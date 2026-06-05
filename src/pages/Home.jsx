@@ -5,7 +5,7 @@ import Button from "../components/Button.jsx";
 import Toggle from "../components/Toggle.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { isValidUrl, normalizeUrl } from "../lib/utils.js";
-import { QUICK_ACTIONS, resolveCustomPrompt } from "../lib/extractionPresets.js";
+import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
 
 const EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
@@ -22,6 +22,7 @@ const V2_FEATURES = [
   { icon: "map", title: "Domain mapping", desc: "Discover every indexed URL on a site, instantly" },
   { icon: "users", title: "Contacts & emails", desc: "Surface leadership, board & contact emails" },
   { icon: "wand", title: "Content generation", desc: "Turn any saved page into SEO outlines & briefs" },
+  { icon: "sparkles", title: "Quick enrichment", desc: "One-click contacts, socials, mission & pricing — saved as tabs" },
 ];
 
 export default function Home() {
@@ -48,7 +49,10 @@ export default function Home() {
       return;
     }
     const prompt = resolveCustomPrompt({ customMode, customPrompt, contactsMode });
-    extract(target, { renderJs, customPrompt: prompt });
+    const opts = { renderJs, customPrompt: prompt };
+    // Tag a custom/contacts extraction so it persists as a named enrichment tab.
+    if (prompt) opts.enrichMeta = enrichMeta(contactsMode ? "leadership" : "custom");
+    extract(target, opts);
   };
 
   const applyPreset = (preset) => {

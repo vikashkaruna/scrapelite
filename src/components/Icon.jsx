@@ -46,6 +46,7 @@ import {
   Wand2,
   Code2,
   ClipboardCopy,
+  RotateCw,
 } from "lucide-react";
 
 const MAP = {
@@ -93,6 +94,7 @@ const MAP = {
   wand: Wand2,
   code: Code2,
   "clipboard-copy": ClipboardCopy,
+  refresh: RotateCw,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

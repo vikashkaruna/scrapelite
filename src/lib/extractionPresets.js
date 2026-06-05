@@ -51,6 +51,17 @@ export const QUICK_ACTIONS = [
   },
 ];
 
+// Lookup a quick action by its capability key.
+export const QUICK_ACTION_BY_KEY = Object.fromEntries(QUICK_ACTIONS.map((a) => [a.key, a]));
+
+// Metadata (key/label/icon) for any enrichment capability key, falling back to a
+// generic "Custom extraction" descriptor for free-text prompts run from Home.
+export function enrichMeta(key) {
+  return (
+    QUICK_ACTION_BY_KEY[key] || { key: key || "custom", label: "Custom extraction", icon: "code" }
+  );
+}
+
 // Combine the optional contacts toggle with any free-text prompt the user typed.
 export function resolveCustomPrompt({ customMode, customPrompt, contactsMode }) {
   const typed = customMode && customPrompt ? customPrompt.trim() : "";

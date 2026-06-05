@@ -5,6 +5,13 @@ import { useNavigate } from "react-router-dom";
 import { extractStructure } from "../lib/firecrawlService.js";
 import { summarize, categorizeLinks } from "../lib/aiService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
+import {
+  readEnrichments,
+  saveEnrichment,
+  saveCurrent,
+  readCurrent,
+} from "../lib/enrichmentStore.js";
+import { enrichMeta } from "../lib/extractionPresets.js";
 import { useErrorModal } from "./ErrorModal.jsx";
 import { uid } from "../lib/utils.js";
 
@@ -17,12 +24,19 @@ export function useExtraction() {
 export function ExtractionProvider({ children }) {
   const navigate = useNavigate();
   const showError = useErrorModal();
-  const [current, setCurrent] = useState(null);
+  // Restore the last-viewed extraction so /preview survives a browser reload.
+  const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
   const [loadingUrl, setLoadingUrl] = useState("");
   const reqId = useRef(0);
   const lastUrl = useRef("");
   const lastOpts = useRef({});
+
+  // Set `current` and mirror it to localStorage (so a reload restores the page).
+  const commitCurrent = (next) => {
+    setCurrent(next);
+    saveCurrent(next);
+  };
 
   // Run Firecrawl + AI, then route to the preview screen.
   const extract = useCallbackSafe(async (url, options = {}) => {
@@ -61,8 +75,26 @@ export function ExtractionProvider({ children }) {
           id: uid(),
           created_at: new Date().toISOString(),
         };
+        // Reload any enrichments previously saved for this URL (persisted tabs).
+        const enrichments = readEnrichments(url);
+        // A custom/contacts extraction run from Home is itself a capability —
+        // record it as an enrichment so it persists and shows as a tab.
+        if (result.custom_extraction != null && options.enrichMeta) {
+          const meta = options.enrichMeta;
+          const entry = {
+            key: meta.key,
+            label: meta.label,
+            icon: meta.icon,
+            prompt: options.customPrompt || "",
+            data: result.custom_extraction,
+            created_at: result.created_at,
+          };
+          enrichments[meta.key] = entry;
+          saveEnrichment(url, entry);
+        }
+        result.enrichments = enrichments;
       }
-      setCurrent(result);
+      commitCurrent(result);
       setLoading(false);
       navigate("/preview");
     } catch (err) {
@@ -75,27 +107,32 @@ export function ExtractionProvider({ children }) {
     }
   });
 
-  // Background enrichment (Quick Actions on the Preview screen). Unlike extract(),
-  // this does NOT toggle the full-screen loader or navigate — it re-runs the
-  // extraction quietly and swaps `current` in place, so the page stays visible
-  // while the work happens. Resolves when done; rejects on failure.
-  const enrich = useCallbackSafe(async (url, options = {}) => {
+  // Background enrichment (Quick Actions on the Preview screen). Runs a focused
+  // extraction for ONE capability and stores the result as a named entry on
+  // current.enrichments[preset.key] (a new tab) — it does NOT toggle the
+  // full-screen loader, navigate, or replace the page, so everything stays
+  // visible. Re-running the same preset overwrites its entry (a refresh). The
+  // entry is persisted per-URL so it reloads next time the page is viewed.
+  const enrich = useCallbackSafe(async (url, preset) => {
     const id = ++reqId.current;
-    const structure = await extractStructure(url, options);
-    const [ai_summary, links] = await Promise.all([
-      summarize(structure),
-      categorizeLinks(structure.links, structure.url),
-    ]);
+    const structure = await extractStructure(url, { customPrompt: preset.prompt });
     if (reqId.current !== id) return null; // superseded by a newer run
-    const result = {
-      ...structure,
-      links,
-      ai_summary,
-      id: uid(),
+    const entry = {
+      key: preset.key,
+      label: preset.label,
+      icon: preset.icon,
+      prompt: preset.prompt,
+      data: structure.custom_extraction ?? null,
       created_at: new Date().toISOString(),
     };
-    setCurrent(result);
-    return result;
+    saveEnrichment(url, entry);
+    setCurrent((cur) => {
+      const base = cur && cur.url === url ? cur : { url };
+      const next = { ...base, enrichments: { ...(base.enrichments || {}), [preset.key]: entry } };
+      saveCurrent(next);
+      return next;
+    });
+    return entry;
   });
 
   // Persist the current (or given) extraction.
@@ -105,11 +142,33 @@ export function ExtractionProvider({ children }) {
   };
 
   const view = (item) => {
-    setCurrent(item);
+    // Reload saved enrichments for this URL so its tabs come back.
+    const enrichments = readEnrichments(item.url);
+    // Seed from a saved custom_extraction if the store has nothing (e.g. the row
+    // came straight from Supabase on another device).
+    if (item.custom_extraction != null && Object.keys(enrichments).length === 0) {
+      const meta = enrichMeta("custom");
+      enrichments[meta.key] = {
+        ...meta,
+        prompt: "",
+        data: item.custom_extraction,
+        created_at: item.created_at,
+      };
+    }
+    commitCurrent({ ...item, enrichments });
     navigate("/preview");
   };
 
-  const value = { current, setCurrent, loading, loadingUrl, extract, enrich, save, view };
+  const value = {
+    current,
+    setCurrent: commitCurrent,
+    loading,
+    loadingUrl,
+    extract,
+    enrich,
+    save,
+    view,
+  };
   return <ExtractionContext.Provider value={value}>{children}</ExtractionContext.Provider>;
 }
 

@@ -661,8 +661,32 @@
 .qa-btn:disabled { cursor: default; }
 .qa-btn:disabled:not(.running) { opacity: .5; }
 .qa-btn.running { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* a "saved as a tab" capability shows a tinted state + a check badge */
+.qa-btn.done:not(.running) { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.qa-done {
+  position: absolute; top: -5px; right: -6px; width: 13px; height: 13px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--accent); color: #fff;
+  box-shadow: 0 0 0 2px var(--surface-2);
+}
 /* progress ring wrapping the icon while that action is extracting */
 .qa-ico { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; }
+
+/* ── V2: enrichment tabs on the Preview screen ─────────────────── */
+.pv-tabs {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 5px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface-2); width: fit-content; max-width: 100%;
+}
+.pv-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-2); font-family: inherit; font-size: .88em; font-weight: 600;
+  padding: 7px 14px; border-radius: var(--r-pill); transition: all .15s; white-space: nowrap;
+}
+.pv-tab svg { color: var(--text-3); transition: color .15s; }
+.pv-tab:hover { color: var(--text); background: var(--surface); }
+.pv-tab.on { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
+.pv-tab.on svg { color: #fff; }
 .qa-spin {
   position: absolute; inset: -4px; border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);

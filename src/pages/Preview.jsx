@@ -1,5 +1,5 @@
 // Preview.jsx — review & save interface (route "/preview").
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -10,9 +10,9 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { SAVE_ERROR } from "../lib/errorMessages.js";
-import { hostOf, pathOf, isExternal } from "../lib/utils.js";
+import { hostOf, pathOf, isExternal, timeAgo } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
-import { QUICK_ACTIONS } from "../lib/extractionPresets.js";
+import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 
 function HeadingRow({ h }) {
   const level = Math.max(1, parseInt(String(h.tag).replace(/\D/g, ""), 10) || 1);
@@ -116,10 +116,28 @@ export default function Preview() {
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
+
+  // Persisted enrichments for this extraction become tabs. Fall back to a saved
+  // custom_extraction (older shape) so it still shows as a tab.
+  const enrichments = useMemo(() => {
+    const map = { ...((current && current.enrichments) || {}) };
+    if (Object.keys(map).length === 0 && current?.custom_extraction != null) {
+      map.custom = {
+        key: "custom",
+        label: "Custom extraction",
+        icon: "code",
+        prompt: "",
+        data: current.custom_extraction,
+        created_at: current.created_at,
+      };
+    }
+    return map;
+  }, [current]);
 
   // Direct navigation with nothing to preview → send home.
   if (!current) return <Navigate to="/" replace />;
@@ -133,17 +151,20 @@ export default function Preview() {
   });
   const catCounts = categoryCounts(data.links || [], data.url);
 
-  // Quick Action enrichment (PRD 4.2) — re-extract this URL with a preset prompt
-  // in the BACKGROUND. The page stays visible; only the clicked button shows a
-  // progress spinner. On success the content updates in place.
+  const enrichList = Object.values(enrichments);
+  const activeEntry = enrichments[activeTab];
+  const showOverview = activeTab === "overview" || !activeEntry;
+
+  // Run (or refresh) ONE capability in the background. The page stays visible;
+  // only the clicked control spins. The result is saved as a tab keyed by URL.
   const runQuickAction = async (preset) => {
     if (runningKey) return; // one at a time
     setRunningKey(preset.key);
     try {
-      const result = await enrich(data.url, { customPrompt: preset.prompt });
-      if (result) {
+      const entry = await enrich(data.url, preset);
+      if (entry) {
+        setActiveTab(preset.key);
         showToast(`${preset.label} ready`, "sparkles");
-        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err) {
       console.error("[ScrapeLite] Quick enrichment failed:", err);
@@ -151,6 +172,13 @@ export default function Preview() {
     } finally {
       setRunningKey(null);
     }
+  };
+
+  // Re-run a saved enrichment tab (uses its stored prompt, or the preset's).
+  const refreshEntry = (entry) => {
+    const prompt = entry.prompt || QUICK_ACTION_BY_KEY[entry.key]?.prompt;
+    if (!prompt) return;
+    runQuickAction({ key: entry.key, label: entry.label, icon: entry.icon, prompt });
   };
 
   const onSave = async () => {
@@ -269,7 +297,8 @@ export default function Preview() {
             </div>
           </div>
 
-          {/* Quick Action enrichment (PRD 4.2) — hidden in map mode */}
+          {/* Quick enrichment — run/refresh capabilities (hidden in map mode).
+              Each result is saved as a persistent tab keyed by this URL. */}
           {!isMap && (
             <div className="card rise quick-actions" style={{ animationDelay: ".07s" }}>
               <div className="qa-head">
@@ -278,23 +307,31 @@ export default function Preview() {
                 </span>
                 <div>
                   <h3>Quick enrichment</h3>
-                  <p className="ch-sub">Re-run this page with a focused AI extraction</p>
+                  <p className="ch-sub">
+                    Run a focused AI extraction — each result is saved as a tab below
+                  </p>
                 </div>
               </div>
               <div className="qa-row">
                 {QUICK_ACTIONS.map((a) => {
                   const running = runningKey === a.key;
+                  const done = !!enrichments[a.key];
                   return (
                     <button
                       key={a.key}
-                      className={"qa-btn" + (running ? " running" : "")}
+                      className={"qa-btn" + (running ? " running" : "") + (done ? " done" : "")}
                       onClick={() => runQuickAction(a)}
                       disabled={!!runningKey}
-                      title={a.prompt}
+                      title={done ? `Re-run “${a.label}” (refresh)` : a.prompt}
                     >
                       <span className="qa-ico">
                         <Icon name={a.icon} size={14} />
                         {running && <span className="qa-spin" />}
+                        {!running && done && (
+                          <span className="qa-done">
+                            <Icon name="check" size={9} strokeWidth={3} />
+                          </span>
+                        )}
                       </span>
                       {a.label}
                     </button>
@@ -304,32 +341,77 @@ export default function Preview() {
             </div>
           )}
 
-          {/* Custom extraction result (feature 3.1 / contacts 3.3) */}
-          {data.custom_extraction != null && (
-            <div className="card rise" style={{ animationDelay: ".09s" }}>
+          {/* Tabs: Overview + one per saved enrichment capability */}
+          {enrichList.length > 0 && (
+            <div className="pv-tabs rise" role="tablist">
+              <button
+                className={"pv-tab" + (showOverview ? " on" : "")}
+                onClick={() => setActiveTab("overview")}
+                role="tab"
+                aria-selected={showOverview}
+              >
+                <Icon name={isMap ? "map" : "layers"} size={14} /> Overview
+              </button>
+              {enrichList.map((e) => (
+                <button
+                  key={e.key}
+                  className={"pv-tab" + (activeTab === e.key ? " on" : "")}
+                  onClick={() => setActiveTab(e.key)}
+                  role="tab"
+                  aria-selected={activeTab === e.key}
+                >
+                  <span className="qa-ico">
+                    <Icon name={e.icon} size={14} />
+                    {runningKey === e.key && <span className="qa-spin" />}
+                  </span>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Enrichment tab content */}
+          {!showOverview && (
+            <div className="card rise" style={{ animationDelay: ".04s" }}>
               <div className="card-head">
                 <span className="ch-icon">
-                  <Icon name="code" size={18} />
+                  <Icon name={activeEntry.icon} size={18} />
                 </span>
-                <div>
-                  <h3>Custom extraction</h3>
-                  <p className="ch-sub">Structured data pulled to match your request</p>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3>{activeEntry.label}</h3>
+                  <p className="ch-sub">
+                    Saved {timeAgo(activeEntry.created_at)} · structured data for this capability
+                  </p>
                 </div>
-                <span className="ai-badge ch-meta">
-                  <Icon name="sparkles" size={12} /> AI
-                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={runningKey === activeEntry.key ? null : "refresh"}
+                  onClick={() => refreshEntry(activeEntry)}
+                  disabled={
+                    !!runningKey ||
+                    !(activeEntry.prompt || QUICK_ACTION_BY_KEY[activeEntry.key]?.prompt)
+                  }
+                >
+                  {runningKey === activeEntry.key ? "Refreshing…" : "Refresh"}
+                </Button>
               </div>
               <div className="card-pad">
-                <StructuredData data={data.custom_extraction} />
+                {activeEntry.data == null ? (
+                  <div className="empty-mini">No data returned for this capability.</div>
+                ) : (
+                  <StructuredData data={activeEntry.data} />
+                )}
               </div>
             </div>
           )}
 
-          {/* Domain map (feature 3.2) replaces the headings/links grid */}
-          {isMap ? (
-            <DomainMapCard urls={data.domain_map} base={data.url} />
-          ) : (
-          <div className="preview-grid">
+          {/* Overview tab content — domain map OR the headings/links grid */}
+          {showOverview &&
+            (isMap ? (
+              <DomainMapCard urls={data.domain_map} base={data.url} />
+            ) : (
+              <div className="preview-grid">
             <div
               className="card rise"
               style={{ animationDelay: ".1s", display: "flex", flexDirection: "column" }}
@@ -396,7 +478,7 @@ export default function Preview() {
               </div>
             </div>
           </div>
-          )}
+            ))}
         </div>
       </div>
     </div>
