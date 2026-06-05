@@ -9,10 +9,13 @@
 //
 // Precedence: a non-empty value here OVERRIDES the matching VITE_* value.
 // Leave a value as "" to fall back to the build-time .env value.
+// Auto-select the n8n MCP server URI based on environment.
+// localhost → test endpoint (mcp-test); any other host → production endpoint (mcp).
+// This file is read at runtime, so no rebuild is needed to switch environments.
+var _isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 window.__SCRAPELITE_RUNTIME__ = {
-  // Production webhook — always active (workflow is live in n8n).
-  // For active n8n editor testing, temporarily swap to:
-  //   "https://vkaruna.app.n8n.cloud/webhook-test/scrapelite"
-  webhookUrl: "https://vkaruna.app.n8n.cloud/webhook/scrapelite",
+  webhookUrl: _isLocal
+    ? "https://vkaruna.app.n8n.cloud/mcp-test/scrapelite"
+    : "https://vkaruna.app.n8n.cloud/mcp/scrapelite",
   emailApiUrl: "",
 };
