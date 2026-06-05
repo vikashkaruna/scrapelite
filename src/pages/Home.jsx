@@ -257,8 +257,9 @@ export default function Home() {
           )}
         </form>
 
-        <div className="rise feature-trio" style={{ animationDelay: ".26s" }}>
-          {FEATURES.map((f) => (
+        {/* All capabilities (V1 + V2), merged into one grid below the options */}
+        <div className="rise home-features" style={{ animationDelay: ".26s" }}>
+          {[...FEATURES, ...V2_FEATURES].map((f) => (
             <div key={f.title} className="feature-cell">
               <div className="feature-ico">
                 <Icon name={f.icon} size={19} />
@@ -269,31 +270,6 @@ export default function Home() {
               </div>
             </div>
           ))}
-        </div>
-
-        {/* New in v2.0 — bottom section describing the new additions */}
-        <div className="rise v2-section" style={{ animationDelay: ".32s" }}>
-          <div className="v2-section-head">
-            <span className="v2-pill">New in v2.0</span>
-            <h2 className="v2-section-title">The Extraction &amp; Enrichment update</h2>
-            <p className="v2-section-sub">
-              ScrapeLite now goes beyond structure — pull precise fields, map whole sites, find
-              decision-makers, and turn any saved page into ready-to-use content.
-            </p>
-          </div>
-          <div className="v2-grid">
-            {V2_FEATURES.map((f) => (
-              <div key={f.title} className="feature-cell v2-cell">
-                <div className="feature-ico">
-                  <Icon name={f.icon} size={19} />
-                </div>
-                <div>
-                  <div className="feature-title">{f.title}</div>
-                  <div className="feature-desc">{f.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>

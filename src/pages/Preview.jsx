@@ -112,9 +112,10 @@ export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
   const showError = useErrorModal();
-  const { current, save, extract } = useExtraction();
+  const { current, save, enrich } = useExtraction();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [runningKey, setRunningKey] = useState(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -132,9 +133,24 @@ export default function Preview() {
   });
   const catCounts = categoryCounts(data.links || [], data.url);
 
-  // Quick Action enrichment (PRD 4.2) — re-extract this URL with a preset prompt.
-  const runQuickAction = (preset) => {
-    extract(data.url, { customPrompt: preset.prompt });
+  // Quick Action enrichment (PRD 4.2) — re-extract this URL with a preset prompt
+  // in the BACKGROUND. The page stays visible; only the clicked button shows a
+  // progress spinner. On success the content updates in place.
+  const runQuickAction = async (preset) => {
+    if (runningKey) return; // one at a time
+    setRunningKey(preset.key);
+    try {
+      const result = await enrich(data.url, { customPrompt: preset.prompt });
+      if (result) {
+        showToast(`${preset.label} ready`, "sparkles");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } catch (err) {
+      console.error("[ScrapeLite] Quick enrichment failed:", err);
+      showError(err);
+    } finally {
+      setRunningKey(null);
+    }
   };
 
   const onSave = async () => {
@@ -266,11 +282,24 @@ export default function Preview() {
                 </div>
               </div>
               <div className="qa-row">
-                {QUICK_ACTIONS.map((a) => (
-                  <button key={a.key} className="qa-btn" onClick={() => runQuickAction(a)} title={a.prompt}>
-                    <Icon name={a.icon} size={14} /> {a.label}
-                  </button>
-                ))}
+                {QUICK_ACTIONS.map((a) => {
+                  const running = runningKey === a.key;
+                  return (
+                    <button
+                      key={a.key}
+                      className={"qa-btn" + (running ? " running" : "")}
+                      onClick={() => runQuickAction(a)}
+                      disabled={!!runningKey}
+                      title={a.prompt}
+                    >
+                      <span className="qa-ico">
+                        <Icon name={a.icon} size={14} />
+                        {running && <span className="qa-spin" />}
+                      </span>
+                      {a.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

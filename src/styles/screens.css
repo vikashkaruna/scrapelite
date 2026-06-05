@@ -50,12 +50,13 @@
 .js-toggle-label svg { color: var(--accent); }
 .js-toggle-hint { color: var(--text-3); font-weight: 500; }
 
-.feature-trio {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
-  margin-top: 40px; width: 100%; max-width: 720px;
+/* Unified capabilities grid (V1 + V2) below the options — fills rows evenly. */
+.home-features {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: 14px; margin-top: 34px; width: 100%; max-width: 960px; text-align: left;
 }
 .feature-cell {
-  display: flex; align-items: flex-start; gap: 13px; text-align: left;
+  display: flex; align-items: flex-start; gap: 13px; text-align: left; height: 100%;
   padding: 18px; border: 1px solid var(--border); border-radius: var(--r);
   background: color-mix(in srgb, var(--surface) 60%, transparent);
 }
@@ -330,9 +331,15 @@
 .row-actions { display: flex; align-items: center; gap: 6px; }
 .del-btn:hover { color: #e0556b !important; background: color-mix(in srgb, #e0556b 12%, transparent) !important; }
 
-/* table */
-.table-wrap { overflow-x: auto; padding: 0; }
-.dash-table { width: 100%; border-collapse: collapse; font-size: .94em; min-width: 760px; }
+/* table — fixed layout so columns fit the container (no horizontal scroll) */
+.table-wrap { overflow: hidden; padding: 0; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: .94em; table-layout: fixed; }
+.dash-table .col-check { width: 44px; }
+.dash-table th:nth-child(2) { width: 28%; }   /* Page */
+.dash-table .col-sum { width: 34%; }
+.dash-table .col-struct { width: 112px; }
+.dash-table .col-date { width: 120px; }
+.dash-table .col-act { width: 168px; }
 .dash-table thead th {
   text-align: left; font-size: .74em; font-weight: 700; text-transform: uppercase;
   letter-spacing: .06em; color: var(--text-3); padding: 16px var(--card-pad);
@@ -375,7 +382,7 @@
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .dash-selbar {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 5px 6px 5px 14px; border-radius: var(--r-pill);
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
@@ -638,30 +645,32 @@
 .preset-chip svg { color: var(--accent); }
 .preset-chip:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
-/* ── V2: "New in v2.0" bottom section ──────────────────────────── */
-.v2-section { width: 100%; max-width: 880px; margin-top: 56px; text-align: center; }
-.v2-section-head { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.v2-section-title { font-size: clamp(22px, 3vw, 30px); font-weight: 750; letter-spacing: -.02em; }
-.v2-section-sub { max-width: 60ch; color: var(--text-3); font-size: .95em; line-height: 1.55; }
-.v2-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
-  margin-top: 24px; width: 100%; text-align: left;
-}
-.v2-cell { background: var(--surface); }
-
 /* ── V2: quick enrichment (Preview) ────────────────────────────── */
 .quick-actions { padding: 16px 18px; }
 .qa-head { display: flex; align-items: center; gap: 12px; }
 .qa-head .ch-icon { flex-shrink: 0; }
 .qa-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
 .qa-btn {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid var(--border); background: var(--surface-2);
   color: var(--text-2); font-family: inherit; font-size: .86em; font-weight: 600;
   padding: 8px 13px; border-radius: var(--r-pill); cursor: pointer; transition: all .15s;
 }
 .qa-btn svg { color: var(--accent); }
-.qa-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.qa-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.qa-btn:disabled { cursor: default; }
+.qa-btn:disabled:not(.running) { opacity: .5; }
+.qa-btn.running { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* progress ring wrapping the icon while that action is extracting */
+.qa-ico { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; }
+.qa-spin {
+  position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+  animation: qa-spin .7s linear infinite;
+}
+@keyframes qa-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .qa-spin { animation-duration: 1.6s; } }
 
 /* ── V2: structured data renderer ──────────────────────────────── */
 .sd-rows { display: flex; flex-direction: column; gap: 2px; }
@@ -682,8 +691,8 @@
 }
 .sd-link:hover { text-decoration: underline; }
 
-/* ── V2: content generation modal ──────────────────────────────── */
-.content-modal { max-width: 560px; }
+/* ── V2: content generation modal (large, centered, self-scrolling) ─ */
+.content-modal { max-width: 760px; max-height: calc(100vh - 48px); overflow-y: auto; }
 .content-formats { display: flex; flex-direction: column; gap: 9px; }
 .content-format {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
@@ -709,8 +718,8 @@
   padding: 10px 13px; border-bottom: 1px solid var(--border);
 }
 .content-text {
-  margin: 0; padding: 14px; max-height: 280px; white-space: pre-wrap; word-break: break-word;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .82em; line-height: 1.6;
+  margin: 0; padding: 16px; max-height: 42vh; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .84em; line-height: 1.65;
   color: var(--text); background: var(--surface-2);
 }
 .content-loading {
@@ -725,10 +734,14 @@
   .preview-stats { margin-left: 0; padding-left: 0; }
   .lnk-text { max-width: 38%; }
 }
-/* Feature trio stays 3-col down to 600px; only stacks on true mobile. */
+/* Drop lower-priority table columns before the layout gets cramped. */
+@media (max-width: 760px) {
+  .dash-table .col-sum, .dash-table th.col-sum { display: none; }
+}
+@media (max-width: 560px) {
+  .dash-table .col-date, .dash-table th.col-date { display: none; }
+}
 @media (max-width: 600px) {
-  .feature-trio { grid-template-columns: 1fr; max-width: 420px; }
-  .v2-grid { grid-template-columns: 1fr; }
   .sd-row { grid-template-columns: 1fr; gap: 2px; }
 }
 @media (max-width: 560px) {

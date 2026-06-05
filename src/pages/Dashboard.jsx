@@ -15,7 +15,18 @@ import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload } from "../lib/utils.js";
 
-const PAGE_SIZE = 8;
+// Approx. pixel cost of one row (table) and the chrome around the list
+// (header, toolbar, pager). Used to fit as many rows as the viewport allows.
+const ROW_PX = 66;
+const CHROME_PX = 360;
+const MIN_ROWS = 4;
+const MAX_ROWS = 24;
+
+function rowsForViewport() {
+  if (typeof window === "undefined") return 8;
+  const fit = Math.floor((window.innerHeight - CHROME_PX) / ROW_PX);
+  return Math.max(MIN_ROWS, Math.min(MAX_ROWS, fit));
+}
 
 function persistLayout(layout) {
   try {
@@ -130,18 +141,9 @@ function Pager({ page, totalPages, start, shown, total, onPage }) {
   );
 }
 
-function RowActions({ item, onView, onExport, onDelete, onGenerate, compact }) {
+function RowActions({ item, onView, onExport, onDelete, compact }) {
   return (
     <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-      <Button
-        variant="secondary"
-        size="sm"
-        icon="wand"
-        onClick={() => onGenerate(item)}
-        title="Generate content from this extraction"
-      >
-        {compact ? "" : "Generate"}
-      </Button>
       <Button variant="secondary" size="sm" icon="download" onClick={() => onExport(item)}>
         {compact ? "" : "CSV"}
       </Button>
@@ -160,7 +162,7 @@ function RowActions({ item, onView, onExport, onDelete, onGenerate, compact }) {
   );
 }
 
-function DashCard({ item, selected, onToggle, onView, onExport, onDelete, onGenerate }) {
+function DashCard({ item, selected, onToggle, onView, onExport, onDelete }) {
   return (
     <div className={"dash-card card" + (selected ? " sel" : "")} onClick={() => onView(item)}>
       <div className="dash-card-top">
@@ -189,14 +191,7 @@ function DashCard({ item, selected, onToggle, onView, onExport, onDelete, onGene
             <Icon name="clock" size={14} /> {timeAgo(item.created_at)}
           </span>
         </div>
-        <RowActions
-          item={item}
-          onView={onView}
-          onExport={onExport}
-          onDelete={onDelete}
-          onGenerate={onGenerate}
-          compact
-        />
+        <RowActions item={item} onView={onView} onExport={onExport} onDelete={onDelete} compact />
       </div>
     </div>
   );
@@ -216,6 +211,15 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(() => new Set());
   const [emailOpen, setEmailOpen] = useState(false);
   const [contentItem, setContentItem] = useState(null);
+  const [pageSize, setPageSize] = useState(rowsForViewport);
+
+  // Keep rows-per-page in step with the viewport height so the table fills the
+  // page without overflowing it; overflow rolls into pagination.
+  useEffect(() => {
+    const onResize = () => setPageSize(rowsForViewport());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -248,7 +252,7 @@ export default function Dashboard() {
   }, [items, query]);
 
   // ── Pagination ─────────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => {
     setPage(1);
   }, [query]);
@@ -256,8 +260,8 @@ export default function Dashboard() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  const start = (page - 1) * PAGE_SIZE;
-  const pageItems = filtered.slice(start, start + PAGE_SIZE);
+  const start = (page - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
 
   // ── Selection ──────────────────────────────────────────────────
   const pageIds = pageItems.map((it) => it.id);
@@ -393,6 +397,19 @@ export default function Dashboard() {
                   <Button size="sm" variant="ghost" onClick={clearSelection}>
                     Clear
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="wand"
+                    onClick={() => setContentItem(selectedItems[0])}
+                    title={
+                      selected.size > 1
+                        ? "Generate content from the first selected extraction"
+                        : "Generate content"
+                    }
+                  >
+                    Generate
+                  </Button>
                   <Button size="sm" variant="primary" icon="mail" onClick={() => setEmailOpen(true)}>
                     Send email
                   </Button>
@@ -446,7 +463,6 @@ export default function Dashboard() {
                   onView={view}
                   onExport={csvDownload}
                   onDelete={onDelete}
-                  onGenerate={setContentItem}
                 />
               ))}
             </div>
@@ -528,7 +544,6 @@ export default function Dashboard() {
                           onView={view}
                           onExport={csvDownload}
                           onDelete={onDelete}
-                          onGenerate={setContentItem}
                         />
                       </td>
                     </tr>

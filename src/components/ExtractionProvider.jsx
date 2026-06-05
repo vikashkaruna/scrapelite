@@ -75,6 +75,29 @@ export function ExtractionProvider({ children }) {
     }
   });
 
+  // Background enrichment (Quick Actions on the Preview screen). Unlike extract(),
+  // this does NOT toggle the full-screen loader or navigate — it re-runs the
+  // extraction quietly and swaps `current` in place, so the page stays visible
+  // while the work happens. Resolves when done; rejects on failure.
+  const enrich = useCallbackSafe(async (url, options = {}) => {
+    const id = ++reqId.current;
+    const structure = await extractStructure(url, options);
+    const [ai_summary, links] = await Promise.all([
+      summarize(structure),
+      categorizeLinks(structure.links, structure.url),
+    ]);
+    if (reqId.current !== id) return null; // superseded by a newer run
+    const result = {
+      ...structure,
+      links,
+      ai_summary,
+      id: uid(),
+      created_at: new Date().toISOString(),
+    };
+    setCurrent(result);
+    return result;
+  });
+
   // Persist the current (or given) extraction.
   const save = async (data) => {
     const saved = await saveExtraction(data || current);
@@ -86,7 +109,7 @@ export function ExtractionProvider({ children }) {
     navigate("/preview");
   };
 
-  const value = { current, setCurrent, loading, loadingUrl, extract, save, view };
+  const value = { current, setCurrent, loading, loadingUrl, extract, enrich, save, view };
   return <ExtractionContext.Provider value={value}>{children}</ExtractionContext.Provider>;
 }
 
