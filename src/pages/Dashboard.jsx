@@ -14,6 +14,21 @@ import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
 import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload } from "../lib/utils.js";
+import { readEnrichments } from "../lib/enrichmentStore.js";
+
+// Merge an item's stored enrichments (Supabase column + local cache, newest per
+// capability) so exports include every capability run against the URL — even
+// when the Supabase `enrichments` column hasn't been migrated yet.
+function withEnrichments(item) {
+  const merged = { ...(item.enrichments || {}) };
+  for (const [key, entry] of Object.entries(readEnrichments(item.url))) {
+    const prev = merged[key];
+    if (!prev || new Date(entry.created_at || 0) >= new Date(prev.created_at || 0)) {
+      merged[key] = entry;
+    }
+  }
+  return Object.keys(merged).length ? { ...item, enrichments: merged } : item;
+}
 
 // Approx. pixel cost of one row (table) and the chrome around the list
 // (header, toolbar, pager). Used to fit as many rows as the viewport allows.
@@ -141,13 +156,10 @@ function Pager({ page, totalPages, start, shown, total, onPage }) {
   );
 }
 
-function RowActions({ item, onView, onExport, onDelete, compact }) {
+function RowActions({ item, onView, onDelete, compact }) {
   return (
     <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-      <Button variant="secondary" size="sm" icon="download" onClick={() => onExport(item)}>
-        {compact ? "" : "CSV"}
-      </Button>
-      <Button variant="ghost" size="sm" icon="arrow-up-right" onClick={() => onView(item)} title="Open">
+      <Button variant="secondary" size="sm" icon="arrow-up-right" onClick={() => onView(item)}>
         {compact ? "" : "View"}
       </Button>
       <Button
@@ -162,7 +174,7 @@ function RowActions({ item, onView, onExport, onDelete, compact }) {
   );
 }
 
-function DashCard({ item, selected, onToggle, onView, onExport, onDelete }) {
+function DashCard({ item, selected, onToggle, onView, onDelete }) {
   return (
     <div className={"dash-card card" + (selected ? " sel" : "")} onClick={() => onView(item)}>
       <div className="dash-card-top">
@@ -191,7 +203,7 @@ function DashCard({ item, selected, onToggle, onView, onExport, onDelete }) {
             <Icon name="clock" size={14} /> {timeAgo(item.created_at)}
           </span>
         </div>
-        <RowActions item={item} onView={onView} onExport={onExport} onDelete={onDelete} compact />
+        <RowActions item={item} onView={onView} onDelete={onDelete} compact />
       </div>
     </div>
   );
@@ -322,7 +334,38 @@ export default function Dashboard() {
     return res;
   };
 
+  // ── Export (CSV / PDF) ─────────────────────────────────────────
+  // Export the selected rows; if nothing is selected, export everything that
+  // currently matches the search. Each export bundles ALL of a page's data,
+  // including every Quick-Enrichment capability.
+  const exportTargets = () => (selected.size ? selectedItems : filtered).map(withEnrichments);
+
+  const onExportCsv = () => {
+    const targets = exportTargets();
+    if (!targets.length) return;
+    csvDownload(targets);
+    showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to CSV`, "download");
+  };
+
+  const onExportPdf = async () => {
+    const targets = exportTargets();
+    if (!targets.length) return;
+    try {
+      // Lazy-load the PDF library so jsPDF only ships when someone exports.
+      const { extractionsToPdf } = await import("../lib/pdfExport.js");
+      extractionsToPdf(targets);
+      showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
+    } catch (err) {
+      console.error("[ScrapeLite] PDF export failed:", err);
+      showError(err);
+    }
+  };
+
   const hasItems = items.length > 0;
+  const exportCount = selected.size || filtered.length;
+  const exportLabel = selected.size
+    ? `${selected.size} selected`
+    : `all ${filtered.length}`;
 
   return (
     <div className="page fade">
@@ -358,6 +401,30 @@ export default function Dashboard() {
                 <Icon name="grid" size={15} />
               </button>
             </div>
+            {hasItems && (
+              <div className="dash-export">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="download"
+                  onClick={onExportCsv}
+                  disabled={exportCount === 0}
+                  title={`Download ${exportLabel} as CSV (all capabilities included)`}
+                >
+                  CSV
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="file"
+                  onClick={onExportPdf}
+                  disabled={exportCount === 0}
+                  title={`Download ${exportLabel} as PDF (all capabilities included)`}
+                >
+                  PDF
+                </Button>
+              </div>
+            )}
             <Button variant="primary" icon="plus" onClick={() => navigate("/")}>
               New extraction
             </Button>
@@ -461,7 +528,6 @@ export default function Dashboard() {
                   selected={selected.has(it.id)}
                   onToggle={toggleOne}
                   onView={view}
-                  onExport={csvDownload}
                   onDelete={onDelete}
                 />
               ))}
@@ -539,12 +605,7 @@ export default function Dashboard() {
                         <span className="td-date">{fmtDate(it.created_at)}</span>
                       </td>
                       <td className="col-act">
-                        <RowActions
-                          item={it}
-                          onView={view}
-                          onExport={csvDownload}
-                          onDelete={onDelete}
-                        />
+                        <RowActions item={it} onView={view} onDelete={onDelete} />
                       </td>
                     </tr>
                   ))}

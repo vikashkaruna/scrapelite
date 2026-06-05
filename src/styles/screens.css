@@ -303,7 +303,8 @@
 }
 .dash-h1 { margin: 8px 0 0; font-size: clamp(26px, 4vw, 36px); font-weight: 800; letter-spacing: -.03em; }
 .dash-sub { margin: 6px 0 0; color: var(--text-2); font-size: 1em; }
-.dash-header-actions { display: flex; align-items: center; gap: 12px; }
+.dash-header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.dash-export { display: inline-flex; align-items: center; gap: 8px; }
 .layout-seg .seg-opt { padding: 7px 10px; }
 
 /* cards */
@@ -339,7 +340,7 @@
 .dash-table .col-check { width: 44px; }
 .dash-table .col-struct { width: 116px; }
 .dash-table .col-date { width: 132px; }
-.dash-table .col-act { width: 168px; }
+.dash-table .col-act { width: 124px; }
 .dash-table td.col-date { white-space: nowrap; }
 .dash-table thead th {
   text-align: left; font-size: .74em; font-weight: 700; text-transform: uppercase;
