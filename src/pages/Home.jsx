@@ -39,10 +39,10 @@ export default function Home() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: "flex-start",
           textAlign: "center",
-          paddingTop: "clamp(20px, 4vh, 48px)",
-          paddingBottom: "clamp(20px, 4vh, 48px)",
+          paddingTop: "clamp(32px, 5vh, 64px)",
+          paddingBottom: "clamp(32px, 5vh, 64px)",
         }}
       >
         <div className="hero-glow" />
