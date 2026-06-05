@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# React Router: serve index.html for all routes so direct /preview and
+# /dashboard URLs work instead of returning a 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

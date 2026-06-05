@@ -1,0 +1,6 @@
+/* Tailwind layers — utilities are available alongside the design system.
+   The design system itself (tokens, components) lives in the imported CSS
+   files below and is the source of truth for ScrapeLite's look. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
