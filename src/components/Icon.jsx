@@ -14,6 +14,7 @@ import {
   Moon,
   Plus,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Globe,
   LayoutGrid,
@@ -35,6 +36,11 @@ import {
   Sparkles,
   Circle,
   Database,
+  Mail,
+  Send,
+  Minus,
+  Share2,
+  Image,
 } from "lucide-react";
 
 const MAP = {
@@ -49,6 +55,7 @@ const MAP = {
   moon: Moon,
   plus: Plus,
   "chevron-right": ChevronRight,
+  "chevron-left": ChevronLeft,
   "chevron-down": ChevronDown,
   globe: Globe,
   grid: LayoutGrid,
@@ -70,6 +77,11 @@ const MAP = {
   sparkles: Sparkles,
   dot: Circle,
   database: Database,
+  mail: Mail,
+  send: Send,
+  minus: Minus,
+  share: Share2,
+  image: Image,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

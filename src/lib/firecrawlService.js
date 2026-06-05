@@ -72,14 +72,18 @@ function parseHtml(html, baseUrl) {
   return { page_title, headings, links };
 }
 
-async function realScrape(url) {
+async function realScrape(url, options = {}) {
+  const body = { url, formats: ["html"], onlyMainContent: false };
+  // "Render JavaScript" → wait for client-side content to hydrate before capturing.
+  if (options.renderJs) body.waitFor = 3000;
+
   const res = await fetch(FIRECRAWL_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
     },
-    body: JSON.stringify({ url, formats: ["html"], onlyMainContent: false }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -105,6 +109,6 @@ async function realScrape(url) {
  * @param {string} url
  * @returns {Promise<{url:string, page_title:string, headings:Array, links:Array}>}
  */
-export async function extractStructure(url) {
-  return hasFirecrawl ? realScrape(url) : mockScrape(url);
+export async function extractStructure(url, options = {}) {
+  return hasFirecrawl ? realScrape(url, options) : mockScrape(url);
 }

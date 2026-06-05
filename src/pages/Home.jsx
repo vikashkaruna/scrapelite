@@ -17,6 +17,7 @@ export default function Home() {
   const { extract } = useExtraction();
   const [url, setUrl] = useState("https://lumio.io");
   const [touched, setTouched] = useState(false);
+  const [renderJs, setRenderJs] = useState(false);
   const valid = isValidUrl(url);
 
   const submit = (e) => {
@@ -25,7 +26,7 @@ export default function Home() {
       setTouched(true);
       return;
     }
-    extract(normalizeUrl(url));
+    extract(normalizeUrl(url), { renderJs });
   };
 
   return (
@@ -150,6 +151,21 @@ export default function Home() {
               </>
             )}
           </div>
+
+          <label className="js-toggle" title="Waits for client-side JavaScript to render before capturing (uses Firecrawl waitFor). Best for SPAs and dynamic pages.">
+            <input
+              type="checkbox"
+              checked={renderJs}
+              onChange={(e) => setRenderJs(e.target.checked)}
+            />
+            <span className="js-toggle-track">
+              <span className="js-toggle-thumb" />
+            </span>
+            <span className="js-toggle-label">
+              <Icon name="zap" size={14} /> Render JavaScript
+              <span className="js-toggle-hint">for dynamic / SPA pages — slower</span>
+            </span>
+          </label>
         </form>
 
         <div className="rise feature-trio" style={{ animationDelay: ".26s" }}>

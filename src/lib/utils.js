@@ -66,6 +66,32 @@ export function normalizeUrl(value) {
   return u;
 }
 
+// ── Email helpers (for emailing selected extractions) ────────────────────────
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(value) {
+  return EMAIL_RE.test(String(value).trim());
+}
+
+// Split a free-text field (commas, spaces, semicolons, newlines) into unique
+// valid / invalid email lists. Used by the "Send email" recipient input.
+export function parseEmails(value) {
+  const parts = String(value)
+    .split(/[\s,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const valid = [];
+  const invalid = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (isValidEmail(p) ? valid : invalid).push(p);
+  }
+  return { valid, invalid };
+}
+
 // Build a CSV string from an extraction (headings + links).
 export function extractionToCsv(extraction) {
   const rows = [["type", "tag", "text", "href"]];

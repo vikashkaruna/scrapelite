@@ -10,6 +10,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { SAVE_ERROR } from "../lib/errorMessages.js";
 import { hostOf, pathOf, isExternal } from "../lib/utils.js";
+import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 
 function HeadingRow({ h }) {
   const level = Math.max(1, parseInt(String(h.tag).replace(/\D/g, ""), 10) || 1);
@@ -32,7 +33,8 @@ function HeadingRow({ h }) {
 }
 
 function LinkRow({ link, base }) {
-  const ext = isExternal(link.href, base);
+  const cat = isCategory(link.category) ? link.category : categoryOf(link.href, base);
+  const meta = CATEGORY_META[cat];
   return (
     <a className="lnk-row" href={link.href} target="_blank" rel="noopener noreferrer">
       <FaviconDot url={link.href} />
@@ -41,14 +43,8 @@ function LinkRow({ link, base }) {
         <span className="lnk-host">{hostOf(link.href)}</span>
         <span className="lnk-path">{pathOf(link.href)}</span>
       </span>
-      <span className={"lnk-badge" + (ext ? " ext" : "")}>
-        {ext ? (
-          <>
-            <Icon name="external" size={12} /> external
-          </>
-        ) : (
-          "internal"
-        )}
+      <span className={"lnk-cat cat-" + cat} title={meta.label}>
+        <Icon name={meta.icon} size={12} /> {meta.label}
       </span>
     </a>
   );
@@ -75,7 +71,7 @@ export default function Preview() {
     const ext = isExternal(l.href, data.url);
     return filter === "external" ? ext : !ext;
   });
-  const extCount = data.links.filter((l) => isExternal(l.href, data.url)).length;
+  const catCounts = categoryCounts(data.links, data.url);
 
   const onSave = async () => {
     if (saving) return;
@@ -215,10 +211,20 @@ export default function Preview() {
                 <span className="ch-icon">
                   <Icon name="link" size={18} />
                 </span>
-                <div>
-                  <h3>Links</h3>
-                  <p className="ch-sub">
-                    {extCount} external · {data.links.length - extCount} internal
+                <div style={{ minWidth: 0 }}>
+                  <div className="ch-title-row">
+                    <h3>Links</h3>
+                    <span className="ai-badge">
+                      <Icon name="sparkles" size={12} /> AI tagged
+                    </span>
+                  </div>
+                  <p className="ch-sub lnk-cat-counts">
+                    {catCounts.map((c, i) => (
+                      <span key={c.key} className="lnk-cat-count">
+                        {i > 0 && <span className="dot-sep">·</span>}
+                        <span className={"cat-dot cat-" + c.key} /> {c.count} {c.label.toLowerCase()}
+                      </span>
+                    ))}
                   </p>
                 </div>
                 <div className="seg-filter ch-meta">

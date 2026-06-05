@@ -26,6 +26,30 @@
 }
 .example-chip:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
+/* Render-JavaScript toggle (switch) under the extract field */
+.js-toggle {
+  display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+  margin-top: 20px; user-select: none;
+}
+.js-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.js-toggle-track {
+  position: relative; width: 38px; height: 22px; border-radius: var(--r-pill); flex-shrink: 0;
+  background: var(--border-strong); transition: background .18s;
+}
+.js-toggle-thumb {
+  position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: var(--shadow-sm); transition: transform .18s;
+}
+.js-toggle input:checked + .js-toggle-track { background: var(--accent); }
+.js-toggle input:checked + .js-toggle-track .js-toggle-thumb { transform: translateX(16px); }
+.js-toggle input:focus-visible + .js-toggle-track { box-shadow: 0 0 0 3px var(--accent-ring); }
+.js-toggle-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .9em; font-weight: 600; color: var(--text-2);
+}
+.js-toggle-label svg { color: var(--accent); }
+.js-toggle-hint { color: var(--text-3); font-weight: 500; }
+
 .feature-trio {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
   margin-top: 40px; width: 100%; max-width: 720px;
@@ -185,6 +209,9 @@
 }
 
 .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); align-items: start; }
+/* Let the 1fr tracks shrink to the container instead of growing to fit their
+   widest link row (default min-width:auto), which pushed the card off-screen. */
+.preview-grid > * { min-width: 0; }
 
 .hd-list, .lnk-list { max-height: 460px; padding: 8px; }
 
@@ -223,6 +250,38 @@
   text-transform: capitalize;
 }
 .lnk-badge.ext { color: var(--accent); background: var(--accent-soft); }
+
+/* AI link category tag (per row) */
+.lnk-cat {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  font-size: .72em; font-weight: 650; border-radius: var(--r-pill);
+  padding: 3px 9px; text-transform: capitalize; white-space: nowrap;
+  color: var(--text-2); background: var(--surface-2);
+}
+.lnk-cat svg { flex-shrink: 0; }
+.cat-internal { color: var(--text-2); background: var(--surface-2); }
+.cat-external { color: var(--accent); background: var(--accent-soft); }
+.cat-social   { color: #7c4dff; background: color-mix(in srgb, #7c4dff 14%, transparent); }
+.cat-email    { color: #0d9488; background: color-mix(in srgb, #0d9488 15%, transparent); }
+.cat-document { color: #c2740a; background: color-mix(in srgb, #c2740a 16%, transparent); }
+.cat-media    { color: #2f74e0; background: color-mix(in srgb, #2f74e0 14%, transparent); }
+
+/* category breakdown in the Links card header */
+.ch-title-row { display: flex; align-items: center; gap: 8px; }
+.ch-title-row h3 { margin: 0; }
+.lnk-cat-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lnk-cat-count { display: inline-flex; align-items: center; gap: 5px; }
+.lnk-cat-count .dot-sep { color: var(--border-strong); margin-right: 1px; }
+.cat-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  background: currentColor;
+}
+.cat-dot.cat-internal { color: var(--text-3); }
+.cat-dot.cat-external { color: var(--accent); }
+.cat-dot.cat-social   { color: #7c4dff; }
+.cat-dot.cat-email    { color: #0d9488; }
+.cat-dot.cat-document { color: #c2740a; }
+.cat-dot.cat-media    { color: #2f74e0; }
 
 .seg-filter { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-sm);
   background: var(--surface-2); border: 1px solid var(--border); }
@@ -297,6 +356,80 @@
 .td-date { color: var(--text-2); font-size: .88em; font-weight: 550; white-space: nowrap; }
 .col-act { text-align: right; }
 .col-act .row-actions { justify-content: flex-end; }
+
+/* toolbar: search + selection / count */
+.dash-toolbar {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.dash-search { flex: 1; min-width: 240px; padding: 0 8px 0 14px; }
+.dash-search .field-input { padding: 11px 0; font-size: .98em; }
+.dash-search-clear {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 28px; height: 28px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-3); cursor: pointer; transition: all .14s;
+}
+.dash-search-clear:hover { background: var(--surface-2); color: var(--text); }
+.dash-toolbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.dash-count {
+  color: var(--text-3); font-size: .86em; font-weight: 600;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.dash-selbar {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 6px 5px 14px; border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  animation: selbar-in .2s ease both;
+}
+@keyframes selbar-in {
+  from { transform: translateY(-4px) scale(.97); }
+  to   { transform: translateY(0) scale(1); }
+}
+.dash-sel-count { color: var(--accent); font-weight: 700; font-size: .86em; white-space: nowrap; }
+
+/* selection checkbox */
+.col-check { width: 1%; white-space: nowrap; }
+.dash-table td.col-check, .dash-table th.col-check { padding-right: 0; }
+.dash-check {
+  width: 20px; height: 20px; flex-shrink: 0; cursor: pointer; padding: 0;
+  border: 1.5px solid var(--border-strong); border-radius: 6px;
+  background: var(--surface); color: #fff;
+  display: grid; place-items: center; transition: all .14s;
+}
+.dash-check:hover { border-color: var(--accent); }
+.dash-check.on, .dash-check.ind { background: var(--accent); border-color: var(--accent); }
+.dash-table tbody tr.sel { background: var(--accent-soft); }
+.dash-table tbody tr.sel:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.dash-card-check { margin-left: auto; align-self: flex-start; }
+.dash-card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm); }
+
+/* pagination */
+.dash-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-top: 18px; flex-wrap: wrap;
+}
+.dash-pager-info {
+  color: var(--text-3); font-size: .86em; font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.dash-pager-info b { color: var(--text-2); font-weight: 700; }
+.dash-pager-ctrls { display: inline-flex; align-items: center; gap: 4px; }
+.pager-btn {
+  min-width: 34px; height: 34px; padding: 0 8px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  font-family: inherit; font-size: .9em; font-weight: 650; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; transition: all .14s;
+  font-variant-numeric: tabular-nums;
+}
+.pager-btn:hover:not(:disabled) {
+  border-color: var(--border-strong); color: var(--text); background: var(--surface-2);
+}
+.pager-btn.on {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-contrast); box-shadow: var(--shadow-accent);
+}
+.pager-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pager-ellipsis { color: var(--text-3); padding: 0 4px; font-weight: 700; }
 
 /* empty state */
 .empty-state {
@@ -397,6 +530,34 @@
 .error-actions {
   display: flex; gap: 10px; justify-content: flex-end;
   padding-top: 2px;
+}
+
+/* ── Email Modal ───────────────────────────────────────────────── */
+.email-modal { max-width: 480px; }
+.email-icon-wrap {
+  width: 50px; height: 50px; border-radius: 13px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+}
+.email-field { padding: 0 8px 0 14px; }
+.email-field .field-input { padding: 13px 0; font-size: 1em; }
+.email-help {
+  margin-top: 8px; min-height: 18px;
+  font-size: .82em; color: var(--text-3); font-weight: 550;
+}
+.email-help .email-err { color: #e0556b; font-weight: 600; }
+.email-list {
+  margin: 0; padding: 6px; list-style: none; max-height: 168px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.email-list li {
+  display: flex; align-items: center; gap: 8px; padding: 7px 9px;
+  border-radius: var(--r-sm); font-size: .88em; color: var(--text-2);
+}
+.email-list li svg { color: var(--text-3); flex-shrink: 0; }
+.email-list-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 550;
 }
 
 /* ── responsive ────────────────────────────────────────────────── */
