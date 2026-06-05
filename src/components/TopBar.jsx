@@ -50,7 +50,7 @@ export default function TopBar() {
         >
           <Icon name={theme === "dark" ? "sun" : "moon"} />
         </button>
-        {pathname !== "/" && (
+        {pathname === "/preview" && (
           <Button variant="primary" size="sm" icon="plus" onClick={() => navigate("/")}>
             New
           </Button>

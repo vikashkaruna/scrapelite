@@ -161,5 +161,127 @@ export async function categorizeLinks(links, baseUrl) {
   }
 }
 
+// ── Content generation (V2.1 — Integrated Content Generation) ─────────────────
+// Turns a saved extraction (title + headings + ai_summary) into usable marketing
+// content. Mock path synthesizes a believable draft; real path calls Claude.
+
+export const CONTENT_FORMATS = [
+  {
+    key: "seo-outline",
+    label: "SEO Blog Outline",
+    icon: "list-tree",
+    desc: "A ready-to-write blog structure with H2/H3 sections.",
+    instruction:
+      "Produce an SEO-optimized blog post outline. Include a working title, a meta " +
+      "description (≤155 chars), 4–6 H2 sections each with 2–3 H3 sub-points, and a " +
+      "short list of target keywords. Use markdown headings.",
+  },
+  {
+    key: "competitor-summary",
+    label: "Competitor Summary",
+    icon: "search",
+    desc: "A concise competitive brief on this page's company.",
+    instruction:
+      "Write a competitor summary brief for a sales/strategy audience. Cover: what " +
+      "the company does, positioning & value proposition, apparent target customers, " +
+      "notable strengths, and likely gaps. Keep it tight and scannable with markdown.",
+  },
+  {
+    key: "social-posts",
+    label: "Social Posts",
+    icon: "share",
+    desc: "Three short promotional posts for social channels.",
+    instruction:
+      "Write 3 short, punchy social media posts (LinkedIn tone) promoting the value " +
+      "of this page's offering. Number them. Each ≤ 3 sentences with a light hook.",
+  },
+];
+
+function buildContentPrompt(extraction, format) {
+  const headings = (extraction.headings || []).map((h) => `${h.tag}: ${h.text}`).join("\n");
+  return (
+    `You are a content marketer working from data scraped from a web page.\n` +
+    `${format.instruction}\n\n` +
+    `Base everything strictly on the material below — do not invent facts.\n\n` +
+    `URL: ${extraction.url}\n` +
+    `Title: ${extraction.page_title}\n\n` +
+    `AI summary of the page:\n${extraction.ai_summary || "(none)"}\n\n` +
+    `Headings:\n${headings || "(none)"}\n`
+  );
+}
+
+async function mockContent(extraction, format) {
+  await delay(MOCK_DELAY_MS);
+  const title = extraction.page_title || hostOf(extraction.url);
+  const topics = (extraction.headings || []).filter((h) => /H[123]/.test(h.tag)).slice(0, 5);
+  if (format.key === "seo-outline") {
+    const lines = [
+      `# ${title}: The Complete Guide`,
+      ``,
+      `*Meta description:* Everything you need to know about ${title} — features, benefits, and how to get started.`,
+      ``,
+      `**Target keywords:** ${hostOf(extraction.url)}, ${title.split(" ").slice(0, 3).join(" ")}, guide, overview`,
+      ``,
+    ];
+    (topics.length ? topics : [{ text: "Overview" }, { text: "Key benefits" }, { text: "Getting started" }]).forEach(
+      (h, i) => {
+        lines.push(`## ${i + 1}. ${h.text}`);
+        lines.push(`- What it means for the reader`);
+        lines.push(`- Why it matters`);
+        lines.push(``);
+      },
+    );
+    return lines.join("\n");
+  }
+  if (format.key === "competitor-summary") {
+    return (
+      `## Competitor brief: ${title}\n\n` +
+      `**What they do.** ${extraction.ai_summary || `${title} positions itself around its core offering.`}\n\n` +
+      `**Positioning.** Messaging centers on ${topics[0]?.text || "their primary value proposition"}.\n\n` +
+      `**Strengths.** Clear structure across ${extraction.headings?.length || 0} sections; strong calls to action.\n\n` +
+      `**Likely gaps.** Limited public detail on pricing depth and technical specifics.\n`
+    );
+  }
+  return (
+    `1. ${title} just caught our eye — ${topics[0]?.text || "worth a look"}. Here's why it matters. 🚀\n\n` +
+    `2. Stop guessing. ${title} turns ${topics[1]?.text || "complexity"} into clarity. 👇\n\n` +
+    `3. If ${topics[2]?.text || "growth"} is on your roadmap, this one's for you. Link in comments.`
+  );
+}
+
+async function realContent(extraction, format) {
+  const res = await fetch(ANTHROPIC_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": AI_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: AI_MODEL,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: buildContentPrompt(extraction, format) }],
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Content generation failed (${res.status}). ${detail}`.trim());
+  }
+  const json = await res.json();
+  const text = json?.content?.map((b) => b.text).filter(Boolean).join("\n").trim();
+  return text || (await mockContent(extraction, format));
+}
+
+/**
+ * Generate marketing content from a saved extraction.
+ * @param {object} extraction
+ * @param {{key:string, instruction:string}} format - one of CONTENT_FORMATS
+ * @returns {Promise<string>} markdown content
+ */
+export async function generateContent(extraction, format) {
+  return hasAI ? realContent(extraction, format) : mockContent(extraction, format);
+}
+
 // Re-export so callers can import categorization helpers from one place.
 export { CATEGORY_KEYS };

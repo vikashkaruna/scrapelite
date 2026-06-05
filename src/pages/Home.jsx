@@ -2,15 +2,27 @@
 import { useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import Toggle from "../components/Toggle.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { isValidUrl, normalizeUrl } from "../lib/utils.js";
+import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
 
 const EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
+// V1 capabilities — always available.
 const FEATURES = [
   { icon: "list-tree", title: "Heading structure", desc: "Full H1–H6 outline, in order" },
   { icon: "link", title: "Every link", desc: "Internal & external, deduped" },
   { icon: "sparkles", title: "AI summary", desc: "Plain-language page overview" },
+];
+
+// V2.0 additions — surfaced at the bottom so users discover the new powers.
+const V2_FEATURES = [
+  { icon: "code", title: "Custom extraction", desc: "Ask for any field in plain English — Firecrawl's LLM pulls it out" },
+  { icon: "map", title: "Domain mapping", desc: "Discover every indexed URL on a site, instantly" },
+  { icon: "users", title: "Contacts & emails", desc: "Surface leadership, board & contact emails" },
+  { icon: "wand", title: "Content generation", desc: "Turn any saved page into SEO outlines & briefs" },
+  { icon: "sparkles", title: "Quick enrichment", desc: "One-click contacts, socials, mission & pricing — saved as tabs" },
 ];
 
 export default function Home() {
@@ -18,6 +30,10 @@ export default function Home() {
   const [url, setUrl] = useState("https://lumio.io");
   const [touched, setTouched] = useState(false);
   const [renderJs, setRenderJs] = useState(false);
+  const [mapMode, setMapMode] = useState(false);
+  const [contactsMode, setContactsMode] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
   const valid = isValidUrl(url);
 
   const submit = (e) => {
@@ -26,7 +42,22 @@ export default function Home() {
       setTouched(true);
       return;
     }
-    extract(normalizeUrl(url), { renderJs });
+    const target = normalizeUrl(url);
+    if (mapMode) {
+      // Domain mapping ignores per-page options — it just lists URLs.
+      extract(target, { mapMode: true });
+      return;
+    }
+    const prompt = resolveCustomPrompt({ customMode, customPrompt, contactsMode });
+    const opts = { renderJs, customPrompt: prompt };
+    // Tag a custom/contacts extraction so it persists as a named enrichment tab.
+    if (prompt) opts.enrichMeta = enrichMeta(contactsMode ? "leadership" : "custom");
+    extract(target, opts);
+  };
+
+  const applyPreset = (preset) => {
+    setCustomMode(true);
+    setCustomPrompt(preset.prompt);
   };
 
   return (
@@ -49,6 +80,7 @@ export default function Home() {
 
         <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
           <Icon name="sparkles" size={14} /> No code · structured in seconds
+          <span className="v2-pill">v2.0</span>
         </div>
 
         <h1
@@ -62,9 +94,9 @@ export default function Home() {
             margin: "20px 0 0",
           }}
         >
-          Extract web data
+          Extract &amp; enrich
           <br />
-          in <span style={{ color: "var(--accent)" }}>seconds.</span>
+          web data in <span style={{ color: "var(--accent)" }}>seconds.</span>
         </h1>
 
         <p
@@ -73,14 +105,15 @@ export default function Home() {
             animationDelay: ".12s",
             fontSize: "clamp(16px, 2vw, 20px)",
             color: "var(--text-2)",
-            maxWidth: "52ch",
+            maxWidth: "58ch",
             margin: "22px 0 0",
             lineHeight: 1.55,
             fontWeight: 450,
           }}
         >
-          Paste any URL and ScrapeLite pulls the page's headings and links into clean, structured
-          data — with an instant AI summary. No scraping scripts required.
+          Paste any URL to pull a page's headings, links and an instant AI summary — then go
+          further: extract <b>any field in plain English</b>, <b>map an entire domain</b>, or
+          surface <b>leadership contacts &amp; emails</b>. No scraping scripts required.
         </p>
 
         <form
@@ -111,9 +144,42 @@ export default function Home() {
               iconRight="arrow-right"
               style={{ height: 50, fontSize: "1em" }}
             >
-              Extract
+              {mapMode ? "Map domain" : "Extract"}
             </Button>
           </div>
+
+          {/* Custom Extraction text area (feature 3.1) — shown when toggled on */}
+          {customMode && !mapMode && (
+            <div className="custom-extract rise">
+              <div className="custom-extract-head">
+                <Icon name="code" size={14} />
+                <span>Custom extraction</span>
+                <span className="custom-extract-hint">describe exactly what to pull</span>
+              </div>
+              <textarea
+                className="custom-extract-input"
+                rows={2}
+                placeholder='e.g. "Extract the product name, price, and customer rating"'
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                aria-label="Custom extraction instructions"
+              />
+              <div className="custom-extract-presets">
+                <span className="preset-lead">Quick actions</span>
+                {QUICK_ACTIONS.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    className="preset-chip"
+                    onClick={() => applyPreset(a)}
+                    title={a.prompt}
+                  >
+                    <Icon name={a.icon} size={12} /> {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div
             style={{
@@ -152,24 +218,52 @@ export default function Home() {
             )}
           </div>
 
-          <label className="js-toggle" title="Waits for client-side JavaScript to render before capturing (uses Firecrawl waitFor). Best for SPAs and dynamic pages.">
-            <input
-              type="checkbox"
+          {/* Scrape options — toggles below the search box & examples */}
+          <div className="scrape-opts">
+            <Toggle
+              icon="zap"
+              label="Render JavaScript"
+              hint="for dynamic / SPA pages — slower"
               checked={renderJs}
-              onChange={(e) => setRenderJs(e.target.checked)}
+              onChange={setRenderJs}
+              title="Waits for client-side JavaScript to render before capturing (Firecrawl waitFor). Best for SPAs and dynamic pages."
             />
-            <span className="js-toggle-track">
-              <span className="js-toggle-thumb" />
-            </span>
-            <span className="js-toggle-label">
-              <Icon name="zap" size={14} /> Render JavaScript
-              <span className="js-toggle-hint">for dynamic / SPA pages — slower</span>
-            </span>
-          </label>
+            <Toggle
+              icon="map"
+              label="Map entire domain"
+              hint={mapMode ? "lists every indexed URL" : "vs. scrape single page"}
+              checked={mapMode}
+              onChange={setMapMode}
+              title="Discover all indexed URLs on the domain via Firecrawl's /map endpoint, instead of scraping one page."
+            />
+            <Toggle
+              icon="users"
+              label="Contacts & emails"
+              hint="leadership & board"
+              checked={contactsMode}
+              onChange={setContactsMode}
+              title="Extract names, titles and emails of senior leadership and board members."
+            />
+            <Toggle
+              icon="code"
+              label="Custom extraction"
+              hint="ask in plain English"
+              checked={customMode}
+              onChange={setCustomMode}
+              title="Reveal a prompt box to extract any specific fields you describe."
+            />
+          </div>
+          {mapMode && (
+            <p className="opts-note">
+              <Icon name="network" size={13} /> Domain mapping is active — other options apply to
+              single-page scrapes.
+            </p>
+          )}
         </form>
 
-        <div className="rise feature-trio" style={{ animationDelay: ".26s" }}>
-          {FEATURES.map((f) => (
+        {/* All capabilities (V1 + V2), merged into one grid below the options */}
+        <div className="rise home-features" style={{ animationDelay: ".26s" }}>
+          {[...FEATURES, ...V2_FEATURES].map((f) => (
             <div key={f.title} className="feature-cell">
               <div className="feature-ico">
                 <Icon name={f.icon} size={19} />
