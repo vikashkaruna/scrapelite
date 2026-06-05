@@ -10,6 +10,9 @@
 // Precedence: a non-empty value here OVERRIDES the matching VITE_* value.
 // Leave a value as "" to fall back to the build-time .env value.
 window.__SCRAPELITE_RUNTIME__ = {
-  webhookUrl: "",
+  // Production webhook — always active (workflow is live in n8n).
+  // For active n8n editor testing, temporarily swap to:
+  //   "https://vkaruna.app.n8n.cloud/webhook-test/scrapelite"
+  webhookUrl: "https://vkaruna.app.n8n.cloud/webhook/scrapelite",
   emailApiUrl: "",
 };
