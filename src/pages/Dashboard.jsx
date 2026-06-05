@@ -6,6 +6,8 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useErrorModal } from "../components/ErrorModal.jsx";
+import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
 import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload } from "../lib/utils.js";
 
@@ -82,6 +84,7 @@ function DashCard({ item, onView, onExport, onDelete }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const showToast = useToast();
+  const showError = useErrorModal();
   const { view } = useExtraction();
 
   const [items, setItems] = useState([]);
@@ -96,7 +99,7 @@ export default function Dashboard() {
       })
       .catch((err) => {
         console.error("[ScrapeLite] Failed to load extractions:", err);
-        if (alive) showToast("Couldn't load saved extractions", "x");
+        if (alive) showError(err, LOAD_ERROR);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -120,8 +123,8 @@ export default function Dashboard() {
       showToast("Extraction deleted", "trash");
     } catch (err) {
       console.error("[ScrapeLite] Delete failed:", err);
-      setItems(prev); // rollback
-      showToast("Couldn't delete — please try again", "x");
+      setItems(prev); // rollback optimistic update
+      showError(err, DELETE_ERROR, () => onDelete(item));
     }
   };
 

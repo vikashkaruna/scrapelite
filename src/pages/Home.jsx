@@ -14,7 +14,7 @@ const FEATURES = [
 ];
 
 export default function Home() {
-  const { extract, error, setError } = useExtraction();
+  const { extract } = useExtraction();
   const [url, setUrl] = useState("https://lumio.io");
   const [touched, setTouched] = useState(false);
   const valid = isValidUrl(url);
@@ -101,7 +101,6 @@ export default function Home() {
               onChange={(e) => {
                 setUrl(e.target.value);
                 if (touched) setTouched(false);
-                if (error) setError(null);
               }}
               aria-label="Page URL to extract"
             />
@@ -126,9 +125,7 @@ export default function Home() {
               minHeight: 22,
             }}
           >
-            {error ? (
-              <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>{error}</span>
-            ) : touched && !valid ? (
+            {touched && !valid ? (
               <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
                 Hmm, that doesn't look like a valid URL.
               </span>
@@ -145,7 +142,6 @@ export default function Home() {
                     onClick={() => {
                       setUrl("https://" + ex);
                       setTouched(false);
-                      setError(null);
                     }}
                   >
                     {ex}

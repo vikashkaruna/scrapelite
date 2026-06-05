@@ -6,6 +6,8 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useErrorModal } from "../components/ErrorModal.jsx";
+import { SAVE_ERROR } from "../lib/errorMessages.js";
 import { hostOf, pathOf, isExternal } from "../lib/utils.js";
 
 function HeadingRow({ h }) {
@@ -54,6 +56,7 @@ function LinkRow({ link, base }) {
 export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
+  const showError = useErrorModal();
   const { current, save } = useExtraction();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
@@ -83,7 +86,8 @@ export default function Preview() {
     } catch (err) {
       console.error("[ScrapeLite] Save failed:", err);
       setSaving(false);
-      showToast("Couldn't save — please try again", "x");
+      // Show modal with retry so user can try saving again without losing the extraction.
+      showError(err, SAVE_ERROR, onSave);
     }
   };
 

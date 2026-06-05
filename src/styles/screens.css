@@ -260,6 +260,78 @@
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
+/* ── Error Modal ───────────────────────────────────────────────── */
+.error-backdrop {
+  position: fixed; inset: 0; z-index: 1200;
+  background: rgba(0, 0, 0, .48);
+  -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+  display: grid; place-items: center;
+  padding: 24px;
+  animation: err-bg-in .2s ease both;
+}
+@keyframes err-bg-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.error-modal {
+  width: 100%; max-width: 468px;
+  padding: var(--card-pad);
+  display: flex; flex-direction: column; gap: 18px;
+  position: relative;
+  animation: err-modal-in .28s cubic-bezier(.2,.8,.3,1) both;
+}
+@keyframes err-modal-in {
+  from { transform: translateY(14px) scale(.96); }
+  to   { transform: translateY(0)    scale(1); }
+}
+
+.error-close {
+  position: absolute; top: 12px; right: 12px;
+}
+
+.error-icon-wrap {
+  width: 50px; height: 50px; border-radius: 13px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, #e0556b 13%, transparent);
+  color: #e0556b;
+}
+
+.error-title {
+  margin: 0; font-size: 1.18em; font-weight: 750; letter-spacing: -.02em;
+}
+.error-message {
+  margin: 5px 0 0; font-size: .95em; color: var(--text-2); line-height: 1.62;
+}
+
+.error-detail-section {
+  border-top: 1px solid var(--border); padding-top: 14px;
+  display: flex; flex-direction: column; gap: 0;
+}
+.error-detail-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-family: inherit; font-size: .83em; font-weight: 600;
+  color: var(--text-3); transition: color .15s;
+}
+.error-detail-toggle:hover { color: var(--text-2); }
+
+.error-detail-pre {
+  margin: 10px 0 0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 13px 15px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .78em; color: var(--text-2);
+  white-space: pre-wrap; word-break: break-all;
+  max-height: 172px; line-height: 1.55;
+  scrollbar-width: thin;
+}
+
+.error-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding-top: 2px;
+}
+
 /* ── responsive ────────────────────────────────────────────────── */
 @media (max-width: 820px) {
   .preview-grid { grid-template-columns: 1fr; }

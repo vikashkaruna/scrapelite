@@ -2,6 +2,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
+import { ErrorModalProvider } from "./components/ErrorModal.jsx";
 import { ExtractionProvider, useExtraction } from "./components/ExtractionProvider.jsx";
 import TopBar from "./components/TopBar.jsx";
 import LoadingScreen from "./components/LoadingScreen.jsx";
@@ -33,11 +34,13 @@ export default function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <ExtractionProvider>
-          <div className="app-root">
-            <Shell />
-          </div>
-        </ExtractionProvider>
+        <ErrorModalProvider>
+          <ExtractionProvider>
+            <div className="app-root">
+              <Shell />
+            </div>
+          </ExtractionProvider>
+        </ErrorModalProvider>
       </ToastProvider>
     </ThemeProvider>
   );
