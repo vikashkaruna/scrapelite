@@ -13,6 +13,21 @@ import { fmtDate, snippet } from "./utils.js";
 const MAX_SUMMARY = 600; // trim long summaries so mailto bodies stay deliverable
 const MAX_MAILTO_BODY = 1800;
 
+// Turn a failed webhook response into a concise, actionable message instead of
+// dumping a raw HTML error page (e.g. a 404) into the UI.
+function webhookErrorMessage(status, detail) {
+  const looksLikeHtml = /<!doctype|<html[\s>]/i.test(detail || "");
+  if (status === 404 || looksLikeHtml) {
+    return (
+      `Couldn't reach the email webhook (HTTP ${status}). ` +
+      `The webhook URL looks wrong or inactive — check VITE_WEBHOOK_URL ` +
+      `(use the full https:// production URL).`
+    );
+  }
+  const msg = (detail || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  return `Email webhook failed (HTTP ${status})${msg ? ": " + msg : ""}.`;
+}
+
 function lineFor(it, i) {
   const meta =
     `${(it.headings || []).length} headings · ` +
@@ -55,7 +70,7 @@ export async function sendExtractionsEmail({ to, items }) {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`Email webhook failed (${res.status}). ${detail}`.trim());
+      throw new Error(webhookErrorMessage(res.status, detail));
     }
     return { via: "webhook", count: recipients.length };
   }
