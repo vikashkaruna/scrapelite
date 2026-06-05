@@ -60,13 +60,16 @@ src/lib/
 create extension if not exists "pgcrypto";
 
 create table if not exists public.extractions (
-  id          uuid primary key default gen_random_uuid(),
-  created_at  timestamptz not null default now(),
-  url         text not null,
-  page_title  text,
-  headings    jsonb not null default '[]'::jsonb,
-  links       jsonb not null default '[]'::jsonb,
-  ai_summary  text
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  url               text not null,
+  page_title        text,
+  headings          jsonb not null default '[]'::jsonb,
+  links             jsonb not null default '[]'::jsonb,
+  ai_summary        text,
+  -- v2.0 columns:
+  custom_extraction jsonb,   -- structured output from Custom Schema / Contacts extraction
+  domain_map        jsonb    -- array of URLs from the "Map entire domain" feature
 );
 
 alter table public.extractions enable row level security;
@@ -75,6 +78,22 @@ alter table public.extractions enable row level security;
 create policy "anon full access" on public.extractions
   for all using (true) with check (true);
 ```
+
+### Upgrading an existing (v1) database to v2.0
+
+If you already ran the v1 SQL, just add the two new columns — this is idempotent
+and safe to run against a live table (existing rows get `null`):
+
+```sql
+alter table public.extractions
+  add column if not exists custom_extraction jsonb,
+  add column if not exists domain_map        jsonb;
+```
+
+> The app is resilient to a missing migration: if these columns don't exist yet,
+> `saveExtraction` automatically retries with the v1 columns only (and keeps a full
+> copy — including the v2 fields — in `localStorage`). Run the `alter table` above to
+> persist `custom_extraction` / `domain_map` in Supabase.
 
 ---
 

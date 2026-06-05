@@ -92,11 +92,20 @@ export function parseEmails(value) {
   return { valid, invalid };
 }
 
-// Build a CSV string from an extraction (headings + links).
+// Build a CSV string from an extraction (headings, links, and V2 extras).
 export function extractionToCsv(extraction) {
   const rows = [["type", "tag", "text", "href"]];
   (extraction.headings || []).forEach((h) => rows.push(["heading", h.tag, h.text, ""]));
   (extraction.links || []).forEach((l) => rows.push(["link", "", l.text, l.href]));
+  // V2: discovered domain-map URLs.
+  (extraction.domain_map || []).forEach((u) => rows.push(["mapped-url", "", "", u]));
+  // V2: contacts from custom/contacts extraction, when present.
+  const contacts = extraction.custom_extraction?.contacts;
+  if (Array.isArray(contacts)) {
+    contacts.forEach((c) =>
+      rows.push(["contact", c.title || "", c.name || "", c.email || ""]),
+    );
+  }
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
   return rows.map((r) => r.map(esc).join(",")).join("\r\n");
 }

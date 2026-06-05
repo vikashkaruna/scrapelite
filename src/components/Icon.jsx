@@ -41,6 +41,11 @@ import {
   Minus,
   Share2,
   Image,
+  Users,
+  Network,
+  Wand2,
+  Code2,
+  ClipboardCopy,
 } from "lucide-react";
 
 const MAP = {
@@ -82,6 +87,12 @@ const MAP = {
   minus: Minus,
   share: Share2,
   image: Image,
+  users: Users,
+  network: Network,
+  map: Network,
+  wand: Wand2,
+  code: Code2,
+  "clipboard-copy": ClipboardCopy,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

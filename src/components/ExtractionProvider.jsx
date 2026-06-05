@@ -33,19 +33,35 @@ export function ExtractionProvider({ children }) {
     setLoading(true);
     try {
       const structure = await extractStructure(url, options);
-      // Summarize and AI-tag the links concurrently.
-      const [ai_summary, links] = await Promise.all([
-        summarize(structure),
-        categorizeLinks(structure.links, structure.url),
-      ]);
-      if (reqId.current !== id) return; // superseded by a newer extraction
-      const result = {
-        ...structure,
-        links,
-        ai_summary,
-        id: uid(),
-        created_at: new Date().toISOString(),
-      };
+
+      let result;
+      if (structure.domain_map) {
+        // Domain-mapping mode: no page to summarize or links to categorize —
+        // just carry the discovered URL list straight to the preview.
+        if (reqId.current !== id) return;
+        result = {
+          ...structure,
+          ai_summary:
+            `Mapped ${structure.domain_map.length} indexed URL` +
+            `${structure.domain_map.length === 1 ? "" : "s"} on ${url}.`,
+          id: uid(),
+          created_at: new Date().toISOString(),
+        };
+      } else {
+        // Standard (and custom-extraction) mode: summarize and AI-tag concurrently.
+        const [ai_summary, links] = await Promise.all([
+          summarize(structure),
+          categorizeLinks(structure.links, structure.url),
+        ]);
+        if (reqId.current !== id) return; // superseded by a newer extraction
+        result = {
+          ...structure,
+          links,
+          ai_summary,
+          id: uid(),
+          created_at: new Date().toISOString(),
+        };
+      }
       setCurrent(result);
       setLoading(false);
       navigate("/preview");

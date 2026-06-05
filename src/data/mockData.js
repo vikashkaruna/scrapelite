@@ -52,6 +52,95 @@ export const LUMIO_EXTRACTION = {
   ],
 };
 
+// ── V2 mock helpers ────────────────────────────────────────────────────────
+// Used by firecrawlService when no real Firecrawl key is configured, so the new
+// V2 features (custom extraction, contacts, domain mapping) are fully demoable.
+
+function brandFromUrl(url) {
+  let host = url;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    host = String(url).replace(/^https?:\/\/(www\.)?/, "").split("/")[0];
+  }
+  const brand = (host.split(".")[0] || "site").replace(/^\w/, (c) => c.toUpperCase());
+  return { host, brand };
+}
+
+// Synthetic senior-leadership / board contacts for the Contacts & Emails toggle.
+export function mockContacts(url) {
+  const { host, brand } = brandFromUrl(url);
+  const domain = host.replace(/^www\./, "");
+  return [
+    { name: "Jordan Avery", title: "Chief Executive Officer", email: `jordan.avery@${domain}` },
+    { name: "Priya Raman", title: "Chief Financial Officer", email: `priya.raman@${domain}` },
+    { name: "Marcus Lee", title: "Chief Technology Officer", email: `marcus.lee@${domain}` },
+    { name: "Elena Fischer", title: "VP, Marketing", email: `elena.fischer@${domain}` },
+    { name: "Daniel Okoro", title: "Board Member", email: `daniel.okoro@${domain}` },
+    { name: `${brand} Press Office`, title: "General Inquiries", email: `hello@${domain}` },
+  ];
+}
+
+// Synthetic structured output for an arbitrary custom prompt. Inspects the
+// prompt for intent so the demo returns shape-appropriate data.
+export function mockCustomExtraction(url, prompt) {
+  const { host, brand } = brandFromUrl(url);
+  const p = String(prompt || "").toLowerCase();
+
+  if (/contact|email|leadership|board|executive|founder/.test(p)) {
+    return { contacts: mockContacts(url) };
+  }
+  if (/social|linkedin|twitter|facebook|instagram|youtube|github/.test(p)) {
+    return {
+      social_links: {
+        linkedin: `https://linkedin.com/company/${host.split(".")[0]}`,
+        twitter: `https://twitter.com/${host.split(".")[0]}`,
+        github: `https://github.com/${host.split(".")[0]}`,
+        youtube: `https://youtube.com/@${host.split(".")[0]}`,
+      },
+    };
+  }
+  if (/price|pricing|plan|tier|cost/.test(p)) {
+    return {
+      plans: [
+        { name: "Starter", price: "$0", period: "forever", features: ["1 project", "Community support"] },
+        { name: "Growth", price: "$49", period: "month", features: ["Unlimited projects", "Priority support", "Integrations"] },
+        { name: "Enterprise", price: "Custom", period: "—", features: ["SSO & SAML", "Dedicated CSM", "SLA"] },
+      ],
+    };
+  }
+  if (/mission|value proposition|what.*do/.test(p)) {
+    return {
+      mission: `${brand} helps fast-moving teams turn complexity into clarity.`,
+      value_proposition: `${brand} delivers measurable outcomes with a zero-code experience.`,
+      summary: `${brand} is a modern platform focused on speed, simplicity, and trust.`,
+    };
+  }
+  // Generic fallback: a couple of plausible fields derived from the prompt.
+  return {
+    query: String(prompt || "").trim(),
+    result: `Structured data matching your request would appear here for ${brand}.`,
+    source: url,
+  };
+}
+
+// Synthetic site map (list of indexed URLs) for the "Map Entire Domain" toggle.
+export function mockDomainMap(url) {
+  let origin = url;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    origin = "https://" + String(url).replace(/^https?:\/\//, "").split("/")[0];
+  }
+  const paths = [
+    "/", "/about", "/pricing", "/features", "/blog", "/contact", "/careers",
+    "/docs", "/docs/getting-started", "/docs/api", "/integrations", "/customers",
+    "/security", "/legal/privacy", "/legal/terms", "/login", "/signup",
+    "/blog/announcing-v2", "/blog/how-we-scale", "/changelog",
+  ];
+  return paths.map((p) => origin + p);
+}
+
 // Generates a plausible mock extraction for an arbitrary URL (host-derived),
 // so the demo works for any input, not just lumio.io.
 export function mockExtractionForUrl(url) {

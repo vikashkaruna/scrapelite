@@ -54,25 +54,61 @@ export async function listExtractions() {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
+// Postgres/PostgREST signals for "this column doesn't exist yet" — emitted when
+// the V2 migration (custom_extraction / domain_map) hasn't been run on the DB.
+// Detecting them lets us insert the V2 columns when present but degrade safely
+// to the V1 schema otherwise, so an un-migrated database never breaks saving.
+function isMissingColumnError(error) {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  const msg = String(error.message || "").toLowerCase();
+  return (
+    (msg.includes("column") && (msg.includes("does not exist") || msg.includes("could not find"))) &&
+    (msg.includes("custom_extraction") || msg.includes("domain_map") || msg.includes("schema cache"))
+  );
+}
+
 /** Persist an extraction and (optionally) notify the webhook. Returns the saved row. */
 export async function saveExtraction(extraction) {
-  const payload = {
+  // V1 base columns (always present).
+  const base = {
     url: extraction.url,
     page_title: extraction.page_title,
     headings: extraction.headings,
     links: extraction.links,
     ai_summary: extraction.ai_summary,
   };
+  // V2 columns — only included when the extraction actually carries them, so a
+  // plain V1 extraction produces a byte-identical payload to before.
+  const v2 = {};
+  if (extraction.custom_extraction != null) v2.custom_extraction = extraction.custom_extraction;
+  if (extraction.domain_map != null) v2.domain_map = extraction.domain_map;
+  const payload = { ...base, ...v2 };
 
   let saved;
   if (isSupabaseEnabled) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from(EXTRACTIONS_TABLE)
       .insert(payload)
       .select()
       .single();
+    // If the V2 columns aren't in the schema yet, retry with V1-only columns so
+    // the save still succeeds (the data is also mirrored to localStorage below).
+    if (error && Object.keys(v2).length && isMissingColumnError(error)) {
+      console.warn(
+        "[ScrapeLite] V2 columns (custom_extraction/domain_map) not found in Supabase; " +
+          "saving base fields only. Run the V2 migration in README to persist them.",
+      );
+      ({ data, error } = await supabase
+        .from(EXTRACTIONS_TABLE)
+        .insert(base)
+        .select()
+        .single());
+    }
     if (error) throw error;
-    saved = data;
+    // Keep the V2 fields on the returned row for the current session even if the
+    // DB couldn't store them, so the Preview/Dashboard still render them now.
+    saved = { ...v2, ...data };
   } else {
     saved = {
       ...payload,

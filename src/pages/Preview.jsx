@@ -5,12 +5,14 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
+import StructuredData from "../components/StructuredData.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { SAVE_ERROR } from "../lib/errorMessages.js";
 import { hostOf, pathOf, isExternal } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
+import { QUICK_ACTIONS } from "../lib/extractionPresets.js";
 
 function HeadingRow({ h }) {
   const level = Math.max(1, parseInt(String(h.tag).replace(/\D/g, ""), 10) || 1);
@@ -50,11 +52,67 @@ function LinkRow({ link, base }) {
   );
 }
 
+// Searchable list of URLs discovered by the "Map entire domain" feature.
+function DomainMapCard({ urls, base }) {
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+  const shown = term ? urls.filter((u) => u.toLowerCase().includes(term)) : urls;
+  return (
+    <div className="card rise" style={{ display: "flex", flexDirection: "column" }}>
+      <div className="card-head">
+        <span className="ch-icon">
+          <Icon name="map" size={18} />
+        </span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h3>Domain map</h3>
+          <p className="ch-sub">All indexed URLs discovered on {hostOf(base)}</p>
+        </div>
+        <span className="count-pill ch-meta">{urls.length}</span>
+      </div>
+      <div className="field-shell dash-search" style={{ margin: "0 16px 12px" }}>
+        <span className="field-lead">
+          <Icon name="search" size={16} />
+        </span>
+        <input
+          className="field-input"
+          type="text"
+          placeholder="Filter URLs…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Filter mapped URLs"
+        />
+        {q && (
+          <button className="dash-search-clear" onClick={() => setQ("")} aria-label="Clear filter">
+            <Icon name="x" size={15} />
+          </button>
+        )}
+      </div>
+      <div className="scroll-y lnk-list">
+        {shown.length === 0 ? (
+          <div className="empty-mini">No URLs match “{q}”.</div>
+        ) : (
+          shown.map((u, i) => (
+            <a key={i} className="lnk-row" href={u} target="_blank" rel="noopener noreferrer">
+              <FaviconDot url={u} />
+              <span className="lnk-text">{pathOf(u) === "/" ? hostOf(u) : pathOf(u)}</span>
+              <span className="lnk-href">
+                <span className="lnk-host">{hostOf(u)}</span>
+                <span className="lnk-path">{pathOf(u)}</span>
+              </span>
+              <Icon name="external" size={13} style={{ color: "var(--text-3)" }} />
+            </a>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
   const showError = useErrorModal();
-  const { current, save } = useExtraction();
+  const { current, save, extract } = useExtraction();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
 
@@ -66,12 +124,18 @@ export default function Preview() {
   if (!current) return <Navigate to="/" replace />;
 
   const data = current;
-  const links = data.links.filter((l) => {
+  const isMap = Array.isArray(data.domain_map);
+  const links = (data.links || []).filter((l) => {
     if (filter === "all") return true;
     const ext = isExternal(l.href, data.url);
     return filter === "external" ? ext : !ext;
   });
-  const catCounts = categoryCounts(data.links, data.url);
+  const catCounts = categoryCounts(data.links || [], data.url);
+
+  // Quick Action enrichment (PRD 4.2) — re-extract this URL with a preset prompt.
+  const runQuickAction = (preset) => {
+    extract(data.url, { customPrompt: preset.prompt });
+  };
 
   const onSave = async () => {
     if (saving) return;
@@ -149,14 +213,23 @@ export default function Preview() {
             </a>
           </div>
           <div className="preview-stats">
-            <div className="pstat">
-              <b>{data.headings.length}</b>
-              <span>headings</span>
-            </div>
-            <div className="pstat">
-              <b>{data.links.length}</b>
-              <span>links</span>
-            </div>
+            {isMap ? (
+              <div className="pstat">
+                <b>{data.domain_map.length}</b>
+                <span>URLs</span>
+              </div>
+            ) : (
+              <>
+                <div className="pstat">
+                  <b>{data.headings.length}</b>
+                  <span>headings</span>
+                </div>
+                <div className="pstat">
+                  <b>{data.links.length}</b>
+                  <span>links</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -180,7 +253,53 @@ export default function Preview() {
             </div>
           </div>
 
-          {/* two-column: headings + links */}
+          {/* Quick Action enrichment (PRD 4.2) — hidden in map mode */}
+          {!isMap && (
+            <div className="card rise quick-actions" style={{ animationDelay: ".07s" }}>
+              <div className="qa-head">
+                <span className="ch-icon">
+                  <Icon name="wand" size={18} />
+                </span>
+                <div>
+                  <h3>Quick enrichment</h3>
+                  <p className="ch-sub">Re-run this page with a focused AI extraction</p>
+                </div>
+              </div>
+              <div className="qa-row">
+                {QUICK_ACTIONS.map((a) => (
+                  <button key={a.key} className="qa-btn" onClick={() => runQuickAction(a)} title={a.prompt}>
+                    <Icon name={a.icon} size={14} /> {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Custom extraction result (feature 3.1 / contacts 3.3) */}
+          {data.custom_extraction != null && (
+            <div className="card rise" style={{ animationDelay: ".09s" }}>
+              <div className="card-head">
+                <span className="ch-icon">
+                  <Icon name="code" size={18} />
+                </span>
+                <div>
+                  <h3>Custom extraction</h3>
+                  <p className="ch-sub">Structured data pulled to match your request</p>
+                </div>
+                <span className="ai-badge ch-meta">
+                  <Icon name="sparkles" size={12} /> AI
+                </span>
+              </div>
+              <div className="card-pad">
+                <StructuredData data={data.custom_extraction} />
+              </div>
+            </div>
+          )}
+
+          {/* Domain map (feature 3.2) replaces the headings/links grid */}
+          {isMap ? (
+            <DomainMapCard urls={data.domain_map} base={data.url} />
+          ) : (
           <div className="preview-grid">
             <div
               className="card rise"
@@ -248,6 +367,7 @@ export default function Preview() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

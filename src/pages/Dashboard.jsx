@@ -5,6 +5,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
 import EmailModal from "../components/EmailModal.jsx";
+import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -129,9 +130,18 @@ function Pager({ page, totalPages, start, shown, total, onPage }) {
   );
 }
 
-function RowActions({ item, onView, onExport, onDelete, compact }) {
+function RowActions({ item, onView, onExport, onDelete, onGenerate, compact }) {
   return (
     <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+      <Button
+        variant="secondary"
+        size="sm"
+        icon="wand"
+        onClick={() => onGenerate(item)}
+        title="Generate content from this extraction"
+      >
+        {compact ? "" : "Generate"}
+      </Button>
       <Button variant="secondary" size="sm" icon="download" onClick={() => onExport(item)}>
         {compact ? "" : "CSV"}
       </Button>
@@ -150,7 +160,7 @@ function RowActions({ item, onView, onExport, onDelete, compact }) {
   );
 }
 
-function DashCard({ item, selected, onToggle, onView, onExport, onDelete }) {
+function DashCard({ item, selected, onToggle, onView, onExport, onDelete, onGenerate }) {
   return (
     <div className={"dash-card card" + (selected ? " sel" : "")} onClick={() => onView(item)}>
       <div className="dash-card-top">
@@ -179,7 +189,14 @@ function DashCard({ item, selected, onToggle, onView, onExport, onDelete }) {
             <Icon name="clock" size={14} /> {timeAgo(item.created_at)}
           </span>
         </div>
-        <RowActions item={item} onView={onView} onExport={onExport} onDelete={onDelete} compact />
+        <RowActions
+          item={item}
+          onView={onView}
+          onExport={onExport}
+          onDelete={onDelete}
+          onGenerate={onGenerate}
+          compact
+        />
       </div>
     </div>
   );
@@ -198,6 +215,7 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(() => new Set());
   const [emailOpen, setEmailOpen] = useState(false);
+  const [contentItem, setContentItem] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -428,6 +446,7 @@ export default function Dashboard() {
                   onView={view}
                   onExport={csvDownload}
                   onDelete={onDelete}
+                  onGenerate={setContentItem}
                 />
               ))}
             </div>
@@ -509,6 +528,7 @@ export default function Dashboard() {
                           onView={view}
                           onExport={csvDownload}
                           onDelete={onDelete}
+                          onGenerate={setContentItem}
                         />
                       </td>
                     </tr>
@@ -535,6 +555,10 @@ export default function Dashboard() {
           onSend={handleSend}
           onClose={() => setEmailOpen(false)}
         />
+      )}
+
+      {contentItem && (
+        <ContentModal item={contentItem} onClose={() => setContentItem(null)} />
       )}
     </div>
   );
