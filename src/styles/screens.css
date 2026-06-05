@@ -72,6 +72,73 @@
   border: 2px solid var(--border-strong);
 }
 
+/* ── Dashboard loading (animated ScrapeLite mark) ──────────────── */
+.dash-loader {
+  padding: 72px 32px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.dash-loader-orb {
+  width: 88px; height: 88px; border-radius: 24px; position: relative;
+  display: grid; place-items: center; margin-bottom: 24px;
+  background: var(--accent-soft); color: var(--accent);
+  overflow: hidden;
+}
+/* rotating sweep behind the mark = indeterminate progress */
+.dash-loader-orb::before {
+  content: ""; position: absolute; inset: -45%;
+  background: conic-gradient(from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--accent) 60%, transparent) 95deg,
+    transparent 210deg);
+  animation: dash-sweep 1.15s linear infinite;
+}
+/* inner mask so the sweep reads as a glowing ring, not a filled disc */
+.dash-loader-orb::after {
+  content: ""; position: absolute; inset: 4px; border-radius: 20px;
+  background: var(--accent-soft);
+}
+.dash-loader-ico {
+  position: relative; z-index: 1;
+  animation: dash-pulse 1.6s ease-in-out infinite;
+}
+@keyframes dash-sweep { to { transform: rotate(360deg); } }
+@keyframes dash-pulse {
+  0%, 100% { transform: translateY(0) scale(1); opacity: .88; }
+  50%      { transform: translateY(-2px) scale(1.09); opacity: 1; }
+}
+.dash-loader-title { font-size: 1.18em; font-weight: 750; letter-spacing: -.02em; }
+.dash-loader-sub { color: var(--text-3); font-size: .9em; font-weight: 550; margin-top: 2px; }
+.dash-loader-bar {
+  margin-top: 22px; width: 184px; height: 5px; border-radius: var(--r-pill);
+  background: var(--accent-soft); overflow: hidden; position: relative;
+}
+.dash-loader-bar::after {
+  content: ""; position: absolute; top: 0; height: 100%; width: 40%;
+  border-radius: var(--r-pill); background: var(--accent);
+  animation: dash-bar 1.25s ease-in-out infinite;
+}
+@keyframes dash-bar {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-loader-orb::before, .dash-loader-ico, .dash-loader-bar::after { animation: none; }
+  .dash-loader-bar::after { left: 0; width: 100%; opacity: .5; }
+}
+
+/* full-screen overlay shown while an extraction is being saved */
+.save-overlay {
+  position: fixed; inset: 0; z-index: 1200;
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  display: grid; place-items: center; padding: 24px;
+  animation: err-bg-in .2s ease both;
+}
+.save-overlay .dash-loader {
+  min-width: 300px; max-width: 380px;
+  animation: err-modal-in .28s cubic-bezier(.2,.8,.3,1) both;
+}
+
 /* ── Preview ───────────────────────────────────────────────────── */
 .preview-bar {
   display: flex; align-items: center; justify-content: space-between;

@@ -26,6 +26,14 @@ const local = {
       /* ignore quota / private-mode errors */
     }
   },
+  // Insert-or-replace a single extraction, newest first.
+  upsert(item) {
+    const items = this.read().filter((x) => x.id !== item.id);
+    this.write([item, ...items]);
+  },
+  remove(id) {
+    this.write(this.read().filter((x) => x.id !== id));
+  },
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -71,9 +79,11 @@ export async function saveExtraction(extraction) {
       id: extraction.id || uid(),
       created_at: extraction.created_at || new Date().toISOString(),
     };
-    const items = local.read().filter((x) => x.id !== saved.id);
-    local.write([saved, ...items]);
   }
+
+  // Always mirror the saved page contents into the browser (localStorage) so a
+  // copy persists locally — backup against DB failures and usable offline.
+  local.upsert(saved);
 
   notifyWebhook(saved); // fire-and-forget
   return saved;
@@ -84,7 +94,7 @@ export async function deleteExtraction(id) {
   if (isSupabaseEnabled) {
     const { error } = await supabase.from(EXTRACTIONS_TABLE).delete().eq("id", id);
     if (error) throw error;
-    return;
   }
-  local.write(local.read().filter((x) => x.id !== id));
+  // Keep the browser copy in sync regardless of backend.
+  local.remove(id);
 }

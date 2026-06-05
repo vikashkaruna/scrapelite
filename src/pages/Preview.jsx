@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import BrandLoader from "../components/BrandLoader.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -98,6 +99,15 @@ export default function Preview() {
 
   return (
     <div className="page fade">
+      {saving && (
+        <div className="save-overlay" role="status" aria-live="polite">
+          <BrandLoader
+            className="card"
+            title="Saving to your dashboard…"
+            sub="Storing the extracted content safely"
+          />
+        </div>
+      )}
       <div className="container" style={{ paddingTop: 28, paddingBottom: 64 }}>
         {/* action bar */}
         <div className="preview-bar">

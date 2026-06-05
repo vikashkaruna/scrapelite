@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import BrandLoader from "../components/BrandLoader.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -168,7 +169,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {!loading && items.length === 0 ? (
+        {loading ? (
+          <BrandLoader
+            className="card rise"
+            title="Loading your extractions…"
+            sub="Fetching your saved pages"
+          />
+        ) : items.length === 0 ? (
           <div className="empty-state card rise">
             <div className="empty-orb">
               <Icon name="layers" size={30} />
