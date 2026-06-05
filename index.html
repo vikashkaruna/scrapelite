@@ -10,6 +10,10 @@
     />
     <title>ScrapeLite — Extract web data in seconds</title>
 
+    <!-- Runtime endpoint overrides (read at load, not baked in at build). Must
+         run before the app module so config.js can read window.__SCRAPELITE_RUNTIME__. -->
+    <script src="/runtime-config.js"></script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
