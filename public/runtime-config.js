@@ -15,7 +15,7 @@
 var _isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 window.__SCRAPELITE_RUNTIME__ = {
   webhookUrl: _isLocal
-    ? "https://vkaruna.app.n8n.cloud/mcp-test/scrapelite"
-    : "https://vkaruna.app.n8n.cloud/mcp/scrapelite",
+    ? "https://vkaruna.app.n8n.cloud/webhook-test/scrapelite"
+    : "https://vkaruna.app.n8n.cloud/webhook/scrapelite",
   emailApiUrl: "",
 };
