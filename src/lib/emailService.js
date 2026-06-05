@@ -1,11 +1,13 @@
 // emailService.js — email one or more saved extractions to chosen recipients.
 //
-// • VITE_EMAIL_API_URL set → POST JSON to that endpoint (your backend / edge fn
-//   that actually delivers the mail).
-// • Otherwise              → fall back to a prefilled mailto: draft in the user's
-//   own mail app, so the feature works with zero backend setup.
+// Delivery is handed off, in priority order, to:
+//   1. VITE_WEBHOOK_URL    → POST an "email.send" event; your webhook (Zapier / n8n /
+//                            Make / custom) performs the actual send. (Preferred.)
+//   2. VITE_EMAIL_API_URL  → POST JSON to a dedicated email endpoint.
+//   3. (neither configured) → fall back to a prefilled mailto: draft in the user's
+//                             own mail app, so the feature works with zero setup.
 
-import { hasEmail, EMAIL_API_URL } from "./config.js";
+import { hasWebhook, WEBHOOK_URL, hasEmail, EMAIL_API_URL } from "./config.js";
 import { fmtDate, snippet } from "./utils.js";
 
 const MAX_SUMMARY = 600; // trim long summaries so mailto bodies stay deliverable
@@ -31,11 +33,32 @@ export function buildEmail(items) {
 /**
  * Send the given extractions to one or more recipients.
  * @param {{ to: string[]|string, items: object[] }} args
- * @returns {Promise<{ via: "api"|"mailto", count: number }>}
+ * @returns {Promise<{ via: "webhook"|"api"|"mailto", count: number }>}
  */
 export async function sendExtractionsEmail({ to, items }) {
   const recipients = Array.isArray(to) ? to : [to];
   const { subject, body } = buildEmail(items);
+
+  // Preferred: hand the email off to the configured webhook to deliver.
+  if (hasWebhook) {
+    const res = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "email.send",
+        sent_at: new Date().toISOString(),
+        to: recipients,
+        subject,
+        body,
+        data: items,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Email webhook failed (${res.status}). ${detail}`.trim());
+    }
+    return { via: "webhook", count: recipients.length };
+  }
 
   if (hasEmail) {
     const res = await fetch(EMAIL_API_URL, {
