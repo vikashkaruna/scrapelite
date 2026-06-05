@@ -5,25 +5,16 @@
 
 import { supabase, isSupabaseEnabled, EXTRACTIONS_TABLE } from "./supabaseClient.js";
 import { notifyWebhook } from "./webhook.js";
-import { SEED_HISTORY } from "../data/mockData.js";
 import { uid } from "./utils.js";
 
 const LS_KEY = "scrapelite.saved";
-const LS_SEEDED_KEY = "scrapelite.seeded";
 
 // ── localStorage backend ─────────────────────────────────────────────────────
 const local = {
   read() {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw != null) return JSON.parse(raw);
-      // First run: seed with demo history once, so the dashboard isn't empty.
-      if (!localStorage.getItem(LS_SEEDED_KEY)) {
-        localStorage.setItem(LS_KEY, JSON.stringify(SEED_HISTORY));
-        localStorage.setItem(LS_SEEDED_KEY, "1");
-        return SEED_HISTORY;
-      }
-      return [];
+      return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
     }
