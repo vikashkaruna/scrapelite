@@ -34,13 +34,14 @@ export default function Home() {
         className="container"
         style={{
           flex: 1,
+          position: "relative",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           textAlign: "center",
-          paddingTop: 64,
-          paddingBottom: 80,
+          paddingTop: "clamp(20px, 4vh, 48px)",
+          paddingBottom: "clamp(20px, 4vh, 48px)",
         }}
       >
         <div className="hero-glow" />
