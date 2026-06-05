@@ -99,12 +99,20 @@ export function extractionToCsv(extraction) {
   (extraction.links || []).forEach((l) => rows.push(["link", "", l.text, l.href]));
   // V2: discovered domain-map URLs.
   (extraction.domain_map || []).forEach((u) => rows.push(["mapped-url", "", "", u]));
-  // V2: contacts from custom/contacts extraction, when present.
-  const contacts = extraction.custom_extraction?.contacts;
-  if (Array.isArray(contacts)) {
-    contacts.forEach((c) =>
-      rows.push(["contact", c.title || "", c.name || "", c.email || ""]),
-    );
+  // V2: contacts from custom/contacts extraction or any enrichment, when present.
+  const contactSources = [
+    extraction.custom_extraction?.contacts,
+    ...Object.values(extraction.enrichments || {}).map((e) => e?.data?.contacts),
+  ];
+  const seen = new Set();
+  for (const list of contactSources) {
+    if (!Array.isArray(list)) continue;
+    for (const c of list) {
+      const key = `${c.name || ""}|${c.email || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(["contact", c.title || "", c.name || "", c.email || ""]);
+    }
   }
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
   return rows.map((r) => r.map(esc).join(",")).join("\r\n");

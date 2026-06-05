@@ -69,7 +69,8 @@ create table if not exists public.extractions (
   ai_summary        text,
   -- v2.0 columns:
   custom_extraction jsonb,   -- structured output from Custom Schema / Contacts extraction
-  domain_map        jsonb    -- array of URLs from the "Map entire domain" feature
+  domain_map        jsonb,   -- array of URLs from the "Map entire domain" feature
+  enrichments       jsonb    -- map of Quick Enrichment results (one per capability), shown as tabs
 );
 
 alter table public.extractions enable row level security;
@@ -87,13 +88,17 @@ and safe to run against a live table (existing rows get `null`):
 ```sql
 alter table public.extractions
   add column if not exists custom_extraction jsonb,
-  add column if not exists domain_map        jsonb;
+  add column if not exists domain_map        jsonb,
+  add column if not exists enrichments       jsonb;
 ```
 
 > The app is resilient to a missing migration: if these columns don't exist yet,
 > `saveExtraction` automatically retries with the v1 columns only (and keeps a full
 > copy — including the v2 fields — in `localStorage`). Run the `alter table` above to
-> persist `custom_extraction` / `domain_map` in Supabase.
+> persist `custom_extraction` / `domain_map` / `enrichments` in Supabase. The
+> `enrichments` column stores the full Quick-Enrichment tab map so saved tabs sync
+> across devices; live edits (running/refreshing a capability on a saved row) are
+> patched into it automatically via `updateEnrichments`.
 
 ---
 

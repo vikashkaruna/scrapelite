@@ -31,6 +31,14 @@ const local = {
     const items = this.read().filter((x) => x.id !== item.id);
     this.write([item, ...items]);
   },
+  // Merge fields into an existing extraction (no-op if it isn't stored locally).
+  patch(id, fields) {
+    const items = this.read();
+    const idx = items.findIndex((x) => x.id === id);
+    if (idx === -1) return;
+    items[idx] = { ...items[idx], ...fields };
+    this.write(items);
+  },
   remove(id) {
     this.write(this.read().filter((x) => x.id !== id));
   },
@@ -38,7 +46,8 @@ const local = {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/** List saved extractions, newest first. */
+/** List saved extractions, newest first. Each row is tagged `_saved` so the app
+ *  knows it's already persisted (and can sync later edits like enrichments). */
 export async function listExtractions() {
   if (isSupabaseEnabled) {
     const { data, error } = await supabase
@@ -46,25 +55,30 @@ export async function listExtractions() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map((r) => ({ ...r, _saved: true }));
   }
   return local
     .read()
     .slice()
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map((r) => ({ ...r, _saved: true }));
 }
 
 // Postgres/PostgREST signals for "this column doesn't exist yet" — emitted when
-// the V2 migration (custom_extraction / domain_map) hasn't been run on the DB.
-// Detecting them lets us insert the V2 columns when present but degrade safely
-// to the V1 schema otherwise, so an un-migrated database never breaks saving.
+// a V2 migration (custom_extraction / domain_map / enrichments) hasn't been run
+// on the DB. Detecting them lets us write the V2 columns when present but degrade
+// safely to the V1 schema otherwise, so an un-migrated database never breaks.
 function isMissingColumnError(error) {
   if (!error) return false;
   if (error.code === "42703" || error.code === "PGRST204") return true;
   const msg = String(error.message || "").toLowerCase();
   return (
-    (msg.includes("column") && (msg.includes("does not exist") || msg.includes("could not find"))) &&
-    (msg.includes("custom_extraction") || msg.includes("domain_map") || msg.includes("schema cache"))
+    msg.includes("column") &&
+    (msg.includes("does not exist") || msg.includes("could not find")) &&
+    (msg.includes("custom_extraction") ||
+      msg.includes("domain_map") ||
+      msg.includes("enrichments") ||
+      msg.includes("schema cache"))
   );
 }
 
@@ -83,6 +97,8 @@ export async function saveExtraction(extraction) {
   const v2 = {};
   if (extraction.custom_extraction != null) v2.custom_extraction = extraction.custom_extraction;
   if (extraction.domain_map != null) v2.domain_map = extraction.domain_map;
+  if (extraction.enrichments && Object.keys(extraction.enrichments).length)
+    v2.enrichments = extraction.enrichments;
   const payload = { ...base, ...v2 };
 
   let saved;
@@ -96,8 +112,8 @@ export async function saveExtraction(extraction) {
     // the save still succeeds (the data is also mirrored to localStorage below).
     if (error && Object.keys(v2).length && isMissingColumnError(error)) {
       console.warn(
-        "[ScrapeLite] V2 columns (custom_extraction/domain_map) not found in Supabase; " +
-          "saving base fields only. Run the V2 migration in README to persist them.",
+        "[ScrapeLite] V2 columns (custom_extraction/domain_map/enrichments) not found in " +
+          "Supabase; saving base fields only. Run the V2 migration in README to persist them.",
       );
       ({ data, error } = await supabase
         .from(EXTRACTIONS_TABLE)
@@ -108,12 +124,13 @@ export async function saveExtraction(extraction) {
     if (error) throw error;
     // Keep the V2 fields on the returned row for the current session even if the
     // DB couldn't store them, so the Preview/Dashboard still render them now.
-    saved = { ...v2, ...data };
+    saved = { ...v2, ...data, _saved: true };
   } else {
     saved = {
       ...payload,
       id: extraction.id || uid(),
       created_at: extraction.created_at || new Date().toISOString(),
+      _saved: true,
     };
   }
 
@@ -123,6 +140,22 @@ export async function saveExtraction(extraction) {
 
   notifyWebhook(saved); // fire-and-forget
   return saved;
+}
+
+/** Update just the enrichments map of an already-saved extraction (live sync of
+ *  Quick Enrichment tabs). No-op if the row isn't persisted; degrades safely if
+ *  the `enrichments` column hasn't been migrated yet. */
+export async function updateEnrichments(id, enrichments) {
+  if (!id) return;
+  if (isSupabaseEnabled) {
+    const { error } = await supabase
+      .from(EXTRACTIONS_TABLE)
+      .update({ enrichments })
+      .eq("id", id);
+    if (error && !isMissingColumnError(error)) throw error;
+  }
+  // Keep the browser copy in step too.
+  local.patch(id, { enrichments });
 }
 
 /** Delete a saved extraction by id. */

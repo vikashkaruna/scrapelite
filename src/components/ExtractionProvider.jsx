@@ -4,7 +4,7 @@ import { createContext, useContext, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { extractStructure } from "../lib/firecrawlService.js";
 import { summarize, categorizeLinks } from "../lib/aiService.js";
-import { saveExtraction } from "../lib/extractionsRepo.js";
+import { saveExtraction, updateEnrichments } from "../lib/extractionsRepo.js";
 import {
   readEnrichments,
   saveEnrichment,
@@ -125,13 +125,17 @@ export function ExtractionProvider({ children }) {
       data: structure.custom_extraction ?? null,
       created_at: new Date().toISOString(),
     };
-    saveEnrichment(url, entry);
-    setCurrent((cur) => {
-      const base = cur && cur.url === url ? cur : { url };
-      const next = { ...base, enrichments: { ...(base.enrichments || {}), [preset.key]: entry } };
-      saveCurrent(next);
-      return next;
-    });
+    saveEnrichment(url, entry); // local cache (keyed by URL)
+    const base = current && current.url === url ? current : { url };
+    const nextEnrichments = { ...(base.enrichments || {}), [preset.key]: entry };
+    commitCurrent({ ...base, enrichments: nextEnrichments });
+    // If this extraction is already saved, sync the full map to the backend so
+    // the tabs persist in Supabase (and across devices). Fire-and-forget.
+    if (base._saved && base.id) {
+      updateEnrichments(base.id, nextEnrichments).catch((err) =>
+        console.warn("[ScrapeLite] Enrichment sync failed:", err),
+      );
+    }
     return entry;
   });
 
@@ -142,11 +146,12 @@ export function ExtractionProvider({ children }) {
   };
 
   const view = (item) => {
-    // Reload saved enrichments for this URL so its tabs come back.
-    const enrichments = readEnrichments(item.url);
-    // Seed from a saved custom_extraction if the store has nothing (e.g. the row
-    // came straight from Supabase on another device).
-    if (item.custom_extraction != null && Object.keys(enrichments).length === 0) {
+    // Reload enrichments for this row: merge what's stored in Supabase (item.enrichments)
+    // with the local cache, keeping the newest entry per capability. This is what makes
+    // saved tabs reappear on another device/browser.
+    const enrichments = mergeEnrichments(item.enrichments, readEnrichments(item.url));
+    // Seed from a saved custom_extraction if neither source has anything.
+    if (Object.keys(enrichments).length === 0 && item.custom_extraction != null) {
       const meta = enrichMeta("custom");
       enrichments[meta.key] = {
         ...meta,
@@ -155,6 +160,8 @@ export function ExtractionProvider({ children }) {
         created_at: item.created_at,
       };
     }
+    // Mirror the merged result back into the local cache so it stays consistent.
+    Object.values(enrichments).forEach((e) => saveEnrichment(item.url, e));
     commitCurrent({ ...item, enrichments });
     navigate("/preview");
   };
@@ -170,6 +177,18 @@ export function ExtractionProvider({ children }) {
     view,
   };
   return <ExtractionContext.Provider value={value}>{children}</ExtractionContext.Provider>;
+}
+
+// Merge two enrichment maps, keeping the newer entry (by created_at) per key.
+function mergeEnrichments(a = {}, b = {}) {
+  const out = { ...(a || {}) };
+  for (const [key, entry] of Object.entries(b || {})) {
+    const prev = out[key];
+    if (!prev || new Date(entry.created_at || 0) >= new Date(prev.created_at || 0)) {
+      out[key] = entry;
+    }
+  }
+  return out;
 }
 
 // Stable callback ref — keeps the handler identity stable without useCallback.
