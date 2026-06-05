@@ -334,12 +334,13 @@
 /* table — fixed layout so columns fit the container (no horizontal scroll) */
 .table-wrap { overflow: hidden; padding: 0; }
 .dash-table { width: 100%; border-collapse: collapse; font-size: .94em; table-layout: fixed; }
+/* Fixed px widths on the narrow columns; Page + AI summary (no width) split the
+   remaining space. Keeping the sum under 100% avoids squeezing the date column. */
 .dash-table .col-check { width: 44px; }
-.dash-table th:nth-child(2) { width: 28%; }   /* Page */
-.dash-table .col-sum { width: 34%; }
-.dash-table .col-struct { width: 112px; }
-.dash-table .col-date { width: 120px; }
+.dash-table .col-struct { width: 116px; }
+.dash-table .col-date { width: 132px; }
 .dash-table .col-act { width: 168px; }
+.dash-table td.col-date { white-space: nowrap; }
 .dash-table thead th {
   text-align: left; font-size: .74em; font-weight: 700; text-transform: uppercase;
   letter-spacing: .06em; color: var(--text-3); padding: 16px var(--card-pad);
