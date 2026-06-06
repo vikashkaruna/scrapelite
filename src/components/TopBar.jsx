@@ -41,6 +41,11 @@ export default function TopBar() {
               {l.label}
             </div>
           ))}
+          {/* Static help site (lives in public/help/, outside the SPA routes) —
+              a plain anchor does a full navigation so it isn't caught by the router. */}
+          <a className="nav-link" href="/help/index.html" target="_blank" rel="noopener">
+            Help
+          </a>
         </nav>
         <button
           className="theme-toggle"

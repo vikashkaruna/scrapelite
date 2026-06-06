@@ -17,7 +17,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` (v2.0 merged; `version-2.0` branch still exists) |
-| **Latest commit** | `278ff5c` — Merge version-2.0 into main |
+| **Latest commit** | `5b267d3` — Merge PR #1 (Netlify deploy w/ secrets-scanning bypass) |
 
 ---
 
@@ -314,6 +314,8 @@ netlify deploy --prod --dir=dist
 ## Git log (recent)
 
 ```
+5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
+6e1d499  Deploy Vite project to Netlify with secrets scanning bypass (6a2387998ea7c38bb41237db)
 278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
 c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
 47a6c76  Fix misaligned "Extracted" date column in dashboard table
