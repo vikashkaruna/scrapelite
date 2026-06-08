@@ -29,6 +29,12 @@ export const AI_MODEL = env.VITE_AI_MODEL || "claude-haiku-4-5-20251001";
 export const WEBHOOK_URL = endpoint(runtime.webhookUrl, env.VITE_WEBHOOK_URL);
 export const EMAIL_API_URL = endpoint(runtime.emailApiUrl, env.VITE_EMAIL_API_URL);
 
+// Optional footer page links. When unset, the corresponding nav item is hidden.
+export const LINK_ABOUT     = env.VITE_LINK_ABOUT     || "";
+export const LINK_BLOG      = env.VITE_LINK_BLOG      || "";
+export const LINK_PRICING   = env.VITE_LINK_PRICING   || "";
+export const LINK_CHANGELOG = env.VITE_LINK_CHANGELOG || "";
+
 export const hasSupabase = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 export const hasFirecrawl = Boolean(FIRECRAWL_API_KEY);
 export const hasAI = Boolean(AI_API_KEY);

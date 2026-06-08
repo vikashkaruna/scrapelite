@@ -8,6 +8,7 @@ import EmailModal from "../components/EmailModal.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
+import { usePersona } from "../components/PersonaProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
@@ -15,6 +16,7 @@ import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
+import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
 // capability) so exports include every capability run against the URL — even
@@ -214,6 +216,8 @@ export default function Dashboard() {
   const showToast = useToast();
   const showError = useErrorModal();
   const { view } = useExtraction();
+  const { personaId } = usePersona();
+  const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -375,12 +379,12 @@ export default function Dashboard() {
             <div className="eyebrow">
               <Icon name="bookmark" size={13} /> Saved
             </div>
-            <h1 className="dash-h1">Your extractions</h1>
+            <h1 className="dash-h1">{persona ? persona.dashboardLabel : "Your extractions"}</h1>
             <p className="dash-sub">
               {loading
                 ? "Loading…"
                 : items.length === 0
-                  ? "Nothing saved yet."
+                  ? (persona ? persona.dashboardSub + " — nothing saved yet." : "Nothing saved yet.")
                   : `${items.length} saved ${items.length === 1 ? "page" : "pages"}, newest first.`}
             </p>
           </div>

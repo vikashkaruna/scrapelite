@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-06 (after full v2.0 build, test, and merge to main)**
+> **Last updated: 2026-06-08 (after V4 E2E fixes: footer env vars, keyboard a11y, localStorage guards, mobile CSS)**
 
 ---
 
@@ -16,8 +16,8 @@
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (v2.0 merged; `version-2.0` branch still exists) |
-| **Latest commit** | `278ff5c` — Merge version-2.0 into main |
+| **Current branch** | `claude/v4-persona-onboard-lEZ1g` (V4 in development) |
+| **Latest commit** | `(see git log)` — V4: Footer env-var links, a11y, localStorage guards, mobile CSS; 90/90 E2E |
 
 ---
 
@@ -69,7 +69,36 @@ Three routes:
 
 ---
 
-## Complete file map (v2.0 state)
+## V4.0 — Persona Onboarding (June 2026, branch: claude/v4-persona-onboard-lEZ1g)
+
+### New files added in V4
+| File | Purpose |
+|---|---|
+| `src/lib/personaConfig.js` | 7 personas (Sales/SDR, Competitive Intel, SEO, Market Researcher, Recruiter, Founder/VC, Agency) each with tagline, subtitle, examples, featuresHighlight, dashboardLabel, guideTip, demoUrl |
+| `src/components/PersonaProvider.jsx` | Context: personaId, onboarded, userName; persisted to localStorage keys scrapelite.persona / scrapelite.onboarded / scrapelite.userName |
+| `src/pages/Onboarding.jsx` | 2-step persona selection flow — Step 1: card grid (7 personas), Step 2: name entry + welcome |
+| `src/pages/Privacy.jsx` | Full Privacy Policy (7 sections: data collection, usage, storage, third-parties, rights, cookies, changes) |
+| `src/pages/Terms.jsx` | Full Terms of Service (12 sections: acceptable use, IP, liability, termination, etc.) |
+| `src/components/Footer.jsx` | Site footer: Product/Company/Legal nav + LinkedIn/Twitter socials + copyright |
+
+### V4 routing changes (App.jsx)
+- `PersonaProvider` wraps `ExtractionProvider` (so all pages have persona context)
+- First-time visitors (onboarded = false) are redirected to `/onboarding` automatically
+- New routes: `/onboarding` (standalone, no TopBar), `/privacy`, `/terms`
+- `Footer` rendered in Shell after Routes (not shown during LoadingScreen or on /onboarding)
+- `PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms"]` — never redirected
+
+### V4 UX patterns
+- **Persona badge** in TopBar: colored dot + role label + click-to-switch
+- **Persona-adaptive Home**: hero tagline, subtitle, examples, stat badge, guide tip, "Recommended" feature cards — all change per persona
+- **Switch role**: available from TopBar badge click or "Switch role" link at Home page bottom — resets onboarding state, navigates to /onboarding
+- **Guide tip**: shown once per persona (dismissed via localStorage `scrapelite.tip.{personaId}`)
+- **Dashboard**: persona-specific title (`dashboardLabel`) and subtitle (`dashboardSub`)
+- **Feature card highlighting**: cards in `featuresHighlight` array get accent border + "Recommended" tag
+
+---
+
+## Complete file map (v2.0 + V4 state)
 
 ```
 /Users/vikash/Extracta/
@@ -88,7 +117,7 @@ Three routes:
 │   └── runtime-config.js             window.__SCRAPELITE_RUNTIME__ override (no rebuild needed)
 └── src/
     ├── main.jsx                      ReactDOM.createRoot, BrowserRouter
-    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > ExtractionProvider > Shell
+    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > PersonaProvider > ExtractionProvider > Shell
     ├── index.css                     @tailwind base/components/utilities only
     ├── styles/
     │   ├── design-system.css         CSS tokens
@@ -99,6 +128,7 @@ Three routes:
     │   └── mockData.js               LUMIO_EXTRACTION + mockExtractionForUrl + mockContacts
     │                                 + mockCustomExtraction + mockDomainMap (v2 helpers)
     ├── lib/
+    │   ├── personaConfig.js          V4: PERSONAS array (7), PERSONA_BY_ID map
     │   ├── config.js                 VITE_* env + runtime override; hasSupabase/hasFirecrawl/hasAI flags
     │   ├── utils.js                  hostOf, pathOf, isExternal, fmtDate, timeAgo, snippet, uid,
     │   │                             isValidUrl, normalizeUrl, flattenJson, extractionRows,
@@ -123,6 +153,8 @@ Three routes:
     │   ├── emailService.js           sendExtractionsEmail; webhook → email API → mailto fallback
     │   └── errorMessages.js          classifyError; 10 categories; SAVE/LOAD/DELETE_ERROR
     ├── components/
+    │   ├── PersonaProvider.jsx        V4: PersonaProvider + usePersona(); localStorage persistence
+    │   ├── Footer.jsx                 V4: site footer with nav links + social icons
     │   ├── ExtractionProvider.jsx    Context: current, loading, loadingUrl, extract, enrich, save, view
     │   │                             extract(): full extraction + nav to /preview + enrichments hydration
     │   │                             enrich(url, preset): BACKGROUND — adds tab, persists, syncs to DB
@@ -140,12 +172,15 @@ Three routes:
     │   ├── ThemeProvider.jsx         light/dark; persists to scrapelite.theme
     │   ├── Toast.jsx                 ToastProvider + useToast(); 2.6s auto-dismiss
     │   ├── ErrorModal.jsx            ErrorModalProvider + useErrorModal(err, override?, retryFn?)
-    │   ├── TopBar.jsx                Brand, nav, theme toggle; "+ New" only on /preview
+    │   ├── TopBar.jsx                V4: Brand, nav, PersonaBadge (colored dot + role + switch), theme toggle, "+ New" on /preview
     │   └── LoadingScreen.jsx         Full-screen 4-step animated progress
     └── pages/
-        ├── Home.jsx                  Toggles, custom extraction textarea, preset chips, 8 capability cards
+        ├── Home.jsx                  V4: Persona-adaptive hero (tagline/subtitle/examples/featuresHighlight), guide tip, URL form, 8 capability cards
+        ├── Onboarding.jsx            V4: 2-step persona selection (/onboarding, standalone — no TopBar/Footer)
+        ├── Privacy.jsx               V4: Privacy Policy page (/privacy)
+        ├── Terms.jsx                 V4: Terms of Service page (/terms)
         ├── Preview.jsx               Tabs (Overview + enrichments), quick-enrichment buttons, save/discard
-        └── Dashboard.jsx             Table/cards, search, pagination, CSV/PDF/Generate/Email
+        └── Dashboard.jsx             V4: Persona label in header; Table/cards, search, pagination, CSV/PDF/Generate/Email
 ```
 
 ---
@@ -268,7 +303,7 @@ extraction.enrichments = {
 
 ## Outstanding tasks for next session
 
-### Highest priority — one SQL command
+### Highest priority — Supabase migration (still unrun)
 ```sql
 -- Run in Supabase SQL Editor → unlocks full v2 persistence across devices
 alter table public.extractions
@@ -277,22 +312,36 @@ alter table public.extractions
   add column if not exists enrichments       jsonb;
 ```
 
-### Other pending work
-- [ ] Set Netlify environment variables to match `.env` and trigger a redeploy (currently deployed app uses build-time vars from CLI deploy)
-- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
-- [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before exposing to real production users (currently browser-bundled — safe for demo only)
+### V4 pending work
+- [ ] **Merge `claude/v4-persona-onboard-lEZ1g` → `main`** once approved
+- [ ] **Real Supabase Auth** — PersonaProvider currently uses localStorage only. Adding Supabase Auth would allow cross-device persona persistence and proper multi-user isolation.
+- [ ] **Preview persona context** — Preview.jsx could show persona-specific enrichment labels (e.g., "Prospect Intel" for sales vs "Site Audit" for SEO). Currently neutral.
+- [ ] **Demo video links** — each persona has `demoUrl` + `demoLabel` fields in personaConfig but no "play demo" button is currently shown on the onboarding page (Step 2) or Home. Add a `<PlayCircle>` button that opens the demo URL.
+- [x] **Blog, Pricing, Changelog, About** — now env-var driven (`VITE_LINK_BLOG`, `VITE_LINK_PRICING`, `VITE_LINK_CHANGELOG`, `VITE_LINK_ABOUT` in `.env.example`). When unset, link is hidden entirely (no placeholder anchors). Documented in config.js.
+- [ ] **Sign-in modal** — currently "Sign in" / "Get started" navigates to /onboarding. A proper modal for returning users (entering name/email) would be more polished.
+
+### V4 fixes applied in last session
+- Footer brand div: `onKeyDown` keyboard handler added (a11y)
+- Home.jsx guide tip: `localStorage.getItem/setItem` wrapped in `try/catch` (private browsing safety)
+- `.topbar-username` hidden on viewports ≤ 760px via media query
+- Footer `Company` section filtered from render when both `LINK_ABOUT` and `LINK_BLOG` are unset (no empty nav column)
+- E2E test suite: **90/90 passed, 0 failed**
+
+### V2 pending work (still applies)
+- [ ] Set Netlify environment variables to match `.env` and trigger a redeploy
+- [ ] Switch webhook to the **production** n8n URL and activate the workflow
+- [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before real production
 - [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
-- [ ] Consider adding **user auth** (Supabase Auth) for multi-user isolation
-- [ ] Consider adding Netlify Background Functions for email reliability (PRD 6.3)
-- [ ] `version-2.0` branch still exists (merged); can be deleted with `git push origin --delete version-2.0`
+- [ ] `version-2.0` branch still exists; can be deleted with `git push origin --delete version-2.0`
 
 ---
 
 ## How to continue developing
 
 ```bash
-cd /Users/vikash/Extracta   # working dir
-git status                   # should be clean on main
+cd /home/user/scrapelite    # working dir (remote) or /Users/vikash/Extracta (local)
+git checkout claude/v4-persona-onboard-lEZ1g
+git status                   # should be clean
 npm run dev                  # starts Vite at http://localhost:5173
 # After any .env change: Ctrl+C → npm run dev (Vite does NOT hot-reload .env)
 ```
@@ -314,14 +363,14 @@ netlify deploy --prod --dir=dist
 ## Git log (recent)
 
 ```
+5acac2f  V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
+5c803b5  Add CLAUDE.md — complete project context for new sessions
+5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
+6e1d499  Deploy Vite project to Netlify with secrets scanning bypass
 278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
 c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
 47a6c76  Fix misaligned "Extracted" date column in dashboard table
 a747769  v2.0: persist enrichments map to Supabase (cross-device sync)
-e54837c  v2.0: persisted, tabbed Quick Enrichment + 8th capability card
-634a68f  v2.0 UX refinements: dashboard, home, background enrichment
-49bcb20  v2.0: Extraction & Enrichment update
-c45...   (earlier v1 commits — error modal, vertical centering, seed data removal)
 ```
 
 ---

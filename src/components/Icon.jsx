@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronDown,
+  ChevronUp,
   Globe,
   LayoutGrid,
   Table,
@@ -47,6 +48,19 @@ import {
   Code2,
   ClipboardCopy,
   RotateCw,
+  // V4 additions
+  Target,
+  Eye,
+  BarChart2,
+  Building2,
+  Linkedin,
+  Twitter,
+  User,
+  Shield,
+  PlayCircle,
+  LogIn,
+  TrendingUp,
+  Info,
 } from "lucide-react";
 
 const MAP = {
@@ -95,6 +109,20 @@ const MAP = {
   code: Code2,
   "clipboard-copy": ClipboardCopy,
   refresh: RotateCw,
+  // V4
+  target: Target,
+  eye: Eye,
+  "bar-chart": BarChart2,
+  building: Building2,
+  linkedin: Linkedin,
+  twitter: Twitter,
+  user: User,
+  shield: Shield,
+  "play-circle": PlayCircle,
+  "log-in": LogIn,
+  "trending-up": TrendingUp,
+  info: Info,
+  "chevron-up": ChevronUp,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
