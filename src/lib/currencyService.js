@@ -30,9 +30,11 @@ export async function getRates() {
   if (cache?.fetchedAt >= bodUtcMs()) return cache.rates; // still fresh
 
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     const res = await fetch("https://open.er-api.com/v6/latest/USD", {
-      signal: AbortSignal.timeout(5000),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     if (res.ok) {
       const data = await res.json();
       const rates = Object.fromEntries(

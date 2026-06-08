@@ -12,7 +12,8 @@ function lsSet(k,v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch 
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export function isAdminAuthed() {
-  return ls(ADMIN_AUTH_KEY) === true || localStorage.getItem(ADMIN_AUTH_KEY) === "true";
+  const v = ls(ADMIN_AUTH_KEY);
+  return v === true || v === "true";
 }
 export function adminLogin(pin) {
   if (pin === ADMIN_PIN) { lsSet(ADMIN_AUTH_KEY, true); return true; }
@@ -51,14 +52,24 @@ export function deleteCoupon(id) {
   return coupons;
 }
 
-export function validateCoupon(code) {
+export function validateCoupon(code, currentPlanId) {
   const now = new Date();
   const coupon = getCoupons().find((c) => c.code.toUpperCase() === code.toUpperCase());
   if (!coupon) return { valid: false, reason: "Coupon code not found." };
   if (!coupon.active) return { valid: false, reason: "This coupon has been deactivated." };
   if (coupon.maxUses && coupon.uses >= coupon.maxUses) return { valid: false, reason: "Coupon has reached its usage limit." };
   if (coupon.expiresAt && new Date(coupon.expiresAt) < now) return { valid: false, reason: "This coupon has expired." };
+  if (coupon.planId && currentPlanId && coupon.planId !== currentPlanId) {
+    const planLabel = coupon.planId.charAt(0).toUpperCase() + coupon.planId.slice(1);
+    return { valid: false, reason: `This coupon is only valid for the ${planLabel} plan.` };
+  }
   return { valid: true, coupon };
+}
+
+export function incrementCouponUses(code) {
+  const coupons = getCoupons();
+  const coupon = coupons.find((c) => c.code.toUpperCase() === code.toUpperCase());
+  if (coupon) { coupon.uses += 1; lsSet(COUPONS_KEY, coupons); }
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -101,15 +112,27 @@ export function addAdminUser(user) {
 }
 
 // ── Revenue metrics ───────────────────────────────────────────────────────────
-const PLAN_PRICES = { free: 0, select: 19, pro: 29, business: 79, agency: 199 };
+// Reads pricing overrides directly from localStorage to avoid circular imports.
+function getEffectivePlanPrices() {
+  const BASE = { free: 0, select: 19, pro: 29, business: 79, agency: 199 };
+  try {
+    const overrides = JSON.parse(localStorage.getItem("scrapelite.pricingOverrides") || "{}");
+    for (const [id, ov] of Object.entries(overrides)) {
+      if (ov?.price_usd !== undefined) BASE[id] = Number(ov.price_usd) || 0;
+    }
+  } catch {}
+  return BASE;
+}
 
 export function getRevenueMetrics() {
   const users = getAdminUsers();
+  const planPrices = getEffectivePlanPrices();
+
   const byPlan = { free: 0, select: 0, pro: 0, business: 0, agency: 0 };
   let mrr = 0;
   users.forEach((u) => {
     byPlan[u.planId] = (byPlan[u.planId] ?? 0) + 1;
-    mrr += PLAN_PRICES[u.planId] ?? 0;
+    mrr += planPrices[u.planId] ?? 0;
   });
   const paying = users.filter((u) => u.planId !== "free").length;
   return {
@@ -128,14 +151,14 @@ export function getRevenueMetrics() {
   };
 }
 
-// Monthly revenue trend (last 6 months, simulated growth)
+// Monthly revenue trend (last 6 months, simulated growth from current MRR)
 export function getRevenueTrend() {
   const base = getRevenueMetrics().mrr;
   return Array.from({ length: 6 }, (_, i) => {
     const d = new Date();
     d.setMonth(d.getMonth() - (5 - i));
     const label = d.toLocaleString("default", { month: "short", year: "2-digit" });
-    const factor = 0.62 + i * 0.076 + (i === 5 ? 0 : 0);
+    const factor = 0.62 + i * 0.076;
     return { label, mrr: Math.round(base * factor) };
   });
 }

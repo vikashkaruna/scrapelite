@@ -68,7 +68,7 @@ export default function AdminCoupons() {
   };
 
   const handleDelete = (id) => {
-    if (!confirm("Delete this coupon?")) return;
+    if (!window.confirm("Delete this coupon? This cannot be undone.")) return;
     setCoupons(deleteCoupon(id));
   };
 

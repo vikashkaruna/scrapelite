@@ -19,6 +19,7 @@ import Pricing from "./pages/Pricing.jsx";
 import Account from "./pages/Account.jsx";
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminRevenue from "./pages/admin/AdminRevenue.jsx";
+import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 
@@ -41,6 +42,7 @@ function Shell() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/revenue" replace />} />
           <Route path="revenue" element={<AdminRevenue />} />
+          <Route path="pricing" element={<AdminPricing />} />
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="users"   element={<AdminUsers />} />
         </Route>

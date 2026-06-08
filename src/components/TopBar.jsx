@@ -5,6 +5,7 @@ import Button from "./Button.jsx";
 import { useTheme } from "./ThemeProvider.jsx";
 import { usePersona } from "./PersonaProvider.jsx";
 import { useBilling } from "./BillingProvider.jsx";
+import { getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 
 const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", business: "#a78bfa", agency: "#f472b6" };
@@ -57,6 +58,8 @@ export default function TopBar() {
   const { plan, planId } = useBilling();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
+  // Use effective plan (picks up admin overrides); guard against null billing context
+  const effectivePlan = getEffectivePlanById(planId ?? "free");
 
   const links = [
     { to: "/", label: "Extract", match: (p) => p === "/" || p === "/preview" },
@@ -87,7 +90,7 @@ export default function TopBar() {
         </nav>
 
         {/* Plan badge — only for paid plans */}
-        <PlanBadge planId={planId} planName={plan.name} onClick={() => navigate("/account")} />
+        <PlanBadge planId={planId} planName={effectivePlan?.name ?? ""} onClick={() => navigate("/account")} />
 
         {/* Persona badge */}
         {persona && <PersonaBadge persona={persona} onClick={handleSwitchRole} />}

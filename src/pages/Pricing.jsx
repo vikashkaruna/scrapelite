@@ -1,7 +1,8 @@
-// Pricing.jsx — V5 public-facing pricing page with multi-currency support.
-import { useState } from "react";
+// Pricing.jsx — V5 public pricing page with effective (admin-overridable) plans.
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { PLANS, TOPUP_BUNDLES, CURRENCIES, CURRENCY_META } from "../lib/pricingConfig.js";
+import { getEffectivePlans, getEffectiveBundles, getGlobalDiscount, applyGlobalDiscount } from "../lib/pricingOverrides.js";
+import { CURRENCIES, CURRENCY_META } from "../lib/pricingConfig.js";
 import { convertPrice, formatPrice } from "../lib/currencyService.js";
 import { useBilling } from "../components/BillingProvider.jsx";
 import Icon from "../components/Icon.jsx";
@@ -9,11 +10,21 @@ import Button from "../components/Button.jsx";
 
 function CurrencyPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const meta = CURRENCY_META[value];
+  const ref = useRef(null);
+  const meta = CURRENCY_META[value] ?? {};
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   return (
-    <div className="currency-picker" style={{ position: "relative" }}>
-      <button className="currency-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span>{meta?.flag}</span>
+    <div className="currency-picker" ref={ref} style={{ position: "relative" }}>
+      <button className="currency-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox">
+        <span>{meta.flag}</span>
         <span>{value}</span>
         <Icon name="chevron-down" size={14} />
       </button>
@@ -38,9 +49,9 @@ function CurrencyPicker({ value, onChange }) {
   );
 }
 
-function PlanCard({ plan, price, currency, currentPlanId, onSelect }) {
+function PlanCard({ plan, displayPrice, currency, currentPlanId, onSelect }) {
   const isCurrent = plan.id === currentPlanId;
-  const isFree = plan.price_usd === 0;
+  const isFree    = plan.price_usd === 0;
   return (
     <div className={"plan-card" + (plan.highlight ? " plan-highlight" : "")}>
       {plan.badge && <div className="plan-badge">{plan.badge}</div>}
@@ -53,7 +64,7 @@ function PlanCard({ plan, price, currency, currentPlanId, onSelect }) {
           <><span className="price-amount">Free</span><span className="price-period"> forever</span></>
         ) : (
           <>
-            <span className="price-amount">{formatPrice(price, currency)}</span>
+            <span className="price-amount">{formatPrice(displayPrice, currency)}</span>
             <span className="price-period"> / month</span>
           </>
         )}
@@ -82,9 +93,7 @@ function PlanCard({ plan, price, currency, currentPlanId, onSelect }) {
 function TopupCard({ bundle, price, currency }) {
   return (
     <div className="topup-card">
-      <div className="topup-icon">
-        <Icon name={bundle.icon} size={20} />
-      </div>
+      <div className="topup-icon"><Icon name={bundle.icon} size={20} /></div>
       <div className="topup-body">
         <div className="topup-name">{bundle.name}</div>
         <div className="topup-desc">{bundle.description}</div>
@@ -101,41 +110,52 @@ export default function Pricing() {
   const navigate = useNavigate();
   const { currency, rates, setCurrency, planId: currentPlanId, upgradePlan } = useBilling();
 
+  // Read effective plans + global discount on every render (picks up admin overrides)
+  const plans    = getEffectivePlans();
+  const bundles  = getEffectiveBundles();
+  const discount = getGlobalDiscount();
+
   const handleSelect = (planId) => {
     upgradePlan(planId);
     navigate("/account");
   };
 
-  const ratesToUse = rates || {};
-
   return (
     <div className="page pricing-page">
       <div className="container">
         <div className="pricing-hero">
-          <div className="eyebrow">
-            <Icon name="zap" />
-            Pricing
-          </div>
+          <div className="eyebrow"><Icon name="zap" />Pricing</div>
           <h1 className="pricing-title">Simple, transparent pricing</h1>
           <p className="pricing-sub">
             Start free. Upgrade when you need more extractions, team features, or automation.
           </p>
+
+          {discount.active && (
+            <div className="global-discount-banner">
+              <Icon name="gift" size={16} />
+              <strong>{discount.percent}% off</strong> — {discount.label}
+              {discount.expiresAt && (
+                <span className="discount-expiry"> · Ends {new Date(discount.expiresAt).toLocaleDateString()}</span>
+              )}
+            </div>
+          )}
+
           <div className="pricing-hero-actions">
             <CurrencyPicker value={currency} onChange={setCurrency} />
-            <span className="pricing-rates-note">
-              Rates updated daily at 5:00 AM IST
-            </span>
+            <span className="pricing-rates-note">Rates updated daily at 5:00 AM IST</span>
           </div>
         </div>
 
         <div className="plans-grid">
-          {PLANS.map((plan) => {
-            const price = convertPrice(plan.price_usd, ratesToUse, currency);
+          {plans.map((plan) => {
+            const baseUsd    = plan.price_usd;
+            const discounted = applyGlobalDiscount(baseUsd);
+            const price      = convertPrice(discounted, rates, currency);
             return (
               <PlanCard
                 key={plan.id}
                 plan={plan}
-                price={price}
+                displayPrice={price}
                 currency={currency}
                 currentPlanId={currentPlanId}
                 onSelect={handleSelect}
@@ -153,14 +173,17 @@ export default function Pricing() {
             </p>
           </div>
           <div className="topup-grid">
-            {TOPUP_BUNDLES.map((bundle) => {
-              const price = convertPrice(bundle.price_usd, ratesToUse, currency);
-              return <TopupCard key={bundle.id} bundle={bundle} price={price} currency={currency} />;
-            })}
+            {bundles.map((bundle) => (
+              <TopupCard
+                key={bundle.id}
+                bundle={bundle}
+                price={convertPrice(bundle.price_usd, rates, currency)}
+                currency={currency}
+              />
+            ))}
           </div>
         </div>
 
-        {/* FAQ footer */}
         <div className="pricing-footer">
           <div className="pricing-faq-row">
             <div className="pricing-faq-item">

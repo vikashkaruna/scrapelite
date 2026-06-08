@@ -7,6 +7,7 @@ import Button from "../../components/Button.jsx";
 
 const NAV = [
   { to: "/admin/revenue", label: "Revenue",  icon: "bar-chart" },
+  { to: "/admin/pricing", label: "Pricing",  icon: "dollar-sign" },
   { to: "/admin/coupons", label: "Coupons",  icon: "bookmark" },
   { to: "/admin/users",   label: "Users",    icon: "users" },
 ];

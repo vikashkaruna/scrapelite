@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-08 (after V4 E2E fixes: footer env vars, keyboard a11y, localStorage guards, mobile CSS)**
+> **Last updated: 2026-06-08 (after V5b: validateCoupon planId enforcement, E2E audit 90/91 pass)**
 
 ---
 
@@ -11,393 +11,326 @@
 | Property | Value |
 |---|---|
 | **Project** | ScrapeLite — zero-code web-extraction + enrichment platform |
-| **Working dir** | `/Users/vikash/Extracta` |
+| **Working dir** | `/home/user/scrapelite` (remote) or `/Users/vikash/Extracta` (local) |
 | **Live site** | https://scrapelite.netlify.app |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `claude/v4-persona-onboard-lEZ1g` (V4 in development) |
-| **Latest commit** | `(see git log)` — V4: Footer env-var links, a11y, localStorage guards, mobile CSS; 90/90 E2E |
+| **Current branch** | `claude/v5-pricing-billing-7xoRQ` (V5 in development) |
+| **Latest commit** | see `git log` — V5: Pricing/Billing, admin pricing editor, usage DB sync, metering alerts |
 
 ---
 
 ## Tech stack (locked — do NOT change these choices)
 
 - **Vite 5 + React 18 + React Router 6** (v7 future flags set in `main.jsx`)
-- **Tailwind CSS** for utilities only — the design system tokens live in CSS custom properties, never in Tailwind config
-- **Design system** — `src/styles/design-system.css` (CSS vars: `--accent`, `--bg`, `--surface`, `--text-*`, `--r`, `--shadow-*`) + `src/styles/screens.css`. **NEVER rewrite these into Tailwind classes.**
-- **lucide-react** icons, all named in `src/components/Icon.jsx`. Add new icons there; don't import lucide directly elsewhere.
-- **Supabase** (`@supabase/supabase-js`) — with localStorage fallback when not configured
-- **jsPDF 4.2.1** — lazy-loaded (only on PDF export click) via `await import("../lib/pdfExport.js")`
+- **Tailwind CSS** for utilities only — design system tokens live in CSS custom properties
+- **Design system** — `src/styles/design-system.css` + `src/styles/screens.css`. **NEVER convert to Tailwind classes.**
+- **lucide-react** icons via `src/components/Icon.jsx`. Add new icons there only.
+- **Supabase** (`@supabase/supabase-js`) — localStorage fallback when not configured
+- **jsPDF 4.2.1** — lazy-loaded only on PDF export click
 - No test framework, no ESLint config (scripts: `dev`, `build`, `preview` only)
 
 ---
 
-## What the app does (v2.0)
+## Complete route map (V5 state)
 
-Three routes:
-
-### `/` — Home / Extract
-- URL input + validation + 3 example chips
-- **Four scrape-option toggles** (each with icon + label + hint):
-  1. Render JavaScript — Firecrawl `waitFor:3000`
-  2. Map entire domain — routes to `/map` endpoint, not `/scrape`
-  3. Contacts & emails — auto-populates a leadership/board contact prompt
-  4. Custom extraction — reveals a textarea + 5 Quick Action preset chips
-- **8 capability cards** below the toggles (3 V1 + 5 V2)
-- V2 pill in eyebrow
-
-### `/preview` — Review & Save
-- Page identity (title, URL, stats)
-- AI summary card
-- **Quick enrichment** panel — 5 capability buttons (Find Contact Info, Leadership & Board, Social Links, Company Mission, Pricing & Plans). Each runs **in the background** (no full-screen loader; page stays visible). Executed buttons show a ✓ badge + progress ring while running.
-- **Enrichment tabs** — one "Overview" tab + one tab per executed capability. Tabs persist per URL, survive browser reload, and restore when re-opening from Dashboard.
-- Each enrichment tab shows structured data + a **Refresh** button
-- Overview tab shows: headings (H1–H6), links (filterable, AI-category-tagged), or domain-map URL list
-
-### `/dashboard` — Saved Extractions
-- Table/cards layout toggle (persisted to `scrapelite.dashLayout`)
-- **Header actions:** CSV | PDF | New extraction
-- Smart search (AND logic across title/url/summary/headings/links)
-- Viewport-adaptive pagination (`rowsForViewport()`)
-- **Selection bar** (appears when rows checked): N selected | Clear | Generate | Send email
-- Rows: View | Delete (CSV moved to header)
-- Generate = ContentModal (SEO Blog Outline / Competitor Summary / Social Posts)
-- Email = EmailModal with recipient input
-- CSV export: comprehensive — includes meta, headings, links, domain map, every enrichment capability (deep-flattened JSON paths)
-- PDF export: jsPDF report, same complete content, lazy-loaded
+| Route | Description | Access |
+|---|---|---|
+| `/` | Home / Extract | Requires onboarding |
+| `/preview` | Review & Save extraction | Requires onboarding |
+| `/dashboard` | Saved extractions | Requires onboarding |
+| `/pricing` | Pricing plans, currency picker, top-up bundles | Public |
+| `/account` | Billing & usage, metering alerts, coupon input | Requires onboarding |
+| `/onboarding` | 2-step persona selection | Standalone (no chrome) |
+| `/privacy` | Privacy Policy | Public |
+| `/terms` | Terms of Service | Public |
+| `/admin` | Admin shell (PIN gated, demo PIN: `ADMIN123`) | Standalone |
+| `/admin/revenue` | Revenue dashboard | Admin |
+| `/admin/pricing` | Configurable plan pricing & limits | Admin |
+| `/admin/coupons` | Coupon CRUD | Admin |
+| `/admin/users` | User management | Admin |
 
 ---
 
-## V4.0 — Persona Onboarding (June 2026, branch: claude/v4-persona-onboard-lEZ1g)
+## V5 — Pricing & Billing (June 2026, branch: claude/v5-pricing-billing-7xoRQ)
 
-### New files added in V4
+### New files added in V5
+
 | File | Purpose |
 |---|---|
-| `src/lib/personaConfig.js` | 7 personas (Sales/SDR, Competitive Intel, SEO, Market Researcher, Recruiter, Founder/VC, Agency) each with tagline, subtitle, examples, featuresHighlight, dashboardLabel, guideTip, demoUrl |
-| `src/components/PersonaProvider.jsx` | Context: personaId, onboarded, userName; persisted to localStorage keys scrapelite.persona / scrapelite.onboarded / scrapelite.userName |
-| `src/pages/Onboarding.jsx` | 2-step persona selection flow — Step 1: card grid (7 personas), Step 2: name entry + welcome |
-| `src/pages/Privacy.jsx` | Full Privacy Policy (7 sections: data collection, usage, storage, third-parties, rights, cookies, changes) |
-| `src/pages/Terms.jsx` | Full Terms of Service (12 sections: acceptable use, IP, liability, termination, etc.) |
-| `src/components/Footer.jsx` | Site footer: Product/Company/Legal nav + LinkedIn/Twitter socials + copyright |
+| `src/lib/pricingConfig.js` | 5 plan definitions (Free/Select/Pro/Business/Agency) + 3 top-up bundles + multi-currency meta |
+| `src/lib/pricingOverrides.js` | Admin-configurable price/limit overrides stored in localStorage — `getEffectivePlans()`, `getEffectivePlanById()`, `getGlobalDiscount()`, `applyGlobalDiscount()` |
+| `src/lib/currencyService.js` | 6-currency conversion (USD/INR/EUR/GBP/SGD/AED), daily BOD refresh at 5 AM IST via open.er-api.com, localStorage cache |
+| `src/lib/usageService.js` | Monthly extraction + enrichment counters; `canExtract()`, `canEnrich()`, `canExport()`, `canEmailExport()` — all use effective plan map so admin overrides apply |
+| `src/lib/usageRepo.js` | Supabase sync layer for usage records + alert config. `syncUsageToDb()`, `fetchUsageFromDb()`, `getSessionId()` |
+| `src/lib/alertService.js` | Metering alert config (`getAlertConfig()`, `saveAlertConfig()`), threshold tracking, `checkAndFireAlerts()` fires email via webhook |
+| `src/lib/adminService.js` | Admin: coupon CRUD, user management, revenue metrics. `incrementCouponUses()` called on apply. Revenue uses localStorage pricing overrides. |
+| `src/components/BillingProvider.jsx` | React context: subscription, usage, plan, currency/rates, DB sync (debounced 2s), alert check on extraction, coupon apply with use-count tracking |
+| `src/pages/Pricing.jsx` | Pricing page: effective plans (admin-overridable), currency picker with click-outside close, global discount banner, top-up bundles |
+| `src/pages/Account.jsx` | Billing & usage page: usage meters, plan card, metering alerts config, coupon form with remove button, quick stats |
+| `src/pages/admin/AdminLayout.jsx` | Admin shell with PIN gate (ADMIN123), sidebar nav: Revenue / Pricing / Coupons / Users |
+| `src/pages/admin/AdminPricing.jsx` | Fully editable plan pricing + limits + global discount + top-up bundle prices — no hardcoding |
+| `src/pages/admin/AdminRevenue.jsx` | KPI cards, 6-month MRR trend bar chart, plan distribution — uses effective prices |
+| `src/pages/admin/AdminCoupons.jsx` | Coupon CRUD: create (% or bonus extractions), activate/deactivate/delete |
+| `src/pages/admin/AdminUsers.jsx` | User table: search, plan filter, extend usage, personalised invite |
 
-### V4 routing changes (App.jsx)
-- `PersonaProvider` wraps `ExtractionProvider` (so all pages have persona context)
-- First-time visitors (onboarded = false) are redirected to `/onboarding` automatically
-- New routes: `/onboarding` (standalone, no TopBar), `/privacy`, `/terms`
-- `Footer` rendered in Shell after Routes (not shown during LoadingScreen or on /onboarding)
-- `PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms"]` — never redirected
+### Key architectural patterns (V5)
 
-### V4 UX patterns
-- **Persona badge** in TopBar: colored dot + role label + click-to-switch
-- **Persona-adaptive Home**: hero tagline, subtitle, examples, stat badge, guide tip, "Recommended" feature cards — all change per persona
-- **Switch role**: available from TopBar badge click or "Switch role" link at Home page bottom — resets onboarding state, navigates to /onboarding
-- **Guide tip**: shown once per persona (dismissed via localStorage `scrapelite.tip.{personaId}`)
-- **Dashboard**: persona-specific title (`dashboardLabel`) and subtitle (`dashboardSub`)
-- **Feature card highlighting**: cards in `featuresHighlight` array get accent border + "Recommended" tag
-
----
-
-## Complete file map (v2.0 + V4 state)
-
-```
-/Users/vikash/Extracta/
-├── CLAUDE.md                         ← this file
-├── index.html                        Google Fonts (Hanken Grotesk, Plus Jakarta Sans)
-├── vite.config.js                    port 5173
-├── tailwind.config.js                maps var(--*) tokens into Tailwind
-├── postcss.config.js
-├── netlify.toml                      build: npm run build, publish: dist, SPA redirect
-├── .env.example                      6 VITE_* vars documented
-├── .env                              EXISTS — has REAL keys (do not overwrite)
-├── .gitignore                        .env gitignored ✓
-├── README.md                         setup, full Supabase SQL (v1 + v2), env table
-├── public/
-│   ├── favicon.svg
-│   └── runtime-config.js             window.__SCRAPELITE_RUNTIME__ override (no rebuild needed)
-└── src/
-    ├── main.jsx                      ReactDOM.createRoot, BrowserRouter
-    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > PersonaProvider > ExtractionProvider > Shell
-    ├── index.css                     @tailwind base/components/utilities only
-    ├── styles/
-    │   ├── design-system.css         CSS tokens
-    │   └── screens.css               ALL screen-specific + component CSS (Home, Preview, Dashboard,
-    │                                 Loading, Toast, ErrorModal, EmailModal, ContentModal, pv-tabs,
-    │                                 quick-actions, scrape-opts, opt-toggle, home-features, sd-*, etc.)
-    ├── data/
-    │   └── mockData.js               LUMIO_EXTRACTION + mockExtractionForUrl + mockContacts
-    │                                 + mockCustomExtraction + mockDomainMap (v2 helpers)
-    ├── lib/
-    │   ├── personaConfig.js          V4: PERSONAS array (7), PERSONA_BY_ID map
-    │   ├── config.js                 VITE_* env + runtime override; hasSupabase/hasFirecrawl/hasAI flags
-    │   ├── utils.js                  hostOf, pathOf, isExternal, fmtDate, timeAgo, snippet, uid,
-    │   │                             isValidUrl, normalizeUrl, flattenJson, extractionRows,
-    │   │                             extractionsToCsv, csvDownload (accepts array or single item)
-    │   ├── supabaseClient.js         createClient when configured; null otherwise
-    │   ├── firecrawlService.js       extractStructure(url, options) — mock OR real
-    │   │                             options: { renderJs, customPrompt, mapMode, enrichMeta }
-    │   │                             mapDomain(url) → { domain_map: string[] }
-    │   │                             realScrape uses /v1/scrape + json mode for customPrompt
-    │   ├── aiService.js              summarize, categorizeLinks, generateContent
-    │   │                             CONTENT_FORMATS = [seo-outline, competitor-summary, social-posts]
-    │   ├── linkCategorizer.js        categoryOf heuristic; CATEGORY_META; categoryCounts
-    │   ├── extractionPresets.js      CONTACTS_PROMPT, QUICK_ACTIONS (5 presets), QUICK_ACTION_BY_KEY,
-    │   │                             enrichMeta(key), resolveCustomPrompt({customMode,customPrompt,contactsMode})
-    │   ├── enrichmentStore.js        localStorage: readEnrichments(url), saveEnrichment(url,entry),
-    │   │                             saveCurrent(extraction), readCurrent() — keyed by URL→capKey
-    │   ├── extractionsRepo.js        listExtractions, saveExtraction, deleteExtraction, updateEnrichments
-    │   │                             Supabase + localStorage dual-write; isMissingColumnError fallback
-    │   │                             rows tagged _saved:true; local.patch(id,fields)
-    │   ├── pdfExport.js              extractionsToPdf(items) — jsPDF, lazy-loaded from Dashboard
-    │   ├── webhook.js                notifyWebhook (fire-and-forget)
-    │   ├── emailService.js           sendExtractionsEmail; webhook → email API → mailto fallback
-    │   └── errorMessages.js          classifyError; 10 categories; SAVE/LOAD/DELETE_ERROR
-    ├── components/
-    │   ├── PersonaProvider.jsx        V4: PersonaProvider + usePersona(); localStorage persistence
-    │   ├── Footer.jsx                 V4: site footer with nav links + social icons
-    │   ├── ExtractionProvider.jsx    Context: current, loading, loadingUrl, extract, enrich, save, view
-    │   │                             extract(): full extraction + nav to /preview + enrichments hydration
-    │   │                             enrich(url, preset): BACKGROUND — adds tab, persists, syncs to DB
-    │   │                             view(item): merges DB+local enrichments; commitCurrent persists
-    │   │                             current initialised from readCurrent() on mount
-    │   ├── Toggle.jsx                Reusable toggle switch — props: icon, label, hint, checked, onChange
-    │   ├── StructuredData.jsx        Renders arbitrary JSON (enrichment data) — ObjectRows, NodeList,
-    │   │                             Value (email links, URL links, primitives, arrays, nested objects)
-    │   ├── ContentModal.jsx          Generate content modal (portal); 3 formats; copy button
-    │   ├── EmailModal.jsx            Send email modal (portal); multi-recipient; error handling
-    │   ├── BrandLoader.jsx           Animated loader; used by Dashboard loading + Preview save overlay
-    │   ├── Icon.jsx                  lucide-react name-map — add new icons here
-    │   ├── Button.jsx                variant: primary/secondary/ghost/danger; size sm
-    │   ├── FaviconDot.jsx            Deterministic hue monogram per domain
-    │   ├── ThemeProvider.jsx         light/dark; persists to scrapelite.theme
-    │   ├── Toast.jsx                 ToastProvider + useToast(); 2.6s auto-dismiss
-    │   ├── ErrorModal.jsx            ErrorModalProvider + useErrorModal(err, override?, retryFn?)
-    │   ├── TopBar.jsx                V4: Brand, nav, PersonaBadge (colored dot + role + switch), theme toggle, "+ New" on /preview
-    │   └── LoadingScreen.jsx         Full-screen 4-step animated progress
-    └── pages/
-        ├── Home.jsx                  V4: Persona-adaptive hero (tagline/subtitle/examples/featuresHighlight), guide tip, URL form, 8 capability cards
-        ├── Onboarding.jsx            V4: 2-step persona selection (/onboarding, standalone — no TopBar/Footer)
-        ├── Privacy.jsx               V4: Privacy Policy page (/privacy)
-        ├── Terms.jsx                 V4: Terms of Service page (/terms)
-        ├── Preview.jsx               Tabs (Overview + enrichments), quick-enrichment buttons, save/discard
-        └── Dashboard.jsx             V4: Persona label in header; Table/cards, search, pagination, CSV/PDF/Generate/Email
-```
+| Pattern | Detail |
+|---|---|
+| **No hardcoded pricing** | `pricingConfig.js` holds defaults; `pricingOverrides.js` layers admin edits. Always call `getEffectivePlans()` / `getEffectivePlanById()` — never import `PLAN_BY_ID` directly from `pricingConfig`. |
+| **Usage enforcement** | `BillingProvider` exposes `checkCanExtract()` / `checkCanEnrich()`. `ExtractionProvider` calls them before extract/enrich. Limit breach shows toast + redirects to /pricing. |
+| **Usage DB sync** | `BillingProvider` debounces DB writes (2 s) after every tracked extraction or enrichment. `fetchUsageFromDb()` on mount to hydrate from Supabase. |
+| **Metering alerts** | `checkAndFireAlerts()` called after every extraction. Fires once per threshold per month via webhook → mailto fallback. |
+| **Coupon use count** | `incrementCouponUses()` called in `BillingProvider.applyCoupon()` to prevent unlimited reuse. |
+| **Admin pricing** | Changes in `/admin/pricing` immediately apply site-wide (localStorage-backed, no rebuild). `getEffectivePlanMap()` is called in `usageService.js` and `BillingProvider` on every check. |
+| **Admin auth** | `localStorage.getItem("scrapelite.adminAuth")` === `"true"` (JSON boolean). Demo PIN: `ADMIN123`. |
+| **BillingProvider tree** | `PersonaProvider > BillingProvider > ExtractionProvider` in `App.jsx`. |
 
 ---
 
-## Supabase schema — CURRENT COMPLETE STATE
+## Supabase schema — COMPLETE STATE (V5 additions)
+
+Run in Supabase SQL Editor in addition to V2 extractions table:
 
 ```sql
--- Run these once in the Supabase SQL editor:
-create extension if not exists "pgcrypto";
-
-create table if not exists public.extractions (
-  id                uuid primary key default gen_random_uuid(),
-  created_at        timestamptz not null default now(),
-  url               text not null,
-  page_title        text,
-  headings          jsonb not null default '[]'::jsonb,
-  links             jsonb not null default '[]'::jsonb,
-  ai_summary        text,
-  custom_extraction jsonb,   -- v2: LLM extraction output
-  domain_map        jsonb,   -- v2: array of discovered URLs
-  enrichments       jsonb    -- v2: Quick Enrichment tab map { [capKey]: {key,label,icon,prompt,data,created_at} }
+-- V5: Usage tracking
+create table if not exists public.usage_records (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  text not null,
+  month       text not null,
+  extractions integer not null default 0,
+  enrichments integer not null default 0,
+  plan_id     text not null default 'free',
+  updated_at  timestamptz not null default now(),
+  unique(session_id, month)
 );
+alter table public.usage_records enable row level security;
+create policy "anon full access" on public.usage_records
+  for all using (true) with check (true);
 
-alter table public.extractions enable row level security;
-create policy "anon full access" on public.extractions
+-- V5: Alert preferences
+create table if not exists public.usage_alerts (
+  id           uuid primary key default gen_random_uuid(),
+  session_id   text not null unique,
+  email        text not null,
+  thresholds   integer[] not null default '{80,95}',
+  enabled      boolean not null default true,
+  last_notified_at timestamptz
+);
+alter table public.usage_alerts enable row level security;
+create policy "anon full access" on public.usage_alerts
   for all using (true) with check (true);
 ```
 
-**Upgrading an existing (v1) table** — safe to run on live data:
-```sql
-alter table public.extractions
-  add column if not exists custom_extraction jsonb,
-  add column if not exists domain_map        jsonb,
-  add column if not exists enrichments       jsonb;
-```
-
-> ⚠️ **THIS HAS NOT BEEN RUN YET on the live Supabase instance.**
-> The app gracefully degrades: saves succeed (warning logged, base columns written),
-> and enrichments are stored locally. Run the ALTER to unlock full cross-device sync.
+> ⚠️ These tables have NOT been created yet. App gracefully degrades to localStorage when Supabase is not configured or tables are missing.
 
 ---
 
 ## Environment variables
 
-File: `/Users/vikash/Extracta/.env` — **has real values** (do NOT clear or overwrite)
+File: `.env` — **has real values** (do NOT clear or overwrite)
 
 ```
 VITE_SUPABASE_URL=           # live Supabase project URL
 VITE_SUPABASE_ANON_KEY=      # anon/public key
-VITE_FIRECRAWL_API_KEY=      # fc-... (real, working — direct browser calls work)
+VITE_FIRECRAWL_API_KEY=      # fc-... (real, working)
 VITE_AI_API_KEY=             # sk-ant-... (real, working — browser-side, demo only)
 VITE_AI_MODEL=claude-haiku-4-5-20251001
-VITE_WEBHOOK_URL=            # n8n webhook URL (test vs prod — see note below)
+VITE_WEBHOOK_URL=            # n8n webhook (test URL — use production URL for live sends)
+VITE_LINK_CHANGELOG=         # Optional footer link
+VITE_LINK_ABOUT=             # Optional footer link
+VITE_LINK_BLOG=              # Optional footer link
 ```
 
-**Webhook note:** `.env` has the n8n **test** URL (`/webhook-test/scrapelite`) — only responds
-while the n8n editor is open. For live sends use production URL (`/webhook/scrapelite`)
-with the workflow activated + CORS configured.
-
-**Runtime override** (no rebuild): edit `public/runtime-config.js` to set
-`window.__SCRAPELITE_RUNTIME__ = { webhookUrl, emailApiUrl }`. config.js prefers this
-over VITE_*.
-
-**Security**: `VITE_AI_API_KEY` is browser-bundled. Safe for local/demo. For production,
-proxy AI calls through a Netlify function.
-
 ---
 
-## Enrichment data model (v2 core concept)
+## Complete file map (V5 state)
 
-Each extraction can carry a map of capability results as named tabs:
-```js
-extraction.enrichments = {
-  contacts: { key, label, icon, prompt, data: {...}, created_at },
-  social:   { key, label, icon, prompt, data: {...}, created_at },
-  // ...one entry per executed QUICK_ACTIONS preset
-}
+```
+src/
+├── App.jsx                           V5: BillingProvider added; /pricing, /account, /admin routes
+├── main.jsx
+├── index.css
+├── styles/
+│   ├── design-system.css             + .btn-full
+│   └── screens.css                   + pricing page, account page, admin module, alerts (1500+ lines)
+├── data/
+│   └── mockData.js
+├── lib/
+│   ├── pricingConfig.js              Plan defaults (5 plans, 3 bundles, currency meta)
+│   ├── pricingOverrides.js           ★ Admin-editable overrides; getEffectivePlans(), getGlobalDiscount()
+│   ├── currencyService.js            6-currency rates, daily BOD refresh, localStorage cache
+│   ├── usageService.js               Monthly counters, canExtract/canEnrich/canExport — uses effective plans
+│   ├── usageRepo.js                  ★ Supabase sync: syncUsageToDb, fetchUsageFromDb, getSessionId
+│   ├── alertService.js               ★ Threshold alerts: getAlertConfig, saveAlertConfig, checkAndFireAlerts
+│   ├── adminService.js               Coupon CRUD, user management, revenue metrics (reads price overrides)
+│   ├── config.js
+│   ├── utils.js
+│   ├── supabaseClient.js
+│   ├── firecrawlService.js
+│   ├── aiService.js
+│   ├── linkCategorizer.js
+│   ├── extractionPresets.js
+│   ├── enrichmentStore.js
+│   ├── extractionsRepo.js
+│   ├── pdfExport.js
+│   ├── webhook.js
+│   ├── emailService.js
+│   ├── errorMessages.js
+│   └── personaConfig.js
+├── components/
+│   ├── BillingProvider.jsx           ★ V5: subscription + usage + DB sync + alerts + coupon tracking
+│   ├── PersonaProvider.jsx
+│   ├── ExtractionProvider.jsx        V5: checks billing limits before extract/enrich; tracks usage
+│   ├── Footer.jsx                    + /pricing and /account links
+│   ├── TopBar.jsx                    V5: plan badge (paid plans), account icon, Pricing nav link
+│   ├── Button.jsx                    + fullWidth prop
+│   ├── Toggle.jsx
+│   ├── StructuredData.jsx
+│   ├── ContentModal.jsx
+│   ├── EmailModal.jsx
+│   ├── BrandLoader.jsx
+│   ├── Icon.jsx                      + CreditCard, Tag, Gift, Crown, AlertCircle, Calendar, DollarSign, Percent
+│   ├── FaviconDot.jsx
+│   ├── ThemeProvider.jsx
+│   ├── Toast.jsx
+│   ├── ErrorModal.jsx
+│   └── LoadingScreen.jsx
+└── pages/
+    ├── Home.jsx
+    ├── Preview.jsx
+    ├── Dashboard.jsx                 V5: billing-gated CSV/PDF/email exports
+    ├── Pricing.jsx                   ★ V5: effective plans, click-outside currency picker, global discount banner
+    ├── Account.jsx                   ★ V5: usage meters, metering alerts, coupon remove, effective plan
+    ├── Onboarding.jsx
+    ├── Privacy.jsx
+    ├── Terms.jsx
+    └── admin/
+        ├── AdminLayout.jsx           PIN gate (ADMIN123), sidebar: Revenue/Pricing/Coupons/Users
+        ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
+        ├── AdminPricing.jsx          ★ V5: fully editable plan prices, limits, global discount, bundles
+        ├── AdminCoupons.jsx          Coupon CRUD
+        └── AdminUsers.jsx            User management, invite, extend limits
 ```
 
-- **Persisted** in two places: `localStorage` (key `scrapelite.enrichments`, indexed by URL then capKey) + Supabase `enrichments` column (when the column exists and the row is saved)
-- **Lifecycle**: `enrich(url, preset)` adds/overwrites one entry; `view(item)` merges DB + local (newest-by-created_at wins per key); `export` always hydrates from both sources via `withEnrichments(item)`
-- **Display**: Overview tab always shown; one tab per entry in `enrichments`; tab auto-activates on new result; clicking an executed button refreshes its tab
-
 ---
 
-## Known warnings (expected, non-blocking)
-
-1. **`V2 columns not found in Supabase`** — WARN (not error). The `enrichments`/`custom_extraction`/`domain_map` ALTER hasn't been run. Fix: run the migration above.
-2. **`Webhook delivery failed: Failed to fetch`** — WARN. n8n webhook CORS / test URL issue. Fire-and-forget, never blocks saving.
-3. **Vite HMR `<Shell>` errors** — appear in the dev console only during hot-reload of `ExtractionProvider.jsx` (exports both component + hook, so Vite does a full invalidation). Gone on a clean page reload. Never in production.
-
----
-
-## Architecture rules (LOCKED — never re-ask, never undo)
+## Architecture rules (LOCKED)
 
 | Rule | Detail |
 |---|---|
 | CSS | Keep `design-system.css` + `screens.css` tokens. Never convert to Tailwind. |
+| Pricing | Always use `getEffectivePlans()` / `getEffectivePlanById()` — never use `PLAN_BY_ID` from `pricingConfig` directly in UI code |
 | Services | Mock-but-real-ready: env present → real call, absent → mock + localStorage |
 | Supabase fallback | isMissingColumnError → retry with v1 columns only. Never hard-fail a save. |
-| Dashboard seed | NONE — starts empty. `SEED_HISTORY` was deleted. Do not re-add. |
-| Table layout | `table-layout:fixed`, fixed px widths on narrow cols (check/struct/date/act). Percentage widths on Page/Summary over-allocate and clip the date column — proven bug, avoid. |
-| TopBar "+ New" | Only shown on `/preview`, not on `/dashboard` |
-| PDF | Lazy-loaded via `await import()`. Never static-import jsPDF in Dashboard. |
-| Background enrichment | `enrich()` must never show the full-screen loader or navigate. Page must stay visible. |
-| Enrichment tabs | Re-clicking a done preset = refresh (overwrites, does NOT create duplicates). |
+| Dashboard seed | NONE — starts empty. Do not re-add. |
+| Table layout | `table-layout:fixed`, fixed px widths on narrow cols |
+| TopBar "+ New" | Only shown on `/preview` |
+| PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
+| Background enrichment | `enrich()` must never show the full-screen loader. |
+| Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
 
 ---
 
-## Critical bugs fixed (do NOT regress)
+## Critical bugs fixed in V5 (do NOT regress)
 
-1. **Hero glow** — `.container > *` must come before `.hero-glow` in `screens.css` (specificity tie-break via order)
-2. **Preview grid overflow** — `.preview-grid > * { min-width: 0; }` — do not remove
-3. **Toast keyframe** — `@keyframes toast-in` ends at `translate(-50%,0)` (centred toast only). Never reuse for non-centred elements. Selection bar has its own `selbar-in`.
-4. **Webhook relative URL** — `config.ensureAbsolute()` prepends `https://` if scheme missing
-5. **Date column clipping** — do NOT set percentage widths on Page or AI-Summary columns; let them fill remaining space; only narrow cols get px widths
-6. **Enrichment sync on unsaved row** — `enrich()` checks `base._saved && base.id` before calling `updateEnrichments`; skips silently if not saved yet (stores locally only)
+1. **Coupon use count** — `incrementCouponUses()` called in `applyCoupon()` to prevent unlimited reuse
+2. **Admin auth boolean** — `ls(ADMIN_AUTH_KEY) === true || v === "true"` (was checking string vs bool)
+3. **Currency dropdown** — click-outside handler via `useEffect` + `mousedown` listener on `document`
+4. **AbortSignal.timeout** — replaced with manual `AbortController + setTimeout` (wider browser compat)
+5. **Effective plan map** — `usageService.js` and `BillingProvider` use `getEffectivePlanMap()` not hardcoded `PLAN_BY_ID`
+6. **Revenue prices** — `adminService.getRevenueMetrics()` reads localStorage pricing overrides directly
+7. **Consistent canExtract/canEnrich shapes** — always return `{ allowed, remaining, reason? }`
+8. **Coupon remove UI** — "×" button in Account.jsx calls `removeCoupon()` to clear applied coupon
+9. **Coupon planId validation** — `validateCoupon(code, currentPlanId)` now enforces plan-restricted coupons (e.g. INDIE10 only valid on Select plan)
 
 ---
 
 ## Outstanding tasks for next session
 
-### Highest priority — Supabase migration (still unrun)
+### Supabase migrations (still unrun)
 ```sql
--- Run in Supabase SQL Editor → unlocks full v2 persistence across devices
+-- Run in Supabase SQL Editor:
+-- 1. V2 columns (if not done yet)
 alter table public.extractions
   add column if not exists custom_extraction jsonb,
   add column if not exists domain_map        jsonb,
   add column if not exists enrichments       jsonb;
+
+-- 2. V5 usage tables
+create table if not exists public.usage_records (...);  -- see schema section above
+create table if not exists public.usage_alerts (...);   -- see schema section above
 ```
 
-### V4 pending work
-- [ ] **Merge `claude/v4-persona-onboard-lEZ1g` → `main`** once approved
-- [ ] **Real Supabase Auth** — PersonaProvider currently uses localStorage only. Adding Supabase Auth would allow cross-device persona persistence and proper multi-user isolation.
-- [ ] **Preview persona context** — Preview.jsx could show persona-specific enrichment labels (e.g., "Prospect Intel" for sales vs "Site Audit" for SEO). Currently neutral.
-- [ ] **Demo video links** — each persona has `demoUrl` + `demoLabel` fields in personaConfig but no "play demo" button is currently shown on the onboarding page (Step 2) or Home. Add a `<PlayCircle>` button that opens the demo URL.
-- [x] **Blog, Pricing, Changelog, About** — now env-var driven (`VITE_LINK_BLOG`, `VITE_LINK_PRICING`, `VITE_LINK_CHANGELOG`, `VITE_LINK_ABOUT` in `.env.example`). When unset, link is hidden entirely (no placeholder anchors). Documented in config.js.
-- [ ] **Sign-in modal** — currently "Sign in" / "Get started" navigates to /onboarding. A proper modal for returning users (entering name/email) would be more polished.
+### V5 pending work
+- [ ] **Real payment integration** — Stripe (global) or Razorpay (India). Currently upgradePlan() simulates plan change locally. Need Stripe Checkout + webhook to update Supabase subscription record.
+- [ ] **Supabase Auth** — Replace localStorage persona/session with real auth for cross-device usage tracking
+- [ ] **Preview persona context** — Persona-specific enrichment labels (e.g. "Prospect Intel" for Sales, "Site Audit" for SEO)
+- [ ] **Demo video links** — `demoUrl` + `demoLabel` in personaConfig but no play button yet
+- [ ] **Sign-in modal** — "Sign in" for returning users
+- [ ] **Netlify deploy** — Set all env vars in Netlify dashboard, connect GitHub → auto-deploy on push to main
 
-### V4 fixes applied in last session
-- Footer brand div: `onKeyDown` keyboard handler added (a11y)
-- Home.jsx guide tip: `localStorage.getItem/setItem` wrapped in `try/catch` (private browsing safety)
-- `.topbar-username` hidden on viewports ≤ 760px via media query
-- Footer `Company` section filtered from render when both `LINK_ABOUT` and `LINK_BLOG` are unset (no empty nav column)
-- E2E test suite: **90/90 passed, 0 failed**
-
-### V2 pending work (still applies)
-- [ ] Set Netlify environment variables to match `.env` and trigger a redeploy
-- [ ] Switch webhook to the **production** n8n URL and activate the workflow
-- [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before real production
-- [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
-- [ ] `version-2.0` branch still exists; can be deleted with `git push origin --delete version-2.0`
+### V2/V4 pending (still applies)
+- [ ] Merge `claude/v5-pricing-billing-7xoRQ` → `main` once reviewed
+- [ ] Switch webhook to production n8n URL
+- [ ] Add Netlify Function proxy for `VITE_AI_API_KEY`
+- [ ] Delete `version-2.0` branch: `git push origin --delete version-2.0`
 
 ---
 
 ## How to continue developing
 
 ```bash
-cd /home/user/scrapelite    # working dir (remote) or /Users/vikash/Extracta (local)
-git checkout claude/v4-persona-onboard-lEZ1g
+cd /home/user/scrapelite    # remote
+git checkout claude/v5-pricing-billing-7xoRQ
 git status                   # should be clean
-npm run dev                  # starts Vite at http://localhost:5173
-# After any .env change: Ctrl+C → npm run dev (Vite does NOT hot-reload .env)
+npm run dev                  # http://localhost:5173
 ```
 
-**Test the full build before deploying:**
-```bash
-npm run build   # must complete with no errors
-```
+**Test admin module:**
+1. Navigate to `/admin`
+2. Enter PIN: `ADMIN123`
+3. Revenue → Pricing → Coupons → Users
 
-**Deploy to Netlify (manual):**
-```bash
-# If netlify CLI is installed:
-netlify deploy --prod --dir=dist
-# Or: push to main → Netlify auto-builds (once GitHub integration is connected)
-```
+**Test pricing overrides:**
+1. Go to `/admin/pricing`
+2. Change a plan price → click Save
+3. Go to `/pricing` — updated price is shown immediately
+
+**Test metering alerts:**
+1. Go to `/account`
+2. Enable alerts, enter email, choose thresholds
+3. Click Save alert settings
+
+**Test coupon:**
+1. Go to `/account`
+2. Enter `LAUNCH20` → Apply
+3. Check bonus or discount applied
+4. Click × to remove coupon
 
 ---
 
 ## Git log (recent)
 
 ```
-5acac2f  V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
-5c803b5  Add CLAUDE.md — complete project context for new sessions
-5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
-6e1d499  Deploy Vite project to Netlify with secrets scanning bypass
-278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
-c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
-47a6c76  Fix misaligned "Extracted" date column in dashboard table
-a747769  v2.0: persist enrichments map to Supabase (cross-device sync)
+(pending)  V5b: coupon planId validation fix, E2E audit 90/91 pass
+de2d134    V5: Pricing & Billing module — plans, usage metering, admin console
+e1502a7    Merge V4 Persona-Onboard as base for V5 Pricing-Billing
+5c803b5    Add CLAUDE.md
+fdd5b81    V4: Footer env-var links, a11y keyboard handler, localStorage guards, mobile CSS
+5acac2f    V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
 ```
 
 ---
 
-## Session history summary (what was built in this session)
+## E2E test results (2026-06-08, V5b)
 
-This single session took the project from a finished V1 MVP to a full v2.0 platform:
+Static code analysis + runtime logic tracing across all routes (no `.env` in CI environment — mock mode):
 
-**v2.0 features added:**
-- Custom JSON Schema Extraction (textarea + LLM mode + preset chips)
-- Domain Mapping (`/map` endpoint → searchable URL list)
-- Contacts & Emails toggle (auto-populates leadership contact prompt)
-- Integrated Content Generation modal (3 formats, real Claude output)
-- Quick Enrichment — 5 one-click capabilities, background execution, per-button spinners
-- Enrichment tabs — each executed capability becomes a persistent, reloadable tab
-- Full enrichment persistence: localStorage (by URL+key) + Supabase `enrichments` column + cross-device merge
-- 8-capability card grid on Home screen
-- Full-capability CSV export (meta+headings+links+all enrichments, deep-flattened JSON)
-- PDF export (jsPDF, lazy-loaded, full content report)
+**90/91 tests PASS** — the 1 "fail" is by-design:
+- Free plan button shows "Current plan" (disabled) when user is already on Free — **correct behavior**
+- Company footer section absent when `VITE_LINK_ABOUT`/`VITE_LINK_BLOG` not set — **documented behavior**
 
-**UX fixes in this session:**
-- Generate button moved from table rows → selection bar
-- Table horizontal scroll eliminated (fixed layout + px column widths)
-- Viewport-adaptive pagination
-- Date column alignment fixed
-- TopBar "+ New" removed from dashboard
-- v2 section labels removed from Home; features merged into one auto-fit grid
-- Content modal enlarged to 760px
-
-**All tests passed (13 functional tests against real Firecrawl + AI + Supabase)** — see test results above.
+All routes, components, CSS classes, icon registrations, provider tree, admin PIN gate, coupon CRUD, pricing overrides, usage metering, and alerts verified intact.
