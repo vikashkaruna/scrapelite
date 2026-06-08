@@ -1,18 +1,17 @@
 // firecrawlService.js — turns a URL into { page_title, headings, links }.
 //
-// • No VITE_FIRECRAWL_API_KEY  → mocked: a simulated ~2s delay + dummy data.
-// • Key present                → real Firecrawl scrape, parsed in the browser.
+// Architecture (V2 API layer):
+//   UI → extractStructure() → /api/extract (Netlify Function) → Firecrawl API
 //
-// V2 additions (both paths return the same superset shape):
-// • options.customPrompt → run Firecrawl's llm-extraction (json) mode and return
-//   the structured result on `custom_extraction`.
-// • options.mapMode      → call Firecrawl's /map endpoint and return the list of
-//   discovered URLs on `domain_map` (via mapDomain()).
+// The VITE_FIRECRAWL_API_KEY is now a feature flag only — it tells the app
+// whether to use the real API path or the mock path. The actual key lives in
+// the Netlify Function and is never bundled into the browser.
 //
-// Both paths return the SAME shape, so the rest of the app never cares which
-// one ran.
+// Mock path: no key configured → simulated delay + fixture data (dev / demo).
+// Real path: key configured → calls /api/extract → Firecrawl (server-side).
 
-import { hasFirecrawl, FIRECRAWL_API_KEY } from "./config.js";
+import { hasFirecrawl } from "./config.js";
+import { apiClient } from "./apiClient.js";
 import {
   LUMIO_EXTRACTION,
   mockExtractionForUrl,
@@ -21,28 +20,22 @@ import {
 } from "../data/mockData.js";
 import { hostOf } from "./utils.js";
 
-const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
-const FIRECRAWL_ENDPOINT = `${FIRECRAWL_BASE}/scrape`;
-const FIRECRAWL_MAP_ENDPOINT = `${FIRECRAWL_BASE}/map`;
 const MOCK_DELAY_MS = 2000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── Mock path ────────────────────────────────────────────────────────────────
+// ── Mock path ─────────────────────────────────────────────────────────────────
 async function mockScrape(url, options = {}) {
   await delay(MOCK_DELAY_MS);
-  // Use the rich Lumio fixture for the canonical demo host; generate a
-  // host-derived fixture for anything else.
-  const base = hostOf(url) === "lumio.io" ? LUMIO_EXTRACTION : mockExtractionForUrl(url);
+  const base =
+    hostOf(url) === "lumio.io" ? LUMIO_EXTRACTION : mockExtractionForUrl(url);
   const result = {
     url,
     page_title: base.page_title,
     headings: base.headings,
     links: base.links,
-    // Carry the fixture's curated summary as a hint so the demo shows rich copy;
-    // aiService.summarize() uses it when present and generates one otherwise.
     ai_summary: base.ai_summary,
   };
   if (options.customPrompt) {
@@ -51,12 +44,20 @@ async function mockScrape(url, options = {}) {
   return result;
 }
 
-// ── Real path ────────────────────────────────────────────────────────────────
-// Parses an HTML string into the heading + link arrays our schema expects.
+async function mockMap(url) {
+  await delay(MOCK_DELAY_MS);
+  return mockDomainMap(url);
+}
+
+// ── HTML parser (browser-only — runs after the API returns raw HTML) ───────────
+// The /api/extract function returns the raw Firecrawl JSON; the browser parses
+// the HTML locally so the DOMParser API is still available here.
 function parseHtml(html, baseUrl) {
   const doc = new DOMParser().parseFromString(html, "text/html");
 
-  const headings = Array.from(doc.querySelectorAll("h1, h2, h3, h4, h5, h6"))
+  const headings = Array.from(
+    doc.querySelectorAll("h1, h2, h3, h4, h5, h6")
+  )
     .map((el) => ({
       tag: el.tagName.toUpperCase(),
       text: (el.textContent || "").replace(/\s+/g, " ").trim(),
@@ -67,11 +68,16 @@ function parseHtml(html, baseUrl) {
   const links = [];
   for (const a of doc.querySelectorAll("a[href]")) {
     let href = a.getAttribute("href") || "";
-    if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) {
+    if (
+      !href ||
+      href.startsWith("#") ||
+      href.startsWith("javascript:") ||
+      href.startsWith("mailto:")
+    ) {
       continue;
     }
     try {
-      href = new URL(href, baseUrl).href; // resolve relative URLs
+      href = new URL(href, baseUrl).href;
     } catch {
       continue;
     }
@@ -89,33 +95,10 @@ function parseHtml(html, baseUrl) {
   return { page_title, headings, links };
 }
 
+// ── Real path (via /api/extract) ──────────────────────────────────────────────
 async function realScrape(url, options = {}) {
-  const formats = ["html"];
-  const body = { url, formats, onlyMainContent: false };
-  // "Render JavaScript" → wait for client-side content to hydrate before capturing.
-  if (options.renderJs) body.waitFor = 3000;
-  // Custom JSON Schema Extraction → Firecrawl's LLM extraction (json) mode.
-  if (options.customPrompt) {
-    formats.push("json");
-    body.jsonOptions = { prompt: options.customPrompt };
-  }
-
-  const res = await fetch(FIRECRAWL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Firecrawl request failed (${res.status}). ${detail}`.trim());
-  }
-
-  const json = await res.json();
-  const data = json?.data || json || {};
+  const raw = await apiClient.extract(url, options);
+  const data = raw?.data || raw || {};
   const html = data.html || data.rawHtml || "";
   const parsed = parseHtml(html, url);
 
@@ -125,42 +108,25 @@ async function realScrape(url, options = {}) {
     headings: parsed.headings,
     links: parsed.links,
   };
-  // Firecrawl returns LLM-extraction output on `json` (v1) / `extract` (legacy).
   if (options.customPrompt) {
-    result.custom_extraction = data.json || data.extract || data.llm_extraction || null;
+    result.custom_extraction =
+      data.json || data.extract || data.llm_extraction || null;
   }
   return result;
 }
 
-// ── Domain mapping (Firecrawl /map) ───────────────────────────────────────────
 async function realMap(url) {
-  const res = await fetch(FIRECRAWL_MAP_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-    },
-    body: JSON.stringify({ url }),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Firecrawl map request failed (${res.status}). ${detail}`.trim());
-  }
-  const json = await res.json();
-  // /map returns { success, links: ["https://…", …] } (sometimes objects).
-  const raw = json?.links || json?.data || [];
-  return raw.map((l) => (typeof l === "string" ? l : l?.url)).filter(Boolean);
+  const raw = await apiClient.extract(url, { mapMode: true });
+  // The function normalises the map response and adds `mapLinks`.
+  return raw?.mapLinks || [];
 }
 
-async function mockMap(url) {
-  await delay(MOCK_DELAY_MS);
-  return mockDomainMap(url);
-}
+// ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Map an entire domain — discover its indexed URLs without scraping each one.
+ * Map an entire domain — discover its indexed URLs.
  * @param {string} url
- * @returns {Promise<{url:string, page_title:string, domain_map:string[]}>}
+ * @returns {Promise<object>}
  */
 export async function mapDomain(url) {
   const links = hasFirecrawl ? await realMap(url) : await mockMap(url);
