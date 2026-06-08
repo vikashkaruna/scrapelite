@@ -170,7 +170,7 @@ export default function Preview() {
       }
     } catch (err) {
       console.error("[ScrapeLite] Quick enrichment failed:", err);
-      showError(err);
+      showToast("Enrichment failed — check your connection", "alert-triangle");
     } finally {
       setRunningKey(null);
     }

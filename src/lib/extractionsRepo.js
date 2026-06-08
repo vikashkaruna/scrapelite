@@ -17,6 +17,21 @@ import { uid } from "./utils.js";
 
 const LS_KEY = "scrapelite.saved";
 
+// Decide whether an API error warrants a localStorage fallback.
+// Covers: explicit useLocalStorage flag, 401/403 (no/invalid auth),
+// 503 (Supabase not configured), and network-level failures (no status,
+// e.g. Netlify Functions not running in vite preview mode).
+function shouldFallback(err) {
+  return (
+    err.useLocalStorage ||
+    err.status === 401 || // no auth token
+    err.status === 403 || // insufficient permissions
+    err.status === 404 || // API endpoint not found (Netlify Functions not running)
+    err.status === 503 || // Supabase not configured
+    !err.status // network-level failure
+  );
+}
+
 // ── localStorage backend ─────────────────────────────────────────────────────
 const local = {
   read() {
@@ -58,15 +73,14 @@ export async function listExtractions() {
     const data = await apiClient.listExtractions();
     return (data || []).map((r) => ({ ...r, _saved: true }));
   } catch (err) {
-    if (err.useLocalStorage || err.status === 503) {
-      // Supabase not configured — read from localStorage.
-      return local
-        .read()
-        .slice()
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .map((r) => ({ ...r, _saved: true }));
-    }
-    throw err;
+    // Read is always safe to degrade — any API failure falls back to localStorage.
+    // Writes (save/delete) remain strict and surface errors to the user.
+    console.warn("[ScrapeLite] listExtractions: API unavailable, using localStorage:", err.message);
+    return local
+      .read()
+      .slice()
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map((r) => ({ ...r, _saved: true }));
   }
 }
 
@@ -79,7 +93,7 @@ export async function saveExtraction(extraction) {
     notifyWebhook(result);
     return result;
   } catch (err) {
-    if (err.useLocalStorage || err.status === 503) {
+    if (shouldFallback(err)) {
       // localStorage fallback when Supabase is not configured.
       const saved = {
         ...extraction,
@@ -103,7 +117,7 @@ export async function updateEnrichments(id, enrichments) {
   } catch (err) {
     // Silently degrade: if Supabase is missing or the column isn't migrated,
     // localStorage below still keeps data in the current session.
-    if (!err.useLocalStorage && err.status !== 503) throw err;
+    if (!shouldFallback(err)) throw err;
   }
   local.patch(id, { enrichments });
 }
@@ -113,7 +127,7 @@ export async function deleteExtraction(id) {
   try {
     await apiClient.deleteExtraction(id);
   } catch (err) {
-    if (!err.useLocalStorage && err.status !== 503) throw err;
+    if (!shouldFallback(err)) throw err;
   }
   local.remove(id);
 }

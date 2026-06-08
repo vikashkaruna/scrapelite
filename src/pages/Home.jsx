@@ -241,7 +241,10 @@ export default function Home() {
               label="Contacts & emails"
               hint="leadership & board"
               checked={contactsMode}
-              onChange={setContactsMode}
+              onChange={(val) => {
+                setContactsMode(val);
+                if (val) setCustomMode(true); // reveal textarea with auto-populated contacts prompt
+              }}
               title="Extract names, titles and emails of senior leadership and board members."
             />
             <Toggle
