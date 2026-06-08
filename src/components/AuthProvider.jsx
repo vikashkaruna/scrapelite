@@ -13,8 +13,21 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
+    // If the confirmation link (or OAuth redirect) lands with #error=... in the
+    // hash, open the modal immediately so the user sees a friendly message
+    // instead of a blank page. Clean the hash so it doesn't persist on reload.
+    const hash = window.location.hash;
+    if (hash.includes("error=")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const raw = params.get("error_description") || "Authentication failed.";
+      setAuthError(raw.replace(/\+/g, " "));
+      setShowAuthModal(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     // Restore existing session (e.g. after OAuth redirect or page reload).
     getSession().then((s) => {
       setSession(s);
@@ -28,18 +41,18 @@ export function AuthProvider({ children }) {
       setSession(s);
       setUser(s?.user ?? null);
       setAuthToken(s?.access_token ?? null);
-      if (_event === "SIGNED_IN") setShowAuthModal(false);
+      if (_event === "SIGNED_IN") { setShowAuthModal(false); setAuthError(""); }
     });
 
     return unsub;
   }, []);
 
   const openAuth = useCallback(() => setShowAuthModal(true), []);
-  const closeAuth = useCallback(() => setShowAuthModal(false), []);
+  const closeAuth = useCallback(() => { setShowAuthModal(false); setAuthError(""); }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, session, authLoading, showAuthModal, openAuth, closeAuth }}
+      value={{ user, session, authLoading, showAuthModal, authError, openAuth, closeAuth }}
     >
       {children}
     </AuthContext.Provider>

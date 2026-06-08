@@ -17,7 +17,15 @@ export async function signInWithEmail(email, password) {
 
 export async function signUpWithEmail(email, password) {
   if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      // Redirect back to whatever origin the user signed up from so the
+      // confirmation link works in both local dev and production.
+      emailRedirectTo: window.location.origin,
+    },
+  });
   if (error) throw error;
   return data;
 }

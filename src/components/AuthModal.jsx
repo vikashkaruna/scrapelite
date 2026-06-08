@@ -49,11 +49,11 @@ function Spinner() {
 }
 
 export default function AuthModal() {
-  const { closeAuth } = useAuth();
+  const { closeAuth, authError } = useAuth();
   const [tab, setTab] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(authError || "");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(""); // '' | 'email' | 'google' | 'azure' | 'github'
 
