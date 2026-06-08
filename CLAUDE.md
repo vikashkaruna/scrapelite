@@ -17,8 +17,9 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `v3-supabase-auth` (ready to deploy; not yet merged to main) |
-| **Latest commit** | `6147868` — chore: add playwright devDep |
+| **Latest commit** | `ddb9d17` — fix: 3 UX/robustness findings from e2e verification |
 | **Active branches** | `main` (live), `v2-build-api-layer`, `v3-supabase-auth` |
+| **Brand/domain** | Considering rename — `struxt.app` or `datiq.app` (both available as of 2026-06-08) |
 
 ---
 
@@ -337,6 +338,7 @@ netlify deploy --prod --dir=dist
 ## Git log (recent)
 
 ```
+ddb9d17  fix: 3 UX/robustness findings from e2e verification
 6147868  chore: add playwright as devDependency (used for e2e verification)
 65e8701  v3: Supabase Auth — Google/Microsoft/GitHub OAuth + email/password + demo data
 3937253  chore: update package-lock.json after npm install
@@ -377,9 +379,37 @@ c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
 3. Dashboard `listExtractions` gracefully falls back to localStorage on any API error (no blocking modal)
 
 **42/42 end-to-end Playwright tests green** (2026-06-08)
-- Date column alignment fixed
-- TopBar "+ New" removed from dashboard
-- v2 section labels removed from Home; features merged into one auto-fit grid
-- Content modal enlarged to 760px
 
-**All tests passed (13 functional tests against real Firecrawl + AI + Supabase)** — see test results above.
+Tests run with `playwright` + pre-installed Chromium (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`) against `npx vite preview` build. To re-run:
+```bash
+npx vite build && npx vite preview --port 5173 &
+# then run the Playwright node script (see session transcript or write fresh using CHROME path above)
+```
+
+---
+
+## Branding research (2026-06-08)
+
+**Current name:** ScrapeLite (`scrapelite.netlify.app`)
+
+**Problem with "Scrape":** Negative connotation for enterprise/SMB buyers — legal, compliance and procurement teams associate "scraping" with ToS violations and data theft. Hinders B2B adoption.
+
+**Domains checked (available as of 2026-06-08):**
+| Domain | Verdict |
+|---|---|
+| `struxt.app` | ✅ Available — Structure + Extract portmanteau. Tech-savvy, developer-friendly. |
+| `datiq.app` | ✅ Available — Data + IQ. Short, invented word (easy to trademark), broad SMB appeal. |
+| `extracta.ai/io/app` | ❌ Taken |
+| `pageiq.ai` | ❌ Taken |
+| `harvest.ai` | ❌ Taken |
+| `distilla.*` | ❌ Taken |
+| `fetchly.*` | ❌ Taken |
+| `webwise.*` | ❌ Taken |
+
+**Recommended pick:** `datiq.app`
+- "Data IQ" is self-explanatory to any buyer
+- `.app` signals it's a product (not a dev tool), HTTPS enforced by browser, cheaper (~$20/yr vs ~$70 for `.ai`)
+- Invented word = clean trademark path
+- Works globally — no pronunciation ambiguity
+
+**Runner-up:** `struxt.app` — better for developer/technical audience positioning.
