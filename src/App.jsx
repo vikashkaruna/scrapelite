@@ -17,13 +17,15 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import Pricing from "./pages/Pricing.jsx";
 import Account from "./pages/Account.jsx";
+import PaymentSuccess from "./pages/PaymentSuccess.jsx";
+import PaymentCancel from "./pages/PaymentCancel.jsx";
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminRevenue from "./pages/admin/AdminRevenue.jsx";
 import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 
-const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms", "/pricing"];
+const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms", "/pricing", "/payment/success", "/payment/cancel"];
 
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
@@ -68,10 +70,12 @@ function Shell() {
         <Route path="/"          element={<Home />} />
         <Route path="/preview"   element={<Preview />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/pricing"   element={<Pricing />} />
-        <Route path="/account"   element={<Account />} />
-        <Route path="/privacy"   element={<Privacy />} />
-        <Route path="/terms"     element={<Terms />} />
+        <Route path="/pricing"          element={<Pricing />} />
+        <Route path="/account"          element={<Account />} />
+        <Route path="/payment/success"  element={<PaymentSuccess />} />
+        <Route path="/payment/cancel"   element={<PaymentCancel />} />
+        <Route path="/privacy"          element={<Privacy />} />
+        <Route path="/terms"            element={<Terms />} />
         <Route path="*"          element={<Navigate to="/" replace />} />
       </Routes>
       <Footer />

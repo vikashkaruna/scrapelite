@@ -1,7 +1,7 @@
 // AdminRevenue.jsx — revenue dashboard with KPIs and trend chart.
 import { useMemo } from "react";
 import { getRevenueMetrics, getRevenueTrend } from "../../lib/adminService.js";
-import { PLAN_BY_ID } from "../../lib/pricingConfig.js";
+import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useBilling } from "../../components/BillingProvider.jsx";
 import { formatPrice, convertPrice } from "../../lib/currencyService.js";
 import Icon from "../../components/Icon.jsx";
@@ -43,7 +43,7 @@ function PlanDistribution({ byPlan, total }) {
     <div className="plan-dist">
       {Object.entries(byPlan).map(([id, count]) => {
         const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-        const plan = PLAN_BY_ID[id];
+        const plan = getEffectivePlanById(id);
         return (
           <div key={id} className="pd-row">
             <div className="pd-label" style={{ "--dot": PLAN_COLORS[id] ?? "#888" }}>

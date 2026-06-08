@@ -1,4 +1,4 @@
-// BillingProvider.jsx — V5 subscription + usage context with DB sync and alerts.
+// BillingProvider.jsx — V5 subscription + usage context with DB sync, alerts, and payment.
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import {
   readSubscription, writeSubscription, readUsage,
@@ -8,8 +8,11 @@ import {
 import { getRates, getDefaultRates } from "../lib/currencyService.js";
 import { getEffectivePlanMap } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
-import { syncUsageToDb, fetchUsageFromDb } from "../lib/usageRepo.js";
+import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
+import { initiateCheckout, hasPayment } from "../lib/paymentService.js";
+import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
+import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 
 const CURRENCY_KEY = "scrapelite.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || "USD"; } catch { return "USD"; } }
@@ -23,13 +26,17 @@ export function BillingProvider({ children }) {
   const [rates, setRates]               = useState(() => getDefaultRates());
   const [couponError, setCouponError]   = useState("");
   const [couponSuccess, setCouponSuccess] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError]     = useState("");
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [dbSubscription, setDbSubscription] = useState(null);
 
   // Reload effective plan map on every render to pick up admin overrides immediately
   const planMap = getEffectivePlanMap();
 
   useEffect(() => { getRates().then(setRates); }, []);
 
-  // Hydrate usage from Supabase on mount (overrides localStorage if DB has newer data)
+  // Hydrate usage + subscription from Supabase on mount
   useEffect(() => {
     const current = readUsage();
     fetchUsageFromDb(current.month).then((dbRow) => {
@@ -41,6 +48,20 @@ export function BillingProvider({ children }) {
       };
       setUsageState(merged);
     });
+
+    fetchSubscriptionFromDb().then((dbSub) => {
+      if (!dbSub) return;
+      setDbSubscription(dbSub);
+      // Sync DB plan into local state if it differs
+      const localSub = readSubscription();
+      if (dbSub.plan_id && dbSub.plan_id !== localSub.planId) {
+        const merged = { ...localSub, planId: dbSub.plan_id };
+        setSubscription(merged);
+        writeSubscription(merged);
+      }
+    });
+
+    fetchPaymentHistory().then(setPaymentHistory);
   }, []);
 
   const planId = subscription.planId  || "free";
@@ -52,8 +73,8 @@ export function BillingProvider({ children }) {
     try { localStorage.setItem(CURRENCY_KEY, c); } catch {}
   };
 
-  // Debounced DB sync ref — batches rapid increments into a single write
-  const syncTimer = useRef(null);
+  // Debounced DB sync ref
+  const syncTimer   = useRef(null);
   const pendingUsage = useRef(null);
   const syncToDb = useCallback((u) => {
     pendingUsage.current = u;
@@ -68,6 +89,7 @@ export function BillingProvider({ children }) {
     syncToDb(u);
   }, [syncToDb]);
 
+  // ── Plan upgrade (local-only, used for free plan and post-payment confirmation) ──
   const upgradePlan = useCallback((newPlanId) => {
     const sub = { ...subscription, planId: newPlanId, activatedAt: new Date().toISOString() };
     setSubscription(sub);
@@ -75,10 +97,58 @@ export function BillingProvider({ children }) {
     setUsageState(readUsage());
   }, [subscription]);
 
+  // ── Real payment initiation ───────────────────────────────────────────────
+  const initiatePayment = useCallback(async (targetPlanId) => {
+    if (targetPlanId === "free") { upgradePlan("free"); return { status: "free" }; }
+    setPaymentLoading(true);
+    setPaymentError("");
+    try {
+      const result = await initiateCheckout({
+        planId:          targetPlanId,
+        currency,
+        rates,
+        discountPercent: subscription.discountPercent || 0,
+        sessionId:       getSessionId(),
+        email:           subscription.email || null,
+      });
+
+      if (result.status === "demo_mode") {
+        upgradePlan(targetPlanId);
+      } else if (result.status === "success") {
+        // Razorpay in-modal success — verify + activate
+        upgradePlan(targetPlanId);
+        await syncSubscriptionToDb(targetPlanId, result.provider, {
+          subscriptionId: result.subscriptionId,
+          customerId:     result.customerId,
+        });
+        await logPaymentEvent({
+          type:        result.provider === "razorpay" ? "payment.captured" : "checkout.session.completed",
+          provider:    result.provider,
+          providerId:  result.paymentId || result.orderId,
+          planId:      targetPlanId,
+          amountCents: result.amount,
+          currency:    result.currency,
+        });
+        setPaymentHistory(await fetchPaymentHistory());
+      }
+      return result; // caller (Pricing.jsx) uses this to decide navigation
+    } catch (e) {
+      setPaymentError(e.message || "Payment failed. Please try again.");
+      throw e;
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [currency, rates, subscription, upgradePlan]);
+
+  // ── Post-Stripe-redirect confirmation (called from PaymentSuccess page) ──
+  const confirmPayment = useCallback(async (confirmedPlanId, { provider } = {}) => {
+    await syncSubscriptionToDb(confirmedPlanId, provider || null, {});
+    setPaymentHistory(await fetchPaymentHistory());
+  }, []);
+
   const trackExtraction = useCallback(() => {
     const u = incrementExtractions();
     setUsage(u);
-    // Fire alerts async — don't await (background check)
     const currentPlan = getEffectivePlanMap()[planId] ?? planMap.free;
     checkAndFireAlerts(u, currentPlan, subscription).catch(() => {});
   }, [planId, subscription, setUsage]);
@@ -103,7 +173,6 @@ export function BillingProvider({ children }) {
     setCouponSuccess("");
     const { valid, reason, coupon } = validateCoupon(code, planId);
     if (!valid) { setCouponError(reason); return false; }
-    // Increment coupon use count in admin store
     incrementCouponUses(code);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
     if (coupon.type === "extractions") {
@@ -120,7 +189,7 @@ export function BillingProvider({ children }) {
         : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
     );
     return true;
-  }, [subscription]);
+  }, [subscription, planId]);
 
   const removeCoupon = useCallback(() => {
     const sub = { ...subscription, coupon: null, discountPercent: 0 };
@@ -130,16 +199,26 @@ export function BillingProvider({ children }) {
     setCouponError("");
   }, [subscription]);
 
-  // Refresh usage from localStorage (e.g. after a page focus)
   const refreshUsage = useCallback(() => {
     setUsageState(readUsage());
   }, []);
+
+  // Derived: payment provider for current currency
+  const paymentProvider = getPaymentProvider(currency);
+  const providerMeta    = paymentProvider ? PROVIDER_META[paymentProvider] : null;
 
   return (
     <BillingContext.Provider value={{
       subscription, plan, planId, bonus, usage,
       currency, rates, setCurrency,
-      upgradePlan, trackExtraction, trackEnrichment,
+      // Legacy upgrade (no payment)
+      upgradePlan,
+      // Payment-backed upgrade
+      initiatePayment, confirmPayment,
+      paymentLoading, paymentError, setPaymentError,
+      paymentProvider, providerMeta, hasPayment,
+      paymentHistory, dbSubscription,
+      trackExtraction, trackEnrichment,
       checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
       applyBonus, applyCoupon, removeCoupon, refreshUsage,
       couponError, couponSuccess,

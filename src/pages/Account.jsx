@@ -1,16 +1,17 @@
-// Account.jsx — V5 billing & usage: plan details, usage meters, alerts, coupon.
-import { useState, useEffect } from "react";
+// Account.jsx — V5 billing & usage: plan details, usage, alerts, coupon, payment history.
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
 import { getAlertConfig, saveAlertConfig } from "../lib/alertService.js";
 import { useBilling } from "../components/BillingProvider.jsx";
+import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 
 function UsageMeter({ label, used, limit, icon }) {
   const isUnlimited = limit === Infinity || limit == null;
-  const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  const pct    = isUnlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
   const danger = !isUnlimited && pct >= 90;
   const warn   = !isUnlimited && pct >= 70 && !danger;
   return (
@@ -36,26 +37,17 @@ function UsageMeter({ label, used, limit, icon }) {
 function AlertsSection() {
   const [config, setConfig] = useState(() => getAlertConfig());
   const [saved, setSaved]   = useState(false);
-
   const update = (patch) => setConfig((c) => ({ ...c, ...patch }));
-
   const toggleThreshold = (t) => {
     const ts = config.thresholds.includes(t)
       ? config.thresholds.filter((x) => x !== t)
       : [...config.thresholds, t].sort((a, b) => a - b);
     update({ thresholds: ts });
   };
-
-  const save = () => {
-    saveAlertConfig(config);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
+  const save = () => { saveAlertConfig(config); setSaved(true); setTimeout(() => setSaved(false), 2000); };
   return (
     <div className="card card-pad alerts-section">
       <div className="card-section-title"><Icon name="mail" size={15} />Usage alerts</div>
-
       <div className="alert-toggle-row">
         <label className="alert-toggle-label">
           <input type="checkbox" checked={config.enabled}
@@ -63,36 +55,24 @@ function AlertsSection() {
           <span>Enable email alerts when usage hits a threshold</span>
         </label>
       </div>
-
       {config.enabled && (
         <>
           <div className="cf-field" style={{ marginTop: 14 }}>
             <label>Notification email</label>
-            <input
-              type="email"
-              className="coupon-input"
-              placeholder="you@example.com"
-              value={config.email}
-              onChange={(e) => update({ email: e.target.value })}
-              style={{ textTransform: "none", letterSpacing: "normal" }}
-            />
+            <input type="email" className="coupon-input" placeholder="you@example.com"
+              value={config.email} onChange={(e) => update({ email: e.target.value })}
+              style={{ textTransform: "none", letterSpacing: "normal" }} />
           </div>
-
           <div className="alert-thresholds">
             <div className="alert-thresholds-label">Alert me when I reach:</div>
             <div className="alert-threshold-chips">
               {[50, 70, 80, 90, 95].map((t) => (
-                <button
-                  key={t}
+                <button key={t}
                   className={"threshold-chip" + (config.thresholds.includes(t) ? " active" : "")}
-                  onClick={() => toggleThreshold(t)}
-                >
-                  {t}%
-                </button>
+                  onClick={() => toggleThreshold(t)}>{t}%</button>
               ))}
             </div>
           </div>
-
           <div className="alert-notify-row">
             <label className="alert-notify-label">
               <input type="checkbox" checked={config.notifyOn?.extractions ?? true}
@@ -102,17 +82,61 @@ function AlertsSection() {
           </div>
         </>
       )}
-
       <div className="alert-save-row">
-        <Button variant="primary" size="sm" onClick={save}>
-          {saved ? "Saved!" : "Save alert settings"}
-        </Button>
-        {saved && (
-          <div className="coupon-msg success">
-            <Icon name="check-circle" size={13} />Settings saved.
-          </div>
-        )}
+        <Button variant="primary" size="sm" onClick={save}>{saved ? "Saved!" : "Save alert settings"}</Button>
+        {saved && <div className="coupon-msg success"><Icon name="check-circle" size={13} />Settings saved.</div>}
       </div>
+    </div>
+  );
+}
+
+function PaymentHistorySection({ history, providerMeta, dbSubscription }) {
+  if (!history || history.length === 0) return null;
+  return (
+    <div className="card card-pad payment-history-card">
+      <div className="card-section-title"><Icon name="credit-card" size={15} />Payment history</div>
+      <div className="ph-table-wrap">
+        <table className="ph-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Plan</th>
+              <th>Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((row) => (
+              <tr key={row.id}>
+                <td className="ph-date">{new Date(row.created_at).toLocaleDateString()}</td>
+                <td>
+                  <span className="ph-plan">{row.plan_id || "—"}</span>
+                  {row.provider && (
+                    <span className="ph-provider">{PROVIDER_META[row.provider]?.name || row.provider}</span>
+                  )}
+                </td>
+                <td className="ph-amount">
+                  {row.amount_cents
+                    ? `${row.currency?.toUpperCase() || ""} ${(row.amount_cents / 100).toFixed(2)}`
+                    : "—"}
+                </td>
+                <td><span className={"status-badge " + (row.status || "active")}>{row.status || "completed"}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {dbSubscription?.provider && (
+        <div className="ph-provider-row">
+          <Icon name="shield" size={13} />
+          <span>Subscription managed via <strong>{PROVIDER_META[dbSubscription.provider]?.name || dbSubscription.provider}</strong></span>
+          {dbSubscription.current_period_end && (
+            <span className="ph-next-billing">
+              · Next billing: {new Date(dbSubscription.current_period_end).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -122,11 +146,11 @@ export default function Account() {
   const {
     plan: ctxPlan, planId, usage, bonus, currency, rates,
     applyCoupon, removeCoupon, couponError, couponSuccess,
-    subscription,
+    subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
+    paymentHistory, dbSubscription, providerMeta, hasPayment,
   } = useBilling();
 
-  // Always use effective plan (picks up admin overrides)
-  const plan = getEffectivePlanById(planId);
+  const plan     = getEffectivePlanById(planId);
   const allPlans = getEffectivePlans();
 
   const [couponInput, setCouponInput] = useState("");
@@ -136,8 +160,8 @@ export default function Account() {
     ? Infinity
     : plan.limits.extractions + (bonus || 0);
 
-  const enrichmentEntries  = Object.entries(usage?.enrichments ?? {});
-  const totalEnrichments   = enrichmentEntries.reduce((s, [, v]) => s + v, 0);
+  const enrichmentEntries = Object.entries(usage?.enrichments ?? {});
+  const totalEnrichments  = enrichmentEntries.reduce((s, [, v]) => s + v, 0);
 
   const handleApplyCoupon = async (e) => {
     e.preventDefault();
@@ -149,6 +173,11 @@ export default function Account() {
     setApplying(false);
   };
 
+  const handleUpgrade = async (targetPlanId) => {
+    const result = await initiatePayment?.(targetPlanId);
+    if (result?.status === "demo_mode" || result?.status === "success") navigate("/account");
+  };
+
   const nextTier = allPlans.find((p) => p.price_usd > plan.price_usd);
 
   return (
@@ -156,13 +185,23 @@ export default function Account() {
       <div className="container">
         <div className="account-header">
           <div>
-            <div className="eyebrow"><Icon name="user" />Billing & Usage</div>
-            <h1 className="account-title">Your plan & usage</h1>
+            <div className="eyebrow"><Icon name="user" />Billing &amp; Usage</div>
+            <h1 className="account-title">Your plan &amp; usage</h1>
           </div>
           <Button variant="secondary" size="sm" icon="zap" onClick={() => navigate("/pricing")}>
             View all plans
           </Button>
         </div>
+
+        {paymentError && (
+          <div className="payment-error-banner" style={{ marginBottom: 16 }}>
+            <Icon name="alert-circle" size={16} />
+            <span>{paymentError}</span>
+            <button className="peb-close" onClick={() => setPaymentError?.("")}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="account-grid">
           {/* Left column */}
@@ -175,6 +214,12 @@ export default function Account() {
                   <div className="apc-plan-name">
                     {plan.name}
                     {planId === "free" && <span className="apc-free-badge">Free</span>}
+                    {dbSubscription?.provider && (
+                      <span className="apc-provider-badge">
+                        <Icon name={PROVIDER_META[dbSubscription.provider]?.icon || "credit-card"} size={12} />
+                        {PROVIDER_META[dbSubscription.provider]?.name || dbSubscription.provider}
+                      </span>
+                    )}
                   </div>
                   {subscription.activatedAt && (
                     <div className="apc-since">
@@ -184,6 +229,12 @@ export default function Account() {
                   {subscription.discountPercent > 0 && (
                     <div className="apc-discount-note">
                       <Icon name="tag" size={13} />{subscription.discountPercent}% discount applied via coupon
+                    </div>
+                  )}
+                  {dbSubscription?.status && dbSubscription.status !== "active" && (
+                    <div className="apc-status-warn">
+                      <Icon name="alert-circle" size={13} />
+                      Subscription status: <strong>{dbSubscription.status}</strong>
                     </div>
                   )}
                 </div>
@@ -205,7 +256,11 @@ export default function Account() {
                       ? "unlimited extractions"
                       : `${nextTier.limits.extractions.toLocaleString()} extractions / month`}
                   </span>
-                  <Button variant="primary" size="sm" onClick={() => navigate("/pricing")}>Upgrade</Button>
+                  <Button variant="primary" size="sm"
+                    onClick={() => handleUpgrade(nextTier.id)}
+                    disabled={paymentLoading}>
+                    {paymentLoading ? "…" : "Upgrade"}
+                  </Button>
                 </div>
               )}
             </div>
@@ -217,18 +272,8 @@ export default function Account() {
                 Usage this month ({usage?.month ?? "—"})
               </div>
               <div className="usage-meters">
-                <UsageMeter
-                  label="Extractions used"
-                  icon="zap"
-                  used={usage?.extractions ?? 0}
-                  limit={totalExtractionLimit}
-                />
-                <UsageMeter
-                  label="Enrichments (total)"
-                  icon="sparkles"
-                  used={totalEnrichments}
-                  limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null}
-                />
+                <UsageMeter label="Extractions used"   icon="zap"       used={usage?.extractions ?? 0} limit={totalExtractionLimit} />
+                <UsageMeter label="Enrichments (total)" icon="sparkles"  used={totalEnrichments}        limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null} />
               </div>
               {bonus > 0 && (
                 <div className="usage-bonus-note">
@@ -250,6 +295,13 @@ export default function Account() {
                 ))}
               </div>
             </div>
+
+            {/* Payment history (only if there are records) */}
+            <PaymentHistorySection
+              history={paymentHistory}
+              providerMeta={providerMeta}
+              dbSubscription={dbSubscription}
+            />
 
             {/* Metering alerts */}
             <AlertsSection />
