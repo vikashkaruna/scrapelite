@@ -61,14 +61,23 @@ export default function Home() {
   // Show guide tip once per persona selection (cleared on dismiss).
   useEffect(() => {
     if (!persona) return;
-    const tipKey = `scrapelite.tip.${persona.id}`;
-    const seen = localStorage.getItem(tipKey);
-    if (!seen) setShowTip(true);
+    try {
+      const tipKey = `scrapelite.tip.${persona.id}`;
+      const seen = localStorage.getItem(tipKey);
+      if (!seen) setShowTip(true);
+    } catch {
+      // localStorage unavailable (private browsing etc.) — skip tip
+    }
   }, [persona?.id]);
 
   const dismissTip = () => {
     setShowTip(false);
-    if (persona) localStorage.setItem(`scrapelite.tip.${persona.id}`, "1");
+    if (!persona) return;
+    try {
+      localStorage.setItem(`scrapelite.tip.${persona.id}`, "1");
+    } catch {
+      // localStorage unavailable — tip won't persist, that's fine
+    }
   };
 
   const submit = (e) => {

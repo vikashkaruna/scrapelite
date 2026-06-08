@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-08 (after full v4.0 persona onboarding build)**
+> **Last updated: 2026-06-08 (after V4 E2E fixes: footer env vars, keyboard a11y, localStorage guards, mobile CSS)**
 
 ---
 
@@ -17,7 +17,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `claude/v4-persona-onboard-lEZ1g` (V4 in development) |
-| **Latest commit** | `5acac2f` — V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms, Footer |
+| **Latest commit** | `(see git log)` — V4: Footer env-var links, a11y, localStorage guards, mobile CSS; 90/90 E2E |
 
 ---
 
@@ -317,8 +317,15 @@ alter table public.extractions
 - [ ] **Real Supabase Auth** — PersonaProvider currently uses localStorage only. Adding Supabase Auth would allow cross-device persona persistence and proper multi-user isolation.
 - [ ] **Preview persona context** — Preview.jsx could show persona-specific enrichment labels (e.g., "Prospect Intel" for sales vs "Site Audit" for SEO). Currently neutral.
 - [ ] **Demo video links** — each persona has `demoUrl` + `demoLabel` fields in personaConfig but no "play demo" button is currently shown on the onboarding page (Step 2) or Home. Add a `<PlayCircle>` button that opens the demo URL.
-- [ ] **Blog, Pricing, Changelog** — footer links (`href: "#..."`) are placeholders. Wire to real pages or hide until ready.
+- [x] **Blog, Pricing, Changelog, About** — now env-var driven (`VITE_LINK_BLOG`, `VITE_LINK_PRICING`, `VITE_LINK_CHANGELOG`, `VITE_LINK_ABOUT` in `.env.example`). When unset, link is hidden entirely (no placeholder anchors). Documented in config.js.
 - [ ] **Sign-in modal** — currently "Sign in" / "Get started" navigates to /onboarding. A proper modal for returning users (entering name/email) would be more polished.
+
+### V4 fixes applied in last session
+- Footer brand div: `onKeyDown` keyboard handler added (a11y)
+- Home.jsx guide tip: `localStorage.getItem/setItem` wrapped in `try/catch` (private browsing safety)
+- `.topbar-username` hidden on viewports ≤ 760px via media query
+- Footer `Company` section filtered from render when both `LINK_ABOUT` and `LINK_BLOG` are unset (no empty nav column)
+- E2E test suite: **90/90 passed, 0 failed**
 
 ### V2 pending work (still applies)
 - [ ] Set Netlify environment variables to match `.env` and trigger a redeploy

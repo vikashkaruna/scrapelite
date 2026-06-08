@@ -1064,6 +1064,7 @@
 /* Drop lower-priority table columns before the layout gets cramped. */
 @media (max-width: 760px) {
   .dash-table .col-sum, .dash-table th.col-sum { display: none; }
+  .topbar-username { display: none; }
 }
 @media (max-width: 560px) {
   .dash-table .col-date, .dash-table th.col-date { display: none; }

@@ -1,17 +1,18 @@
 // Footer.jsx — site footer with nav links and social icons.
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
+import { LINK_ABOUT, LINK_BLOG, LINK_PRICING, LINK_CHANGELOG } from "../lib/config.js";
 
 const LINKS = {
   Product: [
     { label: "Extract", path: "/" },
     { label: "Dashboard", path: "/dashboard" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "Changelog", href: "#changelog" },
+    ...(LINK_PRICING   ? [{ label: "Pricing",   href: LINK_PRICING   }] : []),
+    ...(LINK_CHANGELOG ? [{ label: "Changelog", href: LINK_CHANGELOG }] : []),
   ],
   Company: [
-    { label: "About", href: "#about" },
-    { label: "Blog", href: "#blog" },
+    ...(LINK_ABOUT ? [{ label: "About", href: LINK_ABOUT }] : []),
+    ...(LINK_BLOG  ? [{ label: "Blog",  href: LINK_BLOG  }] : []),
   ],
   Legal: [
     { label: "Privacy Policy", path: "/privacy" },
@@ -32,7 +33,7 @@ export default function Footer() {
       <div className="container site-footer-inner">
         {/* Brand column */}
         <div className="footer-brand-col">
-          <div className="footer-brand" onClick={() => navigate("/")} role="button" tabIndex={0} aria-label="ScrapeLite home">
+          <div className="footer-brand" onClick={() => navigate("/")} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/")} role="button" tabIndex={0} aria-label="ScrapeLite home">
             <div className="footer-brand-mark">
               <Icon name="layers" size={17} strokeWidth={2.2} />
             </div>
@@ -59,8 +60,8 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Nav columns */}
-        {Object.entries(LINKS).map(([section, items]) => (
+        {/* Nav columns — skip sections with no items */}
+        {Object.entries(LINKS).filter(([, items]) => items.length > 0).map(([section, items]) => (
           <div key={section} className="footer-nav-col">
             <div className="footer-nav-head">{section}</div>
             <ul className="footer-nav-list">
