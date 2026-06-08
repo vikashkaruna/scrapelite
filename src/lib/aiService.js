@@ -156,7 +156,7 @@ export async function categorizeLinks(links, baseUrl) {
     const aiCats = await aiCategorize(base, baseUrl);
     return base.map((l, i) => (isCategory(aiCats[i]) ? { ...l, category: aiCats[i] } : l));
   } catch (err) {
-    console.warn("[ScrapeLite] AI link categorization failed; using heuristics.", err);
+    console.warn("[DatIQ] AI link categorization failed; using heuristics.", err);
     return base;
   }
 }

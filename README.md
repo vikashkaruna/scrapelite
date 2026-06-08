@@ -1,10 +1,10 @@
-# ScrapeLite
+# DatIQ
 
 > Extract a webpage's **headings** and **links** into clean, structured data — with an instant **AI summary**. No code required.
 
-ScrapeLite is a single-page React app for non-technical researchers and content marketers. Paste a URL, preview the extracted structure + AI summary, and save it to your dashboard.
+**DatIQ** (Data + IQ) is a zero-code web-extraction and enrichment platform. Paste a URL, preview the extracted structure + AI summary, and save it to your dashboard — then go further with one-click enrichments, domain mapping, contact discovery, and content generation.
 
-Built from a Claude Design handoff: **React + Vite + Tailwind + React Router + Lucide**, with a hand-crafted Slate + Indigo design system (light/dark).
+Built with: **React + Vite + Tailwind + React Router + Lucide**, with a hand-crafted Slate + Indigo design system (light/dark). Website: **datiq.app**
 
 ---
 
@@ -18,7 +18,7 @@ npm run dev
 
 Open http://localhost:5173.
 
-**Zero-config demo mode:** with no `.env`, ScrapeLite runs entirely on mock data — extraction and AI summaries are simulated, and saved history lives in your browser's `localStorage`. The whole flow is interactive out of the box.
+**Zero-config demo mode:** with no `.env`, DatIQ runs entirely on mock data — extraction and AI summaries are simulated, and saved history lives in your browser's `localStorage`. The whole flow is interactive out of the box.
 
 ---
 
@@ -104,9 +104,9 @@ alter table public.extractions
 
 ## Screens
 
-- **`/` Home** — hero, URL input with validation + example chips, and a stepped “Parsing webpage…” loader.
-- **`/preview` Preview** — page identity + counts, AI-summary card, nested H1–H6 outline, and a filterable (all / internal / external) link list. **Save to Dashboard** persists + redirects; **Discard** returns home.
-- **`/dashboard` Dashboard** — table or card layout of saved extractions, each with **Export CSV**, View, and Delete. Layout choice persists.
+- **`/` Home** — hero, URL input with validation + example chips, 4 scrape-option toggles, and 8 capability cards.
+- **`/preview` Preview** — page identity + counts, AI-summary card, Quick Enrichment panel (5 capabilities), enrichment tabs, nested H1–H6 outline, and a filterable link list. **Save to Dashboard** persists + redirects; **Discard** returns home.
+- **`/dashboard` Dashboard** — table or card layout of saved extractions, smart search, CSV/PDF export, Generate content, Send email. Layout choice persists.
 
 ## Scripts
 

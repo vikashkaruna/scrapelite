@@ -5,7 +5,7 @@ const env = import.meta.env;
 
 // Runtime overrides from public/runtime-config.js (read when the app loads, NOT
 // baked in at build time). A non-empty value here wins over the matching VITE_*.
-const runtime = (typeof window !== "undefined" && window.__SCRAPELITE_RUNTIME__) || {};
+const runtime = (typeof window !== "undefined" && window.__DATIQ_RUNTIME__) || {};
 
 // Outbound endpoints must be absolute. A scheme-less value (e.g. "host.com/hook")
 // would be fetched relative to the app's own origin and hit our 404 page instead

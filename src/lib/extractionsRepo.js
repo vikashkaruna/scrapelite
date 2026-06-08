@@ -7,7 +7,7 @@ import { supabase, isSupabaseEnabled, EXTRACTIONS_TABLE } from "./supabaseClient
 import { notifyWebhook } from "./webhook.js";
 import { uid } from "./utils.js";
 
-const LS_KEY = "scrapelite.saved";
+const LS_KEY = "datiq.saved";
 
 // ── localStorage backend ─────────────────────────────────────────────────────
 const local = {
@@ -112,7 +112,7 @@ export async function saveExtraction(extraction) {
     // the save still succeeds (the data is also mirrored to localStorage below).
     if (error && Object.keys(v2).length && isMissingColumnError(error)) {
       console.warn(
-        "[ScrapeLite] V2 columns (custom_extraction/domain_map/enrichments) not found in " +
+        "[DatIQ] V2 columns (custom_extraction/domain_map/enrichments) not found in " +
           "Supabase; saving base fields only. Run the V2 migration in README to persist them.",
       );
       ({ data, error } = await supabase

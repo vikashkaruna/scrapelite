@@ -11,7 +11,7 @@ export function useTheme() {
 
 function initialTheme() {
   try {
-    const saved = localStorage.getItem("scrapelite.theme");
+    const saved = localStorage.getItem("datiq.theme");
     if (saved === "light" || saved === "dark") return saved;
   } catch {
     /* ignore */
@@ -28,7 +28,7 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     try {
-      localStorage.setItem("scrapelite.theme", theme);
+      localStorage.setItem("datiq.theme", theme);
     } catch {
       /* ignore */
     }

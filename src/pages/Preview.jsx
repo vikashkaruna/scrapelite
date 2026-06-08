@@ -167,7 +167,7 @@ export default function Preview() {
         showToast(`${preset.label} ready`, "sparkles");
       }
     } catch (err) {
-      console.error("[ScrapeLite] Quick enrichment failed:", err);
+      console.error("[DatIQ] Quick enrichment failed:", err);
       showError(err);
     } finally {
       setRunningKey(null);
@@ -189,7 +189,7 @@ export default function Preview() {
       showToast("Saved to your dashboard");
       navigate("/dashboard");
     } catch (err) {
-      console.error("[ScrapeLite] Save failed:", err);
+      console.error("[DatIQ] Save failed:", err);
       setSaving(false);
       // Show modal with retry so user can try saving again without losing the extraction.
       showError(err, SAVE_ERROR, onSave);

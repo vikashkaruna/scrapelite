@@ -47,6 +47,8 @@ import {
   Code2,
   ClipboardCopy,
   RotateCw,
+  BarChart2,
+  TrendingUp,
 } from "lucide-react";
 
 const MAP = {
@@ -95,6 +97,8 @@ const MAP = {
   code: Code2,
   "clipboard-copy": ClipboardCopy,
   refresh: RotateCw,
+  "bar-chart": BarChart2,
+  "trending-up": TrendingUp,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

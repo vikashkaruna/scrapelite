@@ -99,7 +99,7 @@ export function ExtractionProvider({ children }) {
       navigate("/preview");
     } catch (err) {
       if (reqId.current !== id) return;
-      console.error("[ScrapeLite] Extraction failed:", err);
+      console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
       navigate("/");
       // Show modal with a "Try again" button that re-submits the same URL + options.
@@ -133,7 +133,7 @@ export function ExtractionProvider({ children }) {
     // the tabs persist in Supabase (and across devices). Fire-and-forget.
     if (base._saved && base.id) {
       updateEnrichments(base.id, nextEnrichments).catch((err) =>
-        console.warn("[ScrapeLite] Enrichment sync failed:", err),
+        console.warn("[DatIQ] Enrichment sync failed:", err),
       );
     }
     return entry;

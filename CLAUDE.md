@@ -1,4 +1,4 @@
-# ScrapeLite — project context for Claude
+# DatIQ — project context for Claude
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
@@ -10,11 +10,11 @@
 
 | Property | Value |
 |---|---|
-| **Project** | ScrapeLite — zero-code web-extraction + enrichment platform |
+| **Project** | DatIQ — zero-code web-extraction + enrichment platform |
 | **Working dir** | `/Users/vikash/Extracta` |
-| **Live site** | https://scrapelite.netlify.app |
-| **GitHub** | https://github.com/vikashkaruna/scrapelite |
-| **Netlify** | https://app.netlify.com/projects/scrapelite |
+| **Live site** | https://datiq.netlify.app |
+| **GitHub** | https://github.com/vikashkaruna/datiq |
+| **Netlify** | https://app.netlify.com/projects/datiq |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` (v2.0 merged; `version-2.0` branch still exists) |
 | **Latest commit** | `278ff5c` — Merge version-2.0 into main |
@@ -56,7 +56,7 @@ Three routes:
 - Overview tab shows: headings (H1–H6), links (filterable, AI-category-tagged), or domain-map URL list
 
 ### `/dashboard` — Saved Extractions
-- Table/cards layout toggle (persisted to `scrapelite.dashLayout`)
+- Table/cards layout toggle (persisted to `datiq.dashLayout`)
 - **Header actions:** CSV | PDF | New extraction
 - Smart search (AND logic across title/url/summary/headings/links)
 - Viewport-adaptive pagination (`rowsForViewport()`)
@@ -85,7 +85,7 @@ Three routes:
 ├── README.md                         setup, full Supabase SQL (v1 + v2), env table
 ├── public/
 │   ├── favicon.svg
-│   └── runtime-config.js             window.__SCRAPELITE_RUNTIME__ override (no rebuild needed)
+│   └── runtime-config.js             window.__DATIQ_RUNTIME__ override (no rebuild needed)
 └── src/
     ├── main.jsx                      ReactDOM.createRoot, BrowserRouter
     ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > ExtractionProvider > Shell
@@ -137,7 +137,7 @@ Three routes:
     │   ├── Icon.jsx                  lucide-react name-map — add new icons here
     │   ├── Button.jsx                variant: primary/secondary/ghost/danger; size sm
     │   ├── FaviconDot.jsx            Deterministic hue monogram per domain
-    │   ├── ThemeProvider.jsx         light/dark; persists to scrapelite.theme
+    │   ├── ThemeProvider.jsx         light/dark; persists to datiq.theme
     │   ├── Toast.jsx                 ToastProvider + useToast(); 2.6s auto-dismiss
     │   ├── ErrorModal.jsx            ErrorModalProvider + useErrorModal(err, override?, retryFn?)
     │   ├── TopBar.jsx                Brand, nav, theme toggle; "+ New" only on /preview
@@ -201,12 +201,12 @@ VITE_AI_MODEL=claude-haiku-4-5-20251001
 VITE_WEBHOOK_URL=            # n8n webhook URL (test vs prod — see note below)
 ```
 
-**Webhook note:** `.env` has the n8n **test** URL (`/webhook-test/scrapelite`) — only responds
-while the n8n editor is open. For live sends use production URL (`/webhook/scrapelite`)
+**Webhook note:** `.env` has the n8n **test** URL (`/webhook-test/datiq`) — only responds
+while the n8n editor is open. For live sends use production URL (`/webhook/datiq`)
 with the workflow activated + CORS configured.
 
 **Runtime override** (no rebuild): edit `public/runtime-config.js` to set
-`window.__SCRAPELITE_RUNTIME__ = { webhookUrl, emailApiUrl }`. config.js prefers this
+`window.__DATIQ_RUNTIME__ = { webhookUrl, emailApiUrl }`. config.js prefers this
 over VITE_*.
 
 **Security**: `VITE_AI_API_KEY` is browser-bundled. Safe for local/demo. For production,
@@ -225,7 +225,7 @@ extraction.enrichments = {
 }
 ```
 
-- **Persisted** in two places: `localStorage` (key `scrapelite.enrichments`, indexed by URL then capKey) + Supabase `enrichments` column (when the column exists and the row is saved)
+- **Persisted** in two places: `localStorage` (key `datiq.enrichments`, indexed by URL then capKey) + Supabase `enrichments` column (when the column exists and the row is saved)
 - **Lifecycle**: `enrich(url, preset)` adds/overwrites one entry; `view(item)` merges DB + local (newest-by-created_at wins per key); `export` always hydrates from both sources via `withEnrichments(item)`
 - **Display**: Overview tab always shown; one tab per entry in `enrichments`; tab auto-activates on new result; clicking an executed button refreshes its tab
 
@@ -279,7 +279,7 @@ alter table public.extractions
 
 ### Other pending work
 - [ ] Set Netlify environment variables to match `.env` and trigger a redeploy (currently deployed app uses build-time vars from CLI deploy)
-- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
+- [ ] Switch webhook to the **production** n8n URL (`/webhook/datiq`) and activate the workflow
 - [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before exposing to real production users (currently browser-bundled — safe for demo only)
 - [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
 - [ ] Consider adding **user auth** (Supabase Auth) for multi-user isolation

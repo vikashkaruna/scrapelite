@@ -13,9 +13,9 @@
 // localhost → test endpoint (mcp-test); any other host → production endpoint (mcp).
 // This file is read at runtime, so no rebuild is needed to switch environments.
 var _isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-window.__SCRAPELITE_RUNTIME__ = {
+window.__DATIQ_RUNTIME__ = {
   webhookUrl: _isLocal
-    ? "https://vkaruna.app.n8n.cloud/webhook-test/scrapelite"
-    : "https://vkaruna.app.n8n.cloud/webhook/scrapelite",
+    ? "https://vkaruna.app.n8n.cloud/webhook-test/datiq"
+    : "https://vkaruna.app.n8n.cloud/webhook/datiq",
   emailApiUrl: "",
 };
