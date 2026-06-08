@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronDown,
+  ChevronUp,
   Globe,
   LayoutGrid,
   Table,
@@ -51,6 +52,16 @@ import {
   LogOut,
   User,
   FlaskConical,
+  Target,
+  Eye,
+  BarChart2,
+  Building2,
+  Linkedin,
+  Twitter,
+  Shield,
+  PlayCircle,
+  TrendingUp,
+  Info,
 } from "lucide-react";
 
 const MAP = {
@@ -103,6 +114,17 @@ const MAP = {
   "log-out": LogOut,
   user: User,
   flask: FlaskConical,
+  target: Target,
+  eye: Eye,
+  "bar-chart": BarChart2,
+  building: Building2,
+  linkedin: Linkedin,
+  twitter: Twitter,
+  shield: Shield,
+  "play-circle": PlayCircle,
+  "trending-up": TrendingUp,
+  info: Info,
+  "chevron-up": ChevronUp,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

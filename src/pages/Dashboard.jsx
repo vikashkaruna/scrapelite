@@ -9,6 +9,8 @@ import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
+import { usePersona } from "../components/PersonaProvider.jsx";
+import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
@@ -228,6 +230,8 @@ export default function Dashboard() {
   const showError = useErrorModal();
   const { view } = useExtraction();
   const { openAuth } = useAuth();
+  const { personaId } = usePersona();
+  const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -393,12 +397,12 @@ export default function Dashboard() {
             <div className="eyebrow">
               <Icon name="bookmark" size={13} /> Saved
             </div>
-            <h1 className="dash-h1">Your extractions</h1>
+            <h1 className="dash-h1">{persona ? persona.dashboardLabel : "Your extractions"}</h1>
             <p className="dash-sub">
               {loading
                 ? "Loading…"
                 : showingDemo
-                  ? "Sample data — save a real extraction to build your library."
+                  ? (persona ? persona.dashboardSub + " — sample data shown below." : "Sample data — save a real extraction to build your library.")
                   : `${items.length} saved ${items.length === 1 ? "page" : "pages"}, newest first.`}
             </p>
           </div>

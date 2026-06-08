@@ -1,35 +1,63 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ErrorModalProvider } from "./components/ErrorModal.jsx";
 import { AuthProvider, useAuth } from "./components/AuthProvider.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import { ExtractionProvider, useExtraction } from "./components/ExtractionProvider.jsx";
+import { PersonaProvider, usePersona } from "./components/PersonaProvider.jsx";
 import TopBar from "./components/TopBar.jsx";
+import Footer from "./components/Footer.jsx";
 import LoadingScreen from "./components/LoadingScreen.jsx";
 import Home from "./pages/Home.jsx";
 import Preview from "./pages/Preview.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
+import Onboarding from "./pages/Onboarding.jsx";
+import Privacy from "./pages/Privacy.jsx";
+import Terms from "./pages/Terms.jsx";
 
-// Inside the providers: shows the full-screen loader during extraction,
-// otherwise the top bar + routed screen.
+// Routes rendered without TopBar/Footer chrome.
+const STANDALONE = ["/onboarding"];
+// Routes accessible before onboarding is complete.
+const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms"];
+
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
   const { showAuthModal } = useAuth();
+  const { onboarded } = usePersona();
+  const { pathname } = useLocation();
 
-  if (loading) return <LoadingScreen url={loadingUrl} />;
+  const isStandalone = STANDALONE.includes(pathname);
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+
+  // Redirect first-time visitors to onboarding.
+  if (!onboarded && !isPublic) return <Navigate to="/onboarding" replace />;
+
+  // Standalone pages (onboarding) — no chrome.
+  if (isStandalone) {
+    return (
+      <Routes>
+        <Route path="/onboarding" element={<Onboarding />} />
+      </Routes>
+    );
+  }
+
+  if (loading && !isPublic) return <LoadingScreen url={loadingUrl} />;
 
   return (
     <>
       <TopBar />
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/preview" element={<Preview />} />
+        <Route path="/"          element={<Home />} />
+        <Route path="/preview"   element={<Preview />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/privacy"   element={<Privacy />} />
+        <Route path="/terms"     element={<Terms />} />
+        <Route path="*"          element={<Navigate to="/" replace />} />
       </Routes>
       {showAuthModal && <AuthModal />}
+      <Footer />
     </>
   );
 }
@@ -40,11 +68,13 @@ export default function App() {
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>
-            <ExtractionProvider>
-              <div className="app-root">
-                <Shell />
-              </div>
-            </ExtractionProvider>
+            <PersonaProvider>
+              <ExtractionProvider>
+                <div className="app-root">
+                  <Shell />
+                </div>
+              </ExtractionProvider>
+            </PersonaProvider>
           </AuthProvider>
         </ErrorModalProvider>
       </ToastProvider>

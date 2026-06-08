@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-08 (after v3-supabase-auth build, all findings fixed, 42/42 tests green)**
+> **Last updated: 2026-06-08 (after V4 persona-onboarding merged into main)**
 
 ---
 
@@ -16,8 +16,8 @@
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (v2-build-api-layer + v3-supabase-auth merged) |
-| **Latest commit** | merge of v3-supabase-auth — Supabase Auth + API layer |
+| **Current branch** | `main` (v2 API layer + v3 Auth + v4 Persona-Onboarding merged) |
+| **Latest commit** | merge of v4-persona-onboard — Onboarding, Persona UI, Footer, Privacy/Terms |
 | **Brand/domain** | Considering rename — `struxt.app` or `datiq.app` (both available as of 2026-06-08) |
 
 ---
@@ -70,7 +70,36 @@ Three routes:
 
 ---
 
-## Complete file map (v2.0 state)
+## V4.0 — Persona Onboarding (June 2026, branch: claude/v4-persona-onboard-lEZ1g)
+
+### New files added in V4
+| File | Purpose |
+|---|---|
+| `src/lib/personaConfig.js` | 7 personas (Sales/SDR, Competitive Intel, SEO, Market Researcher, Recruiter, Founder/VC, Agency) each with tagline, subtitle, examples, featuresHighlight, dashboardLabel, guideTip, demoUrl |
+| `src/components/PersonaProvider.jsx` | Context: personaId, onboarded, userName; persisted to localStorage keys scrapelite.persona / scrapelite.onboarded / scrapelite.userName |
+| `src/pages/Onboarding.jsx` | 2-step persona selection flow — Step 1: card grid (7 personas), Step 2: name entry + welcome |
+| `src/pages/Privacy.jsx` | Full Privacy Policy (7 sections: data collection, usage, storage, third-parties, rights, cookies, changes) |
+| `src/pages/Terms.jsx` | Full Terms of Service (12 sections: acceptable use, IP, liability, termination, etc.) |
+| `src/components/Footer.jsx` | Site footer: Product/Company/Legal nav + LinkedIn/Twitter socials + copyright |
+
+### V4 routing changes (App.jsx)
+- `PersonaProvider` wraps `ExtractionProvider` (so all pages have persona context)
+- First-time visitors (onboarded = false) are redirected to `/onboarding` automatically
+- New routes: `/onboarding` (standalone, no TopBar), `/privacy`, `/terms`
+- `Footer` rendered in Shell after Routes (not shown during LoadingScreen or on /onboarding)
+- `PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms"]` — never redirected
+
+### V4 UX patterns
+- **Persona badge** in TopBar: colored dot + role label + click-to-switch
+- **Persona-adaptive Home**: hero tagline, subtitle, examples, stat badge, guide tip, "Recommended" feature cards — all change per persona
+- **Switch role**: available from TopBar badge click or "Switch role" link at Home page bottom — resets onboarding state, navigates to /onboarding
+- **Guide tip**: shown once per persona (dismissed via localStorage `scrapelite.tip.{personaId}`)
+- **Dashboard**: persona-specific title (`dashboardLabel`) and subtitle (`dashboardSub`)
+- **Feature card highlighting**: cards in `featuresHighlight` array get accent border + "Recommended" tag
+
+---
+
+## Complete file map (v2.0 + V4 state)
 
 ```
 /Users/vikash/Extracta/
@@ -89,7 +118,7 @@ Three routes:
 │   └── runtime-config.js             window.__SCRAPELITE_RUNTIME__ override (no rebuild needed)
 └── src/
     ├── main.jsx                      ReactDOM.createRoot, BrowserRouter
-    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > ExtractionProvider > Shell
+    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > PersonaProvider > ExtractionProvider > Shell
     ├── index.css                     @tailwind base/components/utilities only
     ├── styles/
     │   ├── design-system.css         CSS tokens
@@ -100,6 +129,7 @@ Three routes:
     │   └── mockData.js               LUMIO_EXTRACTION + mockExtractionForUrl + mockContacts
     │                                 + mockCustomExtraction + mockDomainMap (v2 helpers)
     ├── lib/
+    │   ├── personaConfig.js          V4: PERSONAS array (7), PERSONA_BY_ID map
     │   ├── config.js                 VITE_* env + runtime override; hasSupabase/hasFirecrawl/hasAI flags
     │   ├── utils.js                  hostOf, pathOf, isExternal, fmtDate, timeAgo, snippet, uid,
     │   │                             isValidUrl, normalizeUrl, flattenJson, extractionRows,
@@ -124,6 +154,8 @@ Three routes:
     │   ├── emailService.js           sendExtractionsEmail; webhook → email API → mailto fallback
     │   └── errorMessages.js          classifyError; 10 categories; SAVE/LOAD/DELETE_ERROR
     ├── components/
+    │   ├── PersonaProvider.jsx        V4: PersonaProvider + usePersona(); localStorage persistence
+    │   ├── Footer.jsx                 V4: site footer with nav links + social icons
     │   ├── ExtractionProvider.jsx    Context: current, loading, loadingUrl, extract, enrich, save, view
     │   │                             extract(): full extraction + nav to /preview + enrichments hydration
     │   │                             enrich(url, preset): BACKGROUND — adds tab, persists, syncs to DB
@@ -141,12 +173,15 @@ Three routes:
     │   ├── ThemeProvider.jsx         light/dark; persists to scrapelite.theme
     │   ├── Toast.jsx                 ToastProvider + useToast(); 2.6s auto-dismiss
     │   ├── ErrorModal.jsx            ErrorModalProvider + useErrorModal(err, override?, retryFn?)
-    │   ├── TopBar.jsx                Brand, nav, theme toggle; "+ New" only on /preview
+    │   ├── TopBar.jsx                V4: Brand, nav, PersonaBadge (colored dot + role + switch), theme toggle, "+ New" on /preview
     │   └── LoadingScreen.jsx         Full-screen 4-step animated progress
     └── pages/
-        ├── Home.jsx                  Toggles, custom extraction textarea, preset chips, 8 capability cards
+        ├── Home.jsx                  V4: Persona-adaptive hero (tagline/subtitle/examples/featuresHighlight), guide tip, URL form, 8 capability cards
+        ├── Onboarding.jsx            V4: 2-step persona selection (/onboarding, standalone — no TopBar/Footer)
+        ├── Privacy.jsx               V4: Privacy Policy page (/privacy)
+        ├── Terms.jsx                 V4: Terms of Service page (/terms)
         ├── Preview.jsx               Tabs (Overview + enrichments), quick-enrichment buttons, save/discard
-        └── Dashboard.jsx             Table/cards, search, pagination, CSV/PDF/Generate/Email
+        └── Dashboard.jsx             V4: Persona label in header; Table/cards, search, pagination, CSV/PDF/Generate/Email
 ```
 
 ---
@@ -274,7 +309,7 @@ extraction.enrichments = {
 
 ## Outstanding tasks for next session
 
-### Highest priority — deploy v3 to production
+### Highest priority — Supabase migration (still unrun)
 1. **Supabase SQL** (run once in SQL Editor — enables RLS + per-user data isolation):
 ```sql
 alter table public.extractions
@@ -294,28 +329,25 @@ create policy "users own extractions" on public.extractions
 
 2. **Supabase dashboard** → Authentication → Providers: enable Google, Microsoft (Azure AD), GitHub. Set redirect URL to `https://scrapelite.netlify.app`.
 
-3. **Netlify environment variables** — set these in Netlify dashboard (Site → Environment variables):
-   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (no VITE_ prefix — used by Netlify Functions)
-   - `FIRECRAWL_API_KEY` (no VITE_ prefix — used by Netlify Function, not browser)
-   - `AI_API_KEY` (no VITE_ prefix — used by Netlify Function, not browser)
-   - `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (with VITE_ prefix — used by browser for Auth)
-   - Keep `VITE_FIRECRAWL_API_KEY` and `VITE_AI_API_KEY` **empty** in production (forces API layer)
-
-4. **Merge v3-supabase-auth into main** and trigger Netlify redeploy.
+3. **Netlify environment variables** — set in Netlify dashboard:
+   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (server-side, for Netlify Functions)
+   - `FIRECRAWL_API_KEY` + `AI_API_KEY` (server-side, no VITE_ prefix)
+   - `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (browser-side Auth)
+   - Keep `VITE_FIRECRAWL_API_KEY` and `VITE_AI_API_KEY` **empty** (forces API layer)
 
 ### Other pending work
 - [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
 - [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
-- [ ] Consider Netlify Background Functions for email reliability
-- [ ] `version-2.0` branch still exists; can be deleted: `git push origin --delete version-2.0`
+- [ ] `version-2.0` branch can be deleted: `git push origin --delete version-2.0`
 
 ---
 
 ## How to continue developing
 
 ```bash
-cd /Users/vikash/Extracta   # working dir
-git status                   # should be clean on main
+cd /home/user/scrapelite    # working dir (remote) or /Users/vikash/Extracta (local)
+git checkout claude/v4-persona-onboard-lEZ1g
+git status                   # should be clean
 npm run dev                  # starts Vite at http://localhost:5173
 # After any .env change: Ctrl+C → npm run dev (Vite does NOT hot-reload .env)
 ```
@@ -337,15 +369,13 @@ netlify deploy --prod --dir=dist
 ## Git log (recent)
 
 ```
+fdd5b81  V4: Footer env-var links, a11y keyboard handler, localStorage guards, mobile CSS
+5acac2f  V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
 ddb9d17  fix: 3 UX/robustness findings from e2e verification
-6147868  chore: add playwright as devDependency (used for e2e verification)
 65e8701  v3: Supabase Auth — Google/Microsoft/GitHub OAuth + email/password + demo data
-3937253  chore: update package-lock.json after npm install
 593274b  V2 API layer: route all external calls through Netlify Functions
 5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
-6e1d499  Deploy Vite project to Netlify with secrets scanning bypass (6a2387998ea7c38bb41237db)
 278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
-c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
 ```
 
 ---
