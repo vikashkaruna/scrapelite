@@ -14,12 +14,12 @@ const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", busine
 
 function Brand({ onClick }) {
   return (
-    <div className="brand" onClick={onClick} role="button" aria-label="ScrapeLite home">
+    <div className="brand" onClick={onClick} role="button" aria-label="DatIQ home">
       <div className="brand-mark">
-        <Icon name="layers" size={19} strokeWidth={2.2} />
+        <Icon name="bar-chart" size={19} strokeWidth={2.2} />
       </div>
       <div className="brand-name">
-        Scrape<b>Lite</b>
+        Dat<b>IQ</b>
       </div>
     </div>
   );

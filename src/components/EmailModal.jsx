@@ -30,7 +30,7 @@ export default function EmailModal({ items, hint, onSend, onClose }) {
       await onSend(ok);
       // Parent unmounts this modal on success — nothing else to do here.
     } catch (err) {
-      console.error("[ScrapeLite] Send email failed:", err);
+      console.error("[DatIQ] Send email failed:", err);
       setError(err?.message || "Couldn't send the email. Please try again.");
       setSending(false);
     }

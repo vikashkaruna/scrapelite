@@ -6,8 +6,8 @@
 // that URL's extraction again. Re-running a capability overwrites its entry
 // (acts as a refresh).
 
-const ENRICH_KEY = "scrapelite.enrichments"; // { [url]: { [capKey]: entry } }
-const CURRENT_KEY = "scrapelite.current"; // last extraction shown on /preview
+const ENRICH_KEY = "datiq.enrichments"; // { [url]: { [capKey]: entry } }
+const CURRENT_KEY = "datiq.current"; // last extraction shown on /preview
 
 function readAll() {
   try {

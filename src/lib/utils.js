@@ -183,7 +183,7 @@ export function csvDownload(items) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const name =
     list.length === 1
-      ? `scrapelite-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
-      : `scrapelite-export-${list.length}-pages.csv`;
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
+      : `datiq-export-${list.length}-pages.csv`;
   triggerDownload(blob, name);
 }

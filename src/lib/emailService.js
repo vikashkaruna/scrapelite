@@ -39,8 +39,8 @@ function lineFor(it, i) {
 // Compose the subject + plain-text body for a set of extractions.
 export function buildEmail(items) {
   const n = items.length;
-  const subject = `ScrapeLite — ${n} extraction${n === 1 ? "" : "s"}`;
-  const intro = `Shared from ScrapeLite — ${n} extracted page${n === 1 ? "" : "s"}:`;
+  const subject = `DatIQ — ${n} extraction${n === 1 ? "" : "s"}`;
+  const intro = `Shared from DatIQ — ${n} extracted page${n === 1 ? "" : "s"}:`;
   const body = `${intro}\n\n${items.map(lineFor).join("\n\n")}`;
   return { subject, body };
 }
@@ -91,7 +91,7 @@ export async function sendExtractionsEmail({ to, items }) {
   // Fallback: open the user's email client with a prefilled draft.
   let mailBody = body;
   if (mailBody.length > MAX_MAILTO_BODY) {
-    mailBody = mailBody.slice(0, MAX_MAILTO_BODY) + "\n\n… (truncated — open ScrapeLite for the full details)";
+    mailBody = mailBody.slice(0, MAX_MAILTO_BODY) + "\n\n… (truncated — open DatIQ for the full details)";
   }
   const href =
     `mailto:${encodeURIComponent(recipients.join(","))}` +

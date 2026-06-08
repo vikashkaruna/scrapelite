@@ -50,14 +50,14 @@ function rowsForViewport() {
 
 function persistLayout(layout) {
   try {
-    localStorage.setItem("scrapelite.dashLayout", layout);
+    localStorage.setItem("datiq.dashLayout", layout);
   } catch {
     /* ignore */
   }
 }
 function initialLayout() {
   try {
-    const v = localStorage.getItem("scrapelite.dashLayout");
+    const v = localStorage.getItem("datiq.dashLayout");
     if (v === "cards" || v === "table") return v;
   } catch {
     /* ignore */
@@ -260,7 +260,7 @@ export default function Dashboard() {
         if (alive) setItems(rows);
       })
       .catch((err) => {
-        console.error("[ScrapeLite] Failed to load extractions:", err);
+        console.error("[DatIQ] Failed to load extractions:", err);
         if (alive) showError(err, LOAD_ERROR);
       })
       .finally(() => {
@@ -338,7 +338,7 @@ export default function Dashboard() {
       await deleteExtraction(item.id);
       showToast("Extraction deleted", "trash");
     } catch (err) {
-      console.error("[ScrapeLite] Delete failed:", err);
+      console.error("[DatIQ] Delete failed:", err);
       setItems(prev); // rollback optimistic update
       showError(err, DELETE_ERROR, () => onDelete(item));
     }
@@ -383,7 +383,7 @@ export default function Dashboard() {
       extractionsToPdf(targets);
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {
-      console.error("[ScrapeLite] PDF export failed:", err);
+      console.error("[DatIQ] PDF export failed:", err);
       showError(err);
     }
   };
