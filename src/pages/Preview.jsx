@@ -7,6 +7,7 @@ import BrandLoader from "../components/BrandLoader.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
+import { useAuth } from "../components/AuthProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { SAVE_ERROR } from "../lib/errorMessages.js";
@@ -113,6 +114,7 @@ export default function Preview() {
   const showToast = useToast();
   const showError = useErrorModal();
   const { current, save, enrich } = useExtraction();
+  const { user, openAuth } = useAuth();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
@@ -168,7 +170,7 @@ export default function Preview() {
       }
     } catch (err) {
       console.error("[ScrapeLite] Quick enrichment failed:", err);
-      showError(err);
+      showToast("Enrichment failed — check your connection", "alert-triangle");
     } finally {
       setRunningKey(null);
     }
@@ -182,6 +184,7 @@ export default function Preview() {
   };
 
   const onSave = async () => {
+    if (!user) { openAuth(); return; }
     if (saving) return;
     setSaving(true);
     try {

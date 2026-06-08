@@ -4,14 +4,24 @@
 //
 // All service modules (firecrawlService, aiService, extractionsRepo) use this
 // instead of calling external APIs directly, keeping secret keys server-side.
+//
+// Auth: call setAuthToken(jwt) whenever the Supabase session changes (done by
+// AuthProvider). Every subsequent request will include Authorization: Bearer <jwt>.
 
 const BASE = "/api";
 
+let _authToken = null;
+
+/** Called by AuthProvider whenever the session changes. */
+export function setAuthToken(token) {
+  _authToken = token ?? null;
+}
+
 async function request(path, method = "GET", body) {
-  const opts = {
-    method,
-    headers: { "Content-Type": "application/json" },
-  };
+  const headers = { "Content-Type": "application/json" };
+  if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
+
+  const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${BASE}${path}`, opts);

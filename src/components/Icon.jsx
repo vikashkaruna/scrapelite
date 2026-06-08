@@ -47,6 +47,10 @@ import {
   Code2,
   ClipboardCopy,
   RotateCw,
+  LogIn,
+  LogOut,
+  User,
+  FlaskConical,
 } from "lucide-react";
 
 const MAP = {
@@ -95,6 +99,10 @@ const MAP = {
   code: Code2,
   "clipboard-copy": ClipboardCopy,
   refresh: RotateCw,
+  "log-in": LogIn,
+  "log-out": LogOut,
+  user: User,
+  flask: FlaskConical,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

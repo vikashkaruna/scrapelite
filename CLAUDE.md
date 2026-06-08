@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-06 (after full v2.0 build, test, and merge to main)**
+> **Last updated: 2026-06-08 (after v3-supabase-auth build, all findings fixed, 42/42 tests green)**
 
 ---
 
@@ -16,8 +16,9 @@
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (v2.0 merged; `version-2.0` branch still exists) |
-| **Latest commit** | `5b267d3` — Merge PR #1 (Netlify deploy w/ secrets-scanning bypass) |
+| **Current branch** | `main` (v2-build-api-layer + v3-supabase-auth merged) |
+| **Latest commit** | merge of v3-supabase-auth — Supabase Auth + API layer |
+| **Brand/domain** | Considering rename — `struxt.app` or `datiq.app` (both available as of 2026-06-08) |
 
 ---
 
@@ -250,8 +251,11 @@ extraction.enrichments = {
 | Table layout | `table-layout:fixed`, fixed px widths on narrow cols (check/struct/date/act). Percentage widths on Page/Summary over-allocate and clip the date column — proven bug, avoid. |
 | TopBar "+ New" | Only shown on `/preview`, not on `/dashboard` |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF in Dashboard. |
-| Background enrichment | `enrich()` must never show the full-screen loader or navigate. Page must stay visible. |
+| Background enrichment | `enrich()` must never show the full-screen loader or navigate. Page must stay visible. Errors → toast only, never blocking modal. |
 | Enrichment tabs | Re-clicking a done preset = refresh (overwrites, does NOT create duplicates). |
+| Auth | `AuthProvider` wraps the full tree. `apiClient.setAuthToken()` called on every auth event. Save on Preview gates on `user` — calls `openAuth()` if not signed in. |
+| listExtractions fallback | Always falls back to localStorage on ANY error (no user-visible blocking). Write operations (save/delete) remain strict and surface errors to the user. |
+| Demo data | `DEMO_EXTRACTIONS` shown when `items.length === 0`. Demo rows have `_demo:true` — suppress checkbox, delete, selection. Do NOT show demo rows in exports. |
 
 ---
 
@@ -263,28 +267,47 @@ extraction.enrichments = {
 4. **Webhook relative URL** — `config.ensureAbsolute()` prepends `https://` if scheme missing
 5. **Date column clipping** — do NOT set percentage widths on Page or AI-Summary columns; let them fill remaining space; only narrow cols get px widths
 6. **Enrichment sync on unsaved row** — `enrich()` checks `base._saved && base.id` before calling `updateEnrichments`; skips silently if not saved yet (stores locally only)
+7. **Contacts toggle UX** — turning Contacts on also sets `customMode=true` so the textarea appears immediately with the auto-populated prompt. Without this, Contacts had no visible feedback.
+8. **Dashboard blocking modal** — `listExtractions` must always fall back to localStorage on any API error (including 404/500 from missing Netlify Functions in preview mode). Never call `showError` from the Dashboard's listExtractions catch block.
 
 ---
 
 ## Outstanding tasks for next session
 
-### Highest priority — one SQL command
+### Highest priority — deploy v3 to production
+1. **Supabase SQL** (run once in SQL Editor — enables RLS + per-user data isolation):
 ```sql
--- Run in Supabase SQL Editor → unlocks full v2 persistence across devices
 alter table public.extractions
+  add column if not exists user_id           uuid references auth.users,
   add column if not exists custom_extraction jsonb,
   add column if not exists domain_map        jsonb,
   add column if not exists enrichments       jsonb;
+
+alter table public.extractions enable row level security;
+drop policy if exists "anon full access" on public.extractions;
+drop policy if exists "users own extractions" on public.extractions;
+create policy "users own extractions" on public.extractions
+  for all to authenticated
+  using  (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 ```
 
+2. **Supabase dashboard** → Authentication → Providers: enable Google, Microsoft (Azure AD), GitHub. Set redirect URL to `https://scrapelite.netlify.app`.
+
+3. **Netlify environment variables** — set these in Netlify dashboard (Site → Environment variables):
+   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (no VITE_ prefix — used by Netlify Functions)
+   - `FIRECRAWL_API_KEY` (no VITE_ prefix — used by Netlify Function, not browser)
+   - `AI_API_KEY` (no VITE_ prefix — used by Netlify Function, not browser)
+   - `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (with VITE_ prefix — used by browser for Auth)
+   - Keep `VITE_FIRECRAWL_API_KEY` and `VITE_AI_API_KEY` **empty** in production (forces API layer)
+
+4. **Merge v3-supabase-auth into main** and trigger Netlify redeploy.
+
 ### Other pending work
-- [ ] Set Netlify environment variables to match `.env` and trigger a redeploy (currently deployed app uses build-time vars from CLI deploy)
-- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
-- [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before exposing to real production users (currently browser-bundled — safe for demo only)
 - [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
-- [ ] Consider adding **user auth** (Supabase Auth) for multi-user isolation
-- [ ] Consider adding Netlify Background Functions for email reliability (PRD 6.3)
-- [ ] `version-2.0` branch still exists (merged); can be deleted with `git push origin --delete version-2.0`
+- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
+- [ ] Consider Netlify Background Functions for email reliability
+- [ ] `version-2.0` branch still exists; can be deleted: `git push origin --delete version-2.0`
 
 ---
 
@@ -314,43 +337,80 @@ netlify deploy --prod --dir=dist
 ## Git log (recent)
 
 ```
+ddb9d17  fix: 3 UX/robustness findings from e2e verification
+6147868  chore: add playwright as devDependency (used for e2e verification)
+65e8701  v3: Supabase Auth — Google/Microsoft/GitHub OAuth + email/password + demo data
+3937253  chore: update package-lock.json after npm install
+593274b  V2 API layer: route all external calls through Netlify Functions
 5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
 6e1d499  Deploy Vite project to Netlify with secrets scanning bypass (6a2387998ea7c38bb41237db)
 278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
 c45f77d  Dashboard exports: full-capability CSV + new PDF, moved to the top
-47a6c76  Fix misaligned "Extracted" date column in dashboard table
-a747769  v2.0: persist enrichments map to Supabase (cross-device sync)
-e54837c  v2.0: persisted, tabbed Quick Enrichment + 8th capability card
-634a68f  v2.0 UX refinements: dashboard, home, background enrichment
-49bcb20  v2.0: Extraction & Enrichment update
-c45...   (earlier v1 commits — error modal, vertical centering, seed data removal)
 ```
 
 ---
 
-## Session history summary (what was built in this session)
+## Session history summary (what was built across all sessions)
 
-This single session took the project from a finished V1 MVP to a full v2.0 platform:
+**v2.0 (branch: merged to main):**
+- Custom JSON Schema Extraction, Domain Mapping, Contacts & Emails toggle
+- Quick Enrichment — 5 capabilities, background execution, persistent enrichment tabs
+- Full-capability CSV + PDF export, viewport-adaptive pagination, content generation modal
 
-**v2.0 features added:**
-- Custom JSON Schema Extraction (textarea + LLM mode + preset chips)
-- Domain Mapping (`/map` endpoint → searchable URL list)
-- Contacts & Emails toggle (auto-populates leadership contact prompt)
-- Integrated Content Generation modal (3 formats, real Claude output)
-- Quick Enrichment — 5 one-click capabilities, background execution, per-button spinners
-- Enrichment tabs — each executed capability becomes a persistent, reloadable tab
-- Full enrichment persistence: localStorage (by URL+key) + Supabase `enrichments` column + cross-device merge
-- 8-capability card grid on Home screen
-- Full-capability CSV export (meta+headings+links+all enrichments, deep-flattened JSON)
-- PDF export (jsPDF, lazy-loaded, full content report)
+**v2 API layer (branch: v2-build-api-layer):**
+- All Firecrawl, Anthropic, Supabase calls moved to Netlify Functions
+- `apiClient.js` in browser; secrets never bundled client-side
+- Netlify toml updated with esbuild bundler + `/api/*` redirect
 
-**UX fixes in this session:**
-- Generate button moved from table rows → selection bar
-- Table horizontal scroll eliminated (fixed layout + px column widths)
-- Viewport-adaptive pagination
-- Date column alignment fixed
-- TopBar "+ New" removed from dashboard
-- v2 section labels removed from Home; features merged into one auto-fit grid
-- Content modal enlarged to 760px
+**v3 Auth (branch: v3-supabase-auth) — fully tested, ready to deploy:**
+- `authService.js` — Supabase Auth wrapper: email/password + Google/Microsoft/GitHub OAuth
+- `AuthProvider.jsx` — global React context, JWT synced to `apiClient` on every auth event
+- `AuthModal.jsx` — portal modal; inline SVG logos; sign-in + create-account tabs
+- `TopBar.jsx` — UserChip (avatar/initials + sign-out) when signed in; Sign-in button otherwise
+- `Preview.jsx` — onSave gates on auth; unauthenticated users see AuthModal instead
+- `Dashboard.jsx` — DEMO_EXTRACTIONS (Stripe/Apple/Deloitte) when list is empty; no checkbox/delete on demo rows; demo banner with CTAs
+- `mockData.js` — STRIPE_DEMO, APPLE_DEMO, DELOITTE_DEMO with pre-populated enrichment tabs
+- `extractions.js` (Netlify fn) — requires JWT; validates via getUser(); per-user RLS via user_id
+- `screens.css` — auth modal, OAuth buttons, spinner, user chip, demo badge/banner styles
+- `extractionsRepo.js` — `listExtractions` always falls back to localStorage on any API error; `shouldFallback()` helper covers 401/403/404/503/network errors for write operations
 
-**All tests passed (13 functional tests against real Firecrawl + AI + Supabase)** — see test results above.
+**All findings from verification fixed:**
+1. Contacts toggle now auto-enables Custom Extraction textarea (UX clarity)
+2. Enrichment failure shows toast instead of blocking error modal (non-blocking background ops)
+3. Dashboard `listExtractions` gracefully falls back to localStorage on any API error (no blocking modal)
+
+**42/42 end-to-end Playwright tests green** (2026-06-08)
+
+Tests run with `playwright` + pre-installed Chromium (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`) against `npx vite preview` build. To re-run:
+```bash
+npx vite build && npx vite preview --port 5173 &
+# then run the Playwright node script (see session transcript or write fresh using CHROME path above)
+```
+
+---
+
+## Branding research (2026-06-08)
+
+**Current name:** ScrapeLite (`scrapelite.netlify.app`)
+
+**Problem with "Scrape":** Negative connotation for enterprise/SMB buyers — legal, compliance and procurement teams associate "scraping" with ToS violations and data theft. Hinders B2B adoption.
+
+**Domains checked (available as of 2026-06-08):**
+| Domain | Verdict |
+|---|---|
+| `struxt.app` | ✅ Available — Structure + Extract portmanteau. Tech-savvy, developer-friendly. |
+| `datiq.app` | ✅ Available — Data + IQ. Short, invented word (easy to trademark), broad SMB appeal. |
+| `extracta.ai/io/app` | ❌ Taken |
+| `pageiq.ai` | ❌ Taken |
+| `harvest.ai` | ❌ Taken |
+| `distilla.*` | ❌ Taken |
+| `fetchly.*` | ❌ Taken |
+| `webwise.*` | ❌ Taken |
+
+**Recommended pick:** `datiq.app`
+- "Data IQ" is self-explanatory to any buyer
+- `.app` signals it's a product (not a dev tool), HTTPS enforced by browser, cheaper (~$20/yr vs ~$70 for `.ai`)
+- Invented word = clean trademark path
+- Works globally — no pronunciation ambiguity
+
+**Runner-up:** `struxt.app` — better for developer/technical audience positioning.

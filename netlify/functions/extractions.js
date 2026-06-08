@@ -1,45 +1,39 @@
-// Netlify Function — Supabase CRUD for the extractions table.
-// Moving persistence server-side means the Supabase service-role key can be
-// used here when needed, and the anon key is no longer required in the browser.
+// Netlify Function — Supabase CRUD for the extractions table, with per-user auth.
 //
-// GET    /api/extractions            → list all, newest first
-// POST   /api/extractions            → insert one extraction
-// PATCH  /api/extractions?id={id}   → update fields (used for enrichments sync)
-// DELETE /api/extractions?id={id}   → delete one extraction
+// Architecture: UI → /api/extractions → this function → Supabase (RLS applied)
 //
-// Returns 503 { useLocalStorage: true } when Supabase is not configured so the
-// browser can fall back to its localStorage path gracefully.
+// Auth flow:
+//   - Browser sends Authorization: Bearer <supabase_jwt> (set by AuthProvider)
+//   - This function creates a Supabase client with that JWT
+//   - Supabase RLS policies enforce per-user data isolation automatically
+//   - If no token: returns 401 { useLocalStorage: true } → browser uses localStorage
+//   - If Supabase not configured: returns 503 { useLocalStorage: true }
+//
+// Required Supabase migration (run once in SQL editor):
+//   alter table public.extractions add column if not exists user_id uuid references auth.users;
+//   drop policy if exists "anon full access" on public.extractions;
+//   create policy "users own extractions" on public.extractions
+//     for all to authenticated
+//     using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 import { createClient } from "@supabase/supabase-js";
 
 const TABLE = "extractions";
 
-function getSupabase() {
-  const url =
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_KEY ||  // preferred: service role (bypasses RLS)
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+};
 
 function respond(statusCode, body) {
   return {
     statusCode,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
+    headers: { "Content-Type": "application/json", ...CORS },
     body: JSON.stringify(body),
   };
 }
 
-// Detects errors caused by V2 columns (custom_extraction / domain_map /
-// enrichments) not yet existing on the live DB. Allows a safe retry with only
-// V1 columns so a non-migrated database never breaks saves.
 function isMissingColumnError(error) {
   if (!error) return false;
   if (error.code === "42703" || error.code === "PGRST204") return true;
@@ -50,23 +44,42 @@ function isMissingColumnError(error) {
     (msg.includes("custom_extraction") ||
       msg.includes("domain_map") ||
       msg.includes("enrichments") ||
+      msg.includes("user_id") ||
       msg.includes("schema cache"))
   );
 }
 
+function getSupabaseForUser(authHeader) {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return null;
+
+  // Pass the user's JWT so Supabase applies RLS with auth.uid() = user_id.
+  return createClient(url, anonKey, {
+    global: {
+      headers: authHeader ? { Authorization: authHeader } : {},
+    },
+    auth: { persistSession: false },
+  });
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-      body: "",
-    };
+    return { statusCode: 204, headers: CORS, body: "" };
   }
 
-  const supabase = getSupabase();
+  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
+
+  // Require authentication for all DB operations.
+  // No token → browser falls back to localStorage gracefully.
+  if (!authHeader) {
+    return respond(401, {
+      error: "Authentication required",
+      useLocalStorage: true,
+    });
+  }
+
+  const supabase = getSupabaseForUser(authHeader);
   if (!supabase) {
     return respond(503, {
       error: "Supabase not configured",
@@ -74,21 +87,36 @@ export const handler = async (event) => {
     });
   }
 
+  // Verify the token and get the authenticated user's ID.
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return respond(401, {
+      error: "Invalid or expired session. Please sign in again.",
+      useLocalStorage: true,
+    });
+  }
+
+  const userId = user.id;
   const id = event.queryStringParameters?.id;
   const method = event.httpMethod;
 
   try {
-    // ── LIST ─────────────────────────────────────────────────────────────────
+    // ── LIST ───────────────────────────────────────────────────────────────────
     if (method === "GET") {
       const { data, error } = await supabase
         .from(TABLE)
         .select("*")
+        .eq("user_id", userId)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return respond(200, data || []);
     }
 
-    // ── CREATE ───────────────────────────────────────────────────────────────
+    // ── CREATE ─────────────────────────────────────────────────────────────────
     if (method === "POST") {
       let payload;
       try {
@@ -97,51 +125,45 @@ export const handler = async (event) => {
         return respond(400, { error: "Invalid JSON body" });
       }
 
-      // Separate V1 and V2 columns so we can retry without V2 if the migration
-      // hasn't been applied yet.
       const {
         custom_extraction,
         domain_map,
         enrichments,
-        id: _id,       // never insert a client-supplied id
-        _saved: _s,    // strip internal flags
+        id: _clientId,
+        _saved: _s,
+        _demo: _d,
         ...base
       } = payload;
 
       const v2 = {};
       if (custom_extraction != null) v2.custom_extraction = custom_extraction;
       if (domain_map != null) v2.domain_map = domain_map;
-      if (enrichments && Object.keys(enrichments).length) {
-        v2.enrichments = enrichments;
-      }
+      if (enrichments && Object.keys(enrichments).length) v2.enrichments = enrichments;
+
+      const row = { ...base, ...v2, user_id: userId };
 
       let { data, error } = await supabase
         .from(TABLE)
-        .insert({ ...base, ...v2 })
+        .insert(row)
         .select()
         .single();
 
       if (error && Object.keys(v2).length && isMissingColumnError(error)) {
-        console.warn(
-          "[API/extractions] V2 columns not found; saving base fields only. " +
-            "Run the V2 migration from README to enable full persistence."
-        );
+        console.warn("[API/extractions] V2 columns not found; saving base fields only.");
         ({ data, error } = await supabase
           .from(TABLE)
-          .insert(base)
+          .insert({ ...base, user_id: userId })
           .select()
           .single());
       }
 
       if (error) throw error;
-      // Return V2 fields on the response even if DB couldn't store them so the
-      // current session still renders them.
       return respond(201, { ...v2, ...data });
     }
 
-    // ── UPDATE (enrichments sync) ─────────────────────────────────────────────
+    // ── UPDATE (enrichments sync) ──────────────────────────────────────────────
     if (method === "PATCH") {
-      if (!id) return respond(400, { error: "id query param required for PATCH" });
+      if (!id) return respond(400, { error: "id query param required" });
       let body;
       try {
         body = JSON.parse(event.body || "{}");
@@ -151,20 +173,20 @@ export const handler = async (event) => {
       const { error } = await supabase
         .from(TABLE)
         .update(body)
-        .eq("id", id);
-      // Silently ignore missing-column errors for enrichments patch; caller
-      // always also writes to localStorage.
+        .eq("id", id)
+        .eq("user_id", userId); // extra safety: only update own rows
       if (error && !isMissingColumnError(error)) throw error;
       return respond(200, { ok: true });
     }
 
-    // ── DELETE ────────────────────────────────────────────────────────────────
+    // ── DELETE ─────────────────────────────────────────────────────────────────
     if (method === "DELETE") {
-      if (!id) return respond(400, { error: "id query param required for DELETE" });
+      if (!id) return respond(400, { error: "id query param required" });
       const { error } = await supabase
         .from(TABLE)
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", userId); // only delete own rows
       if (error) throw error;
       return respond(200, { ok: true });
     }
