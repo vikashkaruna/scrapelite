@@ -130,6 +130,7 @@ a { color: inherit; text-decoration: none; }
 .btn-sm svg { width: 15px; height: 15px; }
 .btn-icon { width: 42px; padding: 0; justify-content: center; }
 .btn-icon.btn-sm { width: 34px; }
+.btn-full { width: 100%; justify-content: center; }
 
 /* ── Top bar ───────────────────────────────────────────────────── */
 .topbar {

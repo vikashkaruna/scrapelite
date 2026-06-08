@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 [build.environment]
   # Allow the runtime endpoint-override file to pass Netlify secrets scanning. It
   # holds public n8n webhook URLs read by the browser at runtime (not real

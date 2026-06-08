@@ -11,6 +11,7 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
@@ -231,6 +232,7 @@ export default function Dashboard() {
   const { view } = useExtraction();
   const { openAuth } = useAuth();
   const { personaId } = usePersona();
+  const { checkCanExport, checkCanEmail } = useBilling();
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
   const [items, setItems] = useState([]);
@@ -344,6 +346,7 @@ export default function Dashboard() {
 
   // ── Email selected ─────────────────────────────────────────────
   const handleSend = async (emails) => {
+    if (!checkCanEmail()) { showToast("Email export requires the Select plan or higher."); setEmailOpen(false); return; }
     const res = await sendExtractionsEmail({ to: emails, items: selectedItems });
     setEmailOpen(false);
     setSelected(new Set());
@@ -363,6 +366,7 @@ export default function Dashboard() {
   const exportTargets = () => (selected.size ? selectedItems : filtered).map(withEnrichments);
 
   const onExportCsv = () => {
+    if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     csvDownload(targets);
@@ -370,6 +374,7 @@ export default function Dashboard() {
   };
 
   const onExportPdf = async () => {
+    if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher. Upgrade to unlock."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     try {

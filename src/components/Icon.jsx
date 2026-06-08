@@ -62,6 +62,17 @@ import {
   PlayCircle,
   TrendingUp,
   Info,
+  // V5 additions
+  CreditCard,
+  Tag,
+  Gift,
+  Crown,
+  AlertCircle,
+  ToggleLeft,
+  ToggleRight,
+  Calendar,
+  DollarSign,
+  Percent,
 } from "lucide-react";
 
 const MAP = {
@@ -125,6 +136,17 @@ const MAP = {
   "trending-up": TrendingUp,
   info: Info,
   "chevron-up": ChevronUp,
+  // V5
+  "credit-card": CreditCard,
+  tag: Tag,
+  gift: Gift,
+  crown: Crown,
+  "alert-circle": AlertCircle,
+  "toggle-left": ToggleLeft,
+  "toggle-right": ToggleRight,
+  calendar: Calendar,
+  "dollar-sign": DollarSign,
+  percent: Percent,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

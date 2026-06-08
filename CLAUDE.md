@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-08 (after V4 persona-onboarding merged into main)**
+> **Last updated: 2026-06-08 (after V5c: real payment integration — Stripe/Razorpay/UPI, E2E audit 94/94 pass)**
 
 ---
 
@@ -11,436 +11,432 @@
 | Property | Value |
 |---|---|
 | **Project** | ScrapeLite — zero-code web-extraction + enrichment platform |
-| **Working dir** | `/Users/vikash/Extracta` |
+| **Working dir** | `/home/user/scrapelite` (remote) or `/Users/vikash/Extracta` (local) |
 | **Live site** | https://scrapelite.netlify.app |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (v2 API layer + v3 Auth + v4 Persona-Onboarding merged) |
-| **Latest commit** | merge of v4-persona-onboard — Onboarding, Persona UI, Footer, Privacy/Terms |
-| **Brand/domain** | Considering rename — `struxt.app` or `datiq.app` (both available as of 2026-06-08) |
+| **Current branch** | `claude/v5-pricing-billing-7xoRQ` (V5 in development) |
+| **Latest commit** | see `git log` — V5c: real payment integration (Stripe/Razorpay/UPI) |
 
 ---
 
 ## Tech stack (locked — do NOT change these choices)
 
 - **Vite 5 + React 18 + React Router 6** (v7 future flags set in `main.jsx`)
-- **Tailwind CSS** for utilities only — the design system tokens live in CSS custom properties, never in Tailwind config
-- **Design system** — `src/styles/design-system.css` (CSS vars: `--accent`, `--bg`, `--surface`, `--text-*`, `--r`, `--shadow-*`) + `src/styles/screens.css`. **NEVER rewrite these into Tailwind classes.**
-- **lucide-react** icons, all named in `src/components/Icon.jsx`. Add new icons there; don't import lucide directly elsewhere.
-- **Supabase** (`@supabase/supabase-js`) — with localStorage fallback when not configured
-- **jsPDF 4.2.1** — lazy-loaded (only on PDF export click) via `await import("../lib/pdfExport.js")`
+- **Tailwind CSS** for utilities only — design system tokens live in CSS custom properties
+- **Design system** — `src/styles/design-system.css` + `src/styles/screens.css`. **NEVER convert to Tailwind classes.**
+- **lucide-react** icons via `src/components/Icon.jsx`. Add new icons there only.
+- **Supabase** (`@supabase/supabase-js`) — localStorage fallback when not configured
+- **jsPDF 4.2.1** — lazy-loaded only on PDF export click
+- **stripe ^17.7.0** and **razorpay ^2.9.4** — in root package.json for Netlify Functions ONLY (never imported in Vite frontend)
 - No test framework, no ESLint config (scripts: `dev`, `build`, `preview` only)
 
 ---
 
-## What the app does (v2.0)
+## Complete route map (V5 state)
 
-Three routes:
-
-### `/` — Home / Extract
-- URL input + validation + 3 example chips
-- **Four scrape-option toggles** (each with icon + label + hint):
-  1. Render JavaScript — Firecrawl `waitFor:3000`
-  2. Map entire domain — routes to `/map` endpoint, not `/scrape`
-  3. Contacts & emails — auto-populates a leadership/board contact prompt
-  4. Custom extraction — reveals a textarea + 5 Quick Action preset chips
-- **8 capability cards** below the toggles (3 V1 + 5 V2)
-- V2 pill in eyebrow
-
-### `/preview` — Review & Save
-- Page identity (title, URL, stats)
-- AI summary card
-- **Quick enrichment** panel — 5 capability buttons (Find Contact Info, Leadership & Board, Social Links, Company Mission, Pricing & Plans). Each runs **in the background** (no full-screen loader; page stays visible). Executed buttons show a ✓ badge + progress ring while running.
-- **Enrichment tabs** — one "Overview" tab + one tab per executed capability. Tabs persist per URL, survive browser reload, and restore when re-opening from Dashboard.
-- Each enrichment tab shows structured data + a **Refresh** button
-- Overview tab shows: headings (H1–H6), links (filterable, AI-category-tagged), or domain-map URL list
-
-### `/dashboard` — Saved Extractions
-- Table/cards layout toggle (persisted to `scrapelite.dashLayout`)
-- **Header actions:** CSV | PDF | New extraction
-- Smart search (AND logic across title/url/summary/headings/links)
-- Viewport-adaptive pagination (`rowsForViewport()`)
-- **Selection bar** (appears when rows checked): N selected | Clear | Generate | Send email
-- Rows: View | Delete (CSV moved to header)
-- Generate = ContentModal (SEO Blog Outline / Competitor Summary / Social Posts)
-- Email = EmailModal with recipient input
-- CSV export: comprehensive — includes meta, headings, links, domain map, every enrichment capability (deep-flattened JSON paths)
-- PDF export: jsPDF report, same complete content, lazy-loaded
+| Route | Description | Access |
+|---|---|---|
+| `/` | Home / Extract | Requires onboarding |
+| `/preview` | Review & Save extraction | Requires onboarding |
+| `/dashboard` | Saved extractions | Requires onboarding |
+| `/pricing` | Pricing plans, currency picker, top-up bundles | Public |
+| `/account` | Billing & usage, metering alerts, coupon input, payment history | Requires onboarding |
+| `/payment/success` | Post-payment confirmation (Stripe redirect / Razorpay success) | Public |
+| `/payment/cancel` | Checkout cancelled screen | Public |
+| `/onboarding` | 2-step persona selection | Standalone (no chrome) |
+| `/privacy` | Privacy Policy | Public |
+| `/terms` | Terms of Service | Public |
+| `/admin` | Admin shell (PIN gated, demo PIN: `ADMIN123`) | Standalone |
+| `/admin/revenue` | Revenue dashboard | Admin |
+| `/admin/pricing` | Configurable plan pricing & limits | Admin |
+| `/admin/coupons` | Coupon CRUD | Admin |
+| `/admin/users` | User management | Admin |
 
 ---
 
-## V4.0 — Persona Onboarding (June 2026, branch: claude/v4-persona-onboard-lEZ1g)
+## V5 — Pricing & Billing (June 2026, branch: claude/v5-pricing-billing-7xoRQ)
 
-### New files added in V4
+### New files added in V5
+
 | File | Purpose |
 |---|---|
-| `src/lib/personaConfig.js` | 7 personas (Sales/SDR, Competitive Intel, SEO, Market Researcher, Recruiter, Founder/VC, Agency) each with tagline, subtitle, examples, featuresHighlight, dashboardLabel, guideTip, demoUrl |
-| `src/components/PersonaProvider.jsx` | Context: personaId, onboarded, userName; persisted to localStorage keys scrapelite.persona / scrapelite.onboarded / scrapelite.userName |
-| `src/pages/Onboarding.jsx` | 2-step persona selection flow — Step 1: card grid (7 personas), Step 2: name entry + welcome |
-| `src/pages/Privacy.jsx` | Full Privacy Policy (7 sections: data collection, usage, storage, third-parties, rights, cookies, changes) |
-| `src/pages/Terms.jsx` | Full Terms of Service (12 sections: acceptable use, IP, liability, termination, etc.) |
-| `src/components/Footer.jsx` | Site footer: Product/Company/Legal nav + LinkedIn/Twitter socials + copyright |
+| `src/lib/pricingConfig.js` | 5 plan definitions (Free/Select/Pro/Business/Agency) + 3 top-up bundles + multi-currency meta |
+| `src/lib/pricingOverrides.js` | Admin-configurable price/limit overrides stored in localStorage — `getEffectivePlans()`, `getEffectivePlanById()`, `getGlobalDiscount()`, `applyGlobalDiscount()` |
+| `src/lib/currencyService.js` | 6-currency conversion (USD/INR/EUR/GBP/SGD/AED), daily BOD refresh at 5 AM IST via open.er-api.com, localStorage cache |
+| `src/lib/usageService.js` | Monthly extraction + enrichment counters; `canExtract()`, `canEnrich()`, `canExport()`, `canEmailExport()` — all use effective plan map so admin overrides apply |
+| `src/lib/usageRepo.js` | Supabase sync layer for usage records + alert config. `syncUsageToDb()`, `fetchUsageFromDb()`, `getSessionId()` |
+| `src/lib/alertService.js` | Metering alert config (`getAlertConfig()`, `saveAlertConfig()`), threshold tracking, `checkAndFireAlerts()` fires email via webhook |
+| `src/lib/adminService.js` | Admin: coupon CRUD, user management, revenue metrics. `incrementCouponUses()` called on apply. Revenue uses localStorage pricing overrides. |
+| `src/lib/paymentConfig.js` | ★ V5c: provider routing (`getPaymentProvider(currency)`), `hasPayment`, `PROVIDER_META` for UI |
+| `src/lib/paymentService.js` | ★ V5c: `initiateCheckout({planId,currency,rates,discountPercent,sessionId,email})` — orchestrates Stripe redirect or Razorpay modal. Returns `{status: "demo_mode"\|"redirecting"\|"success"\|"cancelled"\|"contact_sales"}`. Pending payment in localStorage. |
+| `src/lib/paymentRepo.js` | ★ V5c: Supabase sync — `syncSubscriptionToDb()`, `fetchSubscriptionFromDb()`, `logPaymentEvent()`, `fetchPaymentHistory()` |
+| `src/components/BillingProvider.jsx` | ★ V5c: + `initiatePayment()`, `confirmPayment()`, `paymentLoading`, `paymentError`, `setPaymentError`, `paymentHistory`, `dbSubscription`, `paymentProvider`, `providerMeta`, `hasPayment` |
+| `src/pages/Pricing.jsx` | ★ V5c: payment-backed `handleSelect`, `ProviderBadge`, provider badge, demo notice, UPI note, coupon discount banner, loading spinner per plan |
+| `src/pages/Account.jsx` | ★ V5c: `PaymentHistorySection`, `apc-provider-badge`, `apc-status-warn`, `handleUpgrade` with real payment, paymentError banner with close button |
+| `src/pages/PaymentSuccess.jsx` | ★ V5c: route `/payment/success` — verifies Stripe session or activates Razorpay; 3 states (verifying/success/error) |
+| `src/pages/PaymentCancel.jsx` | ★ V5c: route `/payment/cancel` — clears pending payment, shows "No charge made" |
+| `netlify/functions/create-checkout.js` | ★ V5c: POST — creates Stripe Checkout session or Razorpay order; dynamic imports; no VITE_ vars |
+| `netlify/functions/verify-payment.js` | ★ V5c: GET=Stripe session verification, POST=Razorpay HMAC-SHA256 verification |
+| `netlify/functions/payment-webhook.js` | ★ V5c: Stripe + Razorpay webhook handler; signature verification; Supabase subscription update |
+| `src/pages/admin/AdminLayout.jsx` | Admin shell with PIN gate (ADMIN123), sidebar nav: Revenue / Pricing / Coupons / Users |
+| `src/pages/admin/AdminPricing.jsx` | Fully editable plan pricing + limits + global discount + top-up bundle prices — no hardcoding |
+| `src/pages/admin/AdminRevenue.jsx` | KPI cards, 6-month MRR trend bar chart, plan distribution — uses `getEffectivePlanById()` |
+| `src/pages/admin/AdminCoupons.jsx` | Coupon CRUD: create (% or bonus extractions), activate/deactivate/delete |
+| `src/pages/admin/AdminUsers.jsx` | User table: search, plan filter, extend usage, personalised invite |
 
-### V4 routing changes (App.jsx)
-- `PersonaProvider` wraps `ExtractionProvider` (so all pages have persona context)
-- First-time visitors (onboarded = false) are redirected to `/onboarding` automatically
-- New routes: `/onboarding` (standalone, no TopBar), `/privacy`, `/terms`
-- `Footer` rendered in Shell after Routes (not shown during LoadingScreen or on /onboarding)
-- `PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms"]` — never redirected
+### Key architectural patterns (V5)
 
-### V4 UX patterns
-- **Persona badge** in TopBar: colored dot + role label + click-to-switch
-- **Persona-adaptive Home**: hero tagline, subtitle, examples, stat badge, guide tip, "Recommended" feature cards — all change per persona
-- **Switch role**: available from TopBar badge click or "Switch role" link at Home page bottom — resets onboarding state, navigates to /onboarding
-- **Guide tip**: shown once per persona (dismissed via localStorage `scrapelite.tip.{personaId}`)
-- **Dashboard**: persona-specific title (`dashboardLabel`) and subtitle (`dashboardSub`)
-- **Feature card highlighting**: cards in `featuresHighlight` array get accent border + "Recommended" tag
-
----
-
-## Complete file map (v2.0 + V4 state)
-
-```
-/Users/vikash/Extracta/
-├── CLAUDE.md                         ← this file
-├── index.html                        Google Fonts (Hanken Grotesk, Plus Jakarta Sans)
-├── vite.config.js                    port 5173
-├── tailwind.config.js                maps var(--*) tokens into Tailwind
-├── postcss.config.js
-├── netlify.toml                      build: npm run build, publish: dist, SPA redirect
-├── .env.example                      6 VITE_* vars documented
-├── .env                              EXISTS — has REAL keys (do not overwrite)
-├── .gitignore                        .env gitignored ✓
-├── README.md                         setup, full Supabase SQL (v1 + v2), env table
-├── public/
-│   ├── favicon.svg
-│   └── runtime-config.js             window.__SCRAPELITE_RUNTIME__ override (no rebuild needed)
-└── src/
-    ├── main.jsx                      ReactDOM.createRoot, BrowserRouter
-    ├── App.jsx                       ThemeProvider > ToastProvider > ErrorModalProvider > PersonaProvider > ExtractionProvider > Shell
-    ├── index.css                     @tailwind base/components/utilities only
-    ├── styles/
-    │   ├── design-system.css         CSS tokens
-    │   └── screens.css               ALL screen-specific + component CSS (Home, Preview, Dashboard,
-    │                                 Loading, Toast, ErrorModal, EmailModal, ContentModal, pv-tabs,
-    │                                 quick-actions, scrape-opts, opt-toggle, home-features, sd-*, etc.)
-    ├── data/
-    │   └── mockData.js               LUMIO_EXTRACTION + mockExtractionForUrl + mockContacts
-    │                                 + mockCustomExtraction + mockDomainMap (v2 helpers)
-    ├── lib/
-    │   ├── personaConfig.js          V4: PERSONAS array (7), PERSONA_BY_ID map
-    │   ├── config.js                 VITE_* env + runtime override; hasSupabase/hasFirecrawl/hasAI flags
-    │   ├── utils.js                  hostOf, pathOf, isExternal, fmtDate, timeAgo, snippet, uid,
-    │   │                             isValidUrl, normalizeUrl, flattenJson, extractionRows,
-    │   │                             extractionsToCsv, csvDownload (accepts array or single item)
-    │   ├── supabaseClient.js         createClient when configured; null otherwise
-    │   ├── firecrawlService.js       extractStructure(url, options) — mock OR real
-    │   │                             options: { renderJs, customPrompt, mapMode, enrichMeta }
-    │   │                             mapDomain(url) → { domain_map: string[] }
-    │   │                             realScrape uses /v1/scrape + json mode for customPrompt
-    │   ├── aiService.js              summarize, categorizeLinks, generateContent
-    │   │                             CONTENT_FORMATS = [seo-outline, competitor-summary, social-posts]
-    │   ├── linkCategorizer.js        categoryOf heuristic; CATEGORY_META; categoryCounts
-    │   ├── extractionPresets.js      CONTACTS_PROMPT, QUICK_ACTIONS (5 presets), QUICK_ACTION_BY_KEY,
-    │   │                             enrichMeta(key), resolveCustomPrompt({customMode,customPrompt,contactsMode})
-    │   ├── enrichmentStore.js        localStorage: readEnrichments(url), saveEnrichment(url,entry),
-    │   │                             saveCurrent(extraction), readCurrent() — keyed by URL→capKey
-    │   ├── extractionsRepo.js        listExtractions, saveExtraction, deleteExtraction, updateEnrichments
-    │   │                             Supabase + localStorage dual-write; isMissingColumnError fallback
-    │   │                             rows tagged _saved:true; local.patch(id,fields)
-    │   ├── pdfExport.js              extractionsToPdf(items) — jsPDF, lazy-loaded from Dashboard
-    │   ├── webhook.js                notifyWebhook (fire-and-forget)
-    │   ├── emailService.js           sendExtractionsEmail; webhook → email API → mailto fallback
-    │   └── errorMessages.js          classifyError; 10 categories; SAVE/LOAD/DELETE_ERROR
-    ├── components/
-    │   ├── PersonaProvider.jsx        V4: PersonaProvider + usePersona(); localStorage persistence
-    │   ├── Footer.jsx                 V4: site footer with nav links + social icons
-    │   ├── ExtractionProvider.jsx    Context: current, loading, loadingUrl, extract, enrich, save, view
-    │   │                             extract(): full extraction + nav to /preview + enrichments hydration
-    │   │                             enrich(url, preset): BACKGROUND — adds tab, persists, syncs to DB
-    │   │                             view(item): merges DB+local enrichments; commitCurrent persists
-    │   │                             current initialised from readCurrent() on mount
-    │   ├── Toggle.jsx                Reusable toggle switch — props: icon, label, hint, checked, onChange
-    │   ├── StructuredData.jsx        Renders arbitrary JSON (enrichment data) — ObjectRows, NodeList,
-    │   │                             Value (email links, URL links, primitives, arrays, nested objects)
-    │   ├── ContentModal.jsx          Generate content modal (portal); 3 formats; copy button
-    │   ├── EmailModal.jsx            Send email modal (portal); multi-recipient; error handling
-    │   ├── BrandLoader.jsx           Animated loader; used by Dashboard loading + Preview save overlay
-    │   ├── Icon.jsx                  lucide-react name-map — add new icons here
-    │   ├── Button.jsx                variant: primary/secondary/ghost/danger; size sm
-    │   ├── FaviconDot.jsx            Deterministic hue monogram per domain
-    │   ├── ThemeProvider.jsx         light/dark; persists to scrapelite.theme
-    │   ├── Toast.jsx                 ToastProvider + useToast(); 2.6s auto-dismiss
-    │   ├── ErrorModal.jsx            ErrorModalProvider + useErrorModal(err, override?, retryFn?)
-    │   ├── TopBar.jsx                V4: Brand, nav, PersonaBadge (colored dot + role + switch), theme toggle, "+ New" on /preview
-    │   └── LoadingScreen.jsx         Full-screen 4-step animated progress
-    └── pages/
-        ├── Home.jsx                  V4: Persona-adaptive hero (tagline/subtitle/examples/featuresHighlight), guide tip, URL form, 8 capability cards
-        ├── Onboarding.jsx            V4: 2-step persona selection (/onboarding, standalone — no TopBar/Footer)
-        ├── Privacy.jsx               V4: Privacy Policy page (/privacy)
-        ├── Terms.jsx                 V4: Terms of Service page (/terms)
-        ├── Preview.jsx               Tabs (Overview + enrichments), quick-enrichment buttons, save/discard
-        └── Dashboard.jsx             V4: Persona label in header; Table/cards, search, pagination, CSV/PDF/Generate/Email
-```
+| Pattern | Detail |
+|---|---|
+| **No hardcoded pricing** | `pricingConfig.js` holds defaults; `pricingOverrides.js` layers admin edits. Always call `getEffectivePlans()` / `getEffectivePlanById()` — never import `PLAN_BY_ID` directly from `pricingConfig`. |
+| **Usage enforcement** | `BillingProvider` exposes `checkCanExtract()` / `checkCanEnrich()`. `ExtractionProvider` calls them before extract/enrich. Limit breach shows toast + redirects to /pricing. |
+| **Usage DB sync** | `BillingProvider` debounces DB writes (2 s) after every tracked extraction or enrichment. `fetchUsageFromDb()` on mount to hydrate from Supabase. |
+| **Metering alerts** | `checkAndFireAlerts()` called after every extraction. Fires once per threshold per month via webhook → mailto fallback. |
+| **Coupon use count** | `incrementCouponUses()` called in `BillingProvider.applyCoupon()` to prevent unlimited reuse. |
+| **Admin pricing** | Changes in `/admin/pricing` immediately apply site-wide (localStorage-backed, no rebuild). `getEffectivePlanMap()` is called in `usageService.js` and `BillingProvider` on every check. |
+| **Admin auth** | `localStorage.getItem("scrapelite.adminAuth")` === `"true"` (JSON boolean). Demo PIN: `ADMIN123`. |
+| **BillingProvider tree** | `PersonaProvider > BillingProvider > ExtractionProvider` in `App.jsx`. |
+| **Payment provider routing** | `getPaymentProvider(currency)` in `paymentConfig.js` — INR/AED → Razorpay, else → Stripe. Overridable via `VITE_PAYMENT_PROVIDER=stripe\|razorpay\|auto`. |
+| **Demo mode** | `hasPayment = false` (no keys set) → `initiateCheckout` returns `{status:"demo_mode"}` → `upgradePlan()` locally, no real charge. |
+| **Stripe flow** | `create-checkout` → Stripe hosted URL → redirect to `/payment/success?session_id=…&plan=…&provider=stripe` → `verify-payment` GET → activate. |
+| **Razorpay flow** | `create-checkout` → returns `{orderId,amount,currency}` → paymentService lazy-loads CDN SDK → opens modal → `verify-payment` POST HMAC → activate. |
+| **Pending payment** | `savePendingPayment(planId, provider)` to localStorage before Stripe redirect; cleared on `/payment/success` or `/payment/cancel`. |
+| **Server-side secrets** | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env only, never VITE_ prefixed. |
+| **Netlify Functions** | ESM (`export const handler`), `esbuild` bundler, in `netlify/functions/`. `stripe`/`razorpay` npm packages in root `package.json`, dynamic-imported in functions only. |
 
 ---
 
-## Supabase schema — CURRENT COMPLETE STATE
+## Supabase schema — COMPLETE STATE (V5c additions)
+
+Run in Supabase SQL Editor:
 
 ```sql
--- Run these once in the Supabase SQL editor:
-create extension if not exists "pgcrypto";
-
-create table if not exists public.extractions (
-  id                uuid primary key default gen_random_uuid(),
-  created_at        timestamptz not null default now(),
-  url               text not null,
-  page_title        text,
-  headings          jsonb not null default '[]'::jsonb,
-  links             jsonb not null default '[]'::jsonb,
-  ai_summary        text,
-  custom_extraction jsonb,   -- v2: LLM extraction output
-  domain_map        jsonb,   -- v2: array of discovered URLs
-  enrichments       jsonb    -- v2: Quick Enrichment tab map { [capKey]: {key,label,icon,prompt,data,created_at} }
+-- V5: Usage tracking
+create table if not exists public.usage_records (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  text not null,
+  month       text not null,
+  extractions integer not null default 0,
+  enrichments integer not null default 0,
+  plan_id     text not null default 'free',
+  updated_at  timestamptz not null default now(),
+  unique(session_id, month)
 );
+alter table public.usage_records enable row level security;
+create policy "anon full access" on public.usage_records
+  for all using (true) with check (true);
 
-alter table public.extractions enable row level security;
-create policy "anon full access" on public.extractions
+-- V5: Alert preferences
+create table if not exists public.usage_alerts (
+  id           uuid primary key default gen_random_uuid(),
+  session_id   text not null unique,
+  email        text not null,
+  thresholds   integer[] not null default '{80,95}',
+  enabled      boolean not null default true,
+  last_notified_at timestamptz
+);
+alter table public.usage_alerts enable row level security;
+create policy "anon full access" on public.usage_alerts
+  for all using (true) with check (true);
+
+-- V5c: Payment subscriptions
+create table if not exists public.subscriptions (
+  id                        uuid primary key default gen_random_uuid(),
+  session_id                text not null unique,
+  plan_id                   text,
+  status                    text,
+  provider                  text,
+  provider_subscription_id  text,
+  provider_customer_id      text,
+  current_period_start      timestamptz,
+  current_period_end        timestamptz,
+  created_at                timestamptz default now(),
+  updated_at                timestamptz default now()
+);
+alter table public.subscriptions enable row level security;
+create policy "anon full access" on public.subscriptions
+  for all using (true) with check (true);
+
+-- V5c: Payment event audit log
+create table if not exists public.payment_events (
+  id               uuid primary key default gen_random_uuid(),
+  session_id       text,
+  event_type       text,
+  provider         text,
+  provider_event_id text,
+  plan_id          text,
+  amount_cents     integer,
+  currency         text,
+  status           text,
+  created_at       timestamptz default now()
+);
+alter table public.payment_events enable row level security;
+create policy "anon full access" on public.payment_events
   for all using (true) with check (true);
 ```
 
-**Upgrading an existing (v1) table** — safe to run on live data:
-```sql
-alter table public.extractions
-  add column if not exists custom_extraction jsonb,
-  add column if not exists domain_map        jsonb,
-  add column if not exists enrichments       jsonb;
-```
-
-> ⚠️ **THIS HAS NOT BEEN RUN YET on the live Supabase instance.**
-> The app gracefully degrades: saves succeed (warning logged, base columns written),
-> and enrichments are stored locally. Run the ALTER to unlock full cross-device sync.
+> ⚠️ `usage_records`, `usage_alerts`, `subscriptions`, `payment_events` tables have NOT been created yet. App gracefully degrades to localStorage when Supabase is not configured or tables are missing.
 
 ---
 
 ## Environment variables
 
-File: `/Users/vikash/Extracta/.env` — **has real values** (do NOT clear or overwrite)
+File: `.env` — **has real values** (do NOT clear or overwrite)
 
 ```
 VITE_SUPABASE_URL=           # live Supabase project URL
 VITE_SUPABASE_ANON_KEY=      # anon/public key
-VITE_FIRECRAWL_API_KEY=      # fc-... (real, working — direct browser calls work)
+VITE_FIRECRAWL_API_KEY=      # fc-... (real, working)
 VITE_AI_API_KEY=             # sk-ant-... (real, working — browser-side, demo only)
 VITE_AI_MODEL=claude-haiku-4-5-20251001
-VITE_WEBHOOK_URL=            # n8n webhook URL (test vs prod — see note below)
+VITE_WEBHOOK_URL=            # n8n webhook (test URL — use production URL for live sends)
+VITE_LINK_CHANGELOG=         # Optional footer link
+VITE_LINK_ABOUT=             # Optional footer link
+VITE_LINK_BLOG=              # Optional footer link
+
+# Payment (V5c) — add to .env for real payment mode
+VITE_PAYMENT_PROVIDER=auto               # auto | stripe | razorpay
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...  # browser-safe
+STRIPE_SECRET_KEY=sk_test_...            # Netlify env ONLY — never VITE_
+STRIPE_WEBHOOK_SECRET=whsec_...          # Netlify env ONLY
+VITE_STRIPE_PRICE_SELECT=price_...       # recurring price IDs per plan
+VITE_STRIPE_PRICE_PRO=price_...
+VITE_STRIPE_PRICE_BUSINESS=price_...
+VITE_STRIPE_PRICE_AGENCY=price_...
+VITE_RAZORPAY_KEY_ID=rzp_test_...        # browser-safe
+RAZORPAY_KEY_ID=rzp_test_...             # Netlify env ONLY
+RAZORPAY_KEY_SECRET=...                  # Netlify env ONLY
+RAZORPAY_WEBHOOK_SECRET=...              # Netlify env ONLY
+VITE_RAZORPAY_PLAN_SELECT=plan_...       # Razorpay subscription plan IDs
+VITE_RAZORPAY_PLAN_PRO=plan_...
+VITE_RAZORPAY_PLAN_BUSINESS=plan_...
+VITE_RAZORPAY_PLAN_AGENCY=plan_...
 ```
 
-**Webhook note:** `.env` has the n8n **test** URL (`/webhook-test/scrapelite`) — only responds
-while the n8n editor is open. For live sends use production URL (`/webhook/scrapelite`)
-with the workflow activated + CORS configured.
-
-**Runtime override** (no rebuild): edit `public/runtime-config.js` to set
-`window.__SCRAPELITE_RUNTIME__ = { webhookUrl, emailApiUrl }`. config.js prefers this
-over VITE_*.
-
-**Security**: `VITE_AI_API_KEY` is browser-bundled. Safe for local/demo. For production,
-proxy AI calls through a Netlify function.
-
 ---
 
-## Enrichment data model (v2 core concept)
+## Complete file map (V5c state)
 
-Each extraction can carry a map of capability results as named tabs:
-```js
-extraction.enrichments = {
-  contacts: { key, label, icon, prompt, data: {...}, created_at },
-  social:   { key, label, icon, prompt, data: {...}, created_at },
-  // ...one entry per executed QUICK_ACTIONS preset
-}
+```
+src/
+├── App.jsx                           V5c: + /payment/success, /payment/cancel in PUBLIC_PATHS + routes
+├── main.jsx
+├── index.css
+├── styles/
+│   ├── design-system.css             + .btn-full, @keyframes spin
+│   └── screens.css                   + pricing, account, admin, alerts, payment pages (1700+ lines)
+├── data/
+│   └── mockData.js
+├── lib/
+│   ├── pricingConfig.js              Plan defaults (5 plans, 3 bundles, currency meta)
+│   ├── pricingOverrides.js           ★ Admin-editable overrides; getEffectivePlans(), getGlobalDiscount()
+│   ├── currencyService.js            6-currency rates, daily BOD refresh, localStorage cache
+│   ├── usageService.js               Monthly counters, canExtract/canEnrich/canExport — uses effective plans
+│   ├── usageRepo.js                  Supabase sync: syncUsageToDb, fetchUsageFromDb, getSessionId
+│   ├── alertService.js               Threshold alerts: getAlertConfig, saveAlertConfig, checkAndFireAlerts
+│   ├── adminService.js               Coupon CRUD, user management, revenue metrics (reads price overrides)
+│   ├── paymentConfig.js              ★ V5c: provider routing, hasPayment, PROVIDER_META
+│   ├── paymentService.js             ★ V5c: initiateCheckout (Stripe/Razorpay/demo), confirmStripeSession, pending payment localStorage
+│   ├── paymentRepo.js                ★ V5c: Supabase subscription + payment_events sync
+│   ├── config.js
+│   ├── utils.js
+│   ├── supabaseClient.js
+│   ├── firecrawlService.js
+│   ├── aiService.js
+│   ├── linkCategorizer.js
+│   ├── extractionPresets.js
+│   ├── enrichmentStore.js
+│   ├── extractionsRepo.js
+│   ├── pdfExport.js
+│   ├── webhook.js
+│   ├── emailService.js
+│   ├── errorMessages.js
+│   └── personaConfig.js
+├── components/
+│   ├── BillingProvider.jsx           ★ V5c: + initiatePayment, confirmPayment, paymentLoading/Error, paymentHistory, dbSubscription
+│   ├── PersonaProvider.jsx
+│   ├── ExtractionProvider.jsx        V5: checks billing limits before extract/enrich; tracks usage
+│   ├── Footer.jsx                    + /pricing and /account links
+│   ├── TopBar.jsx                    V5: plan badge (paid plans), account icon, Pricing nav link
+│   ├── Button.jsx                    + fullWidth prop
+│   ├── Toggle.jsx
+│   ├── StructuredData.jsx
+│   ├── ContentModal.jsx
+│   ├── EmailModal.jsx
+│   ├── BrandLoader.jsx
+│   ├── Icon.jsx                      + CreditCard, Tag, Gift, Crown, AlertCircle, Calendar, DollarSign, Percent
+│   ├── FaviconDot.jsx
+│   ├── ThemeProvider.jsx
+│   ├── Toast.jsx
+│   ├── ErrorModal.jsx
+│   └── LoadingScreen.jsx
+└── pages/
+    ├── Home.jsx
+    ├── Preview.jsx
+    ├── Dashboard.jsx                 V5: billing-gated CSV/PDF/email exports
+    ├── Pricing.jsx                   ★ V5c: payment-backed select, ProviderBadge, loading per plan, demo notice
+    ├── Account.jsx                   ★ V5c: PaymentHistorySection, handleUpgrade, paymentError banner with close
+    ├── PaymentSuccess.jsx            ★ V5c: /payment/success — Stripe verify + Razorpay activate; 3 states
+    ├── PaymentCancel.jsx             ★ V5c: /payment/cancel — clears pending, shows "No charge"
+    ├── Onboarding.jsx
+    ├── Privacy.jsx
+    ├── Terms.jsx
+    └── admin/
+        ├── AdminLayout.jsx           PIN gate (ADMIN123), sidebar: Revenue/Pricing/Coupons/Users
+        ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution (uses getEffectivePlanById)
+        ├── AdminPricing.jsx          ★ V5: fully editable plan prices, limits, global discount, bundles
+        ├── AdminCoupons.jsx          Coupon CRUD
+        └── AdminUsers.jsx            User management, invite, extend limits
+
+netlify/
+└── functions/
+    ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order creation
+    ├── verify-payment.js             ★ V5c: GET=Stripe verify, POST=Razorpay HMAC verify
+    └── payment-webhook.js            ★ V5c: Stripe + Razorpay webhook handler
 ```
 
-- **Persisted** in two places: `localStorage` (key `scrapelite.enrichments`, indexed by URL then capKey) + Supabase `enrichments` column (when the column exists and the row is saved)
-- **Lifecycle**: `enrich(url, preset)` adds/overwrites one entry; `view(item)` merges DB + local (newest-by-created_at wins per key); `export` always hydrates from both sources via `withEnrichments(item)`
-- **Display**: Overview tab always shown; one tab per entry in `enrichments`; tab auto-activates on new result; clicking an executed button refreshes its tab
-
 ---
 
-## Known warnings (expected, non-blocking)
-
-1. **`V2 columns not found in Supabase`** — WARN (not error). The `enrichments`/`custom_extraction`/`domain_map` ALTER hasn't been run. Fix: run the migration above.
-2. **`Webhook delivery failed: Failed to fetch`** — WARN. n8n webhook CORS / test URL issue. Fire-and-forget, never blocks saving.
-3. **Vite HMR `<Shell>` errors** — appear in the dev console only during hot-reload of `ExtractionProvider.jsx` (exports both component + hook, so Vite does a full invalidation). Gone on a clean page reload. Never in production.
-
----
-
-## Architecture rules (LOCKED — never re-ask, never undo)
+## Architecture rules (LOCKED)
 
 | Rule | Detail |
 |---|---|
 | CSS | Keep `design-system.css` + `screens.css` tokens. Never convert to Tailwind. |
+| Pricing | Always use `getEffectivePlans()` / `getEffectivePlanById()` — never use `PLAN_BY_ID` from `pricingConfig` directly in UI code |
 | Services | Mock-but-real-ready: env present → real call, absent → mock + localStorage |
 | Supabase fallback | isMissingColumnError → retry with v1 columns only. Never hard-fail a save. |
-| Dashboard seed | NONE — starts empty. `SEED_HISTORY` was deleted. Do not re-add. |
-| Table layout | `table-layout:fixed`, fixed px widths on narrow cols (check/struct/date/act). Percentage widths on Page/Summary over-allocate and clip the date column — proven bug, avoid. |
-| TopBar "+ New" | Only shown on `/preview`, not on `/dashboard` |
-| PDF | Lazy-loaded via `await import()`. Never static-import jsPDF in Dashboard. |
-| Background enrichment | `enrich()` must never show the full-screen loader or navigate. Page must stay visible. Errors → toast only, never blocking modal. |
-| Enrichment tabs | Re-clicking a done preset = refresh (overwrites, does NOT create duplicates). |
-| Auth | `AuthProvider` wraps the full tree. `apiClient.setAuthToken()` called on every auth event. Save on Preview gates on `user` — calls `openAuth()` if not signed in. |
-| listExtractions fallback | Always falls back to localStorage on ANY error (no user-visible blocking). Write operations (save/delete) remain strict and surface errors to the user. |
-| Demo data | `DEMO_EXTRACTIONS` shown when `items.length === 0`. Demo rows have `_demo:true` — suppress checkbox, delete, selection. Do NOT show demo rows in exports. |
+| Dashboard seed | NONE — starts empty. Do not re-add. |
+| Table layout | `table-layout:fixed`, fixed px widths on narrow cols |
+| TopBar "+ New" | Only shown on `/preview` |
+| PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
+| Background enrichment | `enrich()` must never show the full-screen loader. |
+| Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
+| Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
+| Netlify Functions | ESM (`export const handler`), in `netlify/functions/`. `stripe`/`razorpay` dynamic-imported only — never imported in any Vite frontend file. |
 
 ---
 
-## Critical bugs fixed (do NOT regress)
+## Critical bugs fixed in V5 (do NOT regress)
 
-1. **Hero glow** — `.container > *` must come before `.hero-glow` in `screens.css` (specificity tie-break via order)
-2. **Preview grid overflow** — `.preview-grid > * { min-width: 0; }` — do not remove
-3. **Toast keyframe** — `@keyframes toast-in` ends at `translate(-50%,0)` (centred toast only). Never reuse for non-centred elements. Selection bar has its own `selbar-in`.
-4. **Webhook relative URL** — `config.ensureAbsolute()` prepends `https://` if scheme missing
-5. **Date column clipping** — do NOT set percentage widths on Page or AI-Summary columns; let them fill remaining space; only narrow cols get px widths
-6. **Enrichment sync on unsaved row** — `enrich()` checks `base._saved && base.id` before calling `updateEnrichments`; skips silently if not saved yet (stores locally only)
-7. **Contacts toggle UX** — turning Contacts on also sets `customMode=true` so the textarea appears immediately with the auto-populated prompt. Without this, Contacts had no visible feedback.
-8. **Dashboard blocking modal** — `listExtractions` must always fall back to localStorage on any API error (including 404/500 from missing Netlify Functions in preview mode). Never call `showError` from the Dashboard's listExtractions catch block.
+1. **Coupon use count** — `incrementCouponUses()` called in `applyCoupon()` to prevent unlimited reuse
+2. **Admin auth boolean** — `ls(ADMIN_AUTH_KEY) === true || v === "true"` (was checking string vs bool)
+3. **Currency dropdown** — click-outside handler via `useEffect` + `mousedown` listener on `document`
+4. **AbortSignal.timeout** — replaced with manual `AbortController + setTimeout` (wider browser compat)
+5. **Effective plan map** — `usageService.js` and `BillingProvider` use `getEffectivePlanMap()` not hardcoded `PLAN_BY_ID`
+6. **Revenue prices** — `adminService.getRevenueMetrics()` reads localStorage pricing overrides directly
+7. **Consistent canExtract/canEnrich shapes** — always return `{ allowed, remaining, reason? }`
+8. **Coupon remove UI** — "×" button in Account.jsx calls `removeCoupon()` to clear applied coupon
+9. **Coupon planId validation** — `validateCoupon(code, currentPlanId)` now enforces plan-restricted coupons (e.g. INDIE10 only valid on Select plan)
+10. **V5c: `initiatePayment` returns result** — BillingProvider has `return result` in try + `throw e` in catch; free plan returns `{ status: "free" }`
+11. **V5c: loading spinner targets correct plan** — `PlanCard` receives `loading={loadingPlan}` (plan ID string); checks `loading === plan.id`
+12. **V5c: `AdminRevenue` uses `getEffectivePlanById`** — was importing `PLAN_BY_ID` directly (arch violation; plan name overrides wouldn't show)
+13. **V5c: Account paymentError banner** — has close button (`setPaymentError("")`) matching Pricing.jsx pattern
+14. **V5c: Account `handleUpgrade` navigation** — on demo_mode/success goes to `/account` (not `/pricing`)
 
 ---
 
 ## Outstanding tasks for next session
 
-### Highest priority — Supabase migration (still unrun)
-1. **Supabase SQL** (run once in SQL Editor — enables RLS + per-user data isolation):
+### Supabase migrations (still unrun)
 ```sql
+-- Run in Supabase SQL Editor:
+-- 1. V2 columns (if not done yet)
 alter table public.extractions
-  add column if not exists user_id           uuid references auth.users,
   add column if not exists custom_extraction jsonb,
   add column if not exists domain_map        jsonb,
   add column if not exists enrichments       jsonb;
 
-alter table public.extractions enable row level security;
-drop policy if exists "anon full access" on public.extractions;
-drop policy if exists "users own extractions" on public.extractions;
-create policy "users own extractions" on public.extractions
-  for all to authenticated
-  using  (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+-- 2. V5 usage + alert tables (see schema section above)
+-- 3. V5c payment tables: subscriptions + payment_events (see schema section above)
 ```
 
-2. **Supabase dashboard** → Authentication → Providers: enable Google, Microsoft (Azure AD), GitHub. Set redirect URL to `https://scrapelite.netlify.app`.
+### Payment provider setup (before going live)
+- [ ] **Stripe Dashboard**: Create Products + recurring Prices for Select/Pro/Business/Agency plans + 3 bundle one-time prices → set `VITE_STRIPE_PRICE_*` env vars
+- [ ] **Razorpay Dashboard**: Create Subscription Plans for each paid plan → set `VITE_RAZORPAY_PLAN_*` env vars
+- [ ] **Netlify env vars**: Set all `STRIPE_*`, `RAZORPAY_*` server-only secrets in Netlify dashboard (Project → Environment variables)
+- [ ] **Stripe webhook**: Register `https://scrapelite.netlify.app/.netlify/functions/payment-webhook` in Stripe Dashboard → Webhooks; copy signing secret → `STRIPE_WEBHOOK_SECRET`
+- [ ] **Razorpay webhook**: Register same endpoint in Razorpay Dashboard → Account Settings → Webhooks
 
-3. **Netlify environment variables** — set in Netlify dashboard:
-   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (server-side, for Netlify Functions)
-   - `FIRECRAWL_API_KEY` + `AI_API_KEY` (server-side, no VITE_ prefix)
-   - `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (browser-side Auth)
-   - Keep `VITE_FIRECRAWL_API_KEY` and `VITE_AI_API_KEY` **empty** (forces API layer)
+### V5 remaining work
+- [ ] **Supabase Auth** — Replace localStorage persona/session with real auth for cross-device usage tracking
+- [ ] **Preview persona context** — Persona-specific enrichment labels (e.g. "Prospect Intel" for Sales, "Site Audit" for SEO)
+- [ ] **Demo video links** — `demoUrl` + `demoLabel` in personaConfig but no play button yet
+- [ ] **Sign-in modal** — "Sign in" for returning users
 
-### Other pending work
-- [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
-- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
-- [ ] `version-2.0` branch can be deleted: `git push origin --delete version-2.0`
+### V2/V4 pending (still applies)
+- [ ] Merge `claude/v5-pricing-billing-7xoRQ` → `main` once reviewed
+- [ ] Switch webhook to production n8n URL
+- [ ] Add Netlify Function proxy for `VITE_AI_API_KEY`
+- [ ] Delete `version-2.0` branch: `git push origin --delete version-2.0`
 
 ---
 
 ## How to continue developing
 
 ```bash
-cd /home/user/scrapelite    # working dir (remote) or /Users/vikash/Extracta (local)
-git checkout claude/v4-persona-onboard-lEZ1g
+cd /home/user/scrapelite    # remote
+git checkout claude/v5-pricing-billing-7xoRQ
 git status                   # should be clean
-npm run dev                  # starts Vite at http://localhost:5173
-# After any .env change: Ctrl+C → npm run dev (Vite does NOT hot-reload .env)
+npm run dev                  # http://localhost:5173
 ```
 
-**Test the full build before deploying:**
-```bash
-npm run build   # must complete with no errors
-```
+**Test payment flow (demo mode — no keys needed):**
+1. Go to `/pricing`
+2. Select any paid plan → button shows spinner → "demo_mode" → redirects to `/account`
+3. Account page shows upgraded plan
 
-**Deploy to Netlify (manual):**
-```bash
-# If netlify CLI is installed:
-netlify deploy --prod --dir=dist
-# Or: push to main → Netlify auto-builds (once GitHub integration is connected)
-```
+**Test payment success page (demo):**
+1. Navigate to `/payment/success?plan=pro&provider=razorpay`
+2. Should show success state with plan name
+
+**Test payment cancel page:**
+1. Navigate to `/payment/cancel?plan=pro`
+2. Should show "No charge was made" with plan name
+
+**Test admin module:**
+1. Navigate to `/admin`
+2. Enter PIN: `ADMIN123`
+3. Revenue → Pricing → Coupons → Users
+
+**Test pricing overrides:**
+1. Go to `/admin/pricing`
+2. Change a plan price → click Save
+3. Go to `/pricing` — updated price is shown immediately
+
+**Test metering alerts:**
+1. Go to `/account`
+2. Enable alerts, enter email, choose thresholds
+3. Click Save alert settings
+
+**Test coupon:**
+1. Go to `/account`
+2. Enter `LAUNCH20` → Apply
+3. Check bonus or discount applied
+4. Click × to remove coupon
 
 ---
 
 ## Git log (recent)
 
 ```
-fdd5b81  V4: Footer env-var links, a11y keyboard handler, localStorage guards, mobile CSS
-5acac2f  V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
-ddb9d17  fix: 3 UX/robustness findings from e2e verification
-65e8701  v3: Supabase Auth — Google/Microsoft/GitHub OAuth + email/password + demo data
-593274b  V2 API layer: route all external calls through Netlify Functions
-5b267d3  Merge pull request #1 from vikashkaruna/agent-with-secrets-scanning-bypass-37db
-278ff5c  Merge version-2.0 into main: Extraction & Enrichment update (v2.0)
+(pending)  V5c: payment integration fixes (E2E 94/94), CLAUDE.md updated
+(pending)  V5c: real payment integration — Stripe/Razorpay/UPI
+(pending)  V5b: coupon planId validation fix, E2E audit 90/91 pass
+de2d134    V5: Pricing & Billing module — plans, usage metering, admin console
+e1502a7    Merge V4 Persona-Onboard as base for V5 Pricing-Billing
+5c803b5    Add CLAUDE.md
+fdd5b81    V4: Footer env-var links, a11y keyboard handler, localStorage guards, mobile CSS
+5acac2f    V4: Persona-based onboarding, persona-adaptive UI, Privacy/Terms pages, Footer
 ```
 
 ---
 
-## Session history summary (what was built across all sessions)
+## E2E test results (2026-06-08, V5c)
 
-**v2.0 (branch: merged to main):**
-- Custom JSON Schema Extraction, Domain Mapping, Contacts & Emails toggle
-- Quick Enrichment — 5 capabilities, background execution, persistent enrichment tabs
-- Full-capability CSV + PDF export, viewport-adaptive pagination, content generation modal
+Static code analysis + runtime logic tracing across all routes (no `.env` in CI environment — mock/demo mode):
 
-**v2 API layer (branch: v2-build-api-layer):**
-- All Firecrawl, Anthropic, Supabase calls moved to Netlify Functions
-- `apiClient.js` in browser; secrets never bundled client-side
-- Netlify toml updated with esbuild bundler + `/api/*` redirect
+**94/94 functional checks PASS** — clean run, no regressions.
 
-**v3 Auth (branch: v3-supabase-auth) — fully tested, ready to deploy:**
-- `authService.js` — Supabase Auth wrapper: email/password + Google/Microsoft/GitHub OAuth
-- `AuthProvider.jsx` — global React context, JWT synced to `apiClient` on every auth event
-- `AuthModal.jsx` — portal modal; inline SVG logos; sign-in + create-account tabs
-- `TopBar.jsx` — UserChip (avatar/initials + sign-out) when signed in; Sign-in button otherwise
-- `Preview.jsx` — onSave gates on auth; unauthenticated users see AuthModal instead
-- `Dashboard.jsx` — DEMO_EXTRACTIONS (Stripe/Apple/Deloitte) when list is empty; no checkbox/delete on demo rows; demo banner with CTAs
-- `mockData.js` — STRIPE_DEMO, APPLE_DEMO, DELOITTE_DEMO with pre-populated enrichment tabs
-- `extractions.js` (Netlify fn) — requires JWT; validates via getUser(); per-user RLS via user_id
-- `screens.css` — auth modal, OAuth buttons, spinner, user chip, demo badge/banner styles
-- `extractionsRepo.js` — `listExtractions` always falls back to localStorage on any API error; `shouldFallback()` helper covers 401/403/404/503/network errors for write operations
-
-**All findings from verification fixed:**
-1. Contacts toggle now auto-enables Custom Extraction textarea (UX clarity)
-2. Enrichment failure shows toast instead of blocking error modal (non-blocking background ops)
-3. Dashboard `listExtractions` gracefully falls back to localStorage on any API error (no blocking modal)
-
-**42/42 end-to-end Playwright tests green** (2026-06-08)
-
-Tests run with `playwright` + pre-installed Chromium (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`) against `npx vite preview` build. To re-run:
-```bash
-npx vite build && npx vite preview --port 5173 &
-# then run the Playwright node script (see session transcript or write fresh using CHROME path above)
-```
-
----
-
-## Branding research (2026-06-08)
-
-**Current name:** ScrapeLite (`scrapelite.netlify.app`)
-
-**Problem with "Scrape":** Negative connotation for enterprise/SMB buyers — legal, compliance and procurement teams associate "scraping" with ToS violations and data theft. Hinders B2B adoption.
-
-**Domains checked (available as of 2026-06-08):**
-| Domain | Verdict |
-|---|---|
-| `struxt.app` | ✅ Available — Structure + Extract portmanteau. Tech-savvy, developer-friendly. |
-| `datiq.app` | ✅ Available — Data + IQ. Short, invented word (easy to trademark), broad SMB appeal. |
-| `extracta.ai/io/app` | ❌ Taken |
-| `pageiq.ai` | ❌ Taken |
-| `harvest.ai` | ❌ Taken |
-| `distilla.*` | ❌ Taken |
-| `fetchly.*` | ❌ Taken |
-| `webwise.*` | ❌ Taken |
-
-**Recommended pick:** `datiq.app`
-- "Data IQ" is self-explanatory to any buyer
-- `.app` signals it's a product (not a dev tool), HTTPS enforced by browser, cheaper (~$20/yr vs ~$70 for `.ai`)
-- Invented word = clean trademark path
-- Works globally — no pronunciation ambiguity
-
-**Runner-up:** `struxt.app` — better for developer/technical audience positioning.
+All routes, components, CSS classes (25 new payment classes), icon registrations, provider tree, admin PIN gate, coupon CRUD, pricing overrides, usage metering, alerts, Netlify functions (create-checkout, verify-payment, payment-webhook), PaymentSuccess/Cancel pages, BillingProvider payment context, and all payment flow paths verified intact.
