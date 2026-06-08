@@ -1,5 +1,5 @@
 // BillingProvider.jsx — V5 subscription + usage context with DB sync, alerts, and payment.
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
@@ -207,22 +207,34 @@ export function BillingProvider({ children }) {
   const paymentProvider = getPaymentProvider(currency);
   const providerMeta    = paymentProvider ? PROVIDER_META[paymentProvider] : null;
 
+  const ctx = useMemo(() => ({
+    subscription, plan, planId, bonus, usage,
+    currency, rates, setCurrency,
+    upgradePlan,
+    initiatePayment, confirmPayment,
+    paymentLoading, paymentError, setPaymentError,
+    paymentProvider, providerMeta, hasPayment,
+    paymentHistory, dbSubscription,
+    trackExtraction, trackEnrichment,
+    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    applyBonus, applyCoupon, removeCoupon, refreshUsage,
+    couponError, couponSuccess,
+  }), [
+    subscription, plan, planId, bonus, usage,
+    currency, rates, setCurrency,
+    upgradePlan,
+    initiatePayment, confirmPayment,
+    paymentLoading, paymentError, setPaymentError,
+    paymentProvider, providerMeta, hasPayment,
+    paymentHistory, dbSubscription,
+    trackExtraction, trackEnrichment,
+    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    applyBonus, applyCoupon, removeCoupon, refreshUsage,
+    couponError, couponSuccess,
+  ]);
+
   return (
-    <BillingContext.Provider value={{
-      subscription, plan, planId, bonus, usage,
-      currency, rates, setCurrency,
-      // Legacy upgrade (no payment)
-      upgradePlan,
-      // Payment-backed upgrade
-      initiatePayment, confirmPayment,
-      paymentLoading, paymentError, setPaymentError,
-      paymentProvider, providerMeta, hasPayment,
-      paymentHistory, dbSubscription,
-      trackExtraction, trackEnrichment,
-      checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-      applyBonus, applyCoupon, removeCoupon, refreshUsage,
-      couponError, couponSuccess,
-    }}>
+    <BillingContext.Provider value={ctx}>
       {children}
     </BillingContext.Provider>
   );
