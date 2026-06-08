@@ -1,44 +1,47 @@
-// aiService.js — produces a plain-language summary of an extraction.
+// aiService.js — AI summarization, link categorization, and content generation.
 //
-// • No VITE_AI_API_KEY → mocked: a simulated delay + a short dummy summary.
-// • Key present        → real Anthropic (Claude) call.
+// Architecture (V2 API layer):
+//   UI → aiService → /api/ai (Netlify Function) → Anthropic Claude
 //
-// SECURITY NOTE: a browser-side key is visible to end users. The real path is
-// provided so engineering can drop in a backend proxy later; for production,
-// route this through a server / edge function instead of shipping the key.
+// The VITE_AI_API_KEY is now a feature flag only. The actual key lives in the
+// Netlify Function and is never bundled or sent from the browser.
+// The "anthropic-dangerous-direct-browser-access" header is no longer needed.
+//
+// Mock path: no key configured → simulated delay + fixture content.
+// Real path: key configured → POST /api/ai → Claude on the server.
 
-import { hasAI, AI_API_KEY, AI_MODEL } from "./config.js";
+import { hasAI, AI_MODEL } from "./config.js";
+import { apiClient } from "./apiClient.js";
 import { hostOf } from "./utils.js";
 import { categoryOf, isCategory, CATEGORY_KEYS } from "./linkCategorizer.js";
 
-const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
 const MOCK_DELAY_MS = 1200;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── Mock path ────────────────────────────────────────────────────────────────
-async function mockSummary(extraction) {
-  await delay(MOCK_DELAY_MS);
-  // If the fixture already carries a summary (the Lumio demo does), keep it.
-  if (extraction.ai_summary) return extraction.ai_summary;
-
-  const host = hostOf(extraction.url);
-  const h = extraction.headings?.length || 0;
-  const l = extraction.links?.length || 0;
-  const topic = extraction.headings?.[0]?.text || extraction.page_title || host;
+// ── Shared helper — calls /api/ai and extracts the text content ───────────────
+async function callAI(messages, max_tokens = 1024) {
+  const data = await apiClient.ai({ model: AI_MODEL, max_tokens, messages });
   return (
-    `This page from ${host} centers on “${topic}”, organized across ${h} headings that move from ` +
-    `the main message into supporting detail. It surfaces ${l} links that guide visitors toward ` +
-    `related content and clear next steps.`
+    data?.content
+      ?.map((b) => b.text)
+      .filter(Boolean)
+      .join("\n")
+      .trim() || ""
   );
 }
 
-// ── Real path ────────────────────────────────────────────────────────────────
-function buildPrompt(extraction) {
-  const headings = (extraction.headings || []).map((h) => `${h.tag}: ${h.text}`).join("\n");
-  const links = (extraction.links || []).map((l) => `- ${l.text} → ${l.href}`).join("\n");
+// ── Summarize ─────────────────────────────────────────────────────────────────
+
+function buildSummaryPrompt(extraction) {
+  const headings = (extraction.headings || [])
+    .map((h) => `${h.tag}: ${h.text}`)
+    .join("\n");
+  const links = (extraction.links || [])
+    .map((l) => `- ${l.text} → ${l.href}`)
+    .join("\n");
   return (
     `You are summarizing a web page for a non-technical researcher.\n` +
     `Write a single concise paragraph (3–5 sentences) describing what the page is about, ` +
@@ -50,52 +53,45 @@ function buildPrompt(extraction) {
   );
 }
 
+async function mockSummary(extraction) {
+  await delay(MOCK_DELAY_MS);
+  if (extraction.ai_summary) return extraction.ai_summary;
+  const host = hostOf(extraction.url);
+  const h = extraction.headings?.length || 0;
+  const l = extraction.links?.length || 0;
+  const topic = extraction.headings?.[0]?.text || extraction.page_title || host;
+  return (
+    `This page from ${host} centers on "${topic}", organized across ${h} headings that move from ` +
+    `the main message into supporting detail. It surfaces ${l} links that guide visitors toward ` +
+    `related content and clear next steps.`
+  );
+}
+
 async function realSummary(extraction) {
-  const res = await fetch(ANTHROPIC_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": AI_API_KEY,
-      "anthropic-version": "2023-06-01",
-      // Required to call the API directly from a browser context.
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      max_tokens: 400,
-      messages: [{ role: "user", content: buildPrompt(extraction) }],
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`AI summary request failed (${res.status}). ${detail}`.trim());
-  }
-
-  const json = await res.json();
-  const text = json?.content?.map((b) => b.text).filter(Boolean).join("\n").trim();
+  const text = await callAI(
+    [{ role: "user", content: buildSummaryPrompt(extraction) }],
+    400
+  );
   return text || (await mockSummary(extraction));
 }
 
 /**
  * Summarize an extraction.
- * @param {{url:string, page_title:string, headings:Array, links:Array, ai_summary?:string}} extraction
+ * @param {object} extraction
  * @returns {Promise<string>}
  */
 export async function summarize(extraction) {
   return hasAI ? realSummary(extraction) : mockSummary(extraction);
 }
 
-// ── AI link categorization ────────────────────────────────────────────────────
-// Tags each link with one category (internal/external/social/email/document/media).
-// Heuristics run always as a reliable baseline; when VITE_AI_API_KEY is set, a single
-// batched Claude call refines the labels. Any failure falls back to the heuristics,
-// so categorization can never break an extraction.
+// ── Link categorization ───────────────────────────────────────────────────────
 
-const MAX_AI_LINKS = 60; // keep the prompt (and cost) bounded on link-heavy pages
+const MAX_AI_LINKS = 60;
 
 function buildCategorizePrompt(links, baseUrl) {
-  const list = links.map((l, i) => `${i}. ${l.text || "(no text)"} -> ${l.href}`).join("\n");
+  const list = links
+    .map((l, i) => `${i}. ${l.text || "(no text)"} -> ${l.href}`)
+    .join("\n");
   return (
     `Classify each link found on the page at ${baseUrl} into exactly ONE category:\n` +
     `- internal: same website as the page\n` +
@@ -119,26 +115,10 @@ function parseCategoryArray(text) {
 }
 
 async function aiCategorize(links, baseUrl) {
-  const res = await fetch(ANTHROPIC_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": AI_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      max_tokens: Math.min(1024, links.length * 6 + 60),
-      messages: [{ role: "user", content: buildCategorizePrompt(links, baseUrl) }],
-    }),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`AI categorization request failed (${res.status}). ${detail}`.trim());
-  }
-  const json = await res.json();
-  const text = json?.content?.map((b) => b.text).filter(Boolean).join("\n") || "";
+  const text = await callAI(
+    [{ role: "user", content: buildCategorizePrompt(links, baseUrl) }],
+    Math.min(1024, links.length * 6 + 60)
+  );
   return parseCategoryArray(text);
 }
 
@@ -149,21 +129,27 @@ async function aiCategorize(links, baseUrl) {
  * @returns {Promise<Array<{text:string, href:string, category:string}>>}
  */
 export async function categorizeLinks(links, baseUrl) {
-  const base = (links || []).map((l) => ({ ...l, category: categoryOf(l.href, baseUrl) }));
+  const base = (links || []).map((l) => ({
+    ...l,
+    category: categoryOf(l.href, baseUrl),
+  }));
   if (!hasAI || base.length === 0 || base.length > MAX_AI_LINKS) return base;
 
   try {
     const aiCats = await aiCategorize(base, baseUrl);
-    return base.map((l, i) => (isCategory(aiCats[i]) ? { ...l, category: aiCats[i] } : l));
+    return base.map((l, i) =>
+      isCategory(aiCats[i]) ? { ...l, category: aiCats[i] } : l
+    );
   } catch (err) {
-    console.warn("[ScrapeLite] AI link categorization failed; using heuristics.", err);
+    console.warn(
+      "[ScrapeLite] AI link categorization failed; using heuristics.",
+      err
+    );
     return base;
   }
 }
 
-// ── Content generation (V2.1 — Integrated Content Generation) ─────────────────
-// Turns a saved extraction (title + headings + ai_summary) into usable marketing
-// content. Mock path synthesizes a believable draft; real path calls Claude.
+// ── Content generation ────────────────────────────────────────────────────────
 
 export const CONTENT_FORMATS = [
   {
@@ -198,7 +184,9 @@ export const CONTENT_FORMATS = [
 ];
 
 function buildContentPrompt(extraction, format) {
-  const headings = (extraction.headings || []).map((h) => `${h.tag}: ${h.text}`).join("\n");
+  const headings = (extraction.headings || [])
+    .map((h) => `${h.tag}: ${h.text}`)
+    .join("\n");
   return (
     `You are a content marketer working from data scraped from a web page.\n` +
     `${format.instruction}\n\n` +
@@ -213,7 +201,9 @@ function buildContentPrompt(extraction, format) {
 async function mockContent(extraction, format) {
   await delay(MOCK_DELAY_MS);
   const title = extraction.page_title || hostOf(extraction.url);
-  const topics = (extraction.headings || []).filter((h) => /H[123]/.test(h.tag)).slice(0, 5);
+  const topics = (extraction.headings || [])
+    .filter((h) => /H[123]/.test(h.tag))
+    .slice(0, 5);
   if (format.key === "seo-outline") {
     const lines = [
       `# ${title}: The Complete Guide`,
@@ -223,14 +213,20 @@ async function mockContent(extraction, format) {
       `**Target keywords:** ${hostOf(extraction.url)}, ${title.split(" ").slice(0, 3).join(" ")}, guide, overview`,
       ``,
     ];
-    (topics.length ? topics : [{ text: "Overview" }, { text: "Key benefits" }, { text: "Getting started" }]).forEach(
-      (h, i) => {
-        lines.push(`## ${i + 1}. ${h.text}`);
-        lines.push(`- What it means for the reader`);
-        lines.push(`- Why it matters`);
-        lines.push(``);
-      },
-    );
+    (
+      topics.length
+        ? topics
+        : [
+            { text: "Overview" },
+            { text: "Key benefits" },
+            { text: "Getting started" },
+          ]
+    ).forEach((h, i) => {
+      lines.push(`## ${i + 1}. ${h.text}`);
+      lines.push(`- What it means for the reader`);
+      lines.push(`- Why it matters`);
+      lines.push(``);
+    });
     return lines.join("\n");
   }
   if (format.key === "competitor-summary") {
@@ -250,26 +246,10 @@ async function mockContent(extraction, format) {
 }
 
 async function realContent(extraction, format) {
-  const res = await fetch(ANTHROPIC_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": AI_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: buildContentPrompt(extraction, format) }],
-    }),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Content generation failed (${res.status}). ${detail}`.trim());
-  }
-  const json = await res.json();
-  const text = json?.content?.map((b) => b.text).filter(Boolean).join("\n").trim();
+  const text = await callAI(
+    [{ role: "user", content: buildContentPrompt(extraction, format) }],
+    1024
+  );
   return text || (await mockContent(extraction, format));
 }
 
