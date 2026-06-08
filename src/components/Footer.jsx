@@ -5,9 +5,10 @@ import { LINK_ABOUT, LINK_BLOG, LINK_PRICING, LINK_CHANGELOG } from "../lib/conf
 
 const LINKS = {
   Product: [
-    { label: "Extract", path: "/" },
-    { label: "Dashboard", path: "/dashboard" },
-    ...(LINK_PRICING   ? [{ label: "Pricing",   href: LINK_PRICING   }] : []),
+    { label: "Extract",    path: "/" },
+    { label: "Dashboard",  path: "/dashboard" },
+    { label: "Pricing",    path: "/pricing" },
+    { label: "Account",    path: "/account" },
     ...(LINK_CHANGELOG ? [{ label: "Changelog", href: LINK_CHANGELOG }] : []),
   ],
   Company: [

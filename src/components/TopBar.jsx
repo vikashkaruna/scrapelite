@@ -1,10 +1,13 @@
-// TopBar.jsx — sticky navigation. V4: persona badge + auth hint.
+// TopBar.jsx — sticky navigation. V5: pricing + account links, plan badge.
 import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useTheme } from "./ThemeProvider.jsx";
 import { usePersona } from "./PersonaProvider.jsx";
+import { useBilling } from "./BillingProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+
+const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", business: "#a78bfa", agency: "#f472b6" };
 
 function Brand({ onClick }) {
   return (
@@ -35,17 +38,30 @@ function PersonaBadge({ persona, onClick }) {
   );
 }
 
+function PlanBadge({ planId, planName, onClick }) {
+  const color = PLAN_COLORS[planId] ?? "#888";
+  if (planId === "free") return null;
+  return (
+    <button className="plan-badge-btn" onClick={onClick} title="View your plan" style={{ "--pb-c": color }}>
+      <Icon name="zap" size={12} style={{ color }} />
+      <span style={{ color }}>{planName}</span>
+    </button>
+  );
+}
+
 export default function TopBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
   const { personaId, userName, onboarded, resetOnboarding } = usePersona();
+  const { plan, planId } = useBilling();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
   const links = [
     { to: "/", label: "Extract", match: (p) => p === "/" || p === "/preview" },
     { to: "/dashboard", label: "Dashboard", match: (p) => p === "/dashboard" },
+    { to: "/pricing", label: "Pricing", match: (p) => p === "/pricing" },
   ];
 
   const handleSwitchRole = () => {
@@ -70,19 +86,30 @@ export default function TopBar() {
           ))}
         </nav>
 
-        {/* Persona badge */}
-        {persona && (
-          <PersonaBadge persona={persona} onClick={handleSwitchRole} />
-        )}
+        {/* Plan badge — only for paid plans */}
+        <PlanBadge planId={planId} planName={plan.name} onClick={() => navigate("/account")} />
 
-        {/* Sign in prompt — shown when no persona selected yet (edge case if redirect skipped) */}
+        {/* Persona badge */}
+        {persona && <PersonaBadge persona={persona} onClick={handleSwitchRole} />}
+
         {!onboarded && !persona && (
           <Button variant="secondary" size="sm" icon="log-in" onClick={() => navigate("/onboarding")}>
             Get started
           </Button>
         )}
 
-        {/* User name greeting */}
+        {/* Account link */}
+        {onboarded && (
+          <button
+            className={"theme-toggle topbar-account" + (pathname === "/account" ? " active" : "")}
+            onClick={() => navigate("/account")}
+            title="Your account & usage"
+            aria-label="Account"
+          >
+            <Icon name="user" size={17} />
+          </button>
+        )}
+
         {userName && (
           <div className="topbar-username" title={`Logged in as ${userName}`}>
             <Icon name="user" size={15} />
@@ -90,12 +117,7 @@ export default function TopBar() {
           </div>
         )}
 
-        <button
-          className="theme-toggle"
-          onClick={toggle}
-          aria-label="Toggle theme"
-          title="Toggle light / dark"
-        >
+        <button className="theme-toggle" onClick={toggle} aria-label="Toggle theme" title="Toggle light / dark">
           <Icon name={theme === "dark" ? "sun" : "moon"} />
         </button>
 
