@@ -1,25 +1,17 @@
-// Footer.jsx — site footer with nav links and social icons.
+// Footer.jsx — site footer with brand identity and essential links only.
+// Product/app nav is intentionally excluded (already in TopBar).
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
-import { LINK_ABOUT, LINK_BLOG, LINK_PRICING, LINK_CHANGELOG } from "../lib/config.js";
 
-const LINKS = {
-  Product: [
-    { label: "Extract",    path: "/" },
-    { label: "Dashboard",  path: "/dashboard" },
-    { label: "Pricing",    path: "/pricing" },
-    { label: "Account",    path: "/account" },
-    ...(LINK_CHANGELOG ? [{ label: "Changelog", href: LINK_CHANGELOG }] : []),
-  ],
-  Company: [
-    ...(LINK_ABOUT ? [{ label: "About", href: LINK_ABOUT }] : []),
-    ...(LINK_BLOG  ? [{ label: "Blog",  href: LINK_BLOG  }] : []),
-  ],
-  Legal: [
-    { label: "Privacy Policy", path: "/privacy" },
-    { label: "Terms of Service", path: "/terms" },
-  ],
-};
+const COMPANY_LINKS = [
+  { label: "About", path: "/about" },
+  { label: "Blog", path: "/blog" },
+];
+
+const LEGAL_LINKS = [
+  { label: "Privacy Policy", path: "/privacy" },
+  { label: "Terms of Service", path: "/terms" },
+];
 
 const SOCIALS = [
   { name: "linkedin", href: "https://linkedin.com", label: "LinkedIn" },
@@ -30,22 +22,28 @@ export default function Footer() {
   const navigate = useNavigate();
 
   return (
-    <footer className="site-footer">
+    <footer className="site-footer" role="contentinfo">
       <div className="container site-footer-inner">
         {/* Brand column */}
         <div className="footer-brand-col">
-          <div className="footer-brand" onClick={() => navigate("/")} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/")} role="button" tabIndex={0} aria-label="ScrapeLite home">
-            <div className="footer-brand-mark">
+          <button
+            className="footer-brand"
+            onClick={() => navigate("/")}
+            aria-label="Go to DatIQ home"
+          >
+            <div className="footer-brand-mark" aria-hidden="true">
               <Icon name="layers" size={17} strokeWidth={2.2} />
             </div>
             <span className="footer-brand-name">
               Scrape<b>Lite</b>
             </span>
-          </div>
+          </button>
           <p className="footer-tagline">
-            Zero-code web extraction and enrichment. From URL to structured intelligence in seconds.
+            Turn any URL into structured intelligence — in seconds.
+            <br />
+            Extract · Enrich · Decide.
           </p>
-          <div className="footer-socials">
+          <div className="footer-socials" aria-label="Social links">
             {SOCIALS.map((s) => (
               <a
                 key={s.name}
@@ -61,36 +59,48 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Nav columns — skip sections with no items */}
-        {Object.entries(LINKS).filter(([, items]) => items.length > 0).map(([section, items]) => (
-          <div key={section} className="footer-nav-col">
-            <div className="footer-nav-head">{section}</div>
-            <ul className="footer-nav-list">
-              {items.map((item) => (
-                <li key={item.label}>
-                  {item.path ? (
-                    <button className="footer-nav-link" onClick={() => navigate(item.path)}>
-                      {item.label}
-                    </button>
-                  ) : (
-                    <a className="footer-nav-link" href={item.href}>
-                      {item.label}
-                    </a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {/* Company links */}
+        <div className="footer-nav-col">
+          <div className="footer-nav-head" id="footer-company-heading">Company</div>
+          <ul className="footer-nav-list" aria-labelledby="footer-company-heading">
+            {COMPANY_LINKS.map((item) => (
+              <li key={item.label}>
+                <button
+                  className="footer-nav-link"
+                  onClick={() => navigate(item.path)}
+                >
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Legal links */}
+        <div className="footer-nav-col">
+          <div className="footer-nav-head" id="footer-legal-heading">Legal</div>
+          <ul className="footer-nav-list" aria-labelledby="footer-legal-heading">
+            {LEGAL_LINKS.map((item) => (
+              <li key={item.label}>
+                <button
+                  className="footer-nav-link"
+                  onClick={() => navigate(item.path)}
+                >
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       <div className="site-footer-bottom">
         <div className="container">
           <span className="footer-copy">
-            © {new Date().getFullYear()} ScrapeLite. All rights reserved.
+            © {new Date().getFullYear()} DatIQ · ScrapeLite. All rights reserved.
           </span>
           <span className="footer-copy-right">
-            Built with ♥ for data-driven teams
+            Data + IQ — intelligence from every URL
           </span>
         </div>
       </div>

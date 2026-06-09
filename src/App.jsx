@@ -26,9 +26,11 @@ import AdminRevenue from "./pages/admin/AdminRevenue.jsx";
 import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
+import About from "./pages/About.jsx";
+import Blog from "./pages/Blog.jsx";
 
 // Accessible without completing onboarding.
-const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms", "/pricing", "/payment/success", "/payment/cancel"];
+const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms", "/pricing", "/payment/success", "/payment/cancel", "/about", "/blog"];
 
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
@@ -80,6 +82,8 @@ function Shell() {
         <Route path="/payment/cancel"   element={<PaymentCancel />} />
         <Route path="/privacy"          element={<Privacy />} />
         <Route path="/terms"            element={<Terms />} />
+        <Route path="/about"            element={<About />} />
+        <Route path="/blog"             element={<Blog />} />
         <Route path="*"                 element={<Navigate to="/" replace />} />
       </Routes>
       {showAuthModal && <AuthModal />}
