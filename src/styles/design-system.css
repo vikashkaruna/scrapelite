@@ -150,8 +150,14 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent-contrast); box-shadow: var(--shadow-accent);
 }
 .brand-mark svg { width: 19px; height: 19px; }
-.brand-name { font-weight: 700; font-size: 18px; letter-spacing: -.02em; }
+.brand-text { display: flex; flex-direction: column; gap: 1px; }
+.brand-name { font-weight: 700; font-size: 18px; letter-spacing: -.02em; line-height: 1.15; }
 .brand-name b { color: var(--accent); }
+.brand-tagline {
+  font-size: .6em; color: var(--text-3); font-weight: 500;
+  letter-spacing: .01em; line-height: 1; white-space: nowrap;
+}
+@media (max-width: 640px) { .brand-tagline { display: none; } }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 
 .nav-links { display: flex; align-items: center; gap: 2px; }

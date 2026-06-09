@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-09 — main branch fully merged (v2+v3+v4+v5+v6), deployed to Netlify**
+> **Last updated: 2026-06-09 — R0 UI polish: brand icon, tagline, About/Blog pages, footer cleanup**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all feature branches merged |
-| **Latest commit** | `f3e05a3` — fix: remove duplicate [functions] section in netlify.toml |
+| **Current branch** | `claude/r0-check-merged-fix-ui-4o44k2` — UI polish off main |
+| **Latest commit** | (see git log) — R0: brand icon, tagline, About/Blog pages, footer redesign |
 
 ---
 
@@ -34,6 +34,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/v4-persona-onboard-lEZ1g` | 7-persona onboarding, `PersonaProvider`, `Footer`, Privacy/Terms pages | ✅ |
 | `claude/v5-pricing-billing-7xoRQ` | Stripe/Razorpay/UPI payments, `BillingProvider`, admin console, usage metering | ✅ |
 | `claude/v6-datiq-rebrand-82s24f` | DatIQ rebrand — localStorage keys → `datiq.*`, console logs → `[DatIQ]` | ✅ |
+| `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish — ScrapeLite `layers` icon in TopBar, DatIQ tagline, About/Blog pages, footer cleanup | In progress |
 
 ---
 
@@ -64,6 +65,8 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/onboarding` | 2-step persona selection | Standalone (no chrome) |
 | `/privacy` | Privacy Policy | Public |
 | `/terms` | Terms of Service | Public |
+| `/about` | About DatIQ — mission, values, how-it-works, personas | Public |
+| `/blog` | Blog listing — featured + recent articles | Public |
 | `/admin` | Admin shell (PIN gated, demo PIN: `ADMIN123`) | Standalone |
 | `/admin/revenue` | Revenue dashboard | Admin |
 | `/admin/pricing` | Configurable plan pricing & limits | Admin |
@@ -148,6 +151,8 @@ src/
     ├── PaymentCancel.jsx             ★ V5c: clears pending payment, "No charge made"
     ├── Privacy.jsx
     ├── Terms.jsx
+    ├── About.jsx                             ★ R0: About page — mission, values, how-it-works, personas, CTA
+    ├── Blog.jsx                              ★ R0: Blog listing — featured post + grid of articles
     └── admin/
         ├── AdminLayout.jsx           PIN gate (ADMIN123), sidebar nav
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
@@ -201,6 +206,9 @@ ThemeProvider
 | Dashboard seed | NONE — starts empty. Do not re-add mock data. |
 | Table layout | `table-layout:fixed`, fixed px widths on narrow cols |
 | TopBar "+ New" | Only shown on `/preview` |
+| TopBar brand icon | Uses `layers` icon (ScrapeLite identity) — do NOT change back to `bar-chart` |
+| TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
+| Footer nav | Footer shows Company (About, Blog) + Legal only — NO Product links (those are in TopBar). This is intentional. |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
 | Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
@@ -433,6 +441,11 @@ npm run dev   # http://localhost:5173
 - `/admin` → PIN `ADMIN123` → Revenue / Pricing / Coupons / Users
 - `/account` → enter coupon `LAUNCH20` → Apply; then × to remove
 - TopBar → Sign in → create account → check email (goes to site origin, not localhost)
+- TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
+- TopBar nav → Extract, Dashboard, Pricing, About, Blog, Help all present
+- `/about` → accessible without onboarding, shows hero + values + how-it-works + personas
+- `/blog` → accessible without onboarding, shows featured post + article grid
+- Footer → ScrapeLite brand + tagline, Company (About, Blog), Legal (Privacy, Terms) — NO Product column
 
 ---
 

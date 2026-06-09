@@ -16,10 +16,13 @@ function Brand({ onClick }) {
   return (
     <div className="brand" onClick={onClick} role="button" aria-label="DatIQ home">
       <div className="brand-mark">
-        <Icon name="bar-chart" size={19} strokeWidth={2.2} />
+        <Icon name="layers" size={19} strokeWidth={2.2} />
       </div>
-      <div className="brand-name">
-        Dat<b>IQ</b>
+      <div className="brand-text">
+        <div className="brand-name">
+          Dat<b>IQ</b>
+        </div>
+        <div className="brand-tagline">Intelligence from every URL</div>
       </div>
     </div>
   );
@@ -94,6 +97,8 @@ export default function TopBar() {
     { to: "/", label: "Extract", match: (p) => p === "/" || p === "/preview" },
     { to: "/dashboard", label: "Dashboard", match: (p) => p === "/dashboard" },
     { to: "/pricing", label: "Pricing", match: (p) => p === "/pricing" },
+    { to: "/about", label: "About", match: (p) => p === "/about" },
+    { to: "/blog", label: "Blog", match: (p) => p === "/blog" },
   ];
 
   async function handleSignOut() {

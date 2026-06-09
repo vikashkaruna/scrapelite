@@ -73,6 +73,13 @@ import {
   Calendar,
   DollarSign,
   Percent,
+  // R0 additions
+  BookOpen,
+  Newspaper,
+  Heart,
+  Lightbulb,
+  Rocket,
+  MessageSquare,
 } from "lucide-react";
 
 const MAP = {
@@ -147,6 +154,13 @@ const MAP = {
   calendar: Calendar,
   "dollar-sign": DollarSign,
   percent: Percent,
+  // R0
+  "book-open": BookOpen,
+  newspaper: Newspaper,
+  heart: Heart,
+  lightbulb: Lightbulb,
+  rocket: Rocket,
+  "message-square": MessageSquare,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
