@@ -2,6 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import { useToast } from "../components/Toast.jsx";
 
 const INTEGRATIONS = [
   {
@@ -99,12 +100,11 @@ const STATUS_META = {
 
 export default function Integrations() {
   const navigate = useNavigate();
+  const toast = useToast();
 
   return (
-    <>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
-      <main id="main-content" className="page">
-        <div className="int-page container">
+    <div className="page">
+      <div className="int-page container">
 
           {/* Hero */}
           <div className="int-hero rise">
@@ -138,7 +138,11 @@ export default function Integrations() {
                       </Button>
                     )}
                     {item.action && item.status === "coming-soon" && (
-                      <Button variant="ghost" size="sm" onClick={() => {}}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toast(`We'll let you know when ${item.title} launches — subscribe on our Blog for updates.`, "info")}
+                      >
                         {item.action.label}
                       </Button>
                     )}
@@ -182,8 +186,7 @@ export default function Integrations() {
             </a>
           </div>
 
-        </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }

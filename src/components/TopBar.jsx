@@ -100,7 +100,7 @@ export default function TopBar() {
   const { theme, toggle } = useTheme();
   const { user, openAuth } = useAuth();
   const { personaId, userName, onboarded, resetOnboarding } = usePersona();
-  const { plan, planId } = useBilling();
+  const { planId } = useBilling();
 
   const [showUseCases, setShowUseCases] = useState(false);
   const useCasesRef = useRef(null);

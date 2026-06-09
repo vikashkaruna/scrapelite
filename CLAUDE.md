@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-09 — R0 UI polish: brand icon, tagline, About/Blog pages, footer cleanup**
+> **Last updated: 2026-06-09 — SEO/GEO foundation, 7 new marketing pages, Use Cases dropdown, live stats, email capture, bug fixes**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `claude/r0-check-merged-fix-ui-4o44k2` — UI polish off main |
-| **Latest commit** | (see git log) — R0: brand icon, tagline, About/Blog pages, footer redesign |
+| **Current branch** | `main` — all work committed here |
+| **Latest commit** | (see git log) — E2E test fixes: nested main, email addresses, localStorage keys |
 
 ---
 
@@ -34,7 +34,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/v4-persona-onboard-lEZ1g` | 7-persona onboarding, `PersonaProvider`, `Footer`, Privacy/Terms pages | ✅ |
 | `claude/v5-pricing-billing-7xoRQ` | Stripe/Razorpay/UPI payments, `BillingProvider`, admin console, usage metering | ✅ |
 | `claude/v6-datiq-rebrand-82s24f` | DatIQ rebrand — localStorage keys → `datiq.*`, console logs → `[DatIQ]` | ✅ |
-| `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish — ScrapeLite `layers` icon in TopBar, DatIQ tagline, About/Blog pages, footer cleanup | In progress |
+| `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish + SEO/GEO + 7 new marketing pages + dropdown + email capture | ✅ merged to main |
 
 ---
 
@@ -66,7 +66,14 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/privacy` | Privacy Policy | Public |
 | `/terms` | Terms of Service | Public |
 | `/about` | About DatIQ — mission, values, how-it-works, personas | Public |
-| `/blog` | Blog listing — featured + recent articles | Public |
+| `/blog` | Blog listing — featured + recent articles + email newsletter capture | Public |
+| `/integrations` | Integration catalog — 4 live, 6 coming-soon, 1 agency, 1 roadmap | Public |
+| `/use-cases/lead-generation` | Lead gen use-case landing page | Public |
+| `/use-cases/competitor-research` | Competitor research landing page | Public |
+| `/use-cases/seo-audit` | SEO audit use-case landing page | Public |
+| `/use-cases/market-research` | Market research use-case landing page | Public |
+| `/vs/browse-ai` | DatIQ vs Browse.ai comparison page | Public |
+| `/vs/clay` | DatIQ vs Clay comparison page | Public |
 | `/admin` | Admin shell (PIN gated, demo PIN: `ADMIN123`) | Standalone |
 | `/admin/revenue` | Revenue dashboard | Admin |
 | `/admin/pricing` | Configurable plan pricing & limits | Admin |
@@ -84,8 +91,10 @@ src/
 ├── main.jsx
 ├── index.css
 ├── styles/
-│   ├── design-system.css             CSS tokens + @keyframes spin + .btn-full
-│   └── screens.css                   All screen/component CSS (1700+ lines)
+│   ├── design-system.css             CSS tokens + @keyframes spin + .btn-full + brand tagline
+│   └── screens.css                   All screen/component CSS (2200+ lines)
+│                                     Includes: .uc-*, .vs-*, .int-*, .skip-link, .nav-dropdown*,
+│                                     .home-social-proof, .blog-*, .about-*
 ├── data/
 │   └── mockData.js
 ├── lib/
@@ -93,7 +102,7 @@ src/
 │   ├── utils.js                      hostOf, pathOf, uid, flattenJson, extractionsToCsv, etc.
 │   ├── supabaseClient.js             createClient when configured; null otherwise
 │   ├── apiClient.js                  ★ V2: /api/* proxy — extract, ai, listExtractions, CRUD, setAuthToken
-│   ├── authService.js                ★ V3: signUpWithEmail, signInWithEmail, signInWithOAuth, signOut, getUserInitials/Avatar/DisplayName
+│   ├── authService.js                ★ V3: signUpWithEmail, signInWithEmail, signInWithOAuth, signOut
 │   ├── firecrawlService.js           extractStructure, mapDomain — mock OR real via apiClient
 │   ├── aiService.js                  summarize, categorizeLinks, generateContent, CONTENT_FORMATS
 │   ├── linkCategorizer.js            categoryOf heuristic, CATEGORY_META, categoryCounts
@@ -115,24 +124,26 @@ src/
 │   ├── pdfExport.js                  Lazy-loaded jsPDF report (never static-imported)
 │   ├── webhook.js                    notifyWebhook (fire-and-forget)
 │   ├── emailService.js               sendExtractionsEmail; webhook → email API → mailto fallback
-│   └── errorMessages.js              classifyError; 10 categories
+│   ├── errorMessages.js              classifyError; 10 categories
+│   ├── statsService.js               ★ R0: getStats() → /api/stats (Supabase aggregate), fmtStat()
+│   │                                 Caches in datiq.stats localStorage (5-min TTL)
+│   └── emailCaptureService.js        ★ R0: captureEmail(email, source) → datiq.subscribers LS + n8n webhook
 ├── components/
 │   ├── ThemeProvider.jsx             light/dark; persists to datiq.theme
 │   ├── Toast.jsx                     ToastProvider + useToast(); 2.6s auto-dismiss
 │   ├── ErrorModal.jsx                ErrorModalProvider + useErrorModal()
-│   ├── AuthProvider.jsx              ★ V3: Supabase auth state, openAuth/closeAuth, authError (hash error handling)
+│   ├── AuthProvider.jsx              ★ V3: Supabase auth state, openAuth/closeAuth, authError
 │   ├── AuthModal.jsx                 ★ V3: sign-up/sign-in modal with authError display
 │   ├── PersonaProvider.jsx           ★ V4: personaId, userName, onboarded, resetOnboarding
-│   ├── BillingProvider.jsx           ★ V5c: plan, planId, usage, initiatePayment, confirmPayment, applyCoupon
+│   ├── BillingProvider.jsx           ★ V5c: planId, usage, initiatePayment, confirmPayment, applyCoupon
 │   ├── ExtractionProvider.jsx        current, loading, extract, enrich, save — checks billing limits
-│   ├── TopBar.jsx                    Brand (DatIQ), nav links, PlanBadge, PersonaBadge, UserChip, auth
-│   ├── Footer.jsx                    Links: /pricing, /account, /privacy, /terms + env-var optional links
+│   ├── TopBar.jsx                    Brand (DatIQ layers icon + tagline), nav links + Use Cases dropdown,
+│   │                                 PlanBadge, PersonaBadge, UserChip, auth, Help anchor
+│   ├── Footer.jsx                    4-col: Socials | Explore (use cases, integrations, pricing, blog)
+│   │                                 | Company (About) | Legal (Privacy, Terms)
 │   ├── Button.jsx                    variant: primary/secondary/ghost/danger; size sm; fullWidth
 │   ├── Toggle.jsx                    Reusable toggle switch
-│   ├── Icon.jsx                      lucide-react name-map (full set inc. log-in/out, user, flask, target,
-│   │                                 eye, bar-chart, building, linkedin, twitter, shield, play-circle,
-│   │                                 trending-up, info, chevron-up, credit-card, tag, gift, crown,
-│   │                                 alert-circle, toggle-left/right, calendar, dollar-sign, percent)
+│   ├── Icon.jsx                      lucide-react name-map (76 icons registered)
 │   ├── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
 │   ├── ContentModal.jsx              Generate content modal; 3 formats; copy button
 │   ├── EmailModal.jsx                Send email modal; multi-recipient
@@ -140,19 +151,26 @@ src/
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
 │   └── LoadingScreen.jsx             Full-screen 4-step animated progress
 └── pages/
-    ├── Home.jsx                      URL input, 4 toggles, custom extraction textarea, 8 capability cards
+    ├── Home.jsx                      URL input, 4 toggles, custom extraction, 8 capability cards,
+    │                                 social proof (live stats from statsService + testimonials)
     ├── Preview.jsx                   Quick enrichment, enrichment tabs, save/discard
     ├── Dashboard.jsx                 Table/cards, search, pagination, CSV/PDF/Generate/Email
-    │                                 localStorage key: datiq.dashLayout
     ├── Onboarding.jsx                2-step persona selection (standalone, no chrome)
     ├── Pricing.jsx                   ★ V5c: plan cards, payment-backed select, provider badge, demo notice
     ├── Account.jsx                   ★ V5c: billing, usage, alerts, coupon, payment history
     ├── PaymentSuccess.jsx            ★ V5c: Stripe verify + Razorpay activate; 3 states
     ├── PaymentCancel.jsx             ★ V5c: clears pending payment, "No charge made"
-    ├── Privacy.jsx
-    ├── Terms.jsx
-    ├── About.jsx                             ★ R0: About page — mission, values, how-it-works, personas, CTA
-    ├── Blog.jsx                              ★ R0: Blog listing — featured post + grid of articles
+    ├── Privacy.jsx                   Privacy Policy (contact: privacy@datiq.app)
+    ├── Terms.jsx                     Terms of Service (contact: legal@datiq.app)
+    ├── About.jsx                     ★ R0: mission, values, how-it-works, personas, CTA
+    ├── Blog.jsx                      ★ R0: featured + grid articles + real email newsletter form
+    ├── Integrations.jsx              ★ R0: 12-card catalog; "Notify me" shows toast
+    ├── UseCaseLead.jsx               ★ R0: /use-cases/lead-generation
+    ├── UseCaseCompetitor.jsx         ★ R0: /use-cases/competitor-research
+    ├── UseCaseSEO.jsx                ★ R0: /use-cases/seo-audit
+    ├── UseCaseResearch.jsx           ★ R0: /use-cases/market-research
+    ├── VsBrowseAI.jsx                ★ R0: /vs/browse-ai comparison
+    ├── VsClay.jsx                    ★ R0: /vs/clay comparison
     └── admin/
         ├── AdminLayout.jsx           PIN gate (ADMIN123), sidebar nav
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
@@ -167,11 +185,16 @@ netlify/
     ├── extractions.js                GET/POST/PATCH/DELETE /api/extractions — Supabase proxy
     ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order
     ├── verify-payment.js             ★ V5c: GET=Stripe verify, POST=Razorpay HMAC verify
-    └── payment-webhook.js            ★ V5c: Stripe + Razorpay webhook handler
+    ├── payment-webhook.js            ★ V5c: Stripe + Razorpay webhook handler
+    └── stats.js                      ★ R0: GET /api/stats — aggregate teams/extractions from Supabase
+                                      Direct REST (no SDK); 5-min CDN cache header
 
 public/
 ├── favicon.svg
 ├── runtime-config.js                 window.__DATIQ_RUNTIME__ override (no rebuild needed)
+├── llms.txt                          ★ R0: Agentic SEO — DatIQ capabilities for AI agent discovery
+├── robots.txt                        ★ R0: allows GPTBot/ClaudeBot/PerplexityBot, blocks /api/ /admin
+├── sitemap.xml                       ★ R0: all 20 public routes with priority + changefreq
 └── help/
     ├── index.html                    Help home (links to 15 section pages)
     ├── help.css
@@ -190,7 +213,7 @@ ThemeProvider
         PersonaProvider
           BillingProvider
             ExtractionProvider
-              <Shell />   ← routes + TopBar + Footer + AuthModal
+              <Shell />   ← skip-link + TopBar + <main id="main-content"> + routes + Footer + AuthModal
 ```
 
 ---
@@ -208,14 +231,18 @@ ThemeProvider
 | TopBar "+ New" | Only shown on `/preview` |
 | TopBar brand icon | Uses `layers` icon (ScrapeLite identity) — do NOT change back to `bar-chart` |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| Footer nav | Footer shows Company (About, Blog) + Legal only — NO Product links (those are in TopBar). This is intentional. |
+| TopBar nav | Includes "Use cases" dropdown with `.nav-dropdown` — closes on outside click + navigation |
+| Footer nav | 4 cols: Socials · Explore (use cases, integrations, pricing, blog) · Company (About) · Legal |
+| Page structure | All route pages return a plain `<div className="page">` — Shell provides `<main id="main-content">` |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
 | Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
 | Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
 | Netlify Functions | ESM (`export const handler`), in `netlify/functions/`. `stripe`/`razorpay` dynamic-imported only. |
-| localStorage keys | All use `datiq.*` prefix (except `scrapelite.adminAuth` — intentionally kept) |
+| localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
+| Contact emails | `support@datiq.app` (payment), `legal@datiq.app` (terms), `privacy@datiq.app` (privacy) |
+| Naming | App brand is "DatIQ" everywhere in UI. Netlify URL stays `scrapelite.netlify.app` for now. |
 
 ---
 
@@ -228,12 +255,12 @@ ThemeProvider
 | `datiq.enrichments` | enrichmentStore.js — enrichment data per URL |
 | `datiq.theme` | ThemeProvider — light/dark preference |
 | `datiq.dashLayout` | Dashboard.jsx — table/cards toggle |
-| `datiq.persona` | PersonaProvider — selected persona |
-| `datiq.userName` | PersonaProvider — display name |
-| `datiq.onboarded` | PersonaProvider — onboarding completed flag |
+| `datiq.tip.*` | Home.jsx — per-persona guide tip (shown once) |
+| `datiq.stats` | statsService.js — cached aggregate stats (5-min TTL) |
+| `datiq.subscribers` | emailCaptureService.js — newsletter email list |
 | `scrapelite.adminAuth` | AdminLayout.jsx — admin PIN gate (intentionally NOT rebranded) |
+| `scrapelite.*` | Internal keys (persona, usage, currency, pricing overrides etc.) — NOT rebranded |
 | `datiq.plan` | BillingProvider — active plan ID |
-| `datiq.usage.*` | usageService.js — monthly extraction/enrichment counters |
 | `datiq.pendingPayment` | paymentService.js — pending Stripe redirect state |
 
 ---
@@ -257,6 +284,28 @@ ThemeProvider
 **Stripe flow**: `create-checkout` → Stripe hosted URL → `/payment/success?session_id=&plan=&provider=stripe` → `verify-payment` GET
 
 **Razorpay flow**: `create-checkout` → `{orderId,amount,currency}` → paymentService lazy-loads CDN SDK → modal → `verify-payment` POST HMAC
+
+---
+
+## R0 — SEO/GEO & Marketing (2026-06-09)
+
+### GEO & Agentic SEO
+- `index.html` — 3 JSON-LD schemas: Organization (sameAs LinkedIn/Twitter/GitHub), WebSite+SearchAction, SoftwareApplication
+- `public/llms.txt` — AI agent discovery (like robots.txt for LLMs)
+- `public/robots.txt` — allows GPTBot/ClaudeBot/PerplexityBot, blocks /api/ /admin
+- `public/sitemap.xml` — all 20 public routes
+
+### Live stats pipeline
+- `netlify/functions/stats.js` → `/api/stats` queries Supabase `usage_records` (teams = distinct session_ids, extractions = SUM)
+- `src/lib/statsService.js` → fetches + caches in `datiq.stats` (5-min TTL)
+- Home.jsx social proof shows real numbers when Supabase is configured; falls back to placeholders silently
+
+### Email capture
+- `src/lib/emailCaptureService.js` → `captureEmail(email, source)`:
+  - Saves to `datiq.subscribers` in localStorage (deduped)
+  - POSTs to `VITE_WEBHOOK_URL` (n8n) as fire-and-forget
+- Blog.jsx newsletter has real form with idle/loading/success/already/error states
+- Integrations.jsx "Notify me" buttons show a toast with Blog redirect suggestion
 
 ---
 
@@ -343,7 +392,7 @@ VITE_SUPABASE_ANON_KEY=
 VITE_FIRECRAWL_API_KEY=        # fc-...
 VITE_AI_API_KEY=               # sk-ant-... (browser-side demo only)
 VITE_AI_MODEL=claude-haiku-4-5-20251001
-VITE_WEBHOOK_URL=              # n8n webhook
+VITE_WEBHOOK_URL=              # n8n webhook (also used for email capture)
 VITE_PAYMENT_PROVIDER=auto     # auto | stripe | razorpay
 VITE_STRIPE_PUBLISHABLE_KEY=   # pk_live_...
 VITE_RAZORPAY_KEY_ID=          # rzp_live_...
@@ -365,6 +414,8 @@ STRIPE_WEBHOOK_SECRET=
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 RAZORPAY_WEBHOOK_SECRET=
+SUPABASE_URL=                  # used by stats.js Netlify function (no VITE_ prefix)
+SUPABASE_SERVICE_KEY=          # preferred for stats.js (service key for aggregate queries)
 ```
 
 ---
@@ -396,6 +447,10 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 10. **V5c: loading spinner** — `loading={loadingPlan}` is plan ID string, not boolean
 11. **V5c: Account paymentError banner** — close button calls `setPaymentError("")`
 12. **V5c: Account `handleUpgrade` nav** — demo_mode/success → `/account` (not `/pricing`)
+13. **R0: nested `<main>` in agent pages** — UseCaseLead/Competitor/SEO/Research, VsBrowseAI/Clay, Integrations all returned `<main id="main-content">` inside Shell's existing `<main>`. Fixed to return `<div className="page">` directly.
+14. **R0: scrapelite.tip.* localStorage key** — Home.jsx guide tip key updated to `datiq.tip.*`
+15. **R0: contact emails** — `hello@scrapelite.io` → `support@datiq.app`, `legal@scrapelite.io` → `legal@datiq.app`, `privacy@scrapelite.io` → `privacy@datiq.app`
+16. **R0: TopBar unused `plan` var** — removed from `useBilling()` destructuring
 
 ---
 
@@ -405,6 +460,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Run SQL migration above in SQL Editor
 - [ ] Enable Google / Microsoft (Azure) / GitHub OAuth providers
 - [ ] Set Site URL → `https://datiq.app`; add redirect URLs including `https://datiq.app/**`
+- [ ] Add `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` to Netlify env for stats.js
 
 ### Netlify (manual — Netlify dashboard)
 - [ ] Add all env vars (see env section above)
@@ -417,10 +473,13 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Razorpay: create Subscription Plans → set `VITE_RAZORPAY_PLAN_*`
 
 ### Future development
+- [ ] Full DatIQ rename: migrate `scrapelite.*` localStorage keys to `datiq.*` (requires session migration script)
+- [ ] Full DatIQ rename: update Terms/Privacy legal text (currently says "ScrapeLite" in the body)
 - [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude
 - [ ] Move `VITE_AI_API_KEY` to server-only via Netlify Function (security)
 - [ ] Supabase real auth → replace localStorage persona/session for cross-device sync
 - [ ] Switch webhook to production n8n URL
+- [ ] Add "Use cases" links also to Footer Explore column (currently points only to /use-cases/lead-generation)
 
 ---
 
@@ -428,7 +487,6 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ```bash
 cd /home/user/scrapelite
-git checkout main
 git pull origin main
 npm run dev   # http://localhost:5173
 ```
@@ -442,21 +500,29 @@ npm run dev   # http://localhost:5173
 - `/account` → enter coupon `LAUNCH20` → Apply; then × to remove
 - TopBar → Sign in → create account → check email (goes to site origin, not localhost)
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
-- TopBar nav → Extract, Dashboard, Pricing, About, Blog, Help all present
+- TopBar nav → Extract, Dashboard, Pricing, About, Blog, **Use cases** (dropdown), Help all present
+- TopBar "Use cases" dropdown → Lead Generation / Competitor Research / SEO Audit / Market Research / vs Browse.ai / vs Clay
 - `/about` → accessible without onboarding, shows hero + values + how-it-works + personas
-- `/blog` → accessible without onboarding, shows featured post + article grid
-- Footer → ScrapeLite brand + tagline, Company (About, Blog), Legal (Privacy, Terms) — NO Product column
+- `/blog` → accessible without onboarding, featured post + article grid + email capture form
+- `/blog` newsletter → enter email → "You're subscribed!" (localStorage + n8n webhook)
+- `/integrations` → 12 cards; "Notify me" on coming-soon shows toast
+- `/use-cases/lead-generation` → renders correctly inside Shell (no nested main)
+- `/vs/clay` → comparison table with DatIQ wins highlighted
+- Home social proof → stats load from /api/stats if Supabase configured, else show "500+" / "10K+"
+- Footer → 4-col: Socials · Explore · Company (About) · Legal (Privacy, Terms)
 
 ---
 
 ## Git log (recent)
 
 ```
+(latest)  fix: E2E test pass — nested main, email addresses, datiq.tip.* key, unused vars
+6d04fed  feat: Use Cases dropdown, email capture, live stats, and DatIQ branding
+8bf109d  feat: SEO/GEO foundation, accessibility, and new marketing pages
+c4abb3d  Merge branch 'claude/r0-check-merged-fix-ui-4o44k2' into main
+520c09c  fix(footer): remove ScrapeLite brand name and tagline from footer body
+b94a204  feat(R0): ScrapeLite icon, DatIQ tagline, About/Blog pages, footer redesign
+bb001e6  chore: update CLAUDE.md with complete session state (2026-06-09)
 f3e05a3  fix: remove duplicate [functions] section in netlify.toml
 6373a89  Merge v6-datiq-rebrand into main
-af29f64  Merge v5-pricing-billing into main
-d135b92  Merge v4-persona-onboard into main
-280fb67  Add comprehensive documentation: README.md rebuild + new HELP.md
-ceac29e  fix: email confirmation redirect and hash-error handling
-8039e4c  Merge v2-build-api-layer + v3-supabase-auth into main
 ```

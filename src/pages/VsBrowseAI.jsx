@@ -18,10 +18,8 @@ export default function VsBrowseAI() {
   const navigate = useNavigate();
 
   return (
-    <>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
-      <main id="main-content" className="page">
-        <div className="vs-page container">
+    <div className="page">
+      <div className="vs-page container">
 
           {/* Hero */}
           <div className="vs-hero rise">
@@ -115,8 +113,7 @@ export default function VsBrowseAI() {
             </div>
           </div>
 
-        </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }

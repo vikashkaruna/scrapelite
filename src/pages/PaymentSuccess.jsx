@@ -96,7 +96,7 @@ export default function PaymentSuccess() {
           <h1 className="payment-title">Payment not confirmed</h1>
           <p className="payment-sub">{error}</p>
           <p className="payment-sub" style={{ marginTop: 8, fontSize: ".84em", color: "var(--text-3)" }}>
-            If your card was charged, please email <strong>hello@scrapelite.io</strong> with your payment reference.
+            If your card was charged, please email <strong>support@datiq.app</strong> with your payment reference.
           </p>
           <div className="payment-actions">
             <Button variant="primary" onClick={() => navigate("/pricing")}>Back to Pricing</Button>

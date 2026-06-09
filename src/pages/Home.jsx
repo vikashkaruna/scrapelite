@@ -68,7 +68,7 @@ export default function Home() {
   useEffect(() => {
     if (!persona) return;
     try {
-      const tipKey = `scrapelite.tip.${persona.id}`;
+      const tipKey = `datiq.tip.${persona.id}`;
       const seen = localStorage.getItem(tipKey);
       if (!seen) setShowTip(true);
     } catch {
@@ -80,7 +80,7 @@ export default function Home() {
     setShowTip(false);
     if (!persona) return;
     try {
-      localStorage.setItem(`scrapelite.tip.${persona.id}`, "1");
+      localStorage.setItem(`datiq.tip.${persona.id}`, "1");
     } catch {
       // localStorage unavailable — tip won't persist, that's fine
     }

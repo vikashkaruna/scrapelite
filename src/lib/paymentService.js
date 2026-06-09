@@ -49,7 +49,7 @@ async function initiateStripeCheckout({ planId, currency, rates, discountPercent
   if (!priceId) {
     // No Stripe price ID configured — open mailto contact
     window.open(
-      `mailto:hello@scrapelite.io?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(`Hi,\n\nI'd like to upgrade to the ${plan.name} plan ($${plan.price_usd}/mo).\n\nSession: ${sessionId}`)}`,
+      `mailto:support@datiq.app?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(`Hi,\n\nI'd like to upgrade to the ${plan.name} plan ($${plan.price_usd}/mo).\n\nSession: ${sessionId}`)}`,
       "_blank"
     );
     return { status: "contact_sales" };

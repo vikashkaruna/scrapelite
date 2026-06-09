@@ -57,10 +57,8 @@ export default function UseCaseResearch() {
   const navigate = useNavigate();
 
   return (
-    <>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
-      <main id="main-content" className="page">
-        <div className="uc-page container">
+    <div className="page">
+      <div className="uc-page container">
 
           {/* Hero */}
           <div className="uc-hero rise">
@@ -170,8 +168,7 @@ export default function UseCaseResearch() {
             </div>
           </div>
 
-        </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }

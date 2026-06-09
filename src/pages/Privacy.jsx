@@ -81,7 +81,7 @@ const SECTIONS = [
       },
       {
         heading: "Deletion",
-        text: "You can delete individual extractions from the Dashboard. To request deletion of your account and all associated data, contact us at privacy@scrapelite.io.",
+        text: "You can delete individual extractions from the Dashboard. To request deletion of your account and all associated data, contact us at privacy@datiq.app.",
       },
       {
         heading: "GDPR and CCPA",
@@ -182,8 +182,8 @@ export default function Privacy() {
           </p>
           <div className="legal-contact-row">
             <Icon name="mail" size={16} />
-            <a href="mailto:privacy@scrapelite.io" className="legal-link">
-              privacy@scrapelite.io
+            <a href="mailto:privacy@datiq.app" className="legal-link">
+              privacy@datiq.app
             </a>
           </div>
         </div>

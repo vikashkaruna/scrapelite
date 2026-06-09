@@ -183,7 +183,7 @@ export default function Pricing() {
     try {
       // For now, open a contact mailto — full bundle checkout is a future enhancement
       window.open(
-        `mailto:hello@scrapelite.io?subject=${encodeURIComponent(`Add-on: ${bundleId}`)}&body=${encodeURIComponent(`I'd like to add the ${bundleId} bundle to my account.`)}`,
+        `mailto:support@datiq.app?subject=${encodeURIComponent(`Add-on: ${bundleId}`)}&body=${encodeURIComponent(`I'd like to add the ${bundleId} bundle to my account.`)}`,
         "_blank"
       );
     } finally {
