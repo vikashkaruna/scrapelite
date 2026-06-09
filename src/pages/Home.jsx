@@ -9,6 +9,7 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { isValidUrl, normalizeUrl } from "../lib/utils.js";
 import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
+import { getStats, fmtStat } from "../lib/statsService.js";
 
 const DEFAULT_EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
@@ -56,7 +57,12 @@ export default function Home() {
   const [customMode, setCustomMode] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const [showTip, setShowTip] = useState(false);
+  const [stats, setStats] = useState(null);
   const valid = isValidUrl(url);
+
+  useEffect(() => {
+    getStats().then(setStats).catch(() => {});
+  }, []);
 
   // Show guide tip once per persona selection (cleared on dismiss).
   useEffect(() => {
@@ -395,8 +401,8 @@ export default function Home() {
         <div className="home-social-proof rise" style={{ animationDelay: ".3s", marginTop: 48, width: "100%", maxWidth: 960 }}>
           <div className="home-sp-stats">
             {[
-              { num: "500+", label: "teams & researchers" },
-              { num: "10K+", label: "extractions this month" },
+              { num: fmtStat(stats?.teams) ?? "500+", label: "teams & researchers" },
+              { num: fmtStat(stats?.extractions) ?? "10K+", label: "extractions run" },
               { num: "30s", label: "average time to insight" },
               { num: "7", label: "export & enrichment types" },
             ].map((s) => (

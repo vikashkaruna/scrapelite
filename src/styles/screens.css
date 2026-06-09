@@ -2204,3 +2204,27 @@
   transition: top .15s;
 }
 .skip-link:focus { top: 8px; }
+
+/* ── TopBar Use Cases dropdown ──────────────────────────────────── */
+.nav-dropdown { position: relative; }
+.nav-link-dropdown { display: inline-flex; align-items: center; gap: 5px; }
+.nav-dropdown-menu {
+  position: absolute; top: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%); min-width: 210px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); box-shadow: 0 8px 28px rgba(0,0,0,.13);
+  padding: 6px; z-index: 300;
+}
+.nav-dropdown-section {
+  font-size: .68em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-3); padding: 7px 10px 3px;
+}
+.nav-dropdown-item {
+  display: block; width: 100%; border: 0; background: transparent;
+  padding: 9px 10px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: .9em; font-weight: 500;
+  color: var(--text-1); border-radius: var(--r-sm);
+  transition: background .12s;
+}
+.nav-dropdown-item:hover { background: var(--surface-2); }
+.nav-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }

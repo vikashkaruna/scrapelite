@@ -1,7 +1,9 @@
 // Blog.jsx — DatIQ blog listing page with featured articles.
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import { captureEmail } from "../lib/emailCaptureService.js";
 
 const FEATURED_POST = {
   tag: "Product",
@@ -95,6 +97,20 @@ function PostCard({ post, large }) {
 
 export default function Blog() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [subStatus, setSubStatus] = useState("idle"); // idle | loading | success | already | error
+
+  async function handleSubscribe(e) {
+    e.preventDefault();
+    if (!email.includes("@")) { setSubStatus("error"); return; }
+    setSubStatus("loading");
+    try {
+      const result = await captureEmail(email, "blog-newsletter");
+      setSubStatus(result.alreadySubscribed ? "already" : "success");
+    } catch {
+      setSubStatus("error");
+    }
+  }
 
   return (
     <div className="page">
@@ -156,9 +172,47 @@ export default function Blog() {
           <p style={{ margin: 0, color: "var(--text-2)", maxWidth: "44ch", lineHeight: 1.6 }}>
             No spam. Just new features, use-case guides, and the occasional deep-dive when we ship something interesting.
           </p>
-          <Button variant="primary" icon="mail" onClick={() => navigate("/")}>
-            Start extracting instead →
-          </Button>
+          {subStatus === "success" && (
+            <p style={{ margin: 0, color: "#16a34a", fontWeight: 600 }}>
+              You're subscribed! We'll be in touch.
+            </p>
+          )}
+          {subStatus === "already" && (
+            <p style={{ margin: 0, color: "var(--text-2)", fontWeight: 600 }}>
+              You're already subscribed — we've got you covered.
+            </p>
+          )}
+          {(subStatus === "idle" || subStatus === "loading" || subStatus === "error") && (
+            <form onSubmit={handleSubscribe} style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              <input
+                type="email"
+                required
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); if (subStatus === "error") setSubStatus("idle"); }}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: "var(--r)",
+                  border: `1px solid ${subStatus === "error" ? "#e0556b" : "var(--border)"}`,
+                  background: "var(--surface)",
+                  color: "var(--text-1)",
+                  fontSize: ".95em",
+                  width: 260,
+                  outline: "none",
+                  fontFamily: "inherit",
+                }}
+                aria-label="Email address"
+              />
+              <Button variant="primary" type="submit" icon="mail" disabled={subStatus === "loading"}>
+                {subStatus === "loading" ? "Subscribing…" : "Subscribe"}
+              </Button>
+            </form>
+          )}
+          {subStatus === "error" && (
+            <p style={{ margin: "-4px 0 0", color: "#e0556b", fontSize: ".85em" }}>
+              Please enter a valid email address.
+            </p>
+          )}
         </div>
 
       </div>

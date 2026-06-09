@@ -1,4 +1,5 @@
 // TopBar.jsx — sticky navigation with brand, route links, theme toggle, auth, persona badge, and plan badge.
+import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
@@ -81,6 +82,18 @@ function PlanBadge({ planId, planName, onClick }) {
   );
 }
 
+const USE_CASE_ITEMS = [
+  { label: "Lead Generation", path: "/use-cases/lead-generation" },
+  { label: "Competitor Research", path: "/use-cases/competitor-research" },
+  { label: "SEO Audit", path: "/use-cases/seo-audit" },
+  { label: "Market Research", path: "/use-cases/market-research" },
+];
+
+const COMPARE_ITEMS = [
+  { label: "vs Browse.ai", path: "/vs/browse-ai" },
+  { label: "vs Clay", path: "/vs/clay" },
+];
+
 export default function TopBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -89,9 +102,29 @@ export default function TopBar() {
   const { personaId, userName, onboarded, resetOnboarding } = usePersona();
   const { plan, planId } = useBilling();
 
+  const [showUseCases, setShowUseCases] = useState(false);
+  const useCasesRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onDown(e) {
+      if (useCasesRef.current && !useCasesRef.current.contains(e.target)) {
+        setShowUseCases(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  // Close dropdown on navigation
+  useEffect(() => { setShowUseCases(false); }, [pathname]);
+
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   // Use effective plan (picks up admin overrides); guard against null billing context
   const effectivePlan = getEffectivePlanById(planId ?? "free");
+
+  const isUseCaseActive =
+    pathname.startsWith("/use-cases/") || pathname.startsWith("/vs/");
 
   const links = [
     { to: "/", label: "Extract", match: (p) => p === "/" || p === "/preview" },
@@ -127,6 +160,56 @@ export default function TopBar() {
               {l.label}
             </button>
           ))}
+
+          {/* Use cases dropdown */}
+          <div className="nav-dropdown" ref={useCasesRef}>
+            <button
+              type="button"
+              className={"nav-link nav-link-dropdown" + (isUseCaseActive ? " active" : "")}
+              onClick={() => setShowUseCases((v) => !v)}
+              aria-expanded={showUseCases}
+              aria-haspopup="true"
+              aria-current={isUseCaseActive ? "page" : undefined}
+            >
+              Use cases
+              <Icon
+                name="chevron-down"
+                size={12}
+                style={{
+                  transition: "transform .15s",
+                  transform: showUseCases ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+              />
+            </button>
+            {showUseCases && (
+              <div className="nav-dropdown-menu" role="menu">
+                <div className="nav-dropdown-section">Use cases</div>
+                {USE_CASE_ITEMS.map((item) => (
+                  <button
+                    key={item.path}
+                    className="nav-dropdown-item"
+                    role="menuitem"
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="nav-dropdown-divider" />
+                <div className="nav-dropdown-section">Compare</div>
+                {COMPARE_ITEMS.map((item) => (
+                  <button
+                    key={item.path}
+                    className="nav-dropdown-item"
+                    role="menuitem"
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Static help site — plain anchor bypasses the SPA router. */}
           <a className="nav-link" href="/help/index.html" target="_blank" rel="noopener">
             Help
