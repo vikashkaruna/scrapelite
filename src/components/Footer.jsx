@@ -26,23 +26,6 @@ export default function Footer() {
       <div className="container site-footer-inner">
         {/* Brand column */}
         <div className="footer-brand-col">
-          <button
-            className="footer-brand"
-            onClick={() => navigate("/")}
-            aria-label="Go to DatIQ home"
-          >
-            <div className="footer-brand-mark" aria-hidden="true">
-              <Icon name="layers" size={17} strokeWidth={2.2} />
-            </div>
-            <span className="footer-brand-name">
-              Scrape<b>Lite</b>
-            </span>
-          </button>
-          <p className="footer-tagline">
-            Turn any URL into structured intelligence — in seconds.
-            <br />
-            Extract · Enrich · Decide.
-          </p>
           <div className="footer-socials" aria-label="Social links">
             {SOCIALS.map((s) => (
               <a
