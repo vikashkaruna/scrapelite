@@ -5,6 +5,12 @@ import Icon from "./Icon.jsx";
 
 const COMPANY_LINKS = [
   { label: "About", path: "/about" },
+];
+
+const EXPLORE_LINKS = [
+  { label: "Use cases", path: "/use-cases/lead-generation" },
+  { label: "Integrations", path: "/integrations" },
+  { label: "Pricing", path: "/pricing" },
   { label: "Blog", path: "/blog" },
 ];
 
@@ -22,8 +28,8 @@ export default function Footer() {
   const navigate = useNavigate();
 
   return (
-    <footer className="site-footer" role="contentinfo">
-      <div className="container site-footer-inner">
+    <footer className="site-footer" role="contentinfo" aria-label="Site footer">
+      <div className="container site-footer-inner" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr" }}>
         {/* Brand column */}
         <div className="footer-brand-col">
           <div className="footer-socials" aria-label="Social links">
@@ -40,6 +46,23 @@ export default function Footer() {
               </a>
             ))}
           </div>
+        </div>
+
+        {/* Explore links */}
+        <div className="footer-nav-col">
+          <div className="footer-nav-head" id="footer-explore-heading">Explore</div>
+          <ul className="footer-nav-list" aria-labelledby="footer-explore-heading">
+            {EXPLORE_LINKS.map((item) => (
+              <li key={item.label}>
+                <button
+                  className="footer-nav-link"
+                  onClick={() => navigate(item.path)}
+                >
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Company links */}

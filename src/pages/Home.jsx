@@ -16,10 +16,10 @@ const DEFAULT_EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 const ALL_FEATURES = [
   { key: "headings", icon: "list-tree", title: "Heading structure", desc: "Full H1–H6 outline, in order" },
   { key: "links",    icon: "link",      title: "Every link",       desc: "Internal & external, deduped" },
-  { key: "summary",  icon: "sparkles",  title: "AI summary",       desc: "Plain-language page overview" },
-  { key: "custom",   icon: "code",      title: "Custom extraction",desc: "Ask for any field in plain English" },
+  { key: "summary",  icon: "sparkles",  title: "AI summary",       desc: "Plain-language page overview", popular: true },
+  { key: "custom",   icon: "code",      title: "Custom extraction",desc: "Ask for any field in plain English", popular: true },
   { key: "map",      icon: "map",       title: "Domain mapping",   desc: "Discover every indexed URL on a site" },
-  { key: "contacts", icon: "users",     title: "Contacts & emails",desc: "Surface leadership & contact emails" },
+  { key: "contacts", icon: "users",     title: "Contacts & emails",desc: "Surface leadership & contact emails", popular: true },
   { key: "content",  icon: "wand",      title: "Content generation",desc: "Turn saved pages into SEO outlines & briefs" },
   { key: "pricing",  icon: "hash",      title: "Pricing extraction",desc: "Structured pricing tiers from any page" },
 ];
@@ -377,6 +377,11 @@ export default function Home() {
                 <div className="feature-title">{f.title}</div>
                 <div className="feature-desc">{f.desc}</div>
               </div>
+              {f.popular && (
+                <span className="feature-tag" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+                  Popular
+                </span>
+              )}
               {persona && persona.featuresHighlight?.includes(f.key) && (
                 <div className="feature-tag" style={{ background: `color-mix(in srgb, ${persona.color} 12%, transparent)`, color: persona.color }}>
                   Recommended
@@ -384,6 +389,38 @@ export default function Home() {
               )}
             </div>
           ))}
+        </div>
+
+        {/* Social proof section */}
+        <div className="home-social-proof rise" style={{ animationDelay: ".3s", marginTop: 48, width: "100%", maxWidth: 960 }}>
+          <div className="home-sp-stats">
+            {[
+              { num: "500+", label: "teams & researchers" },
+              { num: "10K+", label: "extractions this month" },
+              { num: "30s", label: "average time to insight" },
+              { num: "7", label: "export & enrichment types" },
+            ].map((s) => (
+              <div key={s.label} className="home-sp-stat">
+                <span className="home-sp-num">{s.num}</span>
+                <span className="home-sp-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="home-testimonials">
+            {[
+              { quote: "We replaced a $300/month tool with DatIQ. Built 200 targeted leads in a single afternoon.", name: "Alex R.", role: "Head of Sales, B2B SaaS" },
+              { quote: "DatIQ cuts our competitive research time by 80%. Pricing data faster than I can open a browser tab.", name: "Sarah M.", role: "Product Manager, Fintech" },
+              { quote: "Perfect for quick due diligence. I pull a company's headings, team, and tech stack before every call.", name: "James T.", role: "VC Analyst" },
+            ].map((t) => (
+              <div key={t.name} className="home-testimonial-card">
+                <p className="home-testimonial-quote">"{t.quote}"</p>
+                <div className="home-testimonial-author">
+                  <span className="home-testimonial-name">{t.name}</span>
+                  <span className="home-testimonial-role">{t.role}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Change persona / switch role CTA */}

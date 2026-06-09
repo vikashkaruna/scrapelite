@@ -28,9 +28,23 @@ import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import About from "./pages/About.jsx";
 import Blog from "./pages/Blog.jsx";
+import UseCaseLead from "./pages/UseCaseLead.jsx";
+import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
+import UseCaseSEO from "./pages/UseCaseSEO.jsx";
+import UseCaseResearch from "./pages/UseCaseResearch.jsx";
+import VsBrowseAI from "./pages/VsBrowseAI.jsx";
+import VsClay from "./pages/VsClay.jsx";
+import Integrations from "./pages/Integrations.jsx";
 
 // Accessible without completing onboarding.
-const PUBLIC_PATHS = ["/onboarding", "/privacy", "/terms", "/pricing", "/payment/success", "/payment/cancel", "/about", "/blog"];
+const PUBLIC_PATHS = [
+  "/onboarding", "/privacy", "/terms", "/pricing",
+  "/payment/success", "/payment/cancel",
+  "/about", "/blog", "/integrations",
+  "/use-cases/lead-generation", "/use-cases/competitor-research",
+  "/use-cases/seo-audit", "/use-cases/market-research",
+  "/vs/browse-ai", "/vs/clay",
+];
 
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
@@ -39,7 +53,7 @@ function Shell() {
   const { pathname } = useLocation();
 
   const isAdmin  = pathname.startsWith("/admin");
-  const isPublic = PUBLIC_PATHS.includes(pathname) || isAdmin;
+  const isPublic = PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/use-cases/") || pathname.startsWith("/vs/") || isAdmin;
 
   if (!onboarded && !isPublic) return <Navigate to="/onboarding" replace />;
 
@@ -71,21 +85,32 @@ function Shell() {
 
   return (
     <>
+      {/* Skip-to-content link for keyboard/screen reader users */}
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <TopBar />
-      <Routes>
-        <Route path="/"                 element={<Home />} />
-        <Route path="/preview"          element={<Preview />} />
-        <Route path="/dashboard"        element={<Dashboard />} />
-        <Route path="/pricing"          element={<Pricing />} />
-        <Route path="/account"          element={<Account />} />
-        <Route path="/payment/success"  element={<PaymentSuccess />} />
-        <Route path="/payment/cancel"   element={<PaymentCancel />} />
-        <Route path="/privacy"          element={<Privacy />} />
-        <Route path="/terms"            element={<Terms />} />
-        <Route path="/about"            element={<About />} />
-        <Route path="/blog"             element={<Blog />} />
-        <Route path="*"                 element={<Navigate to="/" replace />} />
-      </Routes>
+      <main id="main-content">
+        <Routes>
+          <Route path="/"                              element={<Home />} />
+          <Route path="/preview"                       element={<Preview />} />
+          <Route path="/dashboard"                     element={<Dashboard />} />
+          <Route path="/pricing"                       element={<Pricing />} />
+          <Route path="/account"                       element={<Account />} />
+          <Route path="/payment/success"               element={<PaymentSuccess />} />
+          <Route path="/payment/cancel"                element={<PaymentCancel />} />
+          <Route path="/privacy"                       element={<Privacy />} />
+          <Route path="/terms"                         element={<Terms />} />
+          <Route path="/about"                         element={<About />} />
+          <Route path="/blog"                          element={<Blog />} />
+          <Route path="/integrations"                  element={<Integrations />} />
+          <Route path="/use-cases/lead-generation"     element={<UseCaseLead />} />
+          <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
+          <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
+          <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
+          <Route path="/vs/browse-ai"                  element={<VsBrowseAI />} />
+          <Route path="/vs/clay"                       element={<VsClay />} />
+          <Route path="*"                              element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
       {showAuthModal && <AuthModal />}
       <Footer />
     </>

@@ -112,18 +112,20 @@ export default function TopBar() {
   };
 
   return (
-    <header className="topbar">
+    <header className="topbar" aria-label="Site header">
       <Brand onClick={() => navigate("/")} />
       <div className="topbar-actions">
-        <nav className="nav-links">
+        <nav className="nav-links" aria-label="Main navigation">
           {links.map((l) => (
-            <div
+            <button
               key={l.to}
+              type="button"
               className={"nav-link" + (l.match(pathname) ? " active" : "")}
               onClick={() => navigate(l.to)}
+              aria-current={l.match(pathname) ? "page" : undefined}
             >
               {l.label}
-            </div>
+            </button>
           ))}
           {/* Static help site — plain anchor bypasses the SPA router. */}
           <a className="nav-link" href="/help/index.html" target="_blank" rel="noopener">
