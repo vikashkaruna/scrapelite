@@ -7,18 +7,7 @@
   node_bundler = "esbuild"
 
 [build.environment]
-  # Allow the runtime endpoint-override file to pass Netlify secrets scanning. It
-  # holds public n8n webhook URLs read by the browser at runtime (not real
-  # secrets), but their values match scanned env vars. Vite copies
-  # public/runtime-config.js into the publish dir, so both the source and built
-  # paths are omitted.
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js"
-
-[functions]
-  # Use esbuild so Netlify Functions can import npm packages (e.g. @supabase/supabase-js)
-  # and resolve ESM syntax consistently with the project's "type": "module" setting.
-  node_bundler = "esbuild"
-  directory = "netlify/functions"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
 # Map /api/* → /.netlify/functions/* so the browser can call /api/extract
