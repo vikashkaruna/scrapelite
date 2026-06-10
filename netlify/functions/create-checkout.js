@@ -60,7 +60,7 @@ export const handler = async (event) => {
           const coupon = await stripe.coupons.create({
             percent_off: Math.min(100, Math.round(discountPercent)),
             duration: "once",
-            name: "ScrapeLite discount",
+            name: "DatIQ discount",
           });
           params.discounts = [{ coupon: coupon.id }];
         } catch { /* skip coupon if creation fails */ }

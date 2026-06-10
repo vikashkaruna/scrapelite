@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>11. Data model &amp; persistence · ScrapeLite Help</title>
+<title>11. Data model &amp; persistence · DatIQ Help</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,15 +66,15 @@ create table if not exists public.extractions (
 
 alter table public.extractions enable row level security;
 create policy "anon full access" on public.extractions
-  for all using (true) with check (true);</code></pre><blockquote><p><strong>Migration note:</strong> the three v2 columns may not yet exist on the live database. Until the <code>ALTER TABLE … add column if not exists …</code> migration is run, the app saves the v1 columns to Supabase and keeps v2 data in <code>localStorage</code>, logging a non-blocking warning. Running the migration unlocks full cross-device sync of custom extractions, domain maps, and enrichment tabs.</p></blockquote><h3 id="113-localstorage-keys">11.3 <code>localStorage</code> keys</h3><div class="table-wrap"><table><thead><tr><th>Key</th><th>Holds</th></tr></thead><tbody><tr><td><code>scrapelite.saved</code></td><td>Saved extractions (the local mirror / fallback backend).</td></tr><tr><td><code>scrapelite.enrichments</code></td><td>Enrichment cache, indexed by URL → capability key.</td></tr><tr><td><code>scrapelite.current</code></td><td>The last-viewed extraction (restores Preview after reload).</td></tr><tr><td><code>scrapelite.theme</code></td><td><code>light</code> / <code>dark</code>.</td></tr><tr><td><code>scrapelite.dashLayout</code></td><td><code>table</code> / <code>cards</code>.</td></tr></tbody></table></div><h3 id="114-link-categories">11.4 Link categories</h3><p><code>email · social · document · media · internal · external</code> — assigned by host/extension heuristics first (always reliable), then optionally refined by a single batched Claude call (capped at 60 links). Any AI failure silently falls back to heuristics.</p><hr>
+  for all using (true) with check (true);</code></pre><blockquote><p><strong>Migration note:</strong> the three v2 columns may not yet exist on the live database. Until the <code>ALTER TABLE … add column if not exists …</code> migration is run, the app saves the v1 columns to Supabase and keeps v2 data in <code>localStorage</code>, logging a non-blocking warning. Running the migration unlocks full cross-device sync of custom extractions, domain maps, and enrichment tabs.</p></blockquote><h3 id="113-localstorage-keys">11.3 <code>localStorage</code> keys</h3><div class="table-wrap"><table><thead><tr><th>Key</th><th>Holds</th></tr></thead><tbody><tr><td><code>datiq.saved</code></td><td>Saved extractions (the local mirror / fallback backend).</td></tr><tr><td><code>datiq.enrichments</code></td><td>Enrichment cache, indexed by URL → capability key.</td></tr><tr><td><code>datiq.current</code></td><td>The last-viewed extraction (restores Preview after reload).</td></tr><tr><td><code>datiq.theme</code></td><td><code>light</code> / <code>dark</code>.</td></tr><tr><td><code>datiq.dashLayout</code></td><td><code>table</code> / <code>cards</code>.</td></tr></tbody></table></div><h3 id="114-link-categories">11.4 Link categories</h3><p><code>email · social · document · media · internal · external</code> — assigned by host/extension heuristics first (always reliable), then optionally refined by a single batched Claude call (capped at 60 links). Any AI failure silently falls back to heuristics.</p><hr>
       <div class="page-nav"><a class="pn-btn" href="10-technology-stack-their-uses-and-architecture.html"><span class="pn-dir">← Previous</span><span class="pn-title">Technology stack, their uses &amp; architecture</span></a><a class="pn-btn pn-next" href="12-privacy-security-and-data-handling.html"><span class="pn-dir">Next →</span><span class="pn-title">Privacy, security &amp; data handling</span></a></div>
     </article>
-    <footer class="doc-foot">ScrapeLite v2.0 · Product help · Generated from the canonical documentation.</footer>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>
 </div>
 <script>
   (function () {
-    var KEY = "scrapelite.theme";
+    var KEY = "datiq.theme";
     var root = document.documentElement;
     try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
     function setIcon() {

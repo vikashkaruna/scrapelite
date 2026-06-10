@@ -1,8 +1,8 @@
 // adminService.js — V5 admin module: coupons, user management, revenue metrics.
 // All data is localStorage-persisted (production would use Supabase + server).
 
-const COUPONS_KEY = "scrapelite.coupons";
-const ADMIN_USERS_KEY = "scrapelite.adminUsers";
+const COUPONS_KEY = "datiq.coupons";
+const ADMIN_USERS_KEY = "datiq.adminUsers";
 const ADMIN_AUTH_KEY  = "scrapelite.adminAuth";
 
 const ADMIN_PIN = "ADMIN123"; // demo PIN — in production, use Supabase Auth + role
@@ -116,7 +116,7 @@ export function addAdminUser(user) {
 function getEffectivePlanPrices() {
   const BASE = { free: 0, select: 19, pro: 29, business: 79, agency: 199 };
   try {
-    const overrides = JSON.parse(localStorage.getItem("scrapelite.pricingOverrides") || "{}");
+    const overrides = JSON.parse(localStorage.getItem("datiq.pricingOverrides") || "{}");
     for (const [id, ov] of Object.entries(overrides)) {
       if (ov?.price_usd !== undefined) BASE[id] = Number(ov.price_usd) || 0;
     }

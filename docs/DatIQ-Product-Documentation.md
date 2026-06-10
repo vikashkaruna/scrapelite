@@ -1,11 +1,11 @@
-# ScrapeLite — Complete Product Documentation
+# DatIQ — Complete Product Documentation
 
 > **Zero-code web extraction & enrichment platform**
 > Paste any URL → get its structure, an AI summary, and one-click B2B enrichment — no scraping scripts required.
 
 | | |
 |---|---|
-| **Product** | ScrapeLite |
+| **Product** | DatIQ |
 | **Documented version** | **v2.0** (current production release) |
 | **Live site** | https://scrapelite.netlify.app |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
@@ -18,7 +18,7 @@
 
 This document is written to serve three downstream uses, so it is deliberately structured and self-contained:
 
-1. **In-app HTML help** — every screen and feature has its own clearly-titled section with a screenshot, so each section can be exported to a standalone HTML help page reachable from the ScrapeLite menu.
+1. **In-app HTML help** — every screen and feature has its own clearly-titled section with a screenshot, so each section can be exported to a standalone HTML help page reachable from the DatIQ menu.
 2. **Onboarding & sales enablement** — the persona, segment, and prioritization sections explain *who* each feature is for and *why* it exists.
 3. **Chatbot / knowledge base** — short, question-style headings, a glossary, and an FAQ make the content easy to chunk and retrieve.
 
@@ -47,9 +47,9 @@ This document is written to serve three downstream uses, so it is deliberately s
 
 ## 1. Product overview
 
-**ScrapeLite turns any public web page into structured, usable data in seconds — without writing a single line of scraping code.**
+**DatIQ turns any public web page into structured, usable data in seconds — without writing a single line of scraping code.**
 
-You paste a URL. ScrapeLite returns:
+You paste a URL. DatIQ returns:
 
 - the page's **heading outline** (H1–H6, in document order),
 - **every link** on the page (internal & external, de-duplicated and AI-categorized),
@@ -65,7 +65,7 @@ Everything you keep lands in a personal **Dashboard**, where it can be searched,
 |---|---|
 | **No code** | No selectors, no XPath, no Python. A URL and a toggle are the entire interface. |
 | **Structured in seconds** | Results come back as clean, typed data (headings, links, JSON enrichments), not raw HTML. |
-| **Extract *and* enrich** | v2.0's defining shift: ScrapeLite doesn't just *read* a page, it *answers questions about it* — contacts, pricing, mission — as reusable, saved tabs. |
+| **Extract *and* enrich** | v2.0's defining shift: DatIQ doesn't just *read* a page, it *answers questions about it* — contacts, pricing, mission — as reusable, saved tabs. |
 | **Always usable** | The app degrades gracefully: with API keys it makes real calls; without them it runs on realistic mock data and browser storage, so it never hard-fails. |
 
 ### One-line positioning
@@ -76,7 +76,7 @@ Everything you keep lands in a personal **Dashboard**, where it can be searched,
 
 ## 2. Product evolution: MVP → v1 → v2.0 → latest
 
-ScrapeLite grew in three product stages plus a deployment stage. Understanding the arc explains why the UI is layered the way it is (simple core, progressively-disclosed power features).
+DatIQ grew in three product stages plus a deployment stage. Understanding the arc explains why the UI is layered the way it is (simple core, progressively-disclosed power features).
 
 ### Stage 1 — MVP / v1: "Extract & summarize"
 
@@ -95,7 +95,7 @@ The original product answered one question: *"What's on this page?"*
 
 ### Stage 2 — v2.0: "Extract & **enrich**"
 
-v2.0 is the current feature release. It transformed ScrapeLite from a *reader* into an *enrichment platform*. Everything from v1 remains; v2.0 **adds**:
+v2.0 is the current feature release. It transformed DatIQ from a *reader* into an *enrichment platform*. Everything from v1 remains; v2.0 **adds**:
 
 | # | v2.0 capability | What it does |
 |---|---|---|
@@ -125,7 +125,7 @@ The most recent commits after the v2.0 merge were **infrastructure, not new prod
 
 ## 3. Who it's for — personas, user groups & business segments
 
-ScrapeLite's enrichment prompts and content formats are unmistakably **B2B go-to-market oriented** (leadership contacts, pricing tiers, competitor briefs, SEO outlines). The product is built for **non-technical operators who need web data fast**.
+DatIQ's enrichment prompts and content formats are unmistakably **B2B go-to-market oriented** (leadership contacts, pricing tiers, competitor briefs, SEO outlines). The product is built for **non-technical operators who need web data fast**.
 
 ### Primary personas
 
@@ -200,7 +200,7 @@ These are the principles that guided what got built (and how), reconstructed fro
 
 4. **Non-blocking enrichment.** Quick Enrichment runs **in the background** — the page stays visible, only the clicked control spins. Users never hit a full-screen loader for a secondary action. This was an explicit, locked UX rule.
 
-5. **Persistence & resilience of learned data.** Anything ScrapeLite *learns* about a URL (enrichment tabs) is saved in two places (local cache + Supabase column) and merged newest-wins on read, so insights survive reloads, navigation, and device switches.
+5. **Persistence & resilience of learned data.** Anything DatIQ *learns* about a URL (enrichment tabs) is saved in two places (local cache + Supabase column) and merged newest-wins on read, so insights survive reloads, navigation, and device switches.
 
 6. **Exports must be complete.** CSV and PDF bundle *everything* known about a page — including every enrichment capability, deep-flattened — because the export is often the real deliverable for a sales/marketing user.
 
@@ -275,11 +275,11 @@ A flat, exhaustive list (good for chatbot retrieval). Grouped by area.
 
 ## 7. Application flow — screen-by-screen, with screenshots
 
-ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
+DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  TopBar:  ScrapeLite logo │ Extract · Dashboard │ 🌙 theme │ +New │
+│  TopBar:  DatIQ logo │ Extract · Dashboard │ 🌙 theme │ +New │
 └─────────────────────────────────────────────────────────────────┘
         │                         │                        │
         ▼                         ▼                        ▼
@@ -295,7 +295,7 @@ ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
 
 ### 7.1 Screen 1 — Home (Extract) · route `/`
 
-![ScrapeLite Home screen](assets/screenshots/01-home.png)
+![DatIQ Home screen](assets/screenshots/01-home.png)
 
 **Purpose:** the entry point — turn a URL into an extraction.
 
@@ -320,13 +320,13 @@ ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
 
 **Dark mode** (theme is one click in the top bar, and persists):
 
-![ScrapeLite Home in dark mode](assets/screenshots/03-home-dark.png)
+![DatIQ Home in dark mode](assets/screenshots/03-home-dark.png)
 
 ---
 
 ### 7.2 Screen 2 — Preview (Review & Enrich) · route `/preview`
 
-![ScrapeLite Preview screen](assets/screenshots/02-preview.png)
+![DatIQ Preview screen](assets/screenshots/02-preview.png)
 
 **Purpose:** review the extraction, enrich it, then save or discard.
 
@@ -347,7 +347,7 @@ ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
 
 **Map-mode variant** — when you extracted with **Map entire domain**, the Overview tab shows a single **Domain map** card: a searchable list of every discovered URL, with a filter box and a count pill. (Quick enrichment is hidden in map mode.)
 
-![ScrapeLite domain map preview](assets/screenshots/06-domain-map.png)
+![DatIQ domain map preview](assets/screenshots/06-domain-map.png)
 
 **Behavior notes:**
 - Quick enrichment **never** shows the full-screen loader or navigates — the page stays put.
@@ -358,7 +358,7 @@ ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
 
 ### 7.3 Screen 3 — Dashboard (Saved archive) · route `/dashboard`
 
-![ScrapeLite Dashboard, table view](assets/screenshots/04-dashboard-table.png)
+![DatIQ Dashboard, table view](assets/screenshots/04-dashboard-table.png)
 
 **Purpose:** your searchable archive of saved extractions; the hub for export, content generation, and email.
 
@@ -378,7 +378,7 @@ ScrapeLite is a 3-screen single-page app with a persistent top navigation bar.
 
 **Card view** — the same data as cards (toggle persists):
 
-![ScrapeLite Dashboard, card view](assets/screenshots/05-dashboard-cards.png)
+![DatIQ Dashboard, card view](assets/screenshots/05-dashboard-cards.png)
 
 **Empty states** — a friendly empty state when nothing is saved ("No extractions yet") and a "No matches" state when a search returns nothing.
 
@@ -474,7 +474,7 @@ No test framework or ESLint config is wired in; scripts are `dev`, `build`, `pre
 
 ### 10.2 Architecture overview
 
-ScrapeLite is a **100% client-side SPA**. There is no custom backend server — the browser talks directly to Firecrawl, Anthropic, and Supabase. A layered design keeps this clean:
+DatIQ is a **100% client-side SPA**. There is no custom backend server — the browser talks directly to Firecrawl, Anthropic, and Supabase. A layered design keeps this clean:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -580,11 +580,11 @@ create policy "anon full access" on public.extractions
 
 | Key | Holds |
 |---|---|
-| `scrapelite.saved` | Saved extractions (the local mirror / fallback backend). |
-| `scrapelite.enrichments` | Enrichment cache, indexed by URL → capability key. |
-| `scrapelite.current` | The last-viewed extraction (restores Preview after reload). |
-| `scrapelite.theme` | `light` / `dark`. |
-| `scrapelite.dashLayout` | `table` / `cards`. |
+| `datiq.saved` | Saved extractions (the local mirror / fallback backend). |
+| `datiq.enrichments` | Enrichment cache, indexed by URL → capability key. |
+| `datiq.current` | The last-viewed extraction (restores Preview after reload). |
+| `datiq.theme` | `light` / `dark`. |
+| `datiq.dashLayout` | `table` / `cards`. |
 
 ### 11.4 Link categories
 
@@ -594,7 +594,7 @@ create policy "anon full access" on public.extractions
 
 ## 12. Privacy, security & data handling
 
-- **What ScrapeLite stores:** the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (`localStorage`) and, when configured, your own Supabase project.
+- **What DatIQ stores:** the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (`localStorage`) and, when configured, your own Supabase project.
 - **No accounts (today):** v2.0 has no auth; a configured Supabase uses an anon-access policy. Multi-user isolation (Supabase Auth) is on the roadmap before broad/enterprise use.
 - **Browser-side API keys — demo only.** The AI (and Firecrawl) keys can be bundled into the client for local/demo use. **For production, the AI calls should be proxied through a server/edge function** (a planned Netlify Function) so keys are never shipped to end users. This is called out as the top pre-production hardening task.
 - **Outbound calls** go only to the configured services (Firecrawl, Anthropic, Supabase, your webhook/email endpoint). Endpoints are forced absolute (`https://`) to avoid accidentally hitting the app's own origin.
@@ -604,7 +604,7 @@ create policy "anon full access" on public.extractions
 
 ## 13. FAQ & troubleshooting
 
-**Do I need an API key or a database to use ScrapeLite?**
+**Do I need an API key or a database to use DatIQ?**
 No. With nothing configured it runs on realistic mock data and stores everything in your browser. Keys and Supabase add real scraping/AI and cross-device sync.
 
 **What's the difference between "Custom extraction" and "Quick enrichment"?**
@@ -662,7 +662,7 @@ All screenshots live in `docs/assets/screenshots/` and were captured from the ru
 | `04-dashboard-table.png` | Dashboard, table view |
 | `05-dashboard-cards.png` | Dashboard, card view |
 
-To regenerate, run the dev server and capture each route. Stateful screens (Preview, Dashboard) need seeded data; the simplest method is a localStorage-only dev instance plus a small seed page that sets `scrapelite.saved` / `scrapelite.current` and then redirects into the route.
+To regenerate, run the dev server and capture each route. Stateful screens (Preview, Dashboard) need seeded data; the simplest method is a localStorage-only dev instance plus a small seed page that sets `datiq.saved` / `datiq.current` and then redirects into the route.
 
 ### 15.2 Environment variables
 
@@ -687,4 +687,4 @@ npm run preview  # preview the production build
 
 ---
 
-*End of document. This file is the canonical source for ScrapeLite's HTML help pages and future knowledge-base/chatbot content. Keep it in sync with the product as features ship.*
+*End of document. This file is the canonical source for DatIQ's HTML help pages and future knowledge-base/chatbot content. Keep it in sync with the product as features ship.*

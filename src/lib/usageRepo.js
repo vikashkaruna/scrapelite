@@ -4,7 +4,7 @@
 
 import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
 
-const SESSION_KEY = "scrapelite.sessionId";
+const SESSION_KEY = "datiq.sessionId";
 
 export function getSessionId() {
   try {
@@ -38,7 +38,7 @@ export async function syncUsageToDb(usage, planId) {
         { onConflict: "session_id,month" }
       );
   } catch (err) {
-    console.warn("[ScrapeLite] Usage DB sync failed:", err?.message ?? err);
+    console.warn("[DatIQ] Usage DB sync failed:", err?.message ?? err);
   }
 }
 
@@ -77,7 +77,7 @@ export async function syncAlertsToDb(alertConfig) {
         { onConflict: "session_id" }
       );
   } catch (err) {
-    console.warn("[ScrapeLite] Alert config sync failed:", err?.message ?? err);
+    console.warn("[DatIQ] Alert config sync failed:", err?.message ?? err);
   }
 }
 

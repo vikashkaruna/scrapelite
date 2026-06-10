@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>15. Appendix — regenerating screenshots &amp; environment · ScrapeLite Help</title>
+<title>15. Appendix — regenerating screenshots &amp; environment · DatIQ Help</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,18 +35,18 @@
         <h1>Appendix — regenerating screenshots &amp; environment</h1>
         <p class="doc-sub">All screenshots live in docs/assets/screenshots/ and were captured from the running app at 1280px width:</p>
       </div>
-      <h3 id="151-screenshots-in-this-document">15.1 Screenshots in this document</h3><p>All screenshots live in <code>docs/assets/screenshots/</code> and were captured from the running app at 1280px width:</p><div class="table-wrap"><table><thead><tr><th>File</th><th>Screen</th></tr></thead><tbody><tr><td><code>01-home.png</code></td><td>Home (light)</td></tr><tr><td><code>03-home-dark.png</code></td><td>Home (dark)</td></tr><tr><td><code>02-preview.png</code></td><td>Preview with enrichment tabs</td></tr><tr><td><code>06-domain-map.png</code></td><td>Preview in domain-map mode</td></tr><tr><td><code>04-dashboard-table.png</code></td><td>Dashboard, table view</td></tr><tr><td><code>05-dashboard-cards.png</code></td><td>Dashboard, card view</td></tr></tbody></table></div><p>To regenerate, run the dev server and capture each route. Stateful screens (Preview, Dashboard) need seeded data; the simplest method is a localStorage-only dev instance plus a small seed page that sets <code>scrapelite.saved</code> / <code>scrapelite.current</code> and then redirects into the route.</p><h3 id="152-environment-variables">15.2 Environment variables</h3><div class="table-wrap"><table><thead><tr><th>Variable</th><th>Purpose</th></tr></thead><tbody><tr><td><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></td><td>Cloud persistence (optional).</td></tr><tr><td><code>VITE_FIRECRAWL_API_KEY</code></td><td>Real scraping &amp; domain mapping.</td></tr><tr><td><code>VITE_AI_API_KEY</code> / <code>VITE_AI_MODEL</code></td><td>Real Claude summaries, categorization, content.</td></tr><tr><td><code>VITE_WEBHOOK_URL</code></td><td>Save notifications (n8n).</td></tr><tr><td><code>VITE_EMAIL_API_URL</code></td><td>Email delivery endpoint.</td></tr></tbody></table></div><p>Absent any of these, the corresponding feature uses its mock/fallback path.</p><h3 id="153-run-locally">15.3 Run locally</h3><pre class="code lang-bash"><code>npm install
+      <h3 id="151-screenshots-in-this-document">15.1 Screenshots in this document</h3><p>All screenshots live in <code>docs/assets/screenshots/</code> and were captured from the running app at 1280px width:</p><div class="table-wrap"><table><thead><tr><th>File</th><th>Screen</th></tr></thead><tbody><tr><td><code>01-home.png</code></td><td>Home (light)</td></tr><tr><td><code>03-home-dark.png</code></td><td>Home (dark)</td></tr><tr><td><code>02-preview.png</code></td><td>Preview with enrichment tabs</td></tr><tr><td><code>06-domain-map.png</code></td><td>Preview in domain-map mode</td></tr><tr><td><code>04-dashboard-table.png</code></td><td>Dashboard, table view</td></tr><tr><td><code>05-dashboard-cards.png</code></td><td>Dashboard, card view</td></tr></tbody></table></div><p>To regenerate, run the dev server and capture each route. Stateful screens (Preview, Dashboard) need seeded data; the simplest method is a localStorage-only dev instance plus a small seed page that sets <code>datiq.saved</code> / <code>datiq.current</code> and then redirects into the route.</p><h3 id="152-environment-variables">15.2 Environment variables</h3><div class="table-wrap"><table><thead><tr><th>Variable</th><th>Purpose</th></tr></thead><tbody><tr><td><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></td><td>Cloud persistence (optional).</td></tr><tr><td><code>VITE_FIRECRAWL_API_KEY</code></td><td>Real scraping &amp; domain mapping.</td></tr><tr><td><code>VITE_AI_API_KEY</code> / <code>VITE_AI_MODEL</code></td><td>Real Claude summaries, categorization, content.</td></tr><tr><td><code>VITE_WEBHOOK_URL</code></td><td>Save notifications (n8n).</td></tr><tr><td><code>VITE_EMAIL_API_URL</code></td><td>Email delivery endpoint.</td></tr></tbody></table></div><p>Absent any of these, the corresponding feature uses its mock/fallback path.</p><h3 id="153-run-locally">15.3 Run locally</h3><pre class="code lang-bash"><code>npm install
 npm run dev      # http://localhost:5173
 npm run build    # production build → dist/
-npm run preview  # preview the production build</code></pre><hr><p><em>End of document. This file is the canonical source for ScrapeLite's HTML help pages and future knowledge-base/chatbot content. Keep it in sync with the product as features ship.</em></p>
+npm run preview  # preview the production build</code></pre><hr><p><em>End of document. This file is the canonical source for DatIQ's HTML help pages and future knowledge-base/chatbot content. Keep it in sync with the product as features ship.</em></p>
       <div class="page-nav"><a class="pn-btn" href="14-glossary.html"><span class="pn-dir">← Previous</span><span class="pn-title">Glossary</span></a><span></span></div>
     </article>
-    <footer class="doc-foot">ScrapeLite v2.0 · Product help · Generated from the canonical documentation.</footer>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>
 </div>
 <script>
   (function () {
-    var KEY = "scrapelite.theme";
+    var KEY = "datiq.theme";
     var root = document.documentElement;
     try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
     function setIcon() {

@@ -120,7 +120,7 @@ export default function AuthModal() {
         {/* Brand */}
         <div className="auth-brand">
           <Icon name="layers" size={20} strokeWidth={2.2} />
-          <span>ScrapeLite</span>
+          <span>DatIQ</span>
         </div>
 
         <h2 className="auth-title">

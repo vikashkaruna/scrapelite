@@ -24,7 +24,7 @@ export const PERSONAS = [
     demoUrl: "https://hubspot.com",
     demoLabel: "See a live HubSpot prospect extraction",
     guideTip:
-      "Paste any company URL — ScrapeLite extracts contacts, leadership, and an AI summary in seconds.",
+      "Paste any company URL — DatIQ extracts contacts, leadership, and an AI summary in seconds.",
   },
   {
     id: "competitive-intel",
@@ -48,7 +48,7 @@ export const PERSONAS = [
     demoUrl: "https://notion.so/pricing",
     demoLabel: "Watch us tear down Notion's pricing page",
     guideTip:
-      "Try a competitor's pricing page — ScrapeLite extracts every tier, CTA, and messaging detail.",
+      "Try a competitor's pricing page — DatIQ extracts every tier, CTA, and messaging detail.",
   },
   {
     id: "seo",

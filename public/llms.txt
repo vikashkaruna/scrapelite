@@ -1,5 +1,5 @@
 # DatIQ — Intelligence from Every URL
-> DatIQ (powered by ScrapeLite) is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+> DatIQ is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
 
 ## What DatIQ Does
 DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.

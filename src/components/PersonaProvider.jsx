@@ -2,9 +2,9 @@
 // Stores the selected persona + onboarding state in localStorage.
 import { createContext, useContext, useState } from "react";
 
-const PERSONA_KEY = "scrapelite.persona";
-const ONBOARDED_KEY = "scrapelite.onboarded";
-const NAME_KEY = "scrapelite.userName";
+const PERSONA_KEY = "datiq.persona";
+const ONBOARDED_KEY = "datiq.onboarded";
+const NAME_KEY = "datiq.userName";
 
 const PersonaContext = createContext(null);
 

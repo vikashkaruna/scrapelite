@@ -7,29 +7,29 @@ const SECTIONS = [
   {
     title: "Acceptance of Terms",
     content:
-      "By accessing or using ScrapeLite (the \"Service\"), you agree to be bound by these Terms of Service (\"Terms\"). If you do not agree to all of these Terms, you may not use the Service. These Terms apply to all visitors, users, and others who access or use the Service.",
+      "By accessing or using DatIQ (the \"Service\"), you agree to be bound by these Terms of Service (\"Terms\"). If you do not agree to all of these Terms, you may not use the Service. These Terms apply to all visitors, users, and others who access or use the Service.",
   },
   {
     title: "Description of Service",
     content:
-      "ScrapeLite is a web-based platform that enables users to extract structured data (headings, links, contact information, and other content) from publicly accessible web pages, and to enrich that data using AI-powered analysis. The Service is provided on an \"as is\" and \"as available\" basis.",
+      "DatIQ is a web-based platform that enables users to extract structured data (headings, links, contact information, and other content) from publicly accessible web pages, and to enrich that data using AI-powered analysis. The Service is provided on an \"as is\" and \"as available\" basis.",
   },
   {
     title: "Acceptable Use",
     items: [
-      "You may only use ScrapeLite to extract data from websites you own, have explicit permission to scrape, or that are publicly accessible and not protected by technical or legal access controls.",
-      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using ScrapeLite.",
-      "You may not use ScrapeLite to harvest personal data for spam, phishing, identity theft, or any other malicious purpose.",
-      "You may not use ScrapeLite to circumvent authentication, access controls, or rate limits of any website or service.",
-      "You may not resell, sublicense, or redistribute access to ScrapeLite's extraction infrastructure without prior written consent.",
-      "You may not use ScrapeLite in any way that violates applicable laws, including data protection laws (GDPR, CCPA) and computer fraud statutes (CFAA).",
-      "Automated batch extraction at scale requires prior agreement with ScrapeLite. Contact us for enterprise usage.",
+      "You may only use DatIQ to extract data from websites you own, have explicit permission to scrape, or that are publicly accessible and not protected by technical or legal access controls.",
+      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using DatIQ.",
+      "You may not use DatIQ to harvest personal data for spam, phishing, identity theft, or any other malicious purpose.",
+      "You may not use DatIQ to circumvent authentication, access controls, or rate limits of any website or service.",
+      "You may not resell, sublicense, or redistribute access to DatIQ's extraction infrastructure without prior written consent.",
+      "You may not use DatIQ in any way that violates applicable laws, including data protection laws (GDPR, CCPA) and computer fraud statutes (CFAA).",
+      "Automated batch extraction at scale requires prior agreement with DatIQ. Contact us for enterprise usage.",
     ],
   },
   {
     title: "Intellectual Property",
     content:
-      "The Service itself — including its design, code, branding, and underlying technology — is owned by ScrapeLite and protected by intellectual property laws. Content extracted from third-party websites remains the intellectual property of those websites' owners. ScrapeLite does not claim ownership of any extracted content. You are responsible for ensuring your use of extracted content complies with applicable copyright and data laws.",
+      "The Service itself — including its design, code, branding, and underlying technology — is owned by DatIQ and protected by intellectual property laws. Content extracted from third-party websites remains the intellectual property of those websites' owners. DatIQ does not claim ownership of any extracted content. You are responsible for ensuring your use of extracted content complies with applicable copyright and data laws.",
   },
   {
     title: "User Data and Privacy",
@@ -39,17 +39,17 @@ const SECTIONS = [
   {
     title: "Third-Party Services",
     content:
-      "ScrapeLite integrates with third-party services including Firecrawl (web crawling), Anthropic Claude (AI), and Supabase (data storage). Your use of these integrations is subject to the respective terms and policies of those services. ScrapeLite is not responsible for the availability, accuracy, or actions of these third-party services.",
+      "DatIQ integrates with third-party services including Firecrawl (web crawling), Anthropic Claude (AI), and Supabase (data storage). Your use of these integrations is subject to the respective terms and policies of those services. DatIQ is not responsible for the availability, accuracy, or actions of these third-party services.",
   },
   {
     title: "Limitation of Liability",
     content:
-      "To the maximum extent permitted by applicable law, ScrapeLite shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of data, loss of profits, or business interruption, arising from your use of or inability to use the Service. Our total liability to you for any claims under these Terms shall not exceed the amount you paid us in the twelve months preceding the claim.",
+      "To the maximum extent permitted by applicable law, DatIQ shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of data, loss of profits, or business interruption, arising from your use of or inability to use the Service. Our total liability to you for any claims under these Terms shall not exceed the amount you paid us in the twelve months preceding the claim.",
   },
   {
     title: "Disclaimer of Warranties",
     content:
-      "ScrapeLite is provided \"as is\" without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not warrant that the Service will be uninterrupted, error-free, or free of harmful components, or that extraction results will be complete or accurate.",
+      "DatIQ is provided \"as is\" without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not warrant that the Service will be uninterrupted, error-free, or free of harmful components, or that extraction results will be complete or accurate.",
   },
   {
     title: "Termination",
@@ -95,8 +95,8 @@ export default function Terms() {
 
         <div className="legal-intro card card-pad">
           <p style={{ margin: 0 }}>
-            Please read these Terms of Service carefully before using ScrapeLite. These Terms constitute a legally
-            binding agreement between you and ScrapeLite governing your use of the Service.
+            Please read these Terms of Service carefully before using DatIQ. These Terms constitute a legally
+            binding agreement between you and DatIQ governing your use of the Service.
           </p>
         </div>
 

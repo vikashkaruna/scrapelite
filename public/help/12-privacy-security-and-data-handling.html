@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>12. Privacy, security &amp; data handling · ScrapeLite Help</title>
+<title>12. Privacy, security &amp; data handling · DatIQ Help</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,15 +35,15 @@
         <h1>Privacy, security &amp; data handling</h1>
         
       </div>
-      <ul><li><strong>What ScrapeLite stores:</strong> the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (<code>localStorage</code>) and, when configured, your own Supabase project.</li><li><strong>No accounts (today):</strong> v2.0 has no auth; a configured Supabase uses an anon-access policy. Multi-user isolation (Supabase Auth) is on the roadmap before broad/enterprise use.</li><li><strong>Browser-side API keys — demo only.</strong> The AI (and Firecrawl) keys can be bundled into the client for local/demo use. <strong>For production, the AI calls should be proxied through a server/edge function</strong> (a planned Netlify Function) so keys are never shipped to end users. This is called out as the top pre-production hardening task.</li><li><strong>Outbound calls</strong> go only to the configured services (Firecrawl, Anthropic, Supabase, your webhook/email endpoint). Endpoints are forced absolute (<code>https://</code>) to avoid accidentally hitting the app's own origin.</li><li><strong>Email delivery</strong> prefers your webhook/email API and falls back to the user's own mail client via <code>mailto</code> — content isn't silently routed anywhere unexpected.</li></ul><hr>
+      <ul><li><strong>What DatIQ stores:</strong> the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (<code>localStorage</code>) and, when configured, your own Supabase project.</li><li><strong>No accounts (today):</strong> v2.0 has no auth; a configured Supabase uses an anon-access policy. Multi-user isolation (Supabase Auth) is on the roadmap before broad/enterprise use.</li><li><strong>Browser-side API keys — demo only.</strong> The AI (and Firecrawl) keys can be bundled into the client for local/demo use. <strong>For production, the AI calls should be proxied through a server/edge function</strong> (a planned Netlify Function) so keys are never shipped to end users. This is called out as the top pre-production hardening task.</li><li><strong>Outbound calls</strong> go only to the configured services (Firecrawl, Anthropic, Supabase, your webhook/email endpoint). Endpoints are forced absolute (<code>https://</code>) to avoid accidentally hitting the app's own origin.</li><li><strong>Email delivery</strong> prefers your webhook/email API and falls back to the user's own mail client via <code>mailto</code> — content isn't silently routed anywhere unexpected.</li></ul><hr>
       <div class="page-nav"><a class="pn-btn" href="11-data-model-and-persistence.html"><span class="pn-dir">← Previous</span><span class="pn-title">Data model &amp; persistence</span></a><a class="pn-btn pn-next" href="13-faq-and-troubleshooting.html"><span class="pn-dir">Next →</span><span class="pn-title">FAQ &amp; troubleshooting</span></a></div>
     </article>
-    <footer class="doc-foot">ScrapeLite v2.0 · Product help · Generated from the canonical documentation.</footer>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>
 </div>
 <script>
   (function () {
-    var KEY = "scrapelite.theme";
+    var KEY = "datiq.theme";
     var root = document.documentElement;
     try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
     function setIcon() {

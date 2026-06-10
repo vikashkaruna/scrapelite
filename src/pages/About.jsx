@@ -1,4 +1,4 @@
-// About.jsx — DatIQ / ScrapeLite about page.
+// About.jsx — DatIQ / DatIQ about page.
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -53,7 +53,7 @@ export default function About() {
             <span style={{ color: "var(--accent)" }}>structured intelligence</span>
           </h1>
           <p className="about-hero-sub">
-            DatIQ (powered by ScrapeLite) is a zero-code web extraction and enrichment platform.
+            DatIQ (powered by DatIQ) is a zero-code web extraction and enrichment platform.
             We believe intelligence should be accessible to everyone — researchers, marketers, sales teams,
             developers — without writing a single line of code.
           </p>

@@ -9,7 +9,7 @@ const SECTIONS = [
     content: [
       {
         heading: "Information you provide",
-        text: "When you use ScrapeLite, you may provide us with information such as your email address (if you create an account), your name, and URLs you submit for extraction. This information is used solely to provide and improve the Service.",
+        text: "When you use DatIQ, you may provide us with information such as your email address (if you create an account), your name, and URLs you submit for extraction. This information is used solely to provide and improve the Service.",
       },
       {
         heading: "Extraction data",
@@ -17,7 +17,7 @@ const SECTIONS = [
       },
       {
         heading: "Usage data",
-        text: "We automatically collect certain information about your device and how you interact with ScrapeLite, including browser type, pages visited, features used, and timestamps. This data is used in aggregate to improve the product.",
+        text: "We automatically collect certain information about your device and how you interact with DatIQ, including browser type, pages visited, features used, and timestamps. This data is used in aggregate to improve the product.",
       },
     ],
   },
@@ -26,7 +26,7 @@ const SECTIONS = [
     content: [
       {
         heading: "Service delivery",
-        text: "We use your information primarily to provide, maintain, and improve ScrapeLite — including processing URL extractions, returning results, and persisting your saved extractions.",
+        text: "We use your information primarily to provide, maintain, and improve DatIQ — including processing URL extractions, returning results, and persisting your saved extractions.",
       },
       {
         heading: "Communications",
@@ -34,7 +34,7 @@ const SECTIONS = [
       },
       {
         heading: "Analytics and improvement",
-        text: "Aggregated, anonymised usage data helps us understand how ScrapeLite is used so we can make it better. We do not sell or share individual user data for advertising purposes.",
+        text: "Aggregated, anonymised usage data helps us understand how DatIQ is used so we can make it better. We do not sell or share individual user data for advertising purposes.",
       },
     ],
   },
@@ -94,7 +94,7 @@ const SECTIONS = [
     content: [
       {
         heading: "What we store locally",
-        text: "ScrapeLite uses your browser's localStorage (not traditional cookies) to store preferences such as your selected theme, persona, and unsaved extraction results. This data stays on your device and is not transmitted to our servers.",
+        text: "DatIQ uses your browser's localStorage (not traditional cookies) to store preferences such as your selected theme, persona, and unsaved extraction results. This data stays on your device and is not transmitted to our servers.",
       },
       {
         heading: "No tracking cookies",
@@ -135,15 +135,15 @@ export default function Privacy() {
 
         <div className="legal-intro card card-pad">
           <p>
-            ScrapeLite ("<b>we</b>", "<b>us</b>", or "<b>our</b>") is committed to protecting your privacy. This
-            Privacy Policy explains what information we collect when you use ScrapeLite at{" "}
+            DatIQ ("<b>we</b>", "<b>us</b>", or "<b>our</b>") is committed to protecting your privacy. This
+            Privacy Policy explains what information we collect when you use DatIQ at{" "}
             <a href="https://scrapelite.netlify.app" className="legal-link" target="_blank" rel="noopener noreferrer">
               scrapelite.netlify.app
             </a>{" "}
             (the "<b>Service</b>"), how we use it, and your choices.
           </p>
           <p style={{ marginTop: 12, marginBottom: 0 }}>
-            By using ScrapeLite, you agree to the collection and use of information as described in this policy. If you
+            By using DatIQ, you agree to the collection and use of information as described in this policy. If you
             do not agree, please do not use the Service.
           </p>
         </div>

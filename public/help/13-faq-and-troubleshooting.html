@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>13. FAQ &amp; troubleshooting · ScrapeLite Help</title>
+<title>13. FAQ &amp; troubleshooting · DatIQ Help</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,17 +33,17 @@
       <div class="doc-head">
         <div class="kicker">Section 13</div>
         <h1>FAQ &amp; troubleshooting</h1>
-        <p class="doc-sub">Do I need an API key or a database to use ScrapeLite?</p>
+        <p class="doc-sub">Do I need an API key or a database to use DatIQ?</p>
       </div>
-      <p><strong>Do I need an API key or a database to use ScrapeLite?</strong> No. With nothing configured it runs on realistic mock data and stores everything in your browser. Keys and Supabase add real scraping/AI and cross-device sync.</p><p><strong>What's the difference between "Custom extraction" and "Quick enrichment"?</strong> Custom extraction runs <em>while you extract</em> (from Home) using a prompt you type. Quick enrichment runs <em>after</em>, on the Preview screen, with one click per preset — and each result is saved as its own tab.</p><p><strong>Why didn't my enrichment tabs sync to another device?</strong> Cross-device sync needs Supabase configured <strong>and</strong> the v2 columns migrated. Until then, tabs persist locally in the browser that created them.</p><p><strong>I saw a warning: "V2 columns not found in Supabase."</strong> Expected if the v2 migration hasn't run. Saves still succeed (v1 columns to Supabase, v2 data local). Run the <code>ALTER TABLE</code> migration to enable full persistence.</p><p><strong>The webhook says "Failed to fetch."</strong> Non-blocking. It's usually the n8n <strong>test</strong> URL (only live while the editor is open) or a CORS/activation issue. Switch to the production webhook URL and activate the workflow; saving is never blocked by this.</p><p><strong>Map mode didn't show headings or links.</strong> By design — domain mapping returns a list of URLs, not a single page's structure. The Overview tab shows the searchable URL list instead.</p><p><strong>Export looks empty / missing enrichments.</strong> Exports hydrate from both local cache and Supabase. If a capability was run in a different browser without Supabase sync, export from the browser that has the local cache, or enable Supabase sync.</p><p><strong>Re-running a Quick Action — does it duplicate the tab?</strong> No. Re-running <strong>refreshes</strong> (overwrites) the existing tab.</p><hr>
+      <p><strong>Do I need an API key or a database to use DatIQ?</strong> No. With nothing configured it runs on realistic mock data and stores everything in your browser. Keys and Supabase add real scraping/AI and cross-device sync.</p><p><strong>What's the difference between "Custom extraction" and "Quick enrichment"?</strong> Custom extraction runs <em>while you extract</em> (from Home) using a prompt you type. Quick enrichment runs <em>after</em>, on the Preview screen, with one click per preset — and each result is saved as its own tab.</p><p><strong>Why didn't my enrichment tabs sync to another device?</strong> Cross-device sync needs Supabase configured <strong>and</strong> the v2 columns migrated. Until then, tabs persist locally in the browser that created them.</p><p><strong>I saw a warning: "V2 columns not found in Supabase."</strong> Expected if the v2 migration hasn't run. Saves still succeed (v1 columns to Supabase, v2 data local). Run the <code>ALTER TABLE</code> migration to enable full persistence.</p><p><strong>The webhook says "Failed to fetch."</strong> Non-blocking. It's usually the n8n <strong>test</strong> URL (only live while the editor is open) or a CORS/activation issue. Switch to the production webhook URL and activate the workflow; saving is never blocked by this.</p><p><strong>Map mode didn't show headings or links.</strong> By design — domain mapping returns a list of URLs, not a single page's structure. The Overview tab shows the searchable URL list instead.</p><p><strong>Export looks empty / missing enrichments.</strong> Exports hydrate from both local cache and Supabase. If a capability was run in a different browser without Supabase sync, export from the browser that has the local cache, or enable Supabase sync.</p><p><strong>Re-running a Quick Action — does it duplicate the tab?</strong> No. Re-running <strong>refreshes</strong> (overwrites) the existing tab.</p><hr>
       <div class="page-nav"><a class="pn-btn" href="12-privacy-security-and-data-handling.html"><span class="pn-dir">← Previous</span><span class="pn-title">Privacy, security &amp; data handling</span></a><a class="pn-btn pn-next" href="14-glossary.html"><span class="pn-dir">Next →</span><span class="pn-title">Glossary</span></a></div>
     </article>
-    <footer class="doc-foot">ScrapeLite v2.0 · Product help · Generated from the canonical documentation.</footer>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>
 </div>
 <script>
   (function () {
-    var KEY = "scrapelite.theme";
+    var KEY = "datiq.theme";
     var root = document.documentElement;
     try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
     function setIcon() {

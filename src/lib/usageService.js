@@ -2,8 +2,8 @@
 // in localStorage. BillingProvider syncs to Supabase via usageRepo.js.
 import { getEffectivePlanMap } from "./pricingOverrides.js";
 
-const USAGE_KEY = "scrapelite.usage";
-const SUB_KEY   = "scrapelite.subscription";
+const USAGE_KEY = "datiq.usage";
+const SUB_KEY   = "datiq.subscription";
 
 function monthKey() {
   const d = new Date();

@@ -36,7 +36,7 @@ function StepOne({ selected, onSelect, onNext }) {
     <div className="ob-step rise">
       <div className="ob-eyebrow">
         <Icon name="sparkles" size={14} />
-        ScrapeLite — Smart web extraction
+        DatIQ — Smart web extraction
       </div>
       <h1 className="ob-title">What best describes your work?</h1>
       <p className="ob-subtitle">

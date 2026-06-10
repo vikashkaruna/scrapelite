@@ -5,8 +5,8 @@
 import { WEBHOOK_URL } from "./config.js";
 import { syncAlertsToDb } from "./usageRepo.js";
 
-const ALERT_CONFIG_KEY   = "scrapelite.alertConfig";
-const ALERTED_KEY        = "scrapelite.alertedThresholds"; // tracks which thresholds fired per month
+const ALERT_CONFIG_KEY   = "datiq.alertConfig";
+const ALERTED_KEY        = "datiq.alertedThresholds"; // tracks which thresholds fired per month
 
 function ls(k)      { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function lsSet(k,v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
@@ -58,15 +58,15 @@ async function sendAlertNotification(email, payload) {
       });
       return;
     } catch (err) {
-      console.warn("[ScrapeLite] Alert webhook failed:", err?.message);
+      console.warn("[DatIQ] Alert webhook failed:", err?.message);
     }
   }
   // Fallback: open mailto
-  const subject = `ScrapeLite — Usage Alert (${payload.pct}% of ${payload.planName} plan used)`;
+  const subject = `DatIQ — Usage Alert (${payload.pct}% of ${payload.planName} plan used)`;
   const body =
     `Hi,\n\nYou've used ${payload.pct}% of your ${payload.planName} plan this month.\n` +
     `Extractions: ${payload.used} / ${payload.total}\nMonth: ${payload.month}\n\n` +
-    `Upgrade or purchase a top-up bundle at https://scrapelite.netlify.app/pricing`;
+    `Upgrade or purchase a top-up bundle at https://datiq.netlify.app/pricing`;
   try {
     window.open(`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   } catch {}

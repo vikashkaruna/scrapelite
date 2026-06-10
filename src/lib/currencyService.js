@@ -1,7 +1,7 @@
 // currencyService.js — multi-currency conversion with daily BOD refresh at 5:00 AM IST.
 // Rates are fetched from open.er-api.com and cached in localStorage.
 
-const CACHE_KEY = "scrapelite.currencyRates";
+const CACHE_KEY = "datiq.currencyRates";
 
 // Fallback rates (USD base) — used if fetch fails and no cache exists.
 const DEFAULT_RATES = { USD: 1, INR: 83.5, EUR: 0.92, GBP: 0.79, SGD: 1.34, AED: 3.67 };

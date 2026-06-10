@@ -14,7 +14,7 @@ import { initiateCheckout, hasPayment } from "../lib/paymentService.js";
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 
-const CURRENCY_KEY = "scrapelite.currency";
+const CURRENCY_KEY = "datiq.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || "USD"; } catch { return "USD"; } }
 
 const BillingContext = createContext(null);

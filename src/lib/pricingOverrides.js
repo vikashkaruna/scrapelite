@@ -2,9 +2,9 @@
 // Defaults come from pricingConfig.js; overrides are layered on top and stored
 // in localStorage so nothing is hardcoded.
 
-const OVERRIDES_KEY       = "scrapelite.pricingOverrides";
-const GLOBAL_DISCOUNT_KEY = "scrapelite.globalDiscount";
-const TOPUP_OVERRIDES_KEY = "scrapelite.topupOverrides";
+const OVERRIDES_KEY       = "datiq.pricingOverrides";
+const GLOBAL_DISCOUNT_KEY = "datiq.globalDiscount";
+const TOPUP_OVERRIDES_KEY = "datiq.topupOverrides";
 
 function ls(k)      { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function lsSet(k,v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }

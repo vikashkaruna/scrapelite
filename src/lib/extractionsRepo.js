@@ -15,7 +15,7 @@ import { apiClient } from "./apiClient.js";
 import { notifyWebhook } from "./webhook.js";
 import { uid } from "./utils.js";
 
-const LS_KEY = "scrapelite.saved";
+const LS_KEY = "datiq.saved";
 
 // Decide whether an API error warrants a localStorage fallback.
 // Covers: explicit useLocalStorage flag, 401/403 (no/invalid auth),
@@ -75,7 +75,7 @@ export async function listExtractions() {
   } catch (err) {
     // Read is always safe to degrade — any API failure falls back to localStorage.
     // Writes (save/delete) remain strict and surface errors to the user.
-    console.warn("[ScrapeLite] listExtractions: API unavailable, using localStorage:", err.message);
+    console.warn("[DatIQ] listExtractions: API unavailable, using localStorage:", err.message);
     return local
       .read()
       .slice()

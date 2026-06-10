@@ -103,7 +103,7 @@ export default function Footer() {
       <div className="site-footer-bottom">
         <div className="container">
           <span className="footer-copy">
-            © {new Date().getFullYear()} DatIQ · ScrapeLite. All rights reserved.
+            © {new Date().getFullYear()} DatIQ · DatIQ. All rights reserved.
           </span>
           <span className="footer-copy-right">
             Data + IQ — intelligence from every URL

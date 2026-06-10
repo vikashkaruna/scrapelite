@@ -9,7 +9,7 @@ import {
 import { getEffectivePlanById } from "./pricingOverrides.js";
 import { convertPrice } from "./currencyService.js";
 
-const PENDING_KEY = "scrapelite.pendingPayment";
+const PENDING_KEY = "datiq.pendingPayment";
 const FUNCTIONS   = "/.netlify/functions";
 
 // ── Pending payment (survives Stripe redirect) ──────────────────────────────
@@ -116,7 +116,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, discountPerce
       key:         RAZORPAY_KEY_ID,
       amount:      orderAmount,
       currency:    orderCurrency,
-      name:        "ScrapeLite",
+      name:        "DatIQ",
       description: `${plan.name} Plan — monthly`,
       order_id:    orderId,
       prefill:     { email: email || "" },

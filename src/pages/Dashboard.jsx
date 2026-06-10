@@ -523,7 +523,7 @@ export default function Dashboard() {
             <span className="demo-banner-icon"><Icon name="flask" size={15} /></span>
             <div className="demo-banner-body">
               <strong>Sample data</strong>
-              <span> — These 3 extractions show what ScrapeLite captures. </span>
+              <span> — These 3 extractions show what DatIQ captures. </span>
               <button className="demo-banner-cta" onClick={() => navigate("/")}>
                 Extract a real page
               </button>

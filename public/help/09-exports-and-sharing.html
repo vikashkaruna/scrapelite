@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>9. Exports &amp; sharing · ScrapeLite Help</title>
+<title>9. Exports &amp; sharing · DatIQ Help</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,12 +38,12 @@
       <div class="table-wrap"><table><thead><tr><th>Channel</th><th>Scope</th><th>Contents</th><th>Notes</th></tr></thead><tbody><tr><td><strong>CSV</strong></td><td>Selected rows, or all search matches if none selected</td><td>Meta + headings + links + domain map + <strong>every enrichment capability</strong>, deep-flattened to JSON paths</td><td>Best for CRM/spreadsheet import</td></tr><tr><td><strong>PDF</strong></td><td>Same scope</td><td>Same complete content as a formatted report</td><td>jsPDF, <strong>lazy-loaded</strong> only on click</td></tr><tr><td><strong>Email</strong></td><td>Selected rows</td><td>Title, URL, AI summary, heading/link counts per page</td><td>Delivery chain: webhook → email API → <code>mailto</code> fallback</td></tr></tbody></table></div><p><strong>Export scope rule:</strong> if you've selected rows, exports use the selection; otherwise they export everything currently matching the search. Each exported page is <strong>hydrated</strong> with its enrichments from both local cache and Supabase before export, so nothing is missed.</p><hr>
       <div class="page-nav"><a class="pn-btn" href="08-end-to-end-workflows.html"><span class="pn-dir">← Previous</span><span class="pn-title">End-to-end workflows</span></a><a class="pn-btn pn-next" href="10-technology-stack-their-uses-and-architecture.html"><span class="pn-dir">Next →</span><span class="pn-title">Technology stack, their uses &amp; architecture</span></a></div>
     </article>
-    <footer class="doc-foot">ScrapeLite v2.0 · Product help · Generated from the canonical documentation.</footer>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>
 </div>
 <script>
   (function () {
-    var KEY = "scrapelite.theme";
+    var KEY = "datiq.theme";
     var root = document.documentElement;
     try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
     function setIcon() {

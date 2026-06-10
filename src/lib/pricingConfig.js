@@ -18,7 +18,7 @@ export const PLANS = [
     name: "Free",
     price_usd: 0,
     period: "month",
-    tagline: "Try ScrapeLite risk-free",
+    tagline: "Try DatIQ risk-free",
     badge: null,
     highlight: false,
     limits: {
