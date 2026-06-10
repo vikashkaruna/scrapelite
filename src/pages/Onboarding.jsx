@@ -165,18 +165,8 @@ export default function Onboarding() {
   const persona = PERSONAS.find((p) => p.id === localSelected);
 
   return (
-    <div className="ob-root">
+    <div className="page ob-page">
       <div className="ob-bg-glow" />
-
-      {/* Brand */}
-      <div className="ob-brand">
-        <div className="ob-brand-mark">
-          <Icon name="layers" size={19} strokeWidth={2.2} />
-        </div>
-        <span className="ob-brand-name">
-          Dat<b>IQ</b>
-        </span>
-      </div>
 
       {/* Step indicator */}
       <div className="ob-stepper">
@@ -191,13 +181,6 @@ export default function Onboarding() {
         ) : (
           <StepTwo persona={persona} onComplete={handleComplete} />
         )}
-      </div>
-
-      {/* Footer links */}
-      <div className="ob-foot-links">
-        <a href="/privacy" className="ob-foot-link">Privacy</a>
-        <span className="ob-foot-sep">·</span>
-        <a href="/terms" className="ob-foot-link">Terms</a>
       </div>
     </div>
   );

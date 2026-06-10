@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState("signin");
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
@@ -47,12 +48,12 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  const openAuth = useCallback(() => setShowAuthModal(true), []);
+  const openAuth = useCallback((mode = "signin") => { setAuthMode(mode); setShowAuthModal(true); }, []);
   const closeAuth = useCallback(() => { setShowAuthModal(false); setAuthError(""); }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, session, authLoading, showAuthModal, authError, openAuth, closeAuth }}
+      value={{ user, session, authLoading, showAuthModal, authMode, authError, openAuth, closeAuth }}
     >
       {children}
     </AuthContext.Provider>

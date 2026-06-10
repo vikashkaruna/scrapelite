@@ -7,7 +7,6 @@ import { useTheme } from "./ThemeProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { signOut, getUserInitials, getUserAvatar, getUserDisplayName } from "../lib/authService.js";
 import { usePersona } from "./PersonaProvider.jsx";
-import { useBilling } from "./BillingProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 
 function Brand({ onClick }) {
@@ -202,7 +201,7 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
 
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
-                     onAccount, onSwitchRole, onSignOut, onSignIn, onboarded }) {
+                     onAccount, onSwitchRole, onSignOut, onSignIn }) {
   const [exploreOpen, setExploreOpen] = useState(false);
 
   // Close panel on navigation
@@ -276,7 +275,7 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
         {/* User section */}
         <div className="mobile-nav-divider" />
         <div className="mobile-nav-section">
-          {(onboarded || user) ? (
+          {user ? (
             <>
               {persona && (
                 <div className="mobile-nav-persona">
@@ -293,23 +292,22 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                 Switch Role
               </button>
               <div className="mobile-nav-divider" />
-              {user ? (
-                <button className="mobile-nav-item mobile-nav-danger" onClick={() => { onSignOut(); onClose(); }}>
-                  <span className="mobile-nav-icon"><Icon name="log-out" size={17} /></span>
-                  Sign out
-                </button>
-              ) : (
-                <button className="mobile-nav-item" onClick={() => { onSignIn(); onClose(); }}>
-                  <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
-                  Sign in
-                </button>
-              )}
+              <button className="mobile-nav-item mobile-nav-danger" onClick={() => { onSignOut(); onClose(); }}>
+                <span className="mobile-nav-icon"><Icon name="log-out" size={17} /></span>
+                Sign out
+              </button>
             </>
           ) : (
-            <button className="mobile-nav-item" onClick={() => { onSignIn(); onClose(); }}>
-              <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
-              Sign in
-            </button>
+            <>
+              <button className="mobile-nav-item" onClick={() => { onSignIn("signin"); onClose(); }}>
+                <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
+                Sign in
+              </button>
+              <button className="mobile-nav-item" onClick={() => { onSignIn("signup"); onClose(); }}>
+                <span className="mobile-nav-icon"><Icon name="user-plus" size={17} /></span>
+                Sign up
+              </button>
+            </>
           )}
         </div>
       </nav>
@@ -323,8 +321,7 @@ export default function TopBar() {
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
   const { user, openAuth } = useAuth();
-  const { personaId, onboarded, resetOnboarding } = usePersona();
-  const { planId } = useBilling();
+  const { personaId, resetOnboarding } = usePersona();
 
   const [showExplore, setShowExplore]  = useState(false);
   const [mobileOpen,  setMobileOpen]   = useState(false);
@@ -360,6 +357,7 @@ export default function TopBar() {
   return (
     <>
       <header className="topbar" aria-label="Site header">
+      <div className="topbar-inner">
         <Brand onClick={() => navigate("/")} />
 
         {/* ── Desktop / tablet nav ── */}
@@ -407,16 +405,19 @@ export default function TopBar() {
             <Button variant="primary" size="sm" icon="plus" onClick={() => navigate("/")}>New</Button>
           )}
 
-          {(onboarded || user) ? (
+          {user ? (
             <UserDropdown
               user={user} persona={persona}
               onAccount={() => navigate("/account")}
               onSwitchRole={handleSwitchRole}
               onSignOut={handleSignOut}
-              onSignIn={openAuth}
+              onSignIn={() => openAuth("signin")}
             />
           ) : (
-            <Button variant="secondary" size="sm" icon="log-in" onClick={openAuth}>Sign in</Button>
+            <>
+              <Button variant="ghost" size="sm" icon="log-in" onClick={() => openAuth("signin")}>Sign in</Button>
+              <Button variant="primary" size="sm" onClick={() => openAuth("signup")}>Sign up</Button>
+            </>
           )}
         </div>
 
@@ -435,6 +436,7 @@ export default function TopBar() {
             <Icon name={mobileOpen ? "x" : "menu"} size={20} />
           </button>
         </div>
+      </div>
       </header>
 
       {/* Mobile nav panel (rendered outside topbar for z-index stacking) */}
@@ -447,11 +449,10 @@ export default function TopBar() {
         isExploreActive={isExploreActive}
         persona={persona}
         user={user}
-        onboarded={onboarded}
         onAccount={() => navigate("/account")}
         onSwitchRole={handleSwitchRole}
         onSignOut={handleSignOut}
-        onSignIn={openAuth}
+        onSignIn={(mode) => openAuth(mode || "signin")}
       />
     </>
   );

@@ -79,11 +79,11 @@ function PersonaStep({ onSelect, onSkip }) {
 }
 
 export default function AuthModal() {
-  const { closeAuth, authError } = useAuth();
+  const { closeAuth, authError, authMode } = useAuth();
   const { onboarded, selectPersona, completeOnboarding } = usePersona();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState("signin");
+  const [tab, setTab] = useState(authMode === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(authError || "");
