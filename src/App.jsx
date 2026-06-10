@@ -6,7 +6,7 @@ import { ErrorModalProvider } from "./components/ErrorModal.jsx";
 import { AuthProvider, useAuth } from "./components/AuthProvider.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import { ExtractionProvider, useExtraction } from "./components/ExtractionProvider.jsx";
-import { PersonaProvider, usePersona } from "./components/PersonaProvider.jsx";
+import { PersonaProvider } from "./components/PersonaProvider.jsx";
 import { BillingProvider } from "./components/BillingProvider.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Footer from "./components/Footer.jsx";
@@ -36,26 +36,13 @@ import VsBrowseAI from "./pages/VsBrowseAI.jsx";
 import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
 
-// Accessible without completing onboarding.
-const PUBLIC_PATHS = [
-  "/onboarding", "/privacy", "/terms", "/pricing",
-  "/payment/success", "/payment/cancel",
-  "/about", "/blog", "/integrations",
-  "/use-cases/lead-generation", "/use-cases/competitor-research",
-  "/use-cases/seo-audit", "/use-cases/market-research",
-  "/vs/browse-ai", "/vs/clay",
-];
 
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
   const { showAuthModal } = useAuth();
-  const { onboarded } = usePersona();
   const { pathname } = useLocation();
 
-  const isAdmin  = pathname.startsWith("/admin");
-  const isPublic = PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/use-cases/") || pathname.startsWith("/vs/") || isAdmin;
-
-  if (!onboarded && !isPublic) return <Navigate to="/onboarding" replace />;
+  const isAdmin = pathname.startsWith("/admin");
 
   // Admin module — standalone shell (no TopBar/Footer)
   if (isAdmin) {
@@ -72,16 +59,8 @@ function Shell() {
     );
   }
 
-  // Onboarding — standalone (no chrome)
-  if (pathname === "/onboarding") {
-    return (
-      <Routes>
-        <Route path="/onboarding" element={<Onboarding />} />
-      </Routes>
-    );
-  }
-
-  if (loading && !isPublic) return <LoadingScreen url={loadingUrl} />;
+  const isAppPage = ["/", "/preview", "/dashboard", "/account"].includes(pathname);
+  if (loading && isAppPage) return <LoadingScreen url={loadingUrl} />;
 
   return (
     <>
@@ -91,6 +70,7 @@ function Shell() {
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />
+          <Route path="/onboarding"                    element={<Onboarding />} />
           <Route path="/preview"                       element={<Preview />} />
           <Route path="/dashboard"                     element={<Dashboard />} />
           <Route path="/pricing"                       element={<Pricing />} />
