@@ -64,3 +64,26 @@ export function formatPrice(amount, currency) {
 }
 
 export function getDefaultRates() { return DEFAULT_RATES; }
+
+// Detect currency from browser locale / timezone. Returns one of the supported
+// currency codes (USD, INR, EUR, GBP, SGD, AED). Falls back to USD.
+export function detectCurrency() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz === "Asia/Kolkata" || tz === "Asia/Calcutta") return "INR";
+    if (tz === "Europe/London" || tz === "Atlantic/Reykjavik") return "GBP";
+    if (tz === "Asia/Singapore") return "SGD";
+    if (tz === "Asia/Dubai" || tz === "Asia/Muscat") return "AED";
+    // Europe (but not London/Reykjavik already handled)
+    if (tz.startsWith("Europe/")) return "EUR";
+    const lang = (navigator.language || navigator.userLanguage || "").toLowerCase();
+    if (lang.endsWith("-in") || lang === "hi" || lang === "mr" || lang === "ta") return "INR";
+    if (lang.endsWith("-gb")) return "GBP";
+    if (lang.endsWith("-sg")) return "SGD";
+    if (lang.endsWith("-ae") || lang.endsWith("-sa")) return "AED";
+    if (/^(de|fr|it|es|pt-pt|nl|pl|sv|fi|da|nb|cs|sk|hu|ro)/.test(lang)) return "EUR";
+    return "USD";
+  } catch {
+    return "USD";
+  }
+}

@@ -5,7 +5,7 @@ import {
   incrementExtractions, incrementEnrichments,
   canExtract, canEnrich, canExport, canEmailExport,
 } from "../lib/usageService.js";
-import { getRates, getDefaultRates } from "../lib/currencyService.js";
+import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
@@ -15,7 +15,7 @@ import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPa
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 
 const CURRENCY_KEY = "datiq.currency";
-function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || "USD"; } catch { return "USD"; } }
+function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || detectCurrency(); } catch { return detectCurrency(); } }
 
 const BillingContext = createContext(null);
 

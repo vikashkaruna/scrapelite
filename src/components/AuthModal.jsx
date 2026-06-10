@@ -1,11 +1,12 @@
-// AuthModal.jsx — sign-in / sign-up modal with email+password and OAuth.
-// Rendered via a React portal so it sits above all page content.
-
+// AuthModal.jsx — sign-in / sign-up modal with email+password, OAuth, and optional persona step.
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useAuth } from "./AuthProvider.jsx";
+import { usePersona } from "./PersonaProvider.jsx";
+import { PERSONAS } from "../lib/personaConfig.js";
 import {
   signInWithEmail,
   signUpWithEmail,
@@ -13,7 +14,6 @@ import {
   authEnabled,
 } from "../lib/authService.js";
 
-// SVG logos for OAuth providers (inlined so we don't need image assets).
 function GoogleLogo() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -48,19 +48,66 @@ function Spinner() {
   return <span className="btn-spinner" aria-hidden="true" />;
 }
 
+// ── Persona picker step (shown after sign-up if not yet onboarded) ──
+function PersonaStep({ onSelect, onSkip }) {
+  return (
+    <div className="auth-persona-step">
+      <div className="auth-title" style={{ marginBottom: 4 }}>One more thing</div>
+      <p className="auth-sub" style={{ marginBottom: 16 }}>
+        Choose your primary role so DatIQ can tailor your experience. You can change this any time.
+      </p>
+      <div className="auth-persona-grid">
+        {PERSONAS.map((p) => (
+          <button
+            key={p.id}
+            className="auth-persona-card"
+            onClick={() => onSelect(p.id)}
+            style={{ "--pc": p.color }}
+          >
+            <span className="auth-persona-icon" style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
+              <Icon name={p.icon} size={16} />
+            </span>
+            <span className="auth-persona-label">{p.label}</span>
+          </button>
+        ))}
+      </div>
+      <button className="ob-skip-link" onClick={onSkip} style={{ marginTop: 12, fontSize: ".84em" }}>
+        Skip for now
+      </button>
+    </div>
+  );
+}
+
 export default function AuthModal() {
   const { closeAuth, authError } = useAuth();
+  const { onboarded, selectPersona, completeOnboarding } = usePersona();
+  const navigate = useNavigate();
+
   const [tab, setTab] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(authError || "");
   const [info, setInfo] = useState("");
-  const [loading, setLoading] = useState(""); // '' | 'email' | 'google' | 'azure' | 'github'
+  const [loading, setLoading] = useState("");
+  const [showPersonaStep, setShowPersonaStep] = useState(false);
 
   function switchTab(t) {
     setTab(t);
     setError("");
     setInfo("");
+  }
+
+  function handlePersonaSelect(id) {
+    selectPersona(id);
+    completeOnboarding("");
+    closeAuth();
+    navigate("/");
+  }
+
+  function handlePersonaSkip() {
+    completeOnboarding("");
+    closeAuth();
+    navigate("/");
   }
 
   async function handleEmail(e) {
@@ -75,12 +122,13 @@ export default function AuthModal() {
     try {
       if (tab === "signin") {
         await signInWithEmail(email, password);
-        // AuthProvider's onAuthStateChange closes the modal automatically.
       } else {
         const { user } = await signUpWithEmail(email, password);
-        // If email confirmation is required, show a message instead of closing.
         if (user && !user.confirmed_at && !user.email_confirmed_at) {
           setInfo("Check your email for a confirmation link to activate your account.");
+        } else if (!onboarded) {
+          // Account created & confirmed — offer persona selection
+          setShowPersonaStep(true);
         }
       }
     } catch (err) {
@@ -99,7 +147,6 @@ export default function AuthModal() {
     setLoading(provider);
     try {
       await signInWithOAuth(provider);
-      // Page will redirect to the OAuth provider — no further state needed here.
     } catch (err) {
       setError(err.message || "OAuth sign-in failed. Please try again.");
       setLoading("");
@@ -112,146 +159,90 @@ export default function AuthModal() {
 
   return createPortal(
     <div className="auth-backdrop" onClick={handleBackdropClick}>
-      <div className="auth-modal" role="dialog" aria-modal="true" aria-label="Sign in">
-        <button className="auth-close" onClick={closeAuth} aria-label="Close sign-in dialog">
+      <div className="auth-modal" role="dialog" aria-modal="true" aria-label={showPersonaStep ? "Choose your role" : "Sign in"}>
+        <button className="auth-close" onClick={closeAuth} aria-label="Close">
           <Icon name="x" size={18} />
         </button>
 
-        {/* Brand */}
-        <div className="auth-brand">
-          <Icon name="layers" size={20} strokeWidth={2.2} />
-          <span>DatIQ</span>
-        </div>
-
-        <h2 className="auth-title">
-          {tab === "signin" ? "Welcome back" : "Create your account"}
-        </h2>
-        <p className="auth-sub">
-          {tab === "signin"
-            ? "Sign in to save and manage your extractions."
-            : "Start extracting and enriching web data in seconds."}
-        </p>
-
-        {/* OAuth buttons */}
-        <div className="auth-oauth">
-          <button
-            className="oauth-btn"
-            onClick={() => handleOAuth("google")}
-            disabled={!!loading}
-            aria-label="Continue with Google"
-          >
-            {loading === "google" ? <Spinner /> : <GoogleLogo />}
-            Continue with Google
-          </button>
-          <button
-            className="oauth-btn"
-            onClick={() => handleOAuth("azure")}
-            disabled={!!loading}
-            aria-label="Continue with Microsoft"
-          >
-            {loading === "azure" ? <Spinner /> : <MicrosoftLogo />}
-            Continue with Microsoft
-          </button>
-          <button
-            className="oauth-btn"
-            onClick={() => handleOAuth("github")}
-            disabled={!!loading}
-            aria-label="Continue with GitHub"
-          >
-            {loading === "github" ? <Spinner /> : <GitHubLogo />}
-            Continue with GitHub
-          </button>
-        </div>
-
-        <div className="auth-divider">
-          <span>or continue with email</span>
-        </div>
-
-        {/* Tab switcher */}
-        <div className="auth-tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === "signin"}
-            className={"auth-tab" + (tab === "signin" ? " active" : "")}
-            onClick={() => switchTab("signin")}
-          >
-            Sign in
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "signup"}
-            className={"auth-tab" + (tab === "signup" ? " active" : "")}
-            onClick={() => switchTab("signup")}
-          >
-            Create account
-          </button>
-        </div>
-
-        {/* Email / Password form */}
-        <form className="auth-form" onSubmit={handleEmail} noValidate>
-          {error && (
-            <div className="auth-feedback auth-error" role="alert">
-              <Icon name="alert-triangle" size={14} />
-              {error}
+        {showPersonaStep ? (
+          <PersonaStep onSelect={handlePersonaSelect} onSkip={handlePersonaSkip} />
+        ) : (
+          <>
+            {/* Brand */}
+            <div className="auth-brand">
+              <Icon name="layers" size={20} strokeWidth={2.2} />
+              <span>DatIQ</span>
             </div>
-          )}
-          {info && (
-            <div className="auth-feedback auth-info" role="status">
-              <Icon name="check-circle" size={14} />
-              {info}
+
+            <h2 className="auth-title">
+              {tab === "signin" ? "Welcome back" : "Create your account"}
+            </h2>
+            <p className="auth-sub">
+              {tab === "signin"
+                ? "Sign in to save and manage your extractions."
+                : "Start extracting and enriching web data in seconds."}
+            </p>
+
+            {/* OAuth buttons */}
+            <div className="auth-oauth">
+              <button className="oauth-btn" onClick={() => handleOAuth("google")} disabled={!!loading} aria-label="Continue with Google">
+                {loading === "google" ? <Spinner /> : <GoogleLogo />}
+                Continue with Google
+              </button>
+              <button className="oauth-btn" onClick={() => handleOAuth("azure")} disabled={!!loading} aria-label="Continue with Microsoft">
+                {loading === "azure" ? <Spinner /> : <MicrosoftLogo />}
+                Continue with Microsoft
+              </button>
+              <button className="oauth-btn" onClick={() => handleOAuth("github")} disabled={!!loading} aria-label="Continue with GitHub">
+                {loading === "github" ? <Spinner /> : <GitHubLogo />}
+                Continue with GitHub
+              </button>
             </div>
-          )}
 
-          <div className="auth-field">
-            <label htmlFor="auth-email">Email</label>
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              autoFocus
-            />
-          </div>
+            <div className="auth-divider"><span>or continue with email</span></div>
 
-          <div className="auth-field">
-            <label htmlFor="auth-password">Password</label>
-            <input
-              id="auth-password"
-              type="password"
-              autoComplete={tab === "signin" ? "current-password" : "new-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              minLength={6}
-            />
-          </div>
+            <div className="auth-tabs" role="tablist">
+              <button role="tab" aria-selected={tab === "signin"} className={"auth-tab" + (tab === "signin" ? " active" : "")} onClick={() => switchTab("signin")}>
+                Sign in
+              </button>
+              <button role="tab" aria-selected={tab === "signup"} className={"auth-tab" + (tab === "signup" ? " active" : "")} onClick={() => switchTab("signup")}>
+                Create account
+              </button>
+            </div>
 
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            disabled={!!loading}
-            style={{ width: "100%", justifyContent: "center" }}
-          >
-            {loading === "email"
-              ? "Loading…"
-              : tab === "signin"
-                ? "Sign in"
-                : "Create account"}
-          </Button>
-        </form>
+            <form className="auth-form" onSubmit={handleEmail} noValidate>
+              {error && (
+                <div className="auth-feedback auth-error" role="alert">
+                  <Icon name="alert-triangle" size={14} />{error}
+                </div>
+              )}
+              {info && (
+                <div className="auth-feedback auth-info" role="status">
+                  <Icon name="check-circle" size={14} />{info}
+                </div>
+              )}
 
-        <p className="auth-footer-note">
-          By continuing you agree to our{" "}
-          <a href="/privacy" target="_blank" rel="noopener noreferrer">
-            Privacy Policy
-          </a>
-          .
-        </p>
+              <div className="auth-field">
+                <label htmlFor="auth-email">Email</label>
+                <input id="auth-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required autoFocus />
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="auth-password">Password</label>
+                <input id="auth-password" type="password" autoComplete={tab === "signin" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+              </div>
+
+              <Button variant="primary" size="sm" type="submit" disabled={!!loading} style={{ width: "100%", justifyContent: "center" }}>
+                {loading === "email" ? "Loading…" : tab === "signin" ? "Sign in" : "Create account"}
+              </Button>
+            </form>
+
+            <p className="auth-footer-note">
+              By continuing you agree to our{" "}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </p>
+          </>
+        )}
       </div>
     </div>,
     document.body

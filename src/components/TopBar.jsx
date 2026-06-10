@@ -29,45 +29,173 @@ function Brand({ onClick }) {
   );
 }
 
-function UserChip({ user, onSignOut }) {
-  const initials = getUserInitials(user);
-  const avatar = getUserAvatar(user);
-  const name = getUserDisplayName(user);
+// ── Explore mega-dropdown ──────────────────────────────────────────
+const EXPLORE_SECTIONS = [
+  {
+    key: "use-cases",
+    label: "Use Cases",
+    items: [
+      { label: "Lead Generation",     icon: "target",    path: "/use-cases/lead-generation" },
+      { label: "Competitor Research", icon: "eye",       path: "/use-cases/competitor-research" },
+      { label: "SEO Audit",           icon: "search",    path: "/use-cases/seo-audit" },
+      { label: "Market Research",     icon: "bar-chart", path: "/use-cases/market-research" },
+    ],
+  },
+  {
+    key: "compare",
+    label: "Compare",
+    items: [
+      { label: "vs Browse.ai", icon: "zap",       path: "/vs/browse-ai" },
+      { label: "vs Clay",      icon: "zap",       path: "/vs/clay" },
+    ],
+  },
+  {
+    key: "resources",
+    label: "Resources",
+    items: [
+      { label: "About DatIQ", icon: "info",         path: "/about" },
+      { label: "Blog",        icon: "book-open",    path: "/blog" },
+      { label: "Help Center", icon: "help-circle",  path: "/help/index.html", external: true },
+    ],
+  },
+];
 
+const EXPLORE_ACTIVE_PATHS = [
+  "/use-cases/", "/vs/", "/about", "/blog", "/integrations",
+];
+
+function ExploreDropdown({ onNavigate }) {
   return (
-    <div className="user-chip" title={`Signed in as ${name}`}>
-      <div className="user-avatar">
-        {avatar ? (
-          <img src={avatar} alt={name} className="user-avatar-img" referrerPolicy="no-referrer" />
-        ) : (
-          <span className="user-avatar-initials">{initials}</span>
-        )}
-      </div>
-      <button
-        className="user-signout"
-        onClick={onSignOut}
-        title="Sign out"
-        aria-label="Sign out"
-      >
-        <Icon name="log-out" size={15} />
-      </button>
+    <div className="nav-dropdown-menu nav-explore-menu" role="menu">
+      {EXPLORE_SECTIONS.map((section, si) => (
+        <div key={section.key}>
+          {si > 0 && <div className="nav-dropdown-divider" />}
+          <div className="nav-dropdown-section">{section.label}</div>
+          {section.items.map((item) => (
+            item.external ? (
+              <a
+                key={item.path}
+                href={item.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="nav-dropdown-item"
+                role="menuitem"
+                onClick={() => onNavigate()}
+              >
+                <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
+                {item.label}
+              </a>
+            ) : (
+              <button
+                key={item.path}
+                className="nav-dropdown-item"
+                role="menuitem"
+                onClick={() => onNavigate(item.path)}
+              >
+                <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
+                {item.label}
+              </button>
+            )
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
 
-function PersonaBadge({ persona, onClick }) {
+// ── User dropdown ────────────────────────────────────────────────
+function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSignIn }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const label = persona ? persona.label : (user ? getUserDisplayName(user) : "Account");
+  const initials = user ? getUserInitials(user) : null;
+  const avatar = user ? getUserAvatar(user) : null;
+
   return (
-    <button
-      className="persona-badge"
-      onClick={onClick}
-      title="Switch role"
-      aria-label={`Current role: ${persona.label}. Click to switch.`}
-      style={{ "--pb-color": persona.color }}
-    >
-      <span className="persona-badge-dot" style={{ background: persona.color }} />
-      <span className="persona-badge-label">{persona.label}</span>
-      <Icon name="chevron-down" size={13} style={{ color: "var(--text-3)" }} />
-    </button>
+    <div className="user-dropdown-wrap" ref={ref}>
+      <button
+        className={"user-menu-btn" + (open ? " open" : "")}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        title="Your account"
+      >
+        {avatar ? (
+          <img src={avatar} alt={label} className="user-avatar-img" referrerPolicy="no-referrer" style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0 }} />
+        ) : initials ? (
+          <span className="user-avatar-initials" style={{ width: 22, height: 22, fontSize: ".72em" }}>{initials}</span>
+        ) : (
+          <Icon name="user-circle" size={18} />
+        )}
+        {persona && (
+          <span className="user-menu-label" style={{ color: persona.color }}>
+            <span className="user-persona-dot" style={{ background: persona.color }} />
+            <span className="user-menu-name">{persona.label}</span>
+          </span>
+        )}
+        {!persona && user && (
+          <span className="user-menu-label">
+            <span className="user-menu-name">{getUserDisplayName(user)}</span>
+          </span>
+        )}
+        <Icon name="chevron-down" size={13} style={{ color: "var(--text-3)", transition: "transform .15s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }} />
+      </button>
+
+      {open && (
+        <div className="user-dropdown-menu" role="menu">
+          {(user || persona) && (
+            <>
+              <div className="user-dd-profile">
+                <div className="user-dd-avatar">
+                  {avatar ? (
+                    <img src={avatar} alt={label} className="user-avatar-img" referrerPolicy="no-referrer" />
+                  ) : (
+                    <span className="user-avatar-initials">{initials || "?"}</span>
+                  )}
+                </div>
+                <div className="user-dd-info">
+                  {user && <div className="user-dd-name">{getUserDisplayName(user)}</div>}
+                  {persona && <div className="user-dd-role" style={{ color: persona.color }}>{persona.label}</div>}
+                </div>
+              </div>
+              <div className="nav-dropdown-divider" />
+            </>
+          )}
+
+          <button className="nav-dropdown-item" role="menuitem" onClick={() => { setOpen(false); onAccount(); }}>
+            <span className="nav-dd-icon"><Icon name="user" size={14} /></span>
+            Account &amp; Usage
+          </button>
+          <button className="nav-dropdown-item" role="menuitem" onClick={() => { setOpen(false); onSwitchRole(); }}>
+            <span className="nav-dd-icon"><Icon name="repeat" size={14} /></span>
+            Switch Role / Persona
+          </button>
+
+          <div className="nav-dropdown-divider" />
+
+          {user ? (
+            <button className="nav-dropdown-item nav-dd-danger" role="menuitem" onClick={() => { setOpen(false); onSignOut(); }}>
+              <span className="nav-dd-icon"><Icon name="log-out" size={14} /></span>
+              Sign out
+            </button>
+          ) : (
+            <button className="nav-dropdown-item" role="menuitem" onClick={() => { setOpen(false); onSignIn(); }}>
+              <span className="nav-dd-icon"><Icon name="log-in" size={14} /></span>
+              Sign in
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -82,56 +210,38 @@ function PlanBadge({ planId, planName, onClick }) {
   );
 }
 
-const USE_CASE_ITEMS = [
-  { label: "Lead Generation", path: "/use-cases/lead-generation" },
-  { label: "Competitor Research", path: "/use-cases/competitor-research" },
-  { label: "SEO Audit", path: "/use-cases/seo-audit" },
-  { label: "Market Research", path: "/use-cases/market-research" },
-];
-
-const COMPARE_ITEMS = [
-  { label: "vs Browse.ai", path: "/vs/browse-ai" },
-  { label: "vs Clay", path: "/vs/clay" },
-];
-
 export default function TopBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
   const { user, openAuth } = useAuth();
-  const { personaId, userName, onboarded, resetOnboarding } = usePersona();
+  const { personaId, onboarded, resetOnboarding } = usePersona();
   const { planId } = useBilling();
 
-  const [showUseCases, setShowUseCases] = useState(false);
-  const useCasesRef = useRef(null);
+  const [showExplore, setShowExplore] = useState(false);
+  const exploreRef = useRef(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function onDown(e) {
-      if (useCasesRef.current && !useCasesRef.current.contains(e.target)) {
-        setShowUseCases(false);
+      if (exploreRef.current && !exploreRef.current.contains(e.target)) {
+        setShowExplore(false);
       }
     }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  // Close dropdown on navigation
-  useEffect(() => { setShowUseCases(false); }, [pathname]);
+  useEffect(() => { setShowExplore(false); }, [pathname]);
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
-  // Use effective plan (picks up admin overrides); guard against null billing context
   const effectivePlan = getEffectivePlanById(planId ?? "free");
 
-  const isUseCaseActive =
-    pathname.startsWith("/use-cases/") || pathname.startsWith("/vs/");
+  const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
-  const links = [
-    { to: "/", label: "Extract", match: (p) => p === "/" || p === "/preview" },
-    { to: "/dashboard", label: "Dashboard", match: (p) => p === "/dashboard" },
-    { to: "/pricing", label: "Pricing", match: (p) => p === "/pricing" },
-    { to: "/about", label: "About", match: (p) => p === "/about" },
-    { to: "/blog", label: "Blog", match: (p) => p === "/blog" },
+  const mainLinks = [
+    { to: "/",          label: "Extract",   icon: "globe",    match: (p) => p === "/" || p === "/preview" },
+    { to: "/dashboard", label: "Dashboard", icon: "grid",     match: (p) => p === "/dashboard" },
+    { to: "/pricing",   label: "Pricing",   icon: "tag",      match: (p) => p === "/pricing" },
   ];
 
   async function handleSignOut() {
@@ -144,102 +254,59 @@ export default function TopBar() {
     navigate("/onboarding");
   };
 
+  const handleExploreNav = (path) => {
+    setShowExplore(false);
+    if (path) navigate(path);
+  };
+
   return (
     <header className="topbar" aria-label="Site header">
       <Brand onClick={() => navigate("/")} />
       <div className="topbar-actions">
         <nav className="nav-links" aria-label="Main navigation">
-          {links.map((l) => (
+          {mainLinks.map((l) => (
             <button
               key={l.to}
               type="button"
-              className={"nav-link" + (l.match(pathname) ? " active" : "")}
+              className={"nav-link nav-link-icon" + (l.match(pathname) ? " active" : "")}
               onClick={() => navigate(l.to)}
               aria-current={l.match(pathname) ? "page" : undefined}
             >
-              {l.label}
+              <Icon name={l.icon} size={14} />
+              <span>{l.label}</span>
             </button>
           ))}
 
-          {/* Use cases dropdown */}
-          <div className="nav-dropdown" ref={useCasesRef}>
+          {/* Explore mega-dropdown */}
+          <div className="nav-dropdown" ref={exploreRef}>
             <button
               type="button"
-              className={"nav-link nav-link-dropdown" + (isUseCaseActive ? " active" : "")}
-              onClick={() => setShowUseCases((v) => !v)}
-              aria-expanded={showUseCases}
+              className={"nav-link nav-link-icon nav-link-dropdown" + (isExploreActive ? " active" : "")}
+              onClick={() => setShowExplore((v) => !v)}
+              aria-expanded={showExplore}
               aria-haspopup="true"
-              aria-current={isUseCaseActive ? "page" : undefined}
+              aria-current={isExploreActive ? "page" : undefined}
             >
-              Use cases
+              <Icon name="compass" size={14} />
+              <span>Explore</span>
               <Icon
                 name="chevron-down"
                 size={12}
                 style={{
                   transition: "transform .15s",
-                  transform: showUseCases ? "rotate(180deg)" : "rotate(0deg)",
+                  transform: showExplore ? "rotate(180deg)" : "rotate(0deg)",
+                  marginLeft: 1,
                 }}
               />
             </button>
-            {showUseCases && (
-              <div className="nav-dropdown-menu" role="menu">
-                <div className="nav-dropdown-section">Use cases</div>
-                {USE_CASE_ITEMS.map((item) => (
-                  <button
-                    key={item.path}
-                    className="nav-dropdown-item"
-                    role="menuitem"
-                    onClick={() => navigate(item.path)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-                <div className="nav-dropdown-divider" />
-                <div className="nav-dropdown-section">Compare</div>
-                {COMPARE_ITEMS.map((item) => (
-                  <button
-                    key={item.path}
-                    className="nav-dropdown-item"
-                    role="menuitem"
-                    onClick={() => navigate(item.path)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+            {showExplore && (
+              <ExploreDropdown onNavigate={handleExploreNav} />
             )}
           </div>
-
-          {/* Static help site — plain anchor bypasses the SPA router. */}
-          <a className="nav-link" href="/help/index.html" target="_blank" rel="noopener">
-            Help
-          </a>
         </nav>
 
         {/* Plan badge — only for paid plans */}
         <PlanBadge planId={planId} planName={effectivePlan?.name ?? ""} onClick={() => navigate("/account")} />
-
-        {/* Persona badge */}
-        {persona && <PersonaBadge persona={persona} onClick={handleSwitchRole} />}
-
-        {/* Account icon (when onboarded) */}
-        {onboarded && (
-          <button
-            className={"theme-toggle topbar-account" + (pathname === "/account" ? " active" : "")}
-            onClick={() => navigate("/account")}
-            title="Your account & usage"
-            aria-label="Account"
-          >
-            <Icon name="user" size={17} />
-          </button>
-        )}
-
-        {userName && (
-          <div className="topbar-username" title={`Logged in as ${userName}`}>
-            <Icon name="user" size={15} />
-            <span>{userName}</span>
-          </div>
-        )}
 
         <button className="theme-toggle" onClick={toggle} aria-label="Toggle theme" title="Toggle light / dark">
           <Icon name={theme === "dark" ? "sun" : "moon"} />
@@ -251,9 +318,16 @@ export default function TopBar() {
           </Button>
         )}
 
-        {/* Auth UI */}
-        {user ? (
-          <UserChip user={user} onSignOut={handleSignOut} />
+        {/* User menu (always show once onboarded or if user signed in) */}
+        {(onboarded || user) ? (
+          <UserDropdown
+            user={user}
+            persona={persona}
+            onAccount={() => navigate("/account")}
+            onSwitchRole={handleSwitchRole}
+            onSignOut={handleSignOut}
+            onSignIn={openAuth}
+          />
         ) : (
           <Button variant="secondary" size="sm" icon="log-in" onClick={openAuth}>
             Sign in

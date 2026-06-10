@@ -13,6 +13,14 @@ import { getStats, fmtStat } from "../lib/statsService.js";
 
 const DEFAULT_EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
+// Quick-context chips shown above the URL box — these are persona-specific
+// contextual shortcuts that populate the URL field with a relevant example.
+const DEFAULT_QUICK_CONTEXTS = [
+  { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
+  { label: "Company about page", url: "https://notion.so/about", icon: "info" },
+  { label: "Blog / content",     url: "https://moz.com/blog",     icon: "book-open" },
+];
+
 // All capabilities — shown as cards at the bottom.
 const ALL_FEATURES = [
   { key: "headings", icon: "list-tree", title: "Heading structure", desc: "Full H1–H6 outline, in order" },
@@ -217,11 +225,44 @@ export default function Home() {
           </div>
         )}
 
+        {/* Persona quick-context chips — shown above URL box */}
+        {(() => {
+          const contexts = persona
+            ? persona.examples.map((ex, i) => ({
+                label: ex,
+                url: ex.startsWith("http") ? ex : `https://${ex}`,
+                icon: ["target", "eye", "bar-chart"][i % 3],
+              }))
+            : DEFAULT_QUICK_CONTEXTS;
+          return (
+            <div className="persona-contexts rise" style={{ animationDelay: ".16s" }}>
+              <span className="persona-ctx-label">
+                <Icon name="sparkles" size={12} />
+                {persona ? `${persona.badge} quick-start` : "Try a quick example"}
+              </span>
+              <div className="persona-ctx-chips">
+                {contexts.map((ctx) => (
+                  <button
+                    key={ctx.url}
+                    type="button"
+                    className="persona-ctx-chip"
+                    onClick={() => { setUrl(ctx.url); setTouched(false); }}
+                    title={`Search: ${ctx.url}`}
+                  >
+                    <Icon name={ctx.icon} size={11} />
+                    {ctx.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* URL extraction form */}
         <form
           className="rise"
           onSubmit={submit}
-          style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "32px 0 0" }}
+          style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "12px 0 0" }}
         >
           <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
             <span className="field-lead">
@@ -316,23 +357,23 @@ export default function Home() {
             )}
           </div>
 
-          {/* Scrape options toggles */}
-          <div className="scrape-opts">
+          {/* Scrape options toggles — 2-column grid */}
+          <div className="scrape-opts scrape-opts-grid">
             <Toggle
               icon="zap"
               label="Render JavaScript"
-              hint="for dynamic / SPA pages — slower"
+              hint="dynamic / SPA pages"
               checked={renderJs}
               onChange={setRenderJs}
-              title="Waits for client-side JavaScript to render before capturing. Best for SPAs and dynamic pages."
+              tooltip="Waits for client-side JavaScript to render before capturing. Best for React/Vue/Angular SPAs."
             />
             <Toggle
               icon="map"
               label="Map entire domain"
-              hint={mapMode ? "lists every indexed URL" : "vs. scrape single page"}
+              hint={mapMode ? "all indexed URLs" : "vs. single page"}
               checked={mapMode}
               onChange={setMapMode}
-              title="Discover all indexed URLs on the domain via Firecrawl's /map endpoint."
+              tooltip="Discover all indexed URLs on the domain via Firecrawl's /map endpoint."
             />
             <Toggle
               icon="users"
@@ -341,9 +382,9 @@ export default function Home() {
               checked={contactsMode}
               onChange={(val) => {
                 setContactsMode(val);
-                if (val) setCustomMode(true); // reveal textarea with auto-populated contacts prompt
+                if (val) setCustomMode(true);
               }}
-              title="Extract names, titles and emails of senior leadership and board members."
+              tooltip="Extract names, titles and emails of senior leadership and board members."
             />
             <Toggle
               icon="code"
@@ -351,7 +392,7 @@ export default function Home() {
               hint="ask in plain English"
               checked={customMode}
               onChange={setCustomMode}
-              title="Reveal a prompt box to extract any specific fields you describe."
+              tooltip="Reveal a prompt box to extract any specific fields you describe in plain English."
             />
           </div>
 
