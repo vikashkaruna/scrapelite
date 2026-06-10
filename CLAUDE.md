@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-10 — R1 UI/UX polish complete: responsive nav, hamburger menu, geo-currency, persona chips, tooltips, favicon, simplified footer, AuthModal persona step**
+> **Last updated: 2026-06-10 — R2 UI/UX fixes: onboarding in main layout, nav routing without forced onboarding, topbar/content alignment, auth-gated menus, page padding override fix**
 
 ---
 
@@ -36,6 +36,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/v6-datiq-rebrand-82s24f` | DatIQ rebrand — localStorage keys → `datiq.*`, console logs → `[DatIQ]` | ✅ |
 | `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish + SEO/GEO + 7 new marketing pages + dropdown + email capture | ✅ merged to main |
 | `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
+| `claude/r0-polish-ui-issues-fqbogg` | R2 UI fixes: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override | ✅ merged to main |
 
 ---
 
@@ -56,14 +57,14 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 
 | Route | Description | Access |
 |---|---|---|
-| `/` | Home / Extract | Requires onboarding |
-| `/preview` | Review & Save extraction | Requires onboarding |
-| `/dashboard` | Saved extractions | Requires onboarding |
+| `/` | Home / Extract | Public (no forced onboarding) |
+| `/preview` | Review & Save extraction | Public |
+| `/dashboard` | Saved extractions | Public |
 | `/pricing` | Pricing plans, currency picker, top-up bundles | Public |
-| `/account` | Billing & usage, metering alerts, coupon input, payment history | Requires onboarding |
+| `/account` | Billing & usage, metering alerts, coupon input, payment history | Public |
 | `/payment/success` | Post-payment confirmation (Stripe redirect / Razorpay success) | Public |
 | `/payment/cancel` | Checkout cancelled screen | Public |
-| `/onboarding` | 2-step persona selection | Standalone (no chrome) |
+| `/onboarding` | 2-step persona selection | Public (in Shell with TopBar+Footer; opt-in) |
 | `/privacy` | Privacy Policy | Public |
 | `/terms` | Terms of Service | Public |
 | `/about` | About DatIQ — mission, values, how-it-works, personas | Public |
@@ -235,11 +236,15 @@ ThemeProvider
 | TopBar "+ New" | Only shown on `/preview` |
 | TopBar brand icon | Uses `layers` icon — do NOT change |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown (4 sections: Pricing, Use Cases, Compare, Resources) + UserDropdown. No PlanBadge button (removed — redundant with Account & Usage in UserDropdown) |
+| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown + UserDropdown (logged in) OR Sign in + Sign up (logged out) |
+| TopBar alignment | `.topbar-inner` (max-width: 1080px, auto margins) wraps all content — aligns with `.container` |
 | TopBar responsive | Desktop >820px: full text+icons; Tablet 600–820px: compressed; Mobile <600px: hamburger |
 | TopBar MobileNav | Slide-down panel (position:fixed top:68px), Explore accordion, user persona + actions |
 | Footer | Slim single-row: `.site-footer-slim` — socials left, copyright center, legal right |
 | Page structure | All route pages return a plain `<div className="page">` — Shell provides `<main id="main-content">` |
+| Page class padding | When a page class (`.uc-page`, `.vs-page`, etc.) is combined with `.container`, use `padding-top`/`padding-bottom` only — never `padding: Xpx 0 Ypx` shorthand (zeroes horizontal padding, overrides `.container`) |
+| Onboarding | `/onboarding` inside Shell with TopBar+Footer — not standalone. No forced redirect. |
+| Auth nav gating | UserDropdown only when `user` (logged in). Sign in + Sign up when `!user`. |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
 | Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
@@ -318,7 +323,8 @@ ThemeProvider
 
 ## Auth (Supabase + AuthProvider)
 
-- `AuthProvider` manages Supabase session, exposes: `user`, `openAuth`, `closeAuth`, `showAuthModal`, `authError`
+- `AuthProvider` manages Supabase session, exposes: `user`, `openAuth(mode)`, `closeAuth`, `showAuthModal`, `authMode`, `authError`
+- `openAuth('signin')` opens modal on Sign in tab; `openAuth('signup')` opens on Create account tab
 - On mount: detects `window.location.hash` with `error=` → sets `authError`, opens modal, cleans URL
 - `signUpWithEmail` passes `emailRedirectTo: window.location.origin` (prevents localhost:3000 redirect)
 - `apiClient.setAuthToken(token)` called on sign-in to include `Authorization` header on API requests
@@ -471,6 +477,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 27. **R1: AuthModal persona step** — post-signup persona selection step with skip; `usePersona.completeOnboarding()` called before closing
 28. **R1: favicon layered-diamond** — SVG updated to 3-layer diamond matching in-app brand mark (indigo #4f46e5 bg)
 29. **R1: PlanBadge removed** — plan name badge (e.g. "Select") in TopBar was redundant with "Account & Usage" in UserDropdown; removed `PlanBadge` component and its render call
+30. **R2: Onboarding in Shell** — Onboarding page now renders inside main Shell (with TopBar + Footer); removed standalone rendering block; deleted duplicate brand mark and footer links from page; `.ob-page` CSS class added
+31. **R2: No forced onboarding redirect** — removed `if (!onboarded && !isPublic) return <Navigate to="/onboarding" replace />` from Shell; all routes accessible without onboarding; onboarding is opt-in
+32. **R2: TopBar content alignment** — wrapped TopBar content in `.topbar-inner` (max-width: 1080px, margin: 0 auto) so brand/nav aligns with page `.container` content at all viewport widths
+33. **R2: Auth-gated nav** — TopBar UserDropdown (Account & Usage, Switch Role, Sign out) only shown when user is logged in; not-logged-in state shows Sign in + Sign up buttons opening AuthModal on correct tab; `authMode` state added to AuthProvider; `openAuth(mode)` accepts 'signin'/'signup'
+34. **R2: Page padding override fix** — `.about-page`, `.blog-page`, `.pricing-page`, `.account-page`, `.uc-page`, `.vs-page`, `.int-page` used `padding: Xpx 0 Ypx` shorthand which zeroed out `.container`'s horizontal padding (screens.css loads after design-system.css). Fixed to `padding-top`/`padding-bottom` only.
 
 ---
 
@@ -512,7 +523,12 @@ npm run dev   # http://localhost:5173
 ```
 
 **Quick smoke tests:**
-- `/onboarding` → pick a persona → lands on `/`
+- `/` → accessible without onboarding (no redirect to /onboarding)
+- `/dashboard` → accessible without onboarding
+- `/onboarding` → shows TopBar + Footer (part of Shell); pick a persona → lands on `/`
+- TopBar (not logged in) → shows "Sign in" (ghost) + "Sign up" (primary) buttons
+- TopBar "Sign in" → opens modal on Sign in tab; "Sign up" → opens modal on Create account tab
+- TopBar (logged in) → shows UserDropdown with Account & Usage, Switch Role, Sign out
 - `/pricing` → select paid plan → spinner → demo_mode → `/account` shows upgraded plan
 - `/payment/success?plan=pro&provider=razorpay` → success state
 - `/payment/cancel?plan=pro` → "No charge was made"
@@ -529,8 +545,8 @@ npm run dev   # http://localhost:5173
 - `/blog` → accessible without onboarding, featured post + article grid + email capture form
 - `/blog` newsletter → enter email → "You're subscribed!" (localStorage + n8n webhook)
 - `/integrations` → 12 cards; "Notify me" on coming-soon shows toast
-- `/use-cases/lead-generation` → renders correctly inside Shell (no nested main)
-- `/vs/clay` → comparison table with DatIQ wins highlighted
+- `/use-cases/lead-generation` → content left/right edges align with TopBar and Footer
+- `/vs/clay` → comparison table content aligns with TopBar/Footer (padding-top/bottom only, not shorthand)
 - Home social proof → stats load from /api/stats if Supabase configured, else show "500+" / "10K+"
 - Footer → slim single row: LinkedIn + Twitter socials | copyright | Privacy · Terms links
 - Home → persona chips above URL input (click to populate search box)
@@ -544,11 +560,11 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  feat(R1): UI/UX polish — responsive nav, hamburger menu, favicon, tooltips, geo-currency [merge]
+(latest)  fix(css): page padding override — use padding-top/bottom to preserve .container alignment [R2]
+          fix(ui): 4 UI/UX issues — onboarding layout, nav routing, alignment, auth-gated menus [R2]
+          feat(R1): UI/UX polish — responsive nav, hamburger menu, favicon, tooltips, geo-currency [merge]
 0bba84f  feat(r1): responsive nav — text+icons at all breakpoints, hamburger menu for mobile
 da5e49e  feat(r1): comprehensive UI/UX polish — nav, footer, home, tooltips, currency
 4bbcbbf  chore: update CLAUDE.md — full DatIQ rebrand complete (2026-06-10)
 6e1529f  feat: complete DatIQ rebrand — remove all ScrapeLite references
-8a3e14d  fix: E2E audit — nested main, contact emails, localStorage keys, unused vars
-6d04fed  feat: Use Cases dropdown, email capture, live stats, and DatIQ branding
 ```
