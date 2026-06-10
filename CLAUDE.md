@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-10 — R2 UI/UX fixes: onboarding in main layout, nav routing without forced onboarding, topbar/content alignment, auth-gated menus, page padding override fix**
+> **Last updated: 2026-06-10 — R3: Admin sidebar collapsible with toggle + pin controls**
 
 ---
 
@@ -36,7 +36,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/v6-datiq-rebrand-82s24f` | DatIQ rebrand — localStorage keys → `datiq.*`, console logs → `[DatIQ]` | ✅ |
 | `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish + SEO/GEO + 7 new marketing pages + dropdown + email capture | ✅ merged to main |
 | `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
-| `claude/r0-polish-ui-issues-fqbogg` | R2 UI fixes: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override | ✅ merged to main |
+| `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
 
 ---
 
@@ -247,7 +247,7 @@ ThemeProvider
 | Auth nav gating | UserDropdown only when `user` (logged in). Sign in + Sign up when `!user`. |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
-| Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. |
+| Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. Sidebar is collapsible — toggle (chevron) + pin button. State in `datiq.adminSidebarCollapsed` / `datiq.adminSidebarPinned`. |
 | Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
 | Netlify Functions | ESM (`export const handler`), in `netlify/functions/`. `stripe`/`razorpay` dynamic-imported only. |
 | localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
@@ -274,6 +274,8 @@ ThemeProvider
 | `datiq.plan` | BillingProvider — active plan ID |
 | `datiq.pendingPayment` | paymentService.js — pending Stripe redirect state |
 | `datiq.migrated` | migrationService.js — flag: scrapelite.* → datiq.* migration done |
+| `datiq.adminSidebarCollapsed` | AdminLayout.jsx — sidebar collapsed state ("1" = collapsed) |
+| `datiq.adminSidebarPinned` | AdminLayout.jsx — sidebar pin state ("0" = unpinned) |
 
 ---
 
@@ -482,6 +484,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 32. **R2: TopBar content alignment** — wrapped TopBar content in `.topbar-inner` (max-width: 1080px, margin: 0 auto) so brand/nav aligns with page `.container` content at all viewport widths
 33. **R2: Auth-gated nav** — TopBar UserDropdown (Account & Usage, Switch Role, Sign out) only shown when user is logged in; not-logged-in state shows Sign in + Sign up buttons opening AuthModal on correct tab; `authMode` state added to AuthProvider; `openAuth(mode)` accepts 'signin'/'signup'
 34. **R2: Page padding override fix** — `.about-page`, `.blog-page`, `.pricing-page`, `.account-page`, `.uc-page`, `.vs-page`, `.int-page` used `padding: Xpx 0 Ypx` shorthand which zeroed out `.container`'s horizontal padding (screens.css loads after design-system.css). Fixed to `padding-top`/`padding-bottom` only.
+35. **R3: Admin sidebar collapsible** — `AdminLayout` converted from CSS Grid to Flexbox layout. Sidebar has collapse/expand toggle (chevron), pin button (locks state), and hover-expand when unpinned+collapsed. State persisted to `datiq.adminSidebarCollapsed` + `datiq.adminSidebarPinned`. Mobile (≤700px) stays horizontal bar with controls hidden.
 
 ---
 
@@ -533,6 +536,9 @@ npm run dev   # http://localhost:5173
 - `/payment/success?plan=pro&provider=razorpay` → success state
 - `/payment/cancel?plan=pro` → "No charge was made"
 - `/admin` → PIN `ADMIN123` → Revenue / Pricing / Coupons / Users
+- Admin sidebar → chevron button collapses sidebar to 64px icon-only strip; chevron expands it back
+- Admin sidebar → pin button (pin/pin-off icon) locks state; when unpinned+collapsed, hovering sidebar temporarily expands it
+- Admin sidebar → state persists across page reloads (localStorage)
 - `/account` → enter coupon `LAUNCH20` → Apply; then × to remove
 - TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
@@ -560,11 +566,10 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  fix(css): page padding override — use padding-top/bottom to preserve .container alignment [R2]
-          fix(ui): 4 UI/UX issues — onboarding layout, nav routing, alignment, auth-gated menus [R2]
-          feat(R1): UI/UX polish — responsive nav, hamburger menu, favicon, tooltips, geo-currency [merge]
-0bba84f  feat(r1): responsive nav — text+icons at all breakpoints, hamburger menu for mobile
-da5e49e  feat(r1): comprehensive UI/UX polish — nav, footer, home, tooltips, currency
-4bbcbbf  chore: update CLAUDE.md — full DatIQ rebrand complete (2026-06-10)
-6e1529f  feat: complete DatIQ rebrand — remove all ScrapeLite references
+(latest)  feat(admin): collapsible sidebar with toggle and pin controls [R3]
+cbf8993  feat(admin): collapsible sidebar with toggle and pin controls
+0ae1c84  Add files via upload
+99a2534  merge(css): fix content alignment on use-case, compare and marketing pages
+6ecc1e6  fix(css): page padding override — use padding-top/bottom to preserve .container alignment [R2]
+113e20d  chore: sync feature branch with main after UI fixes merge
 ```
