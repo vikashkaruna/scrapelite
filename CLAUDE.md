@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-10 — Full DatIQ rebrand complete: zero ScrapeLite references, localStorage migration service, paymentService/alertService fixes, all 15 help pages updated**
+> **Last updated: 2026-06-10 — R1 UI/UX polish complete: responsive nav, hamburger menu, geo-currency, persona chips, tooltips, favicon, simplified footer, AuthModal persona step**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — Full DatIQ rebrand: zero ScrapeLite refs, migrationService, paymentService/alertService fixes |
+| **Latest commit** | (see git log) — R1 UI polish: responsive nav+hamburger, geo-currency, persona chips, tooltips, favicon, footer slim, AuthModal persona step |
 
 ---
 
@@ -35,6 +35,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/v5-pricing-billing-7xoRQ` | Stripe/Razorpay/UPI payments, `BillingProvider`, admin console, usage metering | ✅ |
 | `claude/v6-datiq-rebrand-82s24f` | DatIQ rebrand — localStorage keys → `datiq.*`, console logs → `[DatIQ]` | ✅ |
 | `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish + SEO/GEO + 7 new marketing pages + dropdown + email capture | ✅ merged to main |
+| `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
 
 ---
 
@@ -138,19 +139,21 @@ src/
 │   ├── PersonaProvider.jsx           ★ V4: personaId, userName, onboarded, resetOnboarding
 │   ├── BillingProvider.jsx           ★ V5c: planId, usage, initiatePayment, confirmPayment, applyCoupon
 │   ├── ExtractionProvider.jsx        current, loading, extract, enrich, save — checks billing limits
-│   ├── TopBar.jsx                    Brand (DatIQ layers icon + tagline), nav links + Use Cases dropdown,
-│   │                                 PlanBadge, PersonaBadge, UserChip, auth, Help anchor
-│   ├── Footer.jsx                    4-col: Socials | Explore (use cases, integrations, pricing, blog)
-│   │                                 | Company (About) | Legal (Privacy, Terms)
+│   ├── TopBar.jsx                    Brand (DatIQ layers icon + tagline), main nav (Extract/Dashboard/Pricing),
+│   │                                 ExploreDropdown (Use Cases/Compare/Resources sections with icons),
+│   │                                 UserDropdown (persona dot+name, account/billing/role/sign-out),
+│   │                                 MobileNav (hamburger panel <600px, Explore accordion, user actions)
+│   ├── Footer.jsx                    Slim single-row: socials (LinkedIn/Twitter) | copyright | legal links
 │   ├── Button.jsx                    variant: primary/secondary/ghost/danger; size sm; fullWidth
-│   ├── Toggle.jsx                    Reusable toggle switch
+│   ├── Toggle.jsx                    Reusable toggle switch; accepts `tooltip` prop → hover popover
 │   ├── Icon.jsx                      lucide-react name-map (76 icons registered)
 │   ├── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
 │   ├── ContentModal.jsx              Generate content modal; 3 formats; copy button
 │   ├── EmailModal.jsx                Send email modal; multi-recipient
 │   ├── BrandLoader.jsx               Animated loader
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
-│   └── LoadingScreen.jsx             Full-screen 4-step animated progress
+│   ├── LoadingScreen.jsx             Full-screen 4-step animated progress
+│   └── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
 └── pages/
     ├── Home.jsx                      URL input, 4 toggles, custom extraction, 8 capability cards,
     │                                 social proof (live stats from statsService + testimonials)
@@ -230,10 +233,12 @@ ThemeProvider
 | Dashboard seed | NONE — starts empty. Do not re-add mock data. |
 | Table layout | `table-layout:fixed`, fixed px widths on narrow cols |
 | TopBar "+ New" | Only shown on `/preview` |
-| TopBar brand icon | Uses `layers` icon (ScrapeLite identity) — do NOT change back to `bar-chart` |
+| TopBar brand icon | Uses `layers` icon — do NOT change |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| TopBar nav | Includes "Use cases" dropdown with `.nav-dropdown` — closes on outside click + navigation |
-| Footer nav | 4 cols: Socials · Explore (use cases, integrations, pricing, blog) · Company (About) · Legal |
+| TopBar nav | Main links: Extract / Dashboard / Pricing + ExploreDropdown (3 sections) + UserDropdown |
+| TopBar responsive | Desktop >820px: full text+icons; Tablet 600–820px: compressed; Mobile <600px: hamburger |
+| TopBar MobileNav | Slide-down panel (position:fixed top:68px), Explore accordion, user persona + actions |
+| Footer | Slim single-row: `.site-footer-slim` — socials left, copyright center, legal right |
 | Page structure | All route pages return a plain `<div className="page">` — Shell provides `<main id="main-content">` |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
@@ -456,6 +461,15 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 17. **R1: paymentService Razorpay `name`** — `"ScrapeLite"` → `"DatIQ"` in Razorpay modal options
 18. **R1: alertService email subject** — `"ScrapeLite — Usage Alert"` → `"DatIQ — Usage Alert"`
 19. **R1: localStorage migration** — `migrationService.js` + `runMigrations()` in `main.jsx` copies all `scrapelite.*` keys → `datiq.*` on first load (preserves existing user sessions)
+20. **R1: TopBar restructure** — merged Blog/Help/About/Use Cases into single ExploreDropdown (3 sections: Use Cases, Compare, Resources); UserDropdown replaces separate PersonaBadge + UserChip
+21. **R1: Footer simplified** — replaced 4-col layout with slim single-row `.site-footer-slim` (socials + copyright + legal only)
+22. **R1: Responsive nav text** — nav labels visible at all breakpoints down to 600px; below 600px hamburger `MobileNav` panel shown
+23. **R1: Geo-currency detection** — `detectCurrency()` in `currencyService.js`; `BillingProvider` auto-applies on first visit (timezone-first, language fallback)
+24. **R1: Toggle tooltip prop** — `tooltip` prop on Toggle renders `.opt-tooltip` hover popover; all Home.jsx toggles updated
+25. **R1: Persona quick-chips** — `.persona-contexts` above URL input on Home; persona-specific context chips populate search box
+26. **R1: Scrape opts 2-col** — `.scrape-opts-grid` (2-column) replaces single-column layout; collapses to 1 col on mobile
+27. **R1: AuthModal persona step** — post-signup persona selection step with skip; `usePersona.completeOnboarding()` called before closing
+28. **R1: favicon layered-diamond** — SVG updated to 3-layer diamond matching in-app brand mark (indigo #4f46e5 bg)
 
 ---
 
@@ -503,10 +517,13 @@ npm run dev   # http://localhost:5173
 - `/payment/cancel?plan=pro` → "No charge was made"
 - `/admin` → PIN `ADMIN123` → Revenue / Pricing / Coupons / Users
 - `/account` → enter coupon `LAUNCH20` → Apply; then × to remove
-- TopBar → Sign in → create account → check email (goes to site origin, not localhost)
+- TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
-- TopBar nav → Extract, Dashboard, Pricing, About, Blog, **Use cases** (dropdown), Help all present
-- TopBar "Use cases" dropdown → Lead Generation / Competitor Research / SEO Audit / Market Research / vs Browse.ai / vs Clay
+- TopBar nav (desktop >820px) → Extract, Dashboard, Pricing all show text+icon; Explore dropdown shows
+- TopBar Explore dropdown → 3 sections: Use Cases (4), Compare (2), Resources (About/Blog/Help)
+- TopBar UserDropdown → persona colour dot + name; hover shows profile card + Account/Switch Role/Sign out
+- TopBar (mobile <600px) → hamburger button visible; tap to open slide-down nav panel
+- Mobile nav → Extract/Dashboard/Pricing links; Explore accordion expands; persona info shown
 - `/about` → accessible without onboarding, shows hero + values + how-it-works + personas
 - `/blog` → accessible without onboarding, featured post + article grid + email capture form
 - `/blog` newsletter → enter email → "You're subscribed!" (localStorage + n8n webhook)
@@ -514,19 +531,23 @@ npm run dev   # http://localhost:5173
 - `/use-cases/lead-generation` → renders correctly inside Shell (no nested main)
 - `/vs/clay` → comparison table with DatIQ wins highlighted
 - Home social proof → stats load from /api/stats if Supabase configured, else show "500+" / "10K+"
-- Footer → 4-col: Socials · Explore · Company (About) · Legal (Privacy, Terms)
+- Footer → slim single row: LinkedIn + Twitter socials | copyright | Privacy · Terms links
+- Home → persona chips above URL input (click to populate search box)
+- Home → scrape toggles in 2-column grid; each toggle has hover tooltip
+- Pricing → currency auto-detected from timezone (INR for India, EUR for Europe, GBP for UK, USD default)
+- Pricing → currency picker still available; choice persists across sessions
+- favicon → layered-diamond indigo SVG visible in browser tab
 
 ---
 
 ## Git log (recent)
 
 ```
-(latest)  feat: complete DatIQ rebrand — remove all ScrapeLite references
+(latest)  feat(R1): UI/UX polish — responsive nav, hamburger menu, favicon, tooltips, geo-currency [merge]
+0bba84f  feat(r1): responsive nav — text+icons at all breakpoints, hamburger menu for mobile
+da5e49e  feat(r1): comprehensive UI/UX polish — nav, footer, home, tooltips, currency
+4bbcbbf  chore: update CLAUDE.md — full DatIQ rebrand complete (2026-06-10)
+6e1529f  feat: complete DatIQ rebrand — remove all ScrapeLite references
 8a3e14d  fix: E2E audit — nested main, contact emails, localStorage keys, unused vars
 6d04fed  feat: Use Cases dropdown, email capture, live stats, and DatIQ branding
-8bf109d  feat: SEO/GEO foundation, accessibility, and new marketing pages
-c4abb3d  Merge branch 'claude/r0-check-merged-fix-ui-4o44k2' into main
-520c09c  fix(footer): remove ScrapeLite brand name and tagline from footer body
-b94a204  feat(R0): ScrapeLite icon, DatIQ tagline, About/Blog pages, footer redesign
-bb001e6  chore: update CLAUDE.md with complete session state (2026-06-09)
 ```
