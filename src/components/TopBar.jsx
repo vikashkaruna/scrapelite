@@ -30,6 +30,14 @@ function Brand({ onClick }) {
 // ── Explore mega-dropdown sections ────────────────────────────────
 const EXPLORE_SECTIONS = [
   {
+    key: "pricing",
+    label: "Pricing",
+    items: [
+      { label: "Plans & Pricing",     icon: "tag",       path: "/pricing" },
+      { label: "Integrations",        icon: "zap",       path: "/integrations" },
+    ],
+  },
+  {
     key: "use-cases",
     label: "Use Cases",
     items: [
@@ -58,7 +66,7 @@ const EXPLORE_SECTIONS = [
   },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/use-cases/", "/vs/", "/about", "/blog", "/integrations"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases/", "/vs/", "/about", "/blog"];
 
 function ExploreDropdown({ onNavigate }) {
   return (
@@ -355,7 +363,6 @@ export default function TopBar() {
   const mainLinks = [
     { to: "/",          label: "Extract",   icon: "globe", match: (p) => p === "/" || p === "/preview" },
     { to: "/dashboard", label: "Dashboard", icon: "grid",  match: (p) => p === "/dashboard" },
-    { to: "/pricing",   label: "Pricing",   icon: "tag",   match: (p) => p === "/pricing" },
   ];
 
   async function handleSignOut() {

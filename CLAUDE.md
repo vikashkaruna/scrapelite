@@ -235,7 +235,7 @@ ThemeProvider
 | TopBar "+ New" | Only shown on `/preview` |
 | TopBar brand icon | Uses `layers` icon — do NOT change |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| TopBar nav | Main links: Extract / Dashboard / Pricing + ExploreDropdown (3 sections) + UserDropdown |
+| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown (4 sections: Pricing, Use Cases, Compare, Resources) + UserDropdown |
 | TopBar responsive | Desktop >820px: full text+icons; Tablet 600–820px: compressed; Mobile <600px: hamburger |
 | TopBar MobileNav | Slide-down panel (position:fixed top:68px), Explore accordion, user persona + actions |
 | Footer | Slim single-row: `.site-footer-slim` — socials left, copyright center, legal right |
@@ -520,7 +520,7 @@ npm run dev   # http://localhost:5173
 - TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
 - TopBar nav (desktop >820px) → Extract, Dashboard, Pricing all show text+icon; Explore dropdown shows
-- TopBar Explore dropdown → 3 sections: Use Cases (4), Compare (2), Resources (About/Blog/Help)
+- TopBar Explore dropdown → 4 sections: Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (About/Blog/Help)
 - TopBar UserDropdown → persona colour dot + name; hover shows profile card + Account/Switch Role/Sign out
 - TopBar (mobile <600px) → hamburger button visible; tap to open slide-down nav panel
 - Mobile nav → Extract/Dashboard/Pricing links; Explore accordion expands; persona info shown
