@@ -89,6 +89,8 @@ import {
   MapPin,
   Repeat,
   Menu,
+  Pin,
+  PinOff,
 } from "lucide-react";
 
 const MAP = {
@@ -179,6 +181,8 @@ const MAP = {
   "map-pin": MapPin,
   repeat: Repeat,
   menu: Menu,
+  pin: Pin,
+  "pin-off": PinOff,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

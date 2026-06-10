@@ -1,4 +1,4 @@
-// AdminLayout.jsx — admin shell with PIN gate + sidebar navigation.
+// AdminLayout.jsx — admin shell with PIN gate + collapsible sidebar navigation.
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { isAdminAuthed, adminLogin, adminLogout } from "../../lib/adminService.js";
@@ -11,6 +11,9 @@ const NAV = [
   { to: "/admin/coupons", label: "Coupons",  icon: "bookmark" },
   { to: "/admin/users",   label: "Users",    icon: "users" },
 ];
+
+const LS_COL = "datiq.adminSidebarCollapsed";
+const LS_PIN = "datiq.adminSidebarPinned";
 
 function PinGate({ onAuthed }) {
   const [pin, setPin] = useState("");
@@ -60,37 +63,83 @@ export default function AdminLayout() {
   const { pathname } = useLocation();
   const [authed, setAuthed] = useState(isAdminAuthed);
 
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(LS_COL) === "1");
+  const [pinned, setPinned] = useState(() => localStorage.getItem(LS_PIN) !== "0");
+  const [hovered, setHovered] = useState(false);
+
+  // Sidebar is visually expanded when: not collapsed, OR (collapsed but not pinned and hovered)
+  const isExpanded = !collapsed || (!pinned && hovered);
+
   useEffect(() => {
     if (authed && pathname === "/admin") navigate("/admin/revenue", { replace: true });
   }, [authed, pathname]);
 
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(LS_COL, next ? "1" : "0");
+  };
+
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    localStorage.setItem(LS_PIN, next ? "1" : "0");
+  };
+
   if (!authed) return <PinGate onAuthed={() => setAuthed(true)} />;
 
   return (
-    <div className="admin-layout">
-      <aside className="admin-sidebar">
+    <div className={"admin-layout" + (isExpanded ? "" : " sidebar-collapsed")}>
+      <aside
+        className={"admin-sidebar" + (isExpanded ? "" : " collapsed")}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
         <div className="admin-sidebar-head">
           <div className="admin-brand-mark">
             <Icon name="shield" size={17} />
           </div>
-          <span className="admin-brand-label">Admin</span>
+          {isExpanded && <span className="admin-brand-label">Admin</span>}
+          <div className="admin-sidebar-ctrls">
+            {isExpanded && (
+              <button
+                className={"admin-ctrl-btn" + (pinned ? " pinned" : "")}
+                onClick={togglePin}
+                title={pinned ? "Unpin sidebar (auto-collapse on hover out)" : "Pin sidebar open"}
+              >
+                <Icon name={pinned ? "pin" : "pin-off"} size={14} />
+              </button>
+            )}
+            <button
+              className="admin-ctrl-btn"
+              onClick={toggleCollapse}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={14} />
+            </button>
+          </div>
         </div>
         <nav className="admin-nav">
           {NAV.map((n) => (
             <div
               key={n.to}
-              className={"admin-nav-item" + (pathname.startsWith(n.to) ? " active" : "")}
+              className={"admin-nav-item" + (pathname.startsWith(n.to) ? " active" : "") + (isExpanded ? "" : " icon-only")}
               onClick={() => navigate(n.to)}
+              title={isExpanded ? undefined : n.label}
             >
               <Icon name={n.icon} size={17} />
-              <span>{n.label}</span>
+              {isExpanded && <span>{n.label}</span>}
             </div>
           ))}
         </nav>
         <div className="admin-sidebar-foot">
-          <button className="admin-logout" onClick={() => { adminLogout(); setAuthed(false); navigate("/"); }}>
+          <button
+            className={"admin-logout" + (isExpanded ? "" : " icon-only")}
+            onClick={() => { adminLogout(); setAuthed(false); navigate("/"); }}
+            title={isExpanded ? undefined : "Exit admin"}
+          >
             <Icon name="x" size={15} />
-            <span>Exit admin</span>
+            {isExpanded && <span>Exit admin</span>}
           </button>
         </div>
       </aside>
