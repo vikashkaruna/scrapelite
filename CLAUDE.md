@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-09 — SEO/GEO foundation, 7 new marketing pages, Use Cases dropdown, live stats, email capture, bug fixes**
+> **Last updated: 2026-06-10 — Full DatIQ rebrand complete: zero ScrapeLite references, localStorage migration service, paymentService/alertService fixes, all 15 help pages updated**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — E2E test fixes: nested main, email addresses, localStorage keys |
+| **Latest commit** | (see git log) — Full DatIQ rebrand: zero ScrapeLite refs, migrationService, paymentService/alertService fixes |
 
 ---
 
@@ -114,6 +114,7 @@ src/
 │   ├── pricingConfig.js              ★ V5: 5 plan definitions + 3 top-up bundles + currency meta
 │   ├── pricingOverrides.js           ★ V5: getEffectivePlans(), getEffectivePlanById(), getGlobalDiscount()
 │   ├── currencyService.js            ★ V5: 6-currency rates (USD/INR/EUR/GBP/SGD/AED), daily BOD refresh
+│   ├── migrationService.js           ★ R1: runMigrations() — copies scrapelite.* → datiq.* keys on first load
 │   ├── usageService.js               ★ V5: canExtract/canEnrich/canExport — uses effective plan map
 │   ├── usageRepo.js                  ★ V5: Supabase sync for usage_records + usage_alerts
 │   ├── alertService.js               ★ V5: getAlertConfig, saveAlertConfig, checkAndFireAlerts
@@ -262,6 +263,7 @@ ThemeProvider
 | `scrapelite.*` | Internal keys (persona, usage, currency, pricing overrides etc.) — NOT rebranded |
 | `datiq.plan` | BillingProvider — active plan ID |
 | `datiq.pendingPayment` | paymentService.js — pending Stripe redirect state |
+| `datiq.migrated` | migrationService.js — flag: scrapelite.* → datiq.* migration done |
 
 ---
 
@@ -451,6 +453,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 14. **R0: scrapelite.tip.* localStorage key** — Home.jsx guide tip key updated to `datiq.tip.*`
 15. **R0: contact emails** — `hello@scrapelite.io` → `support@datiq.app`, `legal@scrapelite.io` → `legal@datiq.app`, `privacy@scrapelite.io` → `privacy@datiq.app`
 16. **R0: TopBar unused `plan` var** — removed from `useBilling()` destructuring
+17. **R1: paymentService Razorpay `name`** — `"ScrapeLite"` → `"DatIQ"` in Razorpay modal options
+18. **R1: alertService email subject** — `"ScrapeLite — Usage Alert"` → `"DatIQ — Usage Alert"`
+19. **R1: localStorage migration** — `migrationService.js` + `runMigrations()` in `main.jsx` copies all `scrapelite.*` keys → `datiq.*` on first load (preserves existing user sessions)
 
 ---
 
@@ -473,8 +478,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Razorpay: create Subscription Plans → set `VITE_RAZORPAY_PLAN_*`
 
 ### Future development
-- [ ] Full DatIQ rename: migrate `scrapelite.*` localStorage keys to `datiq.*` (requires session migration script)
-- [ ] Full DatIQ rename: update Terms/Privacy legal text (currently says "ScrapeLite" in the body)
+- [x] ~~Full DatIQ rename: migrate `scrapelite.*` localStorage keys to `datiq.*`~~ — DONE via migrationService.js
+- [x] ~~Full DatIQ rename: update Terms/Privacy legal text~~ — DONE (all ScrapeLite refs removed)
 - [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude
 - [ ] Move `VITE_AI_API_KEY` to server-only via Netlify Function (security)
 - [ ] Supabase real auth → replace localStorage persona/session for cross-device sync
@@ -516,13 +521,12 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  fix: E2E test pass — nested main, email addresses, datiq.tip.* key, unused vars
+(latest)  feat: complete DatIQ rebrand — remove all ScrapeLite references
+8a3e14d  fix: E2E audit — nested main, contact emails, localStorage keys, unused vars
 6d04fed  feat: Use Cases dropdown, email capture, live stats, and DatIQ branding
 8bf109d  feat: SEO/GEO foundation, accessibility, and new marketing pages
 c4abb3d  Merge branch 'claude/r0-check-merged-fix-ui-4o44k2' into main
 520c09c  fix(footer): remove ScrapeLite brand name and tagline from footer body
 b94a204  feat(R0): ScrapeLite icon, DatIQ tagline, About/Blog pages, footer redesign
 bb001e6  chore: update CLAUDE.md with complete session state (2026-06-09)
-f3e05a3  fix: remove duplicate [functions] section in netlify.toml
-6373a89  Merge v6-datiq-rebrand into main
 ```
