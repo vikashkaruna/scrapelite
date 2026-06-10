@@ -235,7 +235,7 @@ ThemeProvider
 | TopBar "+ New" | Only shown on `/preview` |
 | TopBar brand icon | Uses `layers` icon — do NOT change |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown (4 sections: Pricing, Use Cases, Compare, Resources) + UserDropdown |
+| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown (4 sections: Pricing, Use Cases, Compare, Resources) + UserDropdown. No PlanBadge button (removed — redundant with Account & Usage in UserDropdown) |
 | TopBar responsive | Desktop >820px: full text+icons; Tablet 600–820px: compressed; Mobile <600px: hamburger |
 | TopBar MobileNav | Slide-down panel (position:fixed top:68px), Explore accordion, user persona + actions |
 | Footer | Slim single-row: `.site-footer-slim` — socials left, copyright center, legal right |
@@ -470,6 +470,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 26. **R1: Scrape opts 2-col** — `.scrape-opts-grid` (2-column) replaces single-column layout; collapses to 1 col on mobile
 27. **R1: AuthModal persona step** — post-signup persona selection step with skip; `usePersona.completeOnboarding()` called before closing
 28. **R1: favicon layered-diamond** — SVG updated to 3-layer diamond matching in-app brand mark (indigo #4f46e5 bg)
+29. **R1: PlanBadge removed** — plan name badge (e.g. "Select") in TopBar was redundant with "Account & Usage" in UserDropdown; removed `PlanBadge` component and its render call
 
 ---
 

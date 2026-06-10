@@ -8,10 +8,7 @@ import { useAuth } from "./AuthProvider.jsx";
 import { signOut, getUserInitials, getUserAvatar, getUserDisplayName } from "../lib/authService.js";
 import { usePersona } from "./PersonaProvider.jsx";
 import { useBilling } from "./BillingProvider.jsx";
-import { getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
-
-const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", business: "#a78bfa", agency: "#f472b6" };
 
 function Brand({ onClick }) {
   return (
@@ -203,17 +200,6 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
   );
 }
 
-function PlanBadge({ planId, planName, onClick }) {
-  const color = PLAN_COLORS[planId] ?? "#888";
-  if (planId === "free") return null;
-  return (
-    <button className="plan-badge-btn" onClick={onClick} title="View your plan" style={{ "--pb-c": color }}>
-      <Icon name="zap" size={12} style={{ color }} />
-      <span style={{ color }}>{planName}</span>
-    </button>
-  );
-}
-
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
                      onAccount, onSwitchRole, onSignOut, onSignIn, onboarded }) {
@@ -356,8 +342,7 @@ export default function TopBar() {
   // Close dropdowns on route change
   useEffect(() => { setShowExplore(false); setMobileOpen(false); }, [pathname]);
 
-  const persona      = personaId ? PERSONA_BY_ID[personaId] : null;
-  const effectivePlan = getEffectivePlanById(planId ?? "free");
+  const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
   const mainLinks = [
@@ -413,8 +398,6 @@ export default function TopBar() {
               {showExplore && <ExploreDropdown onNavigate={handleExploreNav} />}
             </div>
           </nav>
-
-          <PlanBadge planId={planId} planName={effectivePlan?.name ?? ""} onClick={() => navigate("/account")} />
 
           <button className="theme-toggle" onClick={toggle} aria-label="Toggle theme" title="Toggle light / dark">
             <Icon name={theme === "dark" ? "sun" : "moon"} />
