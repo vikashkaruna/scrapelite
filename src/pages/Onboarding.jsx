@@ -174,7 +174,7 @@ export default function Onboarding() {
           <Icon name="layers" size={19} strokeWidth={2.2} />
         </div>
         <span className="ob-brand-name">
-          Scrape<b>Lite</b>
+          Dat<b>IQ</b>
         </span>
       </div>
 

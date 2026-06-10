@@ -1,18 +1,6 @@
-// Footer.jsx — site footer with brand identity and essential links only.
-// Product/app nav is intentionally excluded (already in TopBar).
+// Footer.jsx — simplified footer: socials + legal only.
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
-
-const COMPANY_LINKS = [
-  { label: "About", path: "/about" },
-];
-
-const EXPLORE_LINKS = [
-  { label: "Use cases", path: "/use-cases/lead-generation" },
-  { label: "Integrations", path: "/integrations" },
-  { label: "Pricing", path: "/pricing" },
-  { label: "Blog", path: "/blog" },
-];
 
 const LEGAL_LINKS = [
   { label: "Privacy Policy", path: "/privacy" },
@@ -29,85 +17,38 @@ export default function Footer() {
 
   return (
     <footer className="site-footer" role="contentinfo" aria-label="Site footer">
-      <div className="container site-footer-inner" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr" }}>
-        {/* Brand column */}
-        <div className="footer-brand-col">
-          <div className="footer-socials" aria-label="Social links">
-            {SOCIALS.map((s) => (
-              <a
-                key={s.name}
-                href={s.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="footer-social-btn"
-                aria-label={s.label}
-              >
-                <Icon name={s.name} size={16} />
-              </a>
-            ))}
-          </div>
+      <div className="site-footer-slim container">
+        {/* Socials */}
+        <div className="footer-socials" aria-label="Social links">
+          {SOCIALS.map((s) => (
+            <a
+              key={s.name}
+              href={s.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-social-btn"
+              aria-label={s.label}
+            >
+              <Icon name={s.name} size={16} />
+            </a>
+          ))}
         </div>
 
-        {/* Explore links */}
-        <div className="footer-nav-col">
-          <div className="footer-nav-head" id="footer-explore-heading">Explore</div>
-          <ul className="footer-nav-list" aria-labelledby="footer-explore-heading">
-            {EXPLORE_LINKS.map((item) => (
-              <li key={item.label}>
-                <button
-                  className="footer-nav-link"
-                  onClick={() => navigate(item.path)}
-                >
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Copyright centre */}
+        <span className="footer-copy">
+          © {new Date().getFullYear()} DatIQ · Data + IQ, intelligence from every URL
+        </span>
 
-        {/* Company links */}
-        <div className="footer-nav-col">
-          <div className="footer-nav-head" id="footer-company-heading">Company</div>
-          <ul className="footer-nav-list" aria-labelledby="footer-company-heading">
-            {COMPANY_LINKS.map((item) => (
-              <li key={item.label}>
-                <button
-                  className="footer-nav-link"
-                  onClick={() => navigate(item.path)}
-                >
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Legal links */}
-        <div className="footer-nav-col">
-          <div className="footer-nav-head" id="footer-legal-heading">Legal</div>
-          <ul className="footer-nav-list" aria-labelledby="footer-legal-heading">
-            {LEGAL_LINKS.map((item) => (
-              <li key={item.label}>
-                <button
-                  className="footer-nav-link"
-                  onClick={() => navigate(item.path)}
-                >
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <div className="site-footer-bottom">
-        <div className="container">
-          <span className="footer-copy">
-            © {new Date().getFullYear()} DatIQ · DatIQ. All rights reserved.
-          </span>
-          <span className="footer-copy-right">
-            Data + IQ — intelligence from every URL
-          </span>
+        {/* Legal */}
+        <div className="footer-legal-links">
+          {LEGAL_LINKS.map((item, i) => (
+            <span key={item.label} className="footer-legal-group">
+              {i > 0 && <span className="footer-legal-sep" aria-hidden="true">·</span>}
+              <button className="footer-nav-link" onClick={() => navigate(item.path)}>
+                {item.label}
+              </button>
+            </span>
+          ))}
         </div>
       </div>
     </footer>

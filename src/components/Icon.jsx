@@ -80,6 +80,13 @@ import {
   Lightbulb,
   Rocket,
   MessageSquare,
+  // R1 additions
+  Compass,
+  HelpCircle,
+  Settings,
+  UserCircle,
+  MapPin,
+  Repeat,
 } from "lucide-react";
 
 const MAP = {
@@ -161,6 +168,13 @@ const MAP = {
   lightbulb: Lightbulb,
   rocket: Rocket,
   "message-square": MessageSquare,
+  // R1
+  compass: Compass,
+  "help-circle": HelpCircle,
+  settings: Settings,
+  "user-circle": UserCircle,
+  "map-pin": MapPin,
+  repeat: Repeat,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
