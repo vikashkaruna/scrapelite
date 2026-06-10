@@ -87,6 +87,7 @@ import {
   UserCircle,
   MapPin,
   Repeat,
+  Menu,
 } from "lucide-react";
 
 const MAP = {
@@ -175,6 +176,7 @@ const MAP = {
   "user-circle": UserCircle,
   "map-pin": MapPin,
   repeat: Repeat,
+  menu: Menu,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
