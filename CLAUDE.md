@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-10 — R3: Admin sidebar collapsible with toggle + pin controls**
+> **Last updated: 2026-06-11 — R4: Pricing overhaul, new pages, legal, social proof, blog modal, usage banner**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R1 UI polish: responsive nav+hamburger, geo-currency, persona chips, tooltips, favicon, footer slim, AuthModal persona step |
+| **Latest commit** | (see git log) — R4: pricing overhaul, /contact, /use-cases, founder block, DPDP, Indian arbitration, usage upsell banner, blog modal |
 
 ---
 
@@ -37,6 +37,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-check-merged-fix-ui-4o44k2` | R0 UI polish + SEO/GEO + 7 new marketing pages + dropdown + email capture | ✅ merged to main |
 | `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
 | `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
+| `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 
 ---
 
@@ -60,22 +61,27 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/` | Home / Extract | Public (no forced onboarding) |
 | `/preview` | Review & Save extraction | Public |
 | `/dashboard` | Saved extractions | Public |
-| `/pricing` | Pricing plans, currency picker, top-up bundles | Public |
+| `/pricing` | Pricing plans, annual/monthly toggle, USD+INR, top-up bundles | Public |
 | `/account` | Billing & usage, metering alerts, coupon input, payment history | Public |
 | `/payment/success` | Post-payment confirmation (Stripe redirect / Razorpay success) | Public |
 | `/payment/cancel` | Checkout cancelled screen | Public |
 | `/onboarding` | 2-step persona selection | Public (in Shell with TopBar+Footer; opt-in) |
-| `/privacy` | Privacy Policy | Public |
-| `/terms` | Terms of Service | Public |
-| `/about` | About DatIQ — mission, values, how-it-works, personas | Public |
-| `/blog` | Blog listing — featured + recent articles + email newsletter capture | Public |
+| `/contact` | Support contact form (5 enquiry types + sidebar info) | Public |
+| `/privacy` | Privacy Policy (includes DPDP Act 2023 section) | Public |
+| `/terms` | Terms of Service (Indian arbitration governing law) | Public |
+| `/about` | About DatIQ — mission, values, how-it-works, founder block, personas | Public |
+| `/blog` | Blog listing — featured + grid + email capture; click card → in-page modal | Public |
 | `/integrations` | Integration catalog — 4 live, 6 coming-soon, 1 agency, 1 roadmap | Public |
+| `/use-cases` | Use-cases hub — 4 cards linking to detail pages | Public |
 | `/use-cases/lead-generation` | Lead gen use-case landing page | Public |
 | `/use-cases/competitor-research` | Competitor research landing page | Public |
 | `/use-cases/seo-audit` | SEO audit use-case landing page | Public |
 | `/use-cases/market-research` | Market research use-case landing page | Public |
 | `/vs/browse-ai` | DatIQ vs Browse.ai comparison page | Public |
 | `/vs/clay` | DatIQ vs Clay comparison page | Public |
+| `/docs` | Redirect → `/help/index.html` (window.location.href, not SPA nav) | Public |
+| `/compare` | Redirect → `/vs/browse-ai` (React Router Navigate) | Public |
+| `/compare/*` | Redirect → `/vs/browse-ai` | Public |
 | `/admin` | Admin shell (PIN gated, demo PIN: `ADMIN123`) | Standalone |
 | `/admin/revenue` | Revenue dashboard | Admin |
 | `/admin/pricing` | Configurable plan pricing & limits | Admin |
@@ -90,17 +96,21 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 ```
 src/
 ├── App.jsx                           Provider tree + routes + Shell guard
+│                                     ★ R4: added /contact, /use-cases, /docs redirect, /compare redirect
+│                                     UsageUpsellBanner placed between TopBar and <main>
 ├── main.jsx
 ├── index.css
 ├── styles/
 │   ├── design-system.css             CSS tokens + @keyframes spin + .btn-full + brand tagline
-│   └── screens.css                   All screen/component CSS (2200+ lines)
+│   └── screens.css                   All screen/component CSS (~2500 lines)
 │                                     Includes: .uc-*, .vs-*, .int-*, .skip-link, .nav-dropdown*,
-│                                     .home-social-proof, .blog-*, .about-*
+│                                     .home-social-proof, .blog-*, .about-*, .contact-*, .billing-toggle-*,
+│                                     .enterprise-card, .plan-coming-soon, .referral-teaser, .usage-upsell-banner
 ├── data/
 │   └── mockData.js
 ├── lib/
 │   ├── config.js                     VITE_* env + runtime override; feature flags
+│   │                                 ★ R4: removed AI_API_KEY export; hasAI = true (key server-side only)
 │   ├── utils.js                      hostOf, pathOf, uid, flattenJson, extractionsToCsv, etc.
 │   ├── supabaseClient.js             createClient when configured; null otherwise
 │   ├── apiClient.js                  ★ V2: /api/* proxy — extract, ai, listExtractions, CRUD, setAuthToken
@@ -113,15 +123,20 @@ src/
 │   ├── extractionsRepo.js            listExtractions, saveExtraction, updateEnrichments, deleteExtraction
 │   │                                 Uses apiClient → localStorage fallback; LS_KEY = "datiq.saved"
 │   ├── personaConfig.js              PERSONAS (7), PERSONA_BY_ID
-│   ├── pricingConfig.js              ★ V5: 5 plan definitions + 3 top-up bundles + currency meta
+│   ├── pricingConfig.js              ★ R4: 7 plan tiers + ENTERPRISE_PLAN export + TOPUP_BUNDLES
+│   │                                 Plans: Free/Select/Pro/Business/Agency/Developer(comingSoon)/Enterprise
+│   │                                 Fields: price_usd, price_usd_annual, price_inr_annual, trialCredit
+│   │                                 CURRENCIES = ["USD", "INR"] (EUR/GBP/SGD/AED removed)
 │   ├── pricingOverrides.js           ★ V5: getEffectivePlans(), getEffectivePlanById(), getGlobalDiscount()
-│   ├── currencyService.js            ★ V5: 6-currency rates (USD/INR/EUR/GBP/SGD/AED), daily BOD refresh
+│   ├── currencyService.js            ★ R4: USD+INR only; DEFAULT_RATES = { USD:1, INR:83.5 }
+│   │                                 detectCurrency() returns "USD" or "INR" only
 │   ├── migrationService.js           ★ R1: runMigrations() — copies scrapelite.* → datiq.* keys on first load
 │   ├── usageService.js               ★ V5: canExtract/canEnrich/canExport — uses effective plan map
 │   ├── usageRepo.js                  ★ V5: Supabase sync for usage_records + usage_alerts
 │   ├── alertService.js               ★ V5: getAlertConfig, saveAlertConfig, checkAndFireAlerts
 │   ├── adminService.js               ★ V5: coupon CRUD, user management, revenue metrics
 │   ├── paymentConfig.js              ★ V5c: getPaymentProvider(currency), hasPayment, PROVIDER_META
+│   │                                 INR → Razorpay; USD → Stripe
 │   ├── paymentService.js             ★ V5c: initiateCheckout (Stripe/Razorpay/demo), pending payment
 │   ├── paymentRepo.js                ★ V5c: Supabase subscriptions + payment_events sync
 │   ├── pdfExport.js                  Lazy-loaded jsPDF report (never static-imported)
@@ -134,12 +149,15 @@ src/
 ├── components/
 │   ├── ThemeProvider.jsx             light/dark; persists to datiq.theme
 │   ├── Toast.jsx                     ToastProvider + useToast(); 2.6s auto-dismiss
+│   │                                 IMPORTANT: useToast() returns the fn directly, not {showToast}
 │   ├── ErrorModal.jsx                ErrorModalProvider + useErrorModal()
 │   ├── AuthProvider.jsx              ★ V3: Supabase auth state, openAuth/closeAuth, authError
 │   ├── AuthModal.jsx                 ★ V3: sign-up/sign-in modal with authError display
 │   ├── PersonaProvider.jsx           ★ V4: personaId, userName, onboarded, resetOnboarding
 │   ├── BillingProvider.jsx           ★ V5c: planId, usage, initiatePayment, confirmPayment, applyCoupon
 │   ├── ExtractionProvider.jsx        current, loading, extract, enrich, save — checks billing limits
+│   ├── UsageUpsellBanner.jsx         ★ R4: shows at ≥80% extraction usage; dismiss stores month in LS
+│   │                                 Key: datiq.upsellDismissedMonth; re-shows next month
 │   ├── TopBar.jsx                    Brand (DatIQ layers icon + tagline), main nav (Extract/Dashboard/Pricing),
 │   │                                 ExploreDropdown (Use Cases/Compare/Resources sections with icons),
 │   │                                 UserDropdown (persona dot+name, account/billing/role/sign-out),
@@ -153,31 +171,35 @@ src/
 │   ├── EmailModal.jsx                Send email modal; multi-recipient
 │   ├── BrandLoader.jsx               Animated loader
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
-│   ├── LoadingScreen.jsx             Full-screen 4-step animated progress
-│   └── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
+│   └── LoadingScreen.jsx             Full-screen 4-step animated progress
 └── pages/
     ├── Home.jsx                      URL input, 4 toggles, custom extraction, 8 capability cards,
-    │                                 social proof (live stats from statsService + testimonials)
+    │                                 social proof (real stats; hidden until teams≥10 OR extractions≥100)
+    │                                 ★ R4: testimonials permanently hidden until real backend data
     ├── Preview.jsx                   Quick enrichment, enrichment tabs, save/discard
     ├── Dashboard.jsx                 Table/cards, search, pagination, CSV/PDF/Generate/Email
-    ├── Onboarding.jsx                2-step persona selection (standalone, no chrome)
-    ├── Pricing.jsx                   ★ V5c: plan cards, payment-backed select, provider badge, demo notice
+    ├── Onboarding.jsx                2-step persona selection (in Shell with TopBar+Footer; opt-in)
+    ├── Pricing.jsx                   ★ R4: annual/monthly toggle (default: annual), USD+INR only,
+    │                                 BillingToggle component, EnterpriseCard, Developer comingSoon card
+    │                                 resolvePrice() uses plan.price_inr_annual / price_usd_annual
     ├── Account.jsx                   ★ V5c: billing, usage, alerts, coupon, payment history
     ├── PaymentSuccess.jsx            ★ V5c: Stripe verify + Razorpay activate; 3 states
     ├── PaymentCancel.jsx             ★ V5c: clears pending payment, "No charge made"
-    ├── Privacy.jsx                   Privacy Policy (contact: privacy@datiq.app)
-    ├── Terms.jsx                     Terms of Service (contact: legal@datiq.app)
-    ├── About.jsx                     ★ R0: mission, values, how-it-works, personas, CTA
-    ├── Blog.jsx                      ★ R0: featured + grid articles + real email newsletter form
+    ├── Contact.jsx                   ★ R4: /contact — support form (5 types) + sidebar info cards
+    ├── Privacy.jsx                   ★ R4: full DPDP Act 2023 section added; URL → datiq.app
+    ├── Terms.jsx                     ★ R4: governing law → Indian arbitration (A&C Act 1996, Bengaluru)
+    ├── About.jsx                     ★ R4: founder block (Vikash Karuna, LinkedIn); fixed copy bug
+    ├── Blog.jsx                      ★ R4: all 7 posts have fullContent; PostModal overlay on card click
     ├── Integrations.jsx              ★ R0: 12-card catalog; "Notify me" shows toast
+    ├── UseCases.jsx                  ★ R4: /use-cases hub — 4 cards linking to detail pages
     ├── UseCaseLead.jsx               ★ R0: /use-cases/lead-generation
     ├── UseCaseCompetitor.jsx         ★ R0: /use-cases/competitor-research
     ├── UseCaseSEO.jsx                ★ R0: /use-cases/seo-audit
     ├── UseCaseResearch.jsx           ★ R0: /use-cases/market-research
-    ├── VsBrowseAI.jsx                ★ R0: /vs/browse-ai comparison
-    ├── VsClay.jsx                    ★ R0: /vs/clay comparison
+    ├── VsBrowseAI.jsx                ★ R4: pricing updated to $0–$299/mo; API access → Business plan
+    ├── VsClay.jsx                    ★ R4: pricing updated; CTA → "from $19/month"
     └── admin/
-        ├── AdminLayout.jsx           PIN gate (ADMIN123), sidebar nav
+        ├── AdminLayout.jsx           PIN gate (ADMIN123), collapsible sidebar (chevron + pin)
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
         ├── AdminPricing.jsx          Editable plan prices + limits + global discount + bundles
         ├── AdminCoupons.jsx          Coupon CRUD (% or bonus extractions)
@@ -185,7 +207,7 @@ src/
 
 netlify/
 └── functions/
-    ├── ai.js                         POST /api/ai — Anthropic proxy (server-side AI_API_KEY)
+    ├── ai.js                         POST /api/ai — Anthropic proxy (server-side AI_API_KEY, no VITE_ prefix)
     ├── extract.js                    POST /api/extract — Firecrawl proxy
     ├── extractions.js                GET/POST/PATCH/DELETE /api/extractions — Supabase proxy
     ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order
@@ -197,11 +219,11 @@ netlify/
 public/
 ├── favicon.svg
 ├── runtime-config.js                 window.__DATIQ_RUNTIME__ override (no rebuild needed)
-├── llms.txt                          ★ R0: Agentic SEO — DatIQ capabilities for AI agent discovery
-├── robots.txt                        ★ R0: allows GPTBot/ClaudeBot/PerplexityBot, blocks /api/ /admin
-├── sitemap.xml                       ★ R0: all 20 public routes with priority + changefreq
+├── llms.txt                          ★ R4: updated all URLs → datiq.app; new pricing tiers; /contact added
+├── robots.txt                        ★ R4: Sitemap URL → https://datiq.app/sitemap.xml
+├── sitemap.xml                       ★ R4: all URLs → datiq.app; added /contact, /use-cases
 └── help/
-    ├── index.html                    Help home (links to 15 section pages)
+    ├── index.html                    ★ R4: metadata table → datiq.app; title fixed
     ├── help.css
     └── [15 section HTML pages + 6 screenshot assets]
 ```
@@ -254,6 +276,9 @@ ThemeProvider
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
 | Contact emails | `support@datiq.app` (payment), `legal@datiq.app` (terms), `privacy@datiq.app` (privacy) |
 | Naming | App brand is "DatIQ" everywhere in UI. Netlify URL stays `scrapelite.netlify.app` for now. |
+| Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
+| Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
+| AI key | `hasAI = true` always; `AI_API_KEY` (no VITE_ prefix) lives in Netlify env only. Never export from config.js. |
 
 ---
 
@@ -276,21 +301,36 @@ ThemeProvider
 | `datiq.migrated` | migrationService.js — flag: scrapelite.* → datiq.* migration done |
 | `datiq.adminSidebarCollapsed` | AdminLayout.jsx — sidebar collapsed state ("1" = collapsed) |
 | `datiq.adminSidebarPinned` | AdminLayout.jsx — sidebar pin state ("0" = unpinned) |
+| `datiq.upsellDismissedMonth` | UsageUpsellBanner.jsx — month string (e.g. "2026-06") when banner was dismissed |
 
 ---
 
-## V5 — Pricing & Billing
+## V5 / R4 — Pricing & Billing
 
-### Plans: Free / Select / Pro / Business / Agency
-- Defaults in `src/lib/pricingConfig.js`
+### Plans (R4 revised tiers)
+
+| Plan | USD/mo | USD/yr | INR/yr | Notes |
+|---|---|---|---|---|
+| Free | $0 | — | — | 10 ext/mo + 25 trial credit |
+| Select | $19 | $15/mo | ₹999/mo | |
+| Pro | $29 | $23/mo | ₹1,499/mo | badge: Recommended |
+| Business | $79 | $63/mo | ₹3,999/mo | API access |
+| Agency | $299 | $239/mo | ₹14,999/mo | 5 workspaces |
+| Developer | $49 | $39/mo | ₹2,499/mo | comingSoon — H2 2026 |
+| Enterprise | Custom (≥$1,000/mo) | — | — | Contact sales |
+
+- Defaults in `src/lib/pricingConfig.js` — also exports `ENTERPRISE_PLAN`
 - Admin overrides via `src/lib/pricingOverrides.js` (localStorage-backed, no rebuild)
 - **Always** call `getEffectivePlanById(id)` — never use raw `PLAN_BY_ID`
+- Annual billing is default on `/pricing` (20% off monthly); toggle to monthly available
+- INR annual prices are fixed promotional amounts — NOT converted from USD at runtime
+- Free tier: 10 extractions/month + full-feature access (except API/white-label) + 1 workspace + once-only 25-extraction trial credit at signup (`trialCredit: 25` in config; UI shows it; actual grant wired in usageService/AuthProvider is a future task)
 
 ### Payment provider routing
 | Currency | Provider |
 |---|---|
-| INR, AED | Razorpay |
-| USD, EUR, GBP, SGD | Stripe |
+| INR | Razorpay |
+| USD | Stripe |
 | Override | `VITE_PAYMENT_PROVIDER=stripe\|razorpay\|auto` |
 
 **Demo mode** (no keys): `initiateCheckout` → `{status:"demo_mode"}` → upgrades plan locally, no real charge.
@@ -312,7 +352,9 @@ ThemeProvider
 ### Live stats pipeline
 - `netlify/functions/stats.js` → `/api/stats` queries Supabase `usage_records` (teams = distinct session_ids, extractions = SUM)
 - `src/lib/statsService.js` → fetches + caches in `datiq.stats` (5-min TTL)
-- Home.jsx social proof shows real numbers when Supabase is configured; falls back to placeholders silently
+- Home.jsx social proof is **hidden** until `stats.teams >= 10 OR stats.extractions >= 100`
+- Testimonials section is permanently hidden (`{false && …}`) until real backend data is wired; no placeholder names/photos shown
+- When Supabase is not configured, `getStats()` returns null → social proof section is not rendered
 
 ### Email capture
 - `src/lib/emailCaptureService.js` → `captureEmail(email, source)`:
@@ -485,6 +527,16 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 33. **R2: Auth-gated nav** — TopBar UserDropdown (Account & Usage, Switch Role, Sign out) only shown when user is logged in; not-logged-in state shows Sign in + Sign up buttons opening AuthModal on correct tab; `authMode` state added to AuthProvider; `openAuth(mode)` accepts 'signin'/'signup'
 34. **R2: Page padding override fix** — `.about-page`, `.blog-page`, `.pricing-page`, `.account-page`, `.uc-page`, `.vs-page`, `.int-page` used `padding: Xpx 0 Ypx` shorthand which zeroed out `.container`'s horizontal padding (screens.css loads after design-system.css). Fixed to `padding-top`/`padding-bottom` only.
 35. **R3: Admin sidebar collapsible** — `AdminLayout` converted from CSS Grid to Flexbox layout. Sidebar has collapse/expand toggle (chevron), pin button (locks state), and hover-expand when unpinned+collapsed. State persisted to `datiq.adminSidebarCollapsed` + `datiq.adminSidebarPinned`. Mobile (≤700px) stays horizontal bar with controls hidden.
+36. **R4: AI_API_KEY moved server-side** — Removed `export const AI_API_KEY` from `config.js`; `hasAI` is now always `true` (key lives in Netlify Function env as `AI_API_KEY`, no VITE_ prefix). Browser never sees the key.
+37. **R4: "DatIQ (powered by DatIQ)" copy bug** — About.jsx hero paragraph fixed to "DatIQ is a zero-code…"
+38. **R4: Social proof threshold gate** — Home.jsx stats section only renders when `stats && (stats.teams >= 10 || stats.extractions >= 100)`; testimonials permanently hidden with `{false && …}` until real backend data is wired.
+39. **R4: scrapelite.netlify.app → datiq.app** — Fixed in Privacy.jsx intro, help/index.html metadata table, public/robots.txt Sitemap header, public/llms.txt, public/sitemap.xml.
+40. **R4: /vs/clay CTA** — "from $9/month" → "from $19/month"; pricing row "$0–$199/mo" → "$0–$299/mo"; API access row updated to "Business plan ($79/mo)".
+41. **R4: Blog post expansion** — Clicking any blog card opens an in-page `PostModal` overlay with full article text. `selectedPost` state in Blog.jsx; minimal markdown rendering (##/\*\*/\`code\`).
+42. **R4: useToast() usage** — `useToast()` returns the `showToast` function directly (not `{showToast}`). Contact.jsx and any new components must use `const showToast = useToast()`.
+43. **R4: /docs redirect** — `DocsRedirect` component uses `window.location.href = "/help/index.html"` (not React Router) to ensure the static HTML file is served, bypassing the SPA.
+44. **R4: DPDP Act 2023** — Full compliance section added to Privacy.jsx covering applicability, lawful basis, data principal rights, grievance officer (privacy@datiq.app), cross-border transfers, retention.
+45. **R4: Indian arbitration** — Terms.jsx "Governing Law and Dispute Resolution" updated to Indian law, Arbitration and Conciliation Act 1996, seat Bengaluru, English language, sole arbitrator.
 
 ---
 
@@ -509,11 +561,20 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 ### Future development
 - [x] ~~Full DatIQ rename: migrate `scrapelite.*` localStorage keys to `datiq.*`~~ — DONE via migrationService.js
 - [x] ~~Full DatIQ rename: update Terms/Privacy legal text~~ — DONE (all ScrapeLite refs removed)
+- [x] ~~Move `VITE_AI_API_KEY` to server-only via Netlify Function~~ — DONE (R4: `hasAI = true`, key is `AI_API_KEY` in Netlify env only)
+- [x] ~~Add /contact page~~ — DONE (R4)
+- [x] ~~Add /use-cases hub~~ — DONE (R4)
+- [x] ~~Fix dead URLs (/docs, /compare)~~ — DONE (R4: /docs → window.location redirect, /compare → Navigate)
+- [ ] **Stripe**: update Agency plan Price IDs (plan changed $199 → $299); set `VITE_STRIPE_PRICE_AGENCY`
+- [ ] **Razorpay**: update Agency plan Plan IDs to match new ₹14,999/mo price
 - [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude
-- [ ] Move `VITE_AI_API_KEY` to server-only via Netlify Function (security)
+- [ ] Implement once-only 25-extraction trial credit at signup (`trialCredit: 25` is in plan config; grant not yet wired in usageService/AuthProvider)
+- [ ] Referral/affiliate program — teaser UI is live on /pricing; backend not implemented
 - [ ] Supabase real auth → replace localStorage persona/session for cross-device sync
 - [ ] Switch webhook to production n8n URL
-- [ ] Add "Use cases" links also to Footer Explore column (currently points only to /use-cases/lead-generation)
+- [ ] Add "Use cases" links to Footer Explore column
+- [ ] AdminPricing.jsx: add UI fields for `price_usd_annual` and `price_inr_annual` (currently only monthly prices editable in admin)
+- [ ] `/blog/:slug` routing for SEO-indexed posts (currently all content is in-page modal only)
 
 ---
 
@@ -532,9 +593,21 @@ npm run dev   # http://localhost:5173
 - TopBar (not logged in) → shows "Sign in" (ghost) + "Sign up" (primary) buttons
 - TopBar "Sign in" → opens modal on Sign in tab; "Sign up" → opens modal on Create account tab
 - TopBar (logged in) → shows UserDropdown with Account & Usage, Switch Role, Sign out
+- `/pricing` → default shows **Annual** billing toggle selected; "Save 20%" badge visible
+- `/pricing` → switch to Monthly; prices update; Annual toggle reverts to lower prices
+- `/pricing` → currency auto-detected (INR for India timezone, USD default)
+- `/pricing` → INR annual note below plans: "Promotional INR price. Billed annually…"
+- `/pricing` → Developer card shows "Coming soon" badge + disabled "Notify me" button
+- `/pricing` → Enterprise card has dashed border; "Contact sales" → mailto link
 - `/pricing` → select paid plan → spinner → demo_mode → `/account` shows upgraded plan
 - `/payment/success?plan=pro&provider=razorpay` → success state
 - `/payment/cancel?plan=pro` → "No charge was made"
+- `/contact` → form with 5 type buttons; email + message required; on submit → mailto opens + success state
+- `/contact` → sidebar shows 3 info cards: Email us, Response times, Self-service resources
+- `/use-cases` → 4 cards (Lead Gen, Competitor Research, SEO Audit, Market Research) with highlights
+- `/use-cases` → clicking "Explore X" navigates to the correct `/use-cases/slug` page
+- `/docs` → browser navigates to `/help/index.html` (full page load, not SPA nav)
+- `/compare` → redirects to `/vs/browse-ai`
 - `/admin` → PIN `ADMIN123` → Revenue / Pricing / Coupons / Users
 - Admin sidebar → chevron button collapses sidebar to 64px icon-only strip; chevron expands it back
 - Admin sidebar → pin button (pin/pin-off icon) locks state; when unpinned+collapsed, hovering sidebar temporarily expands it
@@ -547,26 +620,34 @@ npm run dev   # http://localhost:5173
 - TopBar UserDropdown → persona colour dot + name; hover shows profile card + Account/Switch Role/Sign out
 - TopBar (mobile <600px) → hamburger button visible; tap to open slide-down nav panel
 - Mobile nav → Extract/Dashboard/Pricing links; Explore accordion expands; persona info shown
-- `/about` → accessible without onboarding, shows hero + values + how-it-works + personas
-- `/blog` → accessible without onboarding, featured post + article grid + email capture form
+- `/about` → founder block visible (Vikash Karuna, role, bio, LinkedIn link)
+- `/about` → hero text does NOT say "DatIQ (powered by DatIQ)" — should read "DatIQ is a zero-code…"
+- `/blog` → clicking any article card opens in-page PostModal overlay with full content
+- `/blog` → PostModal has close button + "Back to blog" footer link
 - `/blog` newsletter → enter email → "You're subscribed!" (localStorage + n8n webhook)
 - `/integrations` → 12 cards; "Notify me" on coming-soon shows toast
+- `/privacy` → page URL reads `https://datiq.app` (not scrapelite.netlify.app)
+- `/privacy` → DPDP Act 2023 section present with Grievance Officer contact details
+- `/terms` → governing law section says "India" + "Arbitration and Conciliation Act, 1996" + "Bengaluru"
 - `/use-cases/lead-generation` → content left/right edges align with TopBar and Footer
-- `/vs/clay` → comparison table content aligns with TopBar/Footer (padding-top/bottom only, not shorthand)
-- Home social proof → stats load from /api/stats if Supabase configured, else show "500+" / "10K+"
+- `/vs/clay` → CTA says "from $19/month"; Agency row removed; API access → "Business plan ($79/mo)"
+- Home social proof → section hidden when stats are null OR both teams<10 AND extractions<100
+- Home social proof → visible when Supabase returns real numbers above thresholds
 - Footer → slim single row: LinkedIn + Twitter socials | copyright | Privacy · Terms links
 - Home → persona chips above URL input (click to populate search box)
 - Home → scrape toggles in 2-column grid; each toggle has hover tooltip
-- Pricing → currency auto-detected from timezone (INR for India, EUR for Europe, GBP for UK, USD default)
-- Pricing → currency picker still available; choice persists across sessions
 - favicon → layered-diamond indigo SVG visible in browser tab
+- Usage upsell banner → appears between TopBar and page content when extraction usage ≥80%
+- Usage upsell banner → dismiss button hides it; re-appears next calendar month
 
 ---
 
 ## Git log (recent)
 
 ```
-(latest)  feat(admin): collapsible sidebar with toggle and pin controls [R3]
+(latest)  chore: update CLAUDE.md — R4 session fully documented
+5dd3db6  feat(r0-session4): comprehensive UI/UX polish, pricing overhaul, new pages
+9da7968  chore: update CLAUDE.md — R3 admin sidebar collapse documented
 cbf8993  feat(admin): collapsible sidebar with toggle and pin controls
 0ae1c84  Add files via upload
 99a2534  merge(css): fix content alignment on use-case, compare and marketing pages
