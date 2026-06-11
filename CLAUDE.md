@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-11 — R5: Batch mode, CSV-import enrichment, Markdown/JSON exports, plan limit updates**
+> **Last updated: 2026-06-11 — R6: Home batch mode inline, feature card tags fixed, Dashboard real-data empty state**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R5: batch mode (/batch), CSV-import enrichment, Markdown+JSON export, plan limits, Batch Pack top-up bundle |
+| **Latest commit** | (see git log) — R6: batch inline on Home, feature card tag fix, Dashboard real-data empty state |
 
 ---
 
@@ -39,6 +39,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 | `claude/batch-mode-export-formats-fkjkxx` | R5: /batch page (multi-URL mode, CSV import), Markdown+JSON export, plan batch limits, Batch Pack top-up bundle, updated metering | ✅ merged to main |
+| `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
 
 ---
 
@@ -177,11 +178,13 @@ src/
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
 │   └── LoadingScreen.jsx             Full-screen 4-step animated progress
 └── pages/
-    ├── Home.jsx                      URL input, 4 toggles, custom extraction, 8 capability cards,
+    ├── Home.jsx                      URL input, 5 toggles (incl. Batch mode), custom extraction, 8 capability cards,
     │                                 social proof (real stats; hidden until teams≥10 OR extractions≥100)
     │                                 ★ R4: testimonials permanently hidden until real backend data
+    │                                 ★ R6: batch mode toggle — multi-URL textarea + progress bar + inline results panel
     ├── Preview.jsx                   Quick enrichment, enrichment tabs, save/discard
-    ├── Dashboard.jsx                 Table/cards, search, pagination, CSV/PDF/Generate/Email
+    ├── Dashboard.jsx                 Table/cards, search, pagination, CSV/PDF/MD/JSON/Generate/Email
+    │                                 ★ R6: no demo data — shows real extractions; proper empty state when none
     ├── Onboarding.jsx                2-step persona selection (in Shell with TopBar+Footer; opt-in)
     ├── Pricing.jsx                   ★ R4: annual/monthly toggle (default: annual), USD+INR only,
     │                                 BillingToggle component, EnterpriseCard, Developer comingSoon card
@@ -545,6 +548,10 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 43. **R4: /docs redirect** — `DocsRedirect` component uses `window.location.href = "/help/index.html"` (not React Router) to ensure the static HTML file is served, bypassing the SPA.
 44. **R4: DPDP Act 2023** — Full compliance section added to Privacy.jsx covering applicability, lawful basis, data principal rights, grievance officer (privacy@datiq.app), cross-border transfers, retention.
 45. **R4: Indian arbitration** — Terms.jsx "Governing Law and Dispute Resolution" updated to Indian law, Arbitration and Conciliation Act 1996, seat Bengaluru, English language, sole arbitrator.
+46. **R6: Home batch mode** — `batchMode` toggle added to scrape-opts-grid (first position). When active: multi-URL textarea replaces single URL field, progress bar + cancel during run, inline `BatchResultsPanel` after completion with CSV/PDF/MD/JSON export buttons. Dead `submitBatch` function removed; single `handleBatchExtract` used.
+47. **R6: Feature card tag layout** — `.feature-body` + `.feature-title-row` wrapper added so Popular and Recommended tags sit inline next to the title. CSS: `.feature-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }` + `.feature-title-row .feature-tag { margin-left: 0; }`.
+48. **R6: Dashboard no-demo** — `DEMO_EXTRACTIONS` import removed; `showingDemo` always `false`; demo banner removed. Empty state when `items.length === 0` shows bookmark icon + "Nothing saved yet" + "Extract a page" CTA button.
+49. **R6: Batch inline CSS** — Added `.batch-field-wrap`, `.batch-field-header`, `.batch-field-label`, `.batch-field-count`, `.batch-field-textarea`, `.batch-field-footer`, `.batch-field-progress`, `.batch-field-progress-label`, `.batch-cancel-btn`, `.batch-inline-results`, `.batch-inline-header`, `.batch-inline-badge`, `.batch-inline-fail`, `.batch-inline-exports`, `.batch-inline-btn`, `.batch-inline-rows`, `.batch-inline-row`, `.batch-inline-dot`, `.batch-inline-url`, `.batch-inline-errmsg`, `.batch-inline-meta` to screens.css.
 
 ---
 
@@ -587,7 +594,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~CSV-import enrichment~~ — DONE (R5: Batch page "Import CSV" tab, parseUrlsFromCsv in batchService.js)
 - [x] ~~Markdown export~~ — DONE (R5: markdownDownload(), extractionsToMarkdown() in utils.js; Select+ plan)
 - [x] ~~JSON export~~ — DONE (R5: jsonDownload(), extractionsToJson() in utils.js; Pro+ plan)
+- [x] ~~Batch mode integrated on Home Extract screen~~ — DONE (R6: batch toggle, multi-URL textarea, inline progress+results, CSV/PDF/MD/JSON export)
+- [x] ~~Remove demo data from Dashboard~~ — DONE (R6: showingDemo always false; proper empty state with "Extract a page" CTA)
+- [x] ~~Feature card Popular/Recommended tags not visible~~ — DONE (R6: restructured .feature-cell with .feature-body + .feature-title-row)
 - [ ] `/batch` page: save successful batch results to Dashboard (currently batch results are not persisted)
+- [ ] Home batch mode: save batch results to Dashboard on completion
 - [ ] AdminPricing.jsx: add UI field for `batch_max_urls` per plan
 - [ ] Batch Pack top-up: wire purchase flow through payment (currently purely a Batch Pack concept without checkout)
 

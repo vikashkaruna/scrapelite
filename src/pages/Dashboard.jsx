@@ -8,7 +8,6 @@ import EmailModal from "../components/EmailModal.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
-import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -16,7 +15,6 @@ import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
 import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
-import { DEMO_EXTRACTIONS } from "../data/mockData.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
@@ -230,7 +228,6 @@ export default function Dashboard() {
   const showToast = useToast();
   const showError = useErrorModal();
   const { view } = useExtraction();
-  const { openAuth } = useAuth();
   const { personaId } = usePersona();
   const { checkCanExport, checkCanEmail } = useBilling();
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
@@ -272,20 +269,18 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show pre-populated demo extractions when the user has no saved items yet.
-  const showingDemo = !loading && items.length === 0;
-  const displayItems = showingDemo ? DEMO_EXTRACTIONS : items;
+  const showingDemo = false; // always show real data; empty state when none
 
   // ── Smart search ───────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return displayItems;
+    if (!q) return items;
     const terms = q.split(/\s+/);
-    return displayItems.filter((it) => {
+    return items.filter((it) => {
       const hay = haystack(it);
       return terms.every((t) => hay.includes(t));
     });
-  }, [displayItems, query]);
+  }, [items, query]);
 
   // ── Pagination ─────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -422,8 +417,8 @@ export default function Dashboard() {
             <p className="dash-sub">
               {loading
                 ? "Loading…"
-                : showingDemo
-                  ? (persona ? persona.dashboardSub + " — sample data shown below." : "Sample data — save a real extraction to build your library.")
+                : items.length === 0
+                  ? "No saved extractions yet."
                   : `${items.length} saved ${items.length === 1 ? "page" : "pages"}, newest first.`}
             </p>
           </div>
@@ -553,38 +548,30 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Demo banner — shown when displaying sample data */}
-        {showingDemo && (
-          <div className="demo-banner">
-            <span className="demo-banner-icon"><Icon name="flask" size={15} /></span>
-            <div className="demo-banner-body">
-              <strong>Sample data</strong>
-              <span> — These 3 extractions show what DatIQ captures. </span>
-              <button className="demo-banner-cta" onClick={() => navigate("/")}>
-                Extract a real page
-              </button>
-              <span> or </span>
-              <button className="demo-banner-cta" onClick={openAuth}>
-                sign in
-              </button>
-              <span> to save your own.</span>
-            </div>
-          </div>
-        )}
-
         {loading ? (
           <BrandLoader
             className="card rise"
             title="Loading your extractions…"
             sub="Fetching your saved pages"
           />
+        ) : items.length === 0 ? (
+          <div className="empty-state card rise">
+            <div className="empty-orb">
+              <Icon name="bookmark" size={28} />
+            </div>
+            <h2>Nothing saved yet</h2>
+            <p>Extract a page and save it to build your library.</p>
+            <Button variant="primary" icon="globe" onClick={() => navigate("/")}>
+              Extract a page
+            </Button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state card rise">
             <div className="empty-orb">
               <Icon name="search" size={28} />
             </div>
             <h2>No matches</h2>
-            <p>No saved extractions match “{query}”.</p>
+            <p>No saved extractions match "{query}".</p>
             <Button variant="secondary" icon="x" onClick={() => setQuery("")}>
               Clear search
             </Button>
