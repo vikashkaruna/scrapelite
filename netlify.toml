@@ -2,14 +2,23 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 [build.environment]
-  # Allow the runtime endpoint-override file to pass Netlify secrets scanning. It
-  # holds public n8n webhook URLs read by the browser at runtime (not real
-  # secrets), but their values match scanned env vars. Vite copies
-  # public/runtime-config.js into the publish dir, so both the source and built
-  # paths are omitted.
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js"
 
+# ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
+# Map /api/* → /.netlify/functions/* so the browser can call /api/extract
+# instead of /.netlify/functions/extract.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+
+# ── SPA fallback ──────────────────────────────────────────────────────────────
 # React Router: serve index.html for all routes so direct /preview and
 # /dashboard URLs work instead of returning a 404.
 [[redirects]]

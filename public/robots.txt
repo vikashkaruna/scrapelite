@@ -1,0 +1,30 @@
+User-agent: *
+Allow: /
+Allow: /about
+Allow: /blog
+Allow: /pricing
+Allow: /use-cases/
+Allow: /vs/
+Allow: /privacy
+Allow: /terms
+Allow: /help/
+Disallow: /api/
+Disallow: /admin
+Disallow: /.netlify/
+
+User-agent: GPTBot
+Allow: /
+Allow: /about
+Allow: /blog
+Allow: /pricing
+Allow: /use-cases/
+Allow: /vs/
+Allow: /help/
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+Sitemap: https://datiq.app/sitemap.xml

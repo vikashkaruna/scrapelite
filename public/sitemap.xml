@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://datiq.app/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://datiq.app/pricing</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://datiq.app/about</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/blog</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/contact</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/use-cases</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/use-cases/lead-generation</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/use-cases/competitor-research</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/use-cases/seo-audit</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://datiq.app/use-cases/market-research</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/vs/browse-ai</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/vs/clay</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/integrations</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/privacy</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://datiq.app/terms</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://datiq.app/help/index.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+</urlset>

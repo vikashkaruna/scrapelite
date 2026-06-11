@@ -13,6 +13,8 @@ import {
 } from "../lib/enrichmentStore.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
 import { useErrorModal } from "./ErrorModal.jsx";
+import { useToast } from "./Toast.jsx";
+import { useBilling } from "./BillingProvider.jsx";
 import { uid } from "../lib/utils.js";
 
 const ExtractionContext = createContext(null);
@@ -24,6 +26,8 @@ export function useExtraction() {
 export function ExtractionProvider({ children }) {
   const navigate = useNavigate();
   const showError = useErrorModal();
+  const showToast = useToast();
+  const billing = useBilling();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
@@ -40,6 +44,14 @@ export function ExtractionProvider({ children }) {
 
   // Run Firecrawl + AI, then route to the preview screen.
   const extract = useCallbackSafe(async (url, options = {}) => {
+    // Enforce plan limits before starting
+    const limitCheck = billing?.checkCanExtract?.();
+    if (limitCheck && !limitCheck.allowed) {
+      showToast?.(limitCheck.reason + " Upgrade your plan to continue.");
+      navigate("/pricing");
+      return;
+    }
+
     const id = ++reqId.current;
     lastUrl.current = url;
     lastOpts.current = options;
@@ -96,10 +108,11 @@ export function ExtractionProvider({ children }) {
       }
       commitCurrent(result);
       setLoading(false);
+      billing?.trackExtraction?.();
       navigate("/preview");
     } catch (err) {
       if (reqId.current !== id) return;
-      console.error("[ScrapeLite] Extraction failed:", err);
+      console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
       navigate("/");
       // Show modal with a "Try again" button that re-submits the same URL + options.
@@ -114,6 +127,13 @@ export function ExtractionProvider({ children }) {
   // visible. Re-running the same preset overwrites its entry (a refresh). The
   // entry is persisted per-URL so it reloads next time the page is viewed.
   const enrich = useCallbackSafe(async (url, preset) => {
+    // Enforce enrichment limits (only on first run for a preset, not refresh)
+    const limitCheck = billing?.checkCanEnrich?.(url);
+    if (limitCheck && !limitCheck.allowed) {
+      showToast?.(limitCheck.reason);
+      return null;
+    }
+
     const id = ++reqId.current;
     const structure = await extractStructure(url, { customPrompt: preset.prompt });
     if (reqId.current !== id) return null; // superseded by a newer run
@@ -126,6 +146,7 @@ export function ExtractionProvider({ children }) {
       created_at: new Date().toISOString(),
     };
     saveEnrichment(url, entry); // local cache (keyed by URL)
+    billing?.trackEnrichment?.(url);
     const base = current && current.url === url ? current : { url };
     const nextEnrichments = { ...(base.enrichments || {}), [preset.key]: entry };
     commitCurrent({ ...base, enrichments: nextEnrichments });
@@ -133,7 +154,7 @@ export function ExtractionProvider({ children }) {
     // the tabs persist in Supabase (and across devices). Fire-and-forget.
     if (base._saved && base.id) {
       updateEnrichments(base.id, nextEnrichments).catch((err) =>
-        console.warn("[ScrapeLite] Enrichment sync failed:", err),
+        console.warn("[DatIQ] Enrichment sync failed:", err),
       );
     }
     return entry;

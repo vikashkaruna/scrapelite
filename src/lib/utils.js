@@ -183,7 +183,149 @@ export function csvDownload(items) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const name =
     list.length === 1
-      ? `scrapelite-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
-      : `scrapelite-export-${list.length}-pages.csv`;
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
+      : `datiq-export-${list.length}-pages.csv`;
+  triggerDownload(blob, name);
+}
+
+// ── Markdown export ──────────────────────────────────────────────────────────
+
+function mdEsc(text) {
+  return String(text ?? "").replace(/[\\`*_{}[\]()#+\-.!|]/g, "\\$&");
+}
+
+export function extractionsToMarkdown(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const date = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const lines = [
+    `# DatIQ Export — ${date}`,
+    ``,
+    `> Generated from [DatIQ](https://datiq.app) • ${list.length} page${list.length !== 1 ? "s" : ""}`,
+    ``,
+  ];
+
+  list.forEach((e, idx) => {
+    lines.push(`---`, ``);
+    lines.push(`## ${idx + 1}. ${mdEsc(e.page_title || hostOf(e.url))}`, ``);
+    lines.push(`**URL:** <${e.url}>  `);
+    if (e.created_at) {
+      lines.push(`**Extracted:** ${fmtDate(e.created_at)}  `);
+    }
+    lines.push(``);
+
+    if (e.ai_summary) {
+      lines.push(`### AI Summary`, ``, e.ai_summary, ``);
+    }
+
+    if (e.headings?.length) {
+      lines.push(`### Headings (${e.headings.length})`, ``);
+      e.headings.forEach((h) => lines.push(`- **${h.tag}** ${mdEsc(h.text)}`));
+      lines.push(``);
+    }
+
+    if (e.links?.length) {
+      lines.push(`### Links (${e.links.length})`, ``);
+      e.links.slice(0, 50).forEach((l) => {
+        const label = mdEsc(l.text || l.href);
+        const cat = l.category ? ` — ${l.category}` : "";
+        lines.push(`- [${label}](${l.href})${cat}`);
+      });
+      if (e.links.length > 50) lines.push(`- *…and ${e.links.length - 50} more*`);
+      lines.push(``);
+    }
+
+    if (e.domain_map?.length) {
+      lines.push(`### Mapped URLs (${e.domain_map.length})`, ``);
+      e.domain_map.slice(0, 100).forEach((u) => lines.push(`- <${u}>`));
+      if (e.domain_map.length > 100) lines.push(`- *…and ${e.domain_map.length - 100} more*`);
+      lines.push(``);
+    }
+
+    const enrichEntries = Object.values(e.enrichments || {});
+    if (enrichEntries.length) {
+      enrichEntries.forEach((en) => {
+        if (en?.data == null) return;
+        lines.push(`### ${mdEsc(en.label || en.key)}`, ``);
+        flattenJson(en.data).forEach(({ path, value }) => {
+          if (value) lines.push(`**${mdEsc(path)}:** ${mdEsc(value)}  `);
+        });
+        lines.push(``);
+      });
+    } else if (e.custom_extraction != null) {
+      lines.push(`### Custom Extraction`, ``);
+      flattenJson(e.custom_extraction).forEach(({ path, value }) => {
+        if (value) lines.push(`**${mdEsc(path)}:** ${mdEsc(value)}  `);
+      });
+      lines.push(``);
+    }
+  });
+
+  lines.push(`---`, ``, `*Exported with DatIQ — https://datiq.app*`);
+  return lines.join("\n");
+}
+
+export function markdownDownload(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const md = extractionsToMarkdown(list);
+  const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
+  const name =
+    list.length === 1
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.md`
+      : `datiq-export-${list.length}-pages.md`;
+  triggerDownload(blob, name);
+}
+
+// ── JSON export ──────────────────────────────────────────────────────────────
+
+export function extractionsToJson(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const payload = {
+    export: {
+      tool: "DatIQ",
+      version: "2.0",
+      date: new Date().toISOString(),
+      count: list.length,
+    },
+    pages: list.map((e) => {
+      const page = {
+        url: e.url,
+        page_title: e.page_title || null,
+        ai_summary: e.ai_summary || null,
+        extracted_at: e.created_at || null,
+        headings: (e.headings || []).map((h) => ({ tag: h.tag, text: h.text })),
+        links: (e.links || []).map((l) => ({
+          text: l.text,
+          href: l.href,
+          category: l.category || null,
+        })),
+      };
+      if (e.domain_map?.length) page.domain_map = e.domain_map;
+      const enrichEntries = Object.values(e.enrichments || {});
+      if (enrichEntries.length) {
+        page.enrichments = {};
+        enrichEntries.forEach((en) => {
+          if (en) page.enrichments[en.key || en.label] = en.data;
+        });
+      } else if (e.custom_extraction != null) {
+        page.custom_extraction = e.custom_extraction;
+      }
+      return page;
+    }),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+export function jsonDownload(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const json = extractionsToJson(list);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+  const name =
+    list.length === 1
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.json`
+      : `datiq-export-${list.length}-pages.json`;
   triggerDownload(blob, name);
 }

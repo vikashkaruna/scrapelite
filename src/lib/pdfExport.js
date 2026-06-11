@@ -119,7 +119,7 @@ export function extractionsToPdf(items) {
 
   const name =
     list.length === 1
-      ? `scrapelite-${hostOf(list[0].url)}-${list[0].id || "export"}.pdf`
-      : `scrapelite-export-${list.length}-pages.pdf`;
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.pdf`
+      : `datiq-export-${list.length}-pages.pdf`;
   doc.save(name);
 }

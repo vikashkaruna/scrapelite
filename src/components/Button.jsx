@@ -8,6 +8,7 @@ export default function Button({
   iconRight,
   children,
   className = "",
+  fullWidth = false,
   ...rest
 }) {
   const cls = [
@@ -15,6 +16,7 @@ export default function Button({
     `btn-${variant}`,
     size === "sm" ? "btn-sm" : "",
     !children ? "btn-icon" : "",
+    fullWidth ? "btn-full" : "",
     className,
   ]
     .filter(Boolean)

@@ -1,8 +1,8 @@
 {
-  "name": "scrapelite",
+  "name": "datiq",
   "private": true,
   "version": "1.0.0",
-  "description": "ScrapeLite — extract webpage structure (headings + links) with an AI summary. No code required.",
+  "description": "DatIQ — extract webpage structure (headings + links) with an AI summary. No code required.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,13 +13,16 @@
     "@supabase/supabase-js": "^2.45.4",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.460.0",
+    "razorpay": "^2.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "stripe": "^17.7.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "playwright": "^1.60.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "vite": "^5.4.10"

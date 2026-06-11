@@ -13,3 +13,6 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Setup script output — may contain generated IDs but no secrets
+# scripts/migrations.sql is safe to commit; setup-providers.sh reads .env so it's fine too

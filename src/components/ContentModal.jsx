@@ -23,7 +23,7 @@ export default function ContentModal({ item, onClose }) {
       const text = await generateContent(item, fmt);
       setOutput(text);
     } catch (err) {
-      console.error("[ScrapeLite] Content generation failed:", err);
+      console.error("[DatIQ] Content generation failed:", err);
       setError(err?.message || "Couldn't generate content. Please try again.");
     } finally {
       setLoading(false);

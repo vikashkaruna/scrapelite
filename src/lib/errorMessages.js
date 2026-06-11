@@ -21,7 +21,7 @@ const CATEGORIES = [
     test: /401|unauthorized|authentication required/i,
     title: "Login required",
     message:
-      "This page is behind a login or paywall. ScrapeLite can only extract " +
+      "This page is behind a login or paywall. DatIQ can only extract " +
       "publicly accessible pages — try a public URL instead.",
   },
   {

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11. Data model &amp; persistence · DatIQ Help</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="help.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Scrape<b>Lite</b> <span class="brand-help">Help</span></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/" >← Back to app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light / dark">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar" aria-label="Help navigation"><div class="side-group"><a class="side-link" href="index.html">Overview</a></div><div class="side-label">Guide</div><div class="side-group"><a class="side-link" href="01-product-overview.html"><span class="side-num">1</span>Product overview</a><a class="side-link" href="02-product-evolution-mvp-v1-v20-latest.html"><span class="side-num">2</span>Product evolution: MVP → v1 → v2.0 → latest</a><a class="side-link" href="03-who-its-for-personas-user-groups-and-business-segments.html"><span class="side-num">3</span>Who it's for — personas, user groups &amp; business segments</a><a class="side-link" href="04-feature-persona-segment-mapping.html"><span class="side-num">4</span>Feature → persona / segment mapping</a><a class="side-link" href="05-feature-and-functionality-prioritization-principles.html"><span class="side-num">5</span>Feature &amp; functionality prioritization principles</a><a class="side-link" href="06-complete-feature-catalog.html"><span class="side-num">6</span>Complete feature catalog</a><a class="side-link" href="07-application-flow-screen-by-screen-with-screenshots.html"><span class="side-num">7</span>Application flow — screen-by-screen, with screenshots</a><a class="side-link" href="08-end-to-end-workflows.html"><span class="side-num">8</span>End-to-end workflows</a><a class="side-link" href="09-exports-and-sharing.html"><span class="side-num">9</span>Exports &amp; sharing</a><a class="side-link" href="10-technology-stack-their-uses-and-architecture.html"><span class="side-num">10</span>Technology stack, their uses &amp; architecture</a><a class="side-link active" href="11-data-model-and-persistence.html"><span class="side-num">11</span>Data model &amp; persistence</a><a class="side-link" href="12-privacy-security-and-data-handling.html"><span class="side-num">12</span>Privacy, security &amp; data handling</a><a class="side-link" href="13-faq-and-troubleshooting.html"><span class="side-num">13</span>FAQ &amp; troubleshooting</a><a class="side-link" href="14-glossary.html"><span class="side-num">14</span>Glossary</a><a class="side-link" href="15-appendix-regenerating-screenshots-and-environment.html"><span class="side-num">15</span>Appendix — regenerating screenshots &amp; environment</a></div></nav>
+  <main class="content">
+    <button class="side-toggle" id="sideToggle" aria-label="Toggle navigation">☰ Contents</button>
+    <article class="doc">
+      <div class="doc-head">
+        <div class="kicker">Section 11</div>
+        <h1>Data model &amp; persistence</h1>
+        <p class="doc-sub">{</p>
+      </div>
+      <h3 id="111-the-extractions-record">11.1 The <code>extractions</code> record</h3><pre class="code lang-jsonc"><code>{
+  "id": "uuid",
+  "created_at": "ISO-8601",
+  "url": "https://lumio.io",
+  "page_title": "Lumio — Product analytics…",
+  "headings": [ { "tag": "H1", "text": "…" }, … ],     // H1–H6 in order
+  "links":    [ { "text": "…", "href": "…", "category": "internal" }, … ],
+  "ai_summary": "…",                                    // plain-language overview
+  "custom_extraction": { … },                           // v2: LLM extraction output (optional)
+  "domain_map": [ "https://…", … ],                     // v2: discovered URLs (optional)
+  "enrichments": {                                      // v2: capability tabs (optional)
+    "leadership": { "key", "label", "icon", "prompt", "data": {…}, "created_at" },
+    "pricing":    { "key", "label", "icon", "prompt", "data": {…}, "created_at" }
+  }
+}</code></pre><h3 id="112-supabase-schema-current-target">11.2 Supabase schema (current target)</h3><pre class="code lang-sql"><code>create extension if not exists "pgcrypto";
+
+create table if not exists public.extractions (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  url               text not null,
+  page_title        text,
+  headings          jsonb not null default '[]'::jsonb,
+  links             jsonb not null default '[]'::jsonb,
+  ai_summary        text,
+  custom_extraction jsonb,   -- v2
+  domain_map        jsonb,   -- v2
+  enrichments       jsonb    -- v2
+);
+
+alter table public.extractions enable row level security;
+create policy "anon full access" on public.extractions
+  for all using (true) with check (true);</code></pre><blockquote><p><strong>Migration note:</strong> the three v2 columns may not yet exist on the live database. Until the <code>ALTER TABLE … add column if not exists …</code> migration is run, the app saves the v1 columns to Supabase and keeps v2 data in <code>localStorage</code>, logging a non-blocking warning. Running the migration unlocks full cross-device sync of custom extractions, domain maps, and enrichment tabs.</p></blockquote><h3 id="113-localstorage-keys">11.3 <code>localStorage</code> keys</h3><div class="table-wrap"><table><thead><tr><th>Key</th><th>Holds</th></tr></thead><tbody><tr><td><code>datiq.saved</code></td><td>Saved extractions (the local mirror / fallback backend).</td></tr><tr><td><code>datiq.enrichments</code></td><td>Enrichment cache, indexed by URL → capability key.</td></tr><tr><td><code>datiq.current</code></td><td>The last-viewed extraction (restores Preview after reload).</td></tr><tr><td><code>datiq.theme</code></td><td><code>light</code> / <code>dark</code>.</td></tr><tr><td><code>datiq.dashLayout</code></td><td><code>table</code> / <code>cards</code>.</td></tr></tbody></table></div><h3 id="114-link-categories">11.4 Link categories</h3><p><code>email · social · document · media · internal · external</code> — assigned by host/extension heuristics first (always reliable), then optionally refined by a single batched Claude call (capped at 60 links). Any AI failure silently falls back to heuristics.</p><hr>
+      <div class="page-nav"><a class="pn-btn" href="10-technology-stack-their-uses-and-architecture.html"><span class="pn-dir">← Previous</span><span class="pn-title">Technology stack, their uses &amp; architecture</span></a><a class="pn-btn pn-next" href="12-privacy-security-and-data-handling.html"><span class="pn-dir">Next →</span><span class="pn-title">Privacy, security &amp; data handling</span></a></div>
+    </article>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
+  </main>
+</div>
+<script>
+  (function () {
+    var KEY = "datiq.theme";
+    var root = document.documentElement;
+    try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
+    function setIcon() {
+      var dark = root.getAttribute("data-theme") === "dark";
+      document.getElementById("themeIcon").innerHTML = dark
+        ? '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>'
+        : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    }
+    setIcon();
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var dark = root.getAttribute("data-theme") === "dark";
+      var next = dark ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+      setIcon();
+    });
+    var st = document.getElementById("sideToggle");
+    if (st) st.addEventListener("click", function () { document.body.classList.toggle("nav-open"); });
+  })();
+</script>
+</body>
+</html>

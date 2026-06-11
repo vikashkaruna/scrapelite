@@ -19,6 +19,6 @@ export async function notifyWebhook(extraction) {
       keepalive: true,
     });
   } catch (err) {
-    console.warn("[ScrapeLite] Webhook delivery failed:", err);
+    console.warn("[DatIQ] Webhook delivery failed:", err);
   }
 }

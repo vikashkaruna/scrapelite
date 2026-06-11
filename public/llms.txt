@@ -1,0 +1,64 @@
+# DatIQ — Intelligence from Every URL
+> DatIQ is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+
+## What DatIQ Does
+DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.
+
+## Core Capabilities
+- Web extraction: headings H1–H6, all internal/external links, metadata
+- AI summary: plain-language overview of any page
+- Custom extraction: describe any field in English, AI locates and structures it
+- Domain mapping: discover every indexed URL on a site
+- Contact extraction: surface leadership names, email addresses, social profiles
+- Pricing extraction: structured pricing tiers from any pricing page
+- Content generation: SEO outlines, competitive briefs, email drafts from saved pages
+- CSV and PDF export of all data
+
+## Pricing (as of 2026)
+- Free: 10 extractions/month + 25-trial credit, no credit card
+- Select: $19/month (or ₹999/mo annual) — 100 extractions + PDF export
+- Pro: $29/month (or ₹1,499/mo annual) — 250 extractions + scheduled monitoring + Google Sheets
+- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce
+- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF
+- Developer: $49/month (coming H2 2026) — 10K row credits, API-first
+- Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
+- 20% discount on all annual plans
+
+## Target Users
+SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies
+
+## Use Cases
+- Lead generation: extract company info and leadership contacts for outbound sales
+- Competitor research: monitor competitor pricing, messaging, and leadership changes
+- SEO audit: analyse any site's heading structure, link profile, and content gaps
+- Market research: aggregate structured data from multiple company sites
+- Content creation: generate briefs and outlines from competitor content
+
+## Key Pages
+- Home / App: https://datiq.app/
+- Pricing: https://datiq.app/pricing
+- About: https://datiq.app/about
+- Blog: https://datiq.app/blog
+- Contact: https://datiq.app/contact
+- Use cases hub: https://datiq.app/use-cases
+- Use case — Lead generation: https://datiq.app/use-cases/lead-generation
+- Use case — Competitor research: https://datiq.app/use-cases/competitor-research
+- Use case — SEO audit: https://datiq.app/use-cases/seo-audit
+- Use case — Market research: https://datiq.app/use-cases/market-research
+- Help documentation: https://datiq.app/help/index.html
+- Privacy Policy: https://datiq.app/privacy
+- Terms of Service: https://datiq.app/terms
+
+## API
+- Extract endpoint: POST https://datiq.app/api/extract
+- AI enrichment endpoint: POST https://datiq.app/api/ai
+- Aggregated stats: GET https://datiq.app/api/stats
+
+## Competitive Context
+DatIQ is a no-code alternative to Clay (10x cheaper), Browse.ai, Firecrawl, Diffbot, and PhantomBuster. It is differentiated by plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export with no setup.
+
+## India-first
+DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.
+
+## Technical
+Built with Vite, React 18, React Router 6, Tailwind CSS, Supabase (auth + DB), Firecrawl (extraction), Anthropic Claude (AI enrichment), Netlify Functions (serverless API proxy), Stripe and Razorpay (payments).
