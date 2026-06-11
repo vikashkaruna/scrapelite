@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-11 — R4: Pricing overhaul, new pages, legal, social proof, blog modal, usage banner**
+> **Last updated: 2026-06-11 — R5: Batch mode, CSV-import enrichment, Markdown/JSON exports, plan limit updates**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R4: pricing overhaul, /contact, /use-cases, founder block, DPDP, Indian arbitration, usage upsell banner, blog modal |
+| **Latest commit** | (see git log) — R5: batch mode (/batch), CSV-import enrichment, Markdown+JSON export, plan limits, Batch Pack top-up bundle |
 
 ---
 
@@ -38,6 +38,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
 | `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
+| `claude/batch-mode-export-formats-fkjkxx` | R5: /batch page (multi-URL mode, CSV import), Markdown+JSON export, plan batch limits, Batch Pack top-up bundle, updated metering | ✅ merged to main |
 
 ---
 
@@ -61,6 +62,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/` | Home / Extract | Public (no forced onboarding) |
 | `/preview` | Review & Save extraction | Public |
 | `/dashboard` | Saved extractions | Public |
+| `/batch` | Batch multi-URL extraction (10–500 URLs); CSV-import; progress; combined export | Public (plan-gated) |
 | `/pricing` | Pricing plans, annual/monthly toggle, USD+INR, top-up bundles | Public |
 | `/account` | Billing & usage, metering alerts, coupon input, payment history | Public |
 | `/payment/success` | Post-payment confirmation (Stripe redirect / Razorpay success) | Public |
@@ -109,6 +111,7 @@ src/
 ├── data/
 │   └── mockData.js
 ├── lib/
+│   ├── batchService.js               ★ R5: runBatch() — parallel multi-URL extraction (CONCURRENCY=3); parseUrlsFromCsv()
 │   ├── config.js                     VITE_* env + runtime override; feature flags
 │   │                                 ★ R4: removed AI_API_KEY export; hasAI = true (key server-side only)
 │   ├── utils.js                      hostOf, pathOf, uid, flattenJson, extractionsToCsv, etc.
@@ -140,6 +143,7 @@ src/
 │   ├── paymentService.js             ★ V5c: initiateCheckout (Stripe/Razorpay/demo), pending payment
 │   ├── paymentRepo.js                ★ V5c: Supabase subscriptions + payment_events sync
 │   ├── pdfExport.js                  Lazy-loaded jsPDF report (never static-imported)
+│   │                                 ★ R5: utils.js also exports extractionsToMarkdown/markdownDownload/extractionsToJson/jsonDownload
 │   ├── webhook.js                    notifyWebhook (fire-and-forget)
 │   ├── emailService.js               sendExtractionsEmail; webhook → email API → mailto fallback
 │   ├── errorMessages.js              classifyError; 10 categories
@@ -198,6 +202,7 @@ src/
     ├── UseCaseResearch.jsx           ★ R0: /use-cases/market-research
     ├── VsBrowseAI.jsx                ★ R4: pricing updated to $0–$299/mo; API access → Business plan
     ├── VsClay.jsx                    ★ R4: pricing updated; CTA → "from $19/month"
+    ├── Batch.jsx                     ★ R5: /batch — paste URLs / import CSV → progress → results → export
     └── admin/
         ├── AdminLayout.jsx           PIN gate (ADMIN123), collapsible sidebar (chevron + pin)
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
@@ -268,6 +273,9 @@ ThemeProvider
 | Onboarding | `/onboarding` inside Shell with TopBar+Footer — not standalone. No forced redirect. |
 | Auth nav gating | UserDropdown only when `user` (logged in). Sign in + Sign up when `!user`. |
 | PDF | Lazy-loaded via `await import()`. Never static-import jsPDF. |
+| Exports | CSV: `csvDownload()`; PDF: lazy `extractionsToPdf()`; Markdown: `markdownDownload()`; JSON: `jsonDownload()` — all in `utils.js` |
+| Batch mode | `runBatch()` in `batchService.js` — CONCURRENCY=3; each URL increments extraction counter via `billing.trackExtraction(1)` |
+| Batch gating | `checkCanBatch(urlCount)` and `checkCanExtractBatch(urlCount)` on BillingProvider; Business≤200, Agency≤500; Batch Pack top-up adds 50 slots |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
 | Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. Sidebar is collapsible — toggle (chevron) + pin button. State in `datiq.adminSidebarCollapsed` / `datiq.adminSidebarPinned`. |
 | Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
@@ -575,6 +583,13 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add "Use cases" links to Footer Explore column
 - [ ] AdminPricing.jsx: add UI fields for `price_usd_annual` and `price_inr_annual` (currently only monthly prices editable in admin)
 - [ ] `/blog/:slug` routing for SEO-indexed posts (currently all content is in-page modal only)
+- [x] ~~Batch/multi-URL mode (10–500 URLs)~~ — DONE (R5: /batch page, batchService.js, plan limits, Batch Pack bundle)
+- [x] ~~CSV-import enrichment~~ — DONE (R5: Batch page "Import CSV" tab, parseUrlsFromCsv in batchService.js)
+- [x] ~~Markdown export~~ — DONE (R5: markdownDownload(), extractionsToMarkdown() in utils.js; Select+ plan)
+- [x] ~~JSON export~~ — DONE (R5: jsonDownload(), extractionsToJson() in utils.js; Pro+ plan)
+- [ ] `/batch` page: save successful batch results to Dashboard (currently batch results are not persisted)
+- [ ] AdminPricing.jsx: add UI field for `batch_max_urls` per plan
+- [ ] Batch Pack top-up: wire purchase flow through payment (currently purely a Batch Pack concept without checkout)
 
 ---
 

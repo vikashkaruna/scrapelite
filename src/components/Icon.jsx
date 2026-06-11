@@ -91,6 +91,19 @@ import {
   Menu,
   Pin,
   PinOff,
+  // Batch/export additions
+  Upload,
+  FileJson,
+  FileCode,
+  ListChecks,
+  Layers2,
+  Loader2,
+  CheckSquare,
+  XSquare,
+  AlertOctagon,
+  FileUp,
+  Columns,
+  Briefcase,
 } from "lucide-react";
 
 const MAP = {
@@ -183,6 +196,19 @@ const MAP = {
   menu: Menu,
   pin: Pin,
   "pin-off": PinOff,
+  // Batch/export
+  upload: Upload,
+  "file-json": FileJson,
+  "file-code": FileCode,
+  "list-checks": ListChecks,
+  "layers-2": Layers2,
+  loader: Loader2,
+  "check-square": CheckSquare,
+  "x-square": XSquare,
+  "alert-octagon": AlertOctagon,
+  "file-up": FileUp,
+  columns: Columns,
+  briefcase: Briefcase,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

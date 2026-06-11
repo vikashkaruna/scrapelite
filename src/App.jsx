@@ -37,6 +37,7 @@ import UseCaseResearch from "./pages/UseCaseResearch.jsx";
 import VsBrowseAI from "./pages/VsBrowseAI.jsx";
 import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
+import Batch from "./pages/Batch.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 
 
@@ -68,7 +69,7 @@ function Shell() {
     );
   }
 
-  const isAppPage = ["/", "/preview", "/dashboard", "/account"].includes(pathname);
+  const isAppPage = ["/", "/preview", "/dashboard", "/account", "/batch"].includes(pathname);
   if (loading && isAppPage) return <LoadingScreen url={loadingUrl} />;
 
   return (
@@ -83,6 +84,7 @@ function Shell() {
           <Route path="/onboarding"                    element={<Onboarding />} />
           <Route path="/preview"                       element={<Preview />} />
           <Route path="/dashboard"                     element={<Dashboard />} />
+          <Route path="/batch"                         element={<Batch />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />

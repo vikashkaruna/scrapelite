@@ -18,7 +18,7 @@ import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
 import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { DEMO_EXTRACTIONS } from "../data/mockData.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
-import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload } from "../lib/utils.js";
+import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
@@ -388,6 +388,22 @@ export default function Dashboard() {
     }
   };
 
+  const onExportMarkdown = () => {
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher. Upgrade to unlock."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    markdownDownload(targets);
+    showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to Markdown`, "file-code");
+  };
+
+  const onExportJson = () => {
+    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher. Upgrade to unlock."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    jsonDownload(targets);
+    showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
+  };
+
   const hasItems = items.length > 0; // only real items enable export
   const exportCount = selected.size || filtered.length;
   const exportLabel = selected.size
@@ -436,7 +452,7 @@ export default function Dashboard() {
                   icon="download"
                   onClick={onExportCsv}
                   disabled={exportCount === 0}
-                  title={`Download ${exportLabel} as CSV (all capabilities included)`}
+                  title={`Download ${exportLabel} as CSV`}
                 >
                   CSV
                 </Button>
@@ -446,9 +462,29 @@ export default function Dashboard() {
                   icon="file"
                   onClick={onExportPdf}
                   disabled={exportCount === 0}
-                  title={`Download ${exportLabel} as PDF (all capabilities included)`}
+                  title={`Download ${exportLabel} as PDF (Select+)`}
                 >
                   PDF
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="file-code"
+                  onClick={onExportMarkdown}
+                  disabled={exportCount === 0}
+                  title={`Download ${exportLabel} as Markdown (Select+)`}
+                >
+                  MD
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="file-json"
+                  onClick={onExportJson}
+                  disabled={exportCount === 0}
+                  title={`Download ${exportLabel} as JSON (Pro+)`}
+                >
+                  JSON
                 </Button>
               </div>
             )}

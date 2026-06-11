@@ -343,8 +343,9 @@ export default function TopBar() {
   const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
   const mainLinks = [
-    { to: "/",          label: "Extract",   icon: "globe", match: (p) => p === "/" || p === "/preview" },
-    { to: "/dashboard", label: "Dashboard", icon: "grid",  match: (p) => p === "/dashboard" },
+    { to: "/",          label: "Extract",   icon: "globe",     match: (p) => p === "/" || p === "/preview" },
+    { to: "/dashboard", label: "Dashboard", icon: "grid",      match: (p) => p === "/dashboard" },
+    { to: "/batch",     label: "Batch",     icon: "layers-2",  match: (p) => p === "/batch" },
   ];
 
   async function handleSignOut() {

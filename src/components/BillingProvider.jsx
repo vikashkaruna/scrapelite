@@ -4,6 +4,7 @@ import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
   canExtract, canEnrich, canExport, canEmailExport,
+  canBatch, canExtractBatch,
 } from "../lib/usageService.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap } from "../lib/pricingOverrides.js";
@@ -146,8 +147,8 @@ export function BillingProvider({ children }) {
     setPaymentHistory(await fetchPaymentHistory());
   }, []);
 
-  const trackExtraction = useCallback(() => {
-    const u = incrementExtractions();
+  const trackExtraction = useCallback((count = 1) => {
+    const u = incrementExtractions(count);
     setUsage(u);
     const currentPlan = getEffectivePlanMap()[planId] ?? planMap.free;
     checkAndFireAlerts(u, currentPlan, subscription).catch(() => {});
@@ -157,10 +158,12 @@ export function BillingProvider({ children }) {
     setUsage(incrementEnrichments(url));
   }, [setUsage]);
 
-  const checkCanExtract = useCallback(() => canExtract(planId, bonus), [planId, bonus]);
-  const checkCanEnrich  = useCallback((url) => canEnrich(planId, url), [planId]);
-  const checkCanExport  = useCallback((fmt) => canExport(planId, fmt), [planId]);
-  const checkCanEmail   = useCallback(() => canEmailExport(planId), [planId]);
+  const checkCanExtract      = useCallback(() => canExtract(planId, bonus), [planId, bonus]);
+  const checkCanEnrich       = useCallback((url) => canEnrich(planId, url), [planId]);
+  const checkCanExport       = useCallback((fmt) => canExport(planId, fmt), [planId]);
+  const checkCanEmail        = useCallback(() => canEmailExport(planId), [planId]);
+  const checkCanBatch        = useCallback((urlCount) => canBatch(planId, urlCount, subscription.bonusBatchUrls || 0), [planId, subscription]);
+  const checkCanExtractBatch = useCallback((urlCount) => canExtractBatch(planId, urlCount, bonus), [planId, bonus]);
 
   const applyBonus = useCallback((extra) => {
     const sub = { ...subscription, bonusExtractions: (subscription.bonusExtractions || 0) + extra };
@@ -217,6 +220,7 @@ export function BillingProvider({ children }) {
     paymentHistory, dbSubscription,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    checkCanBatch, checkCanExtractBatch,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess,
   }), [
@@ -229,6 +233,7 @@ export function BillingProvider({ children }) {
     paymentHistory, dbSubscription,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    checkCanBatch, checkCanExtractBatch,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess,
   ]);
