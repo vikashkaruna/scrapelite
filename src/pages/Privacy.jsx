@@ -103,6 +103,35 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Digital Personal Data Protection (DPDP Act, India)",
+    content: [
+      {
+        heading: "Applicability",
+        text: "DatIQ operates in India and processes data of Indian residents. Accordingly, we comply with the Digital Personal Data Protection Act, 2023 (DPDP Act) and the rules notified thereunder. This section supplements the general privacy rights described above and applies specifically to Data Principals (users) located in India.",
+      },
+      {
+        heading: "Lawful basis for processing",
+        text: "We process your personal data on the basis of your consent, given at the time of registration or use of the Service, or on the basis of legitimate purposes as specified under the DPDP Act. You may withdraw your consent at any time by contacting privacy@datiq.app, though withdrawal may limit your ability to use certain features of the Service.",
+      },
+      {
+        heading: "Rights of Data Principals",
+        text: "If you are an Indian resident, you have the right to: (a) access a summary of personal data we hold about you; (b) correct inaccurate or incomplete personal data; (c) erasure of personal data when it is no longer necessary; (d) grievance redressal through our designated contact below; and (e) nominate a person to exercise rights on your behalf in the event of death or incapacity.",
+      },
+      {
+        heading: "Grievance Officer (India)",
+        text: "For grievances under the DPDP Act, please contact our designated officer at privacy@datiq.app with the subject line 'DPDP Grievance'. We will acknowledge your complaint within 48 hours and endeavour to resolve it within 15 business days.",
+      },
+      {
+        heading: "Cross-border data transfers",
+        text: "DatIQ uses Supabase and Anthropic services, which may process your data in jurisdictions outside India. We ensure such transfers are subject to adequate safeguards as required under the DPDP Act and applicable rules.",
+      },
+      {
+        heading: "Retention and erasure",
+        text: "We retain personal data only as long as necessary to fulfill the purposes for which it was collected or as required by law. Upon receiving a valid erasure request, we will delete your account data within 30 days unless retention is required by applicable law.",
+      },
+    ],
+  },
+  {
     title: "Changes to This Policy",
     content: [
       {
@@ -137,8 +166,8 @@ export default function Privacy() {
           <p>
             DatIQ ("<b>we</b>", "<b>us</b>", or "<b>our</b>") is committed to protecting your privacy. This
             Privacy Policy explains what information we collect when you use DatIQ at{" "}
-            <a href="https://scrapelite.netlify.app" className="legal-link" target="_blank" rel="noopener noreferrer">
-              scrapelite.netlify.app
+            <a href="https://datiq.app" className="legal-link" target="_blank" rel="noopener noreferrer">
+              datiq.app
             </a>{" "}
             (the "<b>Service</b>"), how we use it, and your choices.
           </p>

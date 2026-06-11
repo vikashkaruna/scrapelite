@@ -53,7 +53,7 @@ export default function About() {
             <span style={{ color: "var(--accent)" }}>structured intelligence</span>
           </h1>
           <p className="about-hero-sub">
-            DatIQ (powered by DatIQ) is a zero-code web extraction and enrichment platform.
+            DatIQ is a zero-code web extraction and enrichment platform.
             We believe intelligence should be accessible to everyone — researchers, marketers, sales teams,
             developers — without writing a single line of code.
           </p>
@@ -152,6 +152,38 @@ export default function About() {
                 <span className="about-persona-name">{p.label}</span>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Founder block */}
+        <div className="about-section fade">
+          <div className="about-section-label">
+            <Icon name="user" size={14} />
+            Founder
+          </div>
+          <h2>Built by someone who felt the pain</h2>
+          <div className="about-founder">
+            <div className="about-founder-avatar" aria-label="Vikash Karuna">
+              <Icon name="user" size={32} strokeWidth={1.5} />
+            </div>
+            <div className="about-founder-info">
+              <div className="about-founder-name">Vikash Karuna</div>
+              <div className="about-founder-role">Founder, DatIQ</div>
+              <p className="about-founder-bio">
+                Vikash built DatIQ after spending hours manually copying data from websites into spreadsheets — a
+                workflow he kept seeing across sales, research, and marketing teams. DatIQ is his answer: a
+                zero-code platform that turns any URL into structured, actionable intelligence in seconds.
+              </p>
+              <a
+                href="https://linkedin.com/in/vikashkaruna"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="about-founder-linkedin"
+              >
+                <Icon name="linkedin" size={15} />
+                linkedin.com/in/vikashkaruna
+              </a>
+            </div>
           </div>
         </div>
 

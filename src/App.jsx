@@ -28,6 +28,8 @@ import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import About from "./pages/About.jsx";
 import Blog from "./pages/Blog.jsx";
+import Contact from "./pages/Contact.jsx";
+import UseCases from "./pages/UseCases.jsx";
 import UseCaseLead from "./pages/UseCaseLead.jsx";
 import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
 import UseCaseSEO from "./pages/UseCaseSEO.jsx";
@@ -35,7 +37,14 @@ import UseCaseResearch from "./pages/UseCaseResearch.jsx";
 import VsBrowseAI from "./pages/VsBrowseAI.jsx";
 import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
+import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 
+
+// Redirect /docs to the static help site
+function DocsRedirect() {
+  window.location.href = "/help/index.html";
+  return null;
+}
 
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
@@ -67,6 +76,7 @@ function Shell() {
       {/* Skip-to-content link for keyboard/screen reader users */}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <TopBar />
+      <UsageUpsellBanner />
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />
@@ -81,13 +91,18 @@ function Shell() {
           <Route path="/terms"                         element={<Terms />} />
           <Route path="/about"                         element={<About />} />
           <Route path="/blog"                          element={<Blog />} />
+          <Route path="/contact"                       element={<Contact />} />
           <Route path="/integrations"                  element={<Integrations />} />
+          <Route path="/use-cases"                     element={<UseCases />} />
           <Route path="/use-cases/lead-generation"     element={<UseCaseLead />} />
           <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
           <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
           <Route path="/vs/browse-ai"                  element={<VsBrowseAI />} />
           <Route path="/vs/clay"                       element={<VsClay />} />
+          <Route path="/docs"                          element={<DocsRedirect />} />
+          <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
+          <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />
           <Route path="*"                              element={<Navigate to="/" replace />} />
         </Routes>
       </main>

@@ -4,14 +4,14 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 
 const TABLE_ROWS = [
-  { criteria: "Pricing", datiq: "$0–$199/mo", other: "$149–$800/mo", datiqWins: true },
+  { criteria: "Pricing", datiq: "$0–$299/mo", other: "$149–$800/mo", datiqWins: true },
   { criteria: "Free tier", datiq: "Yes — 10 extractions/month", other: "No free tier", datiqWins: true },
   { criteria: "Setup", datiq: "Paste a URL — no config", other: "Table setup, integrations config", datiqWins: true },
   { criteria: "Custom extraction", datiq: "Plain English prompts", other: "Column-based waterfall credits", datiqWins: true },
   { criteria: "AI enrichment", datiq: "Built-in (contacts, summary, pricing)", other: "Via Clay AI columns", datiqWins: false },
   { criteria: "CRM push", datiq: "Via webhook / CSV", other: "Native HubSpot, Salesforce", datiqWins: false },
   { criteria: "Team features", datiq: "Business plan ($79/mo)", other: "All plans", datiqWins: false },
-  { criteria: "API access", datiq: "Agency plan ($199/mo)", other: "All plans", datiqWins: false },
+  { criteria: "API access", datiq: "Business plan ($79/mo)", other: "All plans", datiqWins: false },
   { criteria: "Minimum commitment", datiq: "None — monthly, cancel anytime", other: "Annual recommended", datiqWins: true },
 ];
 
@@ -92,7 +92,7 @@ export default function VsClay() {
             <h2>Try DatIQ free — 10 extractions, no credit card</h2>
             <p>
               Start enriching your prospects and research today with zero commitment. Upgrade when you
-              need more — from $9/month, not $149.
+              need more — from $19/month, not $149.
             </p>
             <Button variant="primary" icon="rocket" onClick={() => navigate("/")}>
               Try DatIQ free

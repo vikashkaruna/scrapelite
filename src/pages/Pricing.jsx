@@ -1,11 +1,11 @@
-// Pricing.jsx — V5 public pricing page with payment integration (Stripe/Razorpay/UPI).
+// Pricing.jsx — V6: annual/monthly toggle, USD+INR, Developer+Enterprise tiers.
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
-import { CURRENCIES, CURRENCY_META } from "../lib/pricingConfig.js";
+import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
 import { convertPrice, formatPrice } from "../lib/currencyService.js";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
@@ -52,13 +52,45 @@ function CurrencyPicker({ value, onChange }) {
   );
 }
 
-function PlanCard({ plan, displayPrice, currency, currentPlanId, onSelect, loading }) {
+// Returns the display price for a plan given billing period + currency.
+function resolvePrice(plan, billingPeriod, currency, rates) {
+  if (plan.price_usd === 0) return 0;
+  if (billingPeriod === "annual") {
+    if (currency === "INR" && plan.price_inr_annual) return plan.price_inr_annual;
+    return plan.price_usd_annual ?? plan.price_usd;
+  }
+  if (currency === "INR") return Math.round(convertPrice(plan.price_usd, rates, "INR"));
+  return plan.price_usd;
+}
+
+function BillingToggle({ value, onChange }) {
+  return (
+    <div className="billing-toggle-wrap">
+      <button
+        className={"billing-toggle-btn" + (value === "monthly" ? " active" : "")}
+        onClick={() => onChange("monthly")}
+      >
+        Monthly
+      </button>
+      <button
+        className={"billing-toggle-btn" + (value === "annual" ? " active" : "")}
+        onClick={() => onChange("annual")}
+      >
+        Annual
+        <span className="billing-save-badge">Save 20%</span>
+      </button>
+    </div>
+  );
+}
+
+function PlanCard({ plan, displayPrice, currency, billingPeriod, currentPlanId, onSelect, loading }) {
   const isCurrent = plan.id === currentPlanId;
   const isFree    = plan.price_usd === 0;
   const isLoading = loading === plan.id;
+  const isSoon    = plan.comingSoon;
 
   return (
-    <div className={"plan-card" + (plan.highlight ? " plan-highlight" : "")}>
+    <div className={"plan-card" + (plan.highlight ? " plan-highlight" : "") + (isSoon ? " plan-coming-soon" : "")}>
       {plan.badge && <div className="plan-badge">{plan.badge}</div>}
       <div className="plan-header">
         <div className="plan-name">{plan.name}</div>
@@ -67,10 +99,12 @@ function PlanCard({ plan, displayPrice, currency, currentPlanId, onSelect, loadi
       <div className="plan-price">
         {isFree ? (
           <><span className="price-amount">Free</span><span className="price-period"> forever</span></>
+        ) : isSoon ? (
+          <><span className="price-amount">{formatPrice(displayPrice, currency)}</span><span className="price-period"> / mo</span></>
         ) : (
           <>
             <span className="price-amount">{formatPrice(displayPrice, currency)}</span>
-            <span className="price-period"> / month</span>
+            <span className="price-period"> / mo{billingPeriod === "annual" ? ", billed annually" : ""}</span>
           </>
         )}
       </div>
@@ -78,19 +112,45 @@ function PlanCard({ plan, displayPrice, currency, currentPlanId, onSelect, loadi
         variant={plan.highlight ? "primary" : isCurrent ? "ghost" : "secondary"}
         size="sm"
         fullWidth
-        onClick={() => !isCurrent && !isLoading && onSelect(plan.id)}
-        disabled={isCurrent || isLoading}
+        onClick={() => !isCurrent && !isLoading && !isSoon && onSelect(plan.id)}
+        disabled={isCurrent || isLoading || isSoon}
       >
         {isLoading ? (
           <span className="btn-loading"><Icon name="refresh" size={14} />Processing…</span>
-        ) : (
-          isCurrent ? "Current plan" : isFree ? "Get started free" : `Get ${plan.name}`
-        )}
+        ) : isSoon ? (
+          "Notify me"
+        ) : isCurrent ? "Current plan" : isFree ? "Get started free" : `Get ${plan.name}`}
       </Button>
       <ul className="plan-features">
         {plan.features.map((f) => (
           <li key={f.label} className={"pf-item" + (f.included ? "" : " pf-excluded")}>
             <Icon name={f.included ? "check-circle" : "x"} size={15} />
+            <span>{f.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EnterpriseCard({ onContact }) {
+  return (
+    <div className="plan-card enterprise-card">
+      <div className="plan-header">
+        <div className="plan-name">{ENTERPRISE_PLAN.name}</div>
+        <div className="plan-tagline">{ENTERPRISE_PLAN.tagline}</div>
+      </div>
+      <div className="plan-price">
+        <span className="price-amount">Custom</span>
+        <span className="price-period"> pricing</span>
+      </div>
+      <Button variant="secondary" size="sm" fullWidth onClick={onContact}>
+        Contact sales
+      </Button>
+      <ul className="plan-features">
+        {ENTERPRISE_PLAN.features.map((f) => (
+          <li key={f.label} className="pf-item">
+            <Icon name="check-circle" size={15} />
             <span>{f.label}</span>
           </li>
         ))}
@@ -110,8 +170,10 @@ function ProviderBadge({ provider }) {
   );
 }
 
-function TopupCard({ bundle, price, currency, onBuy, loading }) {
+function TopupCard({ bundle, currency, onBuy, loading }) {
   const isLoading = loading === bundle.id;
+  const price = currency === "INR" && bundle.price_inr ? bundle.price_inr : bundle.price_usd;
+  const sym   = currency === "INR" ? "₹" : "$";
   return (
     <div className="topup-card">
       <div className="topup-icon"><Icon name={bundle.icon} size={20} /></div>
@@ -121,7 +183,7 @@ function TopupCard({ bundle, price, currency, onBuy, loading }) {
       </div>
       <div className="topup-right">
         <div className="topup-price">
-          <span className="topup-amount">{formatPrice(price, currency)}</span>
+          <span className="topup-amount">{sym}{currency === "INR" ? price.toLocaleString("en-IN") : price}</span>
           <span className="topup-unit">{bundle.unit}</span>
         </div>
         {onBuy && (
@@ -142,15 +204,15 @@ export default function Pricing() {
     paymentProvider, hasPayment, subscription,
   } = useBilling();
 
-  const [loadingPlan, setLoadingPlan]     = useState(null);
-  const [loadingBundle, setLoadingBundle] = useState(null);
-  const [localError, setLocalError]       = useState("");
+  const [billingPeriod, setBillingPeriod]   = useState("annual");
+  const [loadingPlan, setLoadingPlan]       = useState(null);
+  const [loadingBundle, setLoadingBundle]   = useState(null);
+  const [localError, setLocalError]         = useState("");
 
   const plans    = getEffectivePlans();
   const bundles  = getEffectiveBundles();
   const discount = getGlobalDiscount();
 
-  // Clear errors when provider/currency changes
   useEffect(() => { setLocalError(""); setPaymentError?.(""); }, [currency]);
 
   const handleSelect = async (planId) => {
@@ -163,13 +225,9 @@ export default function Pricing() {
     setLocalError("");
     try {
       const result = await initiatePayment?.(planId);
-      // demo_mode or success (Razorpay in-modal) → go to account
       if (result?.status === "demo_mode" || result?.status === "success") {
         navigate("/account");
       }
-      // "redirecting"   → Stripe redirect in progress — page will be replaced
-      // "cancelled"     → Razorpay modal dismissed — stay on page
-      // "contact_sales" → mailto opened — stay on page
     } catch (e) {
       setLocalError(e.message || "Payment initiation failed. Please try again.");
     } finally {
@@ -179,9 +237,7 @@ export default function Pricing() {
 
   const handleBundleBuy = async (bundleId) => {
     setLoadingBundle(bundleId);
-    setLocalError("");
     try {
-      // For now, open a contact mailto — full bundle checkout is a future enhancement
       window.open(
         `mailto:support@datiq.app?subject=${encodeURIComponent(`Add-on: ${bundleId}`)}&body=${encodeURIComponent(`I'd like to add the ${bundleId} bundle to my account.`)}`,
         "_blank"
@@ -189,6 +245,10 @@ export default function Pricing() {
     } finally {
       setLoadingBundle(null);
     }
+  };
+
+  const handleContactSales = () => {
+    window.open("mailto:support@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
   };
 
   const showError = localError || paymentError;
@@ -213,17 +273,19 @@ export default function Pricing() {
             </div>
           )}
 
-          {subscription.discountPercent > 0 && !discount.active && (
+          {subscription?.discountPercent > 0 && !discount.active && (
             <div className="global-discount-banner coupon-discount-banner">
               <Icon name="tag" size={16} />
               <strong>{subscription.discountPercent}% coupon discount</strong> will be applied at checkout.
             </div>
           )}
 
-          <div className="pricing-hero-actions">
-            <CurrencyPicker value={currency} onChange={setCurrency} />
-            <span className="pricing-rates-note">Rates updated daily at 5:00 AM IST</span>
-            {paymentProvider && <ProviderBadge provider={paymentProvider} />}
+          <div className="pricing-hero-controls">
+            <BillingToggle value={billingPeriod} onChange={setBillingPeriod} />
+            <div className="pricing-hero-actions">
+              <CurrencyPicker value={currency} onChange={setCurrency} />
+              {paymentProvider && <ProviderBadge provider={paymentProvider} />}
+            </div>
           </div>
 
           {!hasPayment && (
@@ -246,28 +308,35 @@ export default function Pricing() {
 
         <div className="plans-grid">
           {plans.map((plan) => {
-            const baseUsd    = plan.price_usd;
-            const discounted = applyGlobalDiscount(baseUsd);
-            const price      = convertPrice(discounted, rates, currency);
+            const displayPrice = resolvePrice(plan, billingPeriod, currency, rates);
+            const discountedUsd = applyGlobalDiscount(displayPrice);
             return (
               <PlanCard
                 key={plan.id}
                 plan={plan}
-                displayPrice={price}
+                displayPrice={discountedUsd}
                 currency={currency}
+                billingPeriod={billingPeriod}
                 currentPlanId={currentPlanId}
                 onSelect={handleSelect}
                 loading={loadingPlan}
               />
             );
           })}
+          <EnterpriseCard onContact={handleContactSales} />
         </div>
 
-        {/* UPI note for INR */}
+        {currency === "INR" && billingPeriod === "annual" && (
+          <p className="inr-annual-note">
+            <Icon name="info" size={13} />
+            INR annual prices are promotional rates. Monthly INR billing converted from USD at market rates.
+          </p>
+        )}
+
         {currency === "INR" && hasPayment && paymentProvider === "razorpay" && (
           <div className="upi-note">
             <Icon name="shield" size={14} />
-            <span>Pay with UPI, Net Banking, Credit/Debit card — powered by Razorpay.</span>
+            <span>Pay with UPI, Net Banking, Credit/Debit card — powered by Razorpay. Compliant with DPDP Act, 2023.</span>
           </div>
         )}
 
@@ -283,7 +352,6 @@ export default function Pricing() {
               <TopupCard
                 key={bundle.id}
                 bundle={bundle}
-                price={convertPrice(bundle.price_usd, rates, currency)}
                 currency={currency}
                 onBuy={handleBundleBuy}
                 loading={loadingBundle}
@@ -292,19 +360,35 @@ export default function Pricing() {
           </div>
         </div>
 
+        {/* Referral program teaser */}
+        <div className="referral-teaser">
+          <div className="referral-teaser-icon"><Icon name="gift" size={22} /></div>
+          <div>
+            <div className="referral-teaser-title">Referral program — coming soon</div>
+            <div className="referral-teaser-desc">
+              Earn 10% lifetime discount for every friend you refer, or a 40% one-time discount on your current plan.
+              <a href="mailto:support@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Get early access →</a>
+            </div>
+          </div>
+        </div>
+
         <div className="pricing-footer">
           <div className="pricing-faq-row">
             <div className="pricing-faq-item">
-              <Icon name="info" size={16} />
-              <span>All plans include a <strong>free 10-extraction trial</strong> — no card required.</span>
+              <Icon name="gift" size={16} />
+              <span>Free plan includes <strong>25 trial credits</strong> at signup — no card required.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="shield" size={16} />
-              <span>Prices shown exclude local taxes. INR prices are inclusive of 18% GST.</span>
+              <span>INR prices include 18% GST. USD prices exclude local taxes.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="refresh" size={16} />
               <span>Usage resets on the 1st of every month. Unused extractions don't roll over.</span>
+            </div>
+            <div className="pricing-faq-item">
+              <Icon name="info" size={16} />
+              <span>Annual billing locks in the 20% discount for the full year, billed upfront.</span>
             </div>
           </div>
         </div>

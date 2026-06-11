@@ -438,37 +438,42 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Social proof section */}
-        <div className="home-social-proof rise" style={{ animationDelay: ".3s", marginTop: 48, width: "100%", maxWidth: 960 }}>
-          <div className="home-sp-stats">
-            {[
-              { num: fmtStat(stats?.teams) ?? "500+", label: "teams & researchers" },
-              { num: fmtStat(stats?.extractions) ?? "10K+", label: "extractions run" },
-              { num: "30s", label: "average time to insight" },
-              { num: "7", label: "export & enrichment types" },
-            ].map((s) => (
-              <div key={s.label} className="home-sp-stat">
-                <span className="home-sp-num">{s.num}</span>
-                <span className="home-sp-label">{s.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="home-testimonials">
-            {[
-              { quote: "We replaced a $300/month tool with DatIQ. Built 200 targeted leads in a single afternoon.", name: "Alex R.", role: "Head of Sales, B2B SaaS" },
-              { quote: "DatIQ cuts our competitive research time by 80%. Pricing data faster than I can open a browser tab.", name: "Sarah M.", role: "Product Manager, Fintech" },
-              { quote: "Perfect for quick due diligence. I pull a company's headings, team, and tech stack before every call.", name: "James T.", role: "VC Analyst" },
-            ].map((t) => (
-              <div key={t.name} className="home-testimonial-card">
-                <p className="home-testimonial-quote">"{t.quote}"</p>
-                <div className="home-testimonial-author">
-                  <span className="home-testimonial-name">{t.name}</span>
-                  <span className="home-testimonial-role">{t.role}</span>
+        {/* Social proof — only shown when real data crosses minimum thresholds */}
+        {stats && (stats.teams >= 10 || stats.extractions >= 100) && (
+          <div className="home-social-proof rise" style={{ animationDelay: ".3s", marginTop: 48, width: "100%", maxWidth: 960 }}>
+            <div className="home-sp-stats">
+              {[
+                ...(stats.teams    >= 10  ? [{ num: fmtStat(stats.teams),       label: "teams & researchers" }] : []),
+                ...(stats.extractions >= 100 ? [{ num: fmtStat(stats.extractions), label: "extractions run" }]    : []),
+                { num: "30s", label: "average time to insight" },
+                { num: "7",   label: "export & enrichment types" },
+              ].map((s) => (
+                <div key={s.label} className="home-sp-stat">
+                  <span className="home-sp-num">{s.num}</span>
+                  <span className="home-sp-label">{s.label}</span>
                 </div>
+              ))}
+            </div>
+            {/* Testimonials hidden until real data is fed from backend */}
+            {false && (
+              <div className="home-testimonials">
+                {[
+                  { quote: "We replaced a $300/month tool with DatIQ. Built 200 targeted leads in a single afternoon.", name: "Alex R.", role: "Head of Sales, B2B SaaS" },
+                  { quote: "DatIQ cuts our competitive research time by 80%. Pricing data faster than I can open a browser tab.", name: "Sarah M.", role: "Product Manager, Fintech" },
+                  { quote: "Perfect for quick due diligence. I pull a company's headings, team, and tech stack before every call.", name: "James T.", role: "VC Analyst" },
+                ].map((t) => (
+                  <div key={t.name} className="home-testimonial-card">
+                    <p className="home-testimonial-quote">"{t.quote}"</p>
+                    <div className="home-testimonial-author">
+                      <span className="home-testimonial-name">{t.name}</span>
+                      <span className="home-testimonial-role">{t.role}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        </div>
+        )}
 
         {/* Change persona / switch role CTA */}
         {persona && (

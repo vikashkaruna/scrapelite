@@ -62,9 +62,9 @@ const SECTIONS = [
       "We reserve the right to modify these Terms at any time. We will notify you of material changes by posting the updated Terms in the Service and updating the \"Last updated\" date. Your continued use of the Service after any changes constitutes your acceptance of the new Terms.",
   },
   {
-    title: "Governing Law",
+    title: "Governing Law and Dispute Resolution",
     content:
-      "These Terms are governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law provisions. Any disputes arising from these Terms or your use of the Service shall be resolved through binding arbitration in accordance with the American Arbitration Association's rules.",
+      "These Terms are governed by and construed in accordance with the laws of India, without regard to its conflict of law provisions. Any dispute, controversy, or claim arising out of or in connection with these Terms, including any question regarding their existence, validity, or termination, shall be referred to and finally resolved by arbitration in accordance with the Arbitration and Conciliation Act, 1996 (India), as amended. The seat and venue of arbitration shall be Bengaluru, Karnataka, India. The arbitration shall be conducted in English by a sole arbitrator mutually agreed upon by both parties, or appointed by a competent court in the absence of agreement. Pending arbitration, either party may seek urgent interim relief from a court of competent jurisdiction in India.",
   },
   {
     title: "Contact",

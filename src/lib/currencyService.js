@@ -4,7 +4,8 @@
 const CACHE_KEY = "datiq.currencyRates";
 
 // Fallback rates (USD base) — used if fetch fails and no cache exists.
-const DEFAULT_RATES = { USD: 1, INR: 83.5, EUR: 0.92, GBP: 0.79, SGD: 1.34, AED: 3.67 };
+// Only USD and INR are supported pricing currencies.
+const DEFAULT_RATES = { USD: 1, INR: 83.5 };
 
 // Returns the UTC timestamp for 5:00 AM IST today (or yesterday if we're before 5 AM IST).
 // IST = UTC+5:30, so 5:00 AM IST = 23:30 UTC on the previous calendar day.
@@ -56,32 +57,22 @@ export function convertPrice(usdAmount, rates, currency) {
 }
 
 export function formatPrice(amount, currency) {
-  const meta = { USD: "$", INR: "₹", EUR: "€", GBP: "£", SGD: "S$", AED: "AED " };
+  const meta = { USD: "$", INR: "₹" };
   const sym = meta[currency] ?? (currency + " ");
   if (currency === "INR") return sym + Math.round(amount).toLocaleString("en-IN");
-  if (currency === "AED") return sym + Math.round(amount);
   return sym + (amount % 1 === 0 ? amount : amount.toFixed(2));
 }
 
 export function getDefaultRates() { return DEFAULT_RATES; }
 
-// Detect currency from browser locale / timezone. Returns one of the supported
-// currency codes (USD, INR, EUR, GBP, SGD, AED). Falls back to USD.
+// Detect currency from browser locale / timezone.
+// Returns USD (global default) or INR (India). Only two currencies supported.
 export function detectCurrency() {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     if (tz === "Asia/Kolkata" || tz === "Asia/Calcutta") return "INR";
-    if (tz === "Europe/London" || tz === "Atlantic/Reykjavik") return "GBP";
-    if (tz === "Asia/Singapore") return "SGD";
-    if (tz === "Asia/Dubai" || tz === "Asia/Muscat") return "AED";
-    // Europe (but not London/Reykjavik already handled)
-    if (tz.startsWith("Europe/")) return "EUR";
     const lang = (navigator.language || navigator.userLanguage || "").toLowerCase();
-    if (lang.endsWith("-in") || lang === "hi" || lang === "mr" || lang === "ta") return "INR";
-    if (lang.endsWith("-gb")) return "GBP";
-    if (lang.endsWith("-sg")) return "SGD";
-    if (lang.endsWith("-ae") || lang.endsWith("-sa")) return "AED";
-    if (/^(de|fr|it|es|pt-pt|nl|pl|sv|fi|da|nb|cs|sk|hu|ro)/.test(lang)) return "EUR";
+    if (lang.endsWith("-in") || lang === "hi" || lang === "mr" || lang === "ta" || lang === "te" || lang === "kn" || lang === "ml" || lang === "gu") return "INR";
     return "USD";
   } catch {
     return "USD";

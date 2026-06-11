@@ -27,4 +27,4 @@ Allow: /
 User-agent: PerplexityBot
 Allow: /
 
-Sitemap: https://scrapelite.netlify.app/sitemap.xml
+Sitemap: https://datiq.app/sitemap.xml

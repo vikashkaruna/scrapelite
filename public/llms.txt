@@ -15,11 +15,14 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - CSV and PDF export of all data
 
 ## Pricing (as of 2026)
-- Free: 10 extractions/month, no credit card
-- Select: $9/month — 100 extractions
-- Pro: $29/month — 500 extractions + contacts enrichment
-- Business: $79/month — unlimited + team features
-- Agency: $199/month — white-label + API access
+- Free: 10 extractions/month + 25-trial credit, no credit card
+- Select: $19/month (or ₹999/mo annual) — 100 extractions + PDF export
+- Pro: $29/month (or ₹1,499/mo annual) — 250 extractions + scheduled monitoring + Google Sheets
+- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce
+- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF
+- Developer: $49/month (coming H2 2026) — 10K row credits, API-first
+- Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
+- 20% discount on all annual plans
 
 ## Target Users
 SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies
@@ -32,24 +35,30 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Content creation: generate briefs and outlines from competitor content
 
 ## Key Pages
-- Home / App: https://scrapelite.netlify.app/
-- Pricing: https://scrapelite.netlify.app/pricing
-- About: https://scrapelite.netlify.app/about
-- Blog: https://scrapelite.netlify.app/blog
-- Help documentation: https://scrapelite.netlify.app/help/index.html
-- Use case — Lead generation: https://scrapelite.netlify.app/use-cases/lead-generation
-- Use case — Competitor research: https://scrapelite.netlify.app/use-cases/competitor-research
-- Use case — SEO audit: https://scrapelite.netlify.app/use-cases/seo-audit
-- Use case — Market research: https://scrapelite.netlify.app/use-cases/market-research
-- Privacy Policy: https://scrapelite.netlify.app/privacy
-- Terms of Service: https://scrapelite.netlify.app/terms
+- Home / App: https://datiq.app/
+- Pricing: https://datiq.app/pricing
+- About: https://datiq.app/about
+- Blog: https://datiq.app/blog
+- Contact: https://datiq.app/contact
+- Use cases hub: https://datiq.app/use-cases
+- Use case — Lead generation: https://datiq.app/use-cases/lead-generation
+- Use case — Competitor research: https://datiq.app/use-cases/competitor-research
+- Use case — SEO audit: https://datiq.app/use-cases/seo-audit
+- Use case — Market research: https://datiq.app/use-cases/market-research
+- Help documentation: https://datiq.app/help/index.html
+- Privacy Policy: https://datiq.app/privacy
+- Terms of Service: https://datiq.app/terms
 
 ## API
-- Extract endpoint: POST https://scrapelite.netlify.app/api/extract
-- AI enrichment endpoint: POST https://scrapelite.netlify.app/api/ai
+- Extract endpoint: POST https://datiq.app/api/extract
+- AI enrichment endpoint: POST https://datiq.app/api/ai
+- Aggregated stats: GET https://datiq.app/api/stats
 
 ## Competitive Context
 DatIQ is a no-code alternative to Clay (10x cheaper), Browse.ai, Firecrawl, Diffbot, and PhantomBuster. It is differentiated by plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export with no setup.
+
+## India-first
+DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.
 
 ## Technical
 Built with Vite, React 18, React Router 6, Tailwind CSS, Supabase (auth + DB), Firecrawl (extraction), Anthropic Claude (AI enrichment), Netlify Functions (serverless API proxy), Stripe and Razorpay (payments).

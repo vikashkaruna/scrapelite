@@ -1,11 +1,11 @@
-// Blog.jsx — DatIQ blog listing page with featured articles.
+// Blog.jsx — DatIQ blog listing page with expandable inline posts.
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { captureEmail } from "../lib/emailCaptureService.js";
 
 const FEATURED_POST = {
+  slug: "introducing-datiq",
   tag: "Product",
   title: "Introducing DatIQ: From URL to Intelligence in Seconds",
   excerpt:
@@ -13,56 +13,264 @@ const FEATURED_POST = {
   date: "June 9, 2026",
   readTime: "5 min read",
   coverIcon: "layers",
+  fullContent: `
+DatIQ started with a frustration shared by nearly every person doing research, sales, or marketing: copying data from websites into spreadsheets — one cell at a time.
+
+Whether it was scouting competitor pricing, building a lead list, auditing a competitor's content strategy, or just understanding what a company does before a call — the work was always manual, tedious, and error-prone.
+
+## The idea
+
+The premise was simple: if a human can read a web page and extract structured information from it, an AI system should be able to do the same — instantly, for any URL, without writing a line of code.
+
+DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.
+
+## What we shipped in v2.0
+
+The current release (v2.0) includes:
+- **Custom extraction** — describe any field in plain English ("find the pricing tiers") and the AI locates and structures it
+- **Domain mapping** — crawl an entire site and return every indexed URL
+- **Lead enrichment** — surface leadership contacts and emails from any company page
+- **Persona-adaptive workflows** — the app adapts its examples, quick actions, and AI prompts based on your role
+- **CSV, PDF, and email export** — get your data into whatever workflow you use next
+
+## What's coming
+
+We're building toward API access for developers, scheduled monitoring for change tracking, and HubSpot / Salesforce native export. If you have a use case we haven't covered yet, reach out at support@datiq.app.
+
+Start with any URL. No sign-up required.
+  `.trim(),
 };
 
 const POSTS = [
   {
+    slug: "extract-competitor-pricing",
     tag: "Guide",
     title: "How to Extract Competitor Pricing in 60 Seconds",
     excerpt: "Stop manually checking competitor sites. DatIQ's pricing extraction pulls structured tier data from any pricing page in one click.",
     date: "June 5, 2026",
     readTime: "3 min read",
     coverIcon: "hash",
+    fullContent: `
+Tracking competitor pricing used to mean bookmarking a dozen pricing pages and checking them manually every week. With DatIQ, you can pull structured pricing tiers from any page in under 60 seconds.
+
+## How it works
+
+1. Paste the competitor's pricing URL into DatIQ
+2. Enable **Custom extraction** and type: "Extract all pricing tiers, prices, and included features"
+3. Click Extract — DatIQ sends the page to the AI, which locates and structures every plan
+
+The result is a clean JSON object with plan names, prices, billing periods, and feature lists. Export to CSV and paste straight into your competitive analysis spreadsheet.
+
+## Tips
+
+- Works on any pricing page — SaaS, e-commerce, marketplaces, even PDF-style pricing tables embedded in HTML
+- Use **domain mapping** to discover whether a site has a separate /pricing/enterprise page
+- Save multiple extractions to Dashboard and use the CSV export to track pricing over time
+
+## What's next
+
+DatIQ's scheduled monitoring feature (coming on Pro plan) will let you set a URL and get an alert whenever pricing changes. Perfect for sales teams who want to know the moment a competitor drops their price.
+    `.trim(),
   },
   {
+    slug: "lead-research-at-scale",
     tag: "Use Case",
     title: "Lead Research at Scale: Surface Contacts from Any Domain",
     excerpt: "Sales teams use DatIQ to pull leadership contacts and emails from hundreds of target company sites — without a single API key.",
     date: "May 28, 2026",
     readTime: "4 min read",
     coverIcon: "users",
+    fullContent: `
+Building a targeted lead list traditionally means buying a data subscription, waiting for a CSV export, and manually de-duplicating stale data. DatIQ flips this: start with the domains you already care about and extract contacts directly from source.
+
+## The contacts & emails mode
+
+Enable **Contacts & emails** in DatIQ's extraction options and paste any company URL. DatIQ will:
+
+1. Scrape the page (and linked /about, /team, /leadership pages)
+2. Pass the content to the AI with a leadership extraction prompt
+3. Return a structured list of names, titles, and emails
+
+No API key required. No account on the target site.
+
+## What you get
+
+- Senior leadership names and titles (CEO, CTO, VP Sales, etc.)
+- Email addresses surfaced from the page (where publicly listed)
+- LinkedIn profile links when available in the page content
+
+## Scaling it up
+
+Use DatIQ's domain mapping to first discover all pages on a company's site, then run targeted contact extraction on /about and /team pages specifically. Export to CSV and you have a clean, verified lead list in minutes.
+
+Business plan users get API access to automate this workflow across hundreds of domains.
+    `.trim(),
   },
   {
+    slug: "domain-mapping",
     tag: "Deep Dive",
     title: "Domain Mapping: Discover Every URL on a Site",
     excerpt: "The domain map feature crawls an entire site and returns a structured list of every indexed page. Here's how to use it for SEO and competitor research.",
     date: "May 20, 2026",
     readTime: "6 min read",
     coverIcon: "network",
+    fullContent: `
+Most web extraction tools work on individual URLs. DatIQ's **Map entire domain** mode is different: it discovers every indexed URL on a site in a single operation, giving you a complete map of what exists before you decide what to extract.
+
+## How domain mapping works
+
+Enable the **Map entire domain** toggle and paste any root domain (e.g. \`https://example.com\`). DatIQ calls Firecrawl's /map endpoint, which:
+
+1. Follows internal links from the starting URL
+2. Returns a deduplicated list of every discoverable page
+3. Groups results by path pattern (blog posts, product pages, docs, etc.)
+
+The result is a flat list of URLs you can export to CSV, inspect in the Dashboard, or use as a seed list for targeted extraction.
+
+## SEO applications
+
+- Audit a competitor's full content inventory — how many blog posts, product pages, case studies?
+- Identify which pages are indexed vs. blocked by robots.txt
+- Find pages that don't appear in their sitemap
+
+## Competitive research applications
+
+- Map a competitor's entire product catalogue
+- Find hidden pricing pages, case study PDFs, or documentation sections
+- Track when new product pages appear (with scheduled monitoring)
+
+## Tips
+
+- Start with the root domain (https://example.com) not a subpath
+- Very large sites (100K+ pages) may return a truncated list — focus on key subdirectories
+- Combine with single-page extraction: map first, then extract the pages that matter
+    `.trim(),
   },
   {
+    slug: "custom-extraction",
     tag: "Tutorial",
     title: "Custom Extraction: Ask for Any Field in Plain English",
     excerpt: "With DatIQ's custom extraction mode you describe what you want — 'find the product SKUs' — and the AI locates and structures it. No XPath required.",
     date: "May 12, 2026",
     readTime: "4 min read",
     coverIcon: "sparkles",
+    fullContent: `
+XPath selectors. CSS selectors. Regex. The tools for targeted web scraping have always assumed the user knows the page's structure before they start. DatIQ's custom extraction mode takes a different approach: just describe what you want.
+
+## How it works
+
+Enable **Custom extraction** in DatIQ and type a plain-English description of the data you want:
+
+- "Extract the product name, price, and customer rating"
+- "Find all job titles and locations listed on this page"
+- "Pull the pricing tiers, monthly prices, and feature lists"
+- "List all partner logos and their linked URLs"
+
+DatIQ passes this description to Claude AI along with the page's scraped content. The model identifies the matching data and returns it as a structured JSON object.
+
+## Quick actions
+
+If you're not sure how to phrase your request, use DatIQ's built-in **Quick actions** chips:
+- Extract contacts & leadership
+- Find pricing tiers
+- Pull product features
+- Identify technical stack
+
+These are pre-written prompts that work on most common page types.
+
+## When it works best
+
+Custom extraction works best on:
+- Product pages with clear, structured content
+- Pricing pages with plan-feature tables
+- Company pages with team listings
+- Documentation pages with API endpoints or code examples
+
+It works less well on heavily visualised pages (charts, infographics) or pages with mostly image-based content.
+    `.trim(),
   },
   {
+    slug: "persona-adaptive-workflows",
     tag: "Product",
     title: "Persona-Adaptive Workflows: DatIQ Learns Your Role",
     excerpt: "When you tell DatIQ you're a researcher vs. a sales rep, the entire app adapts — different examples, quick actions, and AI prompts out of the box.",
     date: "May 3, 2026",
     readTime: "3 min read",
     coverIcon: "target",
+    fullContent: `
+Most tools treat every user the same. DatIQ is different: from the moment you select your role in the onboarding flow, the entire app adapts to your workflow.
+
+## The seven personas
+
+DatIQ recognises seven distinct user types, each with its own optimised experience:
+
+1. **Sales & SDR** — lead enrichment and contact extraction in focus
+2. **Researcher** — deep extraction and domain mapping
+3. **Marketer** — content analysis and competitor benchmarking
+4. **Developer** — API access and structured data export
+5. **Consultant** — client research and data packaging
+6. **Founder** — market intelligence and competitive monitoring
+7. **Agency** — multi-client workflows and white-label PDF
+
+## What changes for each persona
+
+When you select a persona, DatIQ updates:
+- The **hero headline** and **sub-copy** to match your use case
+- The **example URLs** in the input field (relevant sites for your industry)
+- The **quick-context chips** above the URL field
+- The **recommended features** highlighted in the capability grid
+
+## Switching roles
+
+You can switch your persona at any time from the **UserDropdown → Switch Role** option in the top navigation. Your extraction history stays intact — only the UI adapts.
+
+## Building on it
+
+The persona system is used to feed AI prompts too. A Sales persona extracts contacts and company intelligence. A Researcher persona focuses on page structure and domain mapping. The same URL, different intelligence output.
+    `.trim(),
   },
   {
+    slug: "zero-code-enrichment-pipeline",
     tag: "Engineering",
     title: "How We Built a Zero-Code Enrichment Pipeline",
     excerpt: "A look under the hood at how DatIQ chains Firecrawl extraction, Anthropic AI enrichment, and a Supabase persistence layer — all without the user writing a line of code.",
     date: "April 25, 2026",
     readTime: "8 min read",
     coverIcon: "code",
+    fullContent: `
+Every time you paste a URL into DatIQ and click Extract, a multi-step pipeline runs in milliseconds. Here's how it works.
+
+## Step 1: Extraction (Firecrawl)
+
+The URL is sent to Firecrawl's /scrape API endpoint. Firecrawl handles:
+- JavaScript rendering (for React/Vue/Angular SPAs, when enabled)
+- Robots.txt compliance
+- Rate limiting and retry logic
+- Returning clean HTML + metadata
+
+DatIQ requests the page in HTML format, then parses the response to extract headings (H1–H6), links (internal and external), and page metadata.
+
+## Step 2: AI enrichment (Anthropic Claude)
+
+The extracted content is passed to Claude via the Anthropic messages API. Depending on the extraction options:
+- **Summary** — a single paragraph describing the page's purpose and structure
+- **Custom extraction** — a structured JSON object based on the user's plain-English prompt
+- **Contact extraction** — leadership names, titles, and emails
+
+All AI calls route through a Netlify serverless function — the API key never touches the browser.
+
+## Step 3: Persistence (Supabase)
+
+Extraction results are saved to a Supabase PostgreSQL database, keyed by session ID and URL. This powers the Dashboard view, history, and the CSV/PDF export pipeline.
+
+When Supabase isn't configured (local dev or demo mode), DatIQ falls back to localStorage automatically.
+
+## The no-code part
+
+The user sees none of this. They paste a URL, click a button, and get structured data. The entire pipeline — scraping, AI enrichment, persistence — runs transparently in the background, with progress shown via the animated loading screen.
+
+This is what "zero-code" actually means in practice: not just no scraping scripts, but no infrastructure, no API keys, no configuration. Just data.
+    `.trim(),
   },
 ];
 
@@ -74,9 +282,16 @@ function CoverIcon({ name, large }) {
   );
 }
 
-function PostCard({ post, large }) {
+function PostCard({ post, large, onOpen }) {
   return (
-    <div className={"blog-card" + (large ? " blog-featured-main" : "")}>
+    <div
+      className={"blog-card" + (large ? " blog-featured-main" : "") + " blog-card-clickable"}
+      onClick={() => onOpen(post)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onOpen(post)}
+      aria-label={`Read: ${post.title}`}
+    >
       <CoverIcon name={post.coverIcon} large={large} />
       <div className="blog-card-body">
         <span className="blog-tag">{post.tag}</span>
@@ -86,9 +301,66 @@ function PostCard({ post, large }) {
           <span>{post.date}</span>
           <span className="blog-card-meta-sep">·</span>
           <span>{post.readTime}</span>
-          <button className="blog-card-link" style={{ marginLeft: "auto" }}>
+          <span className="blog-card-link" style={{ marginLeft: "auto" }}>
             Read more <Icon name="arrow-right" size={14} />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PostModal({ post, onClose }) {
+  if (!post) return null;
+
+  // Parse minimal markdown: ## headings, **bold**, `code`
+  function renderContent(text) {
+    return text.split("\n").map((line, i) => {
+      if (line.startsWith("## ")) {
+        return <h3 key={i} className="blog-post-h3">{line.slice(3)}</h3>;
+      }
+      if (!line.trim()) return <br key={i} />;
+      const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return <strong key={j}>{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith("`") && part.endsWith("`")) {
+          return <code key={j} className="blog-inline-code">{part.slice(1, -1)}</code>;
+        }
+        return part;
+      });
+      return <p key={i} className="blog-post-p">{parts}</p>;
+    });
+  }
+
+  return (
+    <div className="blog-modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="blog-modal" role="dialog" aria-modal="true" aria-label={post.title}>
+        <div className="blog-modal-head">
+          <div className="blog-modal-meta">
+            <span className="blog-tag">{post.tag}</span>
+            <span className="blog-card-meta-sep">·</span>
+            <span>{post.date}</span>
+            <span className="blog-card-meta-sep">·</span>
+            <span>{post.readTime}</span>
+          </div>
+          <button className="blog-modal-close" onClick={onClose} aria-label="Close post">
+            <Icon name="x" size={18} />
           </button>
+        </div>
+        <div className="blog-modal-cover">
+          <CoverIcon name={post.coverIcon} large />
+        </div>
+        <h1 className="blog-modal-title">{post.title}</h1>
+        <div className="blog-modal-body">
+          {renderContent(post.fullContent)}
+        </div>
+        {/* Ghost/Beehiiv placeholder — wire up when CMS is ready */}
+        {/* TODO: Replace with hosted blog (Ghost or Beehiiv) for full post routing and SEO */}
+        <div className="blog-modal-footer">
+          <Button variant="secondary" size="sm" icon="arrow-left" onClick={onClose}>
+            Back to blog
+          </Button>
         </div>
       </div>
     </div>
@@ -96,9 +368,9 @@ function PostCard({ post, large }) {
 }
 
 export default function Blog() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [subStatus, setSubStatus] = useState("idle"); // idle | loading | success | already | error
+  const [subStatus, setSubStatus] = useState("idle");
+  const [selectedPost, setSelectedPost] = useState(null);
 
   async function handleSubscribe(e) {
     e.preventDefault();
@@ -122,9 +394,7 @@ export default function Blog() {
             <Icon name="newspaper" size={14} />
             DatIQ Blog
           </div>
-          <h1>
-            Insights, tutorials &amp; product news
-          </h1>
+          <h1>Insights, tutorials &amp; product news</h1>
           <p>
             Tips on web extraction, data enrichment, AI workflows, and how data-driven teams
             are turning URLs into intelligence with DatIQ.
@@ -133,16 +403,16 @@ export default function Blog() {
 
         {/* Featured post */}
         <div className="blog-featured">
-          <PostCard post={FEATURED_POST} large />
-          <PostCard post={POSTS[0]} />
-          <PostCard post={POSTS[1]} />
+          <PostCard post={FEATURED_POST} large onOpen={setSelectedPost} />
+          <PostCard post={POSTS[0]} onOpen={setSelectedPost} />
+          <PostCard post={POSTS[1]} onOpen={setSelectedPost} />
         </div>
 
         {/* More posts */}
         <div className="blog-section-head">More articles</div>
         <div className="blog-grid">
           {POSTS.slice(2).map((post) => (
-            <PostCard key={post.title} post={post} />
+            <PostCard key={post.slug} post={post} onOpen={setSelectedPost} />
           ))}
         </div>
 
@@ -173,14 +443,10 @@ export default function Blog() {
             No spam. Just new features, use-case guides, and the occasional deep-dive when we ship something interesting.
           </p>
           {subStatus === "success" && (
-            <p style={{ margin: 0, color: "#16a34a", fontWeight: 600 }}>
-              You're subscribed! We'll be in touch.
-            </p>
+            <p style={{ margin: 0, color: "#16a34a", fontWeight: 600 }}>You're subscribed! We'll be in touch.</p>
           )}
           {subStatus === "already" && (
-            <p style={{ margin: 0, color: "var(--text-2)", fontWeight: 600 }}>
-              You're already subscribed — we've got you covered.
-            </p>
+            <p style={{ margin: 0, color: "var(--text-2)", fontWeight: 600 }}>You're already subscribed — we've got you covered.</p>
           )}
           {(subStatus === "idle" || subStatus === "loading" || subStatus === "error") && (
             <form onSubmit={handleSubscribe} style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
@@ -209,13 +475,14 @@ export default function Blog() {
             </form>
           )}
           {subStatus === "error" && (
-            <p style={{ margin: "-4px 0 0", color: "#e0556b", fontSize: ".85em" }}>
-              Please enter a valid email address.
-            </p>
+            <p style={{ margin: "-4px 0 0", color: "#e0556b", fontSize: ".85em" }}>Please enter a valid email address.</p>
           )}
         </div>
 
       </div>
+
+      {/* Inline post modal */}
+      {selectedPost && <PostModal post={selectedPost} onClose={() => setSelectedPost(null)} />}
     </div>
   );
 }

@@ -4,13 +4,13 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 
 const TABLE_ROWS = [
-  { criteria: "Pricing", datiq: "Free–$199/mo", other: "$19–$99/mo", datiqWins: true },
+  { criteria: "Pricing", datiq: "Free–$299/mo", other: "$19–$99/mo", datiqWins: true },
   { criteria: "Setup required", datiq: "None — paste a URL", other: "Per-site robot recording", datiqWins: true },
   { criteria: "Custom fields", datiq: "Plain English prompts", other: "Visual point-and-click", datiqWins: true },
   { criteria: "AI enrichment", datiq: "Built-in (contacts, summary, pricing)", other: "Not included", datiqWins: true },
   { criteria: "Export", datiq: "CSV + PDF", other: "CSV", datiqWins: true },
-  { criteria: "Team features", datiq: "Business plan", other: "All plans", datiqWins: false },
-  { criteria: "API access", datiq: "Agency plan", other: "All plans", datiqWins: false },
+  { criteria: "Team features", datiq: "Business plan ($79/mo)", other: "All plans", datiqWins: false },
+  { criteria: "API access", datiq: "Business plan ($79/mo)", other: "All plans", datiqWins: false },
   { criteria: "Browser extension", datiq: "Roadmap", other: "Yes", datiqWins: false },
 ];
 
