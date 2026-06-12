@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R12: Pricing UI enhancements — plan card hover/selection states, TopupBundleModal quantity selector, payment-gated plan activation; merged to main**
+> **Last updated: 2026-06-12 — R12 + hotfix: DemoPaymentModal — "Get Plan" now shows visible checkout UI in demo mode; all changes on main**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R12 complete |
-| **Latest commit** | (see git log) — R12: Pricing UI enhancements, TopupBundleModal, payment-gated plan activation |
+| **Current branch** | `main` — all work committed and merged; R12 + hotfix complete |
+| **Latest commit** | (see git log) — hotfix: DemoPaymentModal; R12: plan hover/selection, TopupBundleModal, payment gating |
 
 ---
 
@@ -599,6 +599,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 92. **R12: Plan card current/selecting states** — `.plan-card.plan-current` green ring + `.plan-current-badge` pill overlay ("Your plan"). `.plan-card.plan-selecting` pulsing accent ring via `@keyframes plan-select-pulse` (runs while payment modal is open).
 93. **R12: TopupBundleModal** — New component `src/components/TopupBundleModal.jsx`: quantity selector 1–10 with live cumulative pricing, bonus URL count scaled by qty, upsell section showing up to 2 higher plans, CTA "Add N bundle(s) — {total}". Opens from every "Add to plan" button on Pricing page. Missing CSS classes `.tbm-summary-per` and `.tbm-upsell-divider` added to `screens.css`.
 94. **R12: Payment-gated plan activation** — `upgradePlan()` only fires on `status === "demo_mode"` or `status === "success"`. Cancelled, error, and exception paths leave plan unchanged. Default planId for new/unpaid users is `"free"` (set in `readSubscription()` default). `purchaseBatchPack` qty param: `bonusUrls = (bundle.bonusBatchUrls || 50) * qty`; server receives qty and computes `unitAmount × qty` authoritatively.
+95. **R12 hotfix: DemoPaymentModal** — Clicking "Get Plan" with no payment keys configured (`hasPayment=false`) previously silently upgraded the plan with zero UI. Fixed: `initiatePayment` now `await`s a `new Promise` whose resolve is stored in `demoResolveRef`. Setting `demoTarget` state mounts `DemoPaymentModal` (plan name + price + greyed-out mock card fields + "Demo mode" badge + confirm/cancel). `confirmDemoPayment` resolves `true` → `upgradePlan` → returns `"demo_mode"` to caller. `cancelDemoPayment` resolves `false` → returns `"cancelled"`, plan unchanged. Real payment flow (Razorpay/Stripe) is completely unaffected — only the `!hasPayment` code path changed. To enable real payments: set `VITE_RAZORPAY_KEY_ID` + `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (or Stripe equivalents) in Netlify env vars and redeploy.
 
 ---
 
@@ -745,6 +746,9 @@ npm run dev   # http://localhost:5173
 - TopupBundleModal → click upsell plan → modal closes → payment flow starts for that plan
 - TopupBundleModal → backdrop click (outside card) → modal closes
 - TopupBundleModal → in demo mode: modal closes, navigates to /account, bonusBatchUrls += 50 × qty
+- `/pricing` → click "Get Pro" (no payment keys): DemoPaymentModal appears with plan name, price, greyed-out card fields, "Demo mode" badge
+- DemoPaymentModal → "Confirm — activate Pro (Demo)": plan upgrades, navigates to /account
+- DemoPaymentModal → "Cancel, keep current plan" or backdrop click: modal closes, plan unchanged
 - `/pricing` → plan cards: hovering non-current plans shows lift+border+tint effect
 - `/pricing` → current plan card: green ring border + "Your plan" badge pill at top
 - `/pricing` → click "Get Pro" (or any paid plan): button shows "Processing…" + card pulses with accent ring during payment
@@ -757,14 +761,14 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+8e1a1f5  fix(payment): show DemoPaymentModal on Get Plan click when no payment keys set
+ffbd7d8  chore: update CLAUDE.md — R12 pricing UI enhancements documented
 a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancements & TopupBundleModal
 866aa9e  fix(pricing): add missing tbm-summary-per and tbm-upsell-divider CSS classes
 4dabf64  feat(pricing): plan card hover/selection states, TopupBundleModal, payment-gated plan activation
 83afe10  chore: update CLAUDE.md — R11 Razorpay integration documented
-44f6885  fix(account): remove unused providerMeta prop from PaymentHistorySection
+44f6885  fix(account): remove unused providerMay prop from PaymentHistorySection
 208b35f  fix(payment): retry re-initiates payment flow; add missing account-stats CSS
 b141308  feat(payments): complete Razorpay end-to-end integration with step-by-step UX
 e21c98d  chore: update CLAUDE.md — R10 final state (Explore restructure, AdminUsers fix)
-d7bec8e  fix(admin): AdminUsers uses getEffectivePlanById() instead of raw PLAN_BY_ID
-5374a20  fix(topbar): About DatIQ first in Explore; Contact/Submit Bug in own section at bottom
 ```
