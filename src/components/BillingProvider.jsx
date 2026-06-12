@@ -7,11 +7,11 @@ import {
   canBatch, canExtractBatch,
 } from "../lib/usageService.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
-import { getEffectivePlanMap } from "../lib/pricingOverrides.js";
+import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
-import { initiateCheckout, hasPayment } from "../lib/paymentService.js";
+import { initiateCheckout, initiateTopupCheckout, hasPayment } from "../lib/paymentService.js";
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 
@@ -141,6 +141,44 @@ export function BillingProvider({ children }) {
     }
   }, [currency, rates, subscription, upgradePlan]);
 
+  // ── Batch Pack top-up purchase ────────────────────────────────────────────
+  const purchaseBatchPack = useCallback(async (bundleId = "batch-pack") => {
+    const bundle = getEffectiveBundles().find((b) => b.id === bundleId);
+    const bonusUrls = bundle?.bonusBatchUrls || 50;
+
+    const grantBatchUrls = (sub) => {
+      const updated = { ...sub, bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls };
+      setSubscription(updated);
+      writeSubscription(updated);
+    };
+
+    if (!hasPayment) {
+      grantBatchUrls(subscription);
+      return { status: "demo_mode", bonusUrls };
+    }
+
+    setPaymentLoading(true);
+    setPaymentError("");
+    try {
+      const result = await initiateTopupCheckout({
+        bundleId,
+        currency,
+        rates,
+        sessionId: getSessionId(),
+        email: subscription.email || null,
+      });
+      if (result?.status === "demo_mode" || result?.status === "success") {
+        grantBatchUrls(subscription);
+      }
+      return result;
+    } catch (e) {
+      setPaymentError(e.message || "Purchase failed. Please try again.");
+      throw e;
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [currency, rates, subscription]);
+
   // ── Post-Stripe-redirect confirmation (called from PaymentSuccess page) ──
   const confirmPayment = useCallback(async (confirmedPlanId, { provider } = {}) => {
     await syncSubscriptionToDb(confirmedPlanId, provider || null, {});
@@ -214,7 +252,7 @@ export function BillingProvider({ children }) {
     subscription, plan, planId, bonus, usage,
     currency, rates, setCurrency,
     upgradePlan,
-    initiatePayment, confirmPayment,
+    initiatePayment, confirmPayment, purchaseBatchPack,
     paymentLoading, paymentError, setPaymentError,
     paymentProvider, providerMeta, hasPayment,
     paymentHistory, dbSubscription,
@@ -227,7 +265,7 @@ export function BillingProvider({ children }) {
     subscription, plan, planId, bonus, usage,
     currency, rates, setCurrency,
     upgradePlan,
-    initiatePayment, confirmPayment,
+    initiatePayment, confirmPayment, purchaseBatchPack,
     paymentLoading, paymentError, setPaymentError,
     paymentProvider, providerMeta, hasPayment,
     paymentHistory, dbSubscription,
