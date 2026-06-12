@@ -90,7 +90,7 @@ function AlertsSection() {
   );
 }
 
-function PaymentHistorySection({ history, providerMeta, dbSubscription }) {
+function PaymentHistorySection({ history, dbSubscription }) {
   if (!history || history.length === 0) return null;
   return (
     <div className="card card-pad payment-history-card">
@@ -299,7 +299,6 @@ export default function Account() {
             {/* Payment history (only if there are records) */}
             <PaymentHistorySection
               history={paymentHistory}
-              providerMeta={providerMeta}
               dbSubscription={dbSubscription}
             />
 
