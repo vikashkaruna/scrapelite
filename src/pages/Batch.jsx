@@ -15,7 +15,7 @@ import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
 
-const MAX_URLS = 500;
+const ABSOLUTE_MAX_URLS = 500;
 const MIN_URLS = 2;
 
 // ── URL parsing from textarea ──────────────────────────────────────────────────
@@ -86,27 +86,35 @@ function ResultRow({ item, index, onView }) {
   );
 }
 
-// ── Gate banner shown when plan doesn't support batch ─────────────────────────
-function BatchGateBanner({ onUpgrade }) {
+// ── Gate banner shown when plan has hit its batch limit ──────────────────────
+function BatchGateBanner({ onUpgrade, planId, planLimit }) {
+  const isNotSupported = !planLimit;
   return (
     <div className="batch-gate-banner card">
       <div className="batch-gate-icon">
         <Icon name="layers-2" size={28} />
       </div>
       <div className="batch-gate-body">
-        <h3>Batch mode — Business &amp; Agency plans</h3>
-        <p>
-          Extract 10–500 URLs simultaneously, import from CSV, and export combined
-          results as CSV, PDF, Markdown or JSON. Upgrade to Business or Agency to
-          unlock, or purchase a <strong>Batch Pack</strong> top-up (50 URL slots
-          for $9 / ₹749).
-        </p>
+        {isNotSupported ? (
+          <>
+            <h3>Batch mode not available on your plan</h3>
+            <p>
+              Extract multiple URLs simultaneously, import from CSV, and export combined results.
+              All plans include batch mode — upgrade to process more URLs per batch (up to 500 on Agency).
+            </p>
+          </>
+        ) : (
+          <>
+            <h3>You've reached your batch limit ({planLimit} URLs)</h3>
+            <p>
+              Your current plan supports up to <strong>{planLimit} URLs per batch</strong>.
+              Upgrade to unlock more URLs per batch run.
+            </p>
+          </>
+        )}
         <div className="batch-gate-actions">
           <Button variant="primary" icon="crown" onClick={onUpgrade}>
             Upgrade plan
-          </Button>
-          <Button variant="secondary" icon="zap" onClick={onUpgrade}>
-            Buy Batch Pack
           </Button>
         </div>
       </div>
@@ -152,9 +160,12 @@ export default function Batch() {
   const activeUrls = inputTab === "paste" ? pastedUrls : csvUrls;
   const urlCount = activeUrls.length;
 
-  // Check plan access
+  // Check plan access — get the effective max URLs for the current plan
   const batchCheck = billing?.checkCanBatch?.(Math.max(urlCount, 1)) ?? { allowed: false };
-  const planSupportsBatch = billing?.checkCanBatch?.(1)?.allowed ?? false;
+  const batchCheckOne = billing?.checkCanBatch?.(1) ?? { allowed: false };
+  const planSupportsBatch = batchCheckOne.allowed ?? false;
+  const planBatchLimit = batchCheckOne.allowed ? (batchCheckOne.remaining + 1) : 0;
+  const MAX_URLS = planBatchLimit || ABSOLUTE_MAX_URLS;
 
   // ── CSV file handling ────────────────────────────────────────────────────────
   const processCsvFile = useCallback((file) => {
@@ -188,21 +199,21 @@ export default function Batch() {
       showToast(`Enter at least ${MIN_URLS} URLs to run batch mode.`);
       return;
     }
-    if (urlCount > MAX_URLS) {
-      showToast(`Maximum ${MAX_URLS} URLs per batch. Remove ${urlCount - MAX_URLS} URLs and try again.`);
+    if (urlCount > ABSOLUTE_MAX_URLS) {
+      showToast(`Maximum ${ABSOLUTE_MAX_URLS} URLs per batch. Remove ${urlCount - ABSOLUTE_MAX_URLS} URLs and try again.`);
       return;
     }
 
     const batchSizeCheck = billing?.checkCanBatch?.(urlCount);
     if (batchSizeCheck && !batchSizeCheck.allowed) {
-      showToast(batchSizeCheck.reason + " Upgrade your plan.");
+      showToast(`${batchSizeCheck.reason} Upgrade your plan to process more URLs.`);
       navigate("/pricing");
       return;
     }
 
     const quotaCheck = billing?.checkCanExtractBatch?.(urlCount);
     if (quotaCheck && !quotaCheck.allowed) {
-      showToast(quotaCheck.reason);
+      showToast(`${quotaCheck.reason} Add an Extractions Bundle or upgrade your plan.`);
       navigate("/pricing");
       return;
     }
@@ -335,9 +346,11 @@ export default function Batch() {
       ? "var(--text-3)"
       : urlCount < MIN_URLS
         ? "var(--warning, #f59e0b)"
-        : urlCount > MAX_URLS
+        : urlCount > ABSOLUTE_MAX_URLS
           ? "var(--danger, #e0556b)"
-          : "var(--success, #22c55e)";
+          : urlCount > MAX_URLS
+            ? "var(--warning, #f59e0b)"
+            : "var(--success, #22c55e)";
 
   const progressPct = progress.total > 0 ? (progress.completed / progress.total) * 100 : 0;
 
@@ -351,14 +364,20 @@ export default function Batch() {
           </div>
           <h1 className="batch-h1">Multi-URL extraction</h1>
           <p className="batch-sub">
-            Extract structured data from 10–500 URLs simultaneously. Import from CSV
-            or paste a list. Each URL counts toward your monthly extraction quota.
+            Extract structured data from multiple URLs simultaneously. Import from CSV or paste a list.
+            Each URL counts toward your monthly extraction quota.
+            {planSupportsBatch && planBatchLimit < ABSOLUTE_MAX_URLS && (
+              <span> Your plan allows up to <strong>{planBatchLimit} URLs per batch</strong>. <a href="/pricing" style={{ color: "var(--accent)" }}>Upgrade for more →</a></span>
+            )}
           </p>
         </div>
 
         {/* Plan gate */}
         {!planSupportsBatch ? (
-          <BatchGateBanner onUpgrade={() => navigate("/pricing")} />
+          <BatchGateBanner
+            onUpgrade={() => navigate("/pricing")}
+            planLimit={planBatchLimit}
+          />
         ) : (
           <>
             {/* Input section */}
@@ -399,7 +418,8 @@ export default function Batch() {
                         <Icon name="globe" size={13} />
                         {urlCount} URL{urlCount !== 1 ? "s" : ""} detected
                         {urlCount > 0 && urlCount < MIN_URLS && ` (minimum ${MIN_URLS})`}
-                        {urlCount > MAX_URLS && ` (max ${MAX_URLS})`}
+                        {urlCount > ABSOLUTE_MAX_URLS && ` (max ${ABSOLUTE_MAX_URLS})`}
+                        {urlCount > MAX_URLS && urlCount <= ABSOLUTE_MAX_URLS && ` (plan limit: ${MAX_URLS})`}
                       </span>
                       {invalidUrls.length > 0 && (
                         <span className="batch-invalid-hint">
@@ -534,7 +554,7 @@ export default function Batch() {
                     icon="layers-2"
                     iconRight="arrow-right"
                     onClick={handleRun}
-                    disabled={urlCount < MIN_URLS || urlCount > MAX_URLS}
+                    disabled={urlCount < MIN_URLS || urlCount > ABSOLUTE_MAX_URLS}
                     style={{ minWidth: 200 }}
                   >
                     Extract {urlCount >= MIN_URLS ? urlCount : ""} URL{urlCount !== 1 ? "s" : ""}
@@ -542,9 +562,11 @@ export default function Batch() {
                   <span className="batch-run-hint">
                     {urlCount < MIN_URLS
                       ? `Add at least ${MIN_URLS} URLs to start`
-                      : urlCount > MAX_URLS
-                        ? `Reduce to ${MAX_URLS} URLs max`
-                        : `~${Math.ceil(urlCount / 3 * 3)}s estimated`}
+                      : urlCount > ABSOLUTE_MAX_URLS
+                        ? `Reduce to ${ABSOLUTE_MAX_URLS} URLs max`
+                        : urlCount > MAX_URLS
+                          ? `Your plan limit is ${MAX_URLS} URLs — upgrade for more`
+                          : `~${Math.ceil(urlCount / 3 * 3)}s estimated`}
                   </span>
                 </div>
               </div>

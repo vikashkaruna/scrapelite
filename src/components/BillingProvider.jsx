@@ -1,5 +1,6 @@
 // BillingProvider.jsx — V5 subscription + usage context with DB sync, alerts, and payment.
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useAuth } from "./AuthProvider.jsx";
 import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
@@ -26,6 +27,7 @@ function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || det
 const BillingContext = createContext(null);
 
 export function BillingProvider({ children }) {
+  const { user } = useAuth();
   const [subscription, setSubscription] = useState(() => readSubscription());
   const [usage, setUsageState]          = useState(() => readUsage());
   const [currency, setCurrencyState]    = useState(() => readCurrency());
@@ -137,7 +139,8 @@ export function BillingProvider({ children }) {
         billingPeriod,
         discountPercent: subscription.discountPercent || 0,
         sessionId:       getSessionId(),
-        email:           subscription.email || null,
+        email:           user?.email || subscription.email || null,
+        mobile:          user?.phone || subscription.mobile || null,
         onStageChange:   handleStageChange,
       });
 
@@ -196,20 +199,25 @@ export function BillingProvider({ children }) {
     }
   }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
-  // ── Batch Pack top-up purchase ────────────────────────────────────────────
+  // ── Top-up bundle purchase (extractions, batch URLs, schedulers, workspaces) ─
   const purchaseBatchPack = useCallback(async (bundleId = "batch-pack", qty = 1) => {
     const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
-    const bonusUrls = (bundle?.bonusBatchUrls || 50) * qty;
+    const bonusUrls = (bundle?.bonusBatchUrls || 0) * qty;
+    const bonusExtr = (bundle?.bonusExtractions || 0) * qty;
 
-    const grantBatchUrls = (sub) => {
-      const updated = { ...sub, bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls };
+    const grantBundle = (sub) => {
+      const updated = {
+        ...sub,
+        ...(bonusUrls > 0 ? { bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls } : {}),
+        ...(bonusExtr > 0 ? { bonusExtractions: (sub.bonusExtractions || 0) + bonusExtr } : {}),
+      };
       setSubscription(updated);
       writeSubscription(updated);
     };
 
     if (!hasPayment) {
-      grantBatchUrls(subscription);
-      return { status: "demo_mode", bonusUrls };
+      grantBundle(subscription);
+      return { status: "demo_mode", bonusUrls, bonusExtr };
     }
 
     setPaymentPlanName(bundle?.name || bundleId);
@@ -224,11 +232,12 @@ export function BillingProvider({ children }) {
         rates,
         qty,
         sessionId:     getSessionId(),
-        email:         subscription.email || null,
+        email:         user?.email || subscription.email || null,
+        mobile:        user?.phone || subscription.mobile || null,
         onStageChange: handleStageChange,
       });
       if (result?.status === "demo_mode" || result?.status === "success") {
-        grantBatchUrls(subscription);
+        grantBundle(subscription);
       }
       setPaymentStage(PAYMENT_STAGE.IDLE);
       return result;
