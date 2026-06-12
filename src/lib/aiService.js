@@ -68,11 +68,16 @@ async function mockSummary(extraction) {
 }
 
 async function realSummary(extraction) {
-  const text = await callAI(
-    [{ role: "user", content: buildSummaryPrompt(extraction) }],
-    400
-  );
-  return text || (await mockSummary(extraction));
+  try {
+    const text = await callAI(
+      [{ role: "user", content: buildSummaryPrompt(extraction) }],
+      400
+    );
+    return text || (await mockSummary(extraction));
+  } catch (err) {
+    console.warn("[DatIQ] AI summary unavailable, using fallback:", err?.message);
+    return mockSummary(extraction);
+  }
 }
 
 /**
@@ -243,11 +248,16 @@ async function mockContent(extraction, format) {
 }
 
 async function realContent(extraction, format) {
-  const text = await callAI(
-    [{ role: "user", content: buildContentPrompt(extraction, format) }],
-    1024
-  );
-  return text || (await mockContent(extraction, format));
+  try {
+    const text = await callAI(
+      [{ role: "user", content: buildContentPrompt(extraction, format) }],
+      1024
+    );
+    return text || (await mockContent(extraction, format));
+  } catch (err) {
+    console.warn("[DatIQ] AI content generation unavailable, using fallback:", err?.message);
+    return mockContent(extraction, format);
+  }
 }
 
 /**
