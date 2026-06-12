@@ -11,6 +11,7 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import TopupBundleModal from "../components/TopupBundleModal.jsx";
 
 function CurrencyPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +91,19 @@ function PlanCard({ plan, displayPrice, currency, billingPeriod, currentPlanId, 
   const isSoon    = plan.comingSoon;
 
   return (
-    <div className={"plan-card" + (plan.highlight ? " plan-highlight" : "") + (isSoon ? " plan-coming-soon" : "")}>
+    <div className={
+      "plan-card" +
+      (plan.highlight ? " plan-highlight" : "") +
+      (isSoon ? " plan-coming-soon" : "") +
+      (isCurrent ? " plan-current" : "") +
+      (isLoading ? " plan-selecting" : "")
+    }>
+      {isCurrent && (
+        <div className="plan-current-badge">
+          <Icon name="check-circle" size={13} />
+          <span>Your plan</span>
+        </div>
+      )}
       {plan.badge && <div className="plan-badge">{plan.badge}</div>}
       <div className="plan-header">
         <div className="plan-name">{plan.name}</div>
@@ -187,7 +200,7 @@ function TopupCard({ bundle, currency, onBuy, loading }) {
           <span className="topup-unit">{bundle.unit}</span>
         </div>
         {onBuy && (
-          <Button variant="secondary" size="sm" onClick={() => onBuy(bundle.id)} disabled={isLoading}>
+          <Button variant="secondary" size="sm" onClick={() => onBuy(bundle)} disabled={isLoading}>
             {isLoading ? <><Icon name="refresh" size={12} />Adding…</> : "Add to plan"}
           </Button>
         )}
@@ -208,6 +221,7 @@ export default function Pricing() {
   const [loadingPlan, setLoadingPlan]       = useState(null);
   const [loadingBundle, setLoadingBundle]   = useState(null);
   const [localError, setLocalError]         = useState("");
+  const [bundleModal, setBundleModal]       = useState(null);
 
   const plans    = getEffectivePlans();
   const bundles  = getEffectiveBundles();
@@ -236,12 +250,17 @@ export default function Pricing() {
     }
   };
 
-  const handleBundleBuy = async (bundleId) => {
+  const handleBundleClick = (bundle) => {
+    setBundleModal(bundle);
+  };
+
+  const handleBundlePurchase = async (bundleId, qty) => {
     setLoadingBundle(bundleId);
     setLocalError("");
     try {
-      const result = await purchaseBatchPack?.(bundleId);
+      const result = await purchaseBatchPack?.(bundleId, qty);
       if (result?.status === "demo_mode" || result?.status === "success") {
+        setBundleModal(null);
         navigate("/account");
       }
     } catch (e) {
@@ -249,6 +268,11 @@ export default function Pricing() {
     } finally {
       setLoadingBundle(null);
     }
+  };
+
+  const handleUpgradeFromBundle = (planId) => {
+    setBundleModal(null);
+    handleSelect(planId);
   };
 
   const handleContactSales = () => {
@@ -357,7 +381,7 @@ export default function Pricing() {
                 key={bundle.id}
                 bundle={bundle}
                 currency={currency}
-                onBuy={handleBundleBuy}
+                onBuy={handleBundleClick}
                 loading={loadingBundle}
               />
             ))}
@@ -397,6 +421,19 @@ export default function Pricing() {
           </div>
         </div>
       </div>
+
+      {bundleModal && (
+        <TopupBundleModal
+          bundle={bundleModal}
+          currency={currency}
+          rates={rates}
+          currentPlanId={currentPlanId}
+          onClose={() => setBundleModal(null)}
+          onPurchase={handleBundlePurchase}
+          onUpgrade={handleUpgradeFromBundle}
+          loading={loadingBundle === bundleModal?.id}
+        />
+      )}
     </div>
   );
 }

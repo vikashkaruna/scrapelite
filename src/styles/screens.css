@@ -1537,10 +1537,46 @@
   border: 1.5px solid var(--border); border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm); transition: box-shadow .2s, border-color .2s, transform .18s;
 }
-.plan-card:hover { box-shadow: var(--shadow); border-color: var(--border-strong); transform: translateY(-2px); }
+.plan-card:hover:not(.plan-current):not(.plan-coming-soon):not(.plan-selecting) {
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
+}
 .plan-highlight {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 1px var(--accent), var(--shadow-accent) !important;
+}
+
+/* Current plan state */
+.plan-card.plan-current {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 1px #22c55e, var(--shadow-sm) !important;
+  background: color-mix(in srgb, #22c55e 4%, var(--surface));
+}
+.plan-card.plan-current:hover {
+  border-color: #16a34a !important;
+  box-shadow: 0 0 0 2px #16a34a, var(--shadow) !important;
+  transform: translateY(-2px);
+}
+.plan-current-badge {
+  position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px;
+  font-size: .72em; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  background: #22c55e; color: #fff;
+  white-space: nowrap;
+}
+
+/* Plan being selected for payment — pulsing accent ring */
+.plan-card.plan-selecting {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm) !important;
+  animation: plan-select-pulse 1.4s ease-in-out infinite;
+}
+@keyframes plan-select-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
+  50%       { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow); }
 }
 .plan-badge {
   position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
@@ -3226,3 +3262,94 @@
   display: inline-flex; align-items: center; gap: 6px; margin-top: 16px;
   font-size: .84em; color: var(--text-3); font-weight: 500;
 }
+
+/* ── TopupBundleModal ─────────────────────────────────────────────────────── */
+.tbm-backdrop {
+  position: fixed; inset: 0; z-index: 8500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: ppm-fade-in .15s ease;
+}
+.tbm-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl); padding: 32px; max-width: 480px; width: 100%;
+  box-shadow: var(--shadow-lg); position: relative;
+  animation: ppm-slide-up .2s ease;
+  max-height: 90vh; overflow-y: auto;
+}
+.tbm-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: var(--surface-2); color: var(--text-2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, color .12s;
+}
+.tbm-close:hover { background: var(--surface-hover); color: var(--text); }
+
+.tbm-header {
+  display: flex; gap: 14px; align-items: flex-start;
+  margin-bottom: 24px; padding-right: 32px;
+}
+.tbm-icon {
+  width: 44px; height: 44px; border-radius: var(--r-lg);
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tbm-title { font-size: 1.1em; font-weight: 750; color: var(--text); margin-bottom: 4px; }
+.tbm-desc  { font-size: .86em; color: var(--text-2); line-height: 1.5; }
+
+.tbm-qty-section {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.tbm-qty-label { font-size: .9em; font-weight: 650; color: var(--text); }
+.tbm-qty-controls { display: flex; align-items: center; gap: 14px; }
+.tbm-qty-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .12s, background .12s;
+}
+.tbm-qty-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.tbm-qty-btn:disabled { opacity: .35; cursor: not-allowed; }
+.tbm-qty-val { font-size: 1.25em; font-weight: 750; min-width: 28px; text-align: center; }
+
+.tbm-summary {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 20px;
+}
+.tbm-summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .9em; padding: 5px 0;
+}
+.tbm-summary-row.muted { color: var(--text-3); font-size: .84em; }
+.tbm-summary-row strong { font-weight: 750; color: var(--text); }
+.tbm-summary-bonus {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .84em; font-weight: 650; color: var(--accent);
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.tbm-summary-per { color: var(--text-3); font-size: .82em; padding: 3px 0; }
+.tbm-upsell-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0 0; }
+
+.tbm-upsell { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.tbm-upsell-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .78em; font-weight: 750; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 12px;
+}
+.tbm-upsell-title svg { color: var(--accent); }
+.tbm-upsell-plan {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 12px 14px; border-radius: var(--r-lg);
+  border: 1.5px solid var(--border); background: var(--surface);
+  cursor: pointer; margin-bottom: 8px; transition: border-color .15s, background .15s;
+  text-align: left;
+}
+.tbm-upsell-plan:hover { border-color: var(--accent); background: var(--accent-soft); }
+.tbm-up-left { flex: 1; }
+.tbm-up-name { font-size: .9em; font-weight: 700; color: var(--text); }
+.tbm-up-desc { font-size: .8em; color: var(--text-3); margin-top: 2px; }
+.tbm-up-price { font-size: .88em; font-weight: 700; color: var(--accent); white-space: nowrap; margin-left: 12px; }
