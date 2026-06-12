@@ -18,6 +18,7 @@ import {
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 import PaymentProcessingModal from "./PaymentProcessingModal.jsx";
+import DemoPaymentModal from "./DemoPaymentModal.jsx";
 
 const CURRENCY_KEY = "datiq.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || detectCurrency(); } catch { return detectCurrency(); } }
@@ -40,6 +41,10 @@ export function BillingProvider({ children }) {
   const [paymentStage, setPaymentStage]     = useState(PAYMENT_STAGE.IDLE);
   const [paymentStageMsg, setPaymentStageMsg] = useState("");
   const [paymentPlanName, setPaymentPlanName] = useState("");
+
+  // ── Demo checkout modal state (no-key environments) ──────────────────────
+  const [demoTarget, setDemoTarget]   = useState(null); // { planId, billingPeriod } | null
+  const demoResolveRef                = useRef(null);   // holds the resolve fn while modal is open
 
   // Reload effective plan map on every render to pick up admin overrides immediately
   const planMap = getEffectivePlanMap();
@@ -137,8 +142,21 @@ export function BillingProvider({ children }) {
       });
 
       if (result.status === "demo_mode") {
-        upgradePlan(targetPlanId);
-        setPaymentStage(PAYMENT_STAGE.IDLE);
+        // Show a confirmation modal instead of silently upgrading.
+        // Pause the async flow until the user clicks Confirm or Cancel.
+        setPaymentLoading(false); // spinner off; modal takes over
+        const confirmed = await new Promise((resolve) => {
+          demoResolveRef.current = resolve;
+          setDemoTarget({ planId: targetPlanId, billingPeriod });
+        });
+        setDemoTarget(null);
+        demoResolveRef.current = null;
+        if (confirmed) {
+          upgradePlan(targetPlanId);
+          return { status: "demo_mode" };
+        } else {
+          return { status: "cancelled" };
+        }
 
       } else if (result.status === "success") {
         // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
@@ -297,6 +315,21 @@ export function BillingProvider({ children }) {
     setPaymentError("");
   }, []);
 
+  // ── Demo modal confirm / cancel ───────────────────────────────────────────
+  const confirmDemoPayment = useCallback(() => {
+    const resolve = demoResolveRef.current;
+    demoResolveRef.current = null;
+    setDemoTarget(null);
+    resolve?.(true);
+  }, []);
+
+  const cancelDemoPayment = useCallback(() => {
+    const resolve = demoResolveRef.current;
+    demoResolveRef.current = null;
+    setDemoTarget(null);
+    resolve?.(false);
+  }, []);
+
   const retryPayment = useCallback(() => {
     const args = lastPaymentArgs.current;
     if (args) {
@@ -348,6 +381,17 @@ export function BillingProvider({ children }) {
         onRetry={retryPayment}
         onCancel={dismissPaymentModal}
       />
+      {/* Demo checkout modal — shown when no payment gateway is configured */}
+      {demoTarget && (
+        <DemoPaymentModal
+          plan={planMap[demoTarget.planId] ?? planMap.free}
+          billingPeriod={demoTarget.billingPeriod}
+          currency={currency}
+          rates={rates}
+          onConfirm={confirmDemoPayment}
+          onCancel={cancelDemoPayment}
+        />
+      )}
     </BillingContext.Provider>
   );
 }
