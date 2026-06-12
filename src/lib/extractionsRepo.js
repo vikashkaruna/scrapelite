@@ -18,15 +18,16 @@ import { uid } from "./utils.js";
 const LS_KEY = "datiq.saved";
 
 // Decide whether an API error warrants a localStorage fallback.
-// Covers: explicit useLocalStorage flag, 401/403 (no/invalid auth),
-// 503 (Supabase not configured), and network-level failures (no status,
-// e.g. Netlify Functions not running in vite preview mode).
+// Covers: explicit useLocalStorage flag, 401/403/404/500/503, and network failures.
+// 500 is included so unexpected Supabase/function errors fall back gracefully
+// rather than surfacing a hard error to the user.
 function shouldFallback(err) {
   return (
     err.useLocalStorage ||
     err.status === 401 || // no auth token
     err.status === 403 || // insufficient permissions
     err.status === 404 || // API endpoint not found (Netlify Functions not running)
+    err.status === 500 || // unexpected server error — degrade gracefully
     err.status === 503 || // Supabase not configured
     !err.status // network-level failure
   );

@@ -287,7 +287,7 @@ export default function Dashboard() {
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
   const [items, setItems] = useState(readLocalItems);
-  const [loading, setLoading] = useState(() => readLocalItems().length === 0);
+  const [loading, setLoading] = useState(() => !localStorage.getItem("datiq.saved"));
   const [refreshing, setRefreshing] = useState(false);
   const [layout, setLayout] = useState(initialLayout);
   const [query, setQuery] = useState("");
@@ -306,8 +306,8 @@ export default function Dashboard() {
   useEffect(() => {
     let alive = true;
     listExtractions()
-      .then((rows) => { if (alive) { setItems(rows); setLoading(false); } })
-      .catch((err) => { console.error("[DatIQ] Failed to load extractions:", err); if (alive) { showError(err, LOAD_ERROR); setLoading(false); } })
+      .then((rows) => { if (alive) setItems(rows); })
+      .catch((err) => { console.error("[DatIQ] Failed to load extractions:", err); if (alive) showError(err, LOAD_ERROR); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -504,10 +504,10 @@ export default function Dashboard() {
               {selected.size > 0 ? (
                 <>
                   <span className="dash-count">{selected.size} selected</span>
-                  <button className="dash-sel-action-btn" onClick={() => setContentItem(selectedItems[0])}>
+                  <button className="dash-sel-action-btn" onClick={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}>
                     <Icon name="wand" size={14} /> Generate
                   </button>
-                  <button className="dash-sel-action-btn" onClick={() => setEmailOpen(true)}>
+                  <button className="dash-sel-action-btn" onClick={() => selectedItems.length > 0 && setEmailOpen(true)}>
                     <Icon name="mail" size={14} /> Email
                   </button>
                   <button className="dash-sel-action-btn" onClick={clearSelection} title="Clear selection">
@@ -604,8 +604,8 @@ export default function Dashboard() {
           count={selected.size}
           selectedItems={selectedItems}
           onClear={clearSelection}
-          onGenerate={() => setContentItem(selectedItems[0])}
-          onEmail={() => setEmailOpen(true)}
+          onGenerate={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}
+          onEmail={() => selectedItems.length > 0 && setEmailOpen(true)}
           onCsv={onExportCsv}
           onPdf={onExportPdf}
           onMarkdown={onExportMarkdown}

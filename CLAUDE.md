@@ -575,6 +575,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 69. **R9: Dashboard Refresh button** — "Refresh" ghost button added to header; calls `listExtractions()` and updates state; shows "Refreshed" toast on success.
 70. **R9: Dashboard inline selection actions** — When rows are selected, `dash-toolbar-right` shows Generate + Email + Clear buttons inline (in addition to the floating selection bar at the bottom).
 71. **R9: Preview Download dropdown** — Action bar "Generate" button replaced with "Download ▾" dropdown (CSV / PDF / Markdown / JSON). "Generate content" button remains in the Quick Enrichment card header.
+72. **R9: Footer alignment** — `.site-footer-slim { padding: 18px 0 }` changed to `padding-top/bottom` only so `.container`'s horizontal `clamp(20px, 4vw, 44px)` padding is no longer overridden. Footer left/right edges now align with TopBar and page content.
+73. **R9: Dashboard Generate/Email guard** — `setContentItem(selectedItems[0])` and `setEmailOpen(true)` now guarded by `selectedItems.length > 0` in both inline toolbar and floating SelectionBar, preventing crash when stale selection IDs don't exist in current items list.
+74. **R9: Batch export strips `_status`/`_error`** — `successResults` mapped to remove `_status` and `_error` before CSV/PDF/Markdown/JSON exports, so users don't see internal batch fields in their downloaded data.
+75. **R9: extractionsRepo `shouldFallback` covers 500** — Added `err.status === 500` to the fallback condition so unexpected Supabase/function errors degrade to localStorage instead of surfacing a hard error modal to the user.
+76. **R9: Dashboard loading init single-read** — `loading` now initialised as `!localStorage.getItem("datiq.saved")` (key existence check only) to avoid double JSON-parse. The `useEffect` cleanup simplified: `setLoading(false)` moved back to `.finally()` only.
 
 ---
 

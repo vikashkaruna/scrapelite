@@ -2405,7 +2405,7 @@
 /* ── R1: Footer — slim single-row ───────────────────────────────── */
 .site-footer-slim {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 18px 0; flex-wrap: wrap;
+  gap: 16px; padding-top: 18px; padding-bottom: 18px; flex-wrap: wrap;
 }
 .footer-legal-links {
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap;

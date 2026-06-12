@@ -277,7 +277,10 @@ export default function Batch() {
   };
 
   // ── Export helpers ───────────────────────────────────────────────────────────
-  const successResults = (results || []).filter((r) => r?._status === "success");
+  // Strip batch-only fields so they don't appear in exported CSV/JSON/MD columns.
+  const successResults = (results || [])
+    .filter((r) => r?._status === "success")
+    .map(({ _status, _error, ...clean }) => clean);
 
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
