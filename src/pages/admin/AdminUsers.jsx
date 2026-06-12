@@ -1,7 +1,7 @@
 // AdminUsers.jsx — user management: invite, extend limits, track sources.
 import { useState } from "react";
 import { getAdminUsers, updateAdminUser, addAdminUser } from "../../lib/adminService.js";
-import { PLAN_BY_ID } from "../../lib/pricingConfig.js";
+import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
@@ -9,7 +9,7 @@ const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", busine
 const SOURCE_ICONS = { organic: "globe", referral: "share", linkedin: "linkedin", google: "search", "product-hunt": "zap", twitter: "twitter", direct: "arrow-right" };
 
 function PlanPill({ planId }) {
-  const plan = PLAN_BY_ID[planId];
+  const plan = getEffectivePlanById(planId);
   return (
     <span className="user-plan-pill" style={{ "--pill-color": PLAN_COLORS[planId] ?? "#888" }}>
       {plan?.name ?? planId}
