@@ -1,27 +1,34 @@
 // Contact.jsx — /contact — support form and contact details.
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { captureEmail } from "../lib/emailCaptureService.js";
 
 const CONTACT_TYPES = [
-  { value: "support",  label: "Product support",     icon: "help-circle" },
-  { value: "billing",  label: "Billing question",     icon: "credit-card" },
-  { value: "feature",  label: "Feature request",     icon: "lightbulb" },
+  { value: "support",    label: "Product support",     icon: "help-circle" },
+  { value: "bug",        label: "Bug report",          icon: "alert-triangle" },
+  { value: "billing",    label: "Billing question",    icon: "credit-card" },
+  { value: "feature",    label: "Feature request",     icon: "lightbulb" },
   { value: "enterprise", label: "Enterprise / agency", icon: "briefcase" },
-  { value: "other",    label: "Other",               icon: "message-circle" },
+  { value: "other",      label: "Other",               icon: "message-square" },
 ];
 
 export default function Contact() {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const showToast = useToast();
 
-  const [type,    setType]    = useState("support");
+  const initialType = (() => {
+    const t = new URLSearchParams(search).get("type");
+    return CONTACT_TYPES.some((ct) => ct.value === t) ? t : "support";
+  })();
+
+  const [type,    setType]    = useState(initialType);
   const [name,    setName]    = useState("");
   const [email,   setEmail]   = useState("");
-  const [subject, setSubject] = useState("");
+  const [subject, setSubject] = useState(initialType === "bug" ? "Bug report: " : "");
   const [message, setMessage] = useState("");
   const [status,  setStatus]  = useState("idle"); // idle | submitting | sent | error
 

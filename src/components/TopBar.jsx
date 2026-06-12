@@ -55,14 +55,16 @@ const EXPLORE_SECTIONS = [
     key: "resources",
     label: "Resources",
     items: [
-      { label: "About DatIQ", icon: "info",        path: "/about" },
-      { label: "Blog",        icon: "book-open",   path: "/blog" },
-      { label: "Help Center", icon: "help-circle", path: "/help/index.html", external: true },
+      { label: "About DatIQ",  icon: "info",             path: "/about" },
+      { label: "Contact Us",   icon: "mail",             path: "/contact" },
+      { label: "Submit Bug",   icon: "alert-triangle",   path: "/contact?type=bug" },
+      { label: "Blog",         icon: "book-open",        path: "/blog" },
+      { label: "Help Center",  icon: "help-circle",      path: "/help/index.html", external: true },
     ],
   },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases/", "/vs/", "/about", "/blog"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases/", "/vs/", "/about", "/blog", "/contact"];
 
 function ExploreDropdown({ onNavigate }) {
   return (
