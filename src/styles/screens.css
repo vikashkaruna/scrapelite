@@ -171,6 +171,7 @@
 .preview-bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+  position: relative; z-index: 10;
 }
 .back-btn { margin-left: -10px; }
 .preview-bar-actions { display: flex; gap: 10px; }
@@ -303,6 +304,7 @@
 .dash-header {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 20px; margin-bottom: 26px; flex-wrap: wrap;
+  position: relative; z-index: 10;
 }
 .dash-h1 { margin: 8px 0 0; font-size: clamp(26px, 4vw, 36px); font-weight: 800; letter-spacing: -.03em; }
 .dash-sub { margin: 6px 0 0; color: var(--text-2); font-size: 1em; }
@@ -386,6 +388,14 @@
   color: var(--text-3); font-size: .86em; font-weight: 600;
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.dash-sel-action-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text-2); font-size: .82em; font-weight: 600;
+  cursor: pointer; transition: all .13s; white-space: nowrap;
+}
+.dash-sel-action-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .dash-selbar {
   display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 5px 6px 5px 14px; border-radius: var(--r-pill);
@@ -2395,7 +2405,7 @@
 /* ── R1: Footer — slim single-row ───────────────────────────────── */
 .site-footer-slim {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 18px 0; flex-wrap: wrap;
+  gap: 16px; padding-top: 18px; padding-bottom: 18px; flex-wrap: wrap;
 }
 .footer-legal-links {
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap;

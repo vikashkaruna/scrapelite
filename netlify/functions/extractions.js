@@ -132,6 +132,8 @@ export const handler = async (event) => {
         id: _clientId,
         _saved: _s,
         _demo: _d,
+        _status: _st,
+        _error: _er,
         ...base
       } = payload;
 

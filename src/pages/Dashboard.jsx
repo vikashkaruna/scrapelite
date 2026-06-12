@@ -116,6 +116,17 @@ function Pager({ page, totalPages, start, shown, total, onPage }) {
   );
 }
 
+function readLocalItems() {
+  try {
+    const raw = localStorage.getItem("datiq.saved");
+    if (!raw) return [];
+    return JSON.parse(raw)
+      .slice()
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map((r) => ({ ...r, _saved: true }));
+  } catch { return []; }
+}
+
 function DemoBadge() {
   return <span className="demo-badge"><Icon name="flask" size={11} /> Demo</span>;
 }
@@ -275,8 +286,9 @@ export default function Dashboard() {
   const { checkCanExport, checkCanEmail } = useBilling();
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(readLocalItems);
+  const [loading, setLoading] = useState(() => !localStorage.getItem("datiq.saved"));
+  const [refreshing, setRefreshing] = useState(false);
   const [layout, setLayout] = useState(initialLayout);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -300,6 +312,19 @@ export default function Dashboard() {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const refreshData = async () => {
+    setRefreshing(true);
+    try {
+      const rows = await listExtractions();
+      setItems(rows);
+      showToast("Refreshed", "check-circle");
+    } catch {
+      showToast("Refresh failed. Please try again.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const showingDemo = false;
 
@@ -440,6 +465,16 @@ export default function Dashboard() {
                 label={exportLabel}
               />
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="refresh"
+              onClick={refreshData}
+              disabled={refreshing}
+              title="Refresh from database"
+            >
+              {refreshing ? "…" : "Refresh"}
+            </Button>
             <Button variant="primary" icon="plus" onClick={() => navigate("/")}>
               New extraction
             </Button>
@@ -466,9 +501,24 @@ export default function Dashboard() {
               )}
             </div>
             <div className="dash-toolbar-right">
-              <span className="dash-count">
-                {query ? `${filtered.length} of ${items.length}` : `${items.length} total`}
-              </span>
+              {selected.size > 0 ? (
+                <>
+                  <span className="dash-count">{selected.size} selected</span>
+                  <button className="dash-sel-action-btn" onClick={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}>
+                    <Icon name="wand" size={14} /> Generate
+                  </button>
+                  <button className="dash-sel-action-btn" onClick={() => selectedItems.length > 0 && setEmailOpen(true)}>
+                    <Icon name="mail" size={14} /> Email
+                  </button>
+                  <button className="dash-sel-action-btn" onClick={clearSelection} title="Clear selection">
+                    <Icon name="x" size={13} />
+                  </button>
+                </>
+              ) : (
+                <span className="dash-count">
+                  {query ? `${filtered.length} of ${items.length}` : `${items.length} total`}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -554,8 +604,8 @@ export default function Dashboard() {
           count={selected.size}
           selectedItems={selectedItems}
           onClear={clearSelection}
-          onGenerate={() => setContentItem(selectedItems[0])}
-          onEmail={() => setEmailOpen(true)}
+          onGenerate={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}
+          onEmail={() => selectedItems.length > 0 && setEmailOpen(true)}
           onCsv={onExportCsv}
           onPdf={onExportPdf}
           onMarkdown={onExportMarkdown}

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R8: grouped exports, floating AI actions bar, auto-save, batch preview, email fix**
+> **Last updated: 2026-06-12 — R9: Batch nav reorder, batch auto-save fix, Dashboard refresh + localStorage-first + inline selection actions + dropdown z-index fix, Preview Download dropdown**
 
 ---
 
@@ -40,7 +40,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 | `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
-| `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback | 🔄 in progress |
+| `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown | 🔄 in progress |
 
 ---
 
@@ -568,6 +568,18 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 62. **R8: Home cleanup** — Batch mode toggle and inline batch UI removed. "Use Batch mode →" hint link added. "Try" example chips removed; only validation error shown.
 63. **R8: Batch result View button** — Each success row in `/batch` results table has "View" → `view(item)` → `/preview`. AI summary snippet shown in results.
 64. **R8: Email webhook fallback** — `emailService` catches network-level `fetch` failures (CORS / server down) and falls through to mailto instead of showing raw "Failed to fetch".
+65. **R9: TopBar Batch order** — `mainLinks` reordered to Extract → Batch → Dashboard (was Extract → Dashboard → Batch).
+66. **R9: Batch auto-save `_status`/`_error` fields** — `Batch.jsx` strips `_status` and `_error` before calling `saveExtraction()`. `netlify/functions/extractions.js` also destructures and discards these fields before the Supabase insert to prevent 500 errors from unknown columns.
+67. **R9: Dashboard dropdown z-index** — `.dash-header` and `.preview-bar` given `position: relative; z-index: 10` so their Export/Download dropdowns paint above sibling cards (which inherit `z-index: 1` from `.container > *`).
+68. **R9: Dashboard localStorage-first loading** — `items` state initialized via `useState(readLocalItems)` (lazy init from `datiq.saved`); `loading` spinner only shown when localStorage has no data; API sync runs in background and updates items silently.
+69. **R9: Dashboard Refresh button** — "Refresh" ghost button added to header; calls `listExtractions()` and updates state; shows "Refreshed" toast on success.
+70. **R9: Dashboard inline selection actions** — When rows are selected, `dash-toolbar-right` shows Generate + Email + Clear buttons inline (in addition to the floating selection bar at the bottom).
+71. **R9: Preview Download dropdown** — Action bar "Generate" button replaced with "Download ▾" dropdown (CSV / PDF / Markdown / JSON). "Generate content" button remains in the Quick Enrichment card header.
+72. **R9: Footer alignment** — `.site-footer-slim { padding: 18px 0 }` changed to `padding-top/bottom` only so `.container`'s horizontal `clamp(20px, 4vw, 44px)` padding is no longer overridden. Footer left/right edges now align with TopBar and page content.
+73. **R9: Dashboard Generate/Email guard** — `setContentItem(selectedItems[0])` and `setEmailOpen(true)` now guarded by `selectedItems.length > 0` in both inline toolbar and floating SelectionBar, preventing crash when stale selection IDs don't exist in current items list.
+74. **R9: Batch export strips `_status`/`_error`** — `successResults` mapped to remove `_status` and `_error` before CSV/PDF/Markdown/JSON exports, so users don't see internal batch fields in their downloaded data.
+75. **R9: extractionsRepo `shouldFallback` covers 500** — Added `err.status === 500` to the fallback condition so unexpected Supabase/function errors degrade to localStorage instead of surfacing a hard error modal to the user.
+76. **R9: Dashboard loading init single-read** — `loading` now initialised as `!localStorage.getItem("datiq.saved")` (key existence check only) to avoid double JSON-parse. The `useEffect` cleanup simplified: `setLoading(false)` moved back to `.finally()` only.
 
 ---
 
@@ -684,16 +696,20 @@ npm run dev   # http://localhost:5173
 - Usage upsell banner → dismiss button hides it; re-appears next calendar month
 - Home → URL input only (no batch mode toggle); "Use Batch mode →" link below options navigates to /batch
 - Home → no "Try lumio.io / stripe.com..." chips below URL input; only validation error shown
-- Home → extract URL → auto-saves to DB → /preview shows "View Dashboard" (primary) + "Generate" + "Delete"
-- `/preview` → "Generate" button in Quick Enrichment card header → opens ContentModal with 3 format options
+- TopBar nav order: Extract → Batch → Dashboard (Batch is before Dashboard)
+- Home → extract URL → auto-saves to DB → /preview shows "View Dashboard" (primary) + "Download ▾" + "Delete"
+- `/preview` → "Download ▾" dropdown in action bar → shows CSV / PDF / Markdown / JSON options
+- `/preview` → "Generate content" button in Quick Enrichment card header → opens ContentModal with 3 format options
 - `/preview` → "View Dashboard" navigates to /dashboard; "Delete" removes extraction and goes home
 - `/batch` → paste 2+ URLs → Run → progress → results table with "View" button per row
 - `/batch` → click "View" on a result → navigates to /preview showing that extraction
-- `/batch` → batch complete → toast "N pages saved to Dashboard" fires automatically
-- `/dashboard` → export buttons: single "Export ▾" dropdown shows CSV / PDF / MD / JSON with plan hints
-- `/dashboard` → check any row → floating bar appears at bottom: count + Clear + Generate + Email + Export ▾
-- `/dashboard` → floating bar "Generate" → ContentModal with SEO Blog Outline / Competitor Summary / Social Posts
-- `/dashboard` → floating bar "Email" → EmailModal (no "Failed to fetch" error; falls back to mailto if webhook down)
+- `/batch` → batch complete → toast "N pages saved to Dashboard" fires automatically (items saved with _status stripped)
+- `/dashboard` → loads instantly from localStorage cache (no spinner if local data exists); API sync happens in background
+- `/dashboard` → "Refresh" ghost button in header → re-fetches from DB, shows "Refreshed" toast
+- `/dashboard` → export buttons: single "Export ▾" dropdown shows CSV / PDF / MD / JSON; dropdown appears above table (z-index fix)
+- `/dashboard` → check any row → toolbar shows: count + Generate + Email + Clear inline; floating bar also appears at bottom
+- `/dashboard` → toolbar "Generate" (inline) → ContentModal with SEO Blog Outline / Competitor Summary / Social Posts
+- `/dashboard` → toolbar "Email" (inline) → EmailModal (no "Failed to fetch" error; falls back to mailto if webhook down)
 - `/dashboard` → floating bar "Export ▾" → dropdown with CSV/PDF/MD/JSON options
 - `/dashboard` → empty state shows bookmark icon + "Nothing saved yet" + "Extract a page" CTA (no demo data)
 - `/dashboard` → after extraction: saved pages appear in table/card view
@@ -708,7 +724,8 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  feat(r0-polish-feature-ui): grouped exports, AI actions bar, auto-save, batch preview, email fix [branch: claude/r0-polish-feature-ui-fgj5yo]
+(latest)  feat(r9): batch nav order, batch auto-save fix, dashboard refresh + localStorage-first + inline selection + z-index fix, preview download dropdown
+(prev)    feat(r0-polish-feature-ui): grouped exports, AI actions bar, auto-save, batch preview, email fix [branch: claude/r0-polish-feature-ui-fgj5yo]
 ee94174  chore: update CLAUDE.md — R7 session documented
 764995b  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
 70e66bd  feat(r7): batch_max_urls admin field, Batch Pack payment wiring, stable AI model default

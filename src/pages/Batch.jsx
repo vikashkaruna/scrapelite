@@ -243,8 +243,12 @@ export default function Batch() {
           "check-circle",
         );
         // Auto-save successful results to Dashboard (fire and forget)
+        // Strip batch-only fields (_status/_error) before saving to avoid DB schema errors.
         if (successItems.length > 0) {
-          Promise.allSettled(successItems.map((r) => saveExtraction(r)))
+          Promise.allSettled(successItems.map((r) => {
+            const { _status, _error, ...cleanItem } = r;
+            return saveExtraction(cleanItem);
+          }))
             .then((settled) => {
               const savedCount = settled.filter((s) => s.status === "fulfilled").length;
               if (savedCount > 0) {
@@ -273,7 +277,10 @@ export default function Batch() {
   };
 
   // ── Export helpers ───────────────────────────────────────────────────────────
-  const successResults = (results || []).filter((r) => r?._status === "success");
+  // Strip batch-only fields so they don't appear in exported CSV/JSON/MD columns.
+  const successResults = (results || [])
+    .filter((r) => r?._status === "success")
+    .map(({ _status, _error, ...clean }) => clean);
 
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
