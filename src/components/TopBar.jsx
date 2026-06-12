@@ -26,6 +26,13 @@ function Brand({ onClick }) {
 // ── Explore mega-dropdown sections ────────────────────────────────
 const EXPLORE_SECTIONS = [
   {
+    key: "company",
+    label: "Company",
+    items: [
+      { label: "About DatIQ",  icon: "info",      path: "/about" },
+    ],
+  },
+  {
     key: "pricing",
     label: "Pricing",
     items: [
@@ -55,11 +62,16 @@ const EXPLORE_SECTIONS = [
     key: "resources",
     label: "Resources",
     items: [
-      { label: "Contact Us",   icon: "mail",             path: "/contact" },
-      { label: "Submit Bug",   icon: "alert-triangle",   path: "/contact?type=bug" },
-      { label: "About DatIQ",  icon: "info",             path: "/about" },
-      { label: "Blog",         icon: "book-open",        path: "/blog" },
-      { label: "Help Center",  icon: "help-circle",      path: "/help/index.html", external: true },
+      { label: "Blog",         icon: "book-open",   path: "/blog" },
+      { label: "Help Center",  icon: "help-circle", path: "/help/index.html", external: true },
+    ],
+  },
+  {
+    key: "contact",
+    label: "Contact",
+    items: [
+      { label: "Contact Us",  icon: "mail",           path: "/contact" },
+      { label: "Submit Bug",  icon: "alert-triangle", path: "/contact?type=bug" },
     ],
   },
 ];
