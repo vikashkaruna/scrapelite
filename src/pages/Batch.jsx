@@ -243,8 +243,12 @@ export default function Batch() {
           "check-circle",
         );
         // Auto-save successful results to Dashboard (fire and forget)
+        // Strip batch-only fields (_status/_error) before saving to avoid DB schema errors.
         if (successItems.length > 0) {
-          Promise.allSettled(successItems.map((r) => saveExtraction(r)))
+          Promise.allSettled(successItems.map((r) => {
+            const { _status, _error, ...cleanItem } = r;
+            return saveExtraction(cleanItem);
+          }))
             .then((settled) => {
               const savedCount = settled.filter((s) => s.status === "fulfilled").length;
               if (savedCount > 0) {

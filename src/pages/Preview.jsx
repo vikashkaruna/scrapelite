@@ -1,5 +1,5 @@
 // Preview.jsx — review & save interface (route "/preview").
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -8,8 +8,9 @@ import StructuredData from "../components/StructuredData.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useBilling } from "../components/BillingProvider.jsx";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
-import { hostOf, pathOf, isExternal, timeAgo } from "../lib/utils.js";
+import { hostOf, pathOf, isExternal, timeAgo, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 
@@ -111,14 +112,24 @@ export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
   const { current, enrich } = useExtraction();
+  const { checkCanExport } = useBilling();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [contentOpen, setContentOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const downloadRef = useRef(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
+
+  useEffect(() => {
+    if (!downloadOpen) return;
+    const handler = (e) => { if (downloadRef.current && !downloadRef.current.contains(e.target)) setDownloadOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [downloadOpen]);
 
   // Persisted enrichments for this extraction become tabs. Fall back to a saved
   // custom_extraction (older shape) so it still shows as a tab.
@@ -181,6 +192,36 @@ export default function Preview() {
 
   const onViewDashboard = () => navigate("/dashboard");
 
+  const onDownloadCsv = () => {
+    if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
+    csvDownload([data]);
+    showToast("Exported to CSV", "download");
+  };
+  const onDownloadMarkdown = () => {
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
+    markdownDownload([data]);
+    showToast("Exported to Markdown", "file-code");
+  };
+  const onDownloadJson = () => {
+    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
+    jsonDownload([data]);
+    showToast("Exported to JSON", "file-json");
+  };
+  const onDownloadPdf = async () => {
+    if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher."); return; }
+    try {
+      const { extractionsToPdf } = await import("../lib/pdfExport.js");
+      extractionsToPdf([data]);
+      showToast("Exported to PDF", "file");
+    } catch (err) {
+      if (/dynamically imported/i.test(err?.message || "")) {
+        showToast("App updated — please refresh the page and try again.", "info");
+      } else {
+        showToast("PDF export failed. Please try again.");
+      }
+    }
+  };
+
   const onDelete = async () => {
     if (data.id) {
       deleteExtraction(data.id).catch((err) => console.warn("[DatIQ] Delete failed:", err));
@@ -201,9 +242,33 @@ export default function Preview() {
             <Button variant="ghost" size="sm" icon="trash" onClick={onDelete} title="Delete this extraction">
               Delete
             </Button>
-            <Button variant="secondary" icon="wand" size="sm" onClick={() => setContentOpen(true)}>
-              Generate
-            </Button>
+            <div className="export-dropdown" ref={downloadRef}>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="download"
+                iconRight="chevron-down"
+                onClick={() => setDownloadOpen((v) => !v)}
+              >
+                Download
+              </Button>
+              {downloadOpen && (
+                <div className="export-dropdown-menu">
+                  <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
+                    <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
+                    <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => { onDownloadMarkdown(); setDownloadOpen(false); }}>
+                    <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => { onDownloadJson(); setDownloadOpen(false); }}>
+                    <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+                  </button>
+                </div>
+              )}
+            </div>
             <Button variant="primary" icon="bookmark" onClick={onViewDashboard}>
               View Dashboard
             </Button>
