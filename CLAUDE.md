@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R6c: Batch auto-save to Dashboard; PDF stale-chunk error handling**
+> **Last updated: 2026-06-12 — R7: batch_max_urls admin field; Batch Pack payment wiring; stable AI model default**
 
 ---
 
@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R6c: batch auto-save to Dashboard; PDF stale-chunk error fix; AI non-fatal fallback |
+| **Latest commit** | (see git log) — R7: batch_max_urls admin field; Batch Pack payment wiring; stable AI model |
 
 ---
 
@@ -38,7 +38,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-fix-ui-issues-mmrjql` | R1 UI polish: responsive nav, hamburger, geo-currency, persona chips, tooltips, favicon, footer slim | ✅ merged to main |
 | `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
-| `claude/batch-mode-export-formats-fkjkxx` | R5: /batch page (multi-URL mode, CSV import), Markdown+JSON export, plan batch limits, Batch Pack top-up bundle, updated metering | ✅ merged to main |
+| `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
 
 ---
@@ -556,6 +556,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 51. **R6b: ai.js model fallback** — `netlify/functions/ai.js` now retries once with `claude-3-5-haiku-20241022` when the primary model (`claude-haiku-4-5-20251001`) returns HTTP 400. Uses a nested `callAnthropic(modelId)` helper. The `FALLBACK_MODEL` const is separate from `DEFAULT_MODEL` for easy maintenance.
 52. **R6c: Batch auto-save** — After `runBatch` completes, all successful results are automatically saved to the database via `Promise.allSettled(successItems.map(saveExtraction))`. A "N pages saved to Dashboard" toast fires when done. Applies to both `/batch` page and Home inline batch mode. `saveExtraction` imported in `Batch.jsx` and `Home.jsx`.
 53. **R6c: PDF stale-chunk error** — `Failed to fetch dynamically imported module` (stale Vite chunk after deploy) was misclassified as a network error. Fixed: (a) new category in `errorMessages.js` for dynamic import failures → "App update available, please refresh"; (b) all PDF export handlers (`Dashboard.jsx`, `Batch.jsx`, `Home.jsx`) detect the error and show a toast "App updated — please refresh the page and try again." instead of the confusing error modal.
+54. **R7: AdminPricing `batch_max_urls` field** — Added numeric input "Batch URL limit (0 = disabled)" to `PlanEditor` form (step=50). Included in `save()` → `limits.batch_max_urls` via `setPlanOverride`. Defaults to `plan.limits.batch_max_urls ?? 0`.
+55. **R7: Batch Pack payment wiring** — `BillingProvider.purchaseBatchPack(bundleId)` added. Demo mode: immediately increments `subscription.bonusBatchUrls` by `bundle.bonusBatchUrls` (50). Real payment: calls `initiateTopupCheckout` → on success/demo_mode grants bonus URLs. Pricing.jsx `handleBundleBuy` replaced mailto stub with `purchaseBatchPack(bundleId)` → navigates to `/account` on success.
+56. **R7: Stable AI model default** — `netlify/functions/ai.js` `DEFAULT_MODEL` changed to `claude-3-5-haiku-20241022` (stable). `FALLBACK_MODEL` is now `claude-haiku-4-5-20251001` (newer, used only as fallback if stable returns 400). Set `AI_MODEL` env var in Netlify to override.
 
 ---
 
@@ -603,9 +606,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~Feature card Popular/Recommended tags not visible~~ — DONE (R6: restructured .feature-cell with .feature-body + .feature-title-row)
 - [x] ~~`/batch` page: save successful batch results to Dashboard~~ — DONE (R6c: Promise.allSettled saveExtraction after runBatch)
 - [x] ~~Home batch mode: save batch results to Dashboard on completion~~ — DONE (R6c: same pattern in handleBatchExtract)
-- [ ] AdminPricing.jsx: add UI field for `batch_max_urls` per plan
-- [ ] Batch Pack top-up: wire purchase flow through payment (currently purely a Batch Pack concept without checkout)
-- [ ] Set `AI_MODEL=claude-3-5-haiku-20241022` in Netlify env vars to ensure stable AI model (current default `claude-haiku-4-5-20251001` may return 400; netlify function retries with haiku-3.5 automatically but explicit env var is cleaner)
+- [x] ~~AdminPricing.jsx: add UI field for `batch_max_urls` per plan~~ — DONE (R7: numeric input step=50, saved to limits.batch_max_urls)
+- [x] ~~Batch Pack top-up: wire purchase flow through payment~~ — DONE (R7: purchaseBatchPack() in BillingProvider; Pricing.jsx handleBundleBuy wired; demo_mode grants bonusBatchUrls locally)
+- [x] ~~Set `AI_MODEL=claude-3-5-haiku-20241022` in Netlify env vars~~ — DONE in code (R7: DEFAULT_MODEL in ai.js is now the stable model; still set env var in Netlify dashboard for explicit override)
 
 ---
 
@@ -682,13 +685,19 @@ npm run dev   # http://localhost:5173
 - `/dashboard` → after batch: saved pages appear in table/card view
 - `/dashboard` → PDF export → if app was updated since page loaded, toast "App updated — refresh and try again" (not "Couldn't reach the page")
 - Home feature cards → Popular tag visible next to title (inline, not pushed off); Recommended tag visible when persona matched
+- `/admin/pricing` → open any plan card → "Batch URL limit" field visible; enter 100 → Save → value persists across refresh
+- `/pricing` → Top-up bundles section → "Add to plan" on Batch Pack → in demo mode: navigates to /account + bonusBatchUrls incremented by 50
+- `/account` → after buying Batch Pack: bonusBatchUrls shows on subscription state
 
 ---
 
 ## Git log (recent)
 
 ```
-(latest)  merge(r6c): batch auto-save + PDF stale-chunk fix
+(latest)  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
+70e66bd  feat(r7): batch_max_urls admin field, Batch Pack payment wiring, stable AI model default
+be179e0  chore: update CLAUDE.md — R6/R6b/R6c session fully documented
+5315d53  merge(r6c): batch auto-save + PDF stale-chunk fix
 33f1971  feat(r6c): batch auto-save to Dashboard; fix PDF stale-chunk error
 8f18ff6  merge(r6b): AI non-fatal + model fallback fix for extraction errors
 eb8f337  fix(ai): make AI step non-fatal; add model fallback in ai.js
@@ -696,6 +705,4 @@ d210bad  merge(r6): batch inline on Home, feature card tags, Dashboard real-data
 c865344  feat(r6): batch mode on Home, feature tags fix, Dashboard real-data empty state
 93bfee3  merge(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
 e371ef1  feat(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
-f3d06e5  chore: update CLAUDE.md — R4 session fully documented
-5dd3db6  feat(r0-session4): comprehensive UI/UX polish, pricing overhaul, new pages
 ```
