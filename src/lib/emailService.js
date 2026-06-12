@@ -55,24 +55,37 @@ export async function sendExtractionsEmail({ to, items }) {
   const { subject, body } = buildEmail(items);
 
   // Preferred: hand the email off to the configured webhook to deliver.
+  // If the webhook is unreachable (network error) fall through to mailto rather
+  // than surfacing a raw "Failed to fetch" message to the user.
   if (hasWebhook) {
-    const res = await fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event: "email.send",
-        sent_at: new Date().toISOString(),
-        to: recipients,
-        subject,
-        body,
-        data: items,
-      }),
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(webhookErrorMessage(res.status, detail));
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "email.send",
+          sent_at: new Date().toISOString(),
+          to: recipients,
+          subject,
+          body,
+          data: items,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(webhookErrorMessage(res.status, detail));
+      }
+      return { via: "webhook", count: recipients.length };
+    } catch (err) {
+      // Network-level failure (e.g. webhook server down, CORS): fall through to
+      // mailto so the user can still send without a broken error state.
+      if (err.message && !err.message.startsWith("Couldn't reach") && !err.message.startsWith("Email webhook")) {
+        console.warn("[DatIQ] Email webhook unreachable, falling back to mailto:", err.message);
+        // fall through to mailto below
+      } else {
+        throw err; // re-throw HTTP-level errors (bad config, etc.)
+      }
     }
-    return { via: "webhook", count: recipients.length };
   }
 
   if (hasEmail) {

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R7: batch_max_urls admin field; Batch Pack payment wiring; stable AI model default**
+> **Last updated: 2026-06-12 — R8: grouped exports, floating AI actions bar, auto-save, batch preview, email fix**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R7: batch_max_urls admin field; Batch Pack payment wiring; stable AI model |
+| **Current branch** | `main` — all work committed here; R8 on `claude/r0-polish-feature-ui-fgj5yo` |
+| **Latest commit** | (see git log) — R8: grouped exports, floating AI actions bar, auto-save, email fix |
 
 ---
 
@@ -40,6 +40,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 | `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
+| `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback | 🔄 in progress |
 
 ---
 
@@ -559,6 +560,14 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 54. **R7: AdminPricing `batch_max_urls` field** — Added numeric input "Batch URL limit (0 = disabled)" to `PlanEditor` form (step=50). Included in `save()` → `limits.batch_max_urls` via `setPlanOverride`. Defaults to `plan.limits.batch_max_urls ?? 0`.
 55. **R7: Batch Pack payment wiring** — `BillingProvider.purchaseBatchPack(bundleId)` added. Demo mode: immediately increments `subscription.bonusBatchUrls` by `bundle.bonusBatchUrls` (50). Real payment: calls `initiateTopupCheckout` → on success/demo_mode grants bonus URLs. Pricing.jsx `handleBundleBuy` replaced mailto stub with `purchaseBatchPack(bundleId)` → navigates to `/account` on success.
 56. **R7: Stable AI model default** — `netlify/functions/ai.js` `DEFAULT_MODEL` changed to `claude-3-5-haiku-20241022` (stable). `FALLBACK_MODEL` is now `claude-haiku-4-5-20251001` (newer, used only as fallback if stable returns 400). Set `AI_MODEL` env var in Netlify to override.
+57. **R8: Grouped Export dropdown** — Dashboard: 4 individual CSV/PDF/MD/JSON buttons → single "Export ▾" dropdown showing plan hints. Same dropdown in floating selection bar.
+58. **R8: Floating selection action bar** — `SelectionBar` component fixed at bottom of Dashboard when ≥1 rows selected. Generate (→ContentModal) / Email (→EmailModal) / Export dropdown. Animated slide-up.
+59. **R8: Auto-save on extraction** — `ExtractionProvider.extract()` calls `saveExtraction(result)` fire-and-forget after navigate to `/preview`. Sets `result._saved = true` on success.
+60. **R8: Preview action bar redesign** — "Save to Dashboard" + "Discard" replaced with "View Dashboard" (primary) + "Generate" (→ContentModal) + "Delete" (ghost). `deleteExtraction` statically imported.
+61. **R8: Generate content on Preview** — ContentModal accessible from Quick Enrichment card header ("Generate content" button) and action bar.
+62. **R8: Home cleanup** — Batch mode toggle and inline batch UI removed. "Use Batch mode →" hint link added. "Try" example chips removed; only validation error shown.
+63. **R8: Batch result View button** — Each success row in `/batch` results table has "View" → `view(item)` → `/preview`. AI summary snippet shown in results.
+64. **R8: Email webhook fallback** — `emailService` catches network-level `fetch` failures (CORS / server down) and falls through to mailto instead of showing raw "Failed to fetch".
 
 ---
 
@@ -673,17 +682,22 @@ npm run dev   # http://localhost:5173
 - favicon → layered-diamond indigo SVG visible in browser tab
 - Usage upsell banner → appears between TopBar and page content when extraction usage ≥80%
 - Usage upsell banner → dismiss button hides it; re-appears next calendar month
-- Home → "Batch mode" toggle is first in scrape-opts-grid; default OFF
-- Home → toggle ON → multi-URL textarea appears; URL counter badge shows valid count
-- Home → batch textarea: paste 2+ URLs (newline or comma or semicolon or pipe) → "Extract N URLs" button
-- Home → batch run → progress bar fills; cancel button visible during run
-- Home → batch complete → inline results panel: green/red dots per URL, export buttons (CSV/PDF/MD/JSON)
-- Home → batch complete → toast "N pages saved to Dashboard" fires automatically
-- `/batch` → paste 2+ URLs → Run → progress → results table → export buttons
+- Home → URL input only (no batch mode toggle); "Use Batch mode →" link below options navigates to /batch
+- Home → no "Try lumio.io / stripe.com..." chips below URL input; only validation error shown
+- Home → extract URL → auto-saves to DB → /preview shows "View Dashboard" (primary) + "Generate" + "Delete"
+- `/preview` → "Generate" button in Quick Enrichment card header → opens ContentModal with 3 format options
+- `/preview` → "View Dashboard" navigates to /dashboard; "Delete" removes extraction and goes home
+- `/batch` → paste 2+ URLs → Run → progress → results table with "View" button per row
+- `/batch` → click "View" on a result → navigates to /preview showing that extraction
 - `/batch` → batch complete → toast "N pages saved to Dashboard" fires automatically
+- `/dashboard` → export buttons: single "Export ▾" dropdown shows CSV / PDF / MD / JSON with plan hints
+- `/dashboard` → check any row → floating bar appears at bottom: count + Clear + Generate + Email + Export ▾
+- `/dashboard` → floating bar "Generate" → ContentModal with SEO Blog Outline / Competitor Summary / Social Posts
+- `/dashboard` → floating bar "Email" → EmailModal (no "Failed to fetch" error; falls back to mailto if webhook down)
+- `/dashboard` → floating bar "Export ▾" → dropdown with CSV/PDF/MD/JSON options
 - `/dashboard` → empty state shows bookmark icon + "Nothing saved yet" + "Extract a page" CTA (no demo data)
-- `/dashboard` → after batch: saved pages appear in table/card view
-- `/dashboard` → PDF export → if app was updated since page loaded, toast "App updated — refresh and try again" (not "Couldn't reach the page")
+- `/dashboard` → after extraction: saved pages appear in table/card view
+- `/dashboard` → PDF export → if app was updated since page loaded, toast "App updated — refresh and try again"
 - Home feature cards → Popular tag visible next to title (inline, not pushed off); Recommended tag visible when persona matched
 - `/admin/pricing` → open any plan card → "Batch URL limit" field visible; enter 100 → Save → value persists across refresh
 - `/pricing` → Top-up bundles section → "Add to plan" on Batch Pack → in demo mode: navigates to /account + bonusBatchUrls incremented by 50
@@ -694,7 +708,9 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
+(latest)  feat(r0-polish-feature-ui): grouped exports, AI actions bar, auto-save, batch preview, email fix [branch: claude/r0-polish-feature-ui-fgj5yo]
+ee94174  chore: update CLAUDE.md — R7 session documented
+764995b  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
 70e66bd  feat(r7): batch_max_urls admin field, Batch Pack payment wiring, stable AI model default
 be179e0  chore: update CLAUDE.md — R6/R6b/R6c session fully documented
 5315d53  merge(r6c): batch auto-save + PDF stale-chunk fix
@@ -703,6 +719,4 @@ be179e0  chore: update CLAUDE.md — R6/R6b/R6c session fully documented
 eb8f337  fix(ai): make AI step non-fatal; add model fallback in ai.js
 d210bad  merge(r6): batch inline on Home, feature card tags, Dashboard real-data empty state
 c865344  feat(r6): batch mode on Home, feature tags fix, Dashboard real-data empty state
-93bfee3  merge(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
-e371ef1  feat(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
 ```

@@ -9,10 +9,11 @@ import Toggle from "../components/Toggle.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { runBatch, parseUrlsFromCsv } from "../lib/batchService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
-import { hostOf } from "../lib/utils.js";
+import { hostOf, snippet } from "../lib/utils.js";
 
 const MAX_URLS = 500;
 const MIN_URLS = 2;
@@ -37,7 +38,7 @@ function parseUrlsFromText(text) {
 }
 
 // ── Result row ──────────────────────────────────────────────────────────────
-function ResultRow({ item, index }) {
+function ResultRow({ item, index, onView }) {
   if (!item) return null;
   const isError = item._status === "error";
   return (
@@ -61,7 +62,10 @@ function ResultRow({ item, index }) {
         {isError ? (
           <span className="batch-err-msg">{item._error}</span>
         ) : (
-          <span>{item.headings?.length ?? 0} headings · {item.links?.length ?? 0} links</span>
+          <div>
+            <div className="batch-td-summary">{snippet(item.ai_summary, 100)}</div>
+            <span className="batch-td-counts">{item.headings?.length ?? 0} headings · {item.links?.length ?? 0} links</span>
+          </div>
         )}
       </td>
       <td className="batch-td-status">
@@ -69,6 +73,13 @@ function ResultRow({ item, index }) {
           <span className="batch-status-badge error"><Icon name="x" size={12} /> Failed</span>
         ) : (
           <span className="batch-status-badge success"><Icon name="check" size={12} /> Done</span>
+        )}
+      </td>
+      <td className="batch-td-act">
+        {!isError && (
+          <Button variant="secondary" size="sm" icon="arrow-up-right" onClick={() => onView(item)}>
+            View
+          </Button>
         )}
       </td>
     </tr>
@@ -108,6 +119,7 @@ export default function Batch() {
   const navigate = useNavigate();
   const showToast = useToast();
   const billing = useBilling();
+  const { view } = useExtraction();
 
   // Input tab: "paste" or "csv"
   const [inputTab, setInputTab] = useState("paste");
@@ -634,13 +646,14 @@ export default function Batch() {
                       <tr>
                         <th className="batch-th-num">#</th>
                         <th>Page</th>
-                        <th className="batch-th-meta">Details</th>
+                        <th className="batch-th-meta">Summary &amp; details</th>
                         <th className="batch-th-status">Status</th>
+                        <th className="batch-th-act"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {results.map((item, i) => (
-                        <ResultRow key={item?.id || i} item={item} index={i} />
+                        <ResultRow key={item?.id || i} item={item} index={i} onView={view} />
                       ))}
                     </tbody>
                   </table>

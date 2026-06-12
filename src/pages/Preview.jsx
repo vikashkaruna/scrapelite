@@ -3,14 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
-import BrandLoader from "../components/BrandLoader.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
+import ContentModal from "../components/ContentModal.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
-import { useAuth } from "../components/AuthProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { useErrorModal } from "../components/ErrorModal.jsx";
-import { SAVE_ERROR } from "../lib/errorMessages.js";
+import { deleteExtraction } from "../lib/extractionsRepo.js";
 import { hostOf, pathOf, isExternal, timeAgo } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
@@ -90,7 +88,7 @@ function DomainMapCard({ urls, base }) {
       </div>
       <div className="scroll-y lnk-list">
         {shown.length === 0 ? (
-          <div className="empty-mini">No URLs match “{q}”.</div>
+          <div className="empty-mini">No URLs match "{q}".</div>
         ) : (
           shown.map((u, i) => (
             <a key={i} className="lnk-row" href={u} target="_blank" rel="noopener noreferrer">
@@ -112,13 +110,11 @@ function DomainMapCard({ urls, base }) {
 export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
-  const showError = useErrorModal();
-  const { current, save, enrich } = useExtraction();
-  const { user, openAuth } = useAuth();
-  const [saving, setSaving] = useState(false);
+  const { current, enrich } = useExtraction();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [contentOpen, setContentOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -183,38 +179,18 @@ export default function Preview() {
     runQuickAction({ key: entry.key, label: entry.label, icon: entry.icon, prompt });
   };
 
-  const onSave = async () => {
-    if (!user) { openAuth(); return; }
-    if (saving) return;
-    setSaving(true);
-    try {
-      await save(data);
-      showToast("Saved to your dashboard");
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("[DatIQ] Save failed:", err);
-      setSaving(false);
-      // Show modal with retry so user can try saving again without losing the extraction.
-      showError(err, SAVE_ERROR, onSave);
-    }
-  };
+  const onViewDashboard = () => navigate("/dashboard");
 
-  const onDiscard = () => {
-    showToast("Extraction discarded", "trash");
+  const onDelete = async () => {
+    if (data.id) {
+      deleteExtraction(data.id).catch((err) => console.warn("[DatIQ] Delete failed:", err));
+    }
+    showToast("Extraction deleted", "trash");
     navigate("/");
   };
 
   return (
     <div className="page fade">
-      {saving && (
-        <div className="save-overlay" role="status" aria-live="polite">
-          <BrandLoader
-            className="card"
-            title="Saving to your dashboard…"
-            sub="Storing the extracted content safely"
-          />
-        </div>
-      )}
       <div className="container" style={{ paddingTop: 28, paddingBottom: 64 }}>
         {/* action bar */}
         <div className="preview-bar">
@@ -222,30 +198,14 @@ export default function Preview() {
             Back
           </Button>
           <div className="preview-bar-actions">
-            <Button variant="danger" icon="trash" onClick={onDiscard}>
-              Discard
+            <Button variant="ghost" size="sm" icon="trash" onClick={onDelete} title="Delete this extraction">
+              Delete
             </Button>
-            <Button
-              variant="primary"
-              icon={saving ? null : "bookmark"}
-              onClick={onSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <>
-                  <span
-                    className="spinner"
-                    style={{
-                      "--sp-size": "16px",
-                      borderColor: "rgba(255,255,255,.4)",
-                      borderTopColor: "#fff",
-                    }}
-                  />{" "}
-                  Saving…
-                </>
-              ) : (
-                "Save to Dashboard"
-              )}
+            <Button variant="secondary" icon="wand" size="sm" onClick={() => setContentOpen(true)}>
+              Generate
+            </Button>
+            <Button variant="primary" icon="bookmark" onClick={onViewDashboard}>
+              View Dashboard
             </Button>
           </div>
         </div>
@@ -300,20 +260,28 @@ export default function Preview() {
             </div>
           </div>
 
-          {/* Quick enrichment — run/refresh capabilities (hidden in map mode).
-              Each result is saved as a persistent tab keyed by this URL. */}
+          {/* Quick enrichment + Generate content (hidden in map mode). */}
           {!isMap && (
             <div className="card rise quick-actions" style={{ animationDelay: ".07s" }}>
               <div className="qa-head">
                 <span className="ch-icon">
                   <Icon name="wand" size={18} />
                 </span>
-                <div>
-                  <h3>Quick enrichment</h3>
+                <div style={{ flex: 1 }}>
+                  <h3>Quick enrichment &amp; content</h3>
                   <p className="ch-sub">
                     Run a focused AI extraction — each result is saved as a tab below
                   </p>
                 </div>
+                <button
+                  className="qa-generate-btn"
+                  type="button"
+                  onClick={() => setContentOpen(true)}
+                  title="Generate SEO outline, competitor summary or social posts"
+                >
+                  <Icon name="sparkles" size={14} />
+                  Generate content
+                </button>
               </div>
               <div className="qa-row">
                 {QUICK_ACTIONS.map((a) => {
@@ -325,7 +293,7 @@ export default function Preview() {
                       className={"qa-btn" + (running ? " running" : "") + (done ? " done" : "")}
                       onClick={() => runQuickAction(a)}
                       disabled={!!runningKey}
-                      title={done ? `Re-run “${a.label}” (refresh)` : a.prompt}
+                      title={done ? `Re-run "${a.label}" (refresh)` : a.prompt}
                     >
                       <span className="qa-ico">
                         <Icon name={a.icon} size={14} />
@@ -484,6 +452,10 @@ export default function Preview() {
             ))}
         </div>
       </div>
+
+      {contentOpen && (
+        <ContentModal item={data} onClose={() => setContentOpen(false)} />
+      )}
     </div>
   );
 }

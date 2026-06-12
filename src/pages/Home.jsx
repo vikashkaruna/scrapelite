@@ -1,5 +1,5 @@
-// Home.jsx — single-URL and batch-URL extraction interface (route "/").
-import { useState, useEffect, useRef, useMemo } from "react";
+// Home.jsx — single-URL extraction interface (route "/").
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -9,13 +9,9 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
-import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
+import { isValidUrl, normalizeUrl } from "../lib/utils.js";
 import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
-import { runBatch } from "../lib/batchService.js";
-import { saveExtraction } from "../lib/extractionsRepo.js";
-
-const DEFAULT_EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
 const DEFAULT_QUICK_CONTEXTS = [
   { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
@@ -34,22 +30,6 @@ const ALL_FEATURES = [
   { key: "pricing",  icon: "hash",      title: "Pricing extraction",desc: "Structured pricing tiers from any page" },
 ];
 
-// Parse a textarea/text value into valid and invalid URL lists.
-// Supports newline, comma, semicolon, pipe, tab, space as delimiters.
-function parseMultiUrls(text) {
-  const parts = text.split(/[\n,;|\t\s]+/).map((s) => s.trim()).filter(Boolean);
-  const valid = [], invalid = [], seen = new Set();
-  for (const p of parts) {
-    const norm = /^https?:\/\//i.test(p) ? p : "https://" + p;
-    const key = norm.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (isValidUrl(p)) valid.push(norm);
-    else invalid.push(p);
-  }
-  return { valid, invalid };
-}
-
 function GuideTip({ tip, onDismiss }) {
   return (
     <div className="guide-tip rise">
@@ -62,82 +42,6 @@ function GuideTip({ tip, onDismiss }) {
   );
 }
 
-// Mini results panel shown inline after a batch run completes.
-function BatchResultsPanel({ results, onClear, checkCanExport }) {
-  const showToast = useToast();
-  const success = results.filter((r) => r?._status === "success");
-  const failed  = results.filter((r) => r?._status === "error");
-
-  const onCsv = () => {
-    if (!checkCanExport("csv")) { showToast("CSV export unavailable on your plan."); return; }
-    csvDownload(success);
-    showToast(`Exported ${success.length} pages to CSV`, "download");
-  };
-  const onMd = () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
-    markdownDownload(success);
-    showToast(`Exported ${success.length} pages to Markdown`, "file-code");
-  };
-  const onJson = () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
-    jsonDownload(success);
-    showToast(`Exported ${success.length} pages to JSON`, "file-json");
-  };
-  const onPdf = async () => {
-    if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher."); return; }
-    try {
-      const { extractionsToPdf } = await import("../lib/pdfExport.js");
-      extractionsToPdf(success);
-      showToast(`Exported ${success.length} pages to PDF`, "file");
-    } catch (e) {
-      if (/dynamically imported/i.test(e?.message || "")) {
-        showToast("App updated — please refresh the page and try again.", "info");
-      } else {
-        showToast("PDF export failed.");
-      }
-    }
-  };
-
-  return (
-    <div className="batch-inline-results rise">
-      <div className="batch-inline-header">
-        <span className="batch-inline-badge">
-          <Icon name="check-circle" size={16} />
-          {success.length} extracted
-          {failed.length > 0 && <span className="batch-inline-fail"> · {failed.length} failed</span>}
-        </span>
-        <div className="batch-inline-exports">
-          {success.length > 0 && (
-            <>
-              <button className="batch-inline-btn" onClick={onCsv} title="Export as CSV"><Icon name="download" size={13} /> CSV</button>
-              <button className="batch-inline-btn" onClick={onPdf} title="Export as PDF (Select+)"><Icon name="file" size={13} /> PDF</button>
-              <button className="batch-inline-btn" onClick={onMd} title="Export as Markdown (Select+)"><Icon name="file-code" size={13} /> MD</button>
-              <button className="batch-inline-btn" onClick={onJson} title="Export as JSON (Pro+)"><Icon name="file-json" size={13} /> JSON</button>
-            </>
-          )}
-          <button className="batch-inline-btn clear-btn" onClick={onClear} title="Clear and run a new batch">
-            <Icon name="x" size={13} /> Clear
-          </button>
-        </div>
-      </div>
-      <div className="batch-inline-rows">
-        {results.map((r, i) => (
-          r && (
-            <div key={r.id || i} className={"batch-inline-row" + (r._status === "error" ? " error" : "")}>
-              <span className={"batch-inline-dot" + (r._status === "error" ? " err" : " ok")} />
-              <span className="batch-inline-url">{r.page_title || r.url}</span>
-              {r._status === "error" && <span className="batch-inline-errmsg">{r._error}</span>}
-              {r._status === "success" && (
-                <span className="batch-inline-meta">{r.headings?.length ?? 0}h · {r.links?.length ?? 0}l</span>
-              )}
-            </div>
-          )
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   const { extract } = useExtraction();
   const { personaId, userName, resetOnboarding } = usePersona();
@@ -146,36 +50,20 @@ export default function Home() {
   const navigate = useNavigate();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
-  const examples = persona ? persona.examples : DEFAULT_EXAMPLES;
+  const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
   const defaultUrl = persona ? `https://${examples[0]}` : "https://lumio.io";
 
-  // ── Single URL state ──
-  const [url, setUrl]                   = useState(defaultUrl);
-  const [touched, setTouched]           = useState(false);
-
-  // ── Batch mode state ──
-  const [batchMode, setBatchMode]       = useState(false);
-  const [batchText, setBatchText]       = useState("");
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 });
-  const [batchResults, setBatchResults] = useState(null);
-  const abortRef = useRef(null);
-
-  // ── Shared options ──
-  const [renderJs, setRenderJs]         = useState(false);
-  const [mapMode, setMapMode]           = useState(false);
+  const [url, setUrl]             = useState(defaultUrl);
+  const [touched, setTouched]     = useState(false);
+  const [renderJs, setRenderJs]   = useState(false);
+  const [mapMode, setMapMode]     = useState(false);
   const [contactsMode, setContactsMode] = useState(false);
   const [customMode, setCustomMode]     = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
-  const [showTip, setShowTip]           = useState(false);
-  const [stats, setStats]               = useState(null);
+  const [showTip, setShowTip]     = useState(false);
+  const [stats, setStats]         = useState(null);
 
   const valid = isValidUrl(url);
-
-  const { valid: batchUrls, invalid: batchInvalidUrls } = useMemo(
-    () => (batchMode ? parseMultiUrls(batchText) : { valid: [], invalid: [] }),
-    [batchMode, batchText],
-  );
 
   useEffect(() => { getStats().then(setStats).catch(() => {}); }, []);
 
@@ -193,8 +81,7 @@ export default function Home() {
     try { localStorage.setItem(`datiq.tip.${persona.id}`, "1"); } catch { /* skip */ }
   };
 
-  // ── Single URL submit ──
-  const submitSingle = (e) => {
+  const handleSubmit = (e) => {
     e?.preventDefault();
     if (!valid) { setTouched(true); return; }
     const target = normalizeUrl(url);
@@ -205,95 +92,7 @@ export default function Home() {
     extract(target, opts);
   };
 
-  // ── Batch submit ──
-  const handleBatchExtract = async () => {
-    if (batchUrls.length < 1) return;
-
-    const batchCheck = billing?.checkCanBatch?.(batchUrls.length);
-    if (batchCheck && !batchCheck.allowed) {
-      navigate("/pricing");
-      return;
-    }
-    const quotaCheck = billing?.checkCanExtractBatch?.(batchUrls.length);
-    if (quotaCheck && !quotaCheck.allowed) {
-      navigate("/pricing");
-      return;
-    }
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setBatchRunning(true);
-    setBatchResults(null);
-    setBatchProgress({ completed: 0, total: batchUrls.length });
-
-    const opts = {};
-    if (renderJs) opts.renderJs = true;
-    const prompt = resolveCustomPrompt({ customMode, customPrompt, contactsMode });
-    if (prompt) opts.customPrompt = prompt;
-
-    try {
-      const allResults = await runBatch(
-        batchUrls,
-        opts,
-        (completed, total, result) => {
-          setBatchProgress({ completed, total });
-          if (result._status === "success") billing?.trackExtraction?.(1);
-        },
-        controller.signal,
-      );
-      if (!controller.signal.aborted) {
-        setBatchResults(allResults);
-        // Auto-save successful results to Dashboard (fire and forget)
-        const successItems = allResults.filter((r) => r?._status === "success");
-        if (successItems.length > 0) {
-          Promise.allSettled(successItems.map((r) => saveExtraction(r)))
-            .then((settled) => {
-              const savedCount = settled.filter((s) => s.status === "fulfilled").length;
-              if (savedCount > 0) {
-                showToast(
-                  `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
-                  "bookmark",
-                );
-              }
-            });
-        }
-      }
-    } catch (err) {
-      console.error("[DatIQ] Batch failed:", err);
-    } finally {
-      setBatchRunning(false);
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e?.preventDefault();
-    if (batchMode) {
-      handleBatchExtract();
-    } else {
-      submitSingle(e);
-    }
-  };
-
-  const cancelBatch = () => {
-    abortRef.current?.abort();
-    setBatchRunning(false);
-  };
-
   const applyPreset = (preset) => { setCustomMode(true); setCustomPrompt(preset.prompt); };
-
-  const tryExample = (ex) => {
-    const full = ex.startsWith("http") ? ex : "https://" + ex;
-    if (batchMode) {
-      setBatchText((t) => (t ? t + "\n" + full : full));
-    } else {
-      setUrl(full);
-      setTouched(false);
-    }
-  };
-
-  const progressPct = batchProgress.total > 0
-    ? Math.round((batchProgress.completed / batchProgress.total) * 100)
-    : 0;
 
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
   const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
@@ -301,11 +100,6 @@ export default function Home() {
     ? persona.subtitle
     : "Paste any URL to pull a page's headings, links and an instant AI summary — then go further: extract any field in plain English, map an entire domain, or surface leadership contacts & emails.";
   const greeting = userName ? `Hi ${userName} —` : null;
-
-  const urlCountColor =
-    batchUrls.length === 0 ? "var(--text-3)" :
-    batchUrls.length > 500 ? "var(--danger, #e0556b)" :
-    "var(--success, #22c55e)";
 
   return (
     <div className="page">
@@ -417,110 +211,39 @@ export default function Home() {
           onSubmit={handleSubmit}
           style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "12px 0 0" }}
         >
-          {/* URL input — single or batch */}
-          {batchMode ? (
-            <div className="batch-field-wrap">
-              <div className="batch-field-header">
-                <span className="batch-field-label">
-                  <Icon name="layers-2" size={13} /> Batch mode
-                </span>
-                <span className="batch-field-count" style={{ color: urlCountColor }}>
-                  {batchUrls.length} URL{batchUrls.length !== 1 ? "s" : ""}
-                  {batchInvalidUrls.length > 0 && (
-                    <span className="batch-field-invalid"> · {batchInvalidUrls.length} invalid skipped</span>
-                  )}
-                </span>
-              </div>
-              <textarea
-                className="batch-field-textarea"
-                placeholder={"Paste URLs — one per line or comma / semicolon / pipe separated:\n\nhttps://stripe.com/pricing\nhttps://notion.so/about\nhttps://moz.com/blog"}
-                value={batchText}
-                onChange={(e) => setBatchText(e.target.value)}
-                rows={5}
-                autoFocus
-                aria-label="URLs to extract in batch"
-              />
-            </div>
-          ) : (
-            <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
-              <span className="field-lead"><Icon name="globe" size={20} /></span>
-              <input
-                className="field-input"
-                type="text"
-                inputMode="url"
-                placeholder={persona ? `https://${examples[0]}` : "https://example.com"}
-                value={url}
-                autoFocus
-                onChange={(e) => { setUrl(e.target.value); if (touched) setTouched(false); }}
-                aria-label="Page URL to extract"
-              />
-              <Button
-                variant="primary"
-                type="submit"
-                iconRight="arrow-right"
-                style={{ height: 50, fontSize: "1em", background: persona ? persona.color : undefined }}
-              >
-                {mapMode ? "Map domain" : "Extract"}
-              </Button>
-            </div>
-          )}
-
-          {/* Batch mode: extract button + progress */}
-          {batchMode && (
-            <div className="batch-field-footer">
-              {batchRunning ? (
-                <div className="batch-field-progress">
-                  <div className="batch-progress-bar-wrap" style={{ flex: 1 }}>
-                    <div
-                      className="batch-progress-bar"
-                      style={{ width: `${progressPct}%` }}
-                      role="progressbar"
-                      aria-valuenow={batchProgress.completed}
-                      aria-valuemax={batchProgress.total}
-                    />
-                  </div>
-                  <span className="batch-field-progress-label">
-                    {batchProgress.completed}/{batchProgress.total}
-                  </span>
-                  <button
-                    type="button"
-                    className="batch-cancel-btn"
-                    onClick={cancelBatch}
-                    aria-label="Cancel batch"
-                  >
-                    <Icon name="x" size={14} /> Cancel
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  variant="primary"
-                  type="submit"
-                  iconRight="arrow-right"
-                  disabled={batchUrls.length < 1}
-                  style={{
-                    width: "100%",
-                    background: persona ? persona.color : undefined,
-                  }}
-                >
-                  {batchUrls.length > 0
-                    ? `Extract ${batchUrls.length} URL${batchUrls.length !== 1 ? "s" : ""}`
-                    : "Extract"}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Batch inline results */}
-          {batchResults && !batchRunning && (
-            <BatchResultsPanel
-              results={batchResults}
-              onClear={() => { setBatchResults(null); setBatchText(""); }}
-              checkCanExport={billing?.checkCanExport ?? (() => true)}
+          <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
+            <span className="field-lead"><Icon name="globe" size={20} /></span>
+            <input
+              className="field-input"
+              type="text"
+              inputMode="url"
+              placeholder={persona ? `https://${examples[0]}` : "https://example.com"}
+              value={url}
+              autoFocus
+              onChange={(e) => { setUrl(e.target.value); if (touched) setTouched(false); }}
+              aria-label="Page URL to extract"
             />
+            <Button
+              variant="primary"
+              type="submit"
+              iconRight="arrow-right"
+              style={{ height: 50, fontSize: "1em", background: persona ? persona.color : undefined }}
+            >
+              {mapMode ? "Map domain" : "Extract"}
+            </Button>
+          </div>
+
+          {/* Validation error */}
+          {touched && !valid && (
+            <div style={{ marginTop: 8, textAlign: "center" }}>
+              <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
+                Hmm, that doesn't look like a valid URL.
+              </span>
+            </div>
           )}
 
           {/* Custom extraction textarea */}
-          {customMode && !mapMode && !batchMode && (
+          {customMode && !mapMode && (
             <div className="custom-extract rise">
               <div className="custom-extract-head">
                 <Icon name="code" size={14} />
@@ -549,40 +272,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* Example chips / error — single mode only */}
-          {!batchMode && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 14, flexWrap: "wrap", minHeight: 22 }}>
-              {touched && !valid ? (
-                <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
-                  Hmm, that doesn't look like a valid URL.
-                </span>
-              ) : (
-                <>
-                  <span style={{ color: "var(--text-3)", fontSize: ".88em", fontWeight: 500 }}>Try</span>
-                  {examples.map((ex) => (
-                    <button key={ex} type="button" className="example-chip" onClick={() => tryExample(ex)}>
-                      {ex}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Scrape options — 2-column grid */}
+          {/* Scrape options — 2-column grid (batch mode removed; use /batch page) */}
           <div className="scrape-opts scrape-opts-grid">
-            <Toggle
-              icon="layers-2"
-              label="Batch mode"
-              hint={batchMode ? "multi-URL active" : "multi-URL off"}
-              checked={batchMode}
-              onChange={(v) => {
-                setBatchMode(v);
-                if (v) { setMapMode(false); }
-                setBatchResults(null);
-              }}
-              tooltip="Paste 10–500 URLs and extract them all at once. Business & Agency plans, or purchase a Batch Pack."
-            />
             <Toggle
               icon="zap"
               label="Render JavaScript"
@@ -595,8 +286,8 @@ export default function Home() {
               icon="map"
               label="Map entire domain"
               hint={mapMode ? "all indexed URLs" : "vs. single page"}
-              checked={mapMode && !batchMode}
-              onChange={(v) => { if (!batchMode) setMapMode(v); }}
+              checked={mapMode}
+              onChange={setMapMode}
               tooltip="Discover all indexed URLs on the domain via Firecrawl's /map endpoint."
             />
             <Toggle
@@ -617,17 +308,24 @@ export default function Home() {
             />
           </div>
 
-          {mapMode && !batchMode && (
+          {mapMode && (
             <p className="opts-note">
               <Icon name="network" size={13} /> Domain mapping is active — other options apply to single-page scrapes.
             </p>
           )}
-          {batchMode && (
-            <p className="opts-note">
-              <Icon name="layers-2" size={13} /> Batch mode — paste URLs above using any delimiter (newline, comma, semicolon, pipe).
-              {" "}Each URL uses one extraction from your monthly quota.
-            </p>
-          )}
+
+          {/* Batch mode hint */}
+          <div className="home-batch-hint">
+            <Icon name="layers-2" size={13} />
+            Need to extract multiple URLs?{" "}
+            <button
+              type="button"
+              className="home-batch-link"
+              onClick={() => navigate("/batch")}
+            >
+              Use Batch mode →
+            </button>
+          </div>
         </form>
 
         {/* Capabilities grid */}

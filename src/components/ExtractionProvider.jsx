@@ -109,6 +109,11 @@ export function ExtractionProvider({ children }) {
       commitCurrent(result);
       setLoading(false);
       billing?.trackExtraction?.();
+      // Auto-save to database (fire-and-forget); marks the extraction as saved
+      // so Preview shows "View Dashboard" instead of "Save to Dashboard".
+      saveExtraction(result)
+        .then(() => commitCurrent({ ...result, _saved: true }))
+        .catch((err) => console.warn("[DatIQ] Auto-save failed:", err));
       navigate("/preview");
     } catch (err) {
       if (reqId.current !== id) return;
