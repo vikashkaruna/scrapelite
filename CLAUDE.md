@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R10: Explore menu adds Contact Us + Submit Bug; bug report pre-fill on Contact page; Contact.jsx icon fix; branch merged to main**
+> **Last updated: 2026-06-12 — R10: Explore menu adds Contact Us + Submit Bug; bug report pre-fill on Contact page; Contact.jsx icon fix; Explore restructure (Company/Contact sections); AdminUsers PLAN_BY_ID fix; branch merged to main**
 
 ---
 
@@ -582,6 +582,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 76. **R9: Dashboard loading init single-read** — `loading` now initialised as `!localStorage.getItem("datiq.saved")` (key existence check only) to avoid double JSON-parse. The `useEffect` cleanup simplified: `setLoading(false)` moved back to `.finally()` only.
 77. **R10: Explore menu Contact Us + Submit Bug** — `EXPLORE_SECTIONS` Resources section now has: About DatIQ (top), Contact Us (/contact), Submit Bug (/contact?type=bug), Blog, Help Center. `/contact` added to `EXPLORE_ACTIVE_PATHS`.
 78. **R10: Contact page bug report pre-fill** — New "Bug report" enquiry type added to `CONTACT_TYPES`. `useLocation` reads `?type=` query param on mount; matching type is pre-selected (fallback "support"). When `type=bug`, subject is pre-filled with "Bug report: ". Icon for "other" type corrected from unregistered "message-circle" to "message-square".
+79. **R10: Explore restructure — Company + Contact sections** — `EXPLORE_SECTIONS` now has 6 sections: Company (About DatIQ at top), Pricing, Use Cases, Compare, Resources (Blog + Help Center), Contact (Contact Us + Submit Bug at bottom). Mobile nav accordion auto-propagates the new structure.
+80. **R10: AdminUsers PLAN_BY_ID fix** — `AdminUsers.jsx` `PlanPill` component was importing `PLAN_BY_ID` directly from `pricingConfig.js` (violating arch rule). Fixed to use `getEffectivePlanById()` from `pricingOverrides.js` so admin price overrides apply consistently.
 
 ---
 
@@ -673,9 +675,10 @@ npm run dev   # http://localhost:5173
 - TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
 - TopBar nav (desktop >820px) → Extract, Dashboard, Pricing all show text+icon; Explore dropdown shows
-- TopBar Explore dropdown → 4 sections: Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (About DatIQ/Contact Us/Submit Bug/Blog/Help)
-- TopBar Explore → Resources → "Contact Us" navigates to /contact; "Submit Bug" navigates to /contact?type=bug
+- TopBar Explore dropdown → 6 sections: Company (About DatIQ), Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (Blog + Help Center), Contact (Contact Us + Submit Bug)
+- TopBar Explore → Contact section (bottom) → "Contact Us" navigates to /contact; "Submit Bug" navigates to /contact?type=bug
 - `/contact?type=bug` → Contact page opens with "Bug report" type pre-selected and subject pre-filled "Bug report: "
+- `/admin/users` → Plan pill displays correct plan name using effective plan overrides
 - TopBar UserDropdown → persona colour dot + name; hover shows profile card + Account/Switch Role/Sign out
 - TopBar (mobile <600px) → hamburger button visible; tap to open slide-down nav panel
 - Mobile nav → Extract/Dashboard/Pricing links; Explore accordion expands; persona info shown
@@ -728,12 +731,13 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+d7bec8e  fix(admin): AdminUsers uses getEffectivePlanById() instead of raw PLAN_BY_ID
+5374a20  fix(topbar): About DatIQ first in Explore; Contact/Submit Bug in own section at bottom
+8a18fd6  fix(topbar): reorder Resources — action items first, About DatIQ after
+9c9be35  chore: update CLAUDE.md — R10 session documented
 9d898b8  Merge branch 'claude/r0-polish-feature-ui-fgj5yo' [main]
 0b8716e  feat(r10): add Contact Us + Submit Bug to Explore menu; bug report pre-fill
 01f88f9  fix(r9): footer alignment, dashboard guards, batch export cleanup, fallback 500
 437fafe  feat(r9): batch nav order, auto-save fix, dashboard refresh + localStorage, preview download
 171bd85  Merge pull request #4 from vikashkaruna/claude/r0-polish-feature-ui-fgj5yo
-5ef2264  chore: update CLAUDE.md — R8 session documented
-ee94174  chore: update CLAUDE.md — R7 session documented
-764995b  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
 ```
