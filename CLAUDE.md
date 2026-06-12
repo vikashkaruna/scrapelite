@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R6b: AI failure non-fatal; Netlify ai.js model fallback (haiku-4-5 → haiku-3-5)**
+> **Last updated: 2026-06-12 — R6c: Batch auto-save to Dashboard; PDF stale-chunk error handling**
 
 ---
 
@@ -554,6 +554,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 49. **R6: Batch inline CSS** — Added `.batch-field-wrap`, `.batch-field-header`, `.batch-field-label`, `.batch-field-count`, `.batch-field-textarea`, `.batch-field-footer`, `.batch-field-progress`, `.batch-field-progress-label`, `.batch-cancel-btn`, `.batch-inline-results`, `.batch-inline-header`, `.batch-inline-badge`, `.batch-inline-fail`, `.batch-inline-exports`, `.batch-inline-btn`, `.batch-inline-rows`, `.batch-inline-row`, `.batch-inline-dot`, `.batch-inline-url`, `.batch-inline-errmsg`, `.batch-inline-meta` to screens.css.
 50. **R6b: AI step non-fatal** — `realSummary()` and `realContent()` in `aiService.js` now wrap `callAI()` in try/catch; if AI returns 400/503/any error, they silently fall back to `mockSummary()`/`mockContent()` so the extraction still succeeds. This fixes "AI request failed (400)" causing all extractions to fail when the Anthropic model returns 400.
 51. **R6b: ai.js model fallback** — `netlify/functions/ai.js` now retries once with `claude-3-5-haiku-20241022` when the primary model (`claude-haiku-4-5-20251001`) returns HTTP 400. Uses a nested `callAnthropic(modelId)` helper. The `FALLBACK_MODEL` const is separate from `DEFAULT_MODEL` for easy maintenance.
+52. **R6c: Batch auto-save** — After `runBatch` completes, all successful results are automatically saved to the database via `Promise.allSettled(successItems.map(saveExtraction))`. A "N pages saved to Dashboard" toast fires when done. Applies to both `/batch` page and Home inline batch mode. `saveExtraction` imported in `Batch.jsx` and `Home.jsx`.
+53. **R6c: PDF stale-chunk error** — `Failed to fetch dynamically imported module` (stale Vite chunk after deploy) was misclassified as a network error. Fixed: (a) new category in `errorMessages.js` for dynamic import failures → "App update available, please refresh"; (b) all PDF export handlers (`Dashboard.jsx`, `Batch.jsx`, `Home.jsx`) detect the error and show a toast "App updated — please refresh the page and try again." instead of the confusing error modal.
 
 ---
 

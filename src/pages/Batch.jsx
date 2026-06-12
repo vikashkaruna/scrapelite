@@ -10,6 +10,7 @@ import FaviconDot from "../components/FaviconDot.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { runBatch, parseUrlsFromCsv } from "../lib/batchService.js";
+import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { hostOf } from "../lib/utils.js";
 
@@ -223,12 +224,25 @@ export default function Batch() {
 
       if (!controller.signal.aborted) {
         setResults(batchResults);
-        const success = batchResults.filter((r) => r?._status === "success").length;
+        const successItems = batchResults.filter((r) => r?._status === "success");
         const failed = batchResults.filter((r) => r?._status === "error").length;
         showToast(
-          `Batch complete — ${success} succeeded${failed ? `, ${failed} failed` : ""}`,
+          `Batch complete — ${successItems.length} succeeded${failed ? `, ${failed} failed` : ""}`,
           "check-circle",
         );
+        // Auto-save successful results to Dashboard (fire and forget)
+        if (successItems.length > 0) {
+          Promise.allSettled(successItems.map((r) => saveExtraction(r)))
+            .then((settled) => {
+              const savedCount = settled.filter((s) => s.status === "fulfilled").length;
+              if (savedCount > 0) {
+                showToast(
+                  `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
+                  "bookmark",
+                );
+              }
+            });
+        }
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -288,7 +302,11 @@ export default function Batch() {
       showToast(`Exported ${successResults.length} pages to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);
-      showToast("PDF export failed. Please try again.");
+      if (/dynamically imported/i.test(err?.message || "")) {
+        showToast("App updated — please refresh the page and try again.", "info");
+      } else {
+        showToast("PDF export failed. Please try again.");
+      }
     }
   };
 
