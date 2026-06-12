@@ -18,7 +18,7 @@
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` — all work committed here |
-| **Latest commit** | (see git log) — R6: batch inline on Home, feature card tag fix, Dashboard real-data empty state |
+| **Latest commit** | (see git log) — R6c: batch auto-save to Dashboard; PDF stale-chunk error fix; AI non-fatal fallback |
 
 ---
 
@@ -601,10 +601,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~Batch mode integrated on Home Extract screen~~ — DONE (R6: batch toggle, multi-URL textarea, inline progress+results, CSV/PDF/MD/JSON export)
 - [x] ~~Remove demo data from Dashboard~~ — DONE (R6: showingDemo always false; proper empty state with "Extract a page" CTA)
 - [x] ~~Feature card Popular/Recommended tags not visible~~ — DONE (R6: restructured .feature-cell with .feature-body + .feature-title-row)
-- [ ] `/batch` page: save successful batch results to Dashboard (currently batch results are not persisted)
-- [ ] Home batch mode: save batch results to Dashboard on completion
+- [x] ~~`/batch` page: save successful batch results to Dashboard~~ — DONE (R6c: Promise.allSettled saveExtraction after runBatch)
+- [x] ~~Home batch mode: save batch results to Dashboard on completion~~ — DONE (R6c: same pattern in handleBatchExtract)
 - [ ] AdminPricing.jsx: add UI field for `batch_max_urls` per plan
 - [ ] Batch Pack top-up: wire purchase flow through payment (currently purely a Batch Pack concept without checkout)
+- [ ] Set `AI_MODEL=claude-3-5-haiku-20241022` in Netlify env vars to ensure stable AI model (current default `claude-haiku-4-5-20251001` may return 400; netlify function retries with haiku-3.5 automatically but explicit env var is cleaner)
 
 ---
 
@@ -669,18 +670,32 @@ npm run dev   # http://localhost:5173
 - favicon → layered-diamond indigo SVG visible in browser tab
 - Usage upsell banner → appears between TopBar and page content when extraction usage ≥80%
 - Usage upsell banner → dismiss button hides it; re-appears next calendar month
+- Home → "Batch mode" toggle is first in scrape-opts-grid; default OFF
+- Home → toggle ON → multi-URL textarea appears; URL counter badge shows valid count
+- Home → batch textarea: paste 2+ URLs (newline or comma or semicolon or pipe) → "Extract N URLs" button
+- Home → batch run → progress bar fills; cancel button visible during run
+- Home → batch complete → inline results panel: green/red dots per URL, export buttons (CSV/PDF/MD/JSON)
+- Home → batch complete → toast "N pages saved to Dashboard" fires automatically
+- `/batch` → paste 2+ URLs → Run → progress → results table → export buttons
+- `/batch` → batch complete → toast "N pages saved to Dashboard" fires automatically
+- `/dashboard` → empty state shows bookmark icon + "Nothing saved yet" + "Extract a page" CTA (no demo data)
+- `/dashboard` → after batch: saved pages appear in table/card view
+- `/dashboard` → PDF export → if app was updated since page loaded, toast "App updated — refresh and try again" (not "Couldn't reach the page")
+- Home feature cards → Popular tag visible next to title (inline, not pushed off); Recommended tag visible when persona matched
 
 ---
 
 ## Git log (recent)
 
 ```
-(latest)  chore: update CLAUDE.md — R4 session fully documented
+(latest)  merge(r6c): batch auto-save + PDF stale-chunk fix
+33f1971  feat(r6c): batch auto-save to Dashboard; fix PDF stale-chunk error
+8f18ff6  merge(r6b): AI non-fatal + model fallback fix for extraction errors
+eb8f337  fix(ai): make AI step non-fatal; add model fallback in ai.js
+d210bad  merge(r6): batch inline on Home, feature card tags, Dashboard real-data empty state
+c865344  feat(r6): batch mode on Home, feature tags fix, Dashboard real-data empty state
+93bfee3  merge(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
+e371ef1  feat(r5): batch mode, CSV-import enrichment, Markdown/JSON exports
+f3d06e5  chore: update CLAUDE.md — R4 session fully documented
 5dd3db6  feat(r0-session4): comprehensive UI/UX polish, pricing overhaul, new pages
-9da7968  chore: update CLAUDE.md — R3 admin sidebar collapse documented
-cbf8993  feat(admin): collapsible sidebar with toggle and pin controls
-0ae1c84  Add files via upload
-99a2534  merge(css): fix content alignment on use-case, compare and marketing pages
-6ecc1e6  fix(css): page padding override — use padding-top/bottom to preserve .container alignment [R2]
-113e20d  chore: sync feature branch with main after UI fixes merge
 ```
