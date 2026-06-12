@@ -1,8 +1,8 @@
 // paymentService.js — Layer 2: payment orchestration (Stripe + Razorpay/UPI).
-// Called by BillingProvider (Layer 3). Never calls UI code directly.
+// Called by BillingProvider. Never calls UI code directly.
 
 import {
-  hasPayment, hasStripe, hasRazorpay,
+  hasPayment,
   STRIPE_PRICE_IDS, RAZORPAY_KEY_ID,
   getPaymentProvider,
 } from "./paymentConfig.js";
@@ -12,7 +12,27 @@ import { convertPrice } from "./currencyService.js";
 const PENDING_KEY = "datiq.pendingPayment";
 const FUNCTIONS   = "/.netlify/functions";
 
-// ── Pending payment (survives Stripe redirect) ──────────────────────────────
+// ── Payment stage constants (consumed by PaymentProcessingModal via BillingProvider) ─
+export const PAYMENT_STAGE = {
+  IDLE:        "idle",
+  PREPARING:   "preparing",    // creating order / Stripe session
+  PORTAL_OPEN: "portal_open",  // Razorpay modal is open (user is interacting)
+  VERIFYING:   "verifying",    // HMAC verification in progress
+  ACTIVATING:  "activating",   // plan activation in progress
+  CANCELLED:   "cancelled",    // user dismissed Razorpay modal without paying
+  ERROR:       "error",        // payment failed at any stage
+};
+
+export const PAYMENT_STAGE_LABELS = {
+  [PAYMENT_STAGE.PREPARING]:   "Setting up your payment…",
+  [PAYMENT_STAGE.PORTAL_OPEN]: "Complete your payment in the secure portal",
+  [PAYMENT_STAGE.VERIFYING]:   "Verifying payment…",
+  [PAYMENT_STAGE.ACTIVATING]:  "Activating your plan…",
+  [PAYMENT_STAGE.CANCELLED]:   "Payment cancelled — no charge was made.",
+  [PAYMENT_STAGE.ERROR]:       "Payment failed. Please try again.",
+};
+
+// ── Pending payment (survives Stripe redirect; 30-min TTL) ───────────────────
 export function savePendingPayment(data) {
   try { localStorage.setItem(PENDING_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); } catch {}
 }
@@ -28,48 +48,102 @@ export function clearPendingPayment() {
   try { localStorage.removeItem(PENDING_KEY); } catch {}
 }
 
-// ── Razorpay SDK (loaded from CDN on demand) ─────────────────────────────────
+// ── Razorpay SDK loader (CDN, lazy) ──────────────────────────────────────────
 let rzpLoaded = false;
 async function loadRazorpay() {
   if (rzpLoaded || window.Razorpay) { rzpLoaded = true; return; }
   return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload  = () => { rzpLoaded = true; resolve(); };
-    s.onerror = () => reject(new Error("Could not load Razorpay SDK. Check your network connection."));
+    const s    = document.createElement("script");
+    s.src      = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload   = () => { rzpLoaded = true; resolve(); };
+    s.onerror  = () => reject(new Error(
+      "Unable to load the payment portal. Please check your internet connection and disable any ad blockers, then try again."
+    ));
     document.head.appendChild(s);
   });
 }
 
-// ── Stripe Checkout ───────────────────────────────────────────────────────────
-async function initiateStripeCheckout({ planId, currency, rates, discountPercent, sessionId, email }) {
+// ── fetch with timeout + retries ────────────────────────────────────────────
+async function fetchSafe(url, options, retries = 2, timeoutMs = 12000) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { ...options, signal: ctrl.signal });
+      clearTimeout(timer);
+      return resp;
+    } catch (e) {
+      clearTimeout(timer);
+      const isTimeout = e.name === "AbortError";
+      const isNetwork = !isTimeout;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 1200));
+        continue;
+      }
+      if (isTimeout) throw new Error("The request timed out. Please check your connection and try again.");
+      throw new Error("Network error. Please check your internet connection and try again.");
+    }
+  }
+}
+
+// ── Razorpay payment.failed error classifier ─────────────────────────────────
+function describeRazorpayFailure(code, description, reason) {
+  const lc = ((code || "") + " " + (description || "") + " " + (reason || "")).toLowerCase();
+  if (lc.includes("insufficient") || lc.includes("bap002"))
+    return "Payment declined — insufficient funds. Please try a different payment method.";
+  if (lc.includes("declined") || lc.includes("refused") || lc.includes("bap001"))
+    return "Your payment was declined by the bank. Please try a different card or contact your bank.";
+  if (lc.includes("authentication") || lc.includes("bau002") || lc.includes("payment_failed"))
+    return "Payment authentication failed (OTP/3D Secure). Please retry and complete the verification step.";
+  if (lc.includes("invalid card") || lc.includes("invalid_card"))
+    return "Invalid card details. Please double-check your card number, expiry, and CVV.";
+  if (lc.includes("upi") && (lc.includes("fail") || lc.includes("error")))
+    return "UPI payment failed. Please verify your UPI ID or try a different payment method.";
+  if (lc.includes("network") || lc.includes("timeout"))
+    return "Network error during payment. Please check your connection and try again.";
+  if (lc.includes("expired"))
+    return "Payment session expired. Please try again.";
+  return `Payment failed${description ? `: ${description}` : ""}. Please try a different method or contact support@datiq.app.`;
+}
+
+// ── Stripe Checkout (redirect flow) ─────────────────────────────────────────
+async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
   const plan    = getEffectivePlanById(planId);
   const priceId = STRIPE_PRICE_IDS[planId];
 
   if (!priceId) {
-    // No Stripe price ID configured — open mailto contact
     window.open(
-      `mailto:support@datiq.app?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(`Hi,\n\nI'd like to upgrade to the ${plan.name} plan ($${plan.price_usd}/mo).\n\nSession: ${sessionId}`)}`,
+      `mailto:support@datiq.app?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(
+        `Hi,\n\nI'd like to upgrade to the ${plan.name} plan ($${plan.price_usd}/mo).\n\nSession: ${sessionId}`
+      )}`,
       "_blank"
     );
     return { status: "contact_sales" };
   }
 
-  const resp = await fetch(`${FUNCTIONS}/create-checkout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      provider:     "stripe",
-      planId,
-      priceId,
-      currency,
-      discountPercent: discountPercent || 0,
-      sessionId,
-      email:        email || null,
-      successUrl:   `${window.location.origin}/payment/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
-      cancelUrl:    `${window.location.origin}/payment/cancel?plan=${planId}`,
-    }),
-  });
+  onStageChange?.(PAYMENT_STAGE.PREPARING, "Creating your checkout session…");
+
+  let resp;
+  try {
+    resp = await fetchSafe(`${FUNCTIONS}/create-checkout`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        provider:        "stripe",
+        planId,
+        priceId,
+        currency,
+        billingPeriod:   billingPeriod || "monthly",
+        discountPercent: discountPercent || 0,
+        sessionId,
+        email:           email || null,
+        successUrl:      `${window.location.origin}/payment/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
+        cancelUrl:       `${window.location.origin}/payment/cancel?plan=${planId}`,
+      }),
+    });
+  } catch (e) {
+    throw new Error(e.message || "Unable to connect to the payment server. Please try again.");
+  }
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -77,119 +151,198 @@ async function initiateStripeCheckout({ planId, currency, rates, discountPercent
   }
 
   const { url } = await resp.json();
-  savePendingPayment({ provider: "stripe", planId, currency });
+  savePendingPayment({ provider: "stripe", planId, currency, billingPeriod });
+  onStageChange?.(PAYMENT_STAGE.PORTAL_OPEN, "Redirecting to secure checkout…");
   window.location.href = url;
   return { status: "redirecting" };
 }
 
-// ── Razorpay Checkout (modal, supports UPI/cards/netbanking) ─────────────────
-async function initiateRazorpayCheckout({ planId, currency, rates, discountPercent, sessionId, email }) {
+// ── Razorpay Checkout (modal, supports UPI/cards/netbanking/wallets) ─────────
+async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
   const plan = getEffectivePlanById(planId);
-  await loadRazorpay();
 
-  const rzpCurrency = ["INR"].includes(currency) ? "INR" : "USD";
-  const baseUsd     = plan.price_usd * (1 - (discountPercent || 0) / 100);
-  const finalAmount = Math.round(convertPrice(baseUsd, rates, rzpCurrency) * 100); // paise / cents
+  // Step 1: Load SDK
+  onStageChange?.(PAYMENT_STAGE.PREPARING, "Loading payment portal…");
+  await loadRazorpay(); // throws with user-friendly message on failure
 
-  const resp = await fetch(`${FUNCTIONS}/create-checkout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      provider: "razorpay",
-      planId,
-      currency:  rzpCurrency,
-      amount:    finalAmount,
-      sessionId,
-      email:     email || null,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || "Failed to create payment order. Please try again.");
+  // Step 2: Compute amount (paise for INR)
+  const rzpCurrency = currency === "INR" ? "INR" : "USD";
+  let finalAmount;
+  if (rzpCurrency === "INR") {
+    if (billingPeriod === "annual" && plan.price_inr_annual) {
+      // Annual: use fixed promotional INR price × 12 months (no dynamic conversion)
+      const monthlyInr   = plan.price_inr_annual * (1 - (discountPercent || 0) / 100);
+      finalAmount = Math.round(monthlyInr * 12 * 100); // paise
+    } else {
+      // Monthly: convert from USD at current rate
+      const baseUsd = plan.price_usd * (1 - (discountPercent || 0) / 100);
+      finalAmount   = Math.round(convertPrice(baseUsd, rates, "INR") * 100);
+    }
+  } else {
+    const baseUsd = plan.price_usd * (1 - (discountPercent || 0) / 100);
+    finalAmount   = Math.round(baseUsd * 100);
   }
 
-  const { orderId, amount: orderAmount, currency: orderCurrency } = await resp.json();
+  const periodLabel = billingPeriod === "annual"
+    ? `annual · ${rzpCurrency === "INR" ? `₹${(plan.price_inr_annual || 0).toLocaleString("en-IN")}/mo` : `$${plan.price_usd_annual || plan.price_usd}/mo`}`
+    : "monthly";
+
+  // Step 3: Create order on server
+  onStageChange?.(PAYMENT_STAGE.PREPARING, "Creating your order…");
+  let orderResp;
+  try {
+    orderResp = await fetchSafe(`${FUNCTIONS}/create-checkout`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        provider:      "razorpay",
+        planId,
+        currency:      rzpCurrency,
+        amount:        finalAmount,
+        billingPeriod: billingPeriod || "monthly",
+        sessionId,
+        email:         email || null,
+      }),
+    });
+  } catch (e) {
+    throw new Error(e.message || "Unable to connect to the payment server. Please try again.");
+  }
+
+  if (!orderResp.ok) {
+    const err  = await orderResp.json().catch(() => ({}));
+    const code = err.code || "";
+    if (code === "RAZORPAY_NOT_CONFIGURED") {
+      throw new Error("Payment gateway is not configured on this server. Please contact support@datiq.app.");
+    }
+    throw new Error(err.error || "Failed to initiate payment. Please try again.");
+  }
+
+  const { orderId, amount: orderAmount, currency: orderCurrency } = await orderResp.json();
+
+  // Save pending data for recovery (Razorpay doesn't redirect, but useful for debugging)
+  savePendingPayment({ provider: "razorpay", planId, orderId, currency: rzpCurrency, billingPeriod });
+
+  // Step 4: Open Razorpay modal
+  onStageChange?.(PAYMENT_STAGE.PORTAL_OPEN, "Complete your payment in the secure portal");
 
   return new Promise((resolve, reject) => {
-    const options = {
+    const rzpOptions = {
       key:         RAZORPAY_KEY_ID,
       amount:      orderAmount,
       currency:    orderCurrency,
       name:        "DatIQ",
-      description: `${plan.name} Plan — monthly`,
+      description: `${plan.name} Plan — ${periodLabel}`,
+      image:       `${window.location.origin}/favicon.svg`,
       order_id:    orderId,
       prefill:     { email: email || "" },
-      notes:       { planId, sessionId },
+      notes:       { planId, sessionId, billingPeriod: billingPeriod || "monthly" },
       theme:       { color: "#6366f1" },
-      handler: async (response) => {
+      modal: {
+        backdropclose: false, // prevent accidental modal close
+        escape:        true,
+        ondismiss:     () => {
+          onStageChange?.(PAYMENT_STAGE.CANCELLED, "Payment cancelled — no charge was made.");
+          clearPendingPayment();
+          resolve({ status: "cancelled" });
+        },
+      },
+
+      // Called by Razorpay SDK after successful payment
+      handler: async (rzpResponse) => {
+        onStageChange?.(PAYMENT_STAGE.VERIFYING, "Verifying your payment…");
+
+        let verifyResp;
         try {
-          const verifyResp = await fetch(`${FUNCTIONS}/verify-payment`, {
-            method: "POST",
+          verifyResp = await fetchSafe(`${FUNCTIONS}/verify-payment`, {
+            method:  "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              provider:  "razorpay",
-              orderId:   response.razorpay_order_id,
-              paymentId: response.razorpay_payment_id,
-              signature: response.razorpay_signature,
+            body:    JSON.stringify({
+              provider:      "razorpay",
+              orderId:       rzpResponse.razorpay_order_id,
+              paymentId:     rzpResponse.razorpay_payment_id,
+              signature:     rzpResponse.razorpay_signature,
               planId,
               sessionId,
+              billingPeriod: billingPeriod || "monthly",
             }),
           });
-          const result = await verifyResp.json();
-          if (result.verified) {
-            resolve({
-              status:    "success",
-              provider:  "razorpay",
-              planId,
-              paymentId: response.razorpay_payment_id,
-              orderId:   response.razorpay_order_id,
-              amount:    orderAmount,
-              currency:  orderCurrency,
-            });
-          } else {
-            reject(new Error("Payment verification failed. Please contact support with your payment ID."));
-          }
-        } catch (e) { reject(e); }
+        } catch (netErr) {
+          reject(new Error(
+            `Payment was processed, but verification failed due to a network error. ` +
+            `Please contact support@datiq.app and quote your Payment ID: ${rzpResponse.razorpay_payment_id}`
+          ));
+          return;
+        }
+
+        const verifyResult = await verifyResp.json();
+
+        if (verifyResult.verified) {
+          onStageChange?.(PAYMENT_STAGE.ACTIVATING, "Activating your plan…");
+          clearPendingPayment();
+          resolve({
+            status:        "success",
+            provider:      "razorpay",
+            planId,
+            paymentId:     rzpResponse.razorpay_payment_id,
+            orderId:       rzpResponse.razorpay_order_id,
+            amount:        orderAmount,
+            currency:      orderCurrency,
+            billingPeriod: billingPeriod || "monthly",
+          });
+        } else {
+          reject(new Error(
+            `Payment signature verification failed. ` +
+            `If your account was charged, please email support@datiq.app with Payment ID: ${rzpResponse.razorpay_payment_id}`
+          ));
+        }
       },
-      modal: { ondismiss: () => resolve({ status: "cancelled" }) },
     };
-    new window.Razorpay(options).open();
+
+    const rzp = new window.Razorpay(rzpOptions);
+
+    // Called when Razorpay detects a payment failure within the modal
+    rzp.on("payment.failed", (failResponse) => {
+      const code   = failResponse?.error?.code        || "";
+      const desc   = failResponse?.error?.description || "";
+      const reason = failResponse?.error?.reason      || "";
+      const msg    = describeRazorpayFailure(code, desc, reason);
+      onStageChange?.(PAYMENT_STAGE.ERROR, msg);
+      reject(new Error(msg));
+    });
+
+    rzp.open();
   });
 }
 
 // ── Top-up bundle checkout ───────────────────────────────────────────────────
-export async function initiateTopupCheckout({ bundleId, currency, rates, sessionId, email }) {
+export async function initiateTopupCheckout({ bundleId, currency, rates, sessionId, email, onStageChange }) {
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
-  const plan = { price_usd: 0, name: bundleId }; // resolved in backend from bundleId
-  const priceId = STRIPE_PRICE_IDS[bundleId] || "";
-
   if (provider === "stripe") {
-    return initiateStripeCheckout({ planId: bundleId, currency, rates, discountPercent: 0, sessionId, email });
+    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, sessionId, email, onStageChange });
   }
-  // Razorpay top-up (one-time payment)
-  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, discountPercent: 0, sessionId, email });
+  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, sessionId, email, onStageChange });
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────
-export async function initiateCheckout({ planId, currency, rates, discountPercent, sessionId, email }) {
+export async function initiateCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
   if (!hasPayment) return { status: "demo_mode" };
 
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
-  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, discountPercent, sessionId, email });
-  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, discountPercent, sessionId, email });
+  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange });
+  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange });
   return { status: "contact_sales" };
 }
 
-// ── Stripe session verification (for /payment/success) ───────────────────────
+// ── Stripe success-page verification ────────────────────────────────────────
 export async function confirmStripeSession(stripeSessionId) {
   try {
-    const resp = await fetch(
-      `${FUNCTIONS}/verify-payment?provider=stripe&session_id=${encodeURIComponent(stripeSessionId)}`
+    const resp = await fetchSafe(
+      `${FUNCTIONS}/verify-payment?provider=stripe&session_id=${encodeURIComponent(stripeSessionId)}`,
+      {}
     );
     if (!resp.ok) return null;
     return await resp.json();

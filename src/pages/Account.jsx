@@ -174,7 +174,7 @@ export default function Account() {
   };
 
   const handleUpgrade = async (targetPlanId) => {
-    const result = await initiatePayment?.(targetPlanId);
+    const result = await initiatePayment?.(targetPlanId, "monthly");
     if (result?.status === "demo_mode" || result?.status === "success") navigate("/account");
   };
 

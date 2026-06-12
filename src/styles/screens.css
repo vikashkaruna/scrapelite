@@ -3124,3 +3124,104 @@
 .batch-td-counts { font-size: .8em; color: var(--text-3); }
 .batch-th-act { width: 90px; }
 .batch-td-act { width: 90px; padding-right: 12px; }
+
+/* ── PaymentProcessingModal — step-by-step Razorpay flow overlay ────────────── */
+.ppm-backdrop {
+  position: fixed; inset: 0; z-index: 9000;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: ppm-fade-in 180ms ease;
+}
+@keyframes ppm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.ppm-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl); padding: 40px 36px; max-width: 400px; width: 100%;
+  text-align: center; box-shadow: var(--shadow-lg);
+  animation: ppm-slide-up 220ms cubic-bezier(.22,1,.36,1);
+}
+@keyframes ppm-slide-up {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)     scale(1);   }
+}
+
+.ppm-icon-ring {
+  width: 64px; height: 64px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; margin: 0 auto 20px;
+}
+.ppm-icon-ring.pending  {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+.ppm-icon-ring.error    {
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+}
+.ppm-icon-ring.cancelled {
+  background: color-mix(in srgb, var(--text-3) 12%, var(--surface));
+  color: var(--text-3);
+}
+
+.ppm-spin { animation: spin 1.2s linear infinite; }
+
+.ppm-title {
+  font-size: 1.25em; font-weight: 750; color: var(--text);
+  letter-spacing: -.02em; margin-bottom: 6px;
+}
+.ppm-plan-label {
+  font-size: .88em; font-weight: 700; color: var(--accent);
+  margin-bottom: 20px; letter-spacing: .01em;
+}
+
+/* Step indicator */
+.ppm-steps {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 18px 0; text-align: left; width: fit-content; margin-inline: auto;
+}
+.ppm-step {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .88em; font-weight: 600; transition: opacity .2s;
+}
+.ppm-step-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+.ppm-step-done    { color: #22c55e; }
+.ppm-step-done   .ppm-step-icon { color: #22c55e; }
+
+.ppm-step-active  { color: var(--accent); }
+.ppm-step-active .ppm-step-icon { color: var(--accent); }
+
+.ppm-step-pending { color: var(--text-3); opacity: .5; }
+
+.ppm-msg {
+  font-size: .88em; color: var(--text-2); line-height: 1.55; margin-top: 12px;
+}
+.ppm-msg.error  { color: var(--danger); }
+.ppm-msg.muted  { color: var(--text-3); }
+
+.ppm-actions {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 18px;
+}
+
+.ppm-security-note {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 20px;
+  font-size: .78em; color: var(--text-3); font-weight: 500;
+  border-top: 1px solid var(--border); padding-top: 14px; width: 100%; justify-content: center;
+}
+
+/* ── PaymentSuccess page additions ──────────────────────────────────────────── */
+.pps-loading-steps {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 20px; text-align: left; width: fit-content; margin-inline: auto;
+}
+.pps-loading-step {
+  display: flex; align-items: center; gap: 8px; font-size: .86em; font-weight: 600;
+}
+.pps-loading-step.active  { color: var(--accent); }
+.pps-loading-step.active svg { animation: spin 1.2s linear infinite; }
+.pps-loading-step.pending { color: var(--text-3); opacity: .5; }
+
+.pps-redirect-note {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 16px;
+  font-size: .84em; color: var(--text-3); font-weight: 500;
+}

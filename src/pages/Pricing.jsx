@@ -217,14 +217,15 @@ export default function Pricing() {
 
   const handleSelect = async (planId) => {
     if (planId === "free") {
-      initiatePayment?.("free");
+      initiatePayment?.("free", billingPeriod);
       navigate("/account");
       return;
     }
     setLoadingPlan(planId);
     setLocalError("");
     try {
-      const result = await initiatePayment?.(planId);
+      const result = await initiatePayment?.(planId, billingPeriod);
+      // demo_mode and success both navigate to /account; cancelled stays on pricing
       if (result?.status === "demo_mode" || result?.status === "success") {
         navigate("/account");
       }

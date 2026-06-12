@@ -11,9 +11,13 @@ import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverride
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
-import { initiateCheckout, initiateTopupCheckout, hasPayment } from "../lib/paymentService.js";
+import {
+  initiateCheckout, initiateTopupCheckout, hasPayment,
+  PAYMENT_STAGE, PAYMENT_STAGE_LABELS,
+} from "../lib/paymentService.js";
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
+import PaymentProcessingModal from "./PaymentProcessingModal.jsx";
 
 const CURRENCY_KEY = "datiq.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || detectCurrency(); } catch { return detectCurrency(); } }
@@ -32,6 +36,11 @@ export function BillingProvider({ children }) {
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [dbSubscription, setDbSubscription] = useState(null);
 
+  // ── Payment progress state (drives PaymentProcessingModal) ──────────────────
+  const [paymentStage, setPaymentStage]     = useState(PAYMENT_STAGE.IDLE);
+  const [paymentStageMsg, setPaymentStageMsg] = useState("");
+  const [paymentPlanName, setPaymentPlanName] = useState("");
+
   // Reload effective plan map on every render to pick up admin overrides immediately
   const planMap = getEffectivePlanMap();
 
@@ -42,18 +51,16 @@ export function BillingProvider({ children }) {
     const current = readUsage();
     fetchUsageFromDb(current.month).then((dbRow) => {
       if (!dbRow) return;
-      const merged = {
+      setUsageState({
         month:       dbRow.month,
         extractions: Math.max(current.extractions, dbRow.extractions),
         enrichments: current.enrichments,
-      };
-      setUsageState(merged);
+      });
     });
 
     fetchSubscriptionFromDb().then((dbSub) => {
       if (!dbSub) return;
       setDbSubscription(dbSub);
-      // Sync DB plan into local state if it differs
       const localSub = readSubscription();
       if (dbSub.plan_id && dbSub.plan_id !== localSub.planId) {
         const merged = { ...localSub, planId: dbSub.plan_id };
@@ -74,8 +81,8 @@ export function BillingProvider({ children }) {
     try { localStorage.setItem(CURRENCY_KEY, c); } catch {}
   };
 
-  // Debounced DB sync ref
-  const syncTimer   = useRef(null);
+  // Debounced DB sync
+  const syncTimer    = useRef(null);
   const pendingUsage = useRef(null);
   const syncToDb = useCallback((u) => {
     pendingUsage.current = u;
@@ -90,7 +97,7 @@ export function BillingProvider({ children }) {
     syncToDb(u);
   }, [syncToDb]);
 
-  // ── Plan upgrade (local-only, used for free plan and post-payment confirmation) ──
+  // ── Plan upgrade (local-only) ─────────────────────────────────────────────
   const upgradePlan = useCallback((newPlanId) => {
     const sub = { ...subscription, planId: newPlanId, activatedAt: new Date().toISOString() };
     setSubscription(sub);
@@ -98,32 +105,48 @@ export function BillingProvider({ children }) {
     setUsageState(readUsage());
   }, [subscription]);
 
+  // ── onStageChange callback passed to paymentService ──────────────────────
+  const handleStageChange = useCallback((stage, msg) => {
+    setPaymentStage(stage);
+    setPaymentStageMsg(msg || PAYMENT_STAGE_LABELS[stage] || "");
+  }, []);
+
   // ── Real payment initiation ───────────────────────────────────────────────
-  const initiatePayment = useCallback(async (targetPlanId) => {
+  // billingPeriod: "monthly" | "annual" — passed from Pricing.jsx
+  const initiatePayment = useCallback(async (targetPlanId, billingPeriod = "monthly") => {
     if (targetPlanId === "free") { upgradePlan("free"); return { status: "free" }; }
-    setPaymentLoading(true);
+
+    const targetPlan = planMap[targetPlanId] ?? planMap.free;
+    setPaymentPlanName(targetPlan.name || targetPlanId);
+    setPaymentStage(PAYMENT_STAGE.IDLE);
     setPaymentError("");
+    setPaymentLoading(true);
+
     try {
       const result = await initiateCheckout({
         planId:          targetPlanId,
         currency,
         rates,
+        billingPeriod,
         discountPercent: subscription.discountPercent || 0,
         sessionId:       getSessionId(),
         email:           subscription.email || null,
+        onStageChange:   handleStageChange,
       });
 
       if (result.status === "demo_mode") {
         upgradePlan(targetPlanId);
+        setPaymentStage(PAYMENT_STAGE.IDLE);
+
       } else if (result.status === "success") {
-        // Razorpay in-modal success — verify + activate
+        // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
         upgradePlan(targetPlanId);
         await syncSubscriptionToDb(targetPlanId, result.provider, {
           subscriptionId: result.subscriptionId,
           customerId:     result.customerId,
         });
         await logPaymentEvent({
-          type:        result.provider === "razorpay" ? "payment.captured" : "checkout.session.completed",
+          type:        "payment.captured",
           provider:    result.provider,
           providerId:  result.paymentId || result.orderId,
           planId:      targetPlanId,
@@ -131,19 +154,31 @@ export function BillingProvider({ children }) {
           currency:    result.currency,
         });
         setPaymentHistory(await fetchPaymentHistory());
+        setPaymentStage(PAYMENT_STAGE.IDLE); // clear modal — page will navigate to /account
+
+      } else if (result.status === "cancelled") {
+        // Stage is already set to CANCELLED by paymentService callback — modal shows cancel message
+        // Keep CANCELLED state so modal displays; user dismisses via onCancel
+
+      } else if (result.status === "redirecting") {
+        // Stripe redirect — page navigates away; no modal cleanup needed
       }
-      return result; // caller (Pricing.jsx) uses this to decide navigation
+
+      return result;
     } catch (e) {
-      setPaymentError(e.message || "Payment failed. Please try again.");
+      const msg = e.message || "Payment failed. Please try again.";
+      setPaymentStage(PAYMENT_STAGE.ERROR);
+      setPaymentStageMsg(msg);
+      setPaymentError(msg);
       throw e;
     } finally {
       setPaymentLoading(false);
     }
-  }, [currency, rates, subscription, upgradePlan]);
+  }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
   // ── Batch Pack top-up purchase ────────────────────────────────────────────
   const purchaseBatchPack = useCallback(async (bundleId = "batch-pack") => {
-    const bundle = getEffectiveBundles().find((b) => b.id === bundleId);
+    const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
     const bonusUrls = bundle?.bonusBatchUrls || 50;
 
     const grantBatchUrls = (sub) => {
@@ -157,27 +192,35 @@ export function BillingProvider({ children }) {
       return { status: "demo_mode", bonusUrls };
     }
 
+    setPaymentPlanName(bundle?.name || bundleId);
+    setPaymentStage(PAYMENT_STAGE.IDLE);
     setPaymentLoading(true);
     setPaymentError("");
+
     try {
       const result = await initiateTopupCheckout({
         bundleId,
         currency,
         rates,
-        sessionId: getSessionId(),
-        email: subscription.email || null,
+        sessionId:     getSessionId(),
+        email:         subscription.email || null,
+        onStageChange: handleStageChange,
       });
       if (result?.status === "demo_mode" || result?.status === "success") {
         grantBatchUrls(subscription);
       }
+      setPaymentStage(PAYMENT_STAGE.IDLE);
       return result;
     } catch (e) {
-      setPaymentError(e.message || "Purchase failed. Please try again.");
+      const msg = e.message || "Purchase failed. Please try again.";
+      setPaymentStage(PAYMENT_STAGE.ERROR);
+      setPaymentStageMsg(msg);
+      setPaymentError(msg);
       throw e;
     } finally {
       setPaymentLoading(false);
     }
-  }, [currency, rates, subscription]);
+  }, [currency, rates, subscription, handleStageChange]);
 
   // ── Post-Stripe-redirect confirmation (called from PaymentSuccess page) ──
   const confirmPayment = useCallback(async (confirmedPlanId, { provider } = {}) => {
@@ -216,17 +259,13 @@ export function BillingProvider({ children }) {
     if (!valid) { setCouponError(reason); return false; }
     incrementCouponUses(code);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
-    if (coupon.type === "extractions") {
-      sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
-    }
-    if (coupon.type === "percent") {
-      sub.discountPercent = coupon.value;
-    }
+    if (coupon.type === "extractions") sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
+    if (coupon.type === "percent")     sub.discountPercent  = coupon.value;
     setSubscription(sub);
     writeSubscription(sub);
     setCouponSuccess(
       coupon.type === "extractions"
-        ? `Coupon applied — ${coupon.value} bonus extractions added to your account.`
+        ? `Coupon applied — ${coupon.value} bonus extractions added.`
         : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
     );
     return true;
@@ -244,9 +283,16 @@ export function BillingProvider({ children }) {
     setUsageState(readUsage());
   }, []);
 
-  // Derived: payment provider for current currency
   const paymentProvider = getPaymentProvider(currency);
   const providerMeta    = paymentProvider ? PROVIDER_META[paymentProvider] : null;
+
+  // Reset modal after CANCELLED state if user navigates away (cleanup on unmount is not needed
+  // since this provider lives at the root, but we expose setPaymentStage for page-level dismiss)
+  const dismissPaymentModal = useCallback(() => {
+    setPaymentStage(PAYMENT_STAGE.IDLE);
+    setPaymentStageMsg("");
+    setPaymentError("");
+  }, []);
 
   const ctx = useMemo(() => ({
     subscription, plan, planId, bonus, usage,
@@ -256,6 +302,8 @@ export function BillingProvider({ children }) {
     paymentLoading, paymentError, setPaymentError,
     paymentProvider, providerMeta, hasPayment,
     paymentHistory, dbSubscription,
+    // Payment stage (for PaymentProcessingModal — also useful for callers to poll)
+    paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
     checkCanBatch, checkCanExtractBatch,
@@ -269,6 +317,7 @@ export function BillingProvider({ children }) {
     paymentLoading, paymentError, setPaymentError,
     paymentProvider, providerMeta, hasPayment,
     paymentHistory, dbSubscription,
+    paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
     checkCanBatch, checkCanExtractBatch,
@@ -279,6 +328,14 @@ export function BillingProvider({ children }) {
   return (
     <BillingContext.Provider value={ctx}>
       {children}
+      {/* Payment processing overlay — global, works for any payment trigger */}
+      <PaymentProcessingModal
+        stage={paymentStage}
+        stageMsg={paymentStageMsg}
+        planName={paymentPlanName}
+        onRetry={dismissPaymentModal}
+        onCancel={dismissPaymentModal}
+      />
     </BillingContext.Provider>
   );
 }
