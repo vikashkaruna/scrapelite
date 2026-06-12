@@ -3330,6 +3330,8 @@
   font-size: .84em; font-weight: 650; color: var(--accent);
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
 }
+.tbm-summary-per { color: var(--text-3); font-size: .82em; padding: 3px 0; }
+.tbm-upsell-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0 0; }
 
 .tbm-upsell { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
 .tbm-upsell-title {
