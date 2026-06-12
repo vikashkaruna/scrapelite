@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R10: Explore menu adds Contact Us + Submit Bug; bug report pre-fill on Contact page; Contact.jsx icon fix; Explore restructure (Company/Contact sections); AdminUsers PLAN_BY_ID fix; branch merged to main**
+> **Last updated: 2026-06-12 — R11: Razorpay end-to-end payment integration; PaymentProcessingModal step-by-step UX; retryPayment callback; audit fixes; merged to main**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R10 complete |
-| **Latest commit** | (see git log) — R8: grouped exports, floating AI actions bar, auto-save, email fix |
+| **Current branch** | `main` — all work committed and merged; R11 complete |
+| **Latest commit** | (see git log) — R11: Razorpay integration, PaymentProcessingModal, retryPayment |
 
 ---
 
@@ -41,6 +41,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
 | `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown; R10: Explore menu Contact Us + Submit Bug, Contact page bug type + query-param pre-fill | ✅ merged to main |
+| `claude/razorpay-payment-integration-76uecb` | R11: complete Razorpay end-to-end integration — `PAYMENT_STAGE` state machine, `PaymentProcessingModal` step-by-step UX, `onStageChange` threading, billingPeriod wiring, INR annual fix, `retryPayment` callback with `lastPaymentArgs` ref, `create-checkout.js` rewrite (agency $299, bundles), `verify-payment.js` timing-safe HMAC, `payment-webhook.js` Supabase sync, audit fixes (account-stats CSS, unused providerMeta) | ✅ merged to main |
 
 ---
 
@@ -584,6 +585,16 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 78. **R10: Contact page bug report pre-fill** — New "Bug report" enquiry type added to `CONTACT_TYPES`. `useLocation` reads `?type=` query param on mount; matching type is pre-selected (fallback "support"). When `type=bug`, subject is pre-filled with "Bug report: ". Icon for "other" type corrected from unregistered "message-circle" to "message-square".
 79. **R10: Explore restructure — Company + Contact sections** — `EXPLORE_SECTIONS` now has 6 sections: Company (About DatIQ at top), Pricing, Use Cases, Compare, Resources (Blog + Help Center), Contact (Contact Us + Submit Bug at bottom). Mobile nav accordion auto-propagates the new structure.
 80. **R10: AdminUsers PLAN_BY_ID fix** — `AdminUsers.jsx` `PlanPill` component was importing `PLAN_BY_ID` directly from `pricingConfig.js` (violating arch rule). Fixed to use `getEffectivePlanById()` from `pricingOverrides.js` so admin price overrides apply consistently.
+81. **R11: Razorpay `PAYMENT_STAGE` state machine** — Added `PAYMENT_STAGE` / `PAYMENT_STAGE_LABELS` exports to `paymentService.js`. `initiateRazorpayCheckout` threads `onStageChange(stage, msg)` through all steps: `PREPARING → PORTAL_OPEN → VERIFYING → ACTIVATING`. Error patterns in `rzp.on("payment.failed")` map to user-friendly messages.
+82. **R11: `PaymentProcessingModal`** — New global overlay component mounted in `BillingProvider`. Shows 3-step progress indicator during Razorpay flow. Hidden during `IDLE` and `PORTAL_OPEN` (Razorpay's own modal covers screen). Error state has "Try again" + "Contact support". Cancelled state has "Back to pricing".
+83. **R11: `retryPayment` callback** — `BillingProvider` stores `lastPaymentArgs` ref (planId + billingPeriod). `retryPayment()` re-calls `initiatePayment` with stored args on error, so "Try again" in modal actually re-initiates the payment flow without user re-clicking.
+84. **R11: INR annual amount fix** — `initiateRazorpayCheckout` now uses `plan.price_inr_annual × 12 × 100` (paise) for annual INR billing instead of USD→INR live conversion — matches the fixed promotional price shown on Pricing page.
+85. **R11: `create-checkout.js` rewrite** — Added `billingPeriod` server-side price tables; fixed Agency plan `$199 → $299`; added `batch-pack` / `workspace-addon` bundle support; input validation with specific error codes (`INVALID_PROVIDER`, `UNKNOWN_PLAN`, `AMOUNT_TOO_SMALL`, `RAZORPAY_NOT_CONFIGURED`).
+86. **R11: `verify-payment.js` timing-safe HMAC** — Replaced `generated === signature` string comparison with `timingSafeEqual` from Node.js `crypto` module to prevent timing side-channel attacks.
+87. **R11: `payment-webhook.js` Supabase sync** — Complete rewrite: lightweight `getDb()` REST client (no SDK); handles Razorpay events (`payment.captured`, `payment.failed`, `subscription.*`); Stripe events (`checkout.session.completed`, `invoice.payment_failed`); returns HTTP 200 even on DB errors to prevent gateway retries.
+88. **R11: `billingPeriod` threading** — `billingPeriod` now flows end-to-end: `Pricing.jsx handleSelect(planId, billingPeriod) → BillingProvider.initiatePayment(planId, billingPeriod) → initiateCheckout({billingPeriod}) → initiateRazorpayCheckout/initiateStripeCheckout → server`.
+89. **R11: `account-stats` CSS** — Missing `.account-stats { display: flex; flex-direction: column; }` class added to `screens.css` (referenced in Account.jsx quick-stats card).
+90. **R11: unused `providerMeta` removed** — `providerMeta` removed from `useBilling()` destructuring in `Account.jsx` (component uses `PROVIDER_META` directly from import). Prop also removed from `PaymentHistorySection` call site and function signature.
 
 ---
 
@@ -731,13 +742,14 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+44f6885  fix(account): remove unused providerMeta prop from PaymentHistorySection
+208b35f  fix(payment): retry re-initiates payment flow; add missing account-stats CSS
+b141308  feat(payments): complete Razorpay end-to-end integration with step-by-step UX
+e21c98d  chore: update CLAUDE.md — R10 final state (Explore restructure, AdminUsers fix)
 d7bec8e  fix(admin): AdminUsers uses getEffectivePlanById() instead of raw PLAN_BY_ID
 5374a20  fix(topbar): About DatIQ first in Explore; Contact/Submit Bug in own section at bottom
 8a18fd6  fix(topbar): reorder Resources — action items first, About DatIQ after
 9c9be35  chore: update CLAUDE.md — R10 session documented
 9d898b8  Merge branch 'claude/r0-polish-feature-ui-fgj5yo' [main]
 0b8716e  feat(r10): add Contact Us + Submit Bug to Explore menu; bug report pre-fill
-01f88f9  fix(r9): footer alignment, dashboard guards, batch export cleanup, fallback 500
-437fafe  feat(r9): batch nav order, auto-save fix, dashboard refresh + localStorage, preview download
-171bd85  Merge pull request #4 from vikashkaruna/claude/r0-polish-feature-ui-fgj5yo
 ```
