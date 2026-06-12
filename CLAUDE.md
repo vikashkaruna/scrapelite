@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R9: Batch nav reorder, batch auto-save fix, Dashboard refresh + localStorage-first + inline selection actions + dropdown z-index fix, Preview Download dropdown**
+> **Last updated: 2026-06-12 — R10: Explore menu adds Contact Us + Submit Bug; bug report pre-fill on Contact page; Contact.jsx icon fix; branch merged to main**
 
 ---
 
@@ -17,7 +17,7 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed here; R8 on `claude/r0-polish-feature-ui-fgj5yo` |
+| **Current branch** | `main` — all work committed and merged; R10 complete |
 | **Latest commit** | (see git log) — R8: grouped exports, floating AI actions bar, auto-save, email fix |
 
 ---
@@ -40,7 +40,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 | `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
-| `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown | 🔄 in progress |
+| `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown; R10: Explore menu Contact Us + Submit Bug, Contact page bug type + query-param pre-fill | ✅ merged to main |
 
 ---
 
@@ -580,6 +580,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 74. **R9: Batch export strips `_status`/`_error`** — `successResults` mapped to remove `_status` and `_error` before CSV/PDF/Markdown/JSON exports, so users don't see internal batch fields in their downloaded data.
 75. **R9: extractionsRepo `shouldFallback` covers 500** — Added `err.status === 500` to the fallback condition so unexpected Supabase/function errors degrade to localStorage instead of surfacing a hard error modal to the user.
 76. **R9: Dashboard loading init single-read** — `loading` now initialised as `!localStorage.getItem("datiq.saved")` (key existence check only) to avoid double JSON-parse. The `useEffect` cleanup simplified: `setLoading(false)` moved back to `.finally()` only.
+77. **R10: Explore menu Contact Us + Submit Bug** — `EXPLORE_SECTIONS` Resources section now has: About DatIQ (top), Contact Us (/contact), Submit Bug (/contact?type=bug), Blog, Help Center. `/contact` added to `EXPLORE_ACTIVE_PATHS`.
+78. **R10: Contact page bug report pre-fill** — New "Bug report" enquiry type added to `CONTACT_TYPES`. `useLocation` reads `?type=` query param on mount; matching type is pre-selected (fallback "support"). When `type=bug`, subject is pre-filled with "Bug report: ". Icon for "other" type corrected from unregistered "message-circle" to "message-square".
 
 ---
 
@@ -671,7 +673,9 @@ npm run dev   # http://localhost:5173
 - TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
 - TopBar nav (desktop >820px) → Extract, Dashboard, Pricing all show text+icon; Explore dropdown shows
-- TopBar Explore dropdown → 4 sections: Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (About/Blog/Help)
+- TopBar Explore dropdown → 4 sections: Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (About DatIQ/Contact Us/Submit Bug/Blog/Help)
+- TopBar Explore → Resources → "Contact Us" navigates to /contact; "Submit Bug" navigates to /contact?type=bug
+- `/contact?type=bug` → Contact page opens with "Bug report" type pre-selected and subject pre-filled "Bug report: "
 - TopBar UserDropdown → persona colour dot + name; hover shows profile card + Account/Switch Role/Sign out
 - TopBar (mobile <600px) → hamburger button visible; tap to open slide-down nav panel
 - Mobile nav → Extract/Dashboard/Pricing links; Explore accordion expands; persona info shown
@@ -724,16 +728,12 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-(latest)  feat(r9): batch nav order, batch auto-save fix, dashboard refresh + localStorage-first + inline selection + z-index fix, preview download dropdown
-(prev)    feat(r0-polish-feature-ui): grouped exports, AI actions bar, auto-save, batch preview, email fix [branch: claude/r0-polish-feature-ui-fgj5yo]
+9d898b8  Merge branch 'claude/r0-polish-feature-ui-fgj5yo' [main]
+0b8716e  feat(r10): add Contact Us + Submit Bug to Explore menu; bug report pre-fill
+01f88f9  fix(r9): footer alignment, dashboard guards, batch export cleanup, fallback 500
+437fafe  feat(r9): batch nav order, auto-save fix, dashboard refresh + localStorage, preview download
+171bd85  Merge pull request #4 from vikashkaruna/claude/r0-polish-feature-ui-fgj5yo
+5ef2264  chore: update CLAUDE.md — R8 session documented
 ee94174  chore: update CLAUDE.md — R7 session documented
 764995b  merge(r7): batch_max_urls admin, Batch Pack payment, stable AI default
-70e66bd  feat(r7): batch_max_urls admin field, Batch Pack payment wiring, stable AI model default
-be179e0  chore: update CLAUDE.md — R6/R6b/R6c session fully documented
-5315d53  merge(r6c): batch auto-save + PDF stale-chunk fix
-33f1971  feat(r6c): batch auto-save to Dashboard; fix PDF stale-chunk error
-8f18ff6  merge(r6b): AI non-fatal + model fallback fix for extraction errors
-eb8f337  fix(ai): make AI step non-fatal; add model fallback in ai.js
-d210bad  merge(r6): batch inline on Home, feature card tags, Dashboard real-data empty state
-c865344  feat(r6): batch mode on Home, feature tags fix, Dashboard real-data empty state
 ```
