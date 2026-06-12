@@ -1683,6 +1683,7 @@
 }
 
 /* Account stats */
+.account-stats { display: flex; flex-direction: column; }
 .astat-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 0; border-bottom: 1px solid var(--border);

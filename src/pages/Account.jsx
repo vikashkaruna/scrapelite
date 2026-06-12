@@ -147,7 +147,7 @@ export default function Account() {
     plan: ctxPlan, planId, usage, bonus, currency, rates,
     applyCoupon, removeCoupon, couponError, couponSuccess,
     subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
-    paymentHistory, dbSubscription, providerMeta, hasPayment,
+    paymentHistory, dbSubscription, hasPayment,
   } = useBilling();
 
   const plan     = getEffectivePlanById(planId);

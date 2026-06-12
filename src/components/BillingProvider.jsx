@@ -84,6 +84,7 @@ export function BillingProvider({ children }) {
   // Debounced DB sync
   const syncTimer    = useRef(null);
   const pendingUsage = useRef(null);
+  const lastPaymentArgs = useRef(null); // stored for retry after payment failure
   const syncToDb = useCallback((u) => {
     pendingUsage.current = u;
     if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -116,6 +117,7 @@ export function BillingProvider({ children }) {
   const initiatePayment = useCallback(async (targetPlanId, billingPeriod = "monthly") => {
     if (targetPlanId === "free") { upgradePlan("free"); return { status: "free" }; }
 
+    lastPaymentArgs.current = { targetPlanId, billingPeriod };
     const targetPlan = planMap[targetPlanId] ?? planMap.free;
     setPaymentPlanName(targetPlan.name || targetPlanId);
     setPaymentStage(PAYMENT_STAGE.IDLE);
@@ -294,6 +296,15 @@ export function BillingProvider({ children }) {
     setPaymentError("");
   }, []);
 
+  const retryPayment = useCallback(() => {
+    const args = lastPaymentArgs.current;
+    if (args) {
+      initiatePayment(args.targetPlanId, args.billingPeriod);
+    } else {
+      dismissPaymentModal();
+    }
+  }, [initiatePayment, dismissPaymentModal]);
+
   const ctx = useMemo(() => ({
     subscription, plan, planId, bonus, usage,
     currency, rates, setCurrency,
@@ -333,7 +344,7 @@ export function BillingProvider({ children }) {
         stage={paymentStage}
         stageMsg={paymentStageMsg}
         planName={paymentPlanName}
-        onRetry={dismissPaymentModal}
+        onRetry={retryPayment}
         onCancel={dismissPaymentModal}
       />
     </BillingContext.Provider>
