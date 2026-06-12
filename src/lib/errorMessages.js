@@ -4,6 +4,13 @@
 
 const CATEGORIES = [
   {
+    test: /failed to fetch dynamically imported module|dynamically imported/i,
+    title: "App update available",
+    message:
+      "DatIQ was updated since you last loaded this page. " +
+      "Please refresh the page and try again.",
+  },
+  {
     test: /failed to fetch|network error|net::err|load failed|fetch error|networkrequesterror/i,
     title: "Couldn't reach the page",
     message:

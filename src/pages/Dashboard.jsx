@@ -379,7 +379,11 @@ export default function Dashboard() {
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);
-      showError(err);
+      if (/dynamically imported/i.test(err?.message || "")) {
+        showToast("App updated — please refresh the page and try again.", "info");
+      } else {
+        showError(err);
+      }
     }
   };
 

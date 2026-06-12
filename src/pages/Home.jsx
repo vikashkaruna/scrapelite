@@ -13,6 +13,7 @@ import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload }
 import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 import { runBatch } from "../lib/batchService.js";
+import { saveExtraction } from "../lib/extractionsRepo.js";
 
 const DEFAULT_EXAMPLES = ["lumio.io", "stripe.com/pricing", "notion.so/help"];
 
@@ -89,7 +90,11 @@ function BatchResultsPanel({ results, onClear, checkCanExport }) {
       extractionsToPdf(success);
       showToast(`Exported ${success.length} pages to PDF`, "file");
     } catch (e) {
-      showToast("PDF export failed.");
+      if (/dynamically imported/i.test(e?.message || "")) {
+        showToast("App updated — please refresh the page and try again.", "info");
+      } else {
+        showToast("PDF export failed.");
+      }
     }
   };
 
@@ -137,6 +142,7 @@ export default function Home() {
   const { extract } = useExtraction();
   const { personaId, userName, resetOnboarding } = usePersona();
   const billing = useBilling();
+  const showToast = useToast();
   const navigate = useNavigate();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
@@ -237,6 +243,20 @@ export default function Home() {
       );
       if (!controller.signal.aborted) {
         setBatchResults(allResults);
+        // Auto-save successful results to Dashboard (fire and forget)
+        const successItems = allResults.filter((r) => r?._status === "success");
+        if (successItems.length > 0) {
+          Promise.allSettled(successItems.map((r) => saveExtraction(r)))
+            .then((settled) => {
+              const savedCount = settled.filter((s) => s.status === "fulfilled").length;
+              if (savedCount > 0) {
+                showToast(
+                  `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
+                  "bookmark",
+                );
+              }
+            });
+        }
       }
     } catch (err) {
       console.error("[DatIQ] Batch failed:", err);
