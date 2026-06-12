@@ -44,6 +44,8 @@ export const handler = async (event) => {
     successUrl, cancelUrl,
   } = body;
 
+  const qty = Math.min(10, Math.max(1, parseInt(body.qty, 10) || 1));
+
   // ── Input validation ────────────────────────────────────────────────────────
   if (!provider || !["stripe", "razorpay"].includes(provider)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid provider. Use 'stripe' or 'razorpay'.", code: "INVALID_PROVIDER" }) };
@@ -84,7 +86,7 @@ export const handler = async (event) => {
     try {
       const params = {
         mode,
-        line_items:  [{ price: priceId, quantity: 1 }],
+        line_items:  [{ price: priceId, quantity: isBundle ? qty : 1 }],
         success_url: successUrl,
         cancel_url:  cancelUrl,
         metadata: {
@@ -130,16 +132,18 @@ export const handler = async (event) => {
     const rzpCurrency = currency === "INR" ? "INR" : "USD";
 
     // Resolve amount in smallest unit (paise for INR, cents for USD).
-    // Front-end computes and sends `amount`; fall back to server-side table if missing.
+    // For bundles: always use server-side price table × qty (prevents client-side tampering).
+    // For plans: honour front-end `amount` if provided; fall back to server-side table.
     let finalAmount;
-    if (typeof amount === "number" && amount > 0) {
+    if (isBundle) {
+      const prices = BUNDLE_PRICES[planId];
+      const unitAmount = Math.round((rzpCurrency === "INR" ? prices.inr : prices.usd) * 100);
+      finalAmount = unitAmount * qty;
+    } else if (typeof amount === "number" && amount > 0) {
       finalAmount = Math.round(amount);
     } else {
       const bp = billingPeriod === "annual" ? "annual" : "monthly";
-      if (isBundle) {
-        const prices = BUNDLE_PRICES[planId];
-        finalAmount  = Math.round((rzpCurrency === "INR" ? prices.inr : prices.usd) * 100);
-      } else if (bp === "annual") {
+      if (bp === "annual") {
         finalAmount = rzpCurrency === "INR"
           ? Math.round((PLAN_PRICES_INR_ANNUAL[planId] || 0) * 12 * 100)
           : Math.round((PLAN_PRICES_USD_ANNUAL[planId] || 0) * 12 * 100);

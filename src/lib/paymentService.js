@@ -107,7 +107,7 @@ function describeRazorpayFailure(code, description, reason) {
 }
 
 // ── Stripe Checkout (redirect flow) ─────────────────────────────────────────
-async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
+async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, onStageChange }) {
   const plan    = getEffectivePlanById(planId);
   const priceId = STRIPE_PRICE_IDS[planId];
 
@@ -135,6 +135,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
         currency,
         billingPeriod:   billingPeriod || "monthly",
         discountPercent: discountPercent || 0,
+        qty:             qty > 1 ? qty : undefined,
         sessionId,
         email:           email || null,
         successUrl:      `${window.location.origin}/payment/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
@@ -158,7 +159,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
 }
 
 // ── Razorpay Checkout (modal, supports UPI/cards/netbanking/wallets) ─────────
-async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
+async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, onStageChange }) {
   const plan = getEffectivePlanById(planId);
 
   // Step 1: Load SDK
@@ -200,6 +201,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
         currency:      rzpCurrency,
         amount:        finalAmount,
         billingPeriod: billingPeriod || "monthly",
+        qty:           qty > 1 ? qty : undefined,
         sessionId,
         email:         email || null,
       }),
@@ -315,14 +317,14 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
 }
 
 // ── Top-up bundle checkout ───────────────────────────────────────────────────
-export async function initiateTopupCheckout({ bundleId, currency, rates, sessionId, email, onStageChange }) {
+export async function initiateTopupCheckout({ bundleId, currency, rates, qty = 1, sessionId, email, onStageChange }) {
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
   if (provider === "stripe") {
-    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, sessionId, email, onStageChange });
+    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, onStageChange });
   }
-  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, sessionId, email, onStageChange });
+  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, onStageChange });
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────

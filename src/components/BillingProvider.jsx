@@ -179,9 +179,9 @@ export function BillingProvider({ children }) {
   }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
   // ── Batch Pack top-up purchase ────────────────────────────────────────────
-  const purchaseBatchPack = useCallback(async (bundleId = "batch-pack") => {
+  const purchaseBatchPack = useCallback(async (bundleId = "batch-pack", qty = 1) => {
     const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
-    const bonusUrls = bundle?.bonusBatchUrls || 50;
+    const bonusUrls = (bundle?.bonusBatchUrls || 50) * qty;
 
     const grantBatchUrls = (sub) => {
       const updated = { ...sub, bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls };
@@ -204,6 +204,7 @@ export function BillingProvider({ children }) {
         bundleId,
         currency,
         rates,
+        qty,
         sessionId:     getSessionId(),
         email:         subscription.email || null,
         onStageChange: handleStageChange,
