@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-11 — R6: Home batch mode inline, feature card tags fixed, Dashboard real-data empty state**
+> **Last updated: 2026-06-12 — R6b: AI failure non-fatal; Netlify ai.js model fallback (haiku-4-5 → haiku-3-5)**
 
 ---
 
@@ -552,6 +552,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 47. **R6: Feature card tag layout** — `.feature-body` + `.feature-title-row` wrapper added so Popular and Recommended tags sit inline next to the title. CSS: `.feature-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }` + `.feature-title-row .feature-tag { margin-left: 0; }`.
 48. **R6: Dashboard no-demo** — `DEMO_EXTRACTIONS` import removed; `showingDemo` always `false`; demo banner removed. Empty state when `items.length === 0` shows bookmark icon + "Nothing saved yet" + "Extract a page" CTA button.
 49. **R6: Batch inline CSS** — Added `.batch-field-wrap`, `.batch-field-header`, `.batch-field-label`, `.batch-field-count`, `.batch-field-textarea`, `.batch-field-footer`, `.batch-field-progress`, `.batch-field-progress-label`, `.batch-cancel-btn`, `.batch-inline-results`, `.batch-inline-header`, `.batch-inline-badge`, `.batch-inline-fail`, `.batch-inline-exports`, `.batch-inline-btn`, `.batch-inline-rows`, `.batch-inline-row`, `.batch-inline-dot`, `.batch-inline-url`, `.batch-inline-errmsg`, `.batch-inline-meta` to screens.css.
+50. **R6b: AI step non-fatal** — `realSummary()` and `realContent()` in `aiService.js` now wrap `callAI()` in try/catch; if AI returns 400/503/any error, they silently fall back to `mockSummary()`/`mockContent()` so the extraction still succeeds. This fixes "AI request failed (400)" causing all extractions to fail when the Anthropic model returns 400.
+51. **R6b: ai.js model fallback** — `netlify/functions/ai.js` now retries once with `claude-3-5-haiku-20241022` when the primary model (`claude-haiku-4-5-20251001`) returns HTTP 400. Uses a nested `callAnthropic(modelId)` helper. The `FALLBACK_MODEL` const is separate from `DEFAULT_MODEL` for easy maintenance.
 
 ---
 
