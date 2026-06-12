@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R12 + hotfix: DemoPaymentModal — "Get Plan" now shows visible checkout UI in demo mode; all changes on main**
+> **Last updated: 2026-06-12 — R12 + hotfixes: DemoPaymentModal; Razorpay env-var diagnostic notices; all changes on main**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R12 + hotfix complete |
-| **Latest commit** | (see git log) — hotfix: DemoPaymentModal; R12: plan hover/selection, TopupBundleModal, payment gating |
+| **Current branch** | `main` — all work committed and merged; R12 + hotfixes complete |
+| **Latest commit** | (see git log) — Razorpay env-var diagnostic notices; DemoPaymentModal; R12: plan hover/selection, TopupBundleModal, payment gating |
 
 ---
 
@@ -600,6 +600,19 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 93. **R12: TopupBundleModal** — New component `src/components/TopupBundleModal.jsx`: quantity selector 1–10 with live cumulative pricing, bonus URL count scaled by qty, upsell section showing up to 2 higher plans, CTA "Add N bundle(s) — {total}". Opens from every "Add to plan" button on Pricing page. Missing CSS classes `.tbm-summary-per` and `.tbm-upsell-divider` added to `screens.css`.
 94. **R12: Payment-gated plan activation** — `upgradePlan()` only fires on `status === "demo_mode"` or `status === "success"`. Cancelled, error, and exception paths leave plan unchanged. Default planId for new/unpaid users is `"free"` (set in `readSubscription()` default). `purchaseBatchPack` qty param: `bonusUrls = (bundle.bonusBatchUrls || 50) * qty`; server receives qty and computes `unitAmount × qty` authoritatively.
 95. **R12 hotfix: DemoPaymentModal** — Clicking "Get Plan" with no payment keys configured (`hasPayment=false`) previously silently upgraded the plan with zero UI. Fixed: `initiatePayment` now `await`s a `new Promise` whose resolve is stored in `demoResolveRef`. Setting `demoTarget` state mounts `DemoPaymentModal` (plan name + price + greyed-out mock card fields + "Demo mode" badge + confirm/cancel). `confirmDemoPayment` resolves `true` → `upgradePlan` → returns `"demo_mode"` to caller. `cancelDemoPayment` resolves `false` → returns `"cancelled"`, plan unchanged. Real payment flow (Razorpay/Stripe) is completely unaffected — only the `!hasPayment` code path changed. To enable real payments: set `VITE_RAZORPAY_KEY_ID` + `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (or Stripe equivalents) in Netlify env vars and redeploy.
+96. **Razorpay env-var diagnostic notices** — Pricing page demo-mode banner now lists exact variable names needed. `DemoPaymentModal` body replaced generic text with numbered setup instructions (`VITE_RAZORPAY_KEY_ID` browser/build-time, `RAZORPAY_KEY_ID` server-side, `RAZORPAY_KEY_SECRET` server-side). `RAZORPAY_NOT_CONFIGURED` server error message now names the exact Netlify env vars and rebuild requirement. `screens.css`: `payment-demo-notice` upgraded to multi-line with `code` monospace styling; new `.dpm-env-list` rule.
+
+### Razorpay live payment — required Netlify env vars (INR only; Stripe/USD on hold)
+
+| Variable | Prefix | Value | Purpose |
+|---|---|---|---|
+| `VITE_RAZORPAY_KEY_ID` | `VITE_` (browser, **build-time**) | `rzp_test_...` or `rzp_live_...` | Unlocks real payment flow (`hasPayment=true`); opens Razorpay modal |
+| `RAZORPAY_KEY_ID` | none (server, runtime) | same value as above | Netlify Function creates Razorpay order |
+| `RAZORPAY_KEY_SECRET` | none (server, runtime) | your key secret | Order creation + HMAC signature verification |
+| `RAZORPAY_WEBHOOK_SECRET` | none (server, optional) | webhook secret | Verifies incoming Razorpay webhook events |
+
+**NOT needed:** `VITE_RAZORPAY_PLAN_*` — current code uses Razorpay Orders (one-time), not Subscriptions.
+**CRITICAL:** After setting `VITE_RAZORPAY_KEY_ID`, trigger a **full rebuild** in Netlify (Deploys → Trigger deploy) — it is baked into the JS bundle at build time.
 
 ---
 
@@ -612,10 +625,13 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` to Netlify env for stats.js
 
 ### Netlify (manual — Netlify dashboard)
-- [ ] Add all env vars (see env section above)
-- [ ] Register Stripe webhook → `https://datiq.app/.netlify/functions/payment-webhook` → copy secret → `STRIPE_WEBHOOK_SECRET`
-- [ ] Register Razorpay webhook → same URL → `RAZORPAY_WEBHOOK_SECRET`
-- [ ] Trigger redeploy after env vars are set
+- [ ] Add `VITE_RAZORPAY_KEY_ID` (browser/build-time) — from Razorpay Dashboard → Settings → API Keys
+- [ ] Add `RAZORPAY_KEY_ID` (server, no VITE_ prefix) — same value as above
+- [ ] Add `RAZORPAY_KEY_SECRET` (server, no VITE_ prefix) — from same Razorpay API Keys page
+- [ ] **Trigger a full redeploy** after adding the above — `VITE_RAZORPAY_KEY_ID` is baked at build time
+- [ ] Register Razorpay webhook → `https://scrapelite.netlify.app/.netlify/functions/payment-webhook?provider=razorpay` → copy secret → add as `RAZORPAY_WEBHOOK_SECRET` → redeploy
+- [ ] Register Stripe webhook (when USD/Stripe is enabled) → same base URL without `?provider` → `STRIPE_WEBHOOK_SECRET`
+- [ ] Add remaining env vars when ready (see env section above)
 
 ### Payment provider (before going live)
 - [ ] Stripe: create Products + Prices for Select/Pro/Business/Agency → set `VITE_STRIPE_PRICE_*`
@@ -761,6 +777,8 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+1dab787  fix(payment): actionable error messages for missing Razorpay env vars
+d621a86  chore: update CLAUDE.md — R12 hotfix DemoPaymentModal documented
 8e1a1f5  fix(payment): show DemoPaymentModal on Get Plan click when no payment keys set
 ffbd7d8  chore: update CLAUDE.md — R12 pricing UI enhancements documented
 a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancements & TopupBundleModal
@@ -769,6 +787,4 @@ a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancem
 83afe10  chore: update CLAUDE.md — R11 Razorpay integration documented
 44f6885  fix(account): remove unused providerMay prop from PaymentHistorySection
 208b35f  fix(payment): retry re-initiates payment flow; add missing account-stats CSS
-b141308  feat(payments): complete Razorpay end-to-end integration with step-by-step UX
-e21c98d  chore: update CLAUDE.md — R10 final state (Explore restructure, AdminUsers fix)
 ```
