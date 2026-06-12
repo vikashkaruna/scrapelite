@@ -200,7 +200,7 @@ export default function Pricing() {
   const navigate  = useNavigate();
   const {
     currency, rates, setCurrency, planId: currentPlanId,
-    initiatePayment, paymentLoading, paymentError, setPaymentError,
+    initiatePayment, purchaseBatchPack, paymentLoading, paymentError, setPaymentError,
     paymentProvider, hasPayment, subscription,
   } = useBilling();
 
@@ -237,11 +237,14 @@ export default function Pricing() {
 
   const handleBundleBuy = async (bundleId) => {
     setLoadingBundle(bundleId);
+    setLocalError("");
     try {
-      window.open(
-        `mailto:support@datiq.app?subject=${encodeURIComponent(`Add-on: ${bundleId}`)}&body=${encodeURIComponent(`I'd like to add the ${bundleId} bundle to my account.`)}`,
-        "_blank"
-      );
+      const result = await purchaseBatchPack?.(bundleId);
+      if (result?.status === "demo_mode" || result?.status === "success") {
+        navigate("/account");
+      }
+    } catch (e) {
+      setLocalError(e.message || "Purchase failed. Please try again.");
     } finally {
       setLoadingBundle(null);
     }

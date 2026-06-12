@@ -31,6 +31,7 @@ function PlanEditor({ plan, onSave, onReset }) {
     enrichments: displayLimit(plan.limits.enrichments_per_extraction),
     seats:       displayLimit(plan.limits.team_seats),
     schedules:   displayLimit(plan.limits.scheduled_monitoring),
+    batch_max_urls:  plan.limits.batch_max_urls ?? 0,
     email_export:    plan.limits.email_export,
     api_access:      plan.limits.api_access,
     white_label_pdf: plan.limits.white_label_pdf,
@@ -49,6 +50,7 @@ function PlanEditor({ plan, onSave, onReset }) {
         enrichments_per_extraction:    parseLimit(form.enrichments),
         team_seats:                    parseLimit(form.seats),
         scheduled_monitoring:          parseLimit(form.schedules),
+        batch_max_urls:                Number(form.batch_max_urls) || 0,
         email_export:                  form.email_export,
         api_access:                    form.api_access,
         white_label_pdf:               form.white_label_pdf,
@@ -119,6 +121,11 @@ function PlanEditor({ plan, onSave, onReset }) {
               <label>Scheduled monitors</label>
               <input type="text" value={form.schedules}
                 onChange={(e) => f("schedules", e.target.value)} />
+            </div>
+            <div className="cf-field">
+              <label>Batch URL limit (0 = disabled)</label>
+              <input type="number" min="0" step="50" value={form.batch_max_urls}
+                onChange={(e) => f("batch_max_urls", e.target.value)} />
             </div>
           </div>
 

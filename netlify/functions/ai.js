@@ -7,9 +7,9 @@
 //   Response: raw Anthropic messages API response
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
-// Ordered preference: haiku 4.5 → haiku 3.5 (stable fallback)
-const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
-const FALLBACK_MODEL = "claude-3-5-haiku-20241022";
+// Stable production default. Override via AI_MODEL env var to test newer models.
+const DEFAULT_MODEL  = "claude-3-5-haiku-20241022";
+const FALLBACK_MODEL = "claude-haiku-4-5-20251001";
 
 function respond(statusCode, body) {
   return {
@@ -85,7 +85,7 @@ export const handler = async (event) => {
     let data = await upstream.json().catch(() => ({}));
 
     // If the primary model returns 400 (model not found / bad request) and we
-    // have a fallback available, retry once with the stable fallback model.
+    // have a fallback available, retry once with the fallback model.
     if (upstream.status === 400 && resolvedModel !== FALLBACK_MODEL) {
       console.warn(`[DatIQ] ai.js: model ${resolvedModel} returned 400 — retrying with ${FALLBACK_MODEL}`);
       upstream = await callAnthropic(FALLBACK_MODEL);
