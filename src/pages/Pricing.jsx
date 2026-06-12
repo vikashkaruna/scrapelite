@@ -319,7 +319,11 @@ export default function Pricing() {
           {!hasPayment && (
             <div className="payment-demo-notice">
               <Icon name="info" size={14} />
-              <span>Demo mode — no payment configured. Upgrades are simulated locally.</span>
+              <span>
+                <strong>Demo mode</strong> — payment not configured.
+                Set <code>VITE_RAZORPAY_KEY_ID</code> + <code>RAZORPAY_KEY_ID</code> + <code>RAZORPAY_KEY_SECRET</code> in
+                Netlify env vars, then redeploy to enable real Razorpay checkout.
+              </span>
             </div>
           )}
         </div>

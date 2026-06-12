@@ -214,7 +214,10 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
     const err  = await orderResp.json().catch(() => ({}));
     const code = err.code || "";
     if (code === "RAZORPAY_NOT_CONFIGURED") {
-      throw new Error("Payment gateway is not configured on this server. Please contact support@datiq.app.");
+      throw new Error(
+        "Razorpay server keys are not configured. " +
+        "Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to Netlify environment variables, then redeploy."
+      );
     }
     throw new Error(err.error || "Failed to initiate payment. Please try again.");
   }

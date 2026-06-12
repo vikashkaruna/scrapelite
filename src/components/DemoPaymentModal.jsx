@@ -53,10 +53,18 @@ export default function DemoPaymentModal({ plan, billingPeriod, currency, rates,
         </div>
 
         <p className="dpm-notice">
-          No payment gateway is configured on this server. Clicking confirm activates
-          the <strong>{plan.name}</strong> plan locally for testing — no real charge is made.
-          To enable real payments, configure <code>VITE_RAZORPAY_KEY_ID</code> or{" "}
-          <code>VITE_STRIPE_PUBLISHABLE_KEY</code> in your Netlify environment variables.
+          Razorpay is not yet configured. To enable real payments, add these three
+          variables to <strong>Netlify → Site configuration → Environment variables</strong>,
+          then trigger a new deploy:
+        </p>
+        <ol className="dpm-env-list">
+          <li><code>VITE_RAZORPAY_KEY_ID</code> — your Razorpay Key ID <em>(browser, build-time)</em></li>
+          <li><code>RAZORPAY_KEY_ID</code> — same value <em>(server-side function)</em></li>
+          <li><code>RAZORPAY_KEY_SECRET</code> — your Razorpay Key Secret <em>(server-side function)</em></li>
+        </ol>
+        <p className="dpm-notice" style={{marginTop: 8}}>
+          Clicking confirm below activates <strong>{plan.name}</strong> locally for
+          testing only — no real charge is made.
         </p>
 
         <Button variant="primary" fullWidth onClick={onConfirm}>
