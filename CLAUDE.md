@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R11: Razorpay end-to-end payment integration; PaymentProcessingModal step-by-step UX; retryPayment callback; audit fixes; merged to main**
+> **Last updated: 2026-06-12 — R12: Pricing UI enhancements — plan card hover/selection states, TopupBundleModal quantity selector, payment-gated plan activation; merged to main**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R11 complete |
-| **Latest commit** | (see git log) — R11: Razorpay integration, PaymentProcessingModal, retryPayment |
+| **Current branch** | `main` — all work committed and merged; R12 complete |
+| **Latest commit** | (see git log) — R12: Pricing UI enhancements, TopupBundleModal, payment-gated plan activation |
 
 ---
 
@@ -39,7 +39,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-ui-issues-fqbogg` | R2+R3: onboarding in Shell, nav routing, topbar alignment, auth-gated menus, padding override, collapsible admin sidebar | ✅ merged to main |
 | `claude/r0-polish-ui-fixes-11ikut` | R4: pricing overhaul (USD+INR, annual, new tiers), /contact, /use-cases, founder block, DPDP, Indian arbitration, usage banner, blog modal, branding fixes | ✅ merged to main |
 | `claude/batch-mode-export-formats-fkjkxx` | R5–R7: /batch page, CSV import, MD/JSON export, batch limits; R6: inline batch on Home, feature tags, Dashboard empty state; R7: batch_max_urls admin, Batch Pack payment, stable AI model | ✅ merged to main |
-| `R0-polish-feature-ui-enhancement` | R6: batch inline on Home (toggle + textarea + progress + results panel), feature card Popular/Recommended tags fixed, Dashboard real-data empty state (no demo data) | ✅ merged to main |
+| `R0-polish-feature-ui-enhancement` | R6: batch inline on Home, feature card tags fixed, Dashboard no-demo; **R12**: plan card hover/selection states, TopupBundleModal qty selector, payment-gated activation | ✅ merged to main |
 | `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown; R10: Explore menu Contact Us + Submit Bug, Contact page bug type + query-param pre-fill | ✅ merged to main |
 | `claude/razorpay-payment-integration-76uecb` | R11: complete Razorpay end-to-end integration — `PAYMENT_STAGE` state machine, `PaymentProcessingModal` step-by-step UX, `onStageChange` threading, billingPeriod wiring, INR annual fix, `retryPayment` callback with `lastPaymentArgs` ref, `create-checkout.js` rewrite (agency $299, bundles), `verify-payment.js` timing-safe HMAC, `payment-webhook.js` Supabase sync, audit fixes (account-stats CSS, unused providerMeta) | ✅ merged to main |
 
@@ -595,6 +595,10 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 88. **R11: `billingPeriod` threading** — `billingPeriod` now flows end-to-end: `Pricing.jsx handleSelect(planId, billingPeriod) → BillingProvider.initiatePayment(planId, billingPeriod) → initiateCheckout({billingPeriod}) → initiateRazorpayCheckout/initiateStripeCheckout → server`.
 89. **R11: `account-stats` CSS** — Missing `.account-stats { display: flex; flex-direction: column; }` class added to `screens.css` (referenced in Account.jsx quick-stats card).
 90. **R11: unused `providerMeta` removed** — `providerMeta` removed from `useBilling()` destructuring in `Account.jsx` (component uses `PROVIDER_META` directly from import). Prop also removed from `PaymentHistorySection` call site and function signature.
+91. **R12: Plan card hover states** — `.plan-card:hover` scoped with `:not(.plan-current):not(.plan-coming-soon):not(.plan-selecting)` guards — lifts 3px, accent border, subtle tint. Active/disabled cards never lift.
+92. **R12: Plan card current/selecting states** — `.plan-card.plan-current` green ring + `.plan-current-badge` pill overlay ("Your plan"). `.plan-card.plan-selecting` pulsing accent ring via `@keyframes plan-select-pulse` (runs while payment modal is open).
+93. **R12: TopupBundleModal** — New component `src/components/TopupBundleModal.jsx`: quantity selector 1–10 with live cumulative pricing, bonus URL count scaled by qty, upsell section showing up to 2 higher plans, CTA "Add N bundle(s) — {total}". Opens from every "Add to plan" button on Pricing page. Missing CSS classes `.tbm-summary-per` and `.tbm-upsell-divider` added to `screens.css`.
+94. **R12: Payment-gated plan activation** — `upgradePlan()` only fires on `status === "demo_mode"` or `status === "success"`. Cancelled, error, and exception paths leave plan unchanged. Default planId for new/unpaid users is `"free"` (set in `readSubscription()` default). `purchaseBatchPack` qty param: `bonusUrls = (bundle.bonusBatchUrls || 50) * qty`; server receives qty and computes `unitAmount × qty` authoritatively.
 
 ---
 
@@ -734,7 +738,18 @@ npm run dev   # http://localhost:5173
 - `/dashboard` → PDF export → if app was updated since page loaded, toast "App updated — refresh and try again"
 - Home feature cards → Popular tag visible next to title (inline, not pushed off); Recommended tag visible when persona matched
 - `/admin/pricing` → open any plan card → "Batch URL limit" field visible; enter 100 → Save → value persists across refresh
-- `/pricing` → Top-up bundles section → "Add to plan" on Batch Pack → in demo mode: navigates to /account + bonusBatchUrls incremented by 50
+- `/pricing` → Top-up bundles section → "Add to plan" on Batch Pack → opens TopupBundleModal (not direct purchase)
+- TopupBundleModal → qty 1 shows unit price; qty 2+ shows total + per-bundle note; CTA "Add N bundle(s) — ₹/$ X"
+- TopupBundleModal → "−" button disabled when qty=1; "+" button disabled when qty=10
+- TopupBundleModal → upsell section shows plans with higher price_usd than current plan
+- TopupBundleModal → click upsell plan → modal closes → payment flow starts for that plan
+- TopupBundleModal → backdrop click (outside card) → modal closes
+- TopupBundleModal → in demo mode: modal closes, navigates to /account, bonusBatchUrls += 50 × qty
+- `/pricing` → plan cards: hovering non-current plans shows lift+border+tint effect
+- `/pricing` → current plan card: green ring border + "Your plan" badge pill at top
+- `/pricing` → click "Get Pro" (or any paid plan): button shows "Processing…" + card pulses with accent ring during payment
+- `/pricing` → cancel Razorpay/Stripe payment: plan stays at previous value (NOT upgraded)
+- `/pricing` → new user with no plan: only Free plan has "Current plan" badge; all paid plans show "Get X"
 - `/account` → after buying Batch Pack: bonusBatchUrls shows on subscription state
 
 ---
@@ -742,14 +757,14 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancements & TopupBundleModal
+866aa9e  fix(pricing): add missing tbm-summary-per and tbm-upsell-divider CSS classes
+4dabf64  feat(pricing): plan card hover/selection states, TopupBundleModal, payment-gated plan activation
+83afe10  chore: update CLAUDE.md — R11 Razorpay integration documented
 44f6885  fix(account): remove unused providerMeta prop from PaymentHistorySection
 208b35f  fix(payment): retry re-initiates payment flow; add missing account-stats CSS
 b141308  feat(payments): complete Razorpay end-to-end integration with step-by-step UX
 e21c98d  chore: update CLAUDE.md — R10 final state (Explore restructure, AdminUsers fix)
 d7bec8e  fix(admin): AdminUsers uses getEffectivePlanById() instead of raw PLAN_BY_ID
 5374a20  fix(topbar): About DatIQ first in Explore; Contact/Submit Bug in own section at bottom
-8a18fd6  fix(topbar): reorder Resources — action items first, About DatIQ after
-9c9be35  chore: update CLAUDE.md — R10 session documented
-9d898b8  Merge branch 'claude/r0-polish-feature-ui-fgj5yo' [main]
-0b8716e  feat(r10): add Contact Us + Submit Bug to Explore menu; bug report pre-fill
 ```
