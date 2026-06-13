@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-12 — R12 + hotfixes: DemoPaymentModal; Razorpay env-var diagnostic notices; all changes on main**
+> **Last updated: 2026-06-13 — R13: GST modal, bundle INR prices, Enterprise plan restore, comparison pages, batch width, help cleanup; all changes on main**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R12 + hotfixes complete |
-| **Latest commit** | (see git log) — Razorpay env-var diagnostic notices; DemoPaymentModal; R12: plan hover/selection, TopupBundleModal, payment gating |
+| **Current branch** | `main` — all work committed and merged; R13 complete |
+| **Latest commit** | (see git log) — R13: GST PaymentConfirmModal, bundle INR upsell prices, Enterprise plan restored, Apify/PhantomBuster comparison pages, batch table full-width, usage banner constrained, account batch/content stats, help cleanup |
 
 ---
 
@@ -42,6 +42,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `R0-polish-feature-ui-enhancement` | R6: batch inline on Home, feature card tags fixed, Dashboard no-demo; **R12**: plan card hover/selection states, TopupBundleModal qty selector, payment-gated activation | ✅ merged to main |
 | `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown; R10: Explore menu Contact Us + Submit Bug, Contact page bug type + query-param pre-fill | ✅ merged to main |
 | `claude/razorpay-payment-integration-76uecb` | R11: complete Razorpay end-to-end integration — `PAYMENT_STAGE` state machine, `PaymentProcessingModal` step-by-step UX, `onStageChange` threading, billingPeriod wiring, INR annual fix, `retryPayment` callback with `lastPaymentArgs` ref, `create-checkout.js` rewrite (agency $299, bundles), `verify-payment.js` timing-safe HMAC, `payment-webhook.js` Supabase sync, audit fixes (account-stats CSS, unused providerMeta) | ✅ merged to main |
+| `claude/pricing-batch-help-polish-dwwlj7` | R13: GST breakdown `PaymentConfirmModal`, bundle base prices (pre-GST display), TopupBundleModal INR upsell prices, Enterprise plan card restored, Apify+PhantomBuster comparison pages, compare.html multi-page links, batch table full-width, usage banner container-constrained, Account batch/content generation stats, `batchRuns`+`contentGenerations` in usageService, TopBar Explore restructure (remove Browse.ai/Clay from Compare, remove Submit Bug, About DatIQ last), help/index.html External/Internal labels removed, 09-exports-and-sharing.html full rewrite (all 5 formats) | ✅ merged to main |
 
 ---
 
@@ -174,8 +175,9 @@ src/
 │   ├── Toggle.jsx                    Reusable toggle switch; accepts `tooltip` prop → hover popover
 │   ├── Icon.jsx                      lucide-react name-map (76 icons registered)
 │   ├── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
-│   ├── ContentModal.jsx              Generate content modal; 3 formats; copy button
+│   ├── ContentModal.jsx              Generate content modal; 3 formats; copy button; ★ R13: calls incrementContentGenerations()
 │   ├── EmailModal.jsx                Send email modal; multi-recipient
+│   ├── PaymentConfirmModal.jsx       ★ R13: pre-payment GST breakdown modal (base + 18% GST + total)
 │   ├── BrandLoader.jsx               Animated loader
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
 │   └── LoadingScreen.jsx             Full-screen 4-step animated progress
@@ -232,10 +234,15 @@ public/
 ├── llms.txt                          ★ R4: updated all URLs → datiq.app; new pricing tiers; /contact added
 ├── robots.txt                        ★ R4: Sitemap URL → https://datiq.app/sitemap.xml
 ├── sitemap.xml                       ★ R4: all URLs → datiq.app; added /contact, /use-cases
+├── vs/
+│   ├── compare.html                  ★ R13: hero quick-links + all 4 comparison pages listed
+│   ├── apify.html                    ★ R13: DatIQ vs Apify comparison page (new)
+│   └── phantombuster.html            ★ R13: DatIQ vs PhantomBuster comparison page (new)
 └── help/
-    ├── index.html                    ★ R4: metadata table → datiq.app; title fixed
+    ├── index.html                    ★ R4: metadata table → datiq.app; R13: removed External/Internal labels + Internal section
     ├── help.css
-    └── [15 section HTML pages + 6 screenshot assets]
+    ├── 09-exports-and-sharing.html   ★ R13: full rewrite — all 5 export formats, plan requirements, tips
+    └── [14 other section HTML pages + 6 screenshot assets]
 ```
 
 ---
@@ -601,6 +608,17 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 94. **R12: Payment-gated plan activation** — `upgradePlan()` only fires on `status === "demo_mode"` or `status === "success"`. Cancelled, error, and exception paths leave plan unchanged. Default planId for new/unpaid users is `"free"` (set in `readSubscription()` default). `purchaseBatchPack` qty param: `bonusUrls = (bundle.bonusBatchUrls || 50) * qty`; server receives qty and computes `unitAmount × qty` authoritatively.
 95. **R12 hotfix: DemoPaymentModal** — Clicking "Get Plan" with no payment keys configured (`hasPayment=false`) previously silently upgraded the plan with zero UI. Fixed: `initiatePayment` now `await`s a `new Promise` whose resolve is stored in `demoResolveRef`. Setting `demoTarget` state mounts `DemoPaymentModal` (plan name + price + greyed-out mock card fields + "Demo mode" badge + confirm/cancel). `confirmDemoPayment` resolves `true` → `upgradePlan` → returns `"demo_mode"` to caller. `cancelDemoPayment` resolves `false` → returns `"cancelled"`, plan unchanged. Real payment flow (Razorpay/Stripe) is completely unaffected — only the `!hasPayment` code path changed. To enable real payments: set `VITE_RAZORPAY_KEY_ID` + `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (or Stripe equivalents) in Netlify env vars and redeploy.
 96. **Razorpay env-var diagnostic notices** — Pricing page demo-mode banner now lists exact variable names needed. `DemoPaymentModal` body replaced generic text with numbered setup instructions (`VITE_RAZORPAY_KEY_ID` browser/build-time, `RAZORPAY_KEY_ID` server-side, `RAZORPAY_KEY_SECRET` server-side). `RAZORPAY_NOT_CONFIGURED` server error message now names the exact Netlify env vars and rebuild requirement. `screens.css`: `payment-demo-notice` upgraded to multi-line with `code` monospace styling; new `.dpm-env-list` rule.
+97. **R13: `PaymentConfirmModal`** — New modal (`src/components/PaymentConfirmModal.jsx`) shown before initiating payment. Displays itemized price breakdown: base price, 18% GST amount, total amount in INR/USD. Has "Confirm & Pay" → calls `initiatePayment`, and "Cancel" / "Upgrade to X" upsell option. `BillingProvider` now sets `confirmTarget` state before opening payment, mounts `<PaymentConfirmModal>` in provider tree.
+98. **R13: Bundle display prices are pre-GST** — `TopupBundleModal` and bundle cards on `/pricing` now show base price (pre-GST). GST breakdown (18%) and total shown only in `PaymentConfirmModal` at confirm step. This matches how plan prices are displayed throughout the UI.
+99. **R13: TopupBundleModal upsell INR prices** — Previously hardcoded `formatPrice(plan.price_usd_annual, "USD")`. Now checks `isINR` flag: shows `₹{plan.price_inr_annual}` when currency is INR, falls back to USD otherwise. E2E verified: shows ₹999/mo and ₹1,499/mo when INR is active.
+100. **R13: Enterprise plan card missing** — `ENTERPRISE_PLAN` was defined in `pricingConfig.js` and `EnterpriseCard` component existed in `Pricing.jsx` but neither the import nor the `<EnterpriseCard>` render call was present. Both added. E2E verified: 7 plan cards (Free/Select/Pro/Business/Agency/Developer/Enterprise) all visible.
+101. **R13: Batch results table full width** — `.batch-page { max-width: 860px }` in `screens.css` was constraining the results table. Changed to `width: 100%` so table uses full container width, matching other pages.
+102. **R13: Usage upsell banner page-width constraint** — `.usage-upsell-banner` previously spanned full viewport with its background. Refactored: outer `.usage-upsell-banner-wrap` takes full width with the background colour; inner `.usage-upsell-banner` is `max-width: 1080px; margin: 0 auto` with clamp padding, aligning to page container. `isOver` class moved to outer wrap.
+103. **R13: Account quick stats — batch + content counts** — Added two new rows in Account.jsx quick stats: "Batch executions" (`usage?.batchRuns`) and "Content generations" (`usage?.contentGenerations`). Both default to 0.
+104. **R13: `usageService.js` new counters** — Added `batchRuns: 0` and `contentGenerations: 0` to default usage object in `readUsage()`. Added `incrementBatchRuns(count)` and `incrementContentGenerations(count)` exports. `Batch.jsx` calls `incrementBatchRuns(1)` after each batch completes. `ContentModal.jsx` calls `incrementContentGenerations(1)` after each successful generation.
+105. **R13: TopBar Explore restructure** — `EXPLORE_SECTIONS` updated: Browse.ai and Clay removed from Compare section (only "Compare Tools" → `/vs/compare.html` remains). "Submit Bug" removed from Contact section. "About DatIQ" moved to the last section ("Company") at the bottom of the dropdown. All external links open in the same window (`target="_blank"` removed).
+106. **R13: Comparison pages — Apify + PhantomBuster** — Created `public/vs/apify.html` (DatIQ vs Apify) and `public/vs/phantombuster.html` (DatIQ vs PhantomBuster). Both are full comparison pages with feature tables, verdict cards, and cross-links to all 4 comparison pages. `public/vs/compare.html` updated: hero quick-links section at top lists all 4 pages; bottom "Detailed comparisons" section updated to list all 4.
+107. **R13: Help file cleanup** — `public/help/index.html`: removed "(External)" labels from User Guide and Developer Reference sections; removed entire "Internal Reference" sidebar section (I1–I5 links) since those are internal developer docs not relevant to end users. `public/help/09-exports-and-sharing.html`: complete rewrite — fixed brand name, all 5 export formats (CSV/PDF/Markdown/JSON/Email) with plan requirements and descriptions, "Where to export from" section, "Email export" step-by-step, "Tips" section; removed all code/DB/architecture references.
 
 ### Razorpay live payment — required Netlify env vars (INR only; Stripe/USD on hold)
 
@@ -646,7 +664,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~Fix dead URLs (/docs, /compare)~~ — DONE (R4: /docs → window.location redirect, /compare → Navigate)
 - [ ] **Stripe**: update Agency plan Price IDs (plan changed $199 → $299); set `VITE_STRIPE_PRICE_AGENCY`
 - [ ] **Razorpay**: update Agency plan Plan IDs to match new ₹14,999/mo price
-- [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude
+- [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude (branch deploys auto-trigger via GitHub integration when not set)
 - [ ] Implement once-only 25-extraction trial credit at signup (`trialCredit: 25` is in plan config; grant not yet wired in usageService/AuthProvider)
 - [ ] Referral/affiliate program — teaser UI is live on /pricing; backend not implemented
 - [ ] Supabase real auth → replace localStorage persona/session for cross-device sync
@@ -654,6 +672,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add "Use cases" links to Footer Explore column
 - [ ] AdminPricing.jsx: add UI fields for `price_usd_annual` and `price_inr_annual` (currently only monthly prices editable in admin)
 - [ ] `/blog/:slug` routing for SEO-indexed posts (currently all content is in-page modal only)
+- [ ] `PaymentConfirmModal` — wire actual `initiatePayment` call through the confirm step in `BillingProvider` (currently confirm/cancel flow uses local state; payment initiation still triggered by the parent CTA click)
 - [x] ~~Batch/multi-URL mode (10–500 URLs)~~ — DONE (R5: /batch page, batchService.js, plan limits, Batch Pack bundle)
 - [x] ~~CSV-import enrichment~~ — DONE (R5: Batch page "Import CSV" tab, parseUrlsFromCsv in batchService.js)
 - [x] ~~Markdown export~~ — DONE (R5: markdownDownload(), extractionsToMarkdown() in utils.js; Select+ plan)
@@ -771,20 +790,38 @@ npm run dev   # http://localhost:5173
 - `/pricing` → cancel Razorpay/Stripe payment: plan stays at previous value (NOT upgraded)
 - `/pricing` → new user with no plan: only Free plan has "Current plan" badge; all paid plans show "Get X"
 - `/account` → after buying Batch Pack: bonusBatchUrls shows on subscription state
+- `/account` quick stats → "Batch executions" row visible; "Content generations" row visible (both default 0)
+- `/batch` → run batch → completion increments "Batch executions" counter in account stats
+- `/preview` or `/dashboard` → Generate content → completion increments "Content generations" counter
+- TopBar Explore dropdown → Compare section has only "Compare Tools" (no Browse.ai / Clay separate links)
+- TopBar Explore dropdown → Contact section has only "Contact Us" (no "Submit Bug")
+- TopBar Explore dropdown → last section is "Company" containing "About DatIQ"
+- `/vs/compare.html` → hero quick-links shows all 4 comparison pages at top
+- `/vs/compare.html` → bottom section lists all 4 detailed pages (Browse.ai, Clay, Apify, PhantomBuster)
+- `/vs/apify.html` → loads DatIQ vs Apify comparison page with feature table
+- `/vs/phantombuster.html` → loads DatIQ vs PhantomBuster comparison page
+- `/pricing` → all 7 plan cards visible: Free, Select, Pro, Business, Agency, Developer (coming soon), Enterprise
+- `/pricing` → Enterprise card has dashed border and "Contact sales" CTA
+- `/pricing` → TopupBundleModal upsell plans show INR prices (₹999/mo, ₹1,499/mo) when INR currency selected
+- `/batch` results → table uses full container width (not capped at 860px)
+- Usage upsell banner (when ≥80% used) → content aligns to 1080px page width, not full browser width
+- `/help/index.html` → User Guide section has no "(External)" label
+- `/help/index.html` → no "Internal Reference" sidebar section
+- `/help/09-exports-and-sharing.html` → lists all 5 formats: CSV, PDF, Markdown, JSON, Email
 
 ---
 
 ## Git log (recent)
 
 ```
+(merge)  Merge branch 'claude/pricing-batch-help-polish-dwwlj7' — R13: GST modal, comparison pages, help cleanup
+b864580  feat: polish — pricing, batch width, help files, TopBar restructure, comparison pages
+2d38d04  feat(payment): GST breakdown modal + revert bundle display prices to base
+6bf8622  feat: pricing/batch/help polish — batch limits, INR fixes, help reorganisation
+f8d3701  chore: update CLAUDE.md — Razorpay env-var diagnostics and setup checklist
 1dab787  fix(payment): actionable error messages for missing Razorpay env vars
 d621a86  chore: update CLAUDE.md — R12 hotfix DemoPaymentModal documented
 8e1a1f5  fix(payment): show DemoPaymentModal on Get Plan click when no payment keys set
 ffbd7d8  chore: update CLAUDE.md — R12 pricing UI enhancements documented
 a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancements & TopupBundleModal
-866aa9e  fix(pricing): add missing tbm-summary-per and tbm-upsell-divider CSS classes
-4dabf64  feat(pricing): plan card hover/selection states, TopupBundleModal, payment-gated plan activation
-83afe10  chore: update CLAUDE.md — R11 Razorpay integration documented
-44f6885  fix(account): remove unused providerMay prop from PaymentHistorySection
-208b35f  fix(payment): retry re-initiates payment flow; add missing account-stats CSS
 ```
