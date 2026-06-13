@@ -3422,3 +3422,94 @@
   font-size: .85em; color: var(--text-3); text-align: center; padding: 6px;
 }
 .dpm-cancel-btn:hover { color: var(--text); }
+
+/* ── PaymentConfirmModal ────────────────────────────────────────────────── */
+.pcm-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1200; padding: 20px;
+}
+.pcm-card {
+  position: relative; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl); padding: 28px 28px 22px; width: 100%; max-width: 440px;
+  box-shadow: var(--shadow-lg); max-height: 90vh; overflow-y: auto;
+}
+.pcm-close {
+  position: absolute; top: 14px; right: 14px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-3); padding: 4px; border-radius: var(--r-sm);
+}
+.pcm-close:hover { color: var(--text); background: var(--surface-2); }
+.pcm-demo-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .75em; font-weight: 700; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 99px; padding: 3px 10px; margin-bottom: 16px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.pcm-header { margin-bottom: 20px; }
+.pcm-upgrade-path {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .78em; font-weight: 600; color: var(--text-3);
+  background: var(--surface-2); border-radius: 99px;
+  padding: 3px 10px; margin-bottom: 10px;
+}
+.pcm-from-plan { color: var(--text-3); }
+.pcm-to-plan   { color: var(--accent); }
+.pcm-plan-name { font-size: 1.4em; font-weight: 800; color: var(--text); }
+.pcm-plan-tagline { font-size: .85em; color: var(--text-3); margin: 3px 0 0; }
+.pcm-breakdown {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 18px;
+}
+.pcm-breakdown-title {
+  font-size: .72em; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+}
+.pcm-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .88em; color: var(--text-2); padding: 3px 0;
+}
+.pcm-gst-row { color: var(--text-3); font-size: .85em; }
+.pcm-breakdown-divider { height: 1px; background: var(--border); margin: 8px 0; }
+.pcm-total-row { font-weight: 700; color: var(--text); font-size: .95em; }
+.pcm-per-month-note {
+  font-size: .78em; color: var(--text-3); margin-top: 8px; text-align: right;
+}
+.pcm-demo-notice {
+  font-size: .8em; color: var(--text-3); line-height: 1.5;
+  background: var(--surface-2); border-radius: var(--r-md);
+  padding: 9px 12px; margin-bottom: 16px;
+}
+.pcm-cancel-btn {
+  display: block; width: 100%; margin-top: 10px;
+  background: none; border: none; cursor: pointer;
+  font-size: .85em; color: var(--text-3); text-align: center; padding: 6px;
+}
+.pcm-cancel-btn:hover { color: var(--text); }
+.pcm-upgrade-section { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+.pcm-upgrade-title {
+  font-size: .78em; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+}
+.pcm-upgrade-plan {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px 14px; margin-bottom: 8px;
+  cursor: pointer; transition: border-color .15s, background .15s; text-align: left;
+}
+.pcm-upgrade-plan:hover { border-color: var(--accent); background: var(--accent-soft); }
+.pcm-upgrade-plan-active { border-color: var(--accent); background: var(--accent-soft); }
+.pcm-up-left { flex: 1; min-width: 0; }
+.pcm-up-name { font-size: .9em; font-weight: 700; color: var(--text); }
+.pcm-up-desc { font-size: .78em; color: var(--text-3); margin-top: 2px; }
+.pcm-up-price {
+  font-size: .85em; font-weight: 700; color: var(--accent);
+  white-space: nowrap; margin-left: 12px;
+}
+.pcm-up-price span { font-weight: 400; color: var(--text-3); font-size: .9em; }
+
+/* ── TopupBundleModal GST rows ──────────────────────────────────────────── */
+.tbm-gst-row { font-size: .83em; color: var(--text-3); }
+.tbm-summary-divider { height: 1px; background: var(--border); margin: 6px 0; }
+.tbm-total-row { font-weight: 700; color: var(--text); }

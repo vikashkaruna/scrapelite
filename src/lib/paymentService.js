@@ -168,18 +168,20 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
   await loadRazorpay(); // throws with user-friendly message on failure
 
   // Step 2: Compute amount (paise for INR)
-  // All INR prices are fixed (GST-inclusive). Never do live USD→INR conversion.
+  // All INR prices are BASE (pre-GST). Add 18% GST for all INR transactions.
+  // Never do live USD→INR conversion — use fixed price_inr fields.
   const rzpCurrency = currency === "INR" ? "INR" : "USD";
+  const GST_RATE = 0.18;
   let finalAmount;
   if (rzpCurrency === "INR") {
     if (billingPeriod === "annual" && plan.price_inr_annual) {
-      // Annual: fixed promotional INR price × 12 months
+      // Annual: fixed promotional INR base price × 12 months + 18% GST
       const monthlyInr = plan.price_inr_annual * (1 - (discountPercent || 0) / 100);
-      finalAmount = Math.round(monthlyInr * 12 * 100); // paise
+      finalAmount = Math.round(monthlyInr * 12 * (1 + GST_RATE) * 100); // paise
     } else {
-      // Monthly: use fixed price_inr (includes 18% GST), no live conversion
+      // Monthly: use fixed price_inr base price + 18% GST
       const monthlyInr = (plan.price_inr || 0) * (1 - (discountPercent || 0) / 100);
-      finalAmount = Math.round(monthlyInr * 100); // paise
+      finalAmount = Math.round(monthlyInr * (1 + GST_RATE) * 100); // paise
     }
   } else {
     const billingUsd = billingPeriod === "annual"

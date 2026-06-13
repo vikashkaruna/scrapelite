@@ -3,8 +3,8 @@
 // India-first: USD for all other regions, INR for Indian users.
 export const CURRENCIES = ["USD", "INR"];
 
-// INR prices include 18% GST. price_inr = monthly INR (GST-inclusive).
-// price_inr_annual = promotional annual INR per month (GST-inclusive).
+// INR prices are BASE prices (pre-GST). 18% GST is added at checkout time.
+// price_inr_annual = promotional annual INR per month (base, pre-GST) — fixed rate
 
 export const CURRENCY_META = {
   USD: { symbol: "$",  label: "US Dollar",   flag: "🇺🇸" },
@@ -13,8 +13,8 @@ export const CURRENCY_META = {
 
 // price_usd         = monthly USD price
 // price_usd_annual  = annual plan price per month (USD, ~20% off)
-// price_inr         = monthly INR price (GST-inclusive, no live conversion)
-// price_inr_annual  = promotional annual price per month (INR, GST-inclusive) — fixed rate
+// price_inr         = monthly INR price (base, pre-GST — 18% GST added at checkout)
+// price_inr_annual  = promotional annual price per month (INR, base, pre-GST) — fixed rate
 // trialCredit       = once-only signup extraction credit (Free plan only)
 export const PLANS = [
   {
@@ -268,15 +268,15 @@ export const ENTERPRISE_PLAN = {
 
 export const PLAN_BY_ID = Object.fromEntries(PLANS.map((p) => [p.id, p]));
 
-// INR prices include 18% GST. hidden: true → not shown in top-up section on Pricing page.
+// All price_inr are BASE prices (pre-GST). 18% GST added at checkout.
+// hidden: true → not shown in top-up section on Pricing page.
 export const TOPUP_BUNDLES = [
   {
     id: "extractions-bundle",
     name: "Extractions Bundle",
     icon: "zap",
     price_usd: 9,
-    price_inr: 884,        // ₹749 base + 18% GST = ₹884
-    price_inr_base: 749,
+    price_inr: 749,
     description: "100 extra extractions with all enrichments, CSV + PDF, and email export.",
     unit: "per 100 extractions",
     bonusExtractions: 100,
@@ -287,8 +287,7 @@ export const TOPUP_BUNDLES = [
     name: "Batch Pack",
     icon: "layers",
     price_usd: 9,
-    price_inr: 884,        // ₹749 base + 18% GST = ₹884
-    price_inr_base: 749,
+    price_inr: 749,
     description: "Unlock batch mode for 50 URLs. Run multi-URL extractions with combined CSV/JSON/Markdown output. Stackable in multiples of 50.",
     unit: "per 50 URLs",
     stackable: true,
@@ -300,8 +299,7 @@ export const TOPUP_BUNDLES = [
     name: "Scheduled Monitor",
     icon: "clock",
     price_usd: 5,
-    price_inr: 471,        // ₹399 base + 18% GST = ₹471
-    price_inr_base: 399,
+    price_inr: 399,
     description: "Monitor one URL daily — email alert when content changes are detected.",
     unit: "per URL / month",
     stackable: true,
@@ -311,8 +309,7 @@ export const TOPUP_BUNDLES = [
     name: "Extra Workspace",
     icon: "briefcase",
     price_usd: 19,
-    price_inr: 1769,       // ₹1499 base + 18% GST = ₹1769
-    price_inr_base: 1499,
+    price_inr: 1499,
     description: "Add an additional client workspace for team collaboration.",
     unit: "/ month",
     stackable: true,

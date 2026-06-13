@@ -19,17 +19,23 @@ export default function TopupBundleModal({
 
   if (!bundle) return null;
 
-  const basePrice = currency === "INR" && bundle.price_inr ? bundle.price_inr : bundle.price_usd;
-  const sym = currency === "INR" ? "₹" : "$";
-  const totalPrice = basePrice * qty;
-  const formattedTotal = currency === "INR"
-    ? sym + totalPrice.toLocaleString("en-IN")
-    : sym + totalPrice;
-  const formattedUnit = currency === "INR"
-    ? sym + basePrice.toLocaleString("en-IN")
-    : sym + basePrice;
+  const isINR = currency === "INR";
+  const GST_RATE = 0.18;
+  const basePrice    = isINR && bundle.price_inr ? bundle.price_inr : bundle.price_usd;
+  const subtotal     = basePrice * qty;
+  const gst          = isINR ? Math.round(subtotal * GST_RATE) : 0;
+  const totalPrice   = subtotal + gst;
+  const sym          = isINR ? "₹" : "$";
+
+  const fmtINR = (n) => sym + Math.round(n).toLocaleString("en-IN");
+  const fmtUSD = (n) => sym + n;
+  const fmtAmt = isINR ? fmtINR : fmtUSD;
+
+  const formattedTotal = fmtAmt(totalPrice);
+  const formattedUnit  = fmtAmt(basePrice);
 
   const bonusUrls = (bundle.bonusBatchUrls || 0) * qty;
+  const bonusExtr = (bundle.bonusExtractions || 0) * qty;
 
   // Get up to 2 plans with higher price_usd than current, excluding comingSoon
   const allPlans = getEffectivePlans();
@@ -89,17 +95,36 @@ export default function TopupBundleModal({
         <div className="tbm-summary">
           <div className="tbm-summary-row">
             <span>{bundle.name}{qty > 1 ? ` × ${qty}` : ""}</span>
-            <span>{formattedTotal}</span>
+            <span>{fmtAmt(subtotal)}</span>
           </div>
           {qty > 1 && (
             <div className="tbm-summary-row tbm-summary-per">
               <span>{formattedUnit} per bundle</span>
             </div>
           )}
+          {isINR && (
+            <>
+              <div className="tbm-summary-row tbm-gst-row">
+                <span>GST (18%)</span>
+                <span>+ {fmtINR(gst)}</span>
+              </div>
+              <div className="tbm-summary-divider" />
+              <div className="tbm-summary-row tbm-total-row">
+                <span>Total charged</span>
+                <span>{formattedTotal}</span>
+              </div>
+            </>
+          )}
           {bonusUrls > 0 && (
             <div className="tbm-summary-bonus">
               <Icon name="zap" size={13} />
               <span>+{bonusUrls.toLocaleString()} bonus batch URLs added to your plan</span>
+            </div>
+          )}
+          {bonusExtr > 0 && (
+            <div className="tbm-summary-bonus">
+              <Icon name="zap" size={13} />
+              <span>+{bonusExtr.toLocaleString()} bonus extractions added to your plan</span>
             </div>
           )}
         </div>
