@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { CONTENT_FORMATS, generateContent } from "../lib/aiService.js";
+import { incrementContentGenerations } from "../lib/usageService.js";
 
 export default function ContentModal({ item, onClose }) {
   const [format, setFormat] = useState(null);
@@ -22,6 +23,7 @@ export default function ContentModal({ item, onClose }) {
     try {
       const text = await generateContent(item, fmt);
       setOutput(text);
+      incrementContentGenerations(1);
     } catch (err) {
       console.error("[DatIQ] Content generation failed:", err);
       setError(err?.message || "Couldn't generate content. Please try again.");

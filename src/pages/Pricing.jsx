@@ -5,7 +5,7 @@ import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
-import { CURRENCIES, CURRENCY_META } from "../lib/pricingConfig.js";
+import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
 import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
@@ -356,6 +356,7 @@ export default function Pricing() {
               />
             );
           })}
+          <EnterpriseCard onContact={handleContactSales} />
         </div>
 
         {currency === "INR" && (

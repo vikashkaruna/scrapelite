@@ -161,7 +161,9 @@ export default function TopupBundleModal({
                     <div className="tbm-up-desc">{plan.tagline}</div>
                   </div>
                   <div className="tbm-up-price">
-                    {formatPrice(plan.price_usd_annual ?? plan.price_usd, "USD")}
+                    {isINR && (plan.price_inr_annual || plan.price_inr)
+                      ? "₹" + Math.round(plan.price_inr_annual || plan.price_inr).toLocaleString("en-IN")
+                      : formatPrice(plan.price_usd_annual ?? plan.price_usd, "USD")}
                     <span>/mo</span>
                   </div>
                 </button>
