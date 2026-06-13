@@ -26,13 +26,6 @@ function Brand({ onClick }) {
 // ── Explore mega-dropdown sections ────────────────────────────────
 const EXPLORE_SECTIONS = [
   {
-    key: "company",
-    label: "Company",
-    items: [
-      { label: "About DatIQ",  icon: "info",      path: "/about" },
-    ],
-  },
-  {
     key: "pricing",
     label: "Pricing",
     items: [
@@ -51,9 +44,7 @@ const EXPLORE_SECTIONS = [
     key: "compare",
     label: "Compare",
     items: [
-      { label: "Compare Tools",    icon: "bar-chart", path: "/vs/compare.html",  external: true },
-      { label: "vs Browse.ai",     icon: "zap",       path: "/vs/browse-ai" },
-      { label: "vs Clay",          icon: "zap",       path: "/vs/clay" },
+      { label: "Compare Tools", icon: "bar-chart", path: "/vs/compare.html", external: true },
     ],
   },
   {
@@ -68,8 +59,14 @@ const EXPLORE_SECTIONS = [
     key: "contact",
     label: "Contact",
     items: [
-      { label: "Contact Us",  icon: "mail",           path: "/contact" },
-      { label: "Submit Bug",  icon: "alert-triangle", path: "/contact?type=bug" },
+      { label: "Contact Us",  icon: "mail",  path: "/contact" },
+    ],
+  },
+  {
+    key: "company",
+    label: "Company",
+    items: [
+      { label: "About DatIQ", icon: "info", path: "/about" },
     ],
   },
 ];
@@ -88,8 +85,6 @@ function ExploreDropdown({ onNavigate }) {
               <a
                 key={item.path}
                 href={item.path}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="nav-dropdown-item"
                 role="menuitem"
                 onClick={() => onNavigate()}
@@ -266,7 +261,7 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                   <div className="mobile-nav-group-label">{section.label}</div>
                   {section.items.map((item) =>
                     item.external ? (
-                      <a key={item.path} href={item.path} target="_blank" rel="noopener noreferrer"
+                      <a key={item.path} href={item.path}
                         className="mobile-nav-subitem" onClick={onClose}>
                         <Icon name={item.icon} size={14} />
                         {item.label}

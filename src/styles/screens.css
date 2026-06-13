@@ -2603,15 +2603,18 @@
 .referral-teaser-link:hover { text-decoration: underline; }
 
 /* ── Usage upsell banner ────────────────────────────────────────── */
-.usage-upsell-banner {
-  display: flex; align-items: center; gap: 10px;
+.usage-upsell-banner-wrap {
   background: color-mix(in srgb, #f59e0b 12%, var(--surface));
   border-bottom: 1px solid color-mix(in srgb, #f59e0b 30%, var(--border));
-  padding: 10px 20px; font-size: .9em;
 }
-.usage-upsell-over {
+.usage-upsell-banner-wrap.usage-upsell-over {
   background: color-mix(in srgb, #e0556b 12%, var(--surface));
   border-bottom-color: color-mix(in srgb, #e0556b 30%, var(--border));
+}
+.usage-upsell-banner {
+  display: flex; align-items: center; gap: 10px;
+  max-width: 1080px; margin: 0 auto;
+  padding: 10px clamp(20px, 4vw, 44px); font-size: .9em;
 }
 .uub-icon { color: #f59e0b; flex-shrink: 0; }
 .usage-upsell-over .uub-icon { color: #e0556b; }
@@ -2796,7 +2799,7 @@
 
 /* ── Batch extraction page (/batch) ─────────────────────────────────────────── */
 
-.batch-page { max-width: 860px; }
+.batch-page { width: 100%; }
 
 .batch-hero { text-align: center; margin-bottom: 32px; }
 .batch-h1 {

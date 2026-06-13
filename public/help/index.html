@@ -32,7 +32,7 @@
     <div class="side-group">
       <a class="side-link active" href="index.html">Overview</a>
     </div>
-    <div class="side-label">User Guide (External)</div>
+    <div class="side-label">User Guide</div>
     <div class="side-group">
       <a class="side-link" href="01-product-overview.html"><span class="side-num">1</span>Product overview</a>
       <a class="side-link" href="07-application-flow-screen-by-screen-with-screenshots.html"><span class="side-num">2</span>App walkthrough — screens &amp; features</a>
@@ -43,18 +43,10 @@
       <a class="side-link" href="13-faq-and-troubleshooting.html"><span class="side-num">7</span>FAQ &amp; troubleshooting</a>
       <a class="side-link" href="14-glossary.html"><span class="side-num">8</span>Glossary</a>
     </div>
-    <div class="side-label">Developer Reference (External)</div>
+    <div class="side-label">Developer Reference</div>
     <div class="side-group">
-      <a class="side-link" href="10-technology-stack-their-uses-and-architecture.html"><span class="side-num">A</span>Technology stack &amp; architecture</a>
-      <a class="side-link" href="11-data-model-and-persistence.html"><span class="side-num">B</span>Data model &amp; persistence</a>
-    </div>
-    <div class="side-label">Internal Reference</div>
-    <div class="side-group">
-      <a class="side-link" href="02-product-evolution-mvp-v1-v20-latest.html"><span class="side-num">I1</span>Product evolution history</a>
-      <a class="side-link" href="03-who-its-for-personas-user-groups-and-business-segments.html"><span class="side-num">I2</span>Personas &amp; user segments</a>
-      <a class="side-link" href="04-feature-persona-segment-mapping.html"><span class="side-num">I3</span>Feature → persona mapping</a>
-      <a class="side-link" href="05-feature-and-functionality-prioritization-principles.html"><span class="side-num">I4</span>Prioritization principles</a>
-      <a class="side-link" href="15-appendix-regenerating-screenshots-and-environment.html"><span class="side-num">I5</span>Dev appendix — screenshots &amp; env</a>
+      <a class="side-link" href="12-privacy-security-and-data-handling.html"><span class="side-num">A</span>Privacy &amp; security</a>
+      <a class="side-link" href="13-faq-and-troubleshooting.html"><span class="side-num">B</span>FAQ &amp; troubleshooting</a>
     </div>
   </nav>
   <main class="content">
@@ -80,14 +72,7 @@
 
       <hr>
 
-      <h2 id="doc-categories">Documentation categories</h2>
-      <p>Documentation is divided into two audiences:</p>
-      <ul>
-        <li><strong>External (User &amp; Developer Guide)</strong> — everything end-users and API developers need: product overview, app walkthrough, workflows, exports, FAQ, glossary, and API/architecture reference.</li>
-        <li><strong>Internal (Developer Reference)</strong> — product evolution history, persona/segment analysis, feature prioritisation principles, and developer environment setup. Confidential — not for external distribution.</li>
-      </ul>
-
-      <h2 id="user-guide">User Guide (External)</h2>
+      <h2 id="user-guide">User Guide</h2>
       <div class="card-grid">
         <a class="nav-card" href="01-product-overview.html">
           <div class="nc-num">1</div>
@@ -123,46 +108,17 @@
         </a>
       </div>
 
-      <h2 id="developer-guide" style="margin-top:40px;">Developer Reference (External)</h2>
-      <p>For developers integrating DatIQ's API or building on the platform.</p>
+      <h2 id="developer-guide" style="margin-top:40px;">Additional reference</h2>
       <div class="card-grid">
-        <a class="nav-card" href="10-technology-stack-their-uses-and-architecture.html">
+        <a class="nav-card" href="06-complete-feature-catalog.html">
           <div class="nc-num">A</div>
-          <div class="nc-body"><div class="nc-title">Technology stack &amp; architecture</div><div class="nc-desc">Vite + React + Supabase + Netlify Functions. API proxy pattern, data flow, and provider tree.</div></div>
+          <div class="nc-body"><div class="nc-title">Complete feature catalog</div><div class="nc-desc">Full list of every feature — handy for "does DatIQ support X?" lookups and integration planning.</div></div>
         </a>
-        <a class="nav-card" href="11-data-model-and-persistence.html">
+        <a class="nav-card" href="14-glossary.html">
           <div class="nc-num">B</div>
-          <div class="nc-body"><div class="nc-title">Data model &amp; persistence</div><div class="nc-desc">Supabase schema, localStorage keys, extraction object structure, and subscription model.</div></div>
+          <div class="nc-body"><div class="nc-title">Glossary</div><div class="nc-desc">Plain-English definitions for every term used in DatIQ — from extractions to enrichment tabs.</div></div>
         </a>
       </div>
-
-      <h2 id="internal" style="margin-top:40px;">Internal Reference</h2>
-      <p style="color:var(--text-2);font-size:0.9rem;margin-bottom:16px;">
-        ⚠️ <strong>Internal use only.</strong> Contains product strategy, persona analysis, evolution history, and developer tooling. Not for external distribution.
-      </p>
-      <div class="card-grid">
-        <a class="nav-card" href="02-product-evolution-mvp-v1-v20-latest.html">
-          <div class="nc-num">I1</div>
-          <div class="nc-body"><div class="nc-title">Product evolution history</div><div class="nc-desc">MVP → v1 → v2.0 → R12+. How DatIQ grew, what was built in each phase, and why.</div></div>
-        </a>
-        <a class="nav-card" href="03-who-its-for-personas-user-groups-and-business-segments.html">
-          <div class="nc-num">I2</div>
-          <div class="nc-body"><div class="nc-title">Personas &amp; user segments</div><div class="nc-desc">The 7 personas, their workflows, and how the product maps to each segment's needs.</div></div>
-        </a>
-        <a class="nav-card" href="04-feature-persona-segment-mapping.html">
-          <div class="nc-num">I3</div>
-          <div class="nc-body"><div class="nc-title">Feature → persona mapping</div><div class="nc-desc">Cross-reference: which features matter for which users. Used for onboarding and prioritisation.</div></div>
-        </a>
-        <a class="nav-card" href="05-feature-and-functionality-prioritization-principles.html">
-          <div class="nc-num">I4</div>
-          <div class="nc-body"><div class="nc-title">Prioritization principles</div><div class="nc-desc">The locked architecture rules and design principles that guide what gets built.</div></div>
-        </a>
-        <a class="nav-card" href="15-appendix-regenerating-screenshots-and-environment.html">
-          <div class="nc-num">I5</div>
-          <div class="nc-body"><div class="nc-title">Dev appendix</div><div class="nc-desc">How to regenerate screenshots, set up the environment, and run the local dev server.</div></div>
-        </a>
-      </div>
-
       <div class="page-nav"><span></span><a class="pn-btn pn-next" href="01-product-overview.html"><span class="pn-dir">Next →</span><span class="pn-title">Product overview</span></a></div>
     </article>
     <footer class="doc-foot">DatIQ · Help &amp; Documentation · Updated 2026-06-12 · <a href="/about" style="color:inherit">About</a> · <a href="/contact" style="color:inherit">Contact</a></footer>

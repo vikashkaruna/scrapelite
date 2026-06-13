@@ -48,7 +48,8 @@ export default function UsageUpsellBanner() {
   const isOver = used >= total;
 
   return (
-    <div className={"usage-upsell-banner" + (isOver ? " usage-upsell-over" : "")}>
+    <div className={"usage-upsell-banner-wrap" + (isOver ? " usage-upsell-over" : "")}>
+    <div className="usage-upsell-banner">
       <div className="uub-icon">
         <Icon name={isOver ? "alert-circle" : "zap"} size={16} />
       </div>
@@ -74,6 +75,7 @@ export default function UsageUpsellBanner() {
       <button className="uub-dismiss" onClick={dismiss} aria-label="Dismiss">
         <Icon name="x" size={14} />
       </button>
+    </div>
     </div>
   );
 }

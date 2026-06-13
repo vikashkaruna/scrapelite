@@ -378,6 +378,14 @@ export default function Account() {
                 <span className="astat-val plan-tier-val">{plan.name}</span>
               </div>
               <div className="astat-row">
+                <span className="astat-label">Batch executions</span>
+                <span className="astat-val">{(usage?.batchRuns ?? 0).toLocaleString()}</span>
+              </div>
+              <div className="astat-row">
+                <span className="astat-label">Content generations</span>
+                <span className="astat-val">{(usage?.contentGenerations ?? 0).toLocaleString()}</span>
+              </div>
+              <div className="astat-row">
                 <span className="astat-label">Batch mode limit</span>
                 <span className="astat-val">
                   {hasBatchAccess

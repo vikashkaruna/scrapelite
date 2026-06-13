@@ -11,6 +11,7 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { runBatch, parseUrlsFromCsv } from "../lib/batchService.js";
+import { incrementBatchRuns } from "../lib/usageService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
@@ -247,6 +248,7 @@ export default function Batch() {
 
       if (!controller.signal.aborted) {
         setResults(batchResults);
+        incrementBatchRuns(1);
         const successItems = batchResults.filter((r) => r?._status === "success");
         const failed = batchResults.filter((r) => r?._status === "error").length;
         showToast(

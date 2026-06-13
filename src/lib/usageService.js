@@ -22,7 +22,7 @@ export function writeSubscription(sub) { lsSet(SUB_KEY, sub); }
 export function readUsage() {
   const raw = ls(USAGE_KEY) ?? {};
   const mk = monthKey();
-  return raw[mk] ?? { month: mk, extractions: 0, enrichments: {} };
+  return raw[mk] ?? { month: mk, extractions: 0, enrichments: {}, batchRuns: 0, contentGenerations: 0 };
 }
 
 function writeUsage(usage) {
@@ -44,6 +44,20 @@ export function incrementEnrichments(url) {
   const u = readUsage();
   const key = url || "__global__";
   u.enrichments[key] = (u.enrichments[key] ?? 0) + 1;
+  writeUsage(u);
+  return { ...u };
+}
+
+export function incrementBatchRuns(count = 1) {
+  const u = readUsage();
+  u.batchRuns = (u.batchRuns ?? 0) + count;
+  writeUsage(u);
+  return { ...u };
+}
+
+export function incrementContentGenerations(count = 1) {
+  const u = readUsage();
+  u.contentGenerations = (u.contentGenerations ?? 0) + count;
   writeUsage(u);
   return { ...u };
 }
