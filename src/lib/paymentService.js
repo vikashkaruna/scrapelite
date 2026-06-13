@@ -107,7 +107,7 @@ function describeRazorpayFailure(code, description, reason) {
 }
 
 // ── Stripe Checkout (redirect flow) ─────────────────────────────────────────
-async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, onStageChange }) {
+async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, mobile, onStageChange }) {
   const plan    = getEffectivePlanById(planId);
   const priceId = STRIPE_PRICE_IDS[planId];
 
@@ -138,6 +138,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
         qty:             qty > 1 ? qty : undefined,
         sessionId,
         email:           email || null,
+        mobile:          mobile || null,
         successUrl:      `${window.location.origin}/payment/success?provider=stripe&session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
         cancelUrl:       `${window.location.origin}/payment/cancel?plan=${planId}`,
       }),
@@ -159,7 +160,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
 }
 
 // ── Razorpay Checkout (modal, supports UPI/cards/netbanking/wallets) ─────────
-async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, onStageChange }) {
+async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, mobile, onStageChange }) {
   const plan = getEffectivePlanById(planId);
 
   // Step 1: Load SDK
@@ -167,21 +168,27 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
   await loadRazorpay(); // throws with user-friendly message on failure
 
   // Step 2: Compute amount (paise for INR)
+  // All INR prices are BASE (pre-GST). Add 18% GST for all INR transactions.
+  // Never do live USD→INR conversion — use fixed price_inr fields.
   const rzpCurrency = currency === "INR" ? "INR" : "USD";
+  const GST_RATE = 0.18;
   let finalAmount;
   if (rzpCurrency === "INR") {
     if (billingPeriod === "annual" && plan.price_inr_annual) {
-      // Annual: use fixed promotional INR price × 12 months (no dynamic conversion)
-      const monthlyInr   = plan.price_inr_annual * (1 - (discountPercent || 0) / 100);
-      finalAmount = Math.round(monthlyInr * 12 * 100); // paise
+      // Annual: fixed promotional INR base price × 12 months + 18% GST
+      const monthlyInr = plan.price_inr_annual * (1 - (discountPercent || 0) / 100);
+      finalAmount = Math.round(monthlyInr * 12 * (1 + GST_RATE) * 100); // paise
     } else {
-      // Monthly: convert from USD at current rate
-      const baseUsd = plan.price_usd * (1 - (discountPercent || 0) / 100);
-      finalAmount   = Math.round(convertPrice(baseUsd, rates, "INR") * 100);
+      // Monthly: use fixed price_inr base price + 18% GST
+      const monthlyInr = (plan.price_inr || 0) * (1 - (discountPercent || 0) / 100);
+      finalAmount = Math.round(monthlyInr * (1 + GST_RATE) * 100); // paise
     }
   } else {
-    const baseUsd = plan.price_usd * (1 - (discountPercent || 0) / 100);
-    finalAmount   = Math.round(baseUsd * 100);
+    const billingUsd = billingPeriod === "annual"
+      ? (plan.price_usd_annual ?? plan.price_usd)
+      : plan.price_usd;
+    const baseUsd = billingUsd * (1 - (discountPercent || 0) / 100);
+    finalAmount = Math.round(baseUsd * 100);
   }
 
   const periodLabel = billingPeriod === "annual"
@@ -239,7 +246,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
       description: `${plan.name} Plan — ${periodLabel}`,
       image:       `${window.location.origin}/favicon.svg`,
       order_id:    orderId,
-      prefill:     { email: email || "" },
+      prefill:     { email: email || "", contact: mobile || "" },
       notes:       { planId, sessionId, billingPeriod: billingPeriod || "monthly" },
       theme:       { color: "#6366f1" },
       modal: {
@@ -320,25 +327,25 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
 }
 
 // ── Top-up bundle checkout ───────────────────────────────────────────────────
-export async function initiateTopupCheckout({ bundleId, currency, rates, qty = 1, sessionId, email, onStageChange }) {
+export async function initiateTopupCheckout({ bundleId, currency, rates, qty = 1, sessionId, email, mobile, onStageChange }) {
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
   if (provider === "stripe") {
-    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, onStageChange });
+    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, mobile, onStageChange });
   }
-  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, onStageChange });
+  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, mobile, onStageChange });
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────
-export async function initiateCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange }) {
+export async function initiateCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange }) {
   if (!hasPayment) return { status: "demo_mode" };
 
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
-  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange });
-  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, onStageChange });
+  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange });
+  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange });
   return { status: "contact_sales" };
 }
 

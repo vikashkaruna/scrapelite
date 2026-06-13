@@ -5,8 +5,8 @@ import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
-import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
-import { convertPrice, formatPrice } from "../lib/currencyService.js";
+import { CURRENCIES, CURRENCY_META } from "../lib/pricingConfig.js";
+import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
@@ -54,13 +54,14 @@ function CurrencyPicker({ value, onChange }) {
 }
 
 // Returns the display price for a plan given billing period + currency.
+// INR prices use fixed amounts (GST-inclusive) — never do live USD→INR conversion.
 function resolvePrice(plan, billingPeriod, currency, rates) {
   if (plan.price_usd === 0) return 0;
   if (billingPeriod === "annual") {
     if (currency === "INR" && plan.price_inr_annual) return plan.price_inr_annual;
     return plan.price_usd_annual ?? plan.price_usd;
   }
-  if (currency === "INR") return Math.round(convertPrice(plan.price_usd, rates, "INR"));
+  if (currency === "INR") return plan.price_inr || Math.round(convertPrice(plan.price_usd, rates, "INR"));
   return plan.price_usd;
 }
 
@@ -355,13 +356,14 @@ export default function Pricing() {
               />
             );
           })}
-          <EnterpriseCard onContact={handleContactSales} />
         </div>
 
-        {currency === "INR" && billingPeriod === "annual" && (
+        {currency === "INR" && (
           <p className="inr-annual-note">
             <Icon name="info" size={13} />
-            INR annual prices are promotional rates. Monthly INR billing converted from USD at market rates.
+            {billingPeriod === "annual"
+              ? "INR annual prices are promotional fixed rates, billed upfront. Prices include 18% GST."
+              : "INR monthly prices are fixed and include 18% GST. No live USD conversion."}
           </p>
         )}
 
@@ -380,7 +382,7 @@ export default function Pricing() {
             </p>
           </div>
           <div className="topup-grid">
-            {bundles.map((bundle) => (
+            {bundles.filter((b) => !b.hidden).map((bundle) => (
               <TopupCard
                 key={bundle.id}
                 bundle={bundle}

@@ -108,15 +108,21 @@ export function canBatch(planId, urlCount = 1, bonusBatchUrls = 0) {
     return {
       allowed: false,
       remaining: 0,
-      reason:
-        "Batch mode requires the Business or Agency plan, or a Batch Pack top-up bundle.",
+      reason: "Batch mode is not available on your current plan. Upgrade to unlock batch extraction.",
     };
   }
   if (urlCount > effectiveLimit) {
+    const nextPlanHint = planId === "free"
+      ? "Upgrade to Select (10 URLs), Pro (25 URLs), Business (200 URLs), or Agency (500 URLs)."
+      : planId === "select"
+        ? "Upgrade to Pro (25 URLs), Business (200 URLs), or Agency (500 URLs) for more."
+        : planId === "pro"
+          ? "Upgrade to Business (200 URLs) or Agency (500 URLs) for larger batches."
+          : `Your plan supports up to ${effectiveLimit} URLs per batch. Reduce your list or upgrade.`;
     return {
       allowed: false,
       remaining: effectiveLimit,
-      reason: `Your plan supports up to ${effectiveLimit} URLs per batch. Reduce your list or upgrade.`,
+      reason: `You've reached your batch limit of ${effectiveLimit} URL${effectiveLimit === 1 ? "" : "s"}. ${nextPlanHint}`,
     };
   }
   return { allowed: true, remaining: effectiveLimit - urlCount };

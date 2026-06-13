@@ -163,6 +163,9 @@ export default function Account() {
   const enrichmentEntries = Object.entries(usage?.enrichments ?? {});
   const totalEnrichments  = enrichmentEntries.reduce((s, [, v]) => s + v, 0);
 
+  const batchUrlLimit  = (plan.limits.batch_max_urls || 0) + (subscription.bonusBatchUrls || 0);
+  const hasBatchAccess = batchUrlLimit > 0;
+
   const handleApplyCoupon = async (e) => {
     e.preventDefault();
     if (!couponInput.trim()) return;
@@ -274,11 +277,25 @@ export default function Account() {
               <div className="usage-meters">
                 <UsageMeter label="Extractions used"   icon="zap"       used={usage?.extractions ?? 0} limit={totalExtractionLimit} />
                 <UsageMeter label="Enrichments (total)" icon="sparkles"  used={totalEnrichments}        limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null} />
+                {hasBatchAccess && (
+                  <div className="usage-meter">
+                    <div className="usage-meter-head">
+                      <div className="usage-meter-label"><Icon name="layers-2" size={15} /><span>Batch mode (URLs per batch)</span></div>
+                      <div className="usage-meter-count">{batchUrlLimit === Infinity ? <span className="usage-unlimited">Unlimited</span> : batchUrlLimit.toLocaleString()}</div>
+                    </div>
+                  </div>
+                )}
               </div>
               {bonus > 0 && (
                 <div className="usage-bonus-note">
                   <Icon name="zap" size={13} />
                   <span>+{bonus} bonus extractions from top-up bundle or coupon.</span>
+                </div>
+              )}
+              {!hasBatchAccess && (
+                <div className="usage-bonus-note" style={{ color: "var(--text-2)" }}>
+                  <Icon name="layers-2" size={13} />
+                  <span>Batch mode: not available on your current plan. <a href="/pricing" style={{ color: "var(--accent)" }}>Upgrade →</a></span>
                 </div>
               )}
             </div>
@@ -359,6 +376,14 @@ export default function Account() {
               <div className="astat-row">
                 <span className="astat-label">Plan tier</span>
                 <span className="astat-val plan-tier-val">{plan.name}</span>
+              </div>
+              <div className="astat-row">
+                <span className="astat-label">Batch mode limit</span>
+                <span className="astat-val">
+                  {hasBatchAccess
+                    ? (batchUrlLimit === Infinity ? "Unlimited" : `${batchUrlLimit} URLs/batch`)
+                    : <a href="/pricing" style={{ color: "var(--accent)", fontSize: "0.85em" }}>Upgrade to unlock</a>}
+                </span>
               </div>
               {plan.limits.scheduled_monitoring > 0 && (
                 <div className="astat-row">

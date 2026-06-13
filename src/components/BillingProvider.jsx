@@ -1,5 +1,6 @@
 // BillingProvider.jsx — V5 subscription + usage context with DB sync, alerts, and payment.
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useAuth } from "./AuthProvider.jsx";
 import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
@@ -18,7 +19,7 @@ import {
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
 import { getPaymentProvider, PROVIDER_META } from "../lib/paymentConfig.js";
 import PaymentProcessingModal from "./PaymentProcessingModal.jsx";
-import DemoPaymentModal from "./DemoPaymentModal.jsx";
+import PaymentConfirmModal from "./PaymentConfirmModal.jsx";
 
 const CURRENCY_KEY = "datiq.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || detectCurrency(); } catch { return detectCurrency(); } }
@@ -26,6 +27,7 @@ function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || det
 const BillingContext = createContext(null);
 
 export function BillingProvider({ children }) {
+  const { user } = useAuth();
   const [subscription, setSubscription] = useState(() => readSubscription());
   const [usage, setUsageState]          = useState(() => readUsage());
   const [currency, setCurrencyState]    = useState(() => readCurrency());
@@ -42,9 +44,9 @@ export function BillingProvider({ children }) {
   const [paymentStageMsg, setPaymentStageMsg] = useState("");
   const [paymentPlanName, setPaymentPlanName] = useState("");
 
-  // ── Demo checkout modal state (no-key environments) ──────────────────────
-  const [demoTarget, setDemoTarget]   = useState(null); // { planId, billingPeriod } | null
-  const demoResolveRef                = useRef(null);   // holds the resolve fn while modal is open
+  // ── Payment confirmation modal state (shown before every checkout) ───────
+  const [confirmTarget, setConfirmTarget] = useState(null); // { planId, billingPeriod } | null
+  const confirmResolveRef                 = useRef(null);   // holds the resolve fn while modal is open
 
   // Reload effective plan map on every render to pick up admin overrides immediately
   const planMap = getEffectivePlanMap();
@@ -123,45 +125,46 @@ export function BillingProvider({ children }) {
     if (targetPlanId === "free") { upgradePlan("free"); return { status: "free" }; }
 
     lastPaymentArgs.current = { targetPlanId, billingPeriod };
-    const targetPlan = planMap[targetPlanId] ?? planMap.free;
-    setPaymentPlanName(targetPlan.name || targetPlanId);
     setPaymentStage(PAYMENT_STAGE.IDLE);
     setPaymentError("");
+
+    // Step 1: Show confirmation modal with pricing breakdown (before any payment call)
+    const confirmedPlanId = await new Promise((resolve) => {
+      confirmResolveRef.current = resolve; // resolves with planId (string) or null (cancel)
+      setConfirmTarget({ planId: targetPlanId, billingPeriod });
+    });
+    setConfirmTarget(null);
+    confirmResolveRef.current = null;
+
+    if (!confirmedPlanId) return { status: "cancelled" };
+
+    // Step 2: Proceed with (possibly upgraded) plan
+    const targetPlan = planMap[confirmedPlanId] ?? planMap.free;
+    setPaymentPlanName(targetPlan.name || confirmedPlanId);
     setPaymentLoading(true);
 
     try {
       const result = await initiateCheckout({
-        planId:          targetPlanId,
+        planId:          confirmedPlanId,
         currency,
         rates,
         billingPeriod,
         discountPercent: subscription.discountPercent || 0,
         sessionId:       getSessionId(),
-        email:           subscription.email || null,
+        email:           user?.email || subscription.email || null,
+        mobile:          user?.phone || subscription.mobile || null,
         onStageChange:   handleStageChange,
       });
 
       if (result.status === "demo_mode") {
-        // Show a confirmation modal instead of silently upgrading.
-        // Pause the async flow until the user clicks Confirm or Cancel.
-        setPaymentLoading(false); // spinner off; modal takes over
-        const confirmed = await new Promise((resolve) => {
-          demoResolveRef.current = resolve;
-          setDemoTarget({ planId: targetPlanId, billingPeriod });
-        });
-        setDemoTarget(null);
-        demoResolveRef.current = null;
-        if (confirmed) {
-          upgradePlan(targetPlanId);
-          return { status: "demo_mode" };
-        } else {
-          return { status: "cancelled" };
-        }
+        // No payment keys — auto-upgrade locally (confirmation was already shown above)
+        upgradePlan(confirmedPlanId);
+        return { status: "demo_mode" };
 
       } else if (result.status === "success") {
         // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
-        upgradePlan(targetPlanId);
-        await syncSubscriptionToDb(targetPlanId, result.provider, {
+        upgradePlan(confirmedPlanId);
+        await syncSubscriptionToDb(confirmedPlanId, result.provider, {
           subscriptionId: result.subscriptionId,
           customerId:     result.customerId,
         });
@@ -169,7 +172,7 @@ export function BillingProvider({ children }) {
           type:        "payment.captured",
           provider:    result.provider,
           providerId:  result.paymentId || result.orderId,
-          planId:      targetPlanId,
+          planId:      confirmedPlanId,
           amountCents: result.amount,
           currency:    result.currency,
         });
@@ -196,20 +199,25 @@ export function BillingProvider({ children }) {
     }
   }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
-  // ── Batch Pack top-up purchase ────────────────────────────────────────────
+  // ── Top-up bundle purchase (extractions, batch URLs, schedulers, workspaces) ─
   const purchaseBatchPack = useCallback(async (bundleId = "batch-pack", qty = 1) => {
     const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
-    const bonusUrls = (bundle?.bonusBatchUrls || 50) * qty;
+    const bonusUrls = (bundle?.bonusBatchUrls || 0) * qty;
+    const bonusExtr = (bundle?.bonusExtractions || 0) * qty;
 
-    const grantBatchUrls = (sub) => {
-      const updated = { ...sub, bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls };
+    const grantBundle = (sub) => {
+      const updated = {
+        ...sub,
+        ...(bonusUrls > 0 ? { bonusBatchUrls: (sub.bonusBatchUrls || 0) + bonusUrls } : {}),
+        ...(bonusExtr > 0 ? { bonusExtractions: (sub.bonusExtractions || 0) + bonusExtr } : {}),
+      };
       setSubscription(updated);
       writeSubscription(updated);
     };
 
     if (!hasPayment) {
-      grantBatchUrls(subscription);
-      return { status: "demo_mode", bonusUrls };
+      grantBundle(subscription);
+      return { status: "demo_mode", bonusUrls, bonusExtr };
     }
 
     setPaymentPlanName(bundle?.name || bundleId);
@@ -224,11 +232,12 @@ export function BillingProvider({ children }) {
         rates,
         qty,
         sessionId:     getSessionId(),
-        email:         subscription.email || null,
+        email:         user?.email || subscription.email || null,
+        mobile:        user?.phone || subscription.mobile || null,
         onStageChange: handleStageChange,
       });
       if (result?.status === "demo_mode" || result?.status === "success") {
-        grantBatchUrls(subscription);
+        grantBundle(subscription);
       }
       setPaymentStage(PAYMENT_STAGE.IDLE);
       return result;
@@ -315,19 +324,19 @@ export function BillingProvider({ children }) {
     setPaymentError("");
   }, []);
 
-  // ── Demo modal confirm / cancel ───────────────────────────────────────────
-  const confirmDemoPayment = useCallback(() => {
-    const resolve = demoResolveRef.current;
-    demoResolveRef.current = null;
-    setDemoTarget(null);
-    resolve?.(true);
+  // ── Payment confirm modal callbacks ──────────────────────────────────────
+  const handlePaymentConfirm = useCallback((planId) => {
+    const resolve = confirmResolveRef.current;
+    confirmResolveRef.current = null;
+    setConfirmTarget(null);
+    resolve?.(planId); // planId string → proceed; null → cancel
   }, []);
 
-  const cancelDemoPayment = useCallback(() => {
-    const resolve = demoResolveRef.current;
-    demoResolveRef.current = null;
-    setDemoTarget(null);
-    resolve?.(false);
+  const handlePaymentConfirmCancel = useCallback(() => {
+    const resolve = confirmResolveRef.current;
+    confirmResolveRef.current = null;
+    setConfirmTarget(null);
+    resolve?.(null);
   }, []);
 
   const retryPayment = useCallback(() => {
@@ -381,15 +390,15 @@ export function BillingProvider({ children }) {
         onRetry={retryPayment}
         onCancel={dismissPaymentModal}
       />
-      {/* Demo checkout modal — shown when no payment gateway is configured */}
-      {demoTarget && (
-        <DemoPaymentModal
-          plan={planMap[demoTarget.planId] ?? planMap.free}
-          billingPeriod={demoTarget.billingPeriod}
+      {/* Payment confirmation modal — shown before every checkout (real or demo) */}
+      {confirmTarget && (
+        <PaymentConfirmModal
+          planId={confirmTarget.planId}
+          billingPeriod={confirmTarget.billingPeriod}
           currency={currency}
-          rates={rates}
-          onConfirm={confirmDemoPayment}
-          onCancel={cancelDemoPayment}
+          currentPlanId={planId}
+          onConfirm={handlePaymentConfirm}
+          onCancel={handlePaymentConfirmCancel}
         />
       )}
     </BillingContext.Provider>

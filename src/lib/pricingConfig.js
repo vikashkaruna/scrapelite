@@ -3,6 +3,9 @@
 // India-first: USD for all other regions, INR for Indian users.
 export const CURRENCIES = ["USD", "INR"];
 
+// INR prices are BASE prices (pre-GST). 18% GST is added at checkout time.
+// price_inr_annual = promotional annual INR per month (base, pre-GST) — fixed rate
+
 export const CURRENCY_META = {
   USD: { symbol: "$",  label: "US Dollar",   flag: "🇺🇸" },
   INR: { symbol: "₹", label: "Indian Rupee", flag: "🇮🇳" },
@@ -10,7 +13,8 @@ export const CURRENCY_META = {
 
 // price_usd         = monthly USD price
 // price_usd_annual  = annual plan price per month (USD, ~20% off)
-// price_inr_annual  = promotional annual price per month (INR) — fixed promotional rate
+// price_inr         = monthly INR price (base, pre-GST — 18% GST added at checkout)
+// price_inr_annual  = promotional annual price per month (INR, base, pre-GST) — fixed rate
 // trialCredit       = once-only signup extraction credit (Free plan only)
 export const PLANS = [
   {
@@ -18,6 +22,7 @@ export const PLANS = [
     name: "Free",
     price_usd: 0,
     price_usd_annual: 0,
+    price_inr: 0,
     price_inr_annual: 0,
     period: "month",
     tagline: "Try DatIQ risk-free",
@@ -36,20 +41,20 @@ export const PLANS = [
       white_label_pdf: false,
       priority_support: false,
       workspaces: 1,
-      batch_max_urls: 0,
+      batch_max_urls: 5,
     },
     features: [
-      { label: "10 extractions / month",       included: true },
-      { label: "Full AI features",             included: true },
-      { label: "CSV export",                   included: true },
-      { label: "25-extraction trial credit",   included: true },
-      { label: "PDF export",                   included: false },
-      { label: "Markdown / JSON export",       included: false },
-      { label: "Email export",                 included: false },
-      { label: "Batch mode (multi-URL)",       included: false },
-      { label: "Scheduled monitoring",         included: false },
-      { label: "API access",                   included: false },
-      { label: "White-label PDF",              included: false },
+      { label: "10 extractions / month",        included: true },
+      { label: "Full AI features",              included: true },
+      { label: "CSV export",                    included: true },
+      { label: "25-extraction trial credit",    included: true },
+      { label: "Batch mode (up to 5 URLs)",     included: true },
+      { label: "PDF export",                    included: false },
+      { label: "Markdown / JSON export",        included: false },
+      { label: "Email export",                  included: false },
+      { label: "Scheduled monitoring",          included: false },
+      { label: "API access",                    included: false },
+      { label: "White-label PDF",               included: false },
     ],
   },
   {
@@ -57,6 +62,7 @@ export const PLANS = [
     name: "Select",
     price_usd: 19,
     price_usd_annual: 15,
+    price_inr: 1899,
     price_inr_annual: 999,
     period: "month",
     tagline: "For individuals & freelancers",
@@ -74,18 +80,18 @@ export const PLANS = [
       white_label_pdf: false,
       priority_support: false,
       workspaces: 1,
-      batch_max_urls: 0,
+      batch_max_urls: 10,
     },
     features: [
-      { label: "100 extractions / month",  included: true },
-      { label: "All enrichments",          included: true },
-      { label: "CSV + PDF + Markdown export", included: true },
-      { label: "Email export",             included: true },
-      { label: "Batch mode (multi-URL)",   included: false },
-      { label: "Scheduled monitoring",     included: false },
-      { label: "JSON export",              included: false },
-      { label: "API access",               included: false },
-      { label: "White-label PDF",          included: false },
+      { label: "100 extractions / month",          included: true },
+      { label: "All enrichments",                  included: true },
+      { label: "CSV + PDF + Markdown export",      included: true },
+      { label: "Email export",                     included: true },
+      { label: "Batch mode (up to 10 URLs)",       included: true },
+      { label: "Scheduled monitoring",             included: false },
+      { label: "JSON export",                      included: false },
+      { label: "API access",                       included: false },
+      { label: "White-label PDF",                  included: false },
     ],
   },
   {
@@ -93,6 +99,7 @@ export const PLANS = [
     name: "Pro",
     price_usd: 29,
     price_usd_annual: 23,
+    price_inr: 2899,
     price_inr_annual: 1499,
     period: "month",
     tagline: "For power users & consultants",
@@ -110,18 +117,18 @@ export const PLANS = [
       white_label_pdf: false,
       priority_support: false,
       workspaces: 1,
-      batch_max_urls: 0,
+      batch_max_urls: 25,
     },
     features: [
-      { label: "250 extractions / month",      included: true },
-      { label: "All enrichments",              included: true },
-      { label: "CSV + PDF + Markdown + JSON",  included: true },
-      { label: "Email export",                 included: true },
-      { label: "1 scheduled monitor",          included: true },
-      { label: "Google Sheets push",           included: true },
-      { label: "Batch mode (multi-URL)",       included: false },
-      { label: "API access",                   included: false },
-      { label: "White-label PDF",              included: false },
+      { label: "250 extractions / month",          included: true },
+      { label: "All enrichments",                  included: true },
+      { label: "CSV + PDF + Markdown + JSON",      included: true },
+      { label: "Email export",                     included: true },
+      { label: "Batch mode (up to 25 URLs)",       included: true },
+      { label: "1 scheduled monitor",              included: true },
+      { label: "Google Sheets push",               included: true },
+      { label: "API access",                       included: false },
+      { label: "White-label PDF",                  included: false },
     ],
   },
   {
@@ -129,6 +136,7 @@ export const PLANS = [
     name: "Business",
     price_usd: 79,
     price_usd_annual: 63,
+    price_inr: 7899,
     price_inr_annual: 3999,
     period: "month",
     tagline: "For teams and growing agencies",
@@ -166,6 +174,7 @@ export const PLANS = [
     name: "Agency",
     price_usd: 299,
     price_usd_annual: 239,
+    price_inr: 29899,
     price_inr_annual: 14999,
     period: "month",
     tagline: "Unlimited scale, your brand",
@@ -205,6 +214,7 @@ export const PLANS = [
     name: "Developer",
     price_usd: 49,
     price_usd_annual: 39,
+    price_inr: 4899,
     price_inr_annual: 2499,
     period: "month",
     tagline: "API-first, 10K row credits",
@@ -258,6 +268,8 @@ export const ENTERPRISE_PLAN = {
 
 export const PLAN_BY_ID = Object.fromEntries(PLANS.map((p) => [p.id, p]));
 
+// All price_inr are BASE prices (pre-GST). 18% GST added at checkout.
+// hidden: true → not shown in top-up section on Pricing page.
 export const TOPUP_BUNDLES = [
   {
     id: "extractions-bundle",
@@ -267,6 +279,7 @@ export const TOPUP_BUNDLES = [
     price_inr: 749,
     description: "100 extra extractions with all enrichments, CSV + PDF, and email export.",
     unit: "per 100 extractions",
+    bonusExtractions: 100,
     stackable: true,
   },
   {
@@ -279,6 +292,7 @@ export const TOPUP_BUNDLES = [
     unit: "per 50 URLs",
     stackable: true,
     bonusBatchUrls: 50,
+    hidden: true,           // hidden from the Pricing page top-up section
   },
   {
     id: "scheduler-addon",

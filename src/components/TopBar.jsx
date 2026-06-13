@@ -44,18 +44,16 @@ const EXPLORE_SECTIONS = [
     key: "use-cases",
     label: "Use Cases",
     items: [
-      { label: "Lead Generation",     icon: "target",    path: "/use-cases/lead-generation" },
-      { label: "Competitor Research", icon: "eye",       path: "/use-cases/competitor-research" },
-      { label: "SEO Audit",           icon: "search",    path: "/use-cases/seo-audit" },
-      { label: "Market Research",     icon: "bar-chart", path: "/use-cases/market-research" },
+      { label: "All Use Cases", icon: "target", path: "/use-cases/usecase.html", external: true },
     ],
   },
   {
     key: "compare",
     label: "Compare",
     items: [
-      { label: "vs Browse.ai", icon: "zap", path: "/vs/browse-ai" },
-      { label: "vs Clay",      icon: "zap", path: "/vs/clay" },
+      { label: "Compare Tools",    icon: "bar-chart", path: "/vs/compare.html",  external: true },
+      { label: "vs Browse.ai",     icon: "zap",       path: "/vs/browse-ai" },
+      { label: "vs Clay",          icon: "zap",       path: "/vs/clay" },
     ],
   },
   {
@@ -76,7 +74,7 @@ const EXPLORE_SECTIONS = [
   },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases/", "/vs/", "/about", "/blog", "/contact"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact"];
 
 function ExploreDropdown({ onNavigate }) {
   return (
