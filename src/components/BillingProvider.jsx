@@ -149,7 +149,7 @@ export function BillingProvider({ children }) {
         currency,
         rates,
         billingPeriod,
-        discountPercent: subscription.discountPercent || 0,
+        couponCode:      subscription.coupon?.code || null,
         sessionId:       getSessionId(),
         email:           user?.email || subscription.email || null,
         mobile:          user?.phone || subscription.mobile || null,

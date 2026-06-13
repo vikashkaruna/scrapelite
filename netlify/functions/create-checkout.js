@@ -1,6 +1,8 @@
 // create-checkout.js — Backend: create a Stripe Checkout session or Razorpay order.
 // POST body: { provider, planId, priceId?, currency, amount?, billingPeriod?,
-//              discountPercent?, sessionId, email?, successUrl?, cancelUrl? }
+//              couponCode?, sessionId, email?, successUrl?, cancelUrl? }
+// The discount is resolved server-side from `couponCode` (see resolveDiscount);
+// any client-supplied `discountPercent`/`amount` is ignored.
 
 // ── Server-side price tables — AUTHORITATIVE source of truth for charged amounts ──
 // Must mirror src/lib/pricingConfig.js. The client `amount` is IGNORED for plans;
@@ -25,6 +27,31 @@ const ALLOWED_PLANS      = new Set(["free", "select", "pro", "business", "agency
 const ALLOWED_BUNDLES    = new Set(Object.keys(BUNDLE_PRICES));
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
 
+// ── Server-side coupon table — AUTHORITATIVE source of truth for discounts ──
+// Mirrors the percent-type coupons in src/lib/adminService.js (seedCoupons). The
+// client-supplied `discountPercent` is IGNORED; the server resolves the real discount
+// from `couponCode` against this table so a tampered client can't dictate its own price.
+// NOTE: `maxUses` is intentionally NOT enforced here — there is no server-side usage
+// persistence (usage is counted client-side in localStorage). Extraction-bonus coupons
+// (e.g. BONUS50EX) grant bonus credits client-side and do NOT reduce the charged amount,
+// so they are deliberately absent from this table.
+const COUPONS = {
+  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-09-14", active: true  },
+  INDIE10:   { value: 10, planId: "select", expiresAt: "2026-09-30", active: true  },
+  EARLYBIRD: { value: 30, planId: null,     expiresAt: "2026-04-01", active: false },
+};
+
+// Resolve a coupon code to a discount fraction in [0, 1]. Unknown, inactive, expired,
+// or plan-mismatched codes resolve to 0 (no discount) — never an error.
+function resolveDiscount(couponCode, planId) {
+  if (!couponCode) return 0;
+  const c = COUPONS[String(couponCode).trim().toUpperCase()];
+  if (!c || !c.active) return 0;
+  if (c.expiresAt && new Date(c.expiresAt) < new Date()) return 0;
+  if (c.planId && c.planId !== planId) return 0;
+  return Math.min(100, Math.max(0, Number(c.value) || 0)) / 100;
+}
+
 export const handler = async (event) => {
   const headers = {
     "Content-Type": "application/json",
@@ -45,9 +72,11 @@ export const handler = async (event) => {
 
   const {
     provider, planId, priceId, currency, amount,
-    billingPeriod, discountPercent, sessionId, email,
+    billingPeriod, couponCode, sessionId, email,
     successUrl, cancelUrl,
   } = body;
+  // `discountPercent` (body.discountPercent) is intentionally NOT read — the server
+  // resolves the discount itself from `couponCode` via resolveDiscount() below.
 
   const qty = Math.min(10, Math.max(1, parseInt(body.qty, 10) || 1));
 
@@ -67,6 +96,9 @@ export const handler = async (event) => {
   if (currency && !ALLOWED_CURRENCIES.has(currency)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: `Unsupported currency: '${currency}'.`, code: "INVALID_CURRENCY" }) };
   }
+
+  // Server-authoritative discount: resolved from the coupon code, not the client number.
+  const serverDiscount = resolveDiscount(couponCode, planId); // fraction in [0, 1]
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   if (provider === "stripe") {
@@ -102,10 +134,11 @@ export const handler = async (event) => {
         ...(email ? { customer_email: email } : {}),
       };
 
-      if (discountPercent > 0) {
+      const stripeDiscPct = Math.round(serverDiscount * 100);
+      if (stripeDiscPct > 0) {
         try {
           const coupon = await stripe.coupons.create({
-            percent_off: Math.min(100, Math.round(discountPercent)),
+            percent_off: stripeDiscPct,
             duration:    "once",
             name:        "DatIQ promotional discount",
           });
@@ -138,9 +171,9 @@ export const handler = async (event) => {
     const isINR       = rzpCurrency === "INR";
     const annual      = billingPeriod === "annual";
 
-    // Discount (coupon) is clamped server-side. NOTE: the coupon value is still
-    // client-supplied — server-side coupon validation is a documented follow-up.
-    const disc = Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100;
+    // Discount is server-resolved from the coupon code (see resolveDiscount). The
+    // client cannot dictate a discount: an unknown/expired/mismatched code yields 0.
+    const disc = serverDiscount;
 
     // Resolve amount in smallest unit (paise for INR, cents for USD).
     // SERVER-AUTHORITATIVE: the client `amount` is intentionally ignored. We recompute

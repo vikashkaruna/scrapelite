@@ -118,7 +118,7 @@ function describeRazorpayFailure(code, description, reason) {
 }
 
 // ── Stripe Checkout (redirect flow) ─────────────────────────────────────────
-async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, mobile, onStageChange }) {
+async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, couponCode, qty = 1, sessionId, email, mobile, onStageChange }) {
   const plan    = getEffectivePlanById(planId);
   const priceId = STRIPE_PRICE_IDS[planId];
 
@@ -145,7 +145,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
         priceId,
         currency,
         billingPeriod:   billingPeriod || "monthly",
-        discountPercent: discountPercent || 0,
+        couponCode:      couponCode || undefined,
         qty:             qty > 1 ? qty : undefined,
         sessionId,
         email:           email || null,
@@ -171,7 +171,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
 }
 
 // ── Razorpay Checkout (modal, supports UPI/cards/netbanking/wallets) ─────────
-async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, mobile, onStageChange }) {
+async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, couponCode, qty = 1, sessionId, email, mobile, onStageChange }) {
   // planId may be a plan id OR a bundle id; getEffectivePlanById returns undefined for bundles.
   const plan        = getEffectivePlanById(planId);
   const displayName = plan?.name || "Top-up";
@@ -199,7 +199,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
         planId,
         currency:        rzpCurrency,
         billingPeriod:   billingPeriod || "monthly",
-        discountPercent: discountPercent || 0,
+        couponCode:      couponCode || undefined,
         qty:             qty > 1 ? qty : undefined,
         sessionId,
         email:           email || null,
@@ -325,20 +325,20 @@ export async function initiateTopupCheckout({ bundleId, currency, rates, qty = 1
   if (!provider) return { status: "contact_sales" };
 
   if (provider === "stripe") {
-    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, mobile, onStageChange });
+    return initiateStripeCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", couponCode: undefined, qty, sessionId, email, mobile, onStageChange });
   }
-  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", discountPercent: 0, qty, sessionId, email, mobile, onStageChange });
+  return initiateRazorpayCheckout({ planId: bundleId, currency, rates, billingPeriod: "once", couponCode: undefined, qty, sessionId, email, mobile, onStageChange });
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────
-export async function initiateCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange }) {
+export async function initiateCheckout({ planId, currency, rates, billingPeriod, couponCode, sessionId, email, mobile, onStageChange }) {
   if (!hasPayment) return { status: "demo_mode" };
 
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
 
-  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange });
-  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, sessionId, email, mobile, onStageChange });
+  if (provider === "stripe")   return initiateStripeCheckout({ planId, currency, rates, billingPeriod, couponCode, sessionId, email, mobile, onStageChange });
+  if (provider === "razorpay") return initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, couponCode, sessionId, email, mobile, onStageChange });
   return { status: "contact_sales" };
 }
 
