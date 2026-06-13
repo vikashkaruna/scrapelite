@@ -7,17 +7,22 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
-    // Proxy /api/* to the Netlify dev server (port 8888) during local development.
-    // Run `netlify dev` instead of `npm run dev` to spin up both the Vite
-    // server and the Netlify Functions together at http://localhost:8888.
-    // This proxy is a convenience for `npm run dev` — it forwards API calls
-    // to Netlify dev if it happens to be running alongside.
+    // Dev-only proxy so `npm run dev` (plain Vite) can reach Netlify Functions
+    // served separately by `netlify functions:serve` (or `netlify dev`).
+    // Target port is configurable via FUNCTIONS_DEV_PORT (default 9999, the port
+    // used by `netlify functions:serve`). Ignored in production builds.
+    // Useful in git worktrees where `netlify dev` resolves the wrong base dir.
     proxy: {
-      "/api": {
-        target: "http://localhost:8888",
+      // Frontend calls /.netlify/functions/* directly (see paymentService FUNCTIONS const)
+      "/.netlify/functions": {
+        target: `http://localhost:${process.env.FUNCTIONS_DEV_PORT || "9999"}`,
         changeOrigin: true,
-        rewrite: (path) =>
-          path.replace(/^\/api/, "/.netlify/functions"),
+      },
+      // /api/* → /.netlify/functions/* (matches netlify.toml redirect)
+      "/api": {
+        target: `http://localhost:${process.env.FUNCTIONS_DEV_PORT || "9999"}`,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, "/.netlify/functions"),
       },
     },
   },

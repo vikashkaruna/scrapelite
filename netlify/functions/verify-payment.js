@@ -111,32 +111,122 @@ export const handler = async (event) => {
       .digest("hex");
 
     // Timing-safe comparison prevents timing side-channel attacks
-    let verified = false;
+    let sigValid = false;
     try {
       const genBuf  = Buffer.from(generated, "hex");
       const recvBuf = Buffer.from(signature,  "hex");
-      verified = genBuf.length === recvBuf.length && timingSafeEqual(genBuf, recvBuf);
+      sigValid = genBuf.length === recvBuf.length && timingSafeEqual(genBuf, recvBuf);
     } catch {
-      verified = false;
+      sigValid = false;
     }
 
-    if (verified) {
-      console.log(`[verify-payment/razorpay] ✓ Verified: orderId=${orderId} paymentId=${paymentId} planId=${planId}`);
-    } else {
-      console.warn(`[verify-payment/razorpay] ✗ Mismatch: orderId=${orderId} paymentId=${paymentId}`);
+    if (!sigValid) {
+      console.warn(`[verify-payment/razorpay] ✗ Signature mismatch: orderId=${orderId} paymentId=${paymentId}`);
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          verified: false,
+          error:    "Payment signature verification failed.",
+          code:     "SIGNATURE_MISMATCH",
+        }),
+      };
     }
 
-    return {
-      statusCode: 200, headers,
-      body: JSON.stringify({
-        verified,
-        planId:        verified ? planId        : null,
-        sessionId:     verified ? sessionId     : null,
-        paymentId:     verified ? paymentId     : null,
-        orderId:       verified ? orderId       : null,
-        billingPeriod: verified ? (billingPeriod || "monthly") : null,
-      }),
-    };
+    // ── Signature is authentic. Now confirm the payment was actually CAPTURED. ──
+    // HMAC proves authenticity, not that money moved. Per Razorpay guide §1.6/§3.2:
+    // fetch the payment + order, confirm order match + amount match, and capture if
+    // still "authorized" (otherwise Razorpay auto-refunds uncaptured payments).
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    if (!keyId) {
+      return {
+        statusCode: 501, headers,
+        body: JSON.stringify({ error: "Razorpay key id is not configured on this server.", code: "NOT_CONFIGURED", verified: false }),
+      };
+    }
+
+    try {
+      const { default: Razorpay } = await import("razorpay");
+      const rzp = new Razorpay({ key_id: keyId, key_secret: keySecret });
+
+      const payment = await rzp.payments.fetch(paymentId);
+
+      // 1. Payment must belong to the order we created.
+      if (payment.order_id !== orderId) {
+        console.warn(`[verify-payment/razorpay] ✗ order_id mismatch: payment.order_id=${payment.order_id} expected=${orderId}`);
+        return {
+          statusCode: 200, headers,
+          body: JSON.stringify({ verified: false, error: "Payment does not match the order.", code: "ORDER_MISMATCH" }),
+        };
+      }
+
+      // 2. Amount/currency must match the server-authoritative order.
+      const order = await rzp.orders.fetch(orderId);
+      if (payment.amount !== order.amount || payment.currency !== order.currency) {
+        console.warn(`[verify-payment/razorpay] ✗ amount mismatch: payment=${payment.amount}${payment.currency} order=${order.amount}${order.currency}`);
+        return {
+          statusCode: 200, headers,
+          body: JSON.stringify({ verified: false, error: "Payment amount does not match the order.", code: "AMOUNT_MISMATCH" }),
+        };
+      }
+
+      // 3. Capture if still authorized (idempotent — re-capturing a captured payment
+      //    returns the captured payment rather than erroring in most cases).
+      let status = payment.status;
+      if (status === "authorized") {
+        try {
+          const captured = await rzp.payments.capture(paymentId, order.amount, order.currency);
+          status = captured.status;
+        } catch (capErr) {
+          // If capture fails because it's already captured, treat as captured.
+          const cd = (capErr.error?.description || capErr.message || "").toLowerCase();
+          if (cd.includes("already been captured") || cd.includes("already captured")) {
+            status = "captured";
+          } else {
+            throw capErr;
+          }
+        }
+      }
+
+      if (status !== "captured") {
+        console.warn(`[verify-payment/razorpay] payment not captured: status=${status} paymentId=${paymentId}`);
+        return {
+          statusCode: 200, headers,
+          body: JSON.stringify({
+            verified: false,
+            error:    `Payment is not captured (status: ${status}). If you were charged, contact support@datiq.app with Payment ID ${paymentId}.`,
+            code:     "NOT_CAPTURED",
+          }),
+        };
+      }
+
+      console.log(`[verify-payment/razorpay] ✓ Verified & captured: orderId=${orderId} paymentId=${paymentId} amount=${order.amount}${order.currency} planId=${planId}`);
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          verified:      true,
+          planId:        planId,
+          sessionId:     sessionId,
+          paymentId:     paymentId,
+          orderId:       orderId,
+          amount:        order.amount,
+          currency:      order.currency,
+          billingPeriod: billingPeriod || "monthly",
+        }),
+      };
+    } catch (apiErr) {
+      // The signature was valid (payment is genuine) but we couldn't confirm capture.
+      // Do NOT fail silently for a user who paid — surface a recoverable message.
+      console.error("[verify-payment/razorpay] capture/fetch error:", apiErr.error?.description || apiErr.message);
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          verified: false,
+          error:    `Your payment was received but confirmation is pending. Please contact support@datiq.app with Payment ID ${paymentId}.`,
+          code:     "CONFIRMATION_PENDING",
+          paymentId,
+        }),
+      };
+    }
   }
 
   return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed." }) };

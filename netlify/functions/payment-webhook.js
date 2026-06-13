@@ -44,8 +44,19 @@ function getDb() {
     patchSubscription: (sessionId, patch) =>
       req(`/subscriptions?session_id=eq.${encodeURIComponent(sessionId)}`, "PATCH", patch),
 
-    insertPaymentEvent: (data) =>
-      req("/payment_events", "POST", data, { Prefer: "return=minimal" }),
+    // Idempotent: skip if an event with the same provider_event_id already exists.
+    // Prevents double-logging when both the client handler and the webhook fire.
+    insertPaymentEvent: async (data) => {
+      if (data.provider_event_id) {
+        const check = await req(
+          `/payment_events?provider_event_id=eq.${encodeURIComponent(data.provider_event_id)}&select=id&limit=1`,
+          "GET"
+        );
+        const rows = await check.json().catch(() => []);
+        if (Array.isArray(rows) && rows.length > 0) return check; // already recorded
+      }
+      return req("/payment_events", "POST", data, { Prefer: "return=minimal" });
+    },
   };
 }
 

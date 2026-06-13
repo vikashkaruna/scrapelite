@@ -29,10 +29,10 @@ export const RAZORPAY_PLAN_IDS = {
   agency:   import.meta.env.VITE_RAZORPAY_PLAN_AGENCY    || "",
 };
 
-// Razorpay natively supports INR; AED via international routing.
-export const RAZORPAY_CURRENCIES = ["INR", "AED"];
+// Razorpay handles INR (the only non-USD currency DatIQ supports). USD → Stripe.
+export const RAZORPAY_CURRENCIES = ["INR"];
 
-// Auto-route: INR/AED → Razorpay, everything else → Stripe.
+// Auto-route: INR → Razorpay, everything else → Stripe.
 // Override via VITE_PAYMENT_PROVIDER=stripe|razorpay.
 export function getPaymentProvider(currency) {
   if (PAYMENT_PROVIDER_OVERRIDE === "stripe"   && hasStripe)   return "stripe";

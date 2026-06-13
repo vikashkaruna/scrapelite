@@ -86,6 +86,17 @@ async function fetchSafe(url, options, retries = 2, timeoutMs = 12000) {
   }
 }
 
+// ── Normalize phone to +{countrycode}{number} (Razorpay prefers this; default +91) ─
+function normalizeContact(mobile) {
+  if (!mobile) return "";
+  const trimmed = String(mobile).trim();
+  if (trimmed.startsWith("+")) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  // 10-digit Indian numbers → prefix +91; otherwise return digits with leading +
+  return digits.length === 10 ? `+91${digits}` : `+${digits}`;
+}
+
 // ── Razorpay payment.failed error classifier ─────────────────────────────────
 function describeRazorpayFailure(code, description, reason) {
   const lc = ((code || "") + " " + (description || "") + " " + (reason || "")).toLowerCase();
@@ -161,41 +172,22 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
 
 // ── Razorpay Checkout (modal, supports UPI/cards/netbanking/wallets) ─────────
 async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod, discountPercent, qty = 1, sessionId, email, mobile, onStageChange }) {
-  const plan = getEffectivePlanById(planId);
+  // planId may be a plan id OR a bundle id; getEffectivePlanById returns undefined for bundles.
+  const plan        = getEffectivePlanById(planId);
+  const displayName = plan?.name || "Top-up";
+  const rzpCurrency = currency === "INR" ? "INR" : "USD"; // INR-only in practice; USD routes to Stripe
 
   // Step 1: Load SDK
   onStageChange?.(PAYMENT_STAGE.PREPARING, "Loading payment portal…");
   await loadRazorpay(); // throws with user-friendly message on failure
 
-  // Step 2: Compute amount (paise for INR)
-  // All INR prices are BASE (pre-GST). Add 18% GST for all INR transactions.
-  // Never do live USD→INR conversion — use fixed price_inr fields.
-  const rzpCurrency = currency === "INR" ? "INR" : "USD";
-  const GST_RATE = 0.18;
-  let finalAmount;
-  if (rzpCurrency === "INR") {
-    if (billingPeriod === "annual" && plan.price_inr_annual) {
-      // Annual: fixed promotional INR base price × 12 months + 18% GST
-      const monthlyInr = plan.price_inr_annual * (1 - (discountPercent || 0) / 100);
-      finalAmount = Math.round(monthlyInr * 12 * (1 + GST_RATE) * 100); // paise
-    } else {
-      // Monthly: use fixed price_inr base price + 18% GST
-      const monthlyInr = (plan.price_inr || 0) * (1 - (discountPercent || 0) / 100);
-      finalAmount = Math.round(monthlyInr * (1 + GST_RATE) * 100); // paise
-    }
-  } else {
-    const billingUsd = billingPeriod === "annual"
-      ? (plan.price_usd_annual ?? plan.price_usd)
-      : plan.price_usd;
-    const baseUsd = billingUsd * (1 - (discountPercent || 0) / 100);
-    finalAmount = Math.round(baseUsd * 100);
-  }
-
+  // NOTE: the charged amount is computed SERVER-SIDE (create-checkout.js) — the server
+  // is authoritative and ignores any client amount. We no longer send `amount`.
   const periodLabel = billingPeriod === "annual"
-    ? `annual · ${rzpCurrency === "INR" ? `₹${(plan.price_inr_annual || 0).toLocaleString("en-IN")}/mo` : `$${plan.price_usd_annual || plan.price_usd}/mo`}`
-    : "monthly";
+    ? `annual · ${rzpCurrency === "INR" ? `₹${(plan?.price_inr_annual || 0).toLocaleString("en-IN")}/mo` : `$${plan?.price_usd_annual || plan?.price_usd || 0}/mo`}`
+    : billingPeriod === "once" ? "one-time" : "monthly";
 
-  // Step 3: Create order on server
+  // Step 2: Create order on server (server computes the authoritative amount + GST)
   onStageChange?.(PAYMENT_STAGE.PREPARING, "Creating your order…");
   let orderResp;
   try {
@@ -203,14 +195,14 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({
-        provider:      "razorpay",
+        provider:        "razorpay",
         planId,
-        currency:      rzpCurrency,
-        amount:        finalAmount,
-        billingPeriod: billingPeriod || "monthly",
-        qty:           qty > 1 ? qty : undefined,
+        currency:        rzpCurrency,
+        billingPeriod:   billingPeriod || "monthly",
+        discountPercent: discountPercent || 0,
+        qty:             qty > 1 ? qty : undefined,
         sessionId,
-        email:         email || null,
+        email:           email || null,
       }),
     });
   } catch (e) {
@@ -243,15 +235,16 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
       amount:      orderAmount,
       currency:    orderCurrency,
       name:        "DatIQ",
-      description: `${plan.name} Plan — ${periodLabel}`,
+      description: `${displayName} — ${periodLabel}`,
       image:       `${window.location.origin}/favicon.svg`,
       order_id:    orderId,
-      prefill:     { email: email || "", contact: mobile || "" },
+      prefill:     { email: email || "", contact: normalizeContact(mobile) },
       notes:       { planId, sessionId, billingPeriod: billingPeriod || "monthly" },
       theme:       { color: "#6366f1" },
       modal: {
         backdropclose: false, // prevent accidental modal close
         escape:        true,
+        confirm_close: true,  // confirm before closing mid-payment
         ondismiss:     () => {
           onStageChange?.(PAYMENT_STAGE.CANCELLED, "Payment cancelled — no charge was made.");
           clearPendingPayment();

@@ -24,7 +24,7 @@ export function adminLogout() { localStorage.removeItem(ADMIN_AUTH_KEY); }
 // ── Coupons ───────────────────────────────────────────────────────────────────
 function seedCoupons() {
   return [
-    { id: "c1", code: "LAUNCH20",  type: "percent", value: 20, maxUses: 100, uses: 34, planId: null, expiresAt: "2026-12-31", active: true, createdAt: "2026-01-01" },
+    { id: "c1", code: "LAUNCH20",  type: "percent", value: 20, maxUses: 100, uses: 0, planId: null, expiresAt: "2026-09-14", active: true, createdAt: "2026-06-14" },
     { id: "c2", code: "INDIE10",   type: "percent", value: 10, maxUses: 50,  uses: 12, planId: "select", expiresAt: "2026-09-30", active: true, createdAt: "2026-03-15" },
     { id: "c3", code: "BONUS50EX", type: "extractions", value: 50, maxUses: 200, uses: 87, planId: null, expiresAt: null, active: true, createdAt: "2026-02-01" },
     { id: "c4", code: "EARLYBIRD", type: "percent", value: 30, maxUses: 30,  uses: 30, planId: null, expiresAt: "2026-04-01", active: false, createdAt: "2025-12-01" },
@@ -39,9 +39,13 @@ export function getCoupons() {
 
 export function saveCoupon(coupon) {
   const coupons = getCoupons();
-  const idx = coupons.findIndex((c) => c.id === coupon.id);
-  if (idx >= 0) coupons[idx] = coupon;
-  else coupons.push({ id: `c${Date.now()}`, uses: 0, createdAt: new Date().toISOString().slice(0, 10), ...coupon });
+  const idx = coupon.id != null ? coupons.findIndex((c) => c.id === coupon.id) : -1;
+  if (idx >= 0) {
+    // Edit: merge so the new code/value/expiry are saved while uses + createdAt are preserved.
+    coupons[idx] = { ...coupons[idx], ...coupon };
+  } else {
+    coupons.push({ id: `c${Date.now()}`, uses: 0, createdAt: new Date().toISOString().slice(0, 10), ...coupon });
+  }
   lsSet(COUPONS_KEY, coupons);
   return coupons;
 }

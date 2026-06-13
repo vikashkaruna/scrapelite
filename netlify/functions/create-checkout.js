@@ -2,10 +2,16 @@
 // POST body: { provider, planId, priceId?, currency, amount?, billingPeriod?,
 //              discountPercent?, sessionId, email?, successUrl?, cancelUrl? }
 
-// Server-side price tables (authoritative; front-end passes amount but we validate minimums)
-const PLAN_PRICES_USD         = { free: 0, select: 19,  pro: 29,  business: 79,  agency: 299 };
-const PLAN_PRICES_USD_ANNUAL  = { free: 0, select: 15,  pro: 23,  business: 63,  agency: 239 };
-const PLAN_PRICES_INR_ANNUAL  = { free: 0, select: 999, pro: 1499, business: 3999, agency: 14999 };
+// ── Server-side price tables — AUTHORITATIVE source of truth for charged amounts ──
+// Must mirror src/lib/pricingConfig.js. The client `amount` is IGNORED for plans;
+// the server recomputes from planId + billingPeriod + currency below.
+// INR prices are BASE (pre-GST); 18% GST is added server-side for INR.
+const PLAN_PRICES_USD          = { free: 0, select: 19,   pro: 29,   business: 79,   agency: 299   };
+const PLAN_PRICES_USD_ANNUAL   = { free: 0, select: 15,   pro: 23,   business: 63,   agency: 239   };
+const PLAN_PRICES_INR_MONTHLY  = { free: 0, select: 1899, pro: 2899, business: 7899, agency: 29899 };
+const PLAN_PRICES_INR_ANNUAL   = { free: 0, select: 999,  pro: 1499, business: 3999, agency: 14999 }; // per-month base
+
+const GST_RATE = 0.18; // 18% GST, INR only
 
 const BUNDLE_PRICES = {
   "extractions-bundle": { usd: 9,  inr: 749  },
@@ -17,8 +23,7 @@ const BUNDLE_PRICES = {
 
 const ALLOWED_PLANS      = new Set(["free", "select", "pro", "business", "agency"]);
 const ALLOWED_BUNDLES    = new Set(Object.keys(BUNDLE_PRICES));
-const ALLOWED_CURRENCIES = new Set(["INR", "USD", "AED"]);
-const INR_FALLBACK_RATE  = 83.5; // used for server-side monthly INR fallback only
+const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
 
 export const handler = async (event) => {
   const headers = {
@@ -130,28 +135,34 @@ export const handler = async (event) => {
     }
 
     const rzpCurrency = currency === "INR" ? "INR" : "USD";
+    const isINR       = rzpCurrency === "INR";
+    const annual      = billingPeriod === "annual";
+
+    // Discount (coupon) is clamped server-side. NOTE: the coupon value is still
+    // client-supplied — server-side coupon validation is a documented follow-up.
+    const disc = Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100;
 
     // Resolve amount in smallest unit (paise for INR, cents for USD).
-    // For bundles: always use server-side price table × qty (prevents client-side tampering).
-    // For plans: honour front-end `amount` if provided; fall back to server-side table.
+    // SERVER-AUTHORITATIVE: the client `amount` is intentionally ignored. We recompute
+    // everything from the price tables so the charged amount cannot be tampered with.
+    // INR amounts include 18% GST (computed in one step to avoid rounding drift).
     let finalAmount;
     if (isBundle) {
-      const prices = BUNDLE_PRICES[planId];
-      const unitAmount = Math.round((rzpCurrency === "INR" ? prices.inr : prices.usd) * 100);
-      finalAmount = unitAmount * qty;
-    } else if (typeof amount === "number" && amount > 0) {
-      finalAmount = Math.round(amount);
+      const prices   = BUNDLE_PRICES[planId];
+      const baseUnit = isINR ? prices.inr : prices.usd;
+      const base     = baseUnit * qty * (1 - disc);
+      finalAmount    = isINR
+        ? Math.round(base * (1 + GST_RATE) * 100)  // INR bundle incl. GST
+        : Math.round(base * 100);                  // USD bundle, no GST
+    } else if (isINR) {
+      const baseMonthly = annual ? (PLAN_PRICES_INR_ANNUAL[planId] || 0) : (PLAN_PRICES_INR_MONTHLY[planId] || 0);
+      const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
+      finalAmount       = Math.round(base * (1 + GST_RATE) * 100); // incl. 18% GST
     } else {
-      const bp = billingPeriod === "annual" ? "annual" : "monthly";
-      if (bp === "annual") {
-        finalAmount = rzpCurrency === "INR"
-          ? Math.round((PLAN_PRICES_INR_ANNUAL[planId] || 0) * 12 * 100)
-          : Math.round((PLAN_PRICES_USD_ANNUAL[planId] || 0) * 12 * 100);
-      } else {
-        finalAmount = rzpCurrency === "INR"
-          ? Math.round((PLAN_PRICES_USD[planId] || 0) * INR_FALLBACK_RATE * 100)
-          : Math.round((PLAN_PRICES_USD[planId] || 0) * 100);
-      }
+      // USD via Razorpay is defensive only (USD normally routes to Stripe). No GST.
+      const baseMonthly = annual ? (PLAN_PRICES_USD_ANNUAL[planId] || 0) : (PLAN_PRICES_USD[planId] || 0);
+      const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
+      finalAmount       = Math.round(base * 100);
     }
 
     // Razorpay minimums: ₹1 (100 paise) for INR, $0.50 (50 cents) for USD

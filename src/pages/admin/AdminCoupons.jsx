@@ -5,10 +5,10 @@ import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
 const EMPTY_FORM = {
-  code: "", type: "percent", value: "", maxUses: "", planId: "", expiresAt: "", active: true,
+  id: null, code: "", type: "percent", value: "", maxUses: "", planId: "", expiresAt: "", active: true,
 };
 
-function CouponRow({ coupon, onToggle, onDelete }) {
+function CouponRow({ coupon, onEdit, onToggle, onDelete }) {
   const expired = coupon.expiresAt && new Date(coupon.expiresAt) < new Date();
   const exhausted = coupon.maxUses > 0 && coupon.uses >= coupon.maxUses;
   const status = !coupon.active ? "inactive" : expired ? "expired" : exhausted ? "exhausted" : "active";
@@ -25,6 +25,9 @@ function CouponRow({ coupon, onToggle, onDelete }) {
       <td>{coupon.planId || "All plans"}</td>
       <td><span className={"status-badge " + status}>{status}</span></td>
       <td className="coupon-actions">
+        <button className="icon-action" title="Edit" onClick={() => onEdit(coupon)}>
+          <Icon name="edit" size={14} />
+        </button>
         <button className="icon-action" title={coupon.active ? "Deactivate" : "Activate"}
           onClick={() => onToggle(coupon)}>
           <Icon name={coupon.active ? "x" : "check"} size={14} />
@@ -58,9 +61,32 @@ export default function AdminCoupons() {
       value: Number(form.value),
       maxUses: form.maxUses ? Number(form.maxUses) : 0,
     };
+    if (coupon.id == null) delete coupon.id; // create: let saveCoupon generate the id
     setCoupons(saveCoupon(coupon));
     setForm(EMPTY_FORM);
     setFormOpen(false);
+  };
+
+  const handleEdit = (coupon) => {
+    setFormError("");
+    setForm({
+      id:        coupon.id,
+      code:      coupon.code,
+      type:      coupon.type,
+      value:     String(coupon.value),
+      maxUses:   coupon.maxUses ? String(coupon.maxUses) : "",
+      planId:    coupon.planId || "",
+      expiresAt: coupon.expiresAt || "",
+      active:    coupon.active,
+    });
+    setFormOpen(true);
+  };
+
+  const handleNew = () => {
+    if (formOpen && form.id == null) { setFormOpen(false); return; } // toggle closed
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setFormOpen(true);
   };
 
   const handleToggle = (coupon) => {
@@ -79,14 +105,14 @@ export default function AdminCoupons() {
           <h2 className="admin-section-title">Coupons & Discounts</h2>
           <p className="admin-section-sub">Create and manage promotional codes.</p>
         </div>
-        <Button variant="primary" size="sm" icon="plus" onClick={() => setFormOpen((o) => !o)}>
+        <Button variant="primary" size="sm" icon="plus" onClick={handleNew}>
           New coupon
         </Button>
       </div>
 
       {formOpen && (
         <div className="card card-pad coupon-form-card">
-          <h3 className="coupon-form-title">Create coupon</h3>
+          <h3 className="coupon-form-title">{form.id != null ? "Edit coupon" : "Create coupon"}</h3>
           <form className="coupon-create-form" onSubmit={handleSave}>
             <div className="cf-row">
               <div className="cf-field">
@@ -133,7 +159,7 @@ export default function AdminCoupons() {
             </div>
             {formError && <div className="cf-error"><Icon name="alert-triangle" size={13} />{formError}</div>}
             <div className="cf-actions">
-              <Button variant="primary" type="submit" size="sm">Save coupon</Button>
+              <Button variant="primary" type="submit" size="sm">{form.id != null ? "Update coupon" : "Save coupon"}</Button>
               <Button variant="ghost" size="sm" onClick={() => { setFormOpen(false); setForm(EMPTY_FORM); }}>Cancel</Button>
             </div>
           </form>
@@ -159,7 +185,7 @@ export default function AdminCoupons() {
                 <tr><td colSpan={7} className="admin-empty">No coupons yet. Create one above.</td></tr>
               ) : (
                 coupons.map((c) => (
-                  <CouponRow key={c.id} coupon={c} onToggle={handleToggle} onDelete={handleDelete} />
+                  <CouponRow key={c.id} coupon={c} onEdit={handleEdit} onToggle={handleToggle} onDelete={handleDelete} />
                 ))
               )}
             </tbody>
