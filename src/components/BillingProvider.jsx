@@ -167,11 +167,12 @@ export function BillingProvider({ children }) {
         await syncSubscriptionToDb(confirmedPlanId, result.provider, {
           subscriptionId: result.subscriptionId,
           customerId:     result.customerId,
+          orderId:        result.orderId,   // razorpay_order_id — persisted on subscription
         });
         await logPaymentEvent({
           type:        "payment.captured",
           provider:    result.provider,
-          providerId:  result.paymentId || result.orderId,
+          providerId:  result.paymentId || result.orderId, // razorpay_payment_id
           planId:      confirmedPlanId,
           amountCents: result.amount,
           currency:    result.currency,

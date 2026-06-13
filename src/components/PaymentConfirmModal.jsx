@@ -2,32 +2,14 @@
 import { useState } from "react";
 import { getEffectivePlans } from "../lib/pricingOverrides.js";
 import { hasPayment } from "../lib/paymentConfig.js";
+import { computeCharge, perMonthIncl } from "../lib/pricingMath.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 
-const GST_RATE = 0.18;
-
+// Thin adapter to the shared canonical helper (display-only; server is authoritative).
 function computePricing(plan, billingPeriod, currency) {
-  const isINR = currency === "INR";
-  let baseTotal, gst, total;
-
-  if (isINR) {
-    const baseMonthly = billingPeriod === "annual"
-      ? (plan.price_inr_annual || 0)
-      : (plan.price_inr || 0);
-    baseTotal = billingPeriod === "annual" ? baseMonthly * 12 : baseMonthly;
-    gst   = Math.round(baseTotal * GST_RATE);
-    total = baseTotal + gst;
-  } else {
-    const baseMonthly = billingPeriod === "annual"
-      ? (plan.price_usd_annual ?? plan.price_usd)
-      : plan.price_usd;
-    baseTotal = billingPeriod === "annual" ? baseMonthly * 12 : baseMonthly;
-    gst   = 0;
-    total = baseTotal;
-  }
-
-  return { baseTotal, gst, total };
+  const { base, gst, total } = computeCharge(plan, billingPeriod, currency);
+  return { baseTotal: base, gst: Math.round(gst), total };
 }
 
 function fmt(amt, currency) {
@@ -114,7 +96,7 @@ export default function PaymentConfirmModal({
           )}
           {billingPeriod === "annual" && (
             <div className="pcm-per-month-note">
-              {fmt(isINR ? Math.round((plan.price_inr_annual || 0) * (1 + GST_RATE)) : (plan.price_usd_annual ?? plan.price_usd), currency)}/mo
+              {fmt(perMonthIncl(plan, currency), currency)}/mo
               {isINR ? " incl. GST" : ""}
             </div>
           )}

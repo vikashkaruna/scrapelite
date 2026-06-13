@@ -648,8 +648,18 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add `RAZORPAY_KEY_SECRET` (server, no VITE_ prefix) — from same Razorpay API Keys page
 - [ ] **Trigger a full redeploy** after adding the above — `VITE_RAZORPAY_KEY_ID` is baked at build time
 - [ ] Register Razorpay webhook → `https://scrapelite.netlify.app/.netlify/functions/payment-webhook?provider=razorpay` → copy secret → add as `RAZORPAY_WEBHOOK_SECRET` → redeploy
+- [ ] **Enable auto-capture** in Razorpay Dashboard → Settings → Payment Capture (belt-and-suspenders; `verify-payment.js` also explicitly captures any `authorized` payment so uncaptured payments are never auto-refunded)
 - [ ] Register Stripe webhook (when USD/Stripe is enabled) → same base URL without `?provider` → `STRIPE_WEBHOOK_SECRET`
 - [ ] Add remaining env vars when ready (see env section above)
+
+### Razorpay hardening (Razorpay-Integration-Enhancement branch)
+> Per Razorpay Standard Checkout guide. One-time Orders model (no Subscriptions). Razorpay/INR only.
+- **Server-authoritative amounts**: `create-checkout.js` recomputes base + 18% GST (INR) from the price tables and IGNORES any client `amount` — prevents amount tampering. Caveat: admin price *overrides* (`pricingOverrides.js`) are NOT reflected in live charges (server uses a static table). Follow-up if admin-editable live prices are needed.
+- **Capture + status verification**: after the mandatory HMAC signature check (§1.5), `verify-payment.js` fetches the payment + order, confirms `order_id` + amount/currency match, captures if `authorized`, and only returns `verified:true` on `captured` (§1.6/§3.2).
+- **Persistence (§1.4)**: `razorpay_payment_id` → `payment_events.provider_event_id`; `razorpay_order_id` → `subscriptions.provider_subscription_id` (synchronous path + webhook). Signature is verified then discarded (not persisted — acceptable).
+- **Webhook idempotency**: `payment_events` deduped on `provider_event_id`.
+- **Shared GST math**: `src/lib/pricingMath.js` (`computeCharge`) used by `PaymentConfirmModal` for display; server mirrors the same one-step rounding (no drift).
+- `PaymentSuccess.jsx` Razorpay branch is display-only — never grants a plan (verification/activation happen in the modal handler).
 
 ### Payment provider (before going live)
 - [ ] Stripe: create Products + Prices for Select/Pro/Business/Agency → set `VITE_STRIPE_PRICE_*`

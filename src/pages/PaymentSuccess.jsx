@@ -35,13 +35,15 @@ export default function PaymentSuccess() {
 
     async function verify() {
       try {
-        let verified       = false;
+        let verified       = false; // controls success display
+        let grant          = false; // controls whether THIS page upgrades the plan
         let resolvedPlanId = planId;
 
         if (provider === "stripe" && sessionId) {
           const result = await confirmStripeSession(sessionId);
           if (result?.verified) {
             verified       = true;
+            grant          = true; // Stripe is verified server-side here
             resolvedPlanId = result.planId || planId;
             setAmount(result.amountTotal);
             setCurrency(result.currency);
@@ -55,25 +57,24 @@ export default function PaymentSuccess() {
             });
           }
         } else if (provider === "razorpay") {
-          // Razorpay verification already completed inside the modal handler.
-          // If we reach this page, payment was confirmed on the frontend.
-          // (Optional: deep-link success here if Razorpay ever redirects)
+          // Razorpay uses the handler-function flow: signature verification, capture
+          // confirmation, activation, and the payment-event log ALL happen in the modal
+          // handler + BillingProvider before navigation. This page is DISPLAY-ONLY for
+          // Razorpay — we must NOT grant a plan here (prevents deep-link access abuse).
           verified       = true;
+          grant          = false;
           resolvedPlanId = planId;
-          await logPaymentEvent({
-            type:      "payment.captured",
-            provider:  "razorpay",
-            providerId: paymentId || "",
-            planId:    resolvedPlanId,
-          });
         } else {
-          // Demo mode or direct navigation — treat as success
+          // Demo mode or direct navigation — treat as success (local-only)
           verified = true;
+          grant    = true;
         }
 
         if (!cancelled && verified && resolvedPlanId) {
-          upgradePlan(resolvedPlanId);
-          await confirmPayment?.(resolvedPlanId, { provider });
+          if (grant) {
+            upgradePlan(resolvedPlanId);
+            await confirmPayment?.(resolvedPlanId, { provider });
+          }
           clearPendingPayment();
           setPlanName(getEffectivePlanById(resolvedPlanId)?.name || resolvedPlanId);
           setStatus("success");

@@ -13,7 +13,10 @@ export async function syncSubscriptionToDb(planId, provider, providerData = {}) 
         plan_id:                   planId,
         status:                    "active",
         provider:                  provider || null,
-        provider_subscription_id:  providerData.subscriptionId  || null,
+        // For Razorpay one-time Orders there's no subscription id — persist the
+        // order id here so razorpay_order_id is durably stored even if the webhook
+        // never arrives (guide §1.4 "store these fields").
+        provider_subscription_id:  providerData.subscriptionId  || providerData.orderId || null,
         provider_customer_id:      providerData.customerId       || null,
         current_period_start:      providerData.periodStart      || new Date().toISOString(),
         current_period_end:        providerData.periodEnd        || null,
