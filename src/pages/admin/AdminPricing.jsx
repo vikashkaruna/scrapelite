@@ -6,8 +6,12 @@ import {
   getGlobalDiscount, setGlobalDiscount,
   setTopupOverride,
 } from "../../lib/pricingOverrides.js";
+import { getCoupons } from "../../lib/adminService.js";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
+
+// Chargeable plan ids that the server (pricingSource.js) knows about.
+const SERVER_PLAN_IDS = ["select", "pro", "business", "agency"];
 
 const INF_LABEL = "Unlimited";
 
@@ -22,7 +26,10 @@ function displayLimit(val) {
 
 function PlanEditor({ plan, onSave, onReset }) {
   const [form, setForm] = useState({
-    price_usd:   plan.price_usd,
+    price_usd:        plan.price_usd,
+    price_usd_annual: plan.price_usd_annual ?? plan.price_usd,
+    price_inr:        plan.price_inr ?? 0,
+    price_inr_annual: plan.price_inr_annual ?? 0,
     name:        plan.name,
     tagline:     plan.tagline ?? "",
     badge:       plan.badge ?? "",
@@ -40,7 +47,10 @@ function PlanEditor({ plan, onSave, onReset }) {
 
   const save = () => {
     onSave(plan.id, {
-      price_usd: Number(form.price_usd) || 0,
+      price_usd:        Number(form.price_usd)        || 0,
+      price_usd_annual: Number(form.price_usd_annual) || 0,
+      price_inr:        Number(form.price_inr)        || 0,
+      price_inr_annual: Number(form.price_inr_annual) || 0,
       name:      form.name,
       tagline:   form.tagline,
       badge:     form.badge || null,
@@ -85,14 +95,32 @@ function PlanEditor({ plan, onSave, onReset }) {
               <input type="text" value={form.name} onChange={(e) => f("name", e.target.value)} />
             </div>
             <div className="cf-field">
-              <label>Price (USD / month)</label>
+              <label>Badge text (empty = none)</label>
+              <input type="text" placeholder="e.g. Most Popular" value={form.badge}
+                onChange={(e) => f("badge", e.target.value)} />
+            </div>
+          </div>
+
+          <div className="cf-row">
+            <div className="cf-field">
+              <label>USD / month</label>
               <input type="number" min="0" step="0.01" value={form.price_usd}
                 onChange={(e) => f("price_usd", e.target.value)} />
             </div>
             <div className="cf-field">
-              <label>Badge text (empty = none)</label>
-              <input type="text" placeholder="e.g. Most Popular" value={form.badge}
-                onChange={(e) => f("badge", e.target.value)} />
+              <label>USD / month (annual)</label>
+              <input type="number" min="0" step="0.01" value={form.price_usd_annual}
+                onChange={(e) => f("price_usd_annual", e.target.value)} />
+            </div>
+            <div className="cf-field">
+              <label>INR / month (base, pre-GST)</label>
+              <input type="number" min="0" step="1" value={form.price_inr}
+                onChange={(e) => f("price_inr", e.target.value)} />
+            </div>
+            <div className="cf-field">
+              <label>INR / month (annual, base)</label>
+              <input type="number" min="0" step="1" value={form.price_inr_annual}
+                onChange={(e) => f("price_inr_annual", e.target.value)} />
             </div>
           </div>
 
@@ -155,7 +183,12 @@ function PlanEditor({ plan, onSave, onReset }) {
 }
 
 function BundleEditor({ bundle, onSave }) {
-  const [form, setForm] = useState({ price_usd: bundle.price_usd, name: bundle.name, description: bundle.description });
+  const [form, setForm] = useState({
+    price_usd:   bundle.price_usd,
+    price_inr:   bundle.price_inr ?? 0,
+    name:        bundle.name,
+    description: bundle.description,
+  });
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   return (
     <div className="bundle-editor-row card card-pad">
@@ -169,12 +202,17 @@ function BundleEditor({ bundle, onSave }) {
           <input type="number" min="0" step="0.01" value={form.price_usd}
             onChange={(e) => f("price_usd", e.target.value)} />
         </div>
+        <div className="cf-field">
+          <label>Price (INR, base)</label>
+          <input type="number" min="0" step="1" value={form.price_inr}
+            onChange={(e) => f("price_inr", e.target.value)} />
+        </div>
       </div>
       <div className="cf-field">
         <label>Description</label>
         <input type="text" value={form.description} onChange={(e) => f("description", e.target.value)} />
       </div>
-      <Button variant="secondary" size="sm" onClick={() => onSave(bundle.id, { price_usd: Number(form.price_usd), name: form.name, description: form.description })}>
+      <Button variant="secondary" size="sm" onClick={() => onSave(bundle.id, { price_usd: Number(form.price_usd), price_inr: Number(form.price_inr), name: form.name, description: form.description })}>
         Save
       </Button>
     </div>
@@ -221,6 +259,78 @@ function GlobalDiscountEditor() {
       <div className="cf-actions" style={{ marginTop: 14 }}>
         <Button variant="primary" size="sm" onClick={save}>{saved ? "Saved!" : "Save discount"}</Button>
       </div>
+    </div>
+  );
+}
+
+// Builds the operator-managed server config (mirrors netlify/functions/lib/pricingSource.js
+// shapes) from the current effective plans/bundles/coupons/global discount.
+function buildServerConfig(plans, bundles) {
+  const planMap = {};
+  for (const p of plans) {
+    if (!SERVER_PLAN_IDS.includes(p.id)) continue;
+    planMap[p.id] = {
+      usd:        Number(p.price_usd)        || 0,
+      usd_annual: Number(p.price_usd_annual) || 0,
+      inr:        Number(p.price_inr)        || 0,
+      inr_annual: Number(p.price_inr_annual) || 0,
+    };
+  }
+  const bundleMap = {};
+  for (const b of bundles) {
+    bundleMap[b.id] = { usd: Number(b.price_usd) || 0, inr: Number(b.price_inr) || 0 };
+  }
+  const coupons = {};
+  for (const c of getCoupons()) {
+    if (c.type !== "percent") continue; // only percent coupons affect charges
+    coupons[c.code.toUpperCase()] = {
+      value:     Number(c.value) || 0,
+      planId:    c.planId || null,
+      expiresAt: c.expiresAt || null,
+      active:    !!c.active,
+    };
+  }
+  const g = getGlobalDiscount();
+  const global = { percent: Number(g.percent) || 0, active: !!g.active, expiresAt: g.expiresAt || null };
+  return { plans: planMap, bundles: bundleMap, coupons, global };
+}
+
+function toSql(config) {
+  const row = (key) => `  ('${key}', '${JSON.stringify(config[key]).replace(/'/g, "''")}'::jsonb)`;
+  return (
+    "insert into public.pricing_config (key, value) values\n" +
+    ["plans", "bundles", "coupons", "global"].map(row).join(",\n") +
+    "\non conflict (key) do update set value = excluded.value, updated_at = now();"
+  );
+}
+
+function ServerConfigPanel({ plans, bundles }) {
+  const [sql, setSql]     = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const generate = () => { setSql(toSql(buildServerConfig(plans, bundles))); setCopied(false); };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(sql); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+  };
+
+  return (
+    <div className="card card-pad" style={{ marginTop: 28 }}>
+      <div className="admin-chart-title"><Icon name="database" size={14} />Live-charge config (server source of truth)</div>
+      <p className="admin-section-sub" style={{ marginTop: 6 }}>
+        Plan/bundle prices and limits above take effect on the <strong>pricing page</strong> immediately.
+        To make them apply to <strong>real charges</strong>, run this SQL in Supabase (table&nbsp;
+        <code>pricing_config</code>). The server uses the static table until a row exists, then operator
+        overrides prevail. Coupons and the global discount are included.
+      </p>
+      <div className="cf-actions" style={{ marginBottom: 12 }}>
+        <Button variant="primary" size="sm" onClick={generate}>Generate SQL</Button>
+        {sql && <Button variant="secondary" size="sm" onClick={copy}>{copied ? "Copied!" : "Copy SQL"}</Button>}
+      </div>
+      {sql && (
+        <textarea readOnly value={sql} spellCheck={false}
+          style={{ width: "100%", minHeight: 180, fontFamily: "var(--font-mono, monospace)", fontSize: 12,
+                   padding: 12, borderRadius: 8, border: "1px solid var(--border-1, #ddd)", background: "var(--bg-2, #fafafa)" }} />
+      )}
     </div>
   );
 }
@@ -280,6 +390,8 @@ export default function AdminPricing() {
           <BundleEditor key={b.id} bundle={b} onSave={handleBundleSave} />
         ))}
       </div>
+
+      <ServerConfigPanel plans={plans} bundles={bundles} />
     </div>
   );
 }

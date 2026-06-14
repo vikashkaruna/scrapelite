@@ -1,56 +1,18 @@
 // create-checkout.js — Backend: create a Stripe Checkout session or Razorpay order.
 // POST body: { provider, planId, priceId?, currency, amount?, billingPeriod?,
 //              couponCode?, sessionId, email?, successUrl?, cancelUrl? }
-// The discount is resolved server-side from `couponCode` (see resolveDiscount);
-// any client-supplied `discountPercent`/`amount` is ignored.
+//
+// Prices, coupons, and the global discount come from pricingSource.loadPricing()
+// — the SERVER-AUTHORITATIVE source of truth (Supabase operator overrides layered
+// over a static table; static fallback when Supabase is absent). The client `amount`
+// and any client-supplied discount are ignored; the server recomputes everything.
 
-// ── Server-side price tables — AUTHORITATIVE source of truth for charged amounts ──
-// Must mirror src/lib/pricingConfig.js. The client `amount` is IGNORED for plans;
-// the server recomputes from planId + billingPeriod + currency below.
-// INR prices are BASE (pre-GST); 18% GST is added server-side for INR.
-const PLAN_PRICES_USD          = { free: 0, select: 19,   pro: 29,   business: 79,   agency: 299   };
-const PLAN_PRICES_USD_ANNUAL   = { free: 0, select: 15,   pro: 23,   business: 63,   agency: 239   };
-const PLAN_PRICES_INR_MONTHLY  = { free: 0, select: 1899, pro: 2899, business: 7899, agency: 29899 };
-const PLAN_PRICES_INR_ANNUAL   = { free: 0, select: 999,  pro: 1499, business: 3999, agency: 14999 }; // per-month base
+import {
+  loadPricing, resolveDiscountFraction,
+  ALLOWED_PLANS, ALLOWED_BUNDLES, GST_RATE,
+} from "./lib/pricingSource.js";
 
-const GST_RATE = 0.18; // 18% GST, INR only
-
-const BUNDLE_PRICES = {
-  "extractions-bundle": { usd: 9,  inr: 749  },
-  "batch-pack":         { usd: 9,  inr: 749  },
-  "scheduler-addon":    { usd: 5,  inr: 399  },
-  "workspace-addon":    { usd: 19, inr: 1499 },
-  "hubspot-addon":      { usd: 12, inr: 999  },
-};
-
-const ALLOWED_PLANS      = new Set(["free", "select", "pro", "business", "agency"]);
-const ALLOWED_BUNDLES    = new Set(Object.keys(BUNDLE_PRICES));
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
-
-// ── Server-side coupon table — AUTHORITATIVE source of truth for discounts ──
-// Mirrors the percent-type coupons in src/lib/adminService.js (seedCoupons). The
-// client-supplied `discountPercent` is IGNORED; the server resolves the real discount
-// from `couponCode` against this table so a tampered client can't dictate its own price.
-// NOTE: `maxUses` is intentionally NOT enforced here — there is no server-side usage
-// persistence (usage is counted client-side in localStorage). Extraction-bonus coupons
-// (e.g. BONUS50EX) grant bonus credits client-side and do NOT reduce the charged amount,
-// so they are deliberately absent from this table.
-const COUPONS = {
-  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-09-14", active: true  },
-  INDIE10:   { value: 10, planId: "select", expiresAt: "2026-09-30", active: true  },
-  EARLYBIRD: { value: 30, planId: null,     expiresAt: "2026-04-01", active: false },
-};
-
-// Resolve a coupon code to a discount fraction in [0, 1]. Unknown, inactive, expired,
-// or plan-mismatched codes resolve to 0 (no discount) — never an error.
-function resolveDiscount(couponCode, planId) {
-  if (!couponCode) return 0;
-  const c = COUPONS[String(couponCode).trim().toUpperCase()];
-  if (!c || !c.active) return 0;
-  if (c.expiresAt && new Date(c.expiresAt) < new Date()) return 0;
-  if (c.planId && c.planId !== planId) return 0;
-  return Math.min(100, Math.max(0, Number(c.value) || 0)) / 100;
-}
 
 export const handler = async (event) => {
   const headers = {
@@ -76,7 +38,7 @@ export const handler = async (event) => {
     successUrl, cancelUrl,
   } = body;
   // `discountPercent` (body.discountPercent) is intentionally NOT read — the server
-  // resolves the discount itself from `couponCode` via resolveDiscount() below.
+  // resolves the discount itself from `couponCode` + global sale via loadPricing() below.
 
   const qty = Math.min(10, Math.max(1, parseInt(body.qty, 10) || 1));
 
@@ -97,8 +59,11 @@ export const handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: `Unsupported currency: '${currency}'.`, code: "INVALID_CURRENCY" }) };
   }
 
-  // Server-authoritative discount: resolved from the coupon code, not the client number.
-  const serverDiscount = resolveDiscount(couponCode, planId); // fraction in [0, 1]
+  // Server-authoritative pricing + discount. Operator overrides (Supabase) prevail
+  // over the static table; the discount is the larger of the resolved coupon or the
+  // active global sale (they never stack). Client-supplied discount is ignored.
+  const pricing        = await loadPricing();
+  const serverDiscount = resolveDiscountFraction(pricing, couponCode, planId); // [0, 1]
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   if (provider === "stripe") {
@@ -181,19 +146,21 @@ export const handler = async (event) => {
     // INR amounts include 18% GST (computed in one step to avoid rounding drift).
     let finalAmount;
     if (isBundle) {
-      const prices   = BUNDLE_PRICES[planId];
+      const prices   = pricing.bundles[planId];
       const baseUnit = isINR ? prices.inr : prices.usd;
       const base     = baseUnit * qty * (1 - disc);
       finalAmount    = isINR
         ? Math.round(base * (1 + GST_RATE) * 100)  // INR bundle incl. GST
         : Math.round(base * 100);                  // USD bundle, no GST
     } else if (isINR) {
-      const baseMonthly = annual ? (PLAN_PRICES_INR_ANNUAL[planId] || 0) : (PLAN_PRICES_INR_MONTHLY[planId] || 0);
+      const p           = pricing.plans[planId];
+      const baseMonthly = annual ? (p.inr_annual || 0) : (p.inr || 0);
       const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
       finalAmount       = Math.round(base * (1 + GST_RATE) * 100); // incl. 18% GST
     } else {
       // USD via Razorpay is defensive only (USD normally routes to Stripe). No GST.
-      const baseMonthly = annual ? (PLAN_PRICES_USD_ANNUAL[planId] || 0) : (PLAN_PRICES_USD[planId] || 0);
+      const p           = pricing.plans[planId];
+      const baseMonthly = annual ? (p.usd_annual || 0) : (p.usd || 0);
       const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
       finalAmount       = Math.round(base * 100);
     }

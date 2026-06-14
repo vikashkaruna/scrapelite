@@ -1,7 +1,10 @@
 // AdminLayout.jsx — admin shell with PIN gate + collapsible sidebar navigation.
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { isAdminAuthed, adminLogin, adminLogout } from "../../lib/adminService.js";
+import {
+  isAdminAuthed, adminLogin, adminLogout,
+  getAdminLock, recordAdminFailure, clearAdminFailures, ADMIN_MAX_ATTEMPTS,
+} from "../../lib/adminService.js";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
@@ -19,15 +22,39 @@ function PinGate({ onAuthed }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lock, setLock] = useState(() => getAdminLock());
+
+  // While locked, tick once a second to update the countdown and auto-unlock.
+  useEffect(() => {
+    if (!lock.locked) return;
+    const id = setInterval(() => {
+      const l = getAdminLock();
+      setLock(l);
+      if (!l.locked) setError("");
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lock.locked]);
 
   const submit = async (e) => {
     e.preventDefault();
+    if (getAdminLock().locked) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    if (adminLogin(pin)) onAuthed();
-    else { setError("Incorrect PIN. Try again."); setPin(""); }
+    const res = await adminLogin(pin);
     setLoading(false);
+    if (res.ok) { clearAdminFailures(); onAuthed(); return; }
+    setPin("");
+    const after = recordAdminFailure();
+    if (after.locked) {
+      setLock(getAdminLock());
+      setError("Too many attempts — locked for 60 seconds.");
+    } else {
+      const left = ADMIN_MAX_ATTEMPTS - after.attempts;
+      setError(`Incorrect PIN. ${left} attempt${left === 1 ? "" : "s"} left.`);
+    }
   };
+
+  const secsLeft = lock.locked ? Math.max(0, Math.ceil((lock.until - Date.now()) / 1000)) : 0;
+  const disabled = loading || lock.locked || !pin.trim();
 
   return (
     <div className="page admin-gate-page">
@@ -45,14 +72,15 @@ function PinGate({ onAuthed }) {
             value={pin}
             onChange={(e) => { setPin(e.target.value); setError(""); }}
             autoComplete="current-password"
-            maxLength={20}
+            maxLength={64}
+            disabled={lock.locked}
           />
           {error && <div className="admin-gate-error">{error}</div>}
-          <Button variant="primary" type="submit" disabled={loading || !pin.trim()} fullWidth>
-            {loading ? "Verifying…" : "Enter Admin"}
+          <Button variant="primary" type="submit" disabled={disabled} fullWidth>
+            {lock.locked ? `Locked — ${secsLeft}s` : loading ? "Verifying…" : "Enter Admin"}
           </Button>
         </form>
-        <p className="admin-gate-hint">Demo PIN: <code>ADMIN123</code></p>
+        <p className="admin-gate-hint">PIN is verified securely on the server.</p>
       </div>
     </div>
   );

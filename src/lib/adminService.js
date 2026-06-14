@@ -3,23 +3,85 @@
 
 const COUPONS_KEY = "datiq.coupons";
 const ADMIN_USERS_KEY = "datiq.adminUsers";
-const ADMIN_AUTH_KEY  = "scrapelite.adminAuth";
+const ADMIN_AUTH_KEY  = "scrapelite.adminAuth";     // now holds the session token
+const ADMIN_EXP_KEY   = "scrapelite.adminAuthExp";  // token expiry (ms epoch)
+const ADMIN_LOCK_KEY  = "datiq.adminLock";          // failed-attempt lockout state
 
-const ADMIN_PIN = "ADMIN123"; // demo PIN — in production, use Supabase Auth + role
+const FUNCTIONS = "/.netlify/functions";
+const DEMO_PIN  = "ADMIN123";
+const EIGHT_H   = 1000 * 60 * 60 * 8;
+
+export const ADMIN_MAX_ATTEMPTS = 5;
+const ADMIN_LOCK_MS = 60_000; // 60s lockout after MAX attempts
 
 function ls(k)      { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function lsSet(k,v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// The admin PIN is verified SERVER-SIDE (netlify/functions/admin-auth.js); the secret
+// never ships in the bundle. A successful login stores a short-lived signed token.
 export function isAdminAuthed() {
-  const v = ls(ADMIN_AUTH_KEY);
-  return v === true || v === "true";
+  const tok = localStorage.getItem(ADMIN_AUTH_KEY);
+  if (!tok || tok === "true" || tok === "1") return false; // reject legacy boolean → re-auth
+  const exp = Number(localStorage.getItem(ADMIN_EXP_KEY) || 0);
+  if (exp && Date.now() > exp) { adminLogout(); return false; }
+  return true;
 }
-export function adminLogin(pin) {
-  if (pin === ADMIN_PIN) { lsSet(ADMIN_AUTH_KEY, true); return true; }
-  return false;
+
+// Returns { ok: true, demo? } | { ok: false, reason }. Async — verifies on the server.
+export async function adminLogin(pin) {
+  try {
+    const res  = await fetch(`${FUNCTIONS}/admin-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.token) {
+      localStorage.setItem(ADMIN_AUTH_KEY, data.token);
+      localStorage.setItem(ADMIN_EXP_KEY, String(data.exp || Date.now() + EIGHT_H));
+      return { ok: true, demo: !!data.demo };
+    }
+    if (res.status === 401) return { ok: false, reason: (data && data.error) || "Incorrect PIN." };
+    // Any other status (function missing / non-JSON) → fall through to dev fallback.
+  } catch {
+    // Network/proxy error (e.g. plain `npm run dev` without netlify dev) → dev fallback.
+  }
+  // DEV-ONLY fallback: usable only when the server is unreachable. A configured server
+  // PIN returns 401 above (handled before here), so this never bypasses a real PIN.
+  if (pin === DEMO_PIN) {
+    const exp = Date.now() + EIGHT_H;
+    localStorage.setItem(ADMIN_AUTH_KEY, `local.${exp}`);
+    localStorage.setItem(ADMIN_EXP_KEY, String(exp));
+    return { ok: true, demo: true };
+  }
+  return { ok: false, reason: "Incorrect PIN." };
 }
-export function adminLogout() { localStorage.removeItem(ADMIN_AUTH_KEY); }
+
+export function adminLogout() {
+  localStorage.removeItem(ADMIN_AUTH_KEY);
+  localStorage.removeItem(ADMIN_EXP_KEY);
+}
+
+// ── Failed-attempt lockout (client-side UX; server adds a fixed delay too) ───────
+export function getAdminLock() {
+  const v = ls(ADMIN_LOCK_KEY);
+  if (!v) return { locked: false, attempts: 0, until: 0 };
+  if (v.until && Date.now() < v.until) return { locked: true, attempts: v.attempts || 0, until: v.until };
+  if (v.until && Date.now() >= v.until) { localStorage.removeItem(ADMIN_LOCK_KEY); return { locked: false, attempts: 0, until: 0 }; }
+  return { locked: false, attempts: v.attempts || 0, until: 0 };
+}
+
+// Records a failed attempt; locks for ADMIN_LOCK_MS once MAX is hit. Returns new state.
+export function recordAdminFailure() {
+  const cur = getAdminLock();
+  const attempts = (cur.attempts || 0) + 1;
+  const until = attempts >= ADMIN_MAX_ATTEMPTS ? Date.now() + ADMIN_LOCK_MS : 0;
+  lsSet(ADMIN_LOCK_KEY, { attempts: until ? 0 : attempts, until });
+  return { locked: !!until, attempts, until };
+}
+
+export function clearAdminFailures() { localStorage.removeItem(ADMIN_LOCK_KEY); }
 
 // ── Coupons ───────────────────────────────────────────────────────────────────
 function seedCoupons() {

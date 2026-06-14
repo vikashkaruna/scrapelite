@@ -211,7 +211,8 @@ src/
     ├── VsClay.jsx                    ★ R4: pricing updated; CTA → "from $19/month"
     ├── Batch.jsx                     ★ R5: /batch — paste URLs / import CSV → progress → results → export
     └── admin/
-        ├── AdminLayout.jsx           PIN gate (ADMIN123), collapsible sidebar (chevron + pin)
+        ├── AdminLayout.jsx           PIN gate (server-verified via admin-auth fn; async login,
+        │                             token session, 5→60s lockout), collapsible sidebar (chevron + pin)
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
         ├── AdminPricing.jsx          Editable plan prices + limits + global discount + bundles
         ├── AdminCoupons.jsx          Coupon CRUD (% or bonus extractions)
@@ -223,8 +224,13 @@ netlify/
     ├── extract.js                    POST /api/extract — Firecrawl proxy
     ├── extractions.js                GET/POST/PATCH/DELETE /api/extractions — Supabase proxy
     ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order
+    │                                 ★ now sources prices/coupons/global via lib/pricingSource.js
     ├── verify-payment.js             ★ V5c: GET=Stripe verify, POST=Razorpay HMAC verify
     ├── payment-webhook.js            ★ V5c: Stripe + Razorpay webhook handler
+    ├── admin-auth.js                 ★ POST — server-side admin PIN verify (ADMIN_PIN_HASH);
+    │                                 returns HMAC-signed session token; demo mode = ADMIN123
+    ├── lib/pricingSource.js          ★ shared server source of truth — loadPricing() merges
+    │                                 Supabase pricing_config over static tables; resolveDiscountFraction()
     └── stats.js                      ★ R0: GET /api/stats — aggregate teams/extractions from Supabase
                                       Direct REST (no SDK); 5-min CDN cache header
 
@@ -289,7 +295,7 @@ ThemeProvider
 | Batch mode | `runBatch()` in `batchService.js` — CONCURRENCY=3; each URL increments extraction counter via `billing.trackExtraction(1)` |
 | Batch gating | `checkCanBatch(urlCount)` and `checkCanExtractBatch(urlCount)` on BillingProvider; Business≤200, Agency≤500; Batch Pack top-up adds 50 slots |
 | Background enrichment | `enrich()` must never show the full-screen loader. |
-| Admin | `/admin` is standalone (no TopBar/Footer). PIN: `ADMIN123`. Sidebar is collapsible — toggle (chevron) + pin button. State in `datiq.adminSidebarCollapsed` / `datiq.adminSidebarPinned`. |
+| Admin | `/admin` is standalone (no TopBar/Footer). **PIN verified server-side** via `netlify/functions/admin-auth.js` (env `ADMIN_PIN_HASH`); demo PIN `ADMIN123` only when no PIN env is set or the function is unreachable (`npm run dev`). `adminLogin()` is async → token in `scrapelite.adminAuth` (+ exp); 5-attempt → 60s lockout (`datiq.adminLock`). Sidebar is collapsible — toggle (chevron) + pin button. State in `datiq.adminSidebarCollapsed` / `datiq.adminSidebarPinned`. |
 | Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
 | Netlify Functions | ESM (`export const handler`), in `netlify/functions/`. `stripe`/`razorpay` dynamic-imported only. |
 | localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
@@ -314,7 +320,9 @@ ThemeProvider
 | `datiq.tip.*` | Home.jsx — per-persona guide tip (shown once) |
 | `datiq.stats` | statsService.js — cached aggregate stats (5-min TTL) |
 | `datiq.subscribers` | emailCaptureService.js — newsletter email list |
-| `scrapelite.adminAuth` | AdminLayout.jsx — admin PIN gate (intentionally NOT rebranded) |
+| `scrapelite.adminAuth` | adminService.js — admin session **token** from `admin-auth` fn (NOT rebranded) |
+| `scrapelite.adminAuthExp` | adminService.js — admin token expiry (ms epoch) |
+| `datiq.adminLock` | adminService.js — failed-PIN-attempt lockout state (`{attempts, until}`) |
 | `scrapelite.*` | Internal keys (persona, usage, currency, pricing overrides etc.) — NOT rebranded |
 | `datiq.plan` | BillingProvider — active plan ID |
 | `datiq.pendingPayment` | paymentService.js — pending Stripe redirect state |
@@ -454,6 +462,20 @@ CREATE TABLE IF NOT EXISTS public.payment_events (
 ALTER TABLE public.payment_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon full access" ON public.payment_events;
 CREATE POLICY "anon full access" ON public.payment_events FOR ALL USING (true) WITH CHECK (true);
+
+-- Server-authoritative pricing/coupon overrides (read by create-checkout.js via
+-- pricingSource.loadPricing). Operator-managed: edited directly (SQL/dashboard) or
+-- via the "Generate SQL" panel in /admin/pricing. RLS is enabled with NO anon policy
+-- on purpose — only the service key (which bypasses RLS) may read/write, because
+-- these values set real charge amounts. If the table is empty, the server uses its
+-- static fallback tables. Keys: 'plans' | 'bundles' | 'coupons' | 'global'.
+CREATE TABLE IF NOT EXISTS public.pricing_config (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz default now()
+);
+ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
+-- (Intentionally no anon policy. Service key bypasses RLS.)
 ```
 
 ---
@@ -491,9 +513,20 @@ STRIPE_WEBHOOK_SECRET=
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 RAZORPAY_WEBHOOK_SECRET=
-SUPABASE_URL=                  # used by stats.js Netlify function (no VITE_ prefix)
-SUPABASE_SERVICE_KEY=          # preferred for stats.js (service key for aggregate queries)
+SUPABASE_URL=                  # used by stats.js + pricingSource.js (no VITE_ prefix)
+SUPABASE_SERVICE_KEY=          # service key — stats.js aggregates + pricing_config reads
+ADMIN_PIN_HASH=                # SHA-256 hex of a STRONG admin PIN (preferred). Generate:
+                               #   printf '%s' 'your-strong-pin' | shasum -a 256
+ADMIN_PIN=                     # plaintext admin PIN (fallback if you can't pre-hash)
+ADMIN_TOKEN_SECRET=            # optional HMAC key for the admin session token
 ```
+
+> **Admin PIN is verified server-side** by `netlify/functions/admin-auth.js` — the secret
+> never ships in the browser bundle. If neither `ADMIN_PIN_HASH` nor `ADMIN_PIN` is set,
+> the function runs in DEMO mode (accepts `ADMIN123`, returns `demo:true`). Set
+> `ADMIN_PIN_HASH` to a strong value to disable demo mode. `admin-auth.js` is plain Node
+> `crypto` (no external deps), so it works in `npm run dev` only via the dev fallback
+> (accepts `ADMIN123` when the function is unreachable); production must set the env var.
 
 ---
 
@@ -643,6 +676,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` to Netlify env for stats.js
 
 ### Netlify (manual — Netlify dashboard)
+- [ ] **Set a strong admin PIN**: add `ADMIN_PIN_HASH` (server, no VITE_ prefix) = `printf '%s' 'your-strong-pin' | shasum -a 256` → redeploy. Until set, `/admin` accepts the demo PIN `ADMIN123`.
+- [ ] (optional) Add `ADMIN_TOKEN_SECRET` (server) — random string to sign admin session tokens; defaults to the PIN hash if unset.
+- [ ] Add `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (server) — also enables operator `pricing_config` overrides for live charges (else server uses static price table).
 - [ ] Add `VITE_RAZORPAY_KEY_ID` (browser/build-time) — from Razorpay Dashboard → Settings → API Keys
 - [ ] Add `RAZORPAY_KEY_ID` (server, no VITE_ prefix) — same value as above
 - [ ] Add `RAZORPAY_KEY_SECRET` (server, no VITE_ prefix) — from same Razorpay API Keys page
@@ -654,8 +690,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ### Razorpay hardening (Razorpay-Integration-Enhancement branch)
 > Per Razorpay Standard Checkout guide. One-time Orders model (no Subscriptions). Razorpay/INR only.
-- **Server-authoritative amounts**: `create-checkout.js` recomputes base + 18% GST (INR) from the price tables and IGNORES any client `amount` — prevents amount tampering. Caveat: admin price *overrides* (`pricingOverrides.js`) are NOT reflected in live charges (server uses a static table). Follow-up if admin-editable live prices are needed.
-- **Server-authoritative discounts** (closes the prior coupon leak): the client now sends a `couponCode` (not a `discountPercent`). `create-checkout.js` resolves the discount itself via `resolveDiscount()` against a server-side `COUPONS` table (mirrors percent-type seed coupons in `adminService.js`) — validates active/expiry/plan match; unknown/expired/mismatched → 0. A tampered client can no longer dictate its own discount. Threaded through `paymentService.js` (Stripe + Razorpay) and `BillingProvider.jsx` (sends `subscription.coupon?.code`). `subscription.discountPercent` survives only as a client-side display hint (Pricing/Account); the charge ignores it. Caveats: `maxUses` not enforced server-side (no usage persistence); the server `COUPONS` table is static (admin coupon CRUD edits are not reflected in live charges) — same trade-off as the price table.
+- **Server shared source of truth** (`netlify/functions/lib/pricingSource.js`): prices, coupons, and the global discount all resolve through `loadPricing()`. Resolution order — **operator overrides PREVAIL, static is the fallback**: (1) static tables in `pricingSource.js` (mirror `pricingConfig.js` + `adminService.js` seeds); (2) operator overrides in the Supabase `pricing_config` table (rows keyed `plans` / `bundles` / `coupons` / `global`, each a jsonb value). Merge is per-field. Result cached 60s per warm container. If Supabase is unconfigured/unreachable → static tables (so "static as start" always holds). **No public write endpoint** (operator-managed by design — these values drive real charges); `pricing_config` is RLS-locked to the service key. `verify-payment.js` does NOT recompute (compares against the Razorpay order), so `create-checkout.js` is the only consumer.
+- **Server-authoritative amounts**: `create-checkout.js` recomputes base + 18% GST (INR) from `loadPricing()` and IGNORES any client `amount` — prevents amount tampering. Admin price edits (incl. new INR + annual fields) now reach live charges via `pricing_config`.
+- **Server-authoritative discounts** (closes the prior coupon leak): the client sends a `couponCode` (not a `discountPercent`). `create-checkout.js` resolves the discount via `resolveDiscountFraction(pricing, couponCode, planId)` = **max(coupon, global sale)** — the two never stack, and the result is always ≤ the UI's displayed (global-only) price, so a customer is never charged MORE than shown. Coupon checks: active/expiry/plan-match; unknown/expired/mismatched → 0. A tampered client can't dictate its own discount. Threaded through `paymentService.js` (Stripe + Razorpay) and `BillingProvider.jsx` (sends `subscription.coupon?.code`); `subscription.discountPercent` survives only as a client-side display hint.
+- **Admin pricing UI** (`AdminPricing.jsx`): plan editor now has USD-monthly, USD-annual, INR-monthly, INR-annual fields (+ bundle INR); `pricingOverrides.js` merges all of them. A **"Generate SQL"** panel emits the exact `insert … on conflict … do update` for `pricing_config` so the operator applies admin edits to live charges with one paste (the operator-managed write path — no insecure endpoint).
+- Caveats (documented): coupon `maxUses` not enforced server-side (no usage persistence); display modals (`PaymentConfirmModal`/`pricingMath.computeCharge`) don't subtract the discount (server charges ≤ displayed); the `pricing_config` table is operator-edited (admin UI edits localStorage for display + emits SQL — they don't auto-propagate to the server).
 - **Capture + status verification**: after the mandatory HMAC signature check (§1.5), `verify-payment.js` fetches the payment + order, confirms `order_id` + amount/currency match, captures if `authorized`, and only returns `verified:true` on `captured` (§1.6/§3.2).
 - **Persistence (§1.4)**: `razorpay_payment_id` → `payment_events.provider_event_id`; `razorpay_order_id` → `subscriptions.provider_subscription_id` (synchronous path + webhook). Signature is verified then discarded (not persisted — acceptable).
 - **Webhook idempotency**: `payment_events` deduped on `provider_event_id`.
@@ -729,7 +768,9 @@ npm run dev   # http://localhost:5173
 - `/use-cases` → clicking "Explore X" navigates to the correct `/use-cases/slug` page
 - `/docs` → browser navigates to `/help/index.html` (full page load, not SPA nav)
 - `/compare` → redirects to `/vs/browse-ai`
-- `/admin` → PIN `ADMIN123` → Revenue / Pricing / Coupons / Users
+- `/admin` → PIN (server-verified; `ADMIN123` in demo/dev) → Revenue / Pricing / Coupons / Users
+- `/admin` → 5 wrong PINs → "Locked for 60s" countdown disables the form; auto-unlocks after 60s
+- `/admin` → with `ADMIN_PIN_HASH` set in Netlify, `ADMIN123` is rejected (only the configured PIN works)
 - Admin sidebar → chevron button collapses sidebar to 64px icon-only strip; chevron expands it back
 - Admin sidebar → pin button (pin/pin-off icon) locks state; when unpinned+collapsed, hovering sidebar temporarily expands it
 - Admin sidebar → state persists across page reloads (localStorage)
