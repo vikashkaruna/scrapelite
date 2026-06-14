@@ -129,16 +129,20 @@ export function BillingProvider({ children }) {
     setPaymentError("");
 
     // Step 1: Show confirmation modal with pricing breakdown (before any payment call)
-    const confirmedPlanId = await new Promise((resolve) => {
-      confirmResolveRef.current = resolve; // resolves with planId (string) or null (cancel)
+    const confirmed = await new Promise((resolve) => {
+      confirmResolveRef.current = resolve; // resolves with { planId, couponCode } or null (cancel)
       setConfirmTarget({ planId: targetPlanId, billingPeriod });
     });
     setConfirmTarget(null);
     confirmResolveRef.current = null;
 
-    if (!confirmedPlanId) return { status: "cancelled" };
+    if (!confirmed) return { status: "cancelled" };
 
-    // Step 2: Proceed with (possibly upgraded) plan
+    // Step 2: Proceed with (possibly upgraded) plan + (possibly inline-applied) coupon.
+    // Read the coupon from the modal's resolution (fresh) — the closure's `subscription`
+    // may be stale if the user applied a coupon inside the modal this same render.
+    const confirmedPlanId = confirmed.planId;
+    const confirmedCoupon = confirmed.couponCode || subscription.coupon?.code || null;
     const targetPlan = planMap[confirmedPlanId] ?? planMap.free;
     setPaymentPlanName(targetPlan.name || confirmedPlanId);
     setPaymentLoading(true);
@@ -149,7 +153,7 @@ export function BillingProvider({ children }) {
         currency,
         rates,
         billingPeriod,
-        couponCode:      subscription.coupon?.code || null,
+        couponCode:      confirmedCoupon,
         sessionId:       getSessionId(),
         email:           user?.email || subscription.email || null,
         mobile:          user?.phone || subscription.mobile || null,
@@ -326,11 +330,11 @@ export function BillingProvider({ children }) {
   }, []);
 
   // ── Payment confirm modal callbacks ──────────────────────────────────────
-  const handlePaymentConfirm = useCallback((planId) => {
+  const handlePaymentConfirm = useCallback((planId, couponCode) => {
     const resolve = confirmResolveRef.current;
     confirmResolveRef.current = null;
     setConfirmTarget(null);
-    resolve?.(planId); // planId string → proceed; null → cancel
+    resolve?.(planId ? { planId, couponCode: couponCode || null } : null);
   }, []);
 
   const handlePaymentConfirmCancel = useCallback(() => {
@@ -398,6 +402,9 @@ export function BillingProvider({ children }) {
           billingPeriod={confirmTarget.billingPeriod}
           currency={currency}
           currentPlanId={planId}
+          appliedCouponCode={subscription.coupon?.code || ""}
+          onApplyCoupon={applyCoupon}
+          onRemoveCoupon={removeCoupon}
           onConfirm={handlePaymentConfirm}
           onCancel={handlePaymentConfirmCancel}
         />
