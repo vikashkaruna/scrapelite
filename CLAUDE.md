@@ -216,11 +216,17 @@ src/
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
         ├── AdminPricing.jsx          Editable plan prices + limits + global discount + bundles
         ├── AdminCoupons.jsx          Coupon CRUD (% or bonus extractions)
-        └── AdminUsers.jsx            User table: search, filter, extend usage, invite
+        ├── AdminUsers.jsx            User table: search, filter, extend usage, invite
+        └── AdminAI.jsx               ★ AI provider chain editor — reorder providers, model per
+                                      provider, enable toggles, max tokens (via adminConfigService)
 
 netlify/
 └── functions/
-    ├── ai.js                         POST /api/ai — Anthropic proxy (server-side AI_API_KEY, no VITE_ prefix)
+    ├── ai.js                         ★ POST /api/ai — MULTI-PROVIDER proxy w/ ordered fallback
+    │                                 (Gemini→Claude→OpenAI default); normalizes to Anthropic shape
+    ├── admin-ai-config.js            ★ GET=config+key presence; POST=upsert app_config 'ai' (token-gated)
+    ├── lib/aiProviders.js            ★ provider adapters + loadAiConfig() + runChain() fallback
+    ├── lib/adminToken.js             ★ verifyAdminToken() — HMAC check of admin-auth session token
     ├── extract.js                    POST /api/extract — Firecrawl proxy
     ├── extractions.js                GET/POST/PATCH/DELETE /api/extractions — Supabase proxy
     ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order
@@ -556,6 +562,15 @@ VITE_LINK_ABOUT=
 VITE_LINK_BLOG=
 
 # Server-only — Netlify env ONLY, never VITE_ prefix
+# ── AI providers (multi-provider fallback chain; keys server-only) ──
+AI_API_KEY=                    # Anthropic Claude (sk-ant-...)
+GEMINI_API_KEY=                # Google Gemini (AIza...) — default PRIMARY provider
+OPENAI_API_KEY=                # OpenAI (sk-...)
+AI_PROVIDER_ORDER=gemini,anthropic,openai   # optional; overrides default chain order
+GEMINI_MODEL=gemini-2.5-flash               # optional per-provider model overrides
+AI_MODEL=claude-3-5-haiku-20241022          # (Anthropic) optional
+OPENAI_MODEL=gpt-4o-mini                     # optional
+AI_MAX_TOKENS=1024                           # optional default per-request budget
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 RAZORPAY_KEY_ID=
@@ -715,10 +730,32 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ---
 
+## Multi-provider AI (enrichment) — fallback chain + admin config
+
+> The enrichment AI (summaries, link categorization, content generation) is now
+> provider-agnostic. **Firecrawl still does the actual scraping** (`extract.js`) —
+> this only affects enrichment. Frontend is unchanged: `aiService.js` → `apiClient.ai`
+> → `/api/ai`; every adapter normalizes its reply to the Anthropic `content[].text`
+> shape so the browser never knows which provider answered.
+
+| Piece | Detail |
+|---|---|
+| Default chain | **Gemini → Anthropic Claude → OpenAI** (cost-first). Override via `AI_PROVIDER_ORDER` env or `/admin/ai`. |
+| Adapters | `netlify/functions/lib/aiProviders.js` — `callGemini` / `callAnthropic` / `callOpenAI`; `runChain()` tries each **enabled** provider **with a key**, returns first success; else 502 → `aiService.js` mock fallback. |
+| Proxy | `netlify/functions/ai.js` — rewritten; **ignores client `model`** (per-provider model from config), honors client `max_tokens`. 503 when no provider key is set. |
+| Config source | `loadAiConfig()` merges Supabase `app_config` row `key='ai'` over env/static defaults (60s cache) — same pattern as `pricingSource.loadPricing()`. Operator config PREVAILS; static is fallback. |
+| Admin screen | `/admin/ai` (`AdminAI.jsx`) — reorder providers, edit model id per provider, enable toggles, default max tokens. Shows per-provider key presence (no secrets) + a not-persisted warning when Supabase is unconfigured. |
+| Write path | `netlify/functions/admin-ai-config.js` — GET (public-ish: config + key presence, no keys); POST gated by `verifyAdminToken()` (`lib/adminToken.js`, HMAC of the `admin-auth` session token), upserts `app_config`. |
+| Keys | `GEMINI_API_KEY` / `AI_API_KEY` / `OPENAI_API_KEY` — **server env only, never VITE_**. Stored config holds only non-secret model ids/order. |
+| DB | Run `scripts/ai-config.sql` (creates `public.app_config`, RLS-locked to service key). Empty table → built-in defaults. |
+| Rule | Never re-introduce a single hardcoded provider in `ai.js`. Add new providers in `aiProviders.js` `ADAPTERS` + `PROVIDER_META` + `DEFAULT_MODELS`. |
+
 ## Outstanding tasks
 
 ### Supabase (manual — Supabase dashboard)
 - [ ] Run SQL migration above in SQL Editor
+- [ ] Run `scripts/ai-config.sql` (creates `app_config` for the AI provider chain)
+- [ ] Add at least one AI provider key to Netlify env: `GEMINI_API_KEY` (primary), `AI_API_KEY` (Claude), and/or `OPENAI_API_KEY` — no VITE_ prefix; redeploy
 - [ ] Enable Google / Microsoft (Azure) / GitHub OAuth providers
 - [ ] Set Site URL → `https://datiq.app`; add redirect URLs including `https://datiq.app/**`
 - [ ] Add `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` to Netlify env for stats.js

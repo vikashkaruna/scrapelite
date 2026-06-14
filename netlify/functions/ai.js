@@ -1,15 +1,16 @@
-// Netlify Function — Anthropic Claude proxy.
-// Keeps AI_API_KEY server-side; the "dangerous-direct-browser-access" header is
-// no longer needed because the request originates from a server context.
+// Netlify Function — multi-provider AI proxy with ordered fallback.
 //
 // POST /api/ai
 //   Body: { model?, max_tokens?, messages: Array<{role, content}> }
-//   Response: raw Anthropic messages API response
+//   Response: Anthropic-shaped { content: [{ type:"text", text }] }
+//
+// The chain (Gemini → Anthropic → OpenAI by default) is resolved server-side from
+// admin-managed config (Supabase app_config 'ai' row) with env/static fallback —
+// see lib/aiProviders.js. Provider keys stay server-side. The client-sent `model`
+// is IGNORED (per-provider models come from config); only `max_tokens` (the
+// per-call budget) and `messages` are honored.
 
-const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
-// Stable production default. Override via AI_MODEL env var to test newer models.
-const DEFAULT_MODEL  = "claude-3-5-haiku-20241022";
-const FALLBACK_MODEL = "claude-haiku-4-5-20251001";
+import { runChain, keyPresence } from "./lib/aiProviders.js";
 
 function respond(statusCode, body) {
   return {
@@ -46,60 +47,30 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { model, max_tokens, messages } = reqBody;
+  const { max_tokens, messages } = reqBody;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return respond(400, { error: "messages array is required" });
   }
 
-  const apiKey = process.env.AI_API_KEY || process.env.VITE_AI_API_KEY;
-  if (!apiKey) {
+  // No provider has a key → behave like the old "not configured" path (503) so
+  // aiService.js falls back to its local mock content.
+  const present = keyPresence();
+  if (!Object.values(present).some(Boolean)) {
     return respond(503, { error: "AI service not configured on this server" });
   }
 
-  // Server-side model resolution: explicit request → env var → default.
-  const resolvedModel =
-    model ||
-    process.env.AI_MODEL ||
-    process.env.VITE_AI_MODEL ||
-    DEFAULT_MODEL;
-
-  async function callAnthropic(modelId) {
-    return fetch(ANTHROPIC_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        max_tokens: max_tokens || 1024,
-        messages,
-      }),
-    });
-  }
-
   try {
-    let upstream = await callAnthropic(resolvedModel);
-    let data = await upstream.json().catch(() => ({}));
-
-    // If the primary model returns 400 (model not found / bad request) and we
-    // have a fallback available, retry once with the fallback model.
-    if (upstream.status === 400 && resolvedModel !== FALLBACK_MODEL) {
-      console.warn(`[DatIQ] ai.js: model ${resolvedModel} returned 400 — retrying with ${FALLBACK_MODEL}`);
-      upstream = await callAnthropic(FALLBACK_MODEL);
-      data = await upstream.json().catch(() => ({}));
+    const result = await runChain(messages, max_tokens);
+    if (!result.ok) {
+      return respond(502, { error: result.error, detail: { attempts: result.attempts } });
     }
-
-    if (!upstream.ok) {
-      return respond(upstream.status, {
-        error: `AI request failed (${upstream.status})`,
-        detail: data,
-      });
-    }
-
-    return respond(200, data);
+    // Normalize to the Anthropic messages shape the browser already parses.
+    return respond(200, {
+      content: [{ type: "text", text: result.text }],
+      _provider: result.provider,
+      _model: result.model,
+    });
   } catch (err) {
     return respond(502, { error: `Upstream fetch failed: ${err.message}` });
   }
