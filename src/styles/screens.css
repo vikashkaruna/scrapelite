@@ -2077,6 +2077,47 @@
 .flag-label input { accent-color: var(--accent); cursor: pointer; }
 .bundle-editor-row { display: flex; flex-direction: column; gap: 12px; }
 
+/* ── Admin · AI Providers ──────────────────────────────────────────────────── */
+.admin-ai-loading { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: .92em; }
+.admin-ai-loading .spin { animation: spin 1s linear infinite; }
+.admin-ai-notice {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  border-radius: var(--r-lg); font-size: .86em; line-height: 1.5;
+  border: 1px solid var(--border); color: var(--text-2);
+}
+.admin-ai-notice.warn {
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  border-color: color-mix(in srgb, #f59e0b 40%, var(--border)); color: var(--text);
+}
+.admin-ai-notice code { font-size: .9em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+.admin-ai-chain { display: flex; flex-direction: column; gap: 12px; }
+.admin-ai-row {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+}
+.admin-ai-row.disabled { opacity: .55; }
+.admin-ai-rank {
+  width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-weight: 750; font-size: .82em;
+}
+.admin-ai-reorder { display: flex; flex-direction: column; gap: 2px; }
+.admin-ai-main { flex: 1; min-width: 0; }
+.admin-ai-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.admin-ai-name { font-weight: 700; font-size: .98em; }
+.admin-ai-keybadge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: .74em; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px; color: var(--text-3);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.admin-ai-keybadge.ok { color: #16a34a; background: color-mix(in srgb, #22c55e 12%, var(--surface)); border-color: color-mix(in srgb, #22c55e 35%, var(--border)); }
+.admin-ai-model { margin: 0; }
+.admin-ai-enable { flex-shrink: 0; white-space: nowrap; }
+.admin-ai-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .admin-ai-row { flex-wrap: wrap; }
+  .admin-ai-enable { margin-left: 38px; }
+}
+
 @media (max-width: 560px) {
   .alert-threshold-chips { gap: 6px; }
   .threshold-chip { padding: 4px 10px; font-size: .82em; }

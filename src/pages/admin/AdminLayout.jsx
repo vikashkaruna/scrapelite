@@ -13,6 +13,7 @@ const NAV = [
   { to: "/admin/pricing", label: "Pricing",  icon: "dollar-sign" },
   { to: "/admin/coupons", label: "Coupons",  icon: "bookmark" },
   { to: "/admin/users",   label: "Users",    icon: "users" },
+  { to: "/admin/ai",      label: "AI",       icon: "sparkles" },
 ];
 
 const LS_COL = "datiq.adminSidebarCollapsed";
