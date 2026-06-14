@@ -23,89 +23,66 @@ function Brand({ onClick }) {
   );
 }
 
-// ── Explore mega-dropdown sections ────────────────────────────────
-const EXPLORE_SECTIONS = [
+// ── Explore dropdown items ────────────────────────────────────────
+// Flat list (no group separators). Entries with a `group` key render a
+// labelled block ("Resources"); all other entries are standalone items.
+const EXPLORE_ITEMS = [
+  { label: "Plans & Pricing", icon: "tag",    path: "/pricing" },
+  { label: "Use Cases",       icon: "target", path: "/use-cases/usecase.html", external: true },
   {
-    key: "pricing",
-    label: "Pricing",
+    group: "Resources",
     items: [
-      { label: "Plans & Pricing",     icon: "tag",       path: "/pricing" },
-      { label: "Integrations",        icon: "zap",       path: "/integrations" },
+      { label: "Integrations",  icon: "zap",         path: "/integrations" },
+      { label: "Compare Tools", icon: "bar-chart",   path: "/vs/compare.html", external: true },
+      { label: "Blog",          icon: "book-open",   path: "/blog" },
+      { label: "Help Center",   icon: "help-circle", path: "/help/index.html", external: true },
     ],
   },
-  {
-    key: "use-cases",
-    label: "Use Cases",
-    items: [
-      { label: "All Use Cases", icon: "target", path: "/use-cases/usecase.html", external: true },
-    ],
-  },
-  {
-    key: "compare",
-    label: "Compare",
-    items: [
-      { label: "Compare Tools", icon: "bar-chart", path: "/vs/compare.html", external: true },
-    ],
-  },
-  {
-    key: "resources",
-    label: "Resources",
-    items: [
-      { label: "Blog",         icon: "book-open",   path: "/blog" },
-      { label: "Help Center",  icon: "help-circle", path: "/help/index.html", external: true },
-    ],
-  },
-  {
-    key: "contact",
-    label: "Contact",
-    items: [
-      { label: "Contact Us",  icon: "mail",  path: "/contact" },
-    ],
-  },
-  {
-    key: "company",
-    label: "Company",
-    items: [
-      { label: "About DatIQ", icon: "info", path: "/about" },
-    ],
-  },
+  { label: "Contact Us",  icon: "mail", path: "/contact" },
+  { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
 const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact"];
 
+function ExploreItem({ item, onNavigate }) {
+  return item.external ? (
+    <a
+      href={item.path}
+      className="nav-dropdown-item"
+      role="menuitem"
+      onClick={() => onNavigate()}
+    >
+      <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
+      {item.label}
+    </a>
+  ) : (
+    <button
+      className="nav-dropdown-item"
+      role="menuitem"
+      onClick={() => onNavigate(item.path)}
+    >
+      <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
+      {item.label}
+    </button>
+  );
+}
+
 function ExploreDropdown({ onNavigate }) {
   return (
     <div className="nav-dropdown-menu nav-explore-menu" role="menu">
-      {EXPLORE_SECTIONS.map((section, si) => (
-        <div key={section.key}>
-          {si > 0 && <div className="nav-dropdown-divider" />}
-          <div className="nav-dropdown-section">{section.label}</div>
-          {section.items.map((item) =>
-            item.external ? (
-              <a
-                key={item.path}
-                href={item.path}
-                className="nav-dropdown-item"
-                role="menuitem"
-                onClick={() => onNavigate()}
-              >
-                <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
-                {item.label}
-              </a>
-            ) : (
-              <button
-                key={item.path}
-                className="nav-dropdown-item"
-                role="menuitem"
-                onClick={() => onNavigate(item.path)}
-              >
-                <span className="nav-dd-icon"><Icon name={item.icon} size={14} /></span>
-                {item.label}
-              </button>
-            )
-          )}
-        </div>
-      ))}
+      {EXPLORE_ITEMS.map((entry) =>
+        entry.group ? (
+          <div key={entry.group} className="nav-dropdown-group">
+            <div className="nav-dropdown-section">{entry.group}</div>
+            {entry.items.map((item) => (
+              <ExploreItem key={item.path} item={item} onNavigate={onNavigate} />
+            ))}
+            <div className="nav-dropdown-divider" />
+          </div>
+        ) : (
+          <ExploreItem key={entry.path} item={entry} onNavigate={onNavigate} />
+        )
+      )}
     </div>
   );
 }
@@ -256,25 +233,29 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
           </button>
           {exploreOpen && (
             <div className="mobile-nav-sub">
-              {EXPLORE_SECTIONS.map((section) => (
-                <div key={section.key} className="mobile-nav-group">
-                  <div className="mobile-nav-group-label">{section.label}</div>
-                  {section.items.map((item) =>
-                    item.external ? (
-                      <a key={item.path} href={item.path}
-                        className="mobile-nav-subitem" onClick={onClose}>
-                        <Icon name={item.icon} size={14} />
-                        {item.label}
-                      </a>
-                    ) : (
-                      <button key={item.path} className="mobile-nav-subitem" onClick={() => go(item.path)}>
-                        <Icon name={item.icon} size={14} />
-                        {item.label}
-                      </button>
-                    )
-                  )}
-                </div>
-              ))}
+              {EXPLORE_ITEMS.map((entry) => {
+                const renderItem = (item) =>
+                  item.external ? (
+                    <a key={item.path} href={item.path}
+                      className="mobile-nav-subitem" onClick={onClose}>
+                      <Icon name={item.icon} size={14} />
+                      {item.label}
+                    </a>
+                  ) : (
+                    <button key={item.path} className="mobile-nav-subitem" onClick={() => go(item.path)}>
+                      <Icon name={item.icon} size={14} />
+                      {item.label}
+                    </button>
+                  );
+                return entry.group ? (
+                  <div key={entry.group} className="mobile-nav-group">
+                    <div className="mobile-nav-group-label">{entry.group}</div>
+                    {entry.items.map(renderItem)}
+                  </div>
+                ) : (
+                  renderItem(entry)
+                );
+              })}
             </div>
           )}
         </div>
