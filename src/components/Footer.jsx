@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 
 const LEGAL_LINKS = [
-  { label: "Privacy Policy", path: "/privacy" },
-  { label: "Terms of Service", path: "/terms" },
+  { label: "Privacy", path: "/privacy", icon: "shield" },
+  { label: "Terms",   path: "/terms",   icon: "file" },
+  { label: "Contact", path: "/contact", icon: "mail" },
 ];
 
 const SOCIALS = [
@@ -45,6 +46,7 @@ export default function Footer() {
             <span key={item.label} className="footer-legal-group">
               {i > 0 && <span className="footer-legal-sep" aria-hidden="true">·</span>}
               <button className="footer-nav-link" onClick={() => navigate(item.path)}>
+                <Icon name={item.icon} size={13} />
                 {item.label}
               </button>
             </span>
