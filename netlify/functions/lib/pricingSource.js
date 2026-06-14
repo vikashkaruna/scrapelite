@@ -36,10 +36,12 @@ const STATIC_BUNDLES = {
 
 // Mirrors the percent-type seed coupons in src/lib/adminService.js. Extraction-bonus
 // coupons grant credits client-side and never reduce a charge, so they are absent here.
+// maxUses = global redemption cap (0/absent = unlimited). Enforced server-side via
+// reserveCoupon() against the coupon_redemptions/coupon_counters tables.
 const STATIC_COUPONS = {
-  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-09-14", active: true  },
-  INDIE10:   { value: 10, planId: "select", expiresAt: "2026-09-30", active: true  },
-  EARLYBIRD: { value: 30, planId: null,     expiresAt: "2026-04-01", active: false },
+  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-09-14", active: true,  maxUses: 100 },
+  INDIE10:   { value: 10, planId: "select", expiresAt: "2026-09-30", active: true,  maxUses: 50  },
+  EARLYBIRD: { value: 30, planId: null,     expiresAt: "2026-04-01", active: false, maxUses: 30  },
 };
 
 const STATIC_GLOBAL = { percent: 0, active: false, expiresAt: null };
@@ -102,29 +104,66 @@ export async function loadPricing() {
 }
 
 // ── Discount resolution ──────────────────────────────────────────────────────
-// Returns a fraction in [0, 1]. A coupon and a global sale never STACK — we take
-// the larger of the two so combining them can't drive an accidental near-zero
-// charge. The result is always <= what the UI shows (UI applies global only),
-// so the customer is never charged MORE than displayed.
+// A coupon and a global sale never STACK — the caller takes the larger of the two
+// so combining them can't drive an accidental near-zero charge. The result is
+// always <= what the UI shows (UI applies global only), so the customer is never
+// charged MORE than displayed.
+
+// Validity-only coupon resolution (does NOT check maxUses — that's enforced at
+// reservation time via reserveCoupon). Returns { frac, maxUses } (frac 0 if invalid).
+export function resolveCouponInfo(pricing, couponCode, planId) {
+  if (!couponCode) return { frac: 0, maxUses: 0 };
+  const c = pricing.coupons[String(couponCode).trim().toUpperCase()];
+  if (!c || !c.active) return { frac: 0, maxUses: 0 };
+  if (c.expiresAt && new Date(c.expiresAt) < new Date()) return { frac: 0, maxUses: 0 };
+  if (c.planId && c.planId !== planId) return { frac: 0, maxUses: 0 };
+  return { frac: clampFrac(c.value), maxUses: Math.max(0, parseInt(c.maxUses, 10) || 0) };
+}
+
+export function globalFraction(pricing) {
+  const g = pricing.global;
+  if (!g || !g.active || !g.percent) return 0;
+  if (g.expiresAt && new Date(g.expiresAt) < new Date()) return 0;
+  return clampFrac(g.percent);
+}
+
+// Back-compat convenience: validity-only max(coupon, global), NO maxUses enforcement.
 export function resolveDiscountFraction(pricing, couponCode, planId) {
-  return Math.max(couponDiscount(pricing.coupons, couponCode, planId), globalDiscount(pricing.global));
-}
-
-function couponDiscount(coupons, couponCode, planId) {
-  if (!couponCode) return 0;
-  const c = coupons[String(couponCode).trim().toUpperCase()];
-  if (!c || !c.active) return 0;
-  if (c.expiresAt && new Date(c.expiresAt) < new Date()) return 0;
-  if (c.planId && c.planId !== planId) return 0;
-  return clampFrac(c.value);
-}
-
-function globalDiscount(global) {
-  if (!global || !global.active || !global.percent) return 0;
-  if (global.expiresAt && new Date(global.expiresAt) < new Date()) return 0;
-  return clampFrac(global.percent);
+  return Math.max(resolveCouponInfo(pricing, couponCode, planId).frac, globalFraction(pricing));
 }
 
 function clampFrac(pct) {
   return Math.min(100, Math.max(0, Number(pct) || 0)) / 100;
+}
+
+// ── Coupon redemption (atomic, server-enforced maxUses + one-per-user) ──────────
+// Calls the Supabase `redeem_coupon` RPC, which atomically (a) claims a per-user
+// slot via the unique (coupon_code, session_id) constraint and (b) increments a
+// per-coupon counter only while under maxUses. Returns one of:
+//   'ok' | 'already_redeemed' | 'cap_reached' | null
+// `null` means enforcement is unavailable (Supabase not configured or the RPC
+// errored) — the caller then falls back to applying the coupon WITHOUT enforcement
+// (today's behavior), so payments never hard-fail on an infra gap.
+export async function reserveCoupon(couponCode, sessionId, maxUses, orderRef) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key || !couponCode || !sessionId) return null;
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/redeem_coupon`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_code:    String(couponCode).trim().toUpperCase(),
+        p_session: String(sessionId),
+        p_max:     Math.max(0, parseInt(maxUses, 10) || 0),
+        p_order:   orderRef || null,
+      }),
+    });
+    if (!res.ok) return null;
+    const out = await res.json().catch(() => null); // RPC returns a scalar text
+    const val = Array.isArray(out) ? out[0] : out;
+    return typeof val === "string" ? val : null;
+  } catch {
+    return null; // infra error → unenforced fallback
+  }
 }

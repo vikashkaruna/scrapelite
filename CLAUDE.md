@@ -476,6 +476,54 @@ CREATE TABLE IF NOT EXISTS public.pricing_config (
 );
 ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
 -- (Intentionally no anon policy. Service key bypasses RLS.)
+
+-- Coupon redemption tracking — server-enforced maxUses + one-redemption-per-user.
+-- Written by create-checkout.js via the redeem_coupon RPC (service key only).
+CREATE TABLE IF NOT EXISTS public.coupon_redemptions (
+  id uuid primary key default gen_random_uuid(),
+  coupon_code text not null,
+  session_id  text not null,
+  order_ref   text,
+  created_at  timestamptz default now(),
+  unique (coupon_code, session_id)   -- per-user one-time use
+);
+ALTER TABLE public.coupon_redemptions ENABLE ROW LEVEL SECURITY; -- no anon policy
+
+CREATE TABLE IF NOT EXISTS public.coupon_counters (
+  coupon_code text primary key,
+  uses integer not null default 0
+);
+ALTER TABLE public.coupon_counters ENABLE ROW LEVEL SECURITY;    -- no anon policy
+
+-- Atomic redeem: (1) claim the per-user slot via the unique constraint, then
+-- (2) conditionally increment the per-coupon counter ONLY while under the cap (the
+-- UPDATE...WHERE uses < p_max is row-locked, so the cap can't be exceeded under
+-- concurrency). Returns 'ok' | 'already_redeemed' | 'cap_reached'. p_max<=0 = no cap.
+CREATE OR REPLACE FUNCTION public.redeem_coupon(
+  p_code text, p_session text, p_max integer, p_order text
+) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE new_uses integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.coupon_redemptions (coupon_code, session_id, order_ref)
+    VALUES (p_code, p_session, p_order);
+  EXCEPTION WHEN unique_violation THEN
+    RETURN 'already_redeemed';
+  END;
+  IF p_max IS NULL OR p_max <= 0 THEN
+    RETURN 'ok';
+  END IF;
+  INSERT INTO public.coupon_counters (coupon_code, uses) VALUES (p_code, 0)
+    ON CONFLICT (coupon_code) DO NOTHING;
+  UPDATE public.coupon_counters SET uses = uses + 1
+   WHERE coupon_code = p_code AND uses < p_max
+  RETURNING uses INTO new_uses;
+  IF new_uses IS NULL THEN
+    DELETE FROM public.coupon_redemptions WHERE coupon_code = p_code AND session_id = p_session;
+    RETURN 'cap_reached';
+  END IF;
+  RETURN 'ok';
+END; $$;
 ```
 
 ---
@@ -694,7 +742,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - **Server-authoritative amounts**: `create-checkout.js` recomputes base + 18% GST (INR) from `loadPricing()` and IGNORES any client `amount` — prevents amount tampering. Admin price edits (incl. new INR + annual fields) now reach live charges via `pricing_config`.
 - **Server-authoritative discounts** (closes the prior coupon leak): the client sends a `couponCode` (not a `discountPercent`). `create-checkout.js` resolves the discount via `resolveDiscountFraction(pricing, couponCode, planId)` = **max(coupon, global sale)** — the two never stack, and the result is always ≤ the UI's displayed (global-only) price, so a customer is never charged MORE than shown. Coupon checks: active/expiry/plan-match; unknown/expired/mismatched → 0. A tampered client can't dictate its own discount. Threaded through `paymentService.js` (Stripe + Razorpay) and `BillingProvider.jsx` (sends `subscription.coupon?.code`); `subscription.discountPercent` survives only as a client-side display hint.
 - **Admin pricing UI** (`AdminPricing.jsx`): plan editor now has USD-monthly, USD-annual, INR-monthly, INR-annual fields (+ bundle INR); `pricingOverrides.js` merges all of them. A **"Generate SQL"** panel emits the exact `insert … on conflict … do update` for `pricing_config` so the operator applies admin edits to live charges with one paste (the operator-managed write path — no insecure endpoint).
-- Caveats (documented): coupon `maxUses` not enforced server-side (no usage persistence); display modals (`PaymentConfirmModal`/`pricingMath.computeCharge`) don't subtract the discount (server charges ≤ displayed); the `pricing_config` table is operator-edited (admin UI edits localStorage for display + emits SQL — they don't auto-propagate to the server).
+- **Coupon `maxUses` + one-per-user are server-enforced** (atomic): `create-checkout.js` calls `reserveCoupon()` → Supabase `redeem_coupon` RPC, which claims a per-user slot (unique `coupon_code,session_id`) and increments a row-locked `coupon_counters` cap. `ok` applies the coupon; `already_redeemed`/`cap_reached` drops it (global sale still applies, never an over-discount); `null` (no Supabase / RPC error) falls back to applying the coupon unenforced so payments never hard-fail. Reservation happens at order-creation, so the discount + redemption are atomic. **Trade-off:** an abandoned discounted checkout consumes a slot — cleanup of stale unpaid reservations (e.g. set `order_ref`, reconcile against captured payments / TTL-expire) is a follow-up.
+- Caveats (documented): display modals (`PaymentConfirmModal`/`pricingMath.computeCharge`) don't subtract the discount (server charges ≤ displayed); the `pricing_config`/`coupons` config is operator-edited (admin UI edits localStorage for display + emits SQL — they don't auto-propagate to the server).
 - **Capture + status verification**: after the mandatory HMAC signature check (§1.5), `verify-payment.js` fetches the payment + order, confirms `order_id` + amount/currency match, captures if `authorized`, and only returns `verified:true` on `captured` (§1.6/§3.2).
 - **Persistence (§1.4)**: `razorpay_payment_id` → `payment_events.provider_event_id`; `razorpay_order_id` → `subscriptions.provider_subscription_id` (synchronous path + webhook). Signature is verified then discarded (not persisted — acceptable).
 - **Webhook idempotency**: `payment_events` deduped on `provider_event_id`.

@@ -8,7 +8,7 @@
 // and any client-supplied discount are ignored; the server recomputes everything.
 
 import {
-  loadPricing, resolveDiscountFraction,
+  loadPricing, resolveCouponInfo, globalFraction, reserveCoupon,
   ALLOWED_PLANS, ALLOWED_BUNDLES, GST_RATE,
 } from "./lib/pricingSource.js";
 
@@ -62,8 +62,24 @@ export const handler = async (event) => {
   // Server-authoritative pricing + discount. Operator overrides (Supabase) prevail
   // over the static table; the discount is the larger of the resolved coupon or the
   // active global sale (they never stack). Client-supplied discount is ignored.
-  const pricing        = await loadPricing();
-  const serverDiscount = resolveDiscountFraction(pricing, couponCode, planId); // [0, 1]
+  const pricing = await loadPricing();
+
+  // Resolve coupon validity, then ATOMICALLY reserve it — this enforces both the
+  // per-user one-time limit and the global maxUses cap. If the reservation is
+  // rejected, the coupon is dropped (the global sale, if any, still applies). When
+  // enforcement is unavailable (no Supabase / RPC error) reserveCoupon returns null
+  // and we fall back to applying the coupon unenforced, so payments never hard-fail.
+  const couponInfo = resolveCouponInfo(pricing, couponCode, planId);
+  let couponFrac = couponInfo.frac;
+  if (couponFrac > 0) {
+    const orderRef = `co_${(sessionId || "").slice(-8)}_${Date.now().toString(36)}`;
+    const reservation = await reserveCoupon(couponCode, sessionId, couponInfo.maxUses, orderRef);
+    if (reservation === "already_redeemed" || reservation === "cap_reached") {
+      console.warn(`[create-checkout] coupon ${String(couponCode).toUpperCase()} dropped: ${reservation}`);
+      couponFrac = 0;
+    }
+  }
+  const serverDiscount = Math.max(couponFrac, globalFraction(pricing)); // [0, 1]
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   if (provider === "stripe") {

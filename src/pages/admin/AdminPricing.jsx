@@ -288,6 +288,7 @@ function buildServerConfig(plans, bundles) {
       planId:    c.planId || null,
       expiresAt: c.expiresAt || null,
       active:    !!c.active,
+      maxUses:   Number(c.maxUses) || 0, // 0 = unlimited; enforced via redeem_coupon RPC
     };
   }
   const g = getGlobalDiscount();
