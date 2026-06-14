@@ -1,34 +1,81 @@
-// Home.jsx — single-URL extraction interface (route "/").
-import { useState, useEffect } from "react";
+// Home.jsx — single-URL + smart multi-URL extraction interface (route "/").
+//
+// Enhancements (home-screen-enhancement):
+//   • Intent chips replace the 4 toggles — one click configures everything
+//   • Smart input: detects multi-URL paste → progressive disclosure or /batch
+//   • FAB (layers-2 icon) opens BulkUploadModal for CSV / URL-list imports
+//   • OG preview card (favicon + title + description) shown on valid URL blur
+//   • Feature capability cards are clickable — click selects the matching intent
+//   • Render JS stays as a collapsible Advanced option
+//   • Post-extraction: /batch pre-populated via navigation state when routing there
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
-import Toggle from "../components/Toggle.jsx";
+import BulkUploadModal from "../components/BulkUploadModal.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { isValidUrl, normalizeUrl } from "../lib/utils.js";
-import { QUICK_ACTIONS, resolveCustomPrompt, enrichMeta } from "../lib/extractionPresets.js";
+import { CONTACTS_PROMPT, QUICK_ACTIONS, enrichMeta } from "../lib/extractionPresets.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
-const DEFAULT_QUICK_CONTEXTS = [
-  { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
-  { label: "Company about page", url: "https://notion.so/about", icon: "info" },
-  { label: "Blog / content",     url: "https://moz.com/blog",     icon: "book-open" },
+// Derive the pricing prompt from the existing QUICK_ACTIONS config.
+const PRICING_PROMPT = QUICK_ACTIONS.find((a) => a.key === "pricing")?.prompt || "";
+
+// ── Intent chip definitions ────────────────────────────────────────────────
+// Each chip auto-configures extraction options so users never touch toggles.
+const INTENTS = [
+  { key: "summary",  icon: "sparkles", label: "AI summary",    desc: "Page overview + key insights" },
+  { key: "contacts", icon: "users",    label: "Find contacts",  desc: "Leadership, emails & board" },
+  { key: "pricing",  icon: "hash",     label: "Scrape pricing", desc: "Tiers, prices & plan features" },
+  { key: "map",      icon: "map",      label: "Map site",       desc: "Discover all indexed URLs" },
+  { key: "custom",   icon: "code",     label: "Custom…",        desc: "Any field in plain English" },
 ];
+
+// Map feature card keys → intent chip key (null = post-extraction only)
+const CARD_TO_INTENT = {
+  headings: "summary",
+  links:    "summary",
+  summary:  "summary",
+  custom:   "custom",
+  map:      "map",
+  contacts: "contacts",
+  pricing:  "pricing",
+  content:  null,
+};
 
 const ALL_FEATURES = [
   { key: "headings", icon: "list-tree", title: "Heading structure", desc: "Full H1–H6 outline, in order" },
-  { key: "links",    icon: "link",      title: "Every link",       desc: "Internal & external, deduped" },
-  { key: "summary",  icon: "sparkles",  title: "AI summary",       desc: "Plain-language page overview", popular: true },
-  { key: "custom",   icon: "code",      title: "Custom extraction",desc: "Ask for any field in plain English", popular: true },
-  { key: "map",      icon: "map",       title: "Domain mapping",   desc: "Discover every indexed URL on a site" },
-  { key: "contacts", icon: "users",     title: "Contacts & emails",desc: "Surface leadership & contact emails", popular: true },
-  { key: "content",  icon: "wand",      title: "Content generation",desc: "Turn saved pages into SEO outlines & briefs" },
-  { key: "pricing",  icon: "hash",      title: "Pricing extraction",desc: "Structured pricing tiers from any page" },
+  { key: "links",    icon: "link",      title: "Every link",        desc: "Internal & external, deduped" },
+  { key: "summary",  icon: "sparkles",  title: "AI summary",        desc: "Plain-language page overview", popular: true },
+  { key: "custom",   icon: "code",      title: "Custom extraction",  desc: "Ask for any field in plain English", popular: true },
+  { key: "map",      icon: "map",       title: "Domain mapping",    desc: "Discover every indexed URL on a site" },
+  { key: "contacts", icon: "users",     title: "Contacts & emails",  desc: "Surface leadership & contact emails", popular: true },
+  { key: "content",  icon: "wand",      title: "Content generation", desc: "Turn saved pages into SEO outlines & briefs" },
+  { key: "pricing",  icon: "hash",      title: "Pricing extraction", desc: "Structured pricing tiers from any page" },
 ];
+
+// Parse multiple URLs from free-form text (newlines, commas, semicolons).
+function parseUrlsFromText(text) {
+  const raw = text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+  const valid = [];
+  const invalid = [];
+  const seen = new Set();
+  for (const r of raw) {
+    const norm = /^https?:\/\//i.test(r) ? r : "https://" + r;
+    if (seen.has(norm.toLowerCase())) continue;
+    seen.add(norm.toLowerCase());
+    if (isValidUrl(norm)) valid.push(norm);
+    else invalid.push(r);
+  }
+  return { valid, invalid };
+}
+
+// URLs ≤ this are sent to /batch with state (inline feel); > this opens /batch normally.
+const MULTI_INLINE_MAX = 10;
 
 function GuideTip({ tip, onDismiss }) {
   return (
@@ -53,17 +100,34 @@ export default function Home() {
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
   const defaultUrl = persona ? `https://${examples[0]}` : "https://lumio.io";
 
-  const [url, setUrl]             = useState(defaultUrl);
-  const [touched, setTouched]     = useState(false);
-  const [renderJs, setRenderJs]   = useState(false);
-  const [mapMode, setMapMode]     = useState(false);
-  const [contactsMode, setContactsMode] = useState(false);
-  const [customMode, setCustomMode]     = useState(false);
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [showTip, setShowTip]     = useState(false);
-  const [stats, setStats]         = useState(null);
+  // ── Single-URL input state ─────────────────────────────────────────────
+  const [url, setUrl]       = useState(defaultUrl);
+  const [touched, setTouched] = useState(false);
 
-  const valid = isValidUrl(url);
+  // ── Intent chip state ──────────────────────────────────────────────────
+  const [intent, setIntent]         = useState("summary");
+  const [customPrompt, setCustomPrompt] = useState("");
+
+  // ── Advanced options (Render JS) ───────────────────────────────────────
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [renderJs, setRenderJs]         = useState(false);
+
+  // ── Multi-URL (progressive disclosure) state ───────────────────────────
+  const [multiMode, setMultiMode]   = useState(false);
+  const [multiText, setMultiText]   = useState("");
+
+  // ── FAB / Bulk Upload Modal state ──────────────────────────────────────
+  const [bulkOpen, setBulkOpen] = useState(false);
+
+  // ── OG Preview state ───────────────────────────────────────────────────
+  const [preview, setPreview]         = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // ── Social proof ───────────────────────────────────────────────────────
+  const [stats, setStats] = useState(null);
+
+  // ── Persona tip ───────────────────────────────────────────────────────
+  const [showTip, setShowTip] = useState(false);
 
   useEffect(() => { getStats().then(setStats).catch(() => {}); }, []);
 
@@ -81,25 +145,121 @@ export default function Home() {
     try { localStorage.setItem(`datiq.tip.${persona.id}`, "1"); } catch { /* skip */ }
   };
 
+  // ── OG preview: debounced fetch on valid URL changes ──────────────────
+  const valid = isValidUrl(url);
+
+  useEffect(() => {
+    if (!valid) { setPreview(null); return; }
+    const timer = setTimeout(async () => {
+      setPreviewLoading(true);
+      try {
+        const target = normalizeUrl(url);
+        const res = await fetch(`/api/og-preview?url=${encodeURIComponent(target)}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Only show preview if we got at least a title or description
+          setPreview(data?.title || data?.description ? data : null);
+        } else {
+          setPreview(null);
+        }
+      } catch {
+        setPreview(null);
+      } finally {
+        setPreviewLoading(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [url, valid]);
+
+  // ── Multi-URL parsing ─────────────────────────────────────────────────
+  const { valid: multiValid, invalid: multiInvalid } = useMemo(
+    () => (multiText ? parseUrlsFromText(multiText) : { valid: [], invalid: [] }),
+    [multiText]
+  );
+
+  // ── Intent chip selection → clear any stale custom prompt when switching away ─
+  const handleIntentSelect = useCallback((key) => {
+    setIntent(key);
+    if (key !== "custom") setCustomPrompt("");
+  }, []);
+
+  // ── Feature card click → set matching intent chip ─────────────────────
+  const handleCardClick = useCallback((featureKey) => {
+    const mapped = CARD_TO_INTENT[featureKey];
+    if (mapped) {
+      setIntent(mapped);
+      // Scroll extraction form into view smoothly
+      document.querySelector(".intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, []);
+
+  // ── Bulk upload: onUrls callback ──────────────────────────────────────
+  const handleBulkUrls = useCallback((urls) => {
+    if (urls.length === 0) return;
+    if (urls.length === 1) {
+      // Single URL — just populate the single input field
+      setUrl(urls[0]);
+      setMultiMode(false);
+      return;
+    }
+    // Multiple URLs — open progressive disclosure with them pre-populated
+    setMultiText(urls.join("\n"));
+    setMultiMode(true);
+  }, []);
+
+  // ── Form submit ────────────────────────────────────────────────────────
   const handleSubmit = (e) => {
     e?.preventDefault();
+
+    // Multi-URL path
+    if (multiMode) {
+      if (multiValid.length === 0) return;
+      // Always route to /batch page, pre-populated with parsed URLs + intent
+      navigate("/batch", {
+        state: { urls: multiValid, intent },
+      });
+      return;
+    }
+
+    // Single-URL path
     if (!valid) { setTouched(true); return; }
     const target = normalizeUrl(url);
-    if (mapMode) { extract(target, { mapMode: true }); return; }
-    const prompt = resolveCustomPrompt({ customMode, customPrompt, contactsMode });
+
+    if (intent === "map") {
+      extract(target, { mapMode: true });
+      return;
+    }
+
+    const prompt =
+      intent === "contacts" ? CONTACTS_PROMPT :
+      intent === "pricing"  ? PRICING_PROMPT :
+      intent === "custom"   ? customPrompt.trim() :
+      ""; // summary — no custom prompt
+
     const opts = { renderJs, customPrompt: prompt };
-    if (prompt) opts.enrichMeta = enrichMeta(contactsMode ? "leadership" : "custom");
+    if (prompt) {
+      opts.enrichMeta = enrichMeta(
+        intent === "contacts" ? "leadership" :
+        intent === "pricing"  ? "pricing" :
+        "custom"
+      );
+    }
     extract(target, opts);
   };
 
-  const applyPreset = (preset) => { setCustomMode(true); setCustomPrompt(preset.prompt); };
-
+  // ── Copy for hero section ─────────────────────────────────────────────
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
   const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
   const subtext  = persona
     ? persona.subtitle
     : "Paste any URL to pull a page's headings, links and an instant AI summary — then go further: extract any field in plain English, map an entire domain, or surface leadership contacts & emails.";
   const greeting = userName ? `Hi ${userName} —` : null;
+
+  const DEFAULT_QUICK_CONTEXTS = [
+    { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
+    { label: "Company about page", url: "https://notion.so/about",   icon: "info" },
+    { label: "Blog / content",     url: "https://moz.com/blog",      icon: "book-open" },
+  ];
 
   return (
     <div className="page">
@@ -115,6 +275,7 @@ export default function Home() {
       >
         <div className="hero-glow" style={persona ? { "--accent": persona.color } : {}} />
 
+        {/* Eyebrow */}
         <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
           <Icon name="sparkles" size={14} />
           {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
@@ -122,6 +283,7 @@ export default function Home() {
           {!persona && <span className="v2-pill">v2.0</span>}
         </div>
 
+        {/* Headline */}
         <h1
           className="rise"
           style={{
@@ -151,6 +313,7 @@ export default function Home() {
           )}
         </h1>
 
+        {/* Subtext */}
         <p
           className="rise"
           style={{
@@ -163,6 +326,7 @@ export default function Home() {
           {subtext}
         </p>
 
+        {/* Persona hero stat */}
         {persona && (
           <div className="persona-stat rise" style={{ animationDelay: ".15s" }}>
             <span className="persona-stat-num" style={{ color: persona.color }}>{persona.heroStat}</span>
@@ -170,13 +334,14 @@ export default function Home() {
           </div>
         )}
 
+        {/* Guide tip */}
         {showTip && persona && (
           <div className="rise" style={{ animationDelay: ".16s", width: "100%", maxWidth: 620 }}>
             <GuideTip tip={persona.guideTip} onDismiss={dismissTip} />
           </div>
         )}
 
-        {/* Persona quick-context chips */}
+        {/* Quick-context chips */}
         {(() => {
           const contexts = persona
             ? persona.examples.map((ex, i) => ({
@@ -194,7 +359,7 @@ export default function Home() {
                 {contexts.map((ctx) => (
                   <button
                     key={ctx.url} type="button" className="persona-ctx-chip"
-                    onClick={() => { setUrl(ctx.url); setTouched(false); }}
+                    onClick={() => { setUrl(ctx.url); setTouched(false); setPreview(null); }}
                     title={`Use: ${ctx.url}`}
                   >
                     <Icon name={ctx.icon} size={11} /> {ctx.label}
@@ -205,36 +370,55 @@ export default function Home() {
           );
         })()}
 
-        {/* ── Main extraction form ── */}
+        {/* ── Main extraction form ─────────────────────────────────────── */}
         <form
           className="rise"
           onSubmit={handleSubmit}
           style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "12px 0 0" }}
         >
-          <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
-            <span className="field-lead"><Icon name="globe" size={20} /></span>
-            <input
-              className="field-input"
-              type="text"
-              inputMode="url"
-              placeholder={persona ? `https://${examples[0]}` : "https://example.com"}
-              value={url}
-              autoFocus
-              onChange={(e) => { setUrl(e.target.value); if (touched) setTouched(false); }}
-              aria-label="Page URL to extract"
-            />
-            <Button
-              variant="primary"
-              type="submit"
-              iconRight="arrow-right"
-              style={{ height: 50, fontSize: "1em", background: persona ? persona.color : undefined }}
-            >
-              {mapMode ? "Map domain" : "Extract"}
-            </Button>
-          </div>
+          {/* URL input row + FAB */}
+          {!multiMode && (
+            <div className="home-input-row">
+              <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
+                <span className="field-lead"><Icon name="globe" size={20} /></span>
+                <input
+                  className="field-input"
+                  type="text"
+                  inputMode="url"
+                  placeholder={persona ? `https://${examples[0]}` : "https://example.com"}
+                  value={url}
+                  autoFocus
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    if (touched) setTouched(false);
+                    setPreview(null);
+                  }}
+                  aria-label="Page URL to extract"
+                />
+                <Button
+                  variant="primary"
+                  type="submit"
+                  iconRight="arrow-right"
+                  style={{ height: 50, fontSize: "1em", background: persona ? persona.color : undefined }}
+                >
+                  {intent === "map" ? "Map domain" : "Extract"}
+                </Button>
+              </div>
+              {/* FAB: Bulk import */}
+              <button
+                type="button"
+                className="home-input-fab"
+                onClick={() => setBulkOpen(true)}
+                title="Bulk import — paste a URL list or upload a CSV"
+                aria-label="Bulk import URLs"
+              >
+                <Icon name="layers-2" size={18} />
+              </button>
+            </div>
+          )}
 
           {/* Validation error */}
-          {touched && !valid && (
+          {!multiMode && touched && !valid && (
             <div style={{ marginTop: 8, textAlign: "center" }}>
               <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
                 Hmm, that doesn't look like a valid URL.
@@ -242,8 +426,54 @@ export default function Home() {
             </div>
           )}
 
-          {/* Custom extraction textarea */}
-          {customMode && !mapMode && (
+          {/* OG Preview card */}
+          {!multiMode && (previewLoading || preview) && (
+            <div className="url-preview-card">
+              {previewLoading ? (
+                <span className="url-preview-loading">
+                  <Icon name="loader" size={14} /> Fetching preview…
+                </span>
+              ) : preview && (
+                <>
+                  <img
+                    className="url-preview-favicon"
+                    src={preview.favicon}
+                    alt=""
+                    width={20}
+                    height={20}
+                    onError={(e) => { e.target.style.display = "none"; }}
+                  />
+                  <div className="url-preview-meta">
+                    {preview.title && <div className="url-preview-title">{preview.title}</div>}
+                    {preview.description && <div className="url-preview-desc">{preview.description}</div>}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Intent chips ─────────────────────────────────────────── */}
+          <div className="intent-chips">
+            <span className="intent-chips-label">What do you want to extract?</span>
+            <div className="intent-chips-row">
+              {INTENTS.map((ic) => (
+                <button
+                  key={ic.key}
+                  type="button"
+                  className={"intent-chip" + (intent === ic.key ? " intent-chip-active" : "")}
+                  onClick={() => handleIntentSelect(ic.key)}
+                  title={ic.desc}
+                  style={intent === ic.key && persona ? { "--chip-accent": persona.color } : {}}
+                >
+                  <Icon name={ic.icon} size={14} />
+                  {ic.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom extraction textarea — shown when intent === "custom" */}
+          {intent === "custom" && (
             <div className="custom-extract rise">
               <div className="custom-extract-head">
                 <Icon name="code" size={14} />
@@ -263,7 +493,8 @@ export default function Home() {
                 {QUICK_ACTIONS.map((a) => (
                   <button
                     key={a.key} type="button" className="preset-chip"
-                    onClick={() => applyPreset(a)} title={a.prompt}
+                    onClick={() => setCustomPrompt(a.prompt)}
+                    title={a.prompt}
                   >
                     <Icon name={a.icon} size={12} /> {a.label}
                   </button>
@@ -272,83 +503,165 @@ export default function Home() {
             </div>
           )}
 
-          {/* Scrape options — 2-column grid (batch mode removed; use /batch page) */}
-          <div className="scrape-opts scrape-opts-grid">
-            <Toggle
-              icon="zap"
-              label="Render JavaScript"
-              hint="dynamic / SPA pages"
-              checked={renderJs}
-              onChange={setRenderJs}
-              tooltip="Waits for client-side JavaScript to render before capturing. Best for React/Vue/Angular SPAs."
-            />
-            <Toggle
-              icon="map"
-              label="Map entire domain"
-              hint={mapMode ? "all indexed URLs" : "vs. single page"}
-              checked={mapMode}
-              onChange={setMapMode}
-              tooltip="Discover all indexed URLs on the domain via Firecrawl's /map endpoint."
-            />
-            <Toggle
-              icon="users"
-              label="Contacts & emails"
-              hint="leadership & board"
-              checked={contactsMode}
-              onChange={(val) => { setContactsMode(val); if (val) setCustomMode(true); }}
-              tooltip="Extract names, titles and emails of senior leadership and board members."
-            />
-            <Toggle
-              icon="code"
-              label="Custom extraction"
-              hint="ask in plain English"
-              checked={customMode}
-              onChange={setCustomMode}
-              tooltip="Reveal a prompt box to extract any specific fields you describe in plain English."
-            />
-          </div>
-
-          {mapMode && (
+          {/* Map mode notice */}
+          {intent === "map" && (
             <p className="opts-note">
-              <Icon name="network" size={13} /> Domain mapping is active — other options apply to single-page scrapes.
+              <Icon name="network" size={13} /> Domain mapping discovers all indexed URLs on the domain — no single-page extraction.
             </p>
           )}
 
-          {/* Batch mode hint */}
-          <div className="home-batch-hint">
-            <Icon name="layers-2" size={13} />
-            Need to extract multiple URLs?{" "}
+          {/* ── Advanced options (Render JS) ─────────────────────────── */}
+          <div style={{ textAlign: "center", marginTop: 10 }}>
             <button
               type="button"
-              className="home-batch-link"
-              onClick={() => navigate("/batch")}
+              className="advanced-toggle"
+              onClick={() => setShowAdvanced((v) => !v)}
+              aria-expanded={showAdvanced}
             >
-              Use Batch mode →
+              <Icon name={showAdvanced ? "chevron-up" : "chevron-down"} size={13} />
+              Advanced options
             </button>
           </div>
+          {showAdvanced && (
+            <div className="advanced-section">
+              <label className="advanced-row">
+                <input
+                  type="checkbox"
+                  checked={renderJs}
+                  onChange={(e) => setRenderJs(e.target.checked)}
+                  style={{ accentColor: "var(--accent)", width: 15, height: 15, flexShrink: 0 }}
+                />
+                <span className="advanced-row-label">
+                  <Icon name="zap" size={14} />
+                  Render JavaScript
+                  <span className="advanced-row-hint">Waits 3 s for React/Vue/Angular SPAs to finish rendering</span>
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* ── Multi-URL progressive disclosure ─────────────────────── */}
+          {!multiMode ? (
+            <div className="multi-url-reveal">
+              <span>Need to extract from multiple URLs?</span>
+              <button
+                type="button"
+                className="multi-url-toggle-btn"
+                onClick={() => setMultiMode(true)}
+              >
+                Enter a list →
+              </button>
+              <span style={{ color: "var(--border)" }}>·</span>
+              <button
+                type="button"
+                className="multi-url-toggle-btn"
+                onClick={() => setBulkOpen(true)}
+              >
+                Upload CSV
+              </button>
+            </div>
+          ) : (
+            <div className="multi-url-wrap">
+              <div className="multi-url-header">
+                <div className="multi-url-header-left">
+                  <Icon name="layers-2" size={15} />
+                  <span>Multi-URL extraction</span>
+                </div>
+                <button
+                  type="button"
+                  className="multi-url-close"
+                  onClick={() => { setMultiMode(false); setMultiText(""); }}
+                  title="Back to single URL"
+                >
+                  <Icon name="x" size={14} />
+                </button>
+              </div>
+              <textarea
+                className="multi-url-textarea"
+                rows={5}
+                placeholder={"Paste URLs, one per line:\nhttps://acme.com\nhttps://acme.com/pricing\nhttps://acme.com/about"}
+                value={multiText}
+                onChange={(e) => setMultiText(e.target.value)}
+                autoFocus
+              />
+              <div className="multi-url-footer">
+                <div className="multi-url-count">
+                  {multiValid.length > 0 && (
+                    <span className="multi-url-count-ok">
+                      <Icon name="check" size={12} /> {multiValid.length} URL{multiValid.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {multiInvalid.length > 0 && (
+                    <span className="multi-url-count-invalid">
+                      <Icon name="x" size={12} /> {multiInvalid.length} skipped
+                    </span>
+                  )}
+                  {multiValid.length > MULTI_INLINE_MAX && (
+                    <span className="multi-url-count-note">
+                      → will open in Batch mode
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  iconRight="arrow-right"
+                  disabled={multiValid.length === 0}
+                  style={{
+                    height: 38, fontSize: ".88em",
+                    background: persona ? persona.color : undefined,
+                  }}
+                >
+                  {multiValid.length > MULTI_INLINE_MAX
+                    ? `Open in Batch (${multiValid.length})`
+                    : `Extract ${multiValid.length || ""} URL${multiValid.length !== 1 ? "s" : ""}`}
+                </Button>
+              </div>
+            </div>
+          )}
         </form>
 
-        {/* Capabilities grid */}
+        {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
         <div className="rise home-features" style={{ animationDelay: ".26s" }}>
           {ALL_FEATURES.map((f) => {
-            const isHighlighted = persona && persona.featuresHighlight?.includes(f.key);
+            const isHighlighted  = persona && persona.featuresHighlight?.includes(f.key);
+            const mappedIntent   = CARD_TO_INTENT[f.key];
+            const isSelected     = mappedIntent && intent === mappedIntent;
+            const isClickable    = Boolean(mappedIntent);
+
             return (
               <div
                 key={f.key}
-                className={"feature-cell" + (isHighlighted ? " feature-cell-highlight" : "")}
+                className={[
+                  "feature-cell",
+                  isHighlighted  ? "feature-cell-highlight" : "",
+                  isClickable    ? "feature-cell-clickable" : "",
+                  isSelected     ? "feature-cell-selected" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={isClickable ? () => handleCardClick(f.key) : undefined}
+                role={isClickable ? "button" : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                onKeyDown={isClickable ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleCardClick(f.key); }
+                } : undefined}
+                title={isClickable ? `Click to use: ${f.title}` : undefined}
               >
                 <div
                   className="feature-ico"
-                  style={isHighlighted
-                    ? { background: `color-mix(in srgb, ${persona.color} 14%, transparent)`, color: persona.color }
-                    : {}}
+                  style={
+                    isSelected
+                      ? { background: "var(--accent-soft)", color: "var(--accent)" }
+                      : isHighlighted
+                      ? { background: `color-mix(in srgb, ${persona.color} 14%, transparent)`, color: persona.color }
+                      : {}
+                  }
                 >
                   <Icon name={f.icon} size={19} />
                 </div>
                 <div className="feature-body">
                   <div className="feature-title-row">
                     <span className="feature-title">{f.title}</span>
-                    {f.popular && (
+                    {f.popular && !isSelected && (
                       <span
                         className="feature-tag"
                         style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
@@ -356,7 +669,15 @@ export default function Home() {
                         Popular
                       </span>
                     )}
-                    {isHighlighted && (
+                    {isSelected && (
+                      <span
+                        className="feature-tag"
+                        style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                      >
+                        Active
+                      </span>
+                    )}
+                    {isHighlighted && !isSelected && (
                       <span
                         className="feature-tag"
                         style={{
@@ -394,6 +715,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Persona footer */}
         {persona && (
           <div className="home-persona-footer rise" style={{ animationDelay: ".32s" }}>
             <span style={{ color: "var(--text-3)", fontSize: ".86em" }}>
@@ -405,6 +727,13 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Bulk Upload Modal */}
+      <BulkUploadModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onUrls={handleBulkUrls}
+      />
     </div>
   );
 }

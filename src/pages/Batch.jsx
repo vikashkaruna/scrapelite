@@ -1,8 +1,8 @@
 // Batch.jsx — multi-URL extraction mode (route "/batch").
 // Supports: paste URLs textarea, CSV file import, progress tracking, and
 // combined export (CSV / PDF / Markdown / JSON).
-import { useState, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import Toggle from "../components/Toggle.jsx";
@@ -126,6 +126,7 @@ function BatchGateBanner({ onUpgrade, planId, planLimit }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Batch() {
   const navigate = useNavigate();
+  const location = useLocation();
   const showToast = useToast();
   const billing = useBilling();
   const { view } = useExtraction();
@@ -133,8 +134,11 @@ export default function Batch() {
   // Input tab: "paste" or "csv"
   const [inputTab, setInputTab] = useState("paste");
 
-  // Paste mode state
-  const [pasteText, setPasteText] = useState("");
+  // Paste mode state — pre-populate from Home navigation state if provided
+  const [pasteText, setPasteText] = useState(() => {
+    const navUrls = location.state?.urls;
+    return Array.isArray(navUrls) && navUrls.length > 0 ? navUrls.join("\n") : "";
+  });
 
   // CSV mode state
   const [csvFile, setCsvFile] = useState(null);
@@ -144,10 +148,27 @@ export default function Batch() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Options
+  // Options — pre-set from Home navigation state (intent → customMode/prompt)
   const [renderJs, setRenderJs] = useState(false);
-  const [customMode, setCustomMode] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState("");
+  const [customMode, setCustomMode] = useState(() => {
+    const i = location.state?.intent;
+    return i === "contacts" || i === "pricing" || i === "custom";
+  });
+  const [customPrompt, setCustomPrompt] = useState(() => {
+    const i = location.state?.intent;
+    if (i === "contacts") return "Extract the full names, job titles, and email addresses of the company's senior leadership and board members. Also capture any general contact emails.";
+    if (i === "pricing")  return "Extract every pricing tier: the plan name, price, billing period, and the key features included in each plan.";
+    return "";
+  });
+
+  // Show a toast when arriving from Home with pre-populated URLs
+  useEffect(() => {
+    if (location.state?.urls?.length > 0) {
+      showToast(`${location.state.urls.length} URLs loaded from Home — review and run`);
+      // Clear navigation state so back-navigation doesn't re-trigger
+      window.history.replaceState({}, "");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Run state
   const [running, setRunning] = useState(false);
