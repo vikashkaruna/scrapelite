@@ -1,20 +1,41 @@
-// PaymentConfirmModal — pre-payment confirmation with GST breakdown (INR) and plan upgrade option.
+// PaymentConfirmModal — pre-payment confirmation with discount + GST breakdown (INR)
+// and inline coupon entry. The discount shown here mirrors the server's
+// serverDiscount = max(coupon, global) so the displayed total matches what is charged.
 import { useState } from "react";
-import { getEffectivePlans } from "../lib/pricingOverrides.js";
+import { getEffectivePlans, getGlobalDiscount } from "../lib/pricingOverrides.js";
+import { validateCoupon } from "../lib/adminService.js";
 import { hasPayment } from "../lib/paymentConfig.js";
 import { computeCharge, perMonthIncl } from "../lib/pricingMath.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 
+// Active global-sale percent (0 when none / expired).
+function globalPercent() {
+  const d = getGlobalDiscount();
+  if (!d?.active || !d.percent) return 0;
+  if (d.expiresAt && new Date(d.expiresAt) < new Date()) return 0;
+  return d.percent;
+}
+
+// Percent from a coupon code, validated against the selected plan (0 if invalid/non-percent).
+function couponPercentFor(code, planId) {
+  if (!code) return 0;
+  const { valid, coupon } = validateCoupon(code, planId);
+  if (!valid || coupon.type !== "percent") return 0;
+  return coupon.value || 0;
+}
+
 // Thin adapter to the shared canonical helper (display-only; server is authoritative).
-function computePricing(plan, billingPeriod, currency) {
-  const { base, gst, total } = computeCharge(plan, billingPeriod, currency);
-  return { baseTotal: base, gst: Math.round(gst), total };
+function computePricing(plan, billingPeriod, currency, discountPercent) {
+  const { gross, discount, base, gst, total } = computeCharge(plan, billingPeriod, currency, discountPercent);
+  return { gross, discount, baseTotal: base, gst: Math.round(gst), total };
 }
 
 function fmt(amt, currency) {
   if (currency === "INR") return "₹" + Math.round(amt).toLocaleString("en-IN");
-  return "$" + amt;
+  const rounded = Math.round(amt * 100) / 100;
+  // Whole dollars → no decimals; fractional → 2 decimals (e.g. $604.80).
+  return "$" + (Number.isInteger(rounded) ? rounded : rounded.toFixed(2));
 }
 
 export default function PaymentConfirmModal({
@@ -22,10 +43,18 @@ export default function PaymentConfirmModal({
   billingPeriod,
   currency,
   currentPlanId,
-  onConfirm,
+  appliedCouponCode,   // coupon already on the subscription (from /account)
+  onApplyCoupon,       // (code) => boolean — persists coupon to subscription, returns validity
+  onRemoveCoupon,      // () => void — clears the applied coupon
+  onConfirm,           // (planId, couponCode) => void
   onCancel,
 }) {
-  const [selectedId, setSelectedId] = useState(planId);
+  const [selectedId, setSelectedId]   = useState(planId);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponErr, setCouponErr]     = useState("");
+  // Local mirror of the applied coupon so the breakdown updates instantly on apply/remove.
+  const [activeCoupon, setActiveCoupon] = useState(appliedCouponCode || "");
+
   const isDemo = !hasPayment;
   const isINR  = currency === "INR";
 
@@ -35,7 +64,13 @@ export default function PaymentConfirmModal({
 
   if (!plan) return null;
 
-  const { baseTotal, gst, total } = computePricing(plan, billingPeriod, currency);
+  // Effective discount = max(coupon-for-this-plan, global sale) — mirrors the server.
+  const couponPct   = couponPercentFor(activeCoupon, selectedId);
+  const globalPct   = globalPercent();
+  const effectivePct = Math.max(couponPct, globalPct);
+  const discountSrc  = couponPct >= globalPct && couponPct > 0 ? "coupon" : globalPct > 0 ? "global" : null;
+
+  const { gross, discount, baseTotal, gst, total } = computePricing(plan, billingPeriod, currency, effectivePct);
 
   // Higher plans relative to the currently selected plan (up to 2)
   const upgradePlans = allPlans
@@ -44,10 +79,35 @@ export default function PaymentConfirmModal({
 
   const handleBackdrop = (e) => { if (e.target === e.currentTarget) onCancel(); };
 
+  const handleApply = (e) => {
+    e.preventDefault();
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    // Validate against the selected plan first so we can show a precise error.
+    const { valid, reason } = validateCoupon(code, selectedId);
+    if (!valid) { setCouponErr(reason || "Invalid coupon code."); return; }
+    // Persist to the subscription for display continuity (/account). The modal's own
+    // validation above is authoritative for what's shown + sent; the server re-validates.
+    onApplyCoupon?.(code);
+    setActiveCoupon(code);
+    setCouponInput("");
+    setCouponErr("");
+  };
+
+  const handleRemove = () => {
+    onRemoveCoupon?.();
+    setActiveCoupon("");
+    setCouponErr("");
+  };
+
   const periodLabel = billingPeriod === "annual" ? "Annual (12 months)" : "Monthly";
   const confirmLabel = isDemo
     ? `Confirm — activate ${plan.name} (Demo)`
     : `Proceed to payment — ${fmt(total, currency)}`;
+
+  // A coupon is "applied but inactive for this plan" when it exists but doesn't grant a
+  // percent for the selected plan (e.g. plan-restricted to a different tier).
+  const couponInactive = activeCoupon && couponPct === 0;
 
   return (
     <div className="pcm-backdrop" onClick={handleBackdrop}>
@@ -79,10 +139,24 @@ export default function PaymentConfirmModal({
           <div className="pcm-breakdown-title">Price breakdown</div>
           <div className="pcm-row">
             <span>{plan.name} — {periodLabel}</span>
-            <span>{fmt(baseTotal, currency)}</span>
+            <span>{fmt(gross, currency)}</span>
           </div>
-          {isINR && (
+          {effectivePct > 0 && discount > 0 && (
+            <div className="pcm-row pcm-discount-row">
+              <span>
+                <Icon name="tag" size={12} />
+                {discountSrc === "coupon" ? `Coupon ${activeCoupon}` : "Sale"} (−{effectivePct}%)
+              </span>
+              <span>− {fmt(discount, currency)}</span>
+            </div>
+          )}
+          {isINR ? (
             <>
+              <div className="pcm-breakdown-divider" />
+              <div className="pcm-row">
+                <span>Subtotal</span>
+                <span>{fmt(baseTotal, currency)}</span>
+              </div>
               <div className="pcm-row pcm-gst-row">
                 <span>GST (18%)</span>
                 <span>+ {fmt(gst, currency)}</span>
@@ -93,6 +167,16 @@ export default function PaymentConfirmModal({
                 <span>{fmt(total, currency)}</span>
               </div>
             </>
+          ) : (
+            effectivePct > 0 && (
+              <>
+                <div className="pcm-breakdown-divider" />
+                <div className="pcm-row pcm-total-row">
+                  <span>Total charged</span>
+                  <span>{fmt(total, currency)}</span>
+                </div>
+              </>
+            )
           )}
           {billingPeriod === "annual" && (
             <div className="pcm-per-month-note">
@@ -102,13 +186,46 @@ export default function PaymentConfirmModal({
           )}
         </div>
 
+        {/* ── Coupon entry / applied state ──────────────────────────────────── */}
+        <div className="pcm-coupon">
+          {activeCoupon ? (
+            <div className={`pcm-coupon-applied${couponInactive ? " pcm-coupon-inactive" : ""}`}>
+              <Icon name={couponInactive ? "alert-triangle" : "check-circle"} size={14} />
+              <span>
+                <strong>{activeCoupon}</strong>{" "}
+                {couponInactive
+                  ? "isn't valid for this plan"
+                  : `applied — ${couponPct}% off`}
+              </span>
+              <button className="pcm-coupon-remove" onClick={handleRemove} title="Remove coupon">
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+          ) : (
+            <form className="pcm-coupon-form" onSubmit={handleApply}>
+              <input
+                className="pcm-coupon-input"
+                type="text"
+                placeholder="Promo code"
+                value={couponInput}
+                onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponErr(""); }}
+                maxLength={32}
+              />
+              <button type="submit" className="pcm-coupon-apply" disabled={!couponInput.trim()}>
+                Apply
+              </button>
+            </form>
+          )}
+          {couponErr && <div className="pcm-coupon-err"><Icon name="alert-triangle" size={12} />{couponErr}</div>}
+        </div>
+
         {isDemo && (
           <p className="pcm-demo-notice">
             Activates <strong>{plan.name}</strong> locally for testing — no real charge is made.
           </p>
         )}
 
-        <Button variant="primary" fullWidth onClick={() => onConfirm(selectedId)}>
+        <Button variant="primary" fullWidth onClick={() => onConfirm(selectedId, activeCoupon || null)}>
           {confirmLabel}
         </Button>
         <button className="pcm-cancel-btn" onClick={onCancel}>
@@ -119,7 +236,8 @@ export default function PaymentConfirmModal({
           <div className="pcm-upgrade-section">
             <div className="pcm-upgrade-title">Or step up to a higher plan</div>
             {upgradePlans.map((up) => {
-              const { total: upTotal } = computePricing(up, billingPeriod, currency);
+              const upPct = Math.max(couponPercentFor(activeCoupon, up.id), globalPct);
+              const { total: upTotal } = computePricing(up, billingPeriod, currency, upPct);
               return (
                 <button
                   key={up.id}

@@ -3513,6 +3513,46 @@
 }
 .pcm-up-price span { font-weight: 400; color: var(--text-3); font-size: .9em; }
 
+/* ── PaymentConfirmModal: discount row + inline coupon ──────────────────── */
+.pcm-discount-row { color: #059669; font-weight: 600; }
+.pcm-discount-row span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+
+.pcm-coupon { margin-bottom: 16px; }
+.pcm-coupon-form { display: flex; gap: 8px; }
+.pcm-coupon-input {
+  flex: 1; min-width: 0; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text);
+  font-size: .88em; text-transform: uppercase; letter-spacing: .03em;
+}
+.pcm-coupon-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.pcm-coupon-apply {
+  padding: 9px 16px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text); font-size: .85em; font-weight: 700;
+  cursor: pointer; transition: border-color .15s, background .15s; white-space: nowrap;
+}
+.pcm-coupon-apply:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.pcm-coupon-apply:disabled { opacity: .5; cursor: not-allowed; }
+.pcm-coupon-applied {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .85em; color: #059669; font-weight: 600;
+  background: rgba(5,150,105,.08); border: 1px solid rgba(5,150,105,.25);
+  border-radius: var(--r-md); padding: 8px 12px;
+}
+.pcm-coupon-applied span { flex: 1; min-width: 0; }
+.pcm-coupon-applied.pcm-coupon-inactive {
+  color: #b45309; background: rgba(217,119,6,.08); border-color: rgba(217,119,6,.25);
+}
+.pcm-coupon-remove {
+  background: none; border: none; cursor: pointer; color: inherit; opacity: .7;
+  padding: 2px; border-radius: var(--r-sm); display: inline-flex;
+}
+.pcm-coupon-remove:hover { opacity: 1; }
+.pcm-coupon-err {
+  display: flex; align-items: center; gap: 5px;
+  font-size: .8em; color: #e0556b; margin-top: 7px;
+}
+
 /* ── TopupBundleModal GST rows ──────────────────────────────────────────── */
 .tbm-gst-row { font-size: .83em; color: var(--text-3); }
 .tbm-summary-divider { height: 1px; background: var(--border); margin: 6px 0; }
