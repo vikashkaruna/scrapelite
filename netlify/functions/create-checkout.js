@@ -1,28 +1,17 @@
 // create-checkout.js — Backend: create a Stripe Checkout session or Razorpay order.
 // POST body: { provider, planId, priceId?, currency, amount?, billingPeriod?,
-//              discountPercent?, sessionId, email?, successUrl?, cancelUrl? }
+//              couponCode?, sessionId, email?, successUrl?, cancelUrl? }
+//
+// Prices, coupons, and the global discount come from pricingSource.loadPricing()
+// — the SERVER-AUTHORITATIVE source of truth (Supabase operator overrides layered
+// over a static table; static fallback when Supabase is absent). The client `amount`
+// and any client-supplied discount are ignored; the server recomputes everything.
 
-// ── Server-side price tables — AUTHORITATIVE source of truth for charged amounts ──
-// Must mirror src/lib/pricingConfig.js. The client `amount` is IGNORED for plans;
-// the server recomputes from planId + billingPeriod + currency below.
-// INR prices are BASE (pre-GST); 18% GST is added server-side for INR.
-const PLAN_PRICES_USD          = { free: 0, select: 19,   pro: 29,   business: 79,   agency: 299   };
-const PLAN_PRICES_USD_ANNUAL   = { free: 0, select: 15,   pro: 23,   business: 63,   agency: 239   };
-const PLAN_PRICES_INR_MONTHLY  = { free: 0, select: 1899, pro: 2899, business: 7899, agency: 29899 };
-const PLAN_PRICES_INR_ANNUAL   = { free: 0, select: 999,  pro: 1499, business: 3999, agency: 14999 }; // per-month base
+import {
+  loadPricing, resolveCouponInfo, globalFraction, reserveCoupon,
+  ALLOWED_PLANS, ALLOWED_BUNDLES, GST_RATE,
+} from "./lib/pricingSource.js";
 
-const GST_RATE = 0.18; // 18% GST, INR only
-
-const BUNDLE_PRICES = {
-  "extractions-bundle": { usd: 9,  inr: 749  },
-  "batch-pack":         { usd: 9,  inr: 749  },
-  "scheduler-addon":    { usd: 5,  inr: 399  },
-  "workspace-addon":    { usd: 19, inr: 1499 },
-  "hubspot-addon":      { usd: 12, inr: 999  },
-};
-
-const ALLOWED_PLANS      = new Set(["free", "select", "pro", "business", "agency"]);
-const ALLOWED_BUNDLES    = new Set(Object.keys(BUNDLE_PRICES));
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
 
 export const handler = async (event) => {
@@ -45,9 +34,11 @@ export const handler = async (event) => {
 
   const {
     provider, planId, priceId, currency, amount,
-    billingPeriod, discountPercent, sessionId, email,
+    billingPeriod, couponCode, sessionId, email,
     successUrl, cancelUrl,
   } = body;
+  // `discountPercent` (body.discountPercent) is intentionally NOT read — the server
+  // resolves the discount itself from `couponCode` + global sale via loadPricing() below.
 
   const qty = Math.min(10, Math.max(1, parseInt(body.qty, 10) || 1));
 
@@ -67,6 +58,28 @@ export const handler = async (event) => {
   if (currency && !ALLOWED_CURRENCIES.has(currency)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: `Unsupported currency: '${currency}'.`, code: "INVALID_CURRENCY" }) };
   }
+
+  // Server-authoritative pricing + discount. Operator overrides (Supabase) prevail
+  // over the static table; the discount is the larger of the resolved coupon or the
+  // active global sale (they never stack). Client-supplied discount is ignored.
+  const pricing = await loadPricing();
+
+  // Resolve coupon validity, then ATOMICALLY reserve it — this enforces both the
+  // per-user one-time limit and the global maxUses cap. If the reservation is
+  // rejected, the coupon is dropped (the global sale, if any, still applies). When
+  // enforcement is unavailable (no Supabase / RPC error) reserveCoupon returns null
+  // and we fall back to applying the coupon unenforced, so payments never hard-fail.
+  const couponInfo = resolveCouponInfo(pricing, couponCode, planId);
+  let couponFrac = couponInfo.frac;
+  if (couponFrac > 0) {
+    const orderRef = `co_${(sessionId || "").slice(-8)}_${Date.now().toString(36)}`;
+    const reservation = await reserveCoupon(couponCode, sessionId, couponInfo.maxUses, orderRef);
+    if (reservation === "already_redeemed" || reservation === "cap_reached") {
+      console.warn(`[create-checkout] coupon ${String(couponCode).toUpperCase()} dropped: ${reservation}`);
+      couponFrac = 0;
+    }
+  }
+  const serverDiscount = Math.max(couponFrac, globalFraction(pricing)); // [0, 1]
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   if (provider === "stripe") {
@@ -102,10 +115,11 @@ export const handler = async (event) => {
         ...(email ? { customer_email: email } : {}),
       };
 
-      if (discountPercent > 0) {
+      const stripeDiscPct = Math.round(serverDiscount * 100);
+      if (stripeDiscPct > 0) {
         try {
           const coupon = await stripe.coupons.create({
-            percent_off: Math.min(100, Math.round(discountPercent)),
+            percent_off: stripeDiscPct,
             duration:    "once",
             name:        "DatIQ promotional discount",
           });
@@ -138,9 +152,9 @@ export const handler = async (event) => {
     const isINR       = rzpCurrency === "INR";
     const annual      = billingPeriod === "annual";
 
-    // Discount (coupon) is clamped server-side. NOTE: the coupon value is still
-    // client-supplied — server-side coupon validation is a documented follow-up.
-    const disc = Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100;
+    // Discount is server-resolved from the coupon code (see resolveDiscount). The
+    // client cannot dictate a discount: an unknown/expired/mismatched code yields 0.
+    const disc = serverDiscount;
 
     // Resolve amount in smallest unit (paise for INR, cents for USD).
     // SERVER-AUTHORITATIVE: the client `amount` is intentionally ignored. We recompute
@@ -148,19 +162,21 @@ export const handler = async (event) => {
     // INR amounts include 18% GST (computed in one step to avoid rounding drift).
     let finalAmount;
     if (isBundle) {
-      const prices   = BUNDLE_PRICES[planId];
+      const prices   = pricing.bundles[planId];
       const baseUnit = isINR ? prices.inr : prices.usd;
       const base     = baseUnit * qty * (1 - disc);
       finalAmount    = isINR
         ? Math.round(base * (1 + GST_RATE) * 100)  // INR bundle incl. GST
         : Math.round(base * 100);                  // USD bundle, no GST
     } else if (isINR) {
-      const baseMonthly = annual ? (PLAN_PRICES_INR_ANNUAL[planId] || 0) : (PLAN_PRICES_INR_MONTHLY[planId] || 0);
+      const p           = pricing.plans[planId];
+      const baseMonthly = annual ? (p.inr_annual || 0) : (p.inr || 0);
       const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
       finalAmount       = Math.round(base * (1 + GST_RATE) * 100); // incl. 18% GST
     } else {
       // USD via Razorpay is defensive only (USD normally routes to Stripe). No GST.
-      const baseMonthly = annual ? (PLAN_PRICES_USD_ANNUAL[planId] || 0) : (PLAN_PRICES_USD[planId] || 0);
+      const p           = pricing.plans[planId];
+      const baseMonthly = annual ? (p.usd_annual || 0) : (p.usd || 0);
       const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
       finalAmount       = Math.round(base * 100);
     }

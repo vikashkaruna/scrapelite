@@ -43,7 +43,10 @@ export function getEffectivePlans() {
     if (!ov) return plan;
     return {
       ...plan,
-      ...(ov.price_usd !== undefined ? { price_usd: ov.price_usd } : {}),
+      ...(ov.price_usd        !== undefined ? { price_usd:        ov.price_usd        } : {}),
+      ...(ov.price_usd_annual !== undefined ? { price_usd_annual: ov.price_usd_annual } : {}),
+      ...(ov.price_inr        !== undefined ? { price_inr:        ov.price_inr        } : {}),
+      ...(ov.price_inr_annual !== undefined ? { price_inr_annual: ov.price_inr_annual } : {}),
       ...(ov.name      ? { name:      ov.name      } : {}),
       ...(ov.tagline   ? { tagline:   ov.tagline   } : {}),
       ...(ov.badge !== undefined ? { badge: ov.badge } : {}),
