@@ -8,7 +8,7 @@
 //   • Feature capability cards are clickable — click selects the matching intent
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -58,25 +58,6 @@ const ALL_FEATURES = [
   { key: "pricing",  icon: "hash",      title: "Pricing extraction", desc: "Structured pricing tiers from any page" },
 ];
 
-// Parse multiple URLs from free-form text (newlines, commas, semicolons).
-function parseUrlsFromText(text) {
-  const raw = text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
-  const valid = [];
-  const invalid = [];
-  const seen = new Set();
-  for (const r of raw) {
-    const norm = /^https?:\/\//i.test(r) ? r : "https://" + r;
-    if (seen.has(norm.toLowerCase())) continue;
-    seen.add(norm.toLowerCase());
-    if (isValidUrl(norm)) valid.push(norm);
-    else invalid.push(r);
-  }
-  return { valid, invalid };
-}
-
-// URLs ≤ this are sent to /batch with state (inline feel); > this opens /batch normally.
-const MULTI_INLINE_MAX = 10;
-
 function GuideTip({ tip, onDismiss }) {
   return (
     <div className="guide-tip rise">
@@ -111,10 +92,6 @@ export default function Home() {
   // ── Advanced options (Render JS) ───────────────────────────────────────
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [renderJs, setRenderJs]         = useState(false);
-
-  // ── Multi-URL (progressive disclosure) state ───────────────────────────
-  const [multiMode, setMultiMode]   = useState(false);
-  const [multiText, setMultiText]   = useState("");
 
   // ── FAB / Bulk Upload Modal state ──────────────────────────────────────
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -171,12 +148,6 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [url, valid]);
 
-  // ── Multi-URL parsing ─────────────────────────────────────────────────
-  const { valid: multiValid, invalid: multiInvalid } = useMemo(
-    () => (multiText ? parseUrlsFromText(multiText) : { valid: [], invalid: [] }),
-    [multiText]
-  );
-
   // ── Intent chip selection → clear any stale custom prompt when switching away ─
   const handleIntentSelect = useCallback((key) => {
     setIntent(key);
@@ -197,29 +168,16 @@ export default function Home() {
   const handleBulkUrls = useCallback((urls) => {
     if (urls.length === 0) return;
     if (urls.length === 1) {
-      // Single URL — just populate the single input field
       setUrl(urls[0]);
-      setMultiMode(false);
       return;
     }
-    // Multiple URLs — open progressive disclosure with them pre-populated
-    setMultiText(urls.join("\n"));
-    setMultiMode(true);
-  }, []);
+    // Multiple URLs — route directly to /batch
+    navigate("/batch", { state: { urls, intent } });
+  }, [intent, navigate]);
 
   // ── Form submit ────────────────────────────────────────────────────────
   const handleSubmit = (e) => {
     e?.preventDefault();
-
-    // Multi-URL path
-    if (multiMode) {
-      if (multiValid.length === 0) return;
-      // Always route to /batch page, pre-populated with parsed URLs + intent
-      navigate("/batch", {
-        state: { urls: multiValid, intent },
-      });
-      return;
-    }
 
     // Single-URL path
     if (!valid) { setTouched(true); return; }
@@ -377,8 +335,7 @@ export default function Home() {
           style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "12px 0 0" }}
         >
           {/* URL input row + FAB */}
-          {!multiMode && (
-            <div className="home-input-row">
+          <div className="home-input-row">
               <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
                 <span className="field-lead"><Icon name="globe" size={20} /></span>
                 <input
@@ -415,10 +372,9 @@ export default function Home() {
                 <Icon name="layers-2" size={18} />
               </button>
             </div>
-          )}
 
           {/* Validation error */}
-          {!multiMode && touched && !valid && (
+          {touched && !valid && (
             <div style={{ marginTop: 8, textAlign: "center" }}>
               <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
                 Hmm, that doesn't look like a valid URL.
@@ -427,7 +383,7 @@ export default function Home() {
           )}
 
           {/* OG Preview card */}
-          {!multiMode && (previewLoading || preview) && (
+          {(previewLoading || preview) && (
             <div className="url-preview-card">
               {previewLoading ? (
                 <span className="url-preview-loading">
@@ -540,85 +496,25 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Multi-URL progressive disclosure ─────────────────────── */}
-          {!multiMode ? (
-            <div className="multi-url-reveal">
-              <span>Need to extract from multiple URLs?</span>
-              <button
-                type="button"
-                className="multi-url-toggle-btn"
-                onClick={() => setMultiMode(true)}
-              >
-                Enter a list →
-              </button>
-              <span style={{ color: "var(--border)" }}>·</span>
-              <button
-                type="button"
-                className="multi-url-toggle-btn"
-                onClick={() => setBulkOpen(true)}
-              >
-                Upload CSV
-              </button>
-            </div>
-          ) : (
-            <div className="multi-url-wrap">
-              <div className="multi-url-header">
-                <div className="multi-url-header-left">
-                  <Icon name="layers-2" size={15} />
-                  <span>Multi-URL extraction</span>
-                </div>
-                <button
-                  type="button"
-                  className="multi-url-close"
-                  onClick={() => { setMultiMode(false); setMultiText(""); }}
-                  title="Back to single URL"
-                >
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-              <textarea
-                className="multi-url-textarea"
-                rows={5}
-                placeholder={"Paste URLs, one per line:\nhttps://acme.com\nhttps://acme.com/pricing\nhttps://acme.com/about"}
-                value={multiText}
-                onChange={(e) => setMultiText(e.target.value)}
-                autoFocus
-              />
-              <div className="multi-url-footer">
-                <div className="multi-url-count">
-                  {multiValid.length > 0 && (
-                    <span className="multi-url-count-ok">
-                      <Icon name="check" size={12} /> {multiValid.length} URL{multiValid.length !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {multiInvalid.length > 0 && (
-                    <span className="multi-url-count-invalid">
-                      <Icon name="x" size={12} /> {multiInvalid.length} skipped
-                    </span>
-                  )}
-                  {multiValid.length > MULTI_INLINE_MAX && (
-                    <span className="multi-url-count-note">
-                      → will open in Batch mode
-                    </span>
-                  )}
-                </div>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  iconRight="arrow-right"
-                  disabled={multiValid.length === 0}
-                  style={{
-                    height: 38, fontSize: ".88em",
-                    background: persona ? persona.color : undefined,
-                  }}
-                >
-                  {multiValid.length > MULTI_INLINE_MAX
-                    ? `Open in Batch (${multiValid.length})`
-                    : `Extract ${multiValid.length || ""} URL${multiValid.length !== 1 ? "s" : ""}`}
-                </Button>
-              </div>
-            </div>
-          )}
+          {/* ── Multi-URL entry — opens BulkUploadModal ───────────────── */}
+          <div className="multi-url-reveal">
+            <span>Need to extract from multiple URLs?</span>
+            <button
+              type="button"
+              className="multi-url-toggle-btn"
+              onClick={() => setBulkOpen(true)}
+            >
+              Paste a list →
+            </button>
+            <span style={{ color: "var(--border)" }}>·</span>
+            <button
+              type="button"
+              className="multi-url-toggle-btn"
+              onClick={() => setBulkOpen(true)}
+            >
+              Upload CSV
+            </button>
+          </div>
         </form>
 
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
