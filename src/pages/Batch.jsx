@@ -56,6 +56,51 @@ function parseUrlsFromText(text) {
   return { valid, invalid };
 }
 
+// ── Export Dropdown (matches Dashboard pattern) ───────────────────────────────
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, disabled }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="export-dropdown" ref={ref}>
+      <Button
+        variant="secondary"
+        size="sm"
+        icon="download"
+        iconRight="chevron-down"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        title="Export batch results"
+      >
+        Export
+      </Button>
+      {open && (
+        <div className="export-dropdown-menu">
+          <button className="export-dropdown-item" onClick={() => { onCsv(); setOpen(false); }}>
+            <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+          </button>
+          <button className="export-dropdown-item" onClick={() => { onPdf(); setOpen(false); }}>
+            <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+          </button>
+          <button className="export-dropdown-item" onClick={() => { onMarkdown(); setOpen(false); }}>
+            <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+          </button>
+          <button className="export-dropdown-item" onClick={() => { onJson(); setOpen(false); }}>
+            <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Result row ──────────────────────────────────────────────────────────────
 function ResultRow({ item, index, onView }) {
   if (!item) return null;
@@ -719,6 +764,21 @@ export default function Batch() {
                     </p>
                   </div>
                   <div className="batch-results-ctas">
+                    <ExportDropdown
+                      onCsv={onExportCsv}
+                      onPdf={onExportPdf}
+                      onMarkdown={onExportMarkdown}
+                      onJson={onExportJson}
+                      disabled={!successResults.length}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon="refresh"
+                      onClick={() => { setResults(null); setPasteText(""); setCsvFile(null); setCsvUrls([]); }}
+                    >
+                      New batch
+                    </Button>
                     <Button
                       variant="primary"
                       icon="bookmark"
@@ -727,56 +787,6 @@ export default function Batch() {
                       onClick={() => navigate("/dashboard")}
                     >
                       View in Dashboard
-                    </Button>
-                  </div>
-                  <div className="batch-export-toolbar">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="download"
-                      onClick={onExportCsv}
-                      disabled={!successResults.length}
-                      title="Export all as CSV"
-                    >
-                      CSV
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="file"
-                      onClick={onExportPdf}
-                      disabled={!successResults.length}
-                      title="Export all as PDF (Select+ plan)"
-                    >
-                      PDF
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="file-code"
-                      onClick={onExportMarkdown}
-                      disabled={!successResults.length}
-                      title="Export all as Markdown (Select+ plan)"
-                    >
-                      Markdown
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="file-json"
-                      onClick={onExportJson}
-                      disabled={!successResults.length}
-                      title="Export all as JSON (Pro+ plan)"
-                    >
-                      JSON
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon="refresh"
-                      onClick={() => { setResults(null); setPasteText(""); setCsvFile(null); setCsvUrls([]); }}
-                    >
-                      New batch
                     </Button>
                   </div>
                 </div>

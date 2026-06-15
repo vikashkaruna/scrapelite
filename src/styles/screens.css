@@ -2981,8 +2981,6 @@
 }
 .batch-results-sub { margin: 0; font-size: .88em; color: var(--text-3); }
 
-.batch-export-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
-
 /* Table */
 .batch-table-wrap { padding: 0; overflow-x: auto; }
 .batch-table {
@@ -4042,8 +4040,9 @@
 /* ── Batch results CTA row ────────────────────────────────────────────────── */
 .batch-results-ctas {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 /* ── Batch item tag in Dashboard ──────────────────────────────────────────── */
