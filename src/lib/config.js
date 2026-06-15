@@ -29,6 +29,12 @@ export const FIRECRAWL_API_KEY = env.VITE_FIRECRAWL_API_KEY || "";
 // In production: set AI_API_KEY in Netlify dashboard (no VITE_ prefix).
 // In local dev via `netlify dev`: VITE_AI_API_KEY in .env still works as a fallback in the function.
 export const AI_MODEL = env.VITE_AI_MODEL || "claude-haiku-4-5-20251001";
+// Scraping fallback provider keys (browser-side presence flags only — actual keys are server-side).
+// Set VITE_SPIDER_API_KEY or VITE_JINA_API_KEY in Netlify env when using these providers.
+// Set VITE_ENABLE_EXTRACT=true to force real extraction when only Jina/Direct is available.
+const SPIDER_KEY_SET  = Boolean(env.VITE_SPIDER_API_KEY);
+const JINA_KEY_SET    = Boolean(env.VITE_JINA_API_KEY);
+const ENABLE_EXTRACT  = Boolean(env.VITE_ENABLE_EXTRACT);
 export const WEBHOOK_URL = endpoint(runtime.webhookUrl, env.VITE_WEBHOOK_URL);
 export const EMAIL_API_URL = endpoint(runtime.emailApiUrl, env.VITE_EMAIL_API_URL);
 
@@ -39,7 +45,13 @@ export const LINK_PRICING   = env.VITE_LINK_PRICING   || "";
 export const LINK_CHANGELOG = env.VITE_LINK_CHANGELOG || "";
 
 export const hasSupabase = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-export const hasFirecrawl = Boolean(FIRECRAWL_API_KEY);
+// hasFirecrawl signals that real extraction is available (any provider will do).
+// True when Firecrawl, Spider, or Jina keys are configured, or VITE_ENABLE_EXTRACT=true.
+// The Netlify Function always falls back to Direct fetch (no key required), so set
+// VITE_ENABLE_EXTRACT=true in Netlify env to enable real extraction without paid API keys.
+export const hasFirecrawl = Boolean(
+  FIRECRAWL_API_KEY || SPIDER_KEY_SET || JINA_KEY_SET || ENABLE_EXTRACT
+);
 // hasAI is always true — the actual key lives in the Netlify Function, not the browser.
 // aiService.js will call /api/ai; the function returns 503 if AI_API_KEY is not set server-side.
 export const hasAI = true;

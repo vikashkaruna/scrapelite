@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-13 — R13: GST modal, bundle INR prices, Enterprise plan restore, comparison pages, batch width, help cleanup; all changes on main**
+> **Last updated: 2026-06-15 — R14: Firecrawl fallback chain + Home UX overhaul (intent chips, multi-URL, OG preview, batch history) — both branches in review, NOT yet merged to main**
 
 ---
 
@@ -17,8 +17,19 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — all work committed and merged; R13 complete |
-| **Latest commit** | (see git log) — R13: GST PaymentConfirmModal, bundle INR upsell prices, Enterprise plan restored, Apify/PhantomBuster comparison pages, batch table full-width, usage banner constrained, account batch/content stats, help cleanup |
+| **Current branch** | Two feature branches in review — see Active Branches below |
+| **Latest commit on main** | R13: GST PaymentConfirmModal, bundle INR upsell prices, Enterprise plan restored, Apify/PhantomBuster comparison pages, batch table full-width, usage banner constrained, account batch/content stats, help cleanup |
+
+---
+
+## Active branches (2026-06-15 — NOT yet merged to main)
+
+| Branch | What it adds | Status |
+|---|---|---|
+| `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain for all extractions | ✅ committed, tested, pushed — ready for PR |
+| `home-screen-enhancement` | R14b: Intent chips replace toggles, smart multi-URL input (progressive disclosure + FAB), OG preview card, clickable feature cards, unified Batch intent chips, batch run history in Dashboard | ✅ committed, tested, pushed — ready for PR |
+
+**To merge** (when ready): merge `claude/firecrawl-fallback-analysis-qyksr4` first (backend-only), then `home-screen-enhancement` (frontend, based on main). No conflicts expected.
 
 ---
 
@@ -752,6 +763,44 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ## Outstanding tasks
 
+### R14 — Pending merge (2026-06-15)
+
+#### Branch: `claude/firecrawl-fallback-analysis-qyksr4` (Firecrawl fallback chain)
+- [ ] **Merge to main** once reviewed — backend only, zero risk to frontend
+- [ ] **Optional Netlify env vars** to activate fallback providers (no redeploy needed for server-only vars):
+  - `SPIDER_API_KEY` — Spider.cloud API key (scrape + crawl/map)
+  - `JINA_API_KEY` — Jina AI Reader API key (higher rate limits; works without key too)
+  - `SCRAPE_PROVIDER_ORDER` — optional override, e.g. `spider,jina,direct` (default: firecrawl,spider,jina,direct)
+  - `VITE_ENABLE_EXTRACT=true` — **build-time** flag; set in Netlify env + trigger redeploy to enable real extraction in browser without a Firecrawl key (e.g. when only using Jina/Direct)
+  - `VITE_SPIDER_API_KEY` — **build-time** flag (tells browser real extraction is available); same value as `SPIDER_API_KEY`
+  - `VITE_JINA_API_KEY` — **build-time** flag; same value as `JINA_API_KEY`
+
+**Files changed:**
+- `netlify/functions/lib/scrapeProviders.js` (NEW) — 4-provider chain: Firecrawl → Spider.cloud → Jina AI → Direct fetch
+- `netlify/functions/extract.js` — rewritten to use `runScrapeChain` / `runMapChain`; response shape unchanged (backward-compatible with `firecrawlService.js`)
+- `src/lib/config.js` — `hasFirecrawl` now true when any provider key is set or `VITE_ENABLE_EXTRACT=true`
+
+**Architecture rules added:**
+- Never add a second hardcoded scrape provider to `extract.js` — add it to `scrapeProviders.js` `SCRAPE_PROVIDERS` registry instead
+- Chain order is runtime-configurable via `SCRAPE_PROVIDER_ORDER` env var — no code change needed to reorder or disable providers
+- `_providerAttempts` field in all extract responses shows which providers were tried and why each failed (diagnostic; not displayed in UI)
+- Jina AI and Direct fetch require no paid API key — extraction always works in production even without Firecrawl/Spider keys
+
+#### Branch: `home-screen-enhancement` (Home UX + batch history)
+- [ ] **Merge to main** once reviewed — pure frontend, no backend changes
+- [ ] **New Netlify Function needed before this branch goes live**: `public/api/og-preview` (created in the branch) — this is the `/api/og-preview` endpoint for the OG metadata preview card on Home. It's a GET request with `?url=` param. No env vars needed.
+
+**Files changed:**
+- `netlify/functions/og-preview.js` (NEW) — server-side OG metadata fetcher (avoids CORS), reads first 15KB only, 5-min CDN cache
+- `src/pages/Home.jsx` — major rewrite: 5 intent chips replace 4 toggles, progressive multi-URL input, 800ms OG preview card, clickable feature cards map to intents, FAB bulk upload button
+- `src/pages/Batch.jsx` — intent chips replace Toggle options, batch run history recording via `batchRunsService.js`
+- `src/pages/Dashboard.jsx` — `BatchRunsDropdown` filter, `batch-item-tag` chips, `batchFilter` state
+- `src/components/BulkUploadModal.jsx` (NEW) — paste URLs + CSV upload modal (FAB trigger)
+- `src/lib/batchRunsService.js` (NEW) — localStorage batch run history (`datiq.batchRuns` + `datiq.batchMap`)
+- `src/styles/screens.css` — ~630 new lines for all new components
+
+---
+
 ### Supabase (manual — Supabase dashboard)
 - [ ] Run SQL migration above in SQL Editor
 - [ ] Run `scripts/ai-config.sql` (creates `app_config` for the AI provider chain)
@@ -952,14 +1001,18 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+-- claude/firecrawl-fallback-analysis-qyksr4 branch --
+37e168d  feat(extract): multi-provider scraping fallback chain (Firecrawl→Spider→Jina→Direct)
+
+-- home-screen-enhancement branch --
+42b52e7  feat(batch+dashboard): unified intent chips, batch run history, Dashboard batch tagging
+ecb3209  feat(home): intent chips, smart multi-URL, OG preview, clickable cards, bulk FAB
+
+-- main --
+b85a6ca  Merge pull request #11 from vikashkaruna/claude/festive-hellman-e0c269
+a143271  feat(ai): multi-provider LLM fallback chain + admin config screen
 (merge)  Merge branch 'claude/pricing-batch-help-polish-dwwlj7' — R13: GST modal, comparison pages, help cleanup
 b864580  feat: polish — pricing, batch width, help files, TopBar restructure, comparison pages
 2d38d04  feat(payment): GST breakdown modal + revert bundle display prices to base
 6bf8622  feat: pricing/batch/help polish — batch limits, INR fixes, help reorganisation
-f8d3701  chore: update CLAUDE.md — Razorpay env-var diagnostics and setup checklist
-1dab787  fix(payment): actionable error messages for missing Razorpay env vars
-d621a86  chore: update CLAUDE.md — R12 hotfix DemoPaymentModal documented
-8e1a1f5  fix(payment): show DemoPaymentModal on Get Plan click when no payment keys set
-ffbd7d8  chore: update CLAUDE.md — R12 pricing UI enhancements documented
-a801b3a  Merge branch 'R0-polish-feature-ui-enhancement' — pricing UI enhancements & TopupBundleModal
 ```
