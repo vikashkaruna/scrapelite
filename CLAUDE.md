@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-15 — R14: Firecrawl fallback chain + Home UX overhaul (intent chips, multi-URL, OG preview, batch history) — both branches in review, NOT yet merged to main**
+> **Last updated: 2026-06-15 — R14: Firecrawl fallback chain (Spider/Jina/Direct), Home intent chips + multi-URL + OG preview + batch history — all merged to main**
 
 ---
 
@@ -17,23 +17,12 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | Two feature branches in review — see Active Branches below |
-| **Latest commit on main** | R13: GST PaymentConfirmModal, bundle INR upsell prices, Enterprise plan restored, Apify/PhantomBuster comparison pages, batch table full-width, usage banner constrained, account batch/content stats, help cleanup |
+| **Current branch** | `main` — R14 complete and merged |
+| **Latest commit** | R14: Firecrawl fallback chain + Home intent chips + multi-URL + OG preview + batch history in Dashboard |
 
 ---
 
-## Active branches (2026-06-15 — NOT yet merged to main)
-
-| Branch | What it adds | Status |
-|---|---|---|
-| `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain for all extractions | ✅ committed, tested, pushed — ready for PR |
-| `home-screen-enhancement` | R14b: Intent chips replace toggles, smart multi-URL input (progressive disclosure + FAB), OG preview card, clickable feature cards, unified Batch intent chips, batch run history in Dashboard | ✅ committed, tested, pushed — ready for PR |
-
-**To merge** (when ready): merge `claude/firecrawl-fallback-analysis-qyksr4` first (backend-only), then `home-screen-enhancement` (frontend, based on main). No conflicts expected.
-
----
-
-## Branch merge history (completed 2026-06-09)
+## Branch merge history (completed 2026-06-09 → 2026-06-15)
 
 All branches have been merged to main and pushed. Do NOT re-merge them.
 
@@ -54,6 +43,8 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/r0-polish-feature-ui-fgj5yo` | R8: grouped Export dropdown (Dashboard), floating AI selection bar (bottom), auto-save on extraction, Preview → View Dashboard + Delete, Generate content in Preview QA card, Home removes Batch toggle + Try examples, Batch result View button, emailService webhook→mailto fallback; R9: Batch nav before Dashboard, batch auto-save fix (strip _status/_error), Netlify fn strips _status/_error, Dashboard localStorage-first loading + Refresh button + inline Generate/Email selection buttons + dropdown z-index fix, Preview Download ▾ dropdown; R10: Explore menu Contact Us + Submit Bug, Contact page bug type + query-param pre-fill | ✅ merged to main |
 | `claude/razorpay-payment-integration-76uecb` | R11: complete Razorpay end-to-end integration — `PAYMENT_STAGE` state machine, `PaymentProcessingModal` step-by-step UX, `onStageChange` threading, billingPeriod wiring, INR annual fix, `retryPayment` callback with `lastPaymentArgs` ref, `create-checkout.js` rewrite (agency $299, bundles), `verify-payment.js` timing-safe HMAC, `payment-webhook.js` Supabase sync, audit fixes (account-stats CSS, unused providerMeta) | ✅ merged to main |
 | `claude/pricing-batch-help-polish-dwwlj7` | R13: GST breakdown `PaymentConfirmModal`, bundle base prices (pre-GST display), TopupBundleModal INR upsell prices, Enterprise plan card restored, Apify+PhantomBuster comparison pages, compare.html multi-page links, batch table full-width, usage banner container-constrained, Account batch/content generation stats, `batchRuns`+`contentGenerations` in usageService, TopBar Explore restructure (remove Browse.ai/Clay from Compare, remove Submit Bug, About DatIQ last), help/index.html External/Internal labels removed, 09-exports-and-sharing.html full rewrite (all 5 formats) | ✅ merged to main |
+| `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain; `scrapeProviders.js` provider registry + chain runners; `extract.js` rewritten to use chain; `config.js` `hasFirecrawl` covers all providers + `VITE_ENABLE_EXTRACT` flag | ✅ merged to main |
+| `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; progressive multi-URL input (inline for ≤10, routes to /batch for >10); 800ms OG preview card (og-preview Netlify fn); clickable feature cards map to intent chips; FAB + `BulkUploadModal` (paste + CSV); Batch page unified intent chips, batch run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
 
 ---
 
@@ -726,6 +717,12 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 105. **R13: TopBar Explore restructure** — `EXPLORE_SECTIONS` updated: Browse.ai and Clay removed from Compare section (only "Compare Tools" → `/vs/compare.html` remains). "Submit Bug" removed from Contact section. "About DatIQ" moved to the last section ("Company") at the bottom of the dropdown. All external links open in the same window (`target="_blank"` removed).
 106. **R13: Comparison pages — Apify + PhantomBuster** — Created `public/vs/apify.html` (DatIQ vs Apify) and `public/vs/phantombuster.html` (DatIQ vs PhantomBuster). Both are full comparison pages with feature tables, verdict cards, and cross-links to all 4 comparison pages. `public/vs/compare.html` updated: hero quick-links section at top lists all 4 pages; bottom "Detailed comparisons" section updated to list all 4.
 107. **R13: Help file cleanup** — `public/help/index.html`: removed "(External)" labels from User Guide and Developer Reference sections; removed entire "Internal Reference" sidebar section (I1–I5 links) since those are internal developer docs not relevant to end users. `public/help/09-exports-and-sharing.html`: complete rewrite — fixed brand name, all 5 export formats (CSV/PDF/Markdown/JSON/Email) with plan requirements and descriptions, "Where to export from" section, "Email export" step-by-step, "Tips" section; removed all code/DB/architecture references.
+108. **R14a: Firecrawl fallback chain** — `netlify/functions/extract.js` rewritten to use `runScrapeChain` / `runMapChain` from new `netlify/functions/lib/scrapeProviders.js`. Default chain: Firecrawl → Spider.cloud → Jina AI → Direct fetch. Each adapter normalizes to `{ data: { html, metadata: { title }, json } }` shape — `firecrawlService.js` needs no changes. Jina converts markdown to basic HTML (heading + link tags) so browser `parseHtml()` works. Direct fetch is always available (no key). Chain order overrideable via `SCRAPE_PROVIDER_ORDER` env var. `config.js` `hasFirecrawl` is now true when any provider key is set or `VITE_ENABLE_EXTRACT=true`.
+109. **R14b: Home intent chips** — 5 intent chips (AI summary / Find contacts / Scrape pricing / Map site / Custom) replace 4 Toggle components. `INTENTS` array + `CARD_TO_INTENT` map; `handleCardClick` scrolls to and selects the matching chip when a feature card is clicked. Active chip applies `var(--chip-accent)` border.
+110. **R14b: Smart multi-URL input** — Progressive disclosure: "Need multiple URLs?" reveal below URL field expands a `<textarea>`. For 2–10 URLs, `handleBatchExtract()` runs inline (maps to `/batch` with pre-populated state); for >10, navigates to `/batch` with `{ state: { urls, intent } }`. FAB button (layers-2 icon) opens `BulkUploadModal` (paste list + CSV upload). `parseUrlsFromText()` deduplicates and normalizes bare domains. `MULTI_INLINE_MAX = 10`.
+111. **R14b: OG preview card** — 800ms debounce on `url`/`valid` state; calls `/api/og-preview?url=...` (new `netlify/functions/og-preview.js`); fetches first 15KB of target page, parses og:title/og:description/`<title>`/meta-description, returns `{ url, hostname, favicon, title, description }`; favicon from `https://www.google.com/s2/favicons?domain=X&sz=32`. Preview card hidden when loading or no data.
+112. **R14b: Batch intent chips + history** — `/batch` page uses same `BATCH_INTENTS` chip pattern (4 chips: summary/contacts/pricing/custom). After each batch run: `uid()` generates `batchRunId`, `recordBatchItems(batchRunId, savedIds)` writes `datiq.batchMap`, `saveBatchRun({id, label, intent, createdAt, totalUrls, successCount, failedCount})` writes `datiq.batchRuns` (max 50). "View in Dashboard →" CTA appears after completion.
+113. **R14b: Dashboard batch history filter** — `BatchRunsDropdown` component in `dash-header-actions`: shows run count badge, dropdown lists past runs (label + meta + delete ×), click-to-filter sets `batchFilter` state. `filtered` memo gates on `batchMap.current[it.id] === batchFilter`. Active filter shown as dismissable `batch-filter-banner`. Table rows and `DashCard` get `batch-item-tag` chip when `isBatchItem(id)` is true. localStorage keys: `datiq.batchRuns` + `datiq.batchMap`.
 
 ### Razorpay live payment — required Netlify env vars (INR only; Stripe/USD on hold)
 
@@ -763,10 +760,10 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ## Outstanding tasks
 
-### R14 — Pending merge (2026-06-15)
+### R14 — Merged to main (2026-06-15)
 
-#### Branch: `claude/firecrawl-fallback-analysis-qyksr4` (Firecrawl fallback chain)
-- [ ] **Merge to main** once reviewed — backend only, zero risk to frontend
+#### Firecrawl fallback chain (`claude/firecrawl-fallback-analysis-qyksr4` — merged)
+- [x] ~~Merge to main~~ — done
 - [ ] **Optional Netlify env vars** to activate fallback providers (no redeploy needed for server-only vars):
   - `SPIDER_API_KEY` — Spider.cloud API key (scrape + crawl/map)
   - `JINA_API_KEY` — Jina AI Reader API key (higher rate limits; works without key too)
@@ -786,9 +783,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - `_providerAttempts` field in all extract responses shows which providers were tried and why each failed (diagnostic; not displayed in UI)
 - Jina AI and Direct fetch require no paid API key — extraction always works in production even without Firecrawl/Spider keys
 
-#### Branch: `home-screen-enhancement` (Home UX + batch history)
-- [ ] **Merge to main** once reviewed — pure frontend, no backend changes
-- [ ] **New Netlify Function needed before this branch goes live**: `public/api/og-preview` (created in the branch) — this is the `/api/og-preview` endpoint for the OG metadata preview card on Home. It's a GET request with `?url=` param. No env vars needed.
+#### Home UX + batch history (`home-screen-enhancement` — merged)
+- [x] ~~Merge to main~~ — done
+- [x] ~~New Netlify Function `og-preview.js`~~ — merged (`netlify/functions/og-preview.js`; GET `/api/og-preview?url=`; no env vars needed)
 
 **Files changed:**
 - `netlify/functions/og-preview.js` (NEW) — server-side OG metadata fetcher (avoids CORS), reads first 15KB only, 5-min CDN cache
@@ -995,24 +992,35 @@ npm run dev   # http://localhost:5173
 - `/help/index.html` → User Guide section has no "(External)" label
 - `/help/index.html` → no "Internal Reference" sidebar section
 - `/help/09-exports-and-sharing.html` → lists all 5 formats: CSV, PDF, Markdown, JSON, Email
+- Home → 5 intent chips row visible below URL input: AI summary / Find contacts / Scrape pricing / Map site / Custom
+- Home → clicking an intent chip selects it (active border); switching away from Custom clears custom prompt
+- Home → clicking a feature card scrolls to and selects the matching intent chip
+- Home → "Need multiple URLs?" toggle reveals a textarea; pasting 2–10 URLs shows count; clicking Run routes to batch mode
+- Home → FAB button (stacked layers icon) next to URL input → opens BulkUploadModal with Paste + CSV tabs
+- BulkUploadModal Paste tab → count badge shows valid/invalid breakdown; confirm sends URLs to multi-URL input
+- BulkUploadModal CSV tab → upload .csv → parses first column URLs; confirm sends to multi-URL input
+- Home → single URL with valid domain → after 800ms, OG preview card appears below URL input with favicon + title + description
+- Home → OG preview card disappears when URL is cleared or invalid
+- `/batch` → intent chips visible (AI summary / Find contacts / Scrape pricing / Custom ← no Map Site)
+- `/batch` → run batch → "View in Dashboard →" button appears after results
+- `/dashboard` → batch run dropdown button visible in header (shows count badge when runs exist)
+- `/dashboard` → click dropdown → shows past batch runs with label + date + URL count; click to filter; × to delete
+- `/dashboard` → filtered state shows `batch-filter-banner` with run label + "Clear filter" button
+- `/dashboard` → items from a batch run show "Batch" tag chip in table row and card view
+- Extraction on any provider fallback → `_providerAttempts` present in response (visible in network tab)
 
 ---
 
 ## Git log (recent)
 
 ```
--- claude/firecrawl-fallback-analysis-qyksr4 branch --
+3bac184  Merge branch 'home-screen-enhancement' — R14b: intent chips, multi-URL, OG preview, batch history
+(merge)  Merge branch 'claude/firecrawl-fallback-analysis-qyksr4' — R14a: Firecrawl multi-provider fallback chain
+033278e  chore: update CLAUDE.md — R14 firecrawl fallback chain + active branches documented
 37e168d  feat(extract): multi-provider scraping fallback chain (Firecrawl→Spider→Jina→Direct)
-
--- home-screen-enhancement branch --
 42b52e7  feat(batch+dashboard): unified intent chips, batch run history, Dashboard batch tagging
 ecb3209  feat(home): intent chips, smart multi-URL, OG preview, clickable cards, bulk FAB
-
--- main --
 b85a6ca  Merge pull request #11 from vikashkaruna/claude/festive-hellman-e0c269
 a143271  feat(ai): multi-provider LLM fallback chain + admin config screen
 (merge)  Merge branch 'claude/pricing-batch-help-polish-dwwlj7' — R13: GST modal, comparison pages, help cleanup
-b864580  feat: polish — pricing, batch width, help files, TopBar restructure, comparison pages
-2d38d04  feat(payment): GST breakdown modal + revert bundle display prices to base
-6bf8622  feat: pricing/batch/help polish — batch limits, INR fixes, help reorganisation
 ```
