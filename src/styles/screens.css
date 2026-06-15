@@ -4029,3 +4029,200 @@
   .home-input-fab { width: 44px; height: 44px; }
   .multi-url-footer { flex-direction: column; align-items: stretch; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Batch Run History & Dashboard Batch Tags
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Batch intent chips on /batch (margin override) ──────────────────────── */
+.batch-intent-chips { margin-top: 20px; margin-bottom: 4px; }
+.batch-intent-chips .intent-chips-label { text-align: left; }
+.batch-intent-chips .intent-chips-row { justify-content: flex-start; }
+
+/* ── Batch results CTA row ────────────────────────────────────────────────── */
+.batch-results-ctas {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Batch item tag in Dashboard ──────────────────────────────────────────── */
+.batch-item-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 20px;
+  font-size: .72em;
+  font-weight: 650;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Batch filter banner (shown when a run is active in Dashboard) ─────────── */
+.batch-filter-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: .875em;
+  color: var(--text-2);
+  animation: rise .18s ease;
+}
+.batch-filter-banner svg { color: var(--accent); flex-shrink: 0; }
+.batch-filter-banner b { color: var(--text); }
+.batch-filter-clear {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: .82em;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color .12s, color .12s;
+  white-space: nowrap;
+}
+.batch-filter-clear:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Batch Runs dropdown (in Dashboard header) ────────────────────────────── */
+.batch-runs-dropdown { position: relative; }
+
+.batch-runs-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: .83em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+  white-space: nowrap;
+}
+.batch-runs-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.batch-runs-btn--active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+.batch-runs-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: .75em;
+  font-weight: 700;
+}
+
+.batch-runs-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 300px;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,.12));
+  z-index: 100;
+  overflow: hidden;
+  animation: rise .14s ease;
+}
+
+.batch-runs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 20px;
+  color: var(--text-3);
+  font-size: .875em;
+  text-align: center;
+}
+.batch-runs-empty svg { color: var(--text-3); }
+
+.batch-runs-item {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.batch-runs-item:last-child { border-bottom: none; }
+.batch-runs-item:hover { background: var(--surface-2); }
+.batch-runs-item--active { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+
+.batch-runs-item-body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+.batch-runs-item-label {
+  font-size: .875em;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.batch-runs-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+  font-size: .78em;
+}
+.batch-runs-ok { color: #16a34a; display: flex; align-items: center; gap: 3px; font-weight: 600; }
+.batch-runs-fail { color: #e0556b; display: flex; align-items: center; gap: 3px; }
+
+.batch-runs-item-del {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color .12s;
+  border-left: 1px solid var(--border);
+}
+.batch-runs-item-del:hover { color: #e0556b; }
+
+.batch-runs-clear {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-size: .82em;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+.batch-runs-clear:hover { background: var(--accent-soft); }
+
+[data-theme="dark"] .batch-runs-ok { color: #4ade80; }

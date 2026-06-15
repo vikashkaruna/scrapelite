@@ -5,7 +5,6 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
-import Toggle from "../components/Toggle.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -13,11 +12,30 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { runBatch, parseUrlsFromCsv } from "../lib/batchService.js";
 import { incrementBatchRuns } from "../lib/usageService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
-import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
+import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload, uid } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
+import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
+import { saveBatchRun, recordBatchItems, makeBatchLabel } from "../lib/batchRunsService.js";
 
 const ABSOLUTE_MAX_URLS = 500;
 const MIN_URLS = 2;
+
+const PRICING_PROMPT = QUICK_ACTIONS.find((a) => a.key === "pricing")?.prompt || "";
+
+// Batch intent chips — same paradigm as Home, minus "Map site" (doesn't apply per-URL in batch).
+const BATCH_INTENTS = [
+  { key: "summary",  icon: "sparkles", label: "AI summary",    desc: "Page overview for every URL" },
+  { key: "contacts", icon: "users",    label: "Find contacts",  desc: "Leadership & emails per page" },
+  { key: "pricing",  icon: "hash",     label: "Scrape pricing", desc: "Pricing tiers per page" },
+  { key: "custom",   icon: "code",     label: "Custom…",        desc: "Same prompt applied to all URLs" },
+];
+
+function resolveIntentPrompt(intent, customPrompt) {
+  if (intent === "contacts") return CONTACTS_PROMPT;
+  if (intent === "pricing")  return PRICING_PROMPT;
+  if (intent === "custom")   return customPrompt.trim();
+  return "";
+}
 
 // ── URL parsing from textarea ──────────────────────────────────────────────────
 function parseUrlsFromText(text) {
@@ -148,18 +166,19 @@ export default function Batch() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Options — pre-set from Home navigation state (intent → customMode/prompt)
-  const [renderJs, setRenderJs] = useState(false);
-  const [customMode, setCustomMode] = useState(() => {
+  // Options — intent chip drives extraction type (same paradigm as Home)
+  const [intent, setIntent] = useState(() => {
     const i = location.state?.intent;
-    return i === "contacts" || i === "pricing" || i === "custom";
+    return BATCH_INTENTS.some((b) => b.key === i) ? i : "summary";
   });
   const [customPrompt, setCustomPrompt] = useState(() => {
     const i = location.state?.intent;
-    if (i === "contacts") return "Extract the full names, job titles, and email addresses of the company's senior leadership and board members. Also capture any general contact emails.";
-    if (i === "pricing")  return "Extract every pricing tier: the plan name, price, billing period, and the key features included in each plan.";
+    if (i === "contacts") return CONTACTS_PROMPT;
+    if (i === "pricing")  return PRICING_PROMPT;
     return "";
   });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [renderJs, setRenderJs] = useState(false);
 
   // Show a toast when arriving from Home with pre-populated URLs
   useEffect(() => {
@@ -247,19 +266,22 @@ export default function Batch() {
     setResults(null);
     setProgress({ completed: 0, total: urlCount, current: activeUrls[0] || "" });
 
+    // Resolve extraction options from intent chip
+    const resolvedPrompt = resolveIntentPrompt(intent, customPrompt);
     const opts = {};
     if (renderJs) opts.renderJs = true;
-    if (customMode && customPrompt.trim()) opts.customPrompt = customPrompt.trim();
+    if (resolvedPrompt) opts.customPrompt = resolvedPrompt;
+
+    // Unique ID for this batch run — used to group results in Dashboard history.
+    const batchRunId = uid();
+    const batchStarted = new Date().toISOString();
 
     try {
-      const partial = [];
       const batchResults = await runBatch(
         activeUrls,
         opts,
         (completed, total, latest) => {
-          partial.push(latest);
           setProgress({ completed, total, current: activeUrls[completed] || "" });
-          // Track each successful URL as an extraction
           if (latest._status === "success") {
             billing?.trackExtraction?.(1);
           }
@@ -276,22 +298,42 @@ export default function Batch() {
           `Batch complete — ${successItems.length} succeeded${failed ? `, ${failed} failed` : ""}`,
           "check-circle",
         );
-        // Auto-save successful results to Dashboard (fire and forget)
-        // Strip batch-only fields (_status/_error) before saving to avoid DB schema errors.
+
+        // Auto-save successful results to Dashboard + record batch run history.
         if (successItems.length > 0) {
-          Promise.allSettled(successItems.map((r) => {
-            const { _status, _error, ...cleanItem } = r;
-            return saveExtraction(cleanItem);
-          }))
-            .then((settled) => {
-              const savedCount = settled.filter((s) => s.status === "fulfilled").length;
-              if (savedCount > 0) {
-                showToast(
-                  `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
-                  "bookmark",
-                );
-              }
-            });
+          Promise.allSettled(
+            successItems.map((r) => {
+              const { _status, _error, ...cleanItem } = r;
+              return saveExtraction(cleanItem);
+            }),
+          ).then((settled) => {
+            const savedRows = settled
+              .filter((s) => s.status === "fulfilled")
+              .map((s) => s.value);
+            const savedCount = savedRows.length;
+
+            if (savedCount > 0) {
+              // Record which extraction IDs belong to this batch run
+              const savedIds = savedRows.map((r) => r.id).filter(Boolean);
+              recordBatchItems(batchRunId, savedIds);
+
+              // Persist the batch run metadata for Dashboard history
+              saveBatchRun({
+                id: batchRunId,
+                label: makeBatchLabel(intent, urlCount, batchStarted),
+                intent,
+                createdAt: batchStarted,
+                totalUrls: urlCount,
+                successCount: savedCount,
+                failedCount: failed,
+              });
+
+              showToast(
+                `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
+                "bookmark",
+              );
+            }
+          });
         }
       }
     } catch (err) {
@@ -529,27 +571,26 @@ export default function Batch() {
                   </div>
                 )}
 
-                {/* Options */}
-                <div className="batch-opts">
-                  <Toggle
-                    icon="zap"
-                    label="Render JavaScript"
-                    hint="dynamic / SPA pages"
-                    checked={renderJs}
-                    onChange={setRenderJs}
-                    tooltip="Wait for JS to render before capturing. Slower but accurate for React/Vue/Angular pages."
-                  />
-                  <Toggle
-                    icon="code"
-                    label="Custom extraction"
-                    hint="ask in plain English"
-                    checked={customMode}
-                    onChange={setCustomMode}
-                    tooltip="Apply a custom extraction prompt to every URL in the batch."
-                  />
+                {/* Intent chips — same paradigm as Home */}
+                <div className="intent-chips batch-intent-chips">
+                  <span className="intent-chips-label">What do you want to extract from each URL?</span>
+                  <div className="intent-chips-row">
+                    {BATCH_INTENTS.map((ic) => (
+                      <button
+                        key={ic.key}
+                        type="button"
+                        className={"intent-chip" + (intent === ic.key ? " intent-chip-active" : "")}
+                        onClick={() => { setIntent(ic.key); if (ic.key !== "custom") setCustomPrompt(""); }}
+                        title={ic.desc}
+                      >
+                        <Icon name={ic.icon} size={14} />
+                        {ic.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {customMode && (
+                {intent === "custom" && (
                   <div className="batch-custom-prompt">
                     <textarea
                       className="custom-extract-input"
@@ -559,6 +600,43 @@ export default function Batch() {
                       onChange={(e) => setCustomPrompt(e.target.value)}
                       aria-label="Custom extraction prompt for all URLs"
                     />
+                    <div className="custom-extract-presets" style={{ marginTop: 8 }}>
+                      <span className="preset-lead">Quick actions</span>
+                      {QUICK_ACTIONS.map((a) => (
+                        <button key={a.key} type="button" className="preset-chip" onClick={() => setCustomPrompt(a.prompt)} title={a.prompt}>
+                          <Icon name={a.icon} size={12} /> {a.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Advanced: Render JS */}
+                <div style={{ textAlign: "center", marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="advanced-toggle"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                  >
+                    <Icon name={showAdvanced ? "chevron-up" : "chevron-down"} size={13} />
+                    Advanced options
+                  </button>
+                </div>
+                {showAdvanced && (
+                  <div className="advanced-section">
+                    <label className="advanced-row">
+                      <input
+                        type="checkbox"
+                        checked={renderJs}
+                        onChange={(e) => setRenderJs(e.target.checked)}
+                        style={{ accentColor: "var(--accent)", width: 15, height: 15, flexShrink: 0 }}
+                      />
+                      <span className="advanced-row-label">
+                        <Icon name="zap" size={14} />
+                        Render JavaScript
+                        <span className="advanced-row-hint">Waits 3 s for React/Vue/Angular SPAs — slower but accurate</span>
+                      </span>
+                    </label>
                   </div>
                 )}
 
@@ -639,6 +717,17 @@ export default function Batch() {
                       {results.filter((r) => r?._status === "error").length} failed ·{" "}
                       {results.length} total
                     </p>
+                  </div>
+                  <div className="batch-results-ctas">
+                    <Button
+                      variant="primary"
+                      icon="bookmark"
+                      iconRight="arrow-right"
+                      size="sm"
+                      onClick={() => navigate("/dashboard")}
+                    >
+                      View in Dashboard
+                    </Button>
                   </div>
                   <div className="batch-export-toolbar">
                     <Button
