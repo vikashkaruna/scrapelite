@@ -1,11 +1,16 @@
-// Netlify Function — Firecrawl proxy.
-// Keeps FIRECRAWL_API_KEY server-side; never bundled into the browser.
+// Netlify Function — Web scraping proxy with provider fallback chain.
+// Keeps all API keys server-side; never bundled into the browser.
 //
 // POST /api/extract
 //   Body: { url: string, options: { renderJs?, customPrompt?, mapMode? } }
-//   Response: raw Firecrawl JSON (scrape or map)
+//   Response: normalised scrape JSON (html + metadata) or map (mapLinks[])
+//
+// Provider chain (default): Firecrawl → Spider.cloud → Jina AI → Direct fetch
+// Override with SCRAPE_PROVIDER_ORDER env var (comma-separated, e.g. "spider,jina,direct").
+// Each provider is skipped automatically when its API key is absent (except Jina + Direct,
+// which work without a key at reduced rate limits).
 
-const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
+import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
 
 function respond(statusCode, body) {
   return {
@@ -17,17 +22,6 @@ function respond(statusCode, body) {
     },
     body: JSON.stringify(body),
   };
-}
-
-function buildScrapePayload(url, options) {
-  const formats = ["html"];
-  const payload = { url, formats, onlyMainContent: false };
-  if (options.renderJs) payload.waitFor = 3000;
-  if (options.customPrompt) {
-    formats.push("json");
-    payload.jsonOptions = { prompt: options.customPrompt };
-  }
-  return payload;
 }
 
 export const handler = async (event) => {
@@ -56,51 +50,46 @@ export const handler = async (event) => {
   const { url, options = {} } = reqBody;
   if (!url) return respond(400, { error: "url is required" });
 
-  // Non-VITE_ prefix is preferred for server-side secrets (set in Netlify dashboard).
-  // Falls back to VITE_ prefix so local development with netlify dev works from .env.
-  const apiKey =
-    process.env.FIRECRAWL_API_KEY || process.env.VITE_FIRECRAWL_API_KEY;
-  if (!apiKey) {
-    return respond(503, { error: "Firecrawl not configured on this server" });
-  }
-
   try {
-    const isMap = Boolean(options.mapMode);
-    const endpoint = isMap
-      ? `${FIRECRAWL_BASE}/map`
-      : `${FIRECRAWL_BASE}/scrape`;
-    const payload = isMap ? { url } : buildScrapePayload(url, options);
-
-    const upstream = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await upstream.json().catch(() => ({}));
-
-    if (!upstream.ok) {
-      return respond(upstream.status, {
-        error: `Firecrawl error (${upstream.status})`,
-        detail: data,
+    // ── Map mode: discover all URLs in a domain ──────────────────────────────
+    if (options.mapMode) {
+      const result = await runMapChain(url);
+      if (!result.ok) {
+        return respond(502, {
+          error: result.error,
+          _providerAttempts: result.attempts,
+        });
+      }
+      return respond(200, {
+        mapLinks: result.mapLinks,
+        source: result.source,
+        _providerAttempts: result.attempts,
       });
     }
 
-    // For map responses, normalise the links array and surface it explicitly so
-    // the browser can pick it up without knowing the raw Firecrawl shape.
-    if (isMap) {
-      const raw = data?.links || data?.data || [];
-      const mapLinks = raw
-        .map((l) => (typeof l === "string" ? l : l?.url))
-        .filter(Boolean);
-      return respond(200, { ...data, mapLinks });
+    // ── Scrape mode: extract page HTML + metadata ────────────────────────────
+    const result = await runScrapeChain(url, options);
+    if (!result.ok) {
+      return respond(502, {
+        error: result.error,
+        _providerAttempts: result.attempts,
+      });
     }
 
-    return respond(200, data);
+    // Normalise to the shape firecrawlService.js / realScrape() expects:
+    //   raw?.data?.html         → page HTML
+    //   raw?.data?.metadata?.title → page title
+    //   raw?.data?.json         → LLM custom extraction (Firecrawl only; null for others)
+    return respond(200, {
+      data: {
+        html: result.html,
+        metadata: { title: result.title || "" },
+        json: result.customExtraction || undefined,
+      },
+      source: result.source,
+      _providerAttempts: result.attempts,
+    });
   } catch (err) {
-    return respond(502, { error: `Upstream fetch failed: ${err.message}` });
+    return respond(502, { error: `Scrape chain failed: ${err.message}` });
   }
 };
