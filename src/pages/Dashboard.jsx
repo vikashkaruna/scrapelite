@@ -15,6 +15,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
 import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
+import { listBatchRuns, readBatchMap, deleteBatchRun } from "../lib/batchRunsService.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
@@ -144,13 +145,16 @@ function RowActions({ item, onView, onDelete, compact }) {
   );
 }
 
-function DashCard({ item, selected, onToggle, onView, onDelete }) {
+function DashCard({ item, selected, onToggle, onView, onDelete, isBatch }) {
   return (
     <div className={"dash-card card" + (selected ? " sel" : "") + (item._demo ? " demo-item" : "")} onClick={() => onView(item)}>
       <div className="dash-card-top">
         <FaviconDot url={item.url} size={38} />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="dash-card-title">{item.page_title}{item._demo && <DemoBadge />}</div>
+          <div className="dash-card-title">
+            {item.page_title}{item._demo && <DemoBadge />}
+            {isBatch && <span className="batch-item-tag" title="Saved from a batch run"><Icon name="layers-2" size={10} /> Batch</span>}
+          </div>
           <div className="dash-card-url">{hostOf(item.url)}{pathOf(item.url) !== "/" ? pathOf(item.url) : ""}</div>
         </div>
         {!item._demo && (
@@ -211,6 +215,89 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, disabled, label }) {
           <button className="export-dropdown-item" onClick={() => { onJson(); setOpen(false); }}>
             <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Batch Runs history dropdown ───────────────────────────────────────────────
+function BatchRunsDropdown({ runs, activeRunId, onSelect, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const active = runs.find((r) => r.id === activeRunId);
+
+  return (
+    <div className="batch-runs-dropdown" ref={ref}>
+      <button
+        className={"batch-runs-btn" + (activeRunId ? " batch-runs-btn--active" : "")}
+        onClick={() => setOpen((v) => !v)}
+        title="Filter by batch run"
+        type="button"
+      >
+        <Icon name="layers-2" size={14} />
+        {activeRunId && active ? active.label.split(" · ")[0] : "Batch runs"}
+        {runs.length > 0 && !activeRunId && (
+          <span className="batch-runs-count">{runs.length}</span>
+        )}
+        <Icon name="chevron-down" size={12} />
+      </button>
+      {open && (
+        <div className="batch-runs-menu">
+          {runs.length === 0 ? (
+            <div className="batch-runs-empty">
+              <Icon name="layers-2" size={16} />
+              <span>No batch runs yet</span>
+              <a href="/batch" style={{ color: "var(--accent)", fontSize: ".82em" }}>Start a batch →</a>
+            </div>
+          ) : (
+            <>
+              {activeRunId && (
+                <button
+                  className="batch-runs-item batch-runs-clear"
+                  onClick={() => { onSelect(null); setOpen(false); }}
+                >
+                  <Icon name="x" size={13} /> Show all extractions
+                </button>
+              )}
+              {runs.map((run) => (
+                <div
+                  key={run.id}
+                  className={"batch-runs-item" + (run.id === activeRunId ? " batch-runs-item--active" : "")}
+                >
+                  <button
+                    className="batch-runs-item-body"
+                    onClick={() => { onSelect(run.id); setOpen(false); }}
+                  >
+                    <div className="batch-runs-item-label">{run.label}</div>
+                    <div className="batch-runs-item-meta">
+                      <span className="batch-runs-ok"><Icon name="check" size={11} /> {run.successCount} saved</span>
+                      {run.failedCount > 0 && (
+                        <span className="batch-runs-fail"><Icon name="x" size={11} /> {run.failedCount} failed</span>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    className="batch-runs-item-del"
+                    onClick={(e) => { e.stopPropagation(); onDelete(run.id); }}
+                    title="Remove from history"
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -297,6 +384,17 @@ export default function Dashboard() {
   const [contentItem, setContentItem] = useState(null);
   const [pageSize, setPageSize] = useState(rowsForViewport);
 
+  // Batch run history (localStorage-backed)
+  const [batchRuns, setBatchRuns] = useState(() => listBatchRuns());
+  const [batchFilter, setBatchFilter] = useState(null); // null = no filter
+  const batchMap = useRef(readBatchMap()); // { extractionId: batchRunId }
+
+  // Reload batch map when filtering changes (picks up runs saved mid-session)
+  useEffect(() => {
+    setBatchRuns(listBatchRuns());
+    batchMap.current = readBatchMap();
+  }, [batchFilter]);
+
   useEffect(() => {
     const onResize = () => setPageSize(rowsForViewport());
     window.addEventListener("resize", onResize);
@@ -329,11 +427,16 @@ export default function Dashboard() {
   const showingDemo = false;
 
   const filtered = useMemo(() => {
+    let result = items;
+    // Batch run filter — show only items from the selected run
+    if (batchFilter) {
+      result = result.filter((it) => batchMap.current[it.id] === batchFilter);
+    }
     const q = query.trim().toLowerCase();
-    if (!q) return items;
+    if (!q) return result;
     const terms = q.split(/\s+/);
-    return items.filter((it) => { const hay = haystack(it); return terms.every((t) => hay.includes(t)); });
-  }, [items, query]);
+    return result.filter((it) => { const hay = haystack(it); return terms.every((t) => hay.includes(t)); });
+  }, [items, query, batchFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => { setPage(1); }, [query]);
@@ -429,9 +532,19 @@ export default function Dashboard() {
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
   };
 
+  const handleDeleteBatchRun = (id) => {
+    deleteBatchRun(id);
+    setBatchRuns(listBatchRuns());
+    if (batchFilter === id) setBatchFilter(null);
+    batchMap.current = readBatchMap();
+  };
+
   const hasItems = items.length > 0;
   const exportCount = selected.size || filtered.length;
   const exportLabel = selected.size ? `${selected.size} selected` : `all ${filtered.length}`;
+
+  // Tag: is this item from any batch run?
+  const isBatchItem = (id) => Boolean(batchMap.current[id]);
 
   return (
     <div className="page fade">
@@ -447,6 +560,12 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="dash-header-actions">
+            <BatchRunsDropdown
+              runs={batchRuns}
+              activeRunId={batchFilter}
+              onSelect={setBatchFilter}
+              onDelete={handleDeleteBatchRun}
+            />
             <div className="seg-filter layout-seg">
               <button className={"seg-opt" + (layout === "table" ? " on" : "")} onClick={() => changeLayout("table")} title="Table view">
                 <Icon name="table" size={15} />
@@ -480,6 +599,20 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
+
+        {/* Active batch run filter banner */}
+        {batchFilter && (() => {
+          const run = batchRuns.find((r) => r.id === batchFilter);
+          return run ? (
+            <div className="batch-filter-banner">
+              <Icon name="layers-2" size={14} />
+              <span>Showing <b>{run.label}</b> — {run.successCount} saved</span>
+              <button className="batch-filter-clear" onClick={() => setBatchFilter(null)} title="Clear filter">
+                <Icon name="x" size={13} /> Show all
+              </button>
+            </div>
+          ) : null;
+        })()}
 
         {/* search toolbar */}
         {!loading && hasItems && (
@@ -543,7 +676,7 @@ export default function Dashboard() {
           <>
             <div className="dash-grid rise">
               {pageItems.map((it) => (
-                <DashCard key={it.id} item={it} selected={selected.has(it.id)} onToggle={toggleOne} onView={view} onDelete={onDelete} />
+                <DashCard key={it.id} item={it} selected={selected.has(it.id)} onToggle={toggleOne} onView={view} onDelete={onDelete} isBatch={isBatchItem(it.id)} />
               ))}
             </div>
             <Pager page={page} totalPages={totalPages} start={start} shown={pageItems.length} total={filtered.length} onPage={setPage} />
@@ -574,7 +707,14 @@ export default function Dashboard() {
                         <div className="td-page">
                           <FaviconDot url={it.url} size={34} />
                           <div style={{ minWidth: 0 }}>
-                            <div className="td-title">{it.page_title}{it._demo && <DemoBadge />}</div>
+                            <div className="td-title">
+                              {it.page_title}{it._demo && <DemoBadge />}
+                              {isBatchItem(it.id) && (
+                                <span className="batch-item-tag" title="Saved from a batch run">
+                                  <Icon name="layers-2" size={10} /> Batch
+                                </span>
+                              )}
+                            </div>
                             <div className="td-url">{hostOf(it.url)}{pathOf(it.url) !== "/" ? pathOf(it.url) : ""}</div>
                           </div>
                         </div>
