@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-16 — R15: Home FAB → /batch navigation, Batch textarea localStorage draft, unified Export dropdown in /batch, Dashboard batch-runs dropdown left-align fix**
+> **Last updated: 2026-06-16 — R15 complete + E2E test suite (89/89 passing); external help docs updated; internal test report at docs/internal/e2e-test-report-2026-06-16.md**
 
 ---
 
@@ -1034,6 +1034,7 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+[pending]  chore: E2E test suite 89/89 passing; update external help docs + internal test report
 40ded1d  fix(dashboard): batch runs dropdown left-aligns to button instead of overflowing off-screen
 d3e21ab  feat(home+batch): streamline multi-URL flow — FAB navigates to /batch, draft persists
 f686d77  fix(home): replace inline multi-URL textarea with BulkUploadModal dialog

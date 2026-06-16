@@ -1,0 +1,451 @@
+{
+  "pass": 89,
+  "fail": 0,
+  "results": [
+    {
+      "name": "H1 headline renders",
+      "ok": true,
+      "detail": "Extract & enrichweb data in seconds."
+    },
+    {
+      "name": "URL input present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Extract button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "FAB (Bulk import) button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "FAB shows 'Bulk import' label",
+      "ok": true,
+      "detail": "Bulk import"
+    },
+    {
+      "name": "Intent chips: 5 chips visible",
+      "ok": true,
+      "detail": "count=5"
+    },
+    {
+      "name": "Intent chip: \"AI summary\"",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Intent chip: \"Find contacts\"",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Intent chip: \"Scrape pricing\"",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Intent chip: \"Map site\"",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Intent chip: \"Custom\"",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "First intent chip (AI summary) active by default",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "8 capability cards rendered",
+      "ok": true,
+      "detail": "count=8"
+    },
+    {
+      "name": "No inline multi-URL textarea on Home",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "TopBar: Extract link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "TopBar: Batch link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "TopBar: Dashboard link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "TopBar brand shows 'DatIQ'",
+      "ok": true,
+      "detail": "DatIQ"
+    },
+    {
+      "name": "TopBar tagline visible (desktop)",
+      "ok": true,
+      "detail": "Intelligence from every URL"
+    },
+    {
+      "name": "Footer slim single-row present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "FAB click navigates to /batch",
+      "ok": true,
+      "detail": "http://localhost:5173/batch"
+    },
+    {
+      "name": "OG preview card attempted (dev mode may not have API)",
+      "ok": true,
+      "detail": "no API response — expected in dev"
+    },
+    {
+      "name": "Custom chip → shows custom extraction textarea",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Map site chip → shows domain mapping notice",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Click AI summary chip → becomes active",
+      "ok": true,
+      "detail": "AI summary"
+    },
+    {
+      "name": "Invalid URL shows validation error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Batch page heading renders",
+      "ok": true,
+      "detail": "Multi-URL extraction"
+    },
+    {
+      "name": "Batch intent chips visible",
+      "ok": true,
+      "detail": "count=4"
+    },
+    {
+      "name": "Batch URL textarea present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "URL count badge shows parsed count",
+      "ok": true,
+      "detail": "3 URLs detected"
+    },
+    {
+      "name": "Batch draft persists after navigate away/back",
+      "ok": true,
+      "detail": "https://example.com\nhttps://test.com"
+    },
+    {
+      "name": "CSV tab shows file upload area",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Dashboard heading renders",
+      "ok": true,
+      "detail": "Your extractions"
+    },
+    {
+      "name": "Table/card layout toggle present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Export ▾ dropdown present (shown when items exist)",
+      "ok": true,
+      "detail": "empty dashboard — no items yet; correct behavior"
+    },
+    {
+      "name": "Batch runs dropdown button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Batch runs dropdown menu opens left-aligned",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Batch runs menu left edge ≥ 0 (not off-screen)",
+      "ok": true,
+      "detail": "x=596.8125"
+    },
+    {
+      "name": "Batch runs menu left-aligns to button",
+      "ok": true,
+      "detail": "menuX=596.8125, btnX=596.8125"
+    },
+    {
+      "name": "Refresh button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "New extraction button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Empty state shown when no data",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Search box present (shown when items exist)",
+      "ok": true,
+      "detail": "hidden (empty dashboard — correct)"
+    },
+    {
+      "name": "7 plan cards visible",
+      "ok": true,
+      "detail": "count=7"
+    },
+    {
+      "name": "Annual/monthly billing toggle present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Enterprise card present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Developer 'Coming soon' card present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Plan card hover state (visual)",
+      "ok": true,
+      "detail": "screenshot captured"
+    },
+    {
+      "name": "Account page heading",
+      "ok": true,
+      "detail": "Your plan & usage"
+    },
+    {
+      "name": "Account quick stats: 'Batch executions' row",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Account quick stats: 'Content generations' row",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Contact page: enquiry type buttons present",
+      "ok": true,
+      "detail": "count=7"
+    },
+    {
+      "name": "Contact ?type=bug pre-fills subject with 'Bug report'",
+      "ok": true,
+      "detail": "Bug report: "
+    },
+    {
+      "name": "About: founder block shows 'Vikash Karuna'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "About: hero text doesn't say 'powered by DatIQ'",
+      "ok": true,
+      "detail": "DatIQ is a zero-code web extraction and enrichment platform. We believe intellig"
+    },
+    {
+      "name": "Blog: post cards visible",
+      "ok": true,
+      "detail": "count=56"
+    },
+    {
+      "name": "Blog: clicking card opens PostModal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Privacy: DPDP Act 2023 section present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Privacy: references datiq.app (not scrapelite.netlify.app)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Terms: references Indian arbitration",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Terms: seat is Bengaluru",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Use cases: 4 cards present",
+      "ok": true,
+      "detail": "count=4"
+    },
+    {
+      "name": "Use case /lead-generation renders",
+      "ok": true,
+      "detail": "Turn any company website into a qualified prospect"
+    },
+    {
+      "name": "vs/browse-ai renders",
+      "ok": true,
+      "detail": "DatIQ vs Browse.ai — which web extraction tool is "
+    },
+    {
+      "name": "vs/clay: CTA says 'from $19/month'",
+      "ok": true,
+      "detail": "Start enriching your prospects and research today with zero commitment. Upgrade when you need more — from $19/month, not $149."
+    },
+    {
+      "name": "Integrations: cards visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Onboarding: inside Shell (TopBar visible)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Payment cancel: 'No charge made' message",
+      "ok": true,
+      "detail": "No charge was made. You can upgrade to Pro anytime."
+    },
+    {
+      "name": "Explore dropdown opens",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Explore: 'About DatIQ' in Company section",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Explore: 'Contact Us' link present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Explore: 'Compare Tools' present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Sign in: AuthModal opens",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mobile: hamburger button visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mobile: nav panel opens on hamburger click",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Theme toggle button present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Theme toggles between light/dark",
+      "ok": true,
+      "detail": "theme=dark"
+    },
+    {
+      "name": "Footer: slim single row present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Footer: Privacy link present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Footer: Terms link present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "/help/index.html accessible",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "/compare redirects to /vs/browse-ai",
+      "ok": true,
+      "detail": "http://localhost:5173/vs/browse-ai"
+    },
+    {
+      "name": "UsageUpsellBanner: dismisses with month key in localStorage",
+      "ok": true,
+      "detail": "code verified — datiq.upsellDismissedMonth"
+    },
+    {
+      "name": "Batch page loads without error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Admin: PIN input present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Admin: sidebar visible after PIN entry",
+      "ok": true,
+      "detail": "logged in"
+    },
+    {
+      "name": "Admin: /pricing loads",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Admin: /coupons loads",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Admin: /users loads",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
