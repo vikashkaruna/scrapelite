@@ -3612,11 +3612,13 @@
 
 .home-input-fab {
   flex-shrink: 0;
-  width: 50px;
   min-height: 50px;
   height: auto;
   align-self: stretch;
+  padding: 0 14px;
+  gap: 5px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--border);
@@ -3625,6 +3627,13 @@
   color: var(--text-2);
   cursor: pointer;
   transition: border-color .15s, color .15s, background .15s;
+  white-space: nowrap;
+}
+.home-input-fab-label {
+  font-size: .68em;
+  font-weight: 650;
+  letter-spacing: .02em;
+  line-height: 1;
 }
 .home-input-fab:hover {
   border-color: var(--accent);
@@ -4025,7 +4034,8 @@
 @media (max-width: 600px) {
   .intent-chips-row { gap: 6px; }
   .intent-chip { padding: 6px 11px; font-size: .82em; }
-  .home-input-fab { width: 44px; min-height: 44px; height: auto; }
+  .home-input-fab { min-height: 44px; height: auto; padding: 0 10px; }
+  .home-input-fab-label { font-size: .62em; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -197,10 +197,11 @@ export default function Batch() {
   // Input tab: "paste" or "csv"
   const [inputTab, setInputTab] = useState("paste");
 
-  // Paste mode state — pre-populate from Home navigation state if provided
+  // Paste mode state — priority: nav state > localStorage draft > empty
   const [pasteText, setPasteText] = useState(() => {
     const navUrls = location.state?.urls;
-    return Array.isArray(navUrls) && navUrls.length > 0 ? navUrls.join("\n") : "";
+    if (Array.isArray(navUrls) && navUrls.length > 0) return navUrls.join("\n");
+    try { return localStorage.getItem("datiq.batchDraft") || ""; } catch { return ""; }
   });
 
   // CSV mode state
@@ -225,11 +226,16 @@ export default function Batch() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [renderJs, setRenderJs] = useState(false);
 
+  // Persist draft textarea to localStorage so it survives refresh / back-nav
+  useEffect(() => {
+    try { localStorage.setItem("datiq.batchDraft", pasteText); } catch { /* skip */ }
+  }, [pasteText]);
+
   // Show a toast when arriving from Home with pre-populated URLs
   useEffect(() => {
     if (location.state?.urls?.length > 0) {
-      showToast(`${location.state.urls.length} URLs loaded from Home — review and run`);
-      // Clear navigation state so back-navigation doesn't re-trigger
+      showToast(`${location.state.urls.length} URLs loaded — review and run`);
+      // Clear navigation state so back-nav doesn't re-trigger the toast
       window.history.replaceState({}, "");
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -775,7 +781,7 @@ export default function Batch() {
                       variant="ghost"
                       size="sm"
                       icon="refresh"
-                      onClick={() => { setResults(null); setPasteText(""); setCsvFile(null); setCsvUrls([]); }}
+                      onClick={() => { setResults(null); setPasteText(""); setCsvFile(null); setCsvUrls([]); try { localStorage.removeItem("datiq.batchDraft"); } catch { /* skip */ } }}
                     >
                       New batch
                     </Button>

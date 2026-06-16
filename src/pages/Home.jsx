@@ -3,7 +3,7 @@
 // Enhancements (home-screen-enhancement):
 //   • Intent chips replace the 4 toggles — one click configures everything
 //   • Smart input: detects multi-URL paste → progressive disclosure or /batch
-//   • FAB (layers-2 icon) opens BulkUploadModal for CSV / URL-list imports
+//   • FAB (layers-2 icon) navigates to /batch for multi-URL extraction
 //   • OG preview card (favicon + title + description) shown on valid URL blur
 //   • Feature capability cards are clickable — click selects the matching intent
 //   • Render JS stays as a collapsible Advanced option
@@ -12,7 +12,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
-import BulkUploadModal from "../components/BulkUploadModal.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -93,9 +92,6 @@ export default function Home() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [renderJs, setRenderJs]         = useState(false);
 
-  // ── FAB / Bulk Upload Modal state ──────────────────────────────────────
-  const [bulkOpen, setBulkOpen] = useState(false);
-
   // ── OG Preview state ───────────────────────────────────────────────────
   const [preview, setPreview]         = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -163,17 +159,6 @@ export default function Home() {
       document.querySelector(".intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, []);
-
-  // ── Bulk upload: onUrls callback ──────────────────────────────────────
-  const handleBulkUrls = useCallback((urls) => {
-    if (urls.length === 0) return;
-    if (urls.length === 1) {
-      setUrl(urls[0]);
-      return;
-    }
-    // Multiple URLs — route directly to /batch
-    navigate("/batch", { state: { urls, intent } });
-  }, [intent, navigate]);
 
   // ── Form submit ────────────────────────────────────────────────────────
   const handleSubmit = (e) => {
@@ -361,15 +346,16 @@ export default function Home() {
                   {intent === "map" ? "Map domain" : "Extract"}
                 </Button>
               </div>
-              {/* FAB: Bulk import */}
+              {/* FAB: Bulk import — navigates to /batch */}
               <button
                 type="button"
                 className="home-input-fab"
-                onClick={() => setBulkOpen(true)}
-                title="Bulk import — paste a URL list or upload a CSV"
-                aria-label="Bulk import URLs"
+                onClick={() => navigate("/batch")}
+                title="Extract multiple URLs in bulk"
+                aria-label="Bulk URL import"
               >
-                <Icon name="layers-2" size={18} />
+                <Icon name="layers-2" size={16} />
+                <span className="home-input-fab-label">Bulk import</span>
               </button>
             </div>
 
@@ -496,25 +482,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Multi-URL entry — opens BulkUploadModal ───────────────── */}
-          <div className="multi-url-reveal">
-            <span>Need to extract from multiple URLs?</span>
-            <button
-              type="button"
-              className="multi-url-toggle-btn"
-              onClick={() => setBulkOpen(true)}
-            >
-              Paste a list →
-            </button>
-            <span style={{ color: "var(--border)" }}>·</span>
-            <button
-              type="button"
-              className="multi-url-toggle-btn"
-              onClick={() => setBulkOpen(true)}
-            >
-              Upload CSV
-            </button>
-          </div>
         </form>
 
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
@@ -624,12 +591,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* Bulk Upload Modal */}
-      <BulkUploadModal
-        open={bulkOpen}
-        onClose={() => setBulkOpen(false)}
-        onUrls={handleBulkUrls}
-      />
     </div>
   );
 }
