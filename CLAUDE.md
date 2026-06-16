@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-15 — R14: Firecrawl fallback chain (Spider/Jina/Direct), Home intent chips + multi-URL + OG preview + batch history — all merged to main**
+> **Last updated: 2026-06-16 — R15: Home FAB → /batch navigation, Batch textarea localStorage draft, unified Export dropdown in /batch, Dashboard batch-runs dropdown left-align fix**
 
 ---
 
@@ -17,8 +17,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — R14 complete and merged |
-| **Latest commit** | R14: Firecrawl fallback chain + Home intent chips + multi-URL + OG preview + batch history in Dashboard |
+| **Current branch** | `main` — R15 complete and merged |
+| **Latest commit** | R15: Home FAB navigates to /batch, Batch draft persists in localStorage, Export dropdown unified in /batch, batch-runs dropdown alignment fixed |
 
 ---
 
@@ -44,7 +44,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/razorpay-payment-integration-76uecb` | R11: complete Razorpay end-to-end integration — `PAYMENT_STAGE` state machine, `PaymentProcessingModal` step-by-step UX, `onStageChange` threading, billingPeriod wiring, INR annual fix, `retryPayment` callback with `lastPaymentArgs` ref, `create-checkout.js` rewrite (agency $299, bundles), `verify-payment.js` timing-safe HMAC, `payment-webhook.js` Supabase sync, audit fixes (account-stats CSS, unused providerMeta) | ✅ merged to main |
 | `claude/pricing-batch-help-polish-dwwlj7` | R13: GST breakdown `PaymentConfirmModal`, bundle base prices (pre-GST display), TopupBundleModal INR upsell prices, Enterprise plan card restored, Apify+PhantomBuster comparison pages, compare.html multi-page links, batch table full-width, usage banner container-constrained, Account batch/content generation stats, `batchRuns`+`contentGenerations` in usageService, TopBar Explore restructure (remove Browse.ai/Clay from Compare, remove Submit Bug, About DatIQ last), help/index.html External/Internal labels removed, 09-exports-and-sharing.html full rewrite (all 5 formats) | ✅ merged to main |
 | `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain; `scrapeProviders.js` provider registry + chain runners; `extract.js` rewritten to use chain; `config.js` `hasFirecrawl` covers all providers + `VITE_ENABLE_EXTRACT` flag | ✅ merged to main |
-| `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; progressive multi-URL input (inline for ≤10, routes to /batch for >10); 800ms OG preview card (og-preview Netlify fn); clickable feature cards map to intent chips; FAB + `BulkUploadModal` (paste + CSV); Batch page unified intent chips, batch run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
+| `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; OG preview card (800ms debounce); clickable feature cards map to intent chips; FAB (layers-2) beside Extract navigates to /batch; `BulkUploadModal` component created but now only reachable from /batch; Batch page unified intent chips + run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
 
 ---
 
@@ -110,7 +110,7 @@ src/
 ├── index.css
 ├── styles/
 │   ├── design-system.css             CSS tokens + @keyframes spin + .btn-full + brand tagline
-│   └── screens.css                   All screen/component CSS (~2500 lines)
+│   └── screens.css                   All screen/component CSS (~4300+ lines)
 │                                     Includes: .uc-*, .vs-*, .int-*, .skip-link, .nav-dropdown*,
 │                                     .home-social-proof, .blog-*, .about-*, .contact-*, .billing-toggle-*,
 │                                     .enterprise-card, .plan-coming-soon, .referral-teaser, .usage-upsell-banner
@@ -155,7 +155,9 @@ src/
 │   ├── errorMessages.js              classifyError; 10 categories
 │   ├── statsService.js               ★ R0: getStats() → /api/stats (Supabase aggregate), fmtStat()
 │   │                                 Caches in datiq.stats localStorage (5-min TTL)
-│   └── emailCaptureService.js        ★ R0: captureEmail(email, source) → datiq.subscribers LS + n8n webhook
+│   ├── emailCaptureService.js        ★ R0: captureEmail(email, source) → datiq.subscribers LS + n8n webhook
+│   └── batchRunsService.js           ★ R14b: saveBatchRun/listBatchRuns/deleteBatchRun + recordBatchItems/readBatchMap
+│                                     localStorage keys: datiq.batchRuns (run summaries) + datiq.batchMap (id→runId map)
 ├── components/
 │   ├── ThemeProvider.jsx             light/dark; persists to datiq.theme
 │   ├── Toast.jsx                     ToastProvider + useToast(); 2.6s auto-dismiss
@@ -182,12 +184,14 @@ src/
 │   ├── PaymentConfirmModal.jsx       ★ R13: pre-payment GST breakdown modal (base + 18% GST + total)
 │   ├── BrandLoader.jsx               Animated loader
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
-│   └── LoadingScreen.jsx             Full-screen 4-step animated progress
+│   ├── LoadingScreen.jsx             Full-screen 4-step animated progress
+│   └── BulkUploadModal.jsx           ★ R14b: paste URLs + CSV upload modal; currently NOT used by Home (FAB → /batch)
+│                                     Still exists for potential future use on /batch or other pages
 └── pages/
-    ├── Home.jsx                      URL input, 5 toggles (incl. Batch mode), custom extraction, 8 capability cards,
-    │                                 social proof (real stats; hidden until teams≥10 OR extractions≥100)
+    ├── Home.jsx                      URL input + Extract button + FAB (Bulk import → /batch), 5 intent chips,
+    │                                 OG preview card, 8 clickable capability cards, social proof
+    │                                 ★ R14b: intent chips replace toggles; FAB navigates to /batch (no inline multi-URL)
     │                                 ★ R4: testimonials permanently hidden until real backend data
-    │                                 ★ R6: batch mode toggle — multi-URL textarea + progress bar + inline results panel
     ├── Preview.jsx                   Quick enrichment, enrichment tabs, save/discard
     ├── Dashboard.jsx                 Table/cards, search, pagination, CSV/PDF/MD/JSON/Generate/Email
     │                                 ★ R6: no demo data — shows real extractions; proper empty state when none
@@ -212,6 +216,8 @@ src/
     ├── VsBrowseAI.jsx                ★ R4: pricing updated to $0–$299/mo; API access → Business plan
     ├── VsClay.jsx                    ★ R4: pricing updated; CTA → "from $19/month"
     ├── Batch.jsx                     ★ R5: /batch — paste URLs / import CSV → progress → results → export
+    │                                 ★ R14b: intent chips; batch run history (batchRunsService.js)
+    │                                 ★ R15: textarea draft persisted to datiq.batchDraft in localStorage; unified Export ▾ dropdown
     └── admin/
         ├── AdminLayout.jsx           PIN gate (server-verified via admin-auth fn; async login,
         │                             token session, 5→60s lockout), collapsible sidebar (chevron + pin)
@@ -229,7 +235,7 @@ netlify/
     ├── admin-ai-config.js            ★ GET=config+key presence; POST=upsert app_config 'ai' (token-gated)
     ├── lib/aiProviders.js            ★ provider adapters + loadAiConfig() + runChain() fallback
     ├── lib/adminToken.js             ★ verifyAdminToken() — HMAC check of admin-auth session token
-    ├── extract.js                    POST /api/extract — Firecrawl proxy
+    ├── extract.js                    POST /api/extract — multi-provider scraping proxy (Firecrawl→Spider→Jina→Direct)
     ├── extractions.js                GET/POST/PATCH/DELETE /api/extractions — Supabase proxy
     ├── create-checkout.js            ★ V5c: POST — Stripe Checkout session or Razorpay order
     │                                 ★ now sources prices/coupons/global via lib/pricingSource.js
@@ -239,8 +245,12 @@ netlify/
     │                                 returns HMAC-signed session token; demo mode = ADMIN123
     ├── lib/pricingSource.js          ★ shared server source of truth — loadPricing() merges
     │                                 Supabase pricing_config over static tables; resolveDiscountFraction()
-    └── stats.js                      ★ R0: GET /api/stats — aggregate teams/extractions from Supabase
-                                      Direct REST (no SDK); 5-min CDN cache header
+    ├── stats.js                      ★ R0: GET /api/stats — aggregate teams/extractions from Supabase
+    │                                 Direct REST (no SDK); 5-min CDN cache header
+    ├── og-preview.js                 ★ R14b: GET /api/og-preview?url= — server-side OG metadata fetch
+    │                                 Reads first 15KB, parses og:title/description/<title>/meta; 5-min CDN cache
+    └── lib/scrapeProviders.js        ★ R14a: 4-provider scraping chain — Firecrawl/Spider/Jina/Direct
+                                      SCRAPE_PROVIDERS registry; runScrapeChain(); runMapChain(); scrapeProviderStatus()
 
 public/
 ├── favicon.svg
@@ -289,7 +299,7 @@ ThemeProvider
 | TopBar "+ New" | Only shown on `/preview` |
 | TopBar brand icon | Uses `layers` icon — do NOT change |
 | TopBar tagline | `.brand-tagline` "Intelligence from every URL" — hidden on mobile (≤640px) |
-| TopBar nav | Main links: Extract / Dashboard + ExploreDropdown + UserDropdown (logged in) OR Sign in + Sign up (logged out) |
+| TopBar nav | Main links: Extract / Batch / Dashboard + ExploreDropdown + UserDropdown (logged in) OR Sign in + Sign up (logged out) |
 | TopBar alignment | `.topbar-inner` (max-width: 1080px, auto margins) wraps all content — aligns with `.container` |
 | TopBar responsive | Desktop >820px: full text+icons; Tablet 600–820px: compressed; Mobile <600px: hamburger |
 | TopBar MobileNav | Slide-down panel (position:fixed top:68px), Explore accordion, user persona + actions |
@@ -338,6 +348,9 @@ ThemeProvider
 | `datiq.adminSidebarCollapsed` | AdminLayout.jsx — sidebar collapsed state ("1" = collapsed) |
 | `datiq.adminSidebarPinned` | AdminLayout.jsx — sidebar pin state ("0" = unpinned) |
 | `datiq.upsellDismissedMonth` | UsageUpsellBanner.jsx — month string (e.g. "2026-06") when banner was dismissed |
+| `datiq.batchRuns` | batchRunsService.js — array of past batch run summaries (max 50) |
+| `datiq.batchMap` | batchRunsService.js — map of `{ extractionId: batchRunId }` for Dashboard tagging |
+| `datiq.batchDraft` | Batch.jsx — persisted textarea content; survives refresh + back-navigation; cleared on "New batch" |
 
 ---
 
@@ -723,6 +736,10 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 111. **R14b: OG preview card** — 800ms debounce on `url`/`valid` state; calls `/api/og-preview?url=...` (new `netlify/functions/og-preview.js`); fetches first 15KB of target page, parses og:title/og:description/`<title>`/meta-description, returns `{ url, hostname, favicon, title, description }`; favicon from `https://www.google.com/s2/favicons?domain=X&sz=32`. Preview card hidden when loading or no data.
 112. **R14b: Batch intent chips + history** — `/batch` page uses same `BATCH_INTENTS` chip pattern (4 chips: summary/contacts/pricing/custom). After each batch run: `uid()` generates `batchRunId`, `recordBatchItems(batchRunId, savedIds)` writes `datiq.batchMap`, `saveBatchRun({id, label, intent, createdAt, totalUrls, successCount, failedCount})` writes `datiq.batchRuns` (max 50). "View in Dashboard →" CTA appears after completion.
 113. **R14b: Dashboard batch history filter** — `BatchRunsDropdown` component in `dash-header-actions`: shows run count badge, dropdown lists past runs (label + meta + delete ×), click-to-filter sets `batchFilter` state. `filtered` memo gates on `batchMap.current[it.id] === batchFilter`. Active filter shown as dismissable `batch-filter-banner`. Table rows and `DashCard` get `batch-item-tag` chip when `isBatchItem(id)` is true. localStorage keys: `datiq.batchRuns` + `datiq.batchMap`.
+114. **R15: Home FAB navigates to /batch** — Bottom "Need multiple URLs?" section removed from Home entirely. FAB button (layers-2 icon) beside the Extract button now shows icon + "Bulk import" label and navigates directly to `/batch` instead of opening `BulkUploadModal`. `BulkUploadModal` import and `bulkOpen` state removed from `Home.jsx`. `handleBulkUrls` removed.
+115. **R15: Batch textarea localStorage draft** — `Batch.jsx` `pasteText` state initialized from: (1) `location.state.urls` (nav from Home FAB), (2) `localStorage.getItem("datiq.batchDraft")` fallback, (3) empty string. `useEffect` persists every `pasteText` change to `datiq.batchDraft`. "New batch" button clears the draft (`localStorage.removeItem`). Textarea content now survives page refresh and back-navigation.
+116. **R15: Batch Export ▾ unified dropdown** — Replaced 4 individual CSV/PDF/MD/JSON export buttons in `/batch` results with single `ExportDropdown` component (same pattern as Dashboard). Results actions bar: `[Export ▾] [New batch] [View in Dashboard →]`.
+117. **R15: Dashboard BatchRunsDropdown alignment** — `.batch-runs-menu` changed from `right: 0` to `left: 0`. The 300px dropdown was overflowing left off-screen because the button is on the far left of the toolbar. Now opens rightward from the button's left edge, within the page layout.
 
 ### Razorpay live payment — required Netlify env vars (INR only; Stripe/USD on hold)
 
@@ -741,10 +758,11 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 ## Multi-provider AI (enrichment) — fallback chain + admin config
 
 > The enrichment AI (summaries, link categorization, content generation) is now
-> provider-agnostic. **Firecrawl still does the actual scraping** (`extract.js`) —
-> this only affects enrichment. Frontend is unchanged: `aiService.js` → `apiClient.ai`
-> → `/api/ai`; every adapter normalizes its reply to the Anthropic `content[].text`
-> shape so the browser never knows which provider answered.
+> provider-agnostic. **Scraping uses its own separate fallback chain** (Firecrawl → Spider → Jina → Direct)
+> via `scrapeProviders.js` — this section only covers the enrichment/AI layer.
+> Frontend is unchanged: `aiService.js` → `apiClient.ai` → `/api/ai`; every adapter
+> normalizes its reply to the Anthropic `content[].text` shape so the browser never
+> knows which provider answered.
 
 | Piece | Detail |
 |---|---|
@@ -787,14 +805,14 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~Merge to main~~ — done
 - [x] ~~New Netlify Function `og-preview.js`~~ — merged (`netlify/functions/og-preview.js`; GET `/api/og-preview?url=`; no env vars needed)
 
-**Files changed:**
+**Files changed (R14b + R15):**
 - `netlify/functions/og-preview.js` (NEW) — server-side OG metadata fetcher (avoids CORS), reads first 15KB only, 5-min CDN cache
-- `src/pages/Home.jsx` — major rewrite: 5 intent chips replace 4 toggles, progressive multi-URL input, 800ms OG preview card, clickable feature cards map to intents, FAB bulk upload button
-- `src/pages/Batch.jsx` — intent chips replace Toggle options, batch run history recording via `batchRunsService.js`
-- `src/pages/Dashboard.jsx` — `BatchRunsDropdown` filter, `batch-item-tag` chips, `batchFilter` state
-- `src/components/BulkUploadModal.jsx` (NEW) — paste URLs + CSV upload modal (FAB trigger)
+- `src/pages/Home.jsx` — 5 intent chips replace 4 toggles; 800ms OG preview card; clickable feature cards; FAB "Bulk import" navigates to /batch (no inline textarea, no BulkUploadModal on Home)
+- `src/pages/Batch.jsx` — intent chips; batch run history via `batchRunsService.js`; textarea draft persisted to `datiq.batchDraft`; unified Export ▾ dropdown replacing 4 buttons
+- `src/pages/Dashboard.jsx` — `BatchRunsDropdown` filter (left-aligned dropdown), `batch-item-tag` chips, `batchFilter` state
+- `src/components/BulkUploadModal.jsx` (NEW, exists in codebase but NOT used on Home) — paste URLs + CSV upload modal
 - `src/lib/batchRunsService.js` (NEW) — localStorage batch run history (`datiq.batchRuns` + `datiq.batchMap`)
-- `src/styles/screens.css` — ~630 new lines for all new components
+- `src/styles/screens.css` — new CSS for all new components; `.batch-runs-menu` left-aligned; `.home-input-fab` with label styling
 
 ---
 
@@ -909,7 +927,7 @@ npm run dev   # http://localhost:5173
 - `/account` → enter coupon `LAUNCH20` → Apply; then × to remove
 - TopBar → Sign in → create account → persona step appears → select persona → lands on `/`
 - TopBar brand → shows `layers` icon + "DatIQ" + "Intelligence from every URL" tagline
-- TopBar nav (desktop >820px) → Extract, Dashboard, Pricing all show text+icon; Explore dropdown shows
+- TopBar nav (desktop >820px) → Extract, Batch, Dashboard all show text+icon; Explore dropdown shows
 - TopBar Explore dropdown → 6 sections: Company (About DatIQ), Pricing (Plans & Pricing + Integrations), Use Cases (4), Compare (2), Resources (Blog + Help Center), Contact (Contact Us + Submit Bug)
 - TopBar Explore → Contact section (bottom) → "Contact Us" navigates to /contact; "Submit Bug" navigates to /contact?type=bug
 - `/contact?type=bug` → Contact page opens with "Bug report" type pre-selected and subject pre-filled "Bug report: "
@@ -936,7 +954,7 @@ npm run dev   # http://localhost:5173
 - favicon → layered-diamond indigo SVG visible in browser tab
 - Usage upsell banner → appears between TopBar and page content when extraction usage ≥80%
 - Usage upsell banner → dismiss button hides it; re-appears next calendar month
-- Home → URL input only (no batch mode toggle); "Use Batch mode →" link below options navigates to /batch
+- Home → URL input + Extract button + FAB "Bulk import" button; NO inline multi-URL toggle or textarea
 - Home → no "Try lumio.io / stripe.com..." chips below URL input; only validation error shown
 - TopBar nav order: Extract → Batch → Dashboard (Batch is before Dashboard)
 - Home → extract URL → auto-saves to DB → /preview shows "View Dashboard" (primary) + "Download ▾" + "Delete"
@@ -995,15 +1013,17 @@ npm run dev   # http://localhost:5173
 - Home → 5 intent chips row visible below URL input: AI summary / Find contacts / Scrape pricing / Map site / Custom
 - Home → clicking an intent chip selects it (active border); switching away from Custom clears custom prompt
 - Home → clicking a feature card scrolls to and selects the matching intent chip
-- Home → "Need multiple URLs?" toggle reveals a textarea; pasting 2–10 URLs shows count; clicking Run routes to batch mode
-- Home → FAB button (stacked layers icon) next to URL input → opens BulkUploadModal with Paste + CSV tabs
-- BulkUploadModal Paste tab → count badge shows valid/invalid breakdown; confirm sends URLs to multi-URL input
-- BulkUploadModal CSV tab → upload .csv → parses first column URLs; confirm sends to multi-URL input
+- Home → FAB button ("Bulk import" label + layers-2 icon) beside Extract button → navigates to /batch page
+- Home → NO inline multi-URL textarea on Home; no BulkUploadModal on Home; multi-URL entry is handled entirely on /batch
 - Home → single URL with valid domain → after 800ms, OG preview card appears below URL input with favicon + title + description
 - Home → OG preview card disappears when URL is cleared or invalid
 - `/batch` → intent chips visible (AI summary / Find contacts / Scrape pricing / Custom ← no Map Site)
+- `/batch` → paste URLs → navigate away → navigate back → textarea retains the URLs (localStorage draft)
+- `/batch` → "New batch" button clears the textarea and the localStorage draft
+- `/batch` results → single "Export ▾" dropdown (CSV / PDF / Markdown / JSON) — not 4 separate buttons
 - `/batch` → run batch → "View in Dashboard →" button appears after results
 - `/dashboard` → batch run dropdown button visible in header (shows count badge when runs exist)
+- `/dashboard` → click batch runs dropdown → menu opens LEFT-aligned (not overflowing off left side of screen)
 - `/dashboard` → click dropdown → shows past batch runs with label + date + URL count; click to filter; × to delete
 - `/dashboard` → filtered state shows `batch-filter-banner` with run label + "Clear filter" button
 - `/dashboard` → items from a batch run show "Batch" tag chip in table row and card view
@@ -1014,13 +1034,14 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+40ded1d  fix(dashboard): batch runs dropdown left-aligns to button instead of overflowing off-screen
+d3e21ab  feat(home+batch): streamline multi-URL flow — FAB navigates to /batch, draft persists
+f686d77  fix(home): replace inline multi-URL textarea with BulkUploadModal dialog
+9f545b4  fix(batch): replace 4 separate export buttons with unified Export dropdown
+397d0a4  chore: update CLAUDE.md — R14 merged to main, session state saved
 3bac184  Merge branch 'home-screen-enhancement' — R14b: intent chips, multi-URL, OG preview, batch history
 (merge)  Merge branch 'claude/firecrawl-fallback-analysis-qyksr4' — R14a: Firecrawl multi-provider fallback chain
 033278e  chore: update CLAUDE.md — R14 firecrawl fallback chain + active branches documented
 37e168d  feat(extract): multi-provider scraping fallback chain (Firecrawl→Spider→Jina→Direct)
 42b52e7  feat(batch+dashboard): unified intent chips, batch run history, Dashboard batch tagging
-ecb3209  feat(home): intent chips, smart multi-URL, OG preview, clickable cards, bulk FAB
-b85a6ca  Merge pull request #11 from vikashkaruna/claude/festive-hellman-e0c269
-a143271  feat(ai): multi-provider LLM fallback chain + admin config screen
-(merge)  Merge branch 'claude/pricing-batch-help-polish-dwwlj7' — R13: GST modal, comparison pages, help cleanup
 ```
