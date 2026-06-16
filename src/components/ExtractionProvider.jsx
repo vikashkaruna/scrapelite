@@ -15,6 +15,8 @@ import { enrichMeta } from "../lib/extractionPresets.js";
 import { useErrorModal } from "./ErrorModal.jsx";
 import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
+import { useAuth } from "./AuthProvider.jsx";
+import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { uid } from "../lib/utils.js";
 
 const ExtractionContext = createContext(null);
@@ -28,6 +30,8 @@ export function ExtractionProvider({ children }) {
   const showError = useErrorModal();
   const showToast = useToast();
   const billing = useBilling();
+  const { user } = useAuth();
+  const guestTrial = useGuestTrial();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
@@ -109,6 +113,8 @@ export function ExtractionProvider({ children }) {
       commitCurrent(result);
       setLoading(false);
       billing?.trackExtraction?.();
+      // Track guest trial for non-logged-in users (1 credit per single-URL extraction).
+      if (!user) guestTrial?.trackGuestExtraction?.(1);
       // Auto-save to database (fire-and-forget); marks the extraction as saved
       // so Preview shows "View Dashboard" instead of "Save to Dashboard".
       saveExtraction(result)
