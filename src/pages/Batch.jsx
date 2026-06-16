@@ -9,32 +9,45 @@ import FaviconDot from "../components/FaviconDot.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
+import { useAuth } from "../components/AuthProvider.jsx";
+import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
 import { runBatch, parseUrlsFromCsv } from "../lib/batchService.js";
 import { incrementBatchRuns } from "../lib/usageService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
-import { isValidUrl, normalizeUrl, csvDownload, markdownDownload, jsonDownload, uid } from "../lib/utils.js";
+import { saveEnrichment } from "../lib/enrichmentStore.js";
+import { isValidUrl, csvDownload, markdownDownload, jsonDownload, uid } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { saveBatchRun, recordBatchItems, makeBatchLabel } from "../lib/batchRunsService.js";
+import { CONTENT_FORMATS } from "../lib/aiService.js";
 
 const ABSOLUTE_MAX_URLS = 500;
 const MIN_URLS = 2;
 
 const PRICING_PROMPT = QUICK_ACTIONS.find((a) => a.key === "pricing")?.prompt || "";
 
-// Batch intent chips — same paradigm as Home, minus "Map site" (doesn't apply per-URL in batch).
+// Batch intent chips — full parity with Home (including "Map site").
 const BATCH_INTENTS = [
   { key: "summary",  icon: "sparkles", label: "AI summary",    desc: "Page overview for every URL" },
   { key: "contacts", icon: "users",    label: "Find contacts",  desc: "Leadership & emails per page" },
   { key: "pricing",  icon: "hash",     label: "Scrape pricing", desc: "Pricing tiers per page" },
+  { key: "map",      icon: "network",  label: "Map site",       desc: "Discover all indexed sub-pages per domain" },
   { key: "custom",   icon: "code",     label: "Custom…",        desc: "Same prompt applied to all URLs" },
 ];
+
+// Derive enrichMeta (for persisting enrichment tabs) based on intent.
+function getEnrichMetaForIntent(intent) {
+  if (intent === "contacts") return { key: "contacts", label: "Find Contact Info", icon: "mail" };
+  if (intent === "pricing")  return { key: "pricing",  label: "Pricing & Plans",   icon: "hash" };
+  if (intent === "custom")   return { key: "custom",   label: "Custom extraction", icon: "code" };
+  return null; // summary and map don't produce named enrichment tabs
+}
 
 function resolveIntentPrompt(intent, customPrompt) {
   if (intent === "contacts") return CONTACTS_PROMPT;
   if (intent === "pricing")  return PRICING_PROMPT;
   if (intent === "custom")   return customPrompt.trim();
-  return "";
+  return ""; // summary and map use their own processing paths
 }
 
 // ── URL parsing from textarea ──────────────────────────────────────────────────
@@ -105,6 +118,7 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, disabled }) {
 function ResultRow({ item, index, onView }) {
   if (!item) return null;
   const isError = item._status === "error";
+  const isMapResult = Boolean(item.domain_map);
   return (
     <tr className={isError ? "batch-row-error" : ""}>
       <td className="batch-td-num">{index + 1}</td>
@@ -128,7 +142,20 @@ function ResultRow({ item, index, onView }) {
         ) : (
           <div>
             <div className="batch-td-summary">{snippet(item.ai_summary, 100)}</div>
-            <span className="batch-td-counts">{item.headings?.length ?? 0} headings · {item.links?.length ?? 0} links</span>
+            {isMapResult ? (
+              <span className="batch-td-counts">
+                <Icon name="network" size={12} /> {item.domain_map.length} URLs mapped
+              </span>
+            ) : (
+              <span className="batch-td-counts">
+                {item.headings?.length ?? 0} headings · {item.links?.length ?? 0} links
+              </span>
+            )}
+            {item.generated_content && (
+              <span className="batch-gen-tag">
+                <Icon name="sparkles" size={11} /> Content generated
+              </span>
+            )}
           </div>
         )}
       </td>
@@ -193,6 +220,8 @@ export default function Batch() {
   const showToast = useToast();
   const billing = useBilling();
   const { view } = useExtraction();
+  const { user } = useAuth();
+  const guestTrial = useGuestTrial();
 
   // Input tab: "paste" or "csv"
   const [inputTab, setInputTab] = useState("paste");
@@ -225,6 +254,11 @@ export default function Batch() {
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [renderJs, setRenderJs] = useState(false);
+
+  // Content generation per URL
+  const [generateContentEnabled, setGenerateContentEnabled] = useState(false);
+  const [selectedContentFormatKey, setSelectedContentFormatKey] = useState("seo-outline");
+  const selectedContentFormat = CONTENT_FORMATS.find((f) => f.key === selectedContentFormatKey) || CONTENT_FORMATS[0];
 
   // Persist draft textarea to localStorage so it survives refresh / back-nav
   useEffect(() => {
@@ -322,6 +356,8 @@ export default function Batch() {
     const opts = {};
     if (renderJs) opts.renderJs = true;
     if (resolvedPrompt) opts.customPrompt = resolvedPrompt;
+    if (intent === "map") opts.mapMode = true;
+    if (generateContentEnabled && intent !== "map") opts.generateContent = selectedContentFormat;
 
     // Unique ID for this batch run — used to group results in Dashboard history.
     const batchRunId = uid();
@@ -350,11 +386,26 @@ export default function Batch() {
           "check-circle",
         );
 
+        // Track guest trial (1 credit per batch run, not per URL)
+        if (!user) guestTrial.trackGuestExtraction(1);
+
         // Auto-save successful results to Dashboard + record batch run history.
+        const enrichMetaObj = getEnrichMetaForIntent(intent);
         if (successItems.length > 0) {
           Promise.allSettled(
             successItems.map((r) => {
               const { _status, _error, ...cleanItem } = r;
+              // Persist enrichment tab so Dashboard "View" shows the named extraction type.
+              if (enrichMetaObj && cleanItem.custom_extraction != null) {
+                saveEnrichment(cleanItem.url, {
+                  key: enrichMetaObj.key,
+                  label: enrichMetaObj.label,
+                  icon: enrichMetaObj.icon,
+                  prompt: resolvedPrompt,
+                  data: cleanItem.custom_extraction,
+                  created_at: cleanItem.created_at,
+                });
+              }
               return saveExtraction(cleanItem);
             }),
           ).then((settled) => {
@@ -622,7 +673,7 @@ export default function Batch() {
                   </div>
                 )}
 
-                {/* Intent chips — same paradigm as Home */}
+                {/* Intent chips — full parity with Home (including Map site) */}
                 <div className="intent-chips batch-intent-chips">
                   <span className="intent-chips-label">What do you want to extract from each URL?</span>
                   <div className="intent-chips-row">
@@ -631,7 +682,12 @@ export default function Batch() {
                         key={ic.key}
                         type="button"
                         className={"intent-chip" + (intent === ic.key ? " intent-chip-active" : "")}
-                        onClick={() => { setIntent(ic.key); if (ic.key !== "custom") setCustomPrompt(""); }}
+                        onClick={() => {
+                          setIntent(ic.key);
+                          if (ic.key !== "custom") setCustomPrompt("");
+                          // Content generation isn't applicable for map mode
+                          if (ic.key === "map") setGenerateContentEnabled(false);
+                        }}
                         title={ic.desc}
                       >
                         <Icon name={ic.icon} size={14} />
@@ -639,6 +695,18 @@ export default function Batch() {
                       </button>
                     ))}
                   </div>
+                  {intent === "map" && urlCount > 5 && (
+                    <div className="batch-map-warning">
+                      <Icon name="alert-triangle" size={13} />
+                      Map mode discovers all sub-pages per domain. Running on {urlCount} URLs may take several minutes.
+                    </div>
+                  )}
+                  {intent === "map" && (
+                    <div className="batch-map-info">
+                      <Icon name="info" size={13} />
+                      Each URL's full domain will be crawled to discover all indexed sub-pages. Best used with root domains (e.g. company.com).
+                    </div>
+                  )}
                 </div>
 
                 {intent === "custom" && (
@@ -688,6 +756,42 @@ export default function Batch() {
                         <span className="advanced-row-hint">Waits 3 s for React/Vue/Angular SPAs — slower but accurate</span>
                       </span>
                     </label>
+                    {intent !== "map" && (
+                      <>
+                        <label className="advanced-row">
+                          <input
+                            type="checkbox"
+                            checked={generateContentEnabled}
+                            onChange={(e) => setGenerateContentEnabled(e.target.checked)}
+                            style={{ accentColor: "var(--accent)", width: 15, height: 15, flexShrink: 0 }}
+                          />
+                          <span className="advanced-row-label">
+                            <Icon name="sparkles" size={14} />
+                            Generate AI content for each URL
+                            <span className="advanced-row-hint">Creates content per result (+1–2 s per URL)</span>
+                          </span>
+                        </label>
+                        {generateContentEnabled && (
+                          <div className="advanced-content-format">
+                            <span className="advanced-content-format-label">Content type:</span>
+                            <div className="advanced-content-format-chips">
+                              {CONTENT_FORMATS.map((f) => (
+                                <button
+                                  key={f.key}
+                                  type="button"
+                                  className={"adv-format-chip" + (selectedContentFormatKey === f.key ? " adv-format-chip-active" : "")}
+                                  onClick={() => setSelectedContentFormatKey(f.key)}
+                                  title={f.desc}
+                                >
+                                  <Icon name={f.icon} size={12} />
+                                  {f.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
 

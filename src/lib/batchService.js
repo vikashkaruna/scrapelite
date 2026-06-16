@@ -1,7 +1,7 @@
 // batchService.js — parallel batch URL extraction with concurrency control.
 // Each URL is extracted independently; results stream back via onProgress.
 import { extractStructure } from "./firecrawlService.js";
-import { summarize, categorizeLinks } from "./aiService.js";
+import { summarize, categorizeLinks, generateContent } from "./aiService.js";
 import { uid } from "./utils.js";
 
 // Max simultaneous in-flight requests to avoid hammering the API.
@@ -11,7 +11,8 @@ const CONCURRENCY = 3;
  * Run batch extraction on an array of URLs.
  *
  * @param {string[]} urls - list of fully-qualified URLs
- * @param {object} options - passed to extractStructure (renderJs, customPrompt)
+ * @param {object} options - passed to extractStructure (renderJs, customPrompt, mapMode)
+ *   options.generateContent - one of CONTENT_FORMATS: {key,label,instruction,...} or null
  * @param {(completed: number, total: number, result: object) => void} onProgress
  * @param {AbortSignal} [signal] - optional abort signal
  * @returns {Promise<object[]>} array of results in input order, each with a _status field
@@ -63,6 +64,16 @@ export async function runBatch(urls, options = {}, onProgress, signal) {
             created_at: new Date().toISOString(),
             _status: "success",
           };
+          // Optional per-URL content generation (seo-outline / competitor-summary / social-posts).
+          if (options.generateContent) {
+            try {
+              result.generated_content = await generateContent(result, options.generateContent);
+            } catch (err) {
+              console.warn("[DatIQ] Batch content generation failed for", url, err?.message);
+              // Non-fatal: extraction still succeeds without generated content.
+            }
+            if (cancelled) return;
+          }
         }
       } catch (err) {
         result = {

@@ -40,6 +40,9 @@ import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
+import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
+import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
+import GuestTrialModal from "./components/GuestTrialModal.jsx";
 
 
 // Redirect /docs to the static help site
@@ -79,6 +82,7 @@ function Shell() {
       {/* Skip-to-content link for keyboard/screen reader users */}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <TopBar />
+      <GuestTrialBanner />
       <UsageUpsellBanner />
       <main id="main-content">
         <Routes>
@@ -111,6 +115,7 @@ function Shell() {
         </Routes>
       </main>
       {showAuthModal && <AuthModal />}
+      <GuestTrialModal />
       <Footer />
     </>
   );
@@ -122,15 +127,17 @@ export default function App() {
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>
-            <PersonaProvider>
-              <BillingProvider>
-                <ExtractionProvider>
-                  <div className="app-root">
-                    <Shell />
-                  </div>
-                </ExtractionProvider>
-              </BillingProvider>
-            </PersonaProvider>
+            <GuestTrialProvider>
+              <PersonaProvider>
+                <BillingProvider>
+                  <ExtractionProvider>
+                    <div className="app-root">
+                      <Shell />
+                    </div>
+                  </ExtractionProvider>
+                </BillingProvider>
+              </PersonaProvider>
+            </GuestTrialProvider>
           </AuthProvider>
         </ErrorModalProvider>
       </ToastProvider>
