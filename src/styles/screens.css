@@ -4144,7 +4144,7 @@
 .batch-runs-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
   min-width: 300px;
   max-width: 360px;
   background: var(--surface);
