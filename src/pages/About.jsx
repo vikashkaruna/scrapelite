@@ -161,7 +161,7 @@ export default function About() {
             <Icon name="user" size={14} />
             Founder
           </div>
-          <h2>Built by someone who felt the pain</h2>
+          <h2>Built by someone who felt the need</h2>
           <div className="about-founder">
             <div className="about-founder-avatar" aria-label="Vikash Karuna">
               <Icon name="user" size={32} strokeWidth={1.5} />
@@ -170,7 +170,7 @@ export default function About() {
               <div className="about-founder-name">Vikash Karuna</div>
               <div className="about-founder-role">Founder, DatIQ</div>
               <p className="about-founder-bio">
-                Vikash built DatIQ after spending hours manually copying data from websites into spreadsheets — a
+                Vikash built DatIQ after realizing the pain of manually copying data from websites into spreadsheets — a
                 workflow he kept seeing across sales, research, and marketing teams. DatIQ is his answer: a
                 zero-code platform that turns any URL into structured, actionable intelligence in seconds.
               </p>
