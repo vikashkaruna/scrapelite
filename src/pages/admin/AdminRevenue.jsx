@@ -1,12 +1,16 @@
-// AdminRevenue.jsx — revenue dashboard with KPIs and trend chart.
-import { useMemo } from "react";
-import { getRevenueMetrics, getRevenueTrend } from "../../lib/adminService.js";
+// AdminRevenue.jsx — revenue dashboard loaded from live Supabase data.
+import { useState, useEffect, useCallback } from "react";
+import { getRevenueData } from "../../lib/adminConfigService.js";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useBilling } from "../../components/BillingProvider.jsx";
 import { formatPrice, convertPrice } from "../../lib/currencyService.js";
 import Icon from "../../components/Icon.jsx";
+import Button from "../../components/Button.jsx";
 
-const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", business: "#a78bfa", agency: "#f472b6" };
+const PLAN_COLORS = {
+  free: "#94a3b8", select: "#60a5fa", pro: "#818cf8",
+  business: "#a78bfa", agency: "#f472b6",
+};
 
 function KpiCard({ label, value, sub, icon, accent }) {
   return (
@@ -42,7 +46,7 @@ function PlanDistribution({ byPlan, total }) {
   return (
     <div className="plan-dist">
       {Object.entries(byPlan).map(([id, count]) => {
-        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        const pct  = total > 0 ? Math.round((count / total) * 100) : 0;
         const plan = getEffectivePlanById(id);
         return (
           <div key={id} className="pd-row">
@@ -63,41 +67,133 @@ function PlanDistribution({ byPlan, total }) {
 
 export default function AdminRevenue() {
   const { currency, rates } = useBilling();
-  const metrics = useMemo(() => getRevenueMetrics(), []);
-  const trend   = useMemo(() => getRevenueTrend(), []);
+
+  const [metrics, setMetrics] = useState(null);
+  const [trend,   setTrend]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
+  const [warning, setWarning] = useState("");
+  const [fromSeed, setFromSeed] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await getRevenueData();
+      setMetrics(data.metrics);
+      setTrend(data.trend);
+      setFromSeed(!!data.fromSeed);
+      setWarning(data.warning || "");
+    } catch (e) {
+      setError(e.message || "Failed to load revenue data.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const fmt = (usd) => formatPrice(convertPrice(usd, rates, currency), currency);
+
+  if (loading) {
+    return (
+      <div className="admin-section">
+        <div className="admin-section-head">
+          <h2 className="admin-section-title">Revenue Dashboard</h2>
+        </div>
+        <div className="admin-ai-loading" style={{ padding: "32px 0" }}>
+          <Icon name="loader" size={18} className="spin" /> Loading revenue data from Supabase…
+        </div>
+      </div>
+    );
+  }
+
+  const m = metrics || { mrr: 0, arr: 0, totalUsers: 0, payingUsers: 0, freeUsers: 0, byPlan: {}, newThisMonth: 0, couponUsage: 0 };
+  const t = trend || [];
+  const conversion = m.totalUsers > 0 ? Math.round((m.payingUsers / m.totalUsers) * 100) : 0;
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-section-title">Revenue Dashboard</h2>
-        <p className="admin-section-sub">Live metrics from subscriber data.</p>
+        <div>
+          <h2 className="admin-section-title">Revenue Dashboard</h2>
+          <p className="admin-section-sub">Live metrics from Supabase subscriber data.</p>
+        </div>
+        <Button variant="ghost" size="sm" icon="refresh" onClick={load} disabled={loading}>
+          Refresh
+        </Button>
       </div>
 
+      {(fromSeed || warning) && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-triangle" size={15} />
+          <span>
+            {warning || "Supabase not configured — add SUPABASE_URL + SUPABASE_SERVICE_KEY to Netlify env to see live revenue."}
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-circle" size={15} /><span>{error}</span>
+        </div>
+      )}
+
       <div className="admin-kpi-grid">
-        <KpiCard label="Monthly Recurring Revenue" value={fmt(metrics.mrr)} icon="trending-up" accent="#818cf8" sub={`ARR ${fmt(metrics.arr)}`} />
-        <KpiCard label="Total Users" value={metrics.totalUsers.toLocaleString()} icon="users" accent="#60a5fa" sub={`${metrics.freeUsers} free`} />
-        <KpiCard label="Paying Subscribers" value={metrics.payingUsers.toLocaleString()} icon="zap" accent="#34d399" sub={`${Math.round((metrics.payingUsers / metrics.totalUsers) * 100)}% conversion`} />
-        <KpiCard label="New This Month" value={metrics.newThisMonth.toLocaleString()} icon="plus" accent="#f472b6" />
-        <KpiCard label="Coupon Uses" value={metrics.couponUsage.toLocaleString()} icon="bookmark" accent="#fb923c" />
+        <KpiCard
+          label="Monthly Recurring Revenue"
+          value={fmt(m.mrr)}
+          icon="trending-up"
+          accent="#818cf8"
+          sub={`ARR ${fmt(m.arr)}`}
+        />
+        <KpiCard
+          label="Total Users"
+          value={m.totalUsers.toLocaleString()}
+          icon="users"
+          accent="#60a5fa"
+          sub={`${m.freeUsers} free`}
+        />
+        <KpiCard
+          label="Paying Subscribers"
+          value={m.payingUsers.toLocaleString()}
+          icon="zap"
+          accent="#34d399"
+          sub={`${conversion}% conversion`}
+        />
+        <KpiCard
+          label="New This Month"
+          value={m.newThisMonth.toLocaleString()}
+          icon="plus"
+          accent="#f472b6"
+        />
+        <KpiCard
+          label="Coupon Redemptions"
+          value={m.couponUsage.toLocaleString()}
+          icon="tag"
+          accent="#fb923c"
+        />
       </div>
 
       <div className="admin-charts-row">
         <div className="card card-pad admin-chart-card">
           <div className="admin-chart-title">
             <Icon name="bar-chart" size={15} />
-            MRR Trend (last 6 months)
+            Revenue collected (last 6 months)
           </div>
-          <MiniBarChart data={trend} />
+          {t.length > 0
+            ? <MiniBarChart data={t} />
+            : <p className="admin-empty" style={{ padding: "24px 0" }}>No payment events found.</p>}
         </div>
 
         <div className="card card-pad admin-chart-card">
           <div className="admin-chart-title">
             <Icon name="layers" size={15} />
-            Plan Distribution ({metrics.totalUsers} users)
+            Plan Distribution ({m.totalUsers} users)
           </div>
-          <PlanDistribution byPlan={metrics.byPlan} total={metrics.totalUsers} />
+          {Object.keys(m.byPlan).length > 0
+            ? <PlanDistribution byPlan={m.byPlan} total={m.totalUsers} />
+            : <p className="admin-empty" style={{ padding: "24px 0" }}>No subscription data found.</p>}
         </div>
       </div>
     </div>

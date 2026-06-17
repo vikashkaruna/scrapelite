@@ -51,6 +51,20 @@ export async function saveGeneralConfig(settings) {
   return data;
 }
 
+// ── Revenue dashboard ────────────────────────────────────────────────────────
+
+const REVENUE_ENDPOINT = "/api/admin-revenue";
+
+/** Fetch live revenue metrics and trend from Supabase. Returns { metrics, trend, fromSeed, warning? }. */
+export async function getRevenueData() {
+  const res = await fetch(REVENUE_ENDPOINT, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Failed to load revenue data (${res.status})`);
+  return data;
+}
+
 // ── User management ──────────────────────────────────────────────────────────
 
 const USERS_ENDPOINT = "/api/admin-users";
