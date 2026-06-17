@@ -1,8 +1,8 @@
 // admin-users.js — admin user management via Supabase Auth admin API.
 //
-// GET  /api/admin-users         — list all registered users (token-gated)
-// PATCH /api/admin-users        — extend user bonus extractions (token-gated)
-// POST  /api/admin-users        — send Supabase invite (token-gated)
+// GET   /api/admin-users — list all registered users (token-gated)
+// PATCH /api/admin-users — extend bonus extractions OR assign coupon (token-gated)
+// POST  /api/admin-users — send Supabase invite (token-gated)
 //
 // Falls back gracefully when SUPABASE_URL / SUPABASE_SERVICE_KEY are absent.
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
@@ -66,10 +66,10 @@ export const handler = async (event) => {
       const authData = await sbFetch(db, "/auth/v1/admin/users?per_page=1000&page=1");
       const authUsers = Array.isArray(authData.users) ? authData.users : [];
 
-      // 2. Subscriptions — keyed by session_id AND provider_customer_id for join attempts.
+      // 2. Subscriptions — include period dates for plan start/end display.
       const subs = await sbFetch(
         db,
-        "/rest/v1/subscriptions?select=session_id,plan_id,status,provider,provider_customer_id"
+        "/rest/v1/subscriptions?select=session_id,plan_id,status,provider,provider_customer_id,current_period_start,current_period_end"
       ).catch(() => []);
 
       // 3. Current-month usage records for extraction counts.
@@ -78,7 +78,14 @@ export const handler = async (event) => {
         `/rest/v1/usage_records?select=session_id,extractions&month=eq.${currentMonth}`
       ).catch(() => []);
 
-      // Build lookup maps (session_id may equal auth user id on some clients, or not).
+      // 4. Coupon redemptions — most-recent coupon per session_id.
+      //    Ordered desc so first entry per session is the latest.
+      const couponRecs = await sbFetch(
+        db,
+        "/rest/v1/coupon_redemptions?select=session_id,coupon_code&order=created_at.desc&limit=5000"
+      ).catch(() => []);
+
+      // Build lookup maps.
       const subMap = {};
       for (const s of subs) {
         subMap[s.session_id] = s;
@@ -87,6 +94,11 @@ export const handler = async (event) => {
       const usageMap = {};
       for (const r of usageRecs) {
         usageMap[r.session_id] = r;
+      }
+      // First entry wins (desc order = latest coupon per session).
+      const couponMap = {};
+      for (const c of couponRecs) {
+        if (!couponMap[c.session_id]) couponMap[c.session_id] = c.coupon_code;
       }
 
       const today = new Date().toISOString().slice(0, 10);
@@ -97,22 +109,28 @@ export const handler = async (event) => {
         const sub     = subMap[au.id] || null;
         const usage   = usageMap[au.id] || null;
 
-        const name = meta.full_name || meta.name || au.email?.split("@")[0] || "User";
+        const name   = meta.full_name || meta.name || au.email?.split("@")[0] || "User";
         const planId = sub?.plan_id || appMeta.plan_id || meta.plan_id || "free";
 
+        // Coupon: prefer admin-assigned (user metadata) then payment-flow redemption.
+        const couponAvailed = meta.coupon_availed || couponMap[au.id] || null;
+
         return {
-          id:                    au.id,
+          id:                   au.id,
           name,
-          email:                 au.email || "",
+          email:                au.email || "",
           planId,
-          bonusExtractions:      Number(meta.bonus_extractions || 0),
-          source:                meta.source || appMeta.provider || "organic",
-          joinedAt:              (au.created_at || today).slice(0, 10),
-          extractionsThisMonth:  usage?.extractions || 0,
-          lastActive:            (au.last_sign_in_at || au.created_at || today).slice(0, 10),
-          inviteSent:            !au.email_confirmed_at,
-          confirmed:             !!au.email_confirmed_at,
-          provider:              appMeta.provider || sub?.provider || null,
+          planStart:            sub?.current_period_start?.slice(0, 10) || null,
+          planEnd:              sub?.current_period_end?.slice(0, 10) || null,
+          couponAvailed,
+          bonusExtractions:     Number(meta.bonus_extractions || 0),
+          source:               meta.source || appMeta.provider || "organic",
+          joinedAt:             (au.created_at || today).slice(0, 10),
+          extractionsThisMonth: usage?.extractions ?? 0,
+          lastActive:           (au.last_sign_in_at || au.created_at || today).slice(0, 10),
+          inviteSent:           !au.email_confirmed_at,
+          confirmed:            !!au.email_confirmed_at,
+          provider:             appMeta.provider || sub?.provider || null,
         };
       });
 
@@ -126,18 +144,35 @@ export const handler = async (event) => {
     }
   }
 
-  // ── PATCH — extend bonus extractions (stored in auth user metadata) ───────────
+  // ── PATCH — extend bonus extractions OR assign coupon ─────────────────────────
   if (event.httpMethod === "PATCH") {
     if (!db) return respond(503, { error: "Supabase not configured." });
     try {
       const body = JSON.parse(event.body || "{}");
+
+      // ── assign coupon ──
+      if (body.action === "assign_coupon") {
+        const { userId, couponCode } = body;
+        if (!userId || !couponCode?.trim()) {
+          return respond(400, { error: "userId and couponCode required." });
+        }
+        const code = couponCode.trim().toUpperCase();
+        const au   = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
+        const meta = au.raw_user_meta_data || {};
+        await sbFetch(db, `/auth/v1/admin/users/${userId}`, {
+          method: "PUT",
+          body: JSON.stringify({ user_metadata: { ...meta, coupon_availed: code } }),
+        });
+        return respond(200, { ok: true, userId, couponCode: code });
+      }
+
+      // ── extend bonus extractions (default) ──
       const { userId, bonus } = body;
       if (!userId || !Number.isFinite(Number(bonus)) || Number(bonus) < 1) {
         return respond(400, { error: "userId and bonus (≥1) required." });
       }
 
-      // Fetch current metadata to merge safely.
-      const au  = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
+      const au   = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
       const meta = au.raw_user_meta_data || {};
       const newBonus = Number(meta.bonus_extractions || 0) + Number(bonus);
 

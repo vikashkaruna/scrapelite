@@ -1957,6 +1957,18 @@
   color: var(--pill-color, #888);
 }
 .source-cell { display: flex; align-items: center; gap: 6px; font-size: .86em; color: var(--text-2); text-transform: capitalize; }
+.user-coupon-pill {
+  display: inline-block; padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: .72em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  background: color-mix(in srgb, #f59e0b 14%, transparent); color: #b45309;
+}
+.user-period-cell { display: flex; flex-direction: column; gap: 1px; }
+.user-period-date { font-size: .79em; color: var(--text-2); font-weight: 550; white-space: nowrap; }
+.user-period-date.user-period-end { color: var(--text-3); }
+.user-period-sep { font-size: .72em; color: var(--text-3); line-height: 1; }
+.user-period-none { color: var(--text-3); font-size: .88em; }
+.user-extractions { font-weight: 600; font-size: .9em; }
+.user-actions-cell { display: flex; align-items: center; gap: 4px; }
 
 /* Modals (extend/invite) */
 .modal-backdrop {

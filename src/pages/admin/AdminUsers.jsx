@@ -1,7 +1,9 @@
 // AdminUsers.jsx — real user management via Supabase Auth admin API.
 // Falls back to empty state (with a notice) when Supabase is not configured.
 import { useState, useEffect, useCallback } from "react";
-import { fetchRealUsers, extendUserBonus, inviteUserByEmail } from "../../lib/adminConfigService.js";
+import {
+  fetchRealUsers, extendUserBonus, inviteUserByEmail, assignUserCoupon,
+} from "../../lib/adminConfigService.js";
 import { addAdminUser } from "../../lib/adminService.js";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useToast } from "../../components/Toast.jsx";
@@ -27,6 +29,22 @@ function PlanPill({ planId }) {
   );
 }
 
+function PlanPeriod({ start, end }) {
+  if (!start && !end) return <span className="user-period-none">—</span>;
+  return (
+    <div className="user-period-cell">
+      {start && <span className="user-period-date">{start}</span>}
+      {start && end && <span className="user-period-sep">→</span>}
+      {end && <span className="user-period-date user-period-end">{end}</span>}
+    </div>
+  );
+}
+
+function CouponPill({ code }) {
+  if (!code) return <span className="user-period-none">—</span>;
+  return <span className="user-coupon-pill">{code}</span>;
+}
+
 function ExtendModal({ user, onClose, onSave, saving }) {
   const [bonus, setBonus] = useState(100);
   return (
@@ -45,6 +63,52 @@ function ExtendModal({ user, onClose, onSave, saving }) {
         <div className="modal-actions">
           <Button variant="primary" size="sm" disabled={saving} onClick={() => onSave(user, bonus)}>
             {saving ? "Saving…" : "Apply"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CouponModal({ user, onClose, onSave, saving }) {
+  const [code, setCode] = useState(user.couponAvailed || "");
+  const [err, setErr]   = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!code.trim()) { setErr("Coupon code is required."); return; }
+    try { await onSave(user, code.trim().toUpperCase()); }
+    catch (e) { setErr(e.message); }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box card card-pad" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Assign coupon for {user.name}</h3>
+          <button className="modal-close" onClick={onClose}><Icon name="x" size={16} /></button>
+        </div>
+        <p className="modal-sub">
+          Record a coupon code against this user's account. This does not apply a discount
+          retroactively — it marks the coupon as availed for reporting.
+        </p>
+        <div className="cf-field">
+          <label>Coupon code</label>
+          <input
+            type="text" placeholder="e.g. LAUNCH20" value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            style={{ textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 }}
+          />
+        </div>
+        {err && (
+          <div className="admin-ai-notice warn" style={{ marginBottom: 0 }}>
+            <Icon name="alert-circle" size={14} /><span>{err}</span>
+          </div>
+        )}
+        <div className="modal-actions">
+          <Button variant="primary" size="sm" icon="tag" disabled={saving} onClick={submit}>
+            {saving ? "Saving…" : "Assign coupon"}
           </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
         </div>
@@ -133,10 +197,12 @@ export default function AdminUsers() {
   const [search, setSearch]     = useState("");
   const [planFilter, setPlan]   = useState("all");
 
-  const [extendUser, setExtend]   = useState(null);
-  const [extSaving, setExtSaving] = useState(false);
-  const [inviteOpen, setInvite]   = useState(false);
-  const [invSaving, setInvSaving] = useState(false);
+  const [extendUser, setExtend]     = useState(null);
+  const [extSaving, setExtSaving]   = useState(false);
+  const [couponUser, setCoupon]     = useState(null);
+  const [couponSaving, setCouponSaving] = useState(false);
+  const [inviteOpen, setInvite]     = useState(false);
+  const [invSaving, setInvSaving]   = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,11 +244,26 @@ export default function AdminUsers() {
     }
   };
 
+  const handleAssignCoupon = async (user, couponCode) => {
+    setCouponSaving(true);
+    try {
+      const result = await assignUserCoupon(user.id, couponCode);
+      setUsers((prev) =>
+        prev.map((u) => u.id === user.id ? { ...u, couponAvailed: result.couponCode } : u)
+      );
+      showToast(`Coupon ${result.couponCode} assigned to ${user.name}.`);
+      setCoupon(null);
+    } catch (e) {
+      throw e; // re-throw so CouponModal displays the error inline
+    } finally {
+      setCouponSaving(false);
+    }
+  };
+
   const handleInvite = async (form) => {
     setInvSaving(true);
     try {
       await inviteUserByEmail(form);
-      // Also optimistically add to local list so the invite appears immediately.
       addAdminUser({ ...form, inviteSent: true });
       setUsers((prev) => [
         {
@@ -190,6 +271,9 @@ export default function AdminUsers() {
           name: form.name,
           email: form.email,
           planId: form.planId || "free",
+          planStart: null,
+          planEnd: null,
+          couponAvailed: null,
           bonusExtractions: 0,
           source: form.source || "invite",
           joinedAt: new Date().toISOString().slice(0, 10),
@@ -204,12 +288,11 @@ export default function AdminUsers() {
       setInvite(false);
     } catch (e) {
       if (e.localOnly) {
-        // Supabase not configured — fall back to local-only record
         addAdminUser({ ...form, inviteSent: true });
         showToast("Invite recorded locally (Supabase not configured).");
         setInvite(false);
       } else {
-        throw e; // re-throw so InviteModal can display the error
+        throw e;
       }
     } finally {
       setInvSaving(false);
@@ -223,7 +306,7 @@ export default function AdminUsers() {
           <h2 className="admin-section-title">User Management</h2>
           <p className="admin-section-sub">
             {loading ? "Loading…" : `${users.length} registered user${users.length !== 1 ? "s" : ""}`}
-            {!loading && " — track sign-ups, extend limits, send invites."}
+            {!loading && " — track sign-ups, extend limits, assign coupons, send invites."}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -236,7 +319,6 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* Supabase-not-configured notice */}
       {(fromSeed || warning) && !loading && (
         <div className="admin-ai-notice warn">
           <Icon name="alert-triangle" size={15} />
@@ -280,6 +362,8 @@ export default function AdminUsers() {
                 <tr>
                   <th>User</th>
                   <th>Plan</th>
+                  <th>Coupon</th>
+                  <th>Plan period</th>
                   <th>Extractions (mo)</th>
                   <th>Bonus</th>
                   <th>Source</th>
@@ -291,7 +375,7 @@ export default function AdminUsers() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="admin-empty">
+                    <td colSpan={10} className="admin-empty">
                       {users.length === 0
                         ? fromSeed
                           ? "No users yet — Supabase not configured or no sign-ups."
@@ -317,7 +401,13 @@ export default function AdminUsers() {
                         </div>
                       </td>
                       <td><PlanPill planId={u.planId} /></td>
-                      <td>{u.extractionsThisMonth || "—"}</td>
+                      <td><CouponPill code={u.couponAvailed} /></td>
+                      <td><PlanPeriod start={u.planStart} end={u.planEnd} /></td>
+                      <td className="user-extractions">
+                        {u.extractionsThisMonth > 0
+                          ? u.extractionsThisMonth
+                          : <span className="user-period-none">0</span>}
+                      </td>
                       <td>{u.bonusExtractions > 0 ? `+${u.bonusExtractions}` : "—"}</td>
                       <td>
                         <div className="source-cell">
@@ -328,9 +418,14 @@ export default function AdminUsers() {
                       <td>{u.joinedAt || "—"}</td>
                       <td>{u.lastActive || "—"}</td>
                       <td>
-                        <button className="icon-action" title="Extend usage" onClick={() => setExtend(u)}>
-                          <Icon name="zap" size={14} />
-                        </button>
+                        <div className="user-actions-cell">
+                          <button className="icon-action" title="Extend usage" onClick={() => setExtend(u)}>
+                            <Icon name="zap" size={14} />
+                          </button>
+                          <button className="icon-action" title="Assign coupon" onClick={() => setCoupon(u)}>
+                            <Icon name="tag" size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -347,6 +442,14 @@ export default function AdminUsers() {
           saving={extSaving}
           onClose={() => setExtend(null)}
           onSave={handleExtend}
+        />
+      )}
+      {couponUser && (
+        <CouponModal
+          user={couponUser}
+          saving={couponSaving}
+          onClose={() => setCoupon(null)}
+          onSave={handleAssignCoupon}
         />
       )}
       {inviteOpen && (
