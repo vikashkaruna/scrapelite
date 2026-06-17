@@ -105,6 +105,7 @@ import {
   FileUp,
   Columns,
   Briefcase,
+  IndianRupee,
 } from "lucide-react";
 
 const MAP = {
@@ -211,6 +212,7 @@ const MAP = {
   "file-up": FileUp,
   columns: Columns,
   briefcase: Briefcase,
+  "indian-rupee": IndianRupee,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

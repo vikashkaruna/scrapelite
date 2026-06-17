@@ -24,6 +24,11 @@ function displayLimit(val) {
   return val === Infinity ? INF_LABEL : String(val);
 }
 
+function inrGst(v) {
+  const n = Number(v);
+  return n > 0 ? `₹${Math.round(n * 1.18).toLocaleString("en-IN")} incl. GST` : null;
+}
+
 function PlanEditor({ plan, onSave, onReset }) {
   const [form, setForm] = useState({
     price_usd:        plan.price_usd,
@@ -44,6 +49,7 @@ function PlanEditor({ plan, onSave, onReset }) {
     white_label_pdf: plan.limits.white_label_pdf,
   });
   const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const save = () => {
     onSave(plan.id, {
@@ -66,18 +72,29 @@ function PlanEditor({ plan, onSave, onReset }) {
         white_label_pdf:               form.white_label_pdf,
       },
     });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
     setOpen(false);
   };
 
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const inrMonthly = Number(form.price_inr);
+  const inrAnnual  = Number(form.price_inr_annual);
 
   return (
     <div className="plan-editor-card card">
       <div className="plan-editor-header" onClick={() => setOpen((o) => !o)}>
         <div className="plan-editor-info">
           <span className="plan-editor-name">{form.name}</span>
-          <span className="plan-editor-price">${form.price_usd}/mo</span>
-          {plan.highlight && <span className="plan-editor-badge">Highlighted</span>}
+          <span className="plan-editor-price">
+            ${form.price_usd}/mo
+            {inrMonthly > 0 && (
+              <span className="plan-editor-price-inr"> · ₹{inrMonthly.toLocaleString("en-IN")}/mo</span>
+            )}
+          </span>
+          {saved && <span className="plan-editor-badge" style={{ background: "var(--success-soft)", color: "var(--success)" }}>Saved</span>}
+          {plan.highlight && !saved && <span className="plan-editor-badge">Highlighted</span>}
         </div>
         <div className="plan-editor-actions" onClick={(e) => e.stopPropagation()}>
           <button className="icon-action" title="Reset to defaults" onClick={() => { onReset(plan.id); }}>
@@ -101,26 +118,53 @@ function PlanEditor({ plan, onSave, onReset }) {
             </div>
           </div>
 
+          {/* USD Pricing */}
+          <div className="admin-price-section-label">
+            <Icon name="dollar-sign" size={13} /> USD Pricing
+          </div>
           <div className="cf-row">
             <div className="cf-field">
-              <label>USD / month</label>
-              <input type="number" min="0" step="0.01" value={form.price_usd}
-                onChange={(e) => f("price_usd", e.target.value)} />
+              <label>Monthly price (USD)</label>
+              <div className="price-input-wrap">
+                <span className="price-prefix">$</span>
+                <input type="number" min="0" step="0.01" value={form.price_usd}
+                  onChange={(e) => f("price_usd", e.target.value)} />
+              </div>
             </div>
             <div className="cf-field">
-              <label>USD / month (annual)</label>
-              <input type="number" min="0" step="0.01" value={form.price_usd_annual}
-                onChange={(e) => f("price_usd_annual", e.target.value)} />
+              <label>Annual monthly equiv. (USD)</label>
+              <div className="price-input-wrap">
+                <span className="price-prefix">$</span>
+                <input type="number" min="0" step="0.01" value={form.price_usd_annual}
+                  onChange={(e) => f("price_usd_annual", e.target.value)} />
+              </div>
+              <p className="cf-hint">Shown on /pricing when "Annual" is selected.</p>
+            </div>
+          </div>
+
+          {/* INR Pricing */}
+          <div className="admin-price-section-label">
+            <Icon name="indian-rupee" size={13} /> INR Pricing
+            <span className="admin-price-section-hint">Base prices (pre-GST). 18% GST added at checkout.</span>
+          </div>
+          <div className="cf-row">
+            <div className="cf-field">
+              <label>Monthly price (INR, base)</label>
+              <div className="price-input-wrap">
+                <span className="price-prefix">₹</span>
+                <input type="number" min="0" step="1" value={form.price_inr}
+                  onChange={(e) => f("price_inr", e.target.value)} />
+              </div>
+              {inrGst(form.price_inr) && <p className="cf-hint">{inrGst(form.price_inr)}/mo charged</p>}
             </div>
             <div className="cf-field">
-              <label>INR / month (base, pre-GST)</label>
-              <input type="number" min="0" step="1" value={form.price_inr}
-                onChange={(e) => f("price_inr", e.target.value)} />
-            </div>
-            <div className="cf-field">
-              <label>INR / month (annual, base)</label>
-              <input type="number" min="0" step="1" value={form.price_inr_annual}
-                onChange={(e) => f("price_inr_annual", e.target.value)} />
+              <label>Annual monthly equiv. (INR, base)</label>
+              <div className="price-input-wrap">
+                <span className="price-prefix">₹</span>
+                <input type="number" min="0" step="1" value={form.price_inr_annual}
+                  onChange={(e) => f("price_inr_annual", e.target.value)} />
+              </div>
+              {inrGst(form.price_inr_annual) && <p className="cf-hint">{inrGst(form.price_inr_annual)}/mo charged (annual billing)</p>}
             </div>
           </div>
 
@@ -199,13 +243,20 @@ function BundleEditor({ bundle, onSave }) {
         </div>
         <div className="cf-field">
           <label>Price (USD)</label>
-          <input type="number" min="0" step="0.01" value={form.price_usd}
-            onChange={(e) => f("price_usd", e.target.value)} />
+          <div className="price-input-wrap">
+            <span className="price-prefix">$</span>
+            <input type="number" min="0" step="0.01" value={form.price_usd}
+              onChange={(e) => f("price_usd", e.target.value)} />
+          </div>
         </div>
         <div className="cf-field">
           <label>Price (INR, base)</label>
-          <input type="number" min="0" step="1" value={form.price_inr}
-            onChange={(e) => f("price_inr", e.target.value)} />
+          <div className="price-input-wrap">
+            <span className="price-prefix">₹</span>
+            <input type="number" min="0" step="1" value={form.price_inr}
+              onChange={(e) => f("price_inr", e.target.value)} />
+          </div>
+          {inrGst(form.price_inr) && <p className="cf-hint">{inrGst(form.price_inr)} charged</p>}
         </div>
       </div>
       <div className="cf-field">
