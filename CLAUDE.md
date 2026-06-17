@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-17 — R16 (batch mode parity + guest trial gate) merged to main; R17 (logout data cleanup, guest hard limits, admin General Settings page) on branch `claude/enrich-batch-mall-3tkc1s` — E2E tested, pushed, Netlify branch deploy triggered**
+> **Last updated: 2026-06-17 — R17 (logout cleanup, guest hard limits, admin General Settings) merged to main and deployed to Netlify**
 
 ---
 
@@ -17,9 +17,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` has R16; active feature branch `claude/enrich-batch-mall-3tkc1s` has R17 (ahead of main by 1 commit) |
-| **Latest main commit** | R16 merge: batch mode parity (Map site chip, per-URL content gen, enrichMeta persistence) + guest trial gate (soft prompt, sign-in/out bypass fix) |
-| **Latest branch commit** | R17: logout data cleanup + guest hard limits (10 single / 5 batch) + admin General Settings page |
+| **Current branch** | `main` — R17 merged and pushed; `claude/enrich-batch-mall-3tkc1s` is the completed feature branch (can be deleted) |
+| **Latest main commit** | R17 merge: logout cleanup + guest hard limits (10 single / 5 batch) + admin General Settings page + globalSettingsService |
+| **Latest branch commit** | Same as main (branch fully merged) |
 
 ---
 
@@ -47,7 +47,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain; `scrapeProviders.js` provider registry + chain runners; `extract.js` rewritten to use chain; `config.js` `hasFirecrawl` covers all providers + `VITE_ENABLE_EXTRACT` flag | ✅ merged to main |
 | `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; OG preview card (800ms debounce); clickable feature cards map to intent chips; FAB (layers-2) beside Extract navigates to /batch; `BulkUploadModal` component created but now only reachable from /batch; Batch page unified intent chips + run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
 | `claude/enrich-batch-mall-3tkc1s` | **R16**: Batch mode parity — Map site intent chip (5th), per-URL content generation toggle (SEO/competitor/social), enrichMeta tab persistence for contacts/pricing/custom; Guest trial gate — `GuestTrialProvider`, `GuestTrialBanner`, `GuestTrialModal`, `guestTrialService`; soft gate (TRIAL_LIMIT=3, re-prompts every 2); sign-in/out bypass prevention (count never cleared on login) | ✅ merged to main |
-| `claude/enrich-batch-mall-3tkc1s` (R17) | **R17**: Logout clears sensitive data (7 localStorage keys + navigate to /); guest hard limits (10 single-URL / 5 batch runs, configurable); non-dismissible hard block modal; pre-flight checks in ExtractionProvider + Batch; Admin General Settings page (`/admin/general`) + Netlify fn `admin-general-config.js` + `globalSettingsService.js` | ⚠️ on branch — NOT yet merged to main; Netlify branch deploy triggered |
+| `claude/enrich-batch-mall-3tkc1s` (R17) | **R17**: Logout clears sensitive data (7 localStorage keys + navigate to /); guest hard limits (10 single-URL / 5 batch runs, configurable); non-dismissible hard block modal; pre-flight checks in ExtractionProvider + Batch; Admin General Settings page (`/admin/general`) + Netlify fn `admin-general-config.js` + `globalSettingsService.js` | ✅ merged to main |
 
 ---
 
@@ -842,9 +842,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - `src/App.jsx` — added `AdminGeneral` import + route
 - `src/styles/screens.css` — admin-general-* CSS classes; `.guest-trial-overlay.gtm-hard` background; `.gtm-icon-warn`
 
-**Status:** E2E tested ✅ — branch pushed ✅ — Netlify branch deploy triggered ✅ — merge to main pending user validation
+**Status:** E2E tested ✅ — merged to main ✅ — pushed to origin ✅ — Netlify auto-deploy triggered ✅
 
-- [ ] **Merge R17 to main** after user validates the Netlify branch deploy
+- [x] ~~Merge R17 to main~~ — done (`a4bca63`)
 - [ ] Supabase `app_config` table needs the `general` key row — auto-created on first POST save via AdminGeneral page (upsert)
 
 ---
@@ -963,9 +963,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ```bash
 cd /home/user/scrapelite
-# R17 is on branch — switch to branch if continuing R17 work, or pull main if starting fresh after merge
-git checkout claude/enrich-batch-mall-3tkc1s
-git pull origin claude/enrich-batch-mall-3tkc1s
+git checkout main
+git pull origin main
 npm run dev   # http://localhost:5173
 ```
 
@@ -1123,7 +1122,8 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-[branch]   chore: update CLAUDE.md — R17 session state, all sections updated
+a4bca63  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R17: logout cleanup + guest hard limits + admin general settings
+3af49a5  chore: update CLAUDE.md — R16/R17 session state, all sections updated
 09fbdda  feat(R17): logout data cleanup + guest hard limits + admin general settings
 52c6631  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R16: batch mode parity + guest trial gate
 663bda6  Update founder description for clarity
