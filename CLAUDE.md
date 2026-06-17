@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-17 — R17 (logout cleanup, guest hard limits, admin General Settings) merged to main and deployed to Netlify**
+> **Last updated: 2026-06-17 — R18 (Admin dashboard upgrades: live revenue, real users, INR pricing, coupon assignment) merged to main and deployed to Netlify**
 
 ---
 
@@ -17,9 +17,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — R17 merged and pushed; `claude/enrich-batch-mall-3tkc1s` is the completed feature branch (can be deleted) |
-| **Latest main commit** | R17 merge: logout cleanup + guest hard limits (10 single / 5 batch) + admin General Settings page + globalSettingsService |
-| **Latest branch commit** | Same as main (branch fully merged) |
+| **Current branch** | `main` — R18 merged and pushed |
+| **Latest main commit** | `df9e4ad` — R18: admin dashboard upgrades (live revenue, real users, INR pricing, coupon assignment) |
+| **Latest branch commit** | Same as main |
 
 ---
 
@@ -48,6 +48,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; OG preview card (800ms debounce); clickable feature cards map to intent chips; FAB (layers-2) beside Extract navigates to /batch; `BulkUploadModal` component created but now only reachable from /batch; Batch page unified intent chips + run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
 | `claude/enrich-batch-mall-3tkc1s` | **R16**: Batch mode parity — Map site intent chip (5th), per-URL content generation toggle (SEO/competitor/social), enrichMeta tab persistence for contacts/pricing/custom; Guest trial gate — `GuestTrialProvider`, `GuestTrialBanner`, `GuestTrialModal`, `guestTrialService`; soft gate (TRIAL_LIMIT=3, re-prompts every 2); sign-in/out bypass prevention (count never cleared on login) | ✅ merged to main |
 | `claude/enrich-batch-mall-3tkc1s` (R17) | **R17**: Logout clears sensitive data (7 localStorage keys + navigate to /); guest hard limits (10 single-URL / 5 batch runs, configurable); non-dismissible hard block modal; pre-flight checks in ExtractionProvider + Batch; Admin General Settings page (`/admin/general`) + Netlify fn `admin-general-config.js` + `globalSettingsService.js` | ✅ merged to main |
+| `main` (R18 — direct commits) | **R18**: Admin dashboard upgrades — AdminPricing INR inputs + GST preview (`indian-rupee` icon); AdminUsers real Supabase data (plan period, coupon column, assign coupon action); AdminRevenue live data from Supabase (`admin-revenue.js` Netlify fn); coupon assign modal redesigned (picker from manual-only coupons, discount % override, persistence via `coupon_redemptions`); `planId='manual'` coupon type (admin-assign only, blocked in `validateCoupon`) | ✅ merged to main |
 
 ---
 
@@ -149,6 +150,8 @@ src/
 │   ├── usageRepo.js                  ★ V5: Supabase sync for usage_records + usage_alerts
 │   ├── alertService.js               ★ V5: getAlertConfig, saveAlertConfig, checkAndFireAlerts
 │   ├── adminService.js               ★ V5: coupon CRUD, user management, revenue metrics
+│   │                                 ★ R18: validateCoupon blocks planId='manual' coupons (admin-assign only)
+│   │                                 planId='manual' coupons shown ONLY in admin user coupon picker
 │   ├── paymentConfig.js              ★ V5c: getPaymentProvider(currency), hasPayment, PROVIDER_META
 │   │                                 INR → Razorpay; USD → Stripe
 │   ├── paymentService.js             ★ V5c: initiateCheckout (Stripe/Razorpay/demo), pending payment
@@ -190,7 +193,8 @@ src/
 │   ├── Footer.jsx                    Slim single-row: socials (LinkedIn/Twitter) | copyright | legal links
 │   ├── Button.jsx                    variant: primary/secondary/ghost/danger; size sm; fullWidth
 │   ├── Toggle.jsx                    Reusable toggle switch; accepts `tooltip` prop → hover popover
-│   ├── Icon.jsx                      lucide-react name-map (76 icons registered)
+│   ├── Icon.jsx                      lucide-react name-map (77 icons registered)
+│   │                                 ★ R18: added IndianRupee → "indian-rupee"
 │   ├── StructuredData.jsx            Renders arbitrary JSON (enrichment data)
 │   ├── ContentModal.jsx              Generate content modal; 3 formats; copy button; ★ R13: calls incrementContentGenerations()
 │   ├── EmailModal.jsx                Send email modal; multi-recipient
@@ -248,10 +252,23 @@ src/
         ├── AdminLayout.jsx           PIN gate (server-verified via admin-auth fn; async login,
         │                             token session, 5→60s lockout), collapsible sidebar (chevron + pin)
         │                             ★ R17: NAV includes General Settings (/admin/general)
-        ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
-        ├── AdminPricing.jsx          Editable plan prices + limits + global discount + bundles
-        ├── AdminCoupons.jsx          Coupon CRUD (% or bonus extractions)
-        ├── AdminUsers.jsx            User table: search, filter, extend usage, invite
+        ├── AdminRevenue.jsx          ★ R18: Live KPIs + revenue trend from Supabase (admin-revenue.js)
+        │                             Parallel fetch: auth users, subscriptions, payment_events, coupon_redemptions
+        │                             MRR from active subs × plan prices; trend from captured payment_events
+        │                             Loading/error/warning states; Refresh button; zero state when Supabase unconfigured
+        ├── AdminPricing.jsx          ★ R18: Editable plan prices + limits + global discount + bundles
+        │                             USD Pricing section ($-prefix inputs) + INR Pricing section (₹-prefix, GST hints)
+        │                             Collapsed header shows ₹X/mo alongside $X/mo when INR set
+        │                             BundleEditor also has ₹-prefix + GST hint
+        ├── AdminCoupons.jsx          ★ R18: Coupon CRUD (% or bonus extractions)
+        │                             Added planId='manual' option "Manually Assigned To User(s)"
+        │                             Manual coupons show purple "Manual assign" pill in Plan column
+        │                             Hint note when manual selected: "users cannot self-apply it"
+        ├── AdminUsers.jsx            ★ R18: Real Supabase data — plan period, coupon, extractions columns
+        │                             New columns: Coupon (with discount % pill), Plan period (start→end)
+        │                             Extractions/mo shows 0 explicitly; both Extend and Assign Coupon action icons
+        │                             CouponModal: picker of planId='manual' active coupons only; discount % override;
+        │                             preview row; persistence via coupon_redemptions upsert on backend
         ├── AdminAI.jsx               ★ AI provider chain editor — reorder providers, model per
         │                             provider, enable toggles, max tokens (via adminConfigService)
         └── AdminGeneral.jsx          ★ R17: Global application settings editor
@@ -266,6 +283,14 @@ netlify/
     ├── admin-ai-config.js            ★ GET=config+key presence; POST=upsert app_config 'ai' (token-gated)
     ├── admin-general-config.js       ★ R17: GET=merge app_config 'general' + DEFAULTS; POST=sanitize+upsert (token-gated)
     │                                 Sanitizes 4 integer fields with min/max bounds; localStorage fallback when no Supabase
+    ├── admin-revenue.js              ★ R18: GET /api/admin-revenue — live revenue KPIs + 6-month trend (token-gated)
+    │                                 Parallel fetch: auth users (total/new), subscriptions (active plan dist, MRR),
+    │                                 payment_events (captured→monthly USD revenue), coupon_redemptions (count)
+    │                                 INR paise→USD at 83.5; zero-state + warning when Supabase unconfigured
+    ├── admin-users.js                ★ R18: GET fetches subscriptions.current_period_start/end + coupon_redemptions
+    │                                 Returns planStart, planEnd, couponAvailed, couponDiscount per user
+    │                                 PATCH action='assign_coupon': writes coupon_availed+coupon_discount to auth
+    │                                 metadata AND upserts to coupon_redemptions (session_id=userId) for persistence
     ├── lib/aiProviders.js            ★ provider adapters + loadAiConfig() + runChain() fallback
     ├── lib/adminToken.js             ★ verifyAdminToken() — HMAC check of admin-auth session token
     ├── extract.js                    POST /api/extract — multi-provider scraping proxy (Firecrawl→Spider→Jina→Direct)
@@ -825,26 +850,28 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ## Outstanding tasks
 
-### R17 — On branch `claude/enrich-batch-mall-3tkc1s` (2026-06-17, NOT yet merged to main)
+### R18 — Merged to main (2026-06-17)
 
 **Files added/changed:**
-- `src/lib/globalSettingsService.js` (NEW) — 5-min TTL cache for admin-controlled guest limits
-- `netlify/functions/admin-general-config.js` (NEW) — GET/POST for `app_config key='general'`; token-gated POST; sanitizes 4 integer fields
-- `src/lib/guestTrialService.js` — added `batchCount`, `getGuestBatchCount`, `incrementGuestBatchCount`, `isSingleHardLimitReached`, `isBatchHardLimitReached`, `SINGLE_HARD_LIMIT`, `BATCH_HARD_LIMIT` exports
-- `src/components/GuestTrialProvider.jsx` — SENSITIVE_KEYS logout cleanup + navigate("/"); hard limit state; mount useEffect for page-reload restore; dynamic settings from globalSettingsService
-- `src/components/GuestTrialModal.jsx` — hard block mode (non-dismissible, own background, warning icon)
-- `src/components/GuestTrialBanner.jsx` — shows both single + batch remaining counts
-- `src/components/ExtractionProvider.jsx` — pre-flight `checkCanExtractSingle()` before extraction
-- `src/pages/Batch.jsx` — pre-flight `checkCanExtractBatch()` before run; `trackGuestBatchRun` instead of `trackGuestExtraction`
-- `src/lib/adminConfigService.js` — added `getGeneralConfig`, `saveGeneralConfig` exports
-- `src/pages/admin/AdminGeneral.jsx` (NEW) — 4 configurable fields; load/save/reset; Supabase-not-configured warning
-- `src/pages/admin/AdminLayout.jsx` — added `/admin/general` to NAV
-- `src/App.jsx` — added `AdminGeneral` import + route
-- `src/styles/screens.css` — admin-general-* CSS classes; `.guest-trial-overlay.gtm-hard` background; `.gtm-icon-warn`
+- `netlify/functions/admin-revenue.js` (NEW) — GET /api/admin-revenue; token-gated; parallel Supabase fetch for live MRR, trend, user counts, coupon usage; INR paise→USD at 83.5; falls back to seed data with warning when Supabase unconfigured
+- `netlify/functions/admin-users.js` (NEW) — GET/PATCH/POST /api/admin-users; Supabase Auth Admin API; returns planStart/planEnd/couponAvailed/couponDiscount/extractionsThisMonth per user; PATCH action='assign_coupon' writes to auth metadata + upserts coupon_redemptions (session_id=userId); POST = Supabase invite
+- `src/components/Icon.jsx` — added `IndianRupee` → `"indian-rupee"` (77 icons total)
+- `src/lib/adminService.js` — `validateCoupon` blocks `planId='manual'` coupons (admin-assign only, cannot self-apply)
+- `src/lib/adminConfigService.js` — added `getRevenueData()`, `fetchRealUsers()`, `extendUserBonus()`, `assignUserCoupon()`, `inviteUserByEmail()` exports
+- `src/pages/admin/AdminPricing.jsx` — INR Pricing section (₹-prefix inputs, `inrGst()` GST hint below each field); `price-input-wrap`/`price-prefix` wrappers for both USD and INR; BundleEditor ₹-prefix + GST hint; collapsed header shows ₹X/mo
+- `src/pages/admin/AdminCoupons.jsx` — `planId='manual'` option "Manually Assigned To User(s)"; purple "Manual assign" pill in Plan column; hint when selected: "users cannot self-apply it"
+- `src/pages/admin/AdminUsers.jsx` (rewrite) — real Supabase data via `fetchRealUsers()`; new columns: Coupon (amber pill + discount %), Plan period (start→end dates); Extractions/mo (shows 0 explicitly); assign coupon action icon (CouponModal: planId='manual' coupons only, discount % override, preview row, persistence via backend)
+- `src/pages/admin/AdminRevenue.jsx` (rewrite) — live KPIs + 6-month trend from `getRevenueData()`; loading/error/warning/fromSeed states; Refresh button; "Revenue collected" bar chart from actual payment_events
+- `src/styles/screens.css` — `.price-input-wrap`, `.price-prefix`, `.admin-price-section-label/hint`, `.plan-editor-price-inr`, `.user-coupon-pill/pct`, `.user-period-cell/date/sep/none`, `.user-extractions`, `.user-actions-cell`, `.coupon-detail-row/badge/meta`, `.coupon-preview-row`, `.cf-label-hint`, `.coupon-plan-manual`
 
-**Status:** E2E tested ✅ — merged to main ✅ — pushed to origin ✅ — Netlify auto-deploy triggered ✅
+**Status:** All R18 code committed ✅ — pushed to `main` ✅ — Netlify auto-deploy triggered ✅
 
-- [x] ~~Merge R17 to main~~ — done (`a4bca63`)
+- [x] ~~AdminPricing INR inputs + GST preview~~ — done (`76bc06f`)
+- [x] ~~AdminUsers real Supabase data~~ — done (`95de7c9`)
+- [x] ~~AdminUsers extractions, plan period, coupon columns~~ — done (`365aa4b`)
+- [x] ~~AdminRevenue live data from Supabase~~ — done (`1b01650`)
+- [x] ~~AdminUsers coupon assign modal: manual-only picker, discount %, persistence~~ — done (`fe1d2ba`)
+- [x] ~~AdminCoupons 'Manually Assigned To User(s)' planId='manual'~~ — done (`df9e4ad`)
 - [ ] Supabase `app_config` table needs the `general` key row — auto-created on first POST save via AdminGeneral page (upsert)
 
 ---
@@ -1116,22 +1143,38 @@ npm run dev   # http://localhost:5173
 - `/admin/general` → "Reset to defaults" → fields reset to 3 / 2 / 10 / 5
 - `/admin/general` → "Reload" button → re-fetches from server and updates form
 - `/admin/general` → without Supabase configured: shows warning banner; fields still load with defaults; changes are not persisted server-side
+- `/admin/pricing` → USD Pricing section: $-prefix inputs for monthly + annual prices; INR Pricing section: ₹-prefix inputs + GST hint below each (e.g. "≈ ₹1,180 incl. GST")
+- `/admin/pricing` → collapsed plan card header shows both $X/mo and ₹Y/mo when INR price is set
+- `/admin/revenue` → shows live KPI cards (MRR, ARR, total/paying/free/new users, coupon usage) — NOT dummy data
+- `/admin/revenue` → 6-month revenue chart shows actual captured payment amounts (from payment_events table)
+- `/admin/revenue` → "from seed data" warning banner shown when Supabase not configured
+- `/admin/revenue` → Refresh button re-fetches live data from Supabase
+- `/admin/users` → table shows real users from Supabase Auth (not dummy seed names)
+- `/admin/users` → "Plan period" column shows subscription start → end dates (or "—" when no paid plan)
+- `/admin/users` → "Coupon" column shows amber pill with code + optional "−X%" discount badge
+- `/admin/users` → "Extractions/mo" column shows current month extractions (0 shown explicitly, not "—")
+- `/admin/users` → tag icon per row opens CouponModal: dropdown shows only `planId='manual'` active coupons
+- `/admin/users` CouponModal → selecting a coupon shows detail strip (type, value, expiry); for % type: discount % override field; preview row shows how it appears
+- `/admin/users` CouponModal → "Assign" saves to auth metadata + persists in coupon_redemptions; navigating away and back still shows the coupon in the table row
+- `/admin/coupons` → "Restrict to plan" dropdown has "Manually Assigned To User(s)" option at bottom
+- `/admin/coupons` → saving a coupon with planId='manual' shows purple "Manual assign" pill in Plan column
+- `/admin/coupons` → coupon with planId='manual': users cannot self-apply it (Account page Apply Coupon returns error "This coupon is for admin assignment only")
 
 ---
 
 ## Git log (recent)
 
 ```
+df9e4ad  feat(coupons+users): 'Manually Assigned To User(s)' coupon restriction
+fe1d2ba  fix(admin-users): coupon picker dropdown, discount %, persistence fix
+1b01650  feat(admin-revenue): load live KPIs and trend from Supabase, replace dummy data
+365aa4b  feat(admin-users): extractions, plan period, coupon columns + assign coupon action
+76bc06f  feat(admin-pricing): add INR price inputs with GST preview
+95de7c9  feat(admin): real user data from Supabase auth — AdminUsers page
+2a43a81  chore: update CLAUDE.md — R17 merged to main, session ready
 a4bca63  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R17: logout cleanup + guest hard limits + admin general settings
 3af49a5  chore: update CLAUDE.md — R16/R17 session state, all sections updated
 09fbdda  feat(R17): logout data cleanup + guest hard limits + admin general settings
 52c6631  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R16: batch mode parity + guest trial gate
 663bda6  Update founder description for clarity
-9b5a7f8  fix(guest-trial): preserve count across sign-in/out cycles
-208dabb  feat: batch mode parity + guest trial gate
-aa7e6bd  chore: E2E test suite 89/89 passing; update help docs + internal test report
-35fbf4f  chore: update CLAUDE.md — R15 session state, fix stale docs for FAB/multi-URL/batch changes
-40ded1d  fix(dashboard): batch runs dropdown left-aligns to button instead of overflowing off-screen
-d3e21ab  feat(home+batch): streamline multi-URL flow — FAB navigates to /batch, draft persists
-f686d77  fix(home): replace inline multi-URL textarea with BulkUploadModal dialog
 ```
