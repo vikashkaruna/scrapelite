@@ -112,8 +112,9 @@ export const handler = async (event) => {
         const name   = meta.full_name || meta.name || au.email?.split("@")[0] || "User";
         const planId = sub?.plan_id || appMeta.plan_id || meta.plan_id || "free";
 
-        // Coupon: prefer admin-assigned (user metadata) then payment-flow redemption.
-        const couponAvailed = meta.coupon_availed || couponMap[au.id] || null;
+        // Coupon: prefer admin-assigned (user metadata), then payment-flow redemption.
+        const couponAvailed  = meta.coupon_availed || couponMap[au.id] || null;
+        const couponDiscount = meta.coupon_availed ? (meta.coupon_discount ?? null) : null;
 
         return {
           id:                   au.id,
@@ -123,6 +124,7 @@ export const handler = async (event) => {
           planStart:            sub?.current_period_start?.slice(0, 10) || null,
           planEnd:              sub?.current_period_end?.slice(0, 10) || null,
           couponAvailed,
+          couponDiscount,
           bonusExtractions:     Number(meta.bonus_extractions || 0),
           source:               meta.source || appMeta.provider || "organic",
           joinedAt:             (au.created_at || today).slice(0, 10),
@@ -152,18 +154,35 @@ export const handler = async (event) => {
 
       // ── assign coupon ──
       if (body.action === "assign_coupon") {
-        const { userId, couponCode } = body;
+        const { userId, couponCode, discountPct } = body;
         if (!userId || !couponCode?.trim()) {
           return respond(400, { error: "userId and couponCode required." });
         }
         const code = couponCode.trim().toUpperCase();
+
+        // Update auth user metadata.
         const au   = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
         const meta = au.raw_user_meta_data || {};
         await sbFetch(db, `/auth/v1/admin/users/${userId}`, {
           method: "PUT",
-          body: JSON.stringify({ user_metadata: { ...meta, coupon_availed: code } }),
+          body: JSON.stringify({
+            user_metadata: {
+              ...meta,
+              coupon_availed:   code,
+              coupon_discount:  discountPct != null ? Number(discountPct) : (meta.coupon_discount ?? null),
+            },
+          }),
         });
-        return respond(200, { ok: true, userId, couponCode: code });
+
+        // Also upsert into coupon_redemptions so the GET join (couponMap[au.id]) reliably
+        // returns the coupon even if auth metadata caching causes a brief stale read.
+        await sbFetch(db, "/rest/v1/coupon_redemptions", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({ coupon_code: code, session_id: userId, order_ref: "admin-assigned" }),
+        }).catch(() => {}); // non-fatal if coupon_redemptions table doesn't exist yet
+
+        return respond(200, { ok: true, userId, couponCode: code, discountPct: discountPct ?? null });
       }
 
       // ── extend bonus extractions (default) ──

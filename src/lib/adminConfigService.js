@@ -91,16 +91,16 @@ export async function extendUserBonus(userId, bonus) {
   return data; // { ok, userId, newBonus }
 }
 
-/** Assign a coupon code to a user (writes to their auth metadata as coupon_availed). */
-export async function assignUserCoupon(userId, couponCode) {
+/** Assign a coupon code (+ optional discount %) to a user via auth metadata. */
+export async function assignUserCoupon(userId, couponCode, discountPct) {
   const res = await fetch(USERS_ENDPOINT, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ action: "assign_coupon", userId, couponCode }),
+    body: JSON.stringify({ action: "assign_coupon", userId, couponCode, discountPct }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Assign coupon failed (${res.status})`);
-  return data; // { ok, userId, couponCode }
+  return data; // { ok, userId, couponCode, discountPct }
 }
 
 /** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */

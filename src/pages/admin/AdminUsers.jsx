@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   fetchRealUsers, extendUserBonus, inviteUserByEmail, assignUserCoupon,
 } from "../../lib/adminConfigService.js";
-import { addAdminUser } from "../../lib/adminService.js";
+import { addAdminUser, getCoupons } from "../../lib/adminService.js";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
@@ -40,9 +40,16 @@ function PlanPeriod({ start, end }) {
   );
 }
 
-function CouponPill({ code }) {
+function CouponPill({ code, discount }) {
   if (!code) return <span className="user-period-none">—</span>;
-  return <span className="user-coupon-pill">{code}</span>;
+  return (
+    <span className="user-coupon-pill">
+      {code}
+      {discount != null && discount > 0 && (
+        <span className="user-coupon-pct"> −{discount}%</span>
+      )}
+    </span>
+  );
 }
 
 function ExtendModal({ user, onClose, onSave, saving }) {
@@ -72,13 +79,22 @@ function ExtendModal({ user, onClose, onSave, saving }) {
 }
 
 function CouponModal({ user, onClose, onSave, saving }) {
-  const [code, setCode] = useState(user.couponAvailed || "");
-  const [err, setErr]   = useState("");
+  const allCoupons = getCoupons().filter((c) => c.active);
+  const [code, setCode]           = useState(user.couponAvailed || "");
+  const [customPct, setCustomPct] = useState(
+    user.couponDiscount != null ? String(user.couponDiscount) : ""
+  );
+  const [err, setErr] = useState("");
+
+  const selected     = allCoupons.find((c) => c.code === code);
+  const effectivePct =
+    customPct !== "" ? Number(customPct) :
+    selected?.type === "percent" ? selected.value : null;
 
   const submit = async () => {
     setErr("");
-    if (!code.trim()) { setErr("Coupon code is required."); return; }
-    try { await onSave(user, code.trim().toUpperCase()); }
+    if (!code) { setErr("Please select a coupon."); return; }
+    try { await onSave(user, code, effectivePct); }
     catch (e) { setErr(e.message); }
   };
 
@@ -86,29 +102,78 @@ function CouponModal({ user, onClose, onSave, saving }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-box card card-pad" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>Assign coupon for {user.name}</h3>
+          <h3>Assign coupon — {user.name}</h3>
           <button className="modal-close" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <p className="modal-sub">
-          Record a coupon code against this user's account. This does not apply a discount
-          retroactively — it marks the coupon as availed for reporting.
+          Select an active coupon to silently assign to this user.
+          It will not appear as a manual apply option for the user.
         </p>
+
         <div className="cf-field">
-          <label>Coupon code</label>
-          <input
-            type="text" placeholder="e.g. LAUNCH20" value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            style={{ textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 }}
-          />
+          <label>Coupon</label>
+          <select value={code} onChange={(e) => { setCode(e.target.value); setCustomPct(""); }}>
+            <option value="">— Choose coupon —</option>
+            {allCoupons.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+                {c.type === "percent"     ? ` — ${c.value}% off`         : ""}
+                {c.type === "extractions" ? ` — +${c.value} extractions` : ""}
+                {c.planId ? ` (${c.planId} only)` : ""}
+              </option>
+            ))}
+            {allCoupons.length === 0 && (
+              <option value="" disabled>No active coupons — create one in Admin › Coupons</option>
+            )}
+          </select>
         </div>
+
+        {selected && (
+          <div className="coupon-detail-row">
+            {selected.type === "percent" && (
+              <span className="coupon-detail-badge"><Icon name="percent" size={12} /> {selected.value}% off</span>
+            )}
+            {selected.type === "extractions" && (
+              <span className="coupon-detail-badge"><Icon name="zap" size={12} /> +{selected.value} extractions</span>
+            )}
+            {selected.expiresAt && <span className="coupon-detail-meta">Expires {selected.expiresAt}</span>}
+            {selected.maxUses > 0 && <span className="coupon-detail-meta">{selected.uses}/{selected.maxUses} uses</span>}
+          </div>
+        )}
+
+        {selected?.type === "percent" && (
+          <div className="cf-field">
+            <label>
+              Override discount %
+              <span className="cf-label-hint"> (leave blank to use coupon default of {selected.value}%)</span>
+            </label>
+            <div className="price-input-wrap">
+              <input
+                type="number" min="0" max="100" step="1"
+                placeholder={String(selected.value)}
+                value={customPct}
+                onChange={(e) => setCustomPct(e.target.value)}
+              />
+              <span className="price-prefix" style={{ borderLeft: "1.5px solid var(--border)", borderRight: "none" }}>%</span>
+            </div>
+          </div>
+        )}
+
+        {effectivePct != null && effectivePct > 0 && (
+          <div className="coupon-preview-row">
+            <Icon name="tag" size={13} />
+            <span>This user will receive <strong>{effectivePct}% off</strong> on their next payment.</span>
+          </div>
+        )}
+
         {err && (
           <div className="admin-ai-notice warn" style={{ marginBottom: 0 }}>
             <Icon name="alert-circle" size={14} /><span>{err}</span>
           </div>
         )}
         <div className="modal-actions">
-          <Button variant="primary" size="sm" icon="tag" disabled={saving} onClick={submit}>
-            {saving ? "Saving…" : "Assign coupon"}
+          <Button variant="primary" size="sm" icon="tag" disabled={saving || !code} onClick={submit}>
+            {saving ? "Assigning…" : "Assign coupon"}
           </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
         </div>
@@ -244,14 +309,19 @@ export default function AdminUsers() {
     }
   };
 
-  const handleAssignCoupon = async (user, couponCode) => {
+  const handleAssignCoupon = async (user, couponCode, discountPct) => {
     setCouponSaving(true);
     try {
-      const result = await assignUserCoupon(user.id, couponCode);
+      const result = await assignUserCoupon(user.id, couponCode, discountPct);
       setUsers((prev) =>
-        prev.map((u) => u.id === user.id ? { ...u, couponAvailed: result.couponCode } : u)
+        prev.map((u) =>
+          u.id === user.id
+            ? { ...u, couponAvailed: result.couponCode, couponDiscount: result.discountPct }
+            : u
+        )
       );
-      showToast(`Coupon ${result.couponCode} assigned to ${user.name}.`);
+      const pctLabel = discountPct != null && discountPct > 0 ? ` (${discountPct}% off)` : "";
+      showToast(`Coupon ${result.couponCode}${pctLabel} assigned to ${user.name}.`);
       setCoupon(null);
     } catch (e) {
       throw e; // re-throw so CouponModal displays the error inline
@@ -401,7 +471,7 @@ export default function AdminUsers() {
                         </div>
                       </td>
                       <td><PlanPill planId={u.planId} /></td>
-                      <td><CouponPill code={u.couponAvailed} /></td>
+                      <td><CouponPill code={u.couponAvailed} discount={u.couponDiscount} /></td>
                       <td><PlanPeriod start={u.planStart} end={u.planEnd} /></td>
                       <td className="user-extractions">
                         {u.extractionsThisMonth > 0
