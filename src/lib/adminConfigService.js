@@ -27,3 +27,26 @@ export async function saveAiConfig(config) {
   if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
   return data;
 }
+
+// ── General / global settings ────────────────────────────────────────────────
+
+const GENERAL_ENDPOINT = "/api/admin-general-config";
+
+/** Fetch current global application settings. */
+export async function getGeneralConfig() {
+  const res = await fetch(GENERAL_ENDPOINT, { headers: { "Content-Type": "application/json" } });
+  if (!res.ok) throw new Error(`Failed to load settings (${res.status})`);
+  return res.json(); // { ok, settings, persisted }
+}
+
+/** Persist global settings. Returns { ok, persisted, warning? }. */
+export async function saveGeneralConfig(settings) {
+  const res = await fetch(GENERAL_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ settings }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+  return data;
+}

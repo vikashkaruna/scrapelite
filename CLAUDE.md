@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-16 — R15 complete + E2E test suite (89/89 passing); external help docs updated; internal test report at docs/internal/e2e-test-report-2026-06-16.md**
+> **Last updated: 2026-06-17 — R16 (batch mode parity + guest trial gate) merged to main; R17 (logout data cleanup, guest hard limits, admin General Settings page) on branch `claude/enrich-batch-mall-3tkc1s` — E2E tested, pushed, Netlify branch deploy triggered**
 
 ---
 
@@ -17,8 +17,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — R15 complete and merged |
-| **Latest commit** | R15: Home FAB navigates to /batch, Batch draft persists in localStorage, Export dropdown unified in /batch, batch-runs dropdown alignment fixed |
+| **Current branch** | `main` has R16; active feature branch `claude/enrich-batch-mall-3tkc1s` has R17 (ahead of main by 1 commit) |
+| **Latest main commit** | R16 merge: batch mode parity (Map site chip, per-URL content gen, enrichMeta persistence) + guest trial gate (soft prompt, sign-in/out bypass fix) |
+| **Latest branch commit** | R17: logout data cleanup + guest hard limits (10 single / 5 batch) + admin General Settings page |
 
 ---
 
@@ -45,6 +46,8 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `claude/pricing-batch-help-polish-dwwlj7` | R13: GST breakdown `PaymentConfirmModal`, bundle base prices (pre-GST display), TopupBundleModal INR upsell prices, Enterprise plan card restored, Apify+PhantomBuster comparison pages, compare.html multi-page links, batch table full-width, usage banner container-constrained, Account batch/content generation stats, `batchRuns`+`contentGenerations` in usageService, TopBar Explore restructure (remove Browse.ai/Clay from Compare, remove Submit Bug, About DatIQ last), help/index.html External/Internal labels removed, 09-exports-and-sharing.html full rewrite (all 5 formats) | ✅ merged to main |
 | `claude/firecrawl-fallback-analysis-qyksr4` | R14a: Firecrawl → Spider.cloud → Jina AI → Direct fetch fallback chain; `scrapeProviders.js` provider registry + chain runners; `extract.js` rewritten to use chain; `config.js` `hasFirecrawl` covers all providers + `VITE_ENABLE_EXTRACT` flag | ✅ merged to main |
 | `home-screen-enhancement` | R14b: Home intent chips (5: summary/contacts/pricing/map/custom) replace 4 toggles; OG preview card (800ms debounce); clickable feature cards map to intent chips; FAB (layers-2) beside Extract navigates to /batch; `BulkUploadModal` component created but now only reachable from /batch; Batch page unified intent chips + run history via `batchRunsService.js`; Dashboard `BatchRunsDropdown` filter + `batch-item-tag` chips | ✅ merged to main |
+| `claude/enrich-batch-mall-3tkc1s` | **R16**: Batch mode parity — Map site intent chip (5th), per-URL content generation toggle (SEO/competitor/social), enrichMeta tab persistence for contacts/pricing/custom; Guest trial gate — `GuestTrialProvider`, `GuestTrialBanner`, `GuestTrialModal`, `guestTrialService`; soft gate (TRIAL_LIMIT=3, re-prompts every 2); sign-in/out bypass prevention (count never cleared on login) | ✅ merged to main |
+| `claude/enrich-batch-mall-3tkc1s` (R17) | **R17**: Logout clears sensitive data (7 localStorage keys + navigate to /); guest hard limits (10 single-URL / 5 batch runs, configurable); non-dismissible hard block modal; pre-flight checks in ExtractionProvider + Batch; Admin General Settings page (`/admin/general`) + Netlify fn `admin-general-config.js` + `globalSettingsService.js` | ⚠️ on branch — NOT yet merged to main; Netlify branch deploy triggered |
 
 ---
 
@@ -95,6 +98,8 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/admin/pricing` | Configurable plan pricing & limits | Admin |
 | `/admin/coupons` | Coupon CRUD | Admin |
 | `/admin/users` | User management | Admin |
+| `/admin/ai` | AI provider chain editor (model, order, enable toggles, max tokens) | Admin |
+| `/admin/general` | Global application settings (guest limits, reprompt interval) | Admin |
 | `/help/index.html` | Static help site (16 pages, plain `<a>` — bypasses SPA router) | Public |
 
 ---
@@ -156,8 +161,16 @@ src/
 │   ├── statsService.js               ★ R0: getStats() → /api/stats (Supabase aggregate), fmtStat()
 │   │                                 Caches in datiq.stats localStorage (5-min TTL)
 │   ├── emailCaptureService.js        ★ R0: captureEmail(email, source) → datiq.subscribers LS + n8n webhook
-│   └── batchRunsService.js           ★ R14b: saveBatchRun/listBatchRuns/deleteBatchRun + recordBatchItems/readBatchMap
-│                                     localStorage keys: datiq.batchRuns (run summaries) + datiq.batchMap (id→runId map)
+│   ├── batchRunsService.js           ★ R14b: saveBatchRun/listBatchRuns/deleteBatchRun + recordBatchItems/readBatchMap
+│   │                                 localStorage keys: datiq.batchRuns (run summaries) + datiq.batchMap (id→runId map)
+│   ├── guestTrialService.js          ★ R16: guest trial counters (count + batchCount) in datiq.guestTrial
+│   │                                 getGuestCount/incrementGuestCount, getGuestBatchCount/incrementGuestBatchCount
+│   │                                 shouldShowTrialPrompt, isTrialLimitReached, isSingleHardLimitReached, isBatchHardLimitReached
+│   │                                 TRIAL_LIMIT=3, SINGLE_HARD_LIMIT=10, BATCH_HARD_LIMIT=5 (overridden by globalSettings)
+│   └── globalSettingsService.js      ★ R17: fetches /api/admin-general-config with 5-min TTL cache (datiq.globalSettings)
+│                                     getSettings() synchronous (immediate cache read + DEFAULTS fallback)
+│                                     loadSettings() async (fetch → cache → return merged)
+│                                     updateCachedSettings(settings) called by AdminGeneral after save
 ├── components/
 │   ├── ThemeProvider.jsx             light/dark; persists to datiq.theme
 │   ├── Toast.jsx                     ToastProvider + useToast(); 2.6s auto-dismiss
@@ -185,8 +198,19 @@ src/
 │   ├── BrandLoader.jsx               Animated loader
 │   ├── FaviconDot.jsx                Deterministic hue monogram per domain
 │   ├── LoadingScreen.jsx             Full-screen 4-step animated progress
-│   └── BulkUploadModal.jsx           ★ R14b: paste URLs + CSV upload modal; currently NOT used by Home (FAB → /batch)
-│                                     Still exists for potential future use on /batch or other pages
+│   ├── BulkUploadModal.jsx           ★ R14b: paste URLs + CSV upload modal; currently NOT used by Home (FAB → /batch)
+│   │                                 Still exists for potential future use on /batch or other pages
+│   ├── GuestTrialProvider.jsx        ★ R16: Context provider for guest trial tracking
+│   │                                 SENSITIVE_KEYS cleared on logout (never includes datiq.guestTrial)
+│   │                                 checkCanExtractSingle/checkCanExtractBatch pre-flight checks
+│   │                                 trackGuestExtraction/trackGuestBatchRun post-completion tracking
+│   │                                 Mount useEffect restores hard-block state on page reload
+│   │                                 Auth-transition useEffect: login→clear prompts; logout→clear sensitive keys + navigate("/")
+│   │                                 Settings loaded via useState(getSettings) + async loadSettings() on mount
+│   ├── GuestTrialBanner.jsx          ★ R16: Top banner showing remaining trial credits (single + batch)
+│   └── GuestTrialModal.jsx           ★ R16: Soft prompt (dismissible) + Hard block (non-dismissible) modal
+│                                     Hard block: no backdrop click, no Escape, no "Continue as guest" button
+│                                     Hard block: overlay itself provides dark background (no backdrop div)
 └── pages/
     ├── Home.jsx                      URL input + Extract button + FAB (Bulk import → /batch), 5 intent chips,
     │                                 OG preview card, 8 clickable capability cards, social proof
@@ -218,21 +242,30 @@ src/
     ├── Batch.jsx                     ★ R5: /batch — paste URLs / import CSV → progress → results → export
     │                                 ★ R14b: intent chips; batch run history (batchRunsService.js)
     │                                 ★ R15: textarea draft persisted to datiq.batchDraft in localStorage; unified Export ▾ dropdown
+    │                                 ★ R16: pre-flight batch hard limit check (checkCanExtractBatch) before run
+    │                                 ★ R16: trackGuestBatchRun() called after batch completes (not trackGuestExtraction)
     └── admin/
         ├── AdminLayout.jsx           PIN gate (server-verified via admin-auth fn; async login,
         │                             token session, 5→60s lockout), collapsible sidebar (chevron + pin)
+        │                             ★ R17: NAV includes General Settings (/admin/general)
         ├── AdminRevenue.jsx          KPI cards, MRR trend chart, plan distribution
         ├── AdminPricing.jsx          Editable plan prices + limits + global discount + bundles
         ├── AdminCoupons.jsx          Coupon CRUD (% or bonus extractions)
         ├── AdminUsers.jsx            User table: search, filter, extend usage, invite
-        └── AdminAI.jsx               ★ AI provider chain editor — reorder providers, model per
-                                      provider, enable toggles, max tokens (via adminConfigService)
+        ├── AdminAI.jsx               ★ AI provider chain editor — reorder providers, model per
+        │                             provider, enable toggles, max tokens (via adminConfigService)
+        └── AdminGeneral.jsx          ★ R17: Global application settings editor
+                                      4 fields: soft_limit, reprompt_interval, single_hard_limit, batch_hard_limit
+                                      Calls getGeneralConfig/saveGeneralConfig (adminConfigService.js)
+                                      updateCachedSettings() after save so changes take effect immediately
 
 netlify/
 └── functions/
     ├── ai.js                         ★ POST /api/ai — MULTI-PROVIDER proxy w/ ordered fallback
     │                                 (Gemini→Claude→OpenAI default); normalizes to Anthropic shape
     ├── admin-ai-config.js            ★ GET=config+key presence; POST=upsert app_config 'ai' (token-gated)
+    ├── admin-general-config.js       ★ R17: GET=merge app_config 'general' + DEFAULTS; POST=sanitize+upsert (token-gated)
+    │                                 Sanitizes 4 integer fields with min/max bounds; localStorage fallback when no Supabase
     ├── lib/aiProviders.js            ★ provider adapters + loadAiConfig() + runChain() fallback
     ├── lib/adminToken.js             ★ verifyAdminToken() — HMAC check of admin-auth session token
     ├── extract.js                    POST /api/extract — multi-provider scraping proxy (Firecrawl→Spider→Jina→Direct)
@@ -278,10 +311,11 @@ ThemeProvider
   ToastProvider
     ErrorModalProvider
       AuthProvider
-        PersonaProvider
-          BillingProvider
-            ExtractionProvider
-              <Shell />   ← skip-link + TopBar + <main id="main-content"> + routes + Footer + AuthModal
+        GuestTrialProvider
+          PersonaProvider
+            BillingProvider
+              ExtractionProvider
+                <Shell />   ← skip-link + TopBar + GuestTrialBanner + <main id="main-content"> + routes + GuestTrialModal + Footer + AuthModal
 ```
 
 ---
@@ -323,6 +357,14 @@ ThemeProvider
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
 | Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
 | AI key | `hasAI = true` always; `AI_API_KEY` (no VITE_ prefix) lives in Netlify env only. Never export from config.js. |
+| Guest trial soft gate | `GuestTrialProvider` tracks `count` (single-URL extractions). Soft prompt after `guest_trial_soft_limit` (default 3), re-prompts every `guest_trial_reprompt_interval` (default 2). Soft prompt is dismissible. |
+| Guest trial hard block | Hard block after `guest_single_hard_limit` (default 10) single-URL extractions OR `guest_batch_hard_limit` (default 5) batch runs. Hard block is **non-dismissible** — no Escape, no backdrop click, no "Continue as guest". Modal overlay provides its own dark background. |
+| Guest trial counter | `datiq.guestTrial` localStorage key is **NEVER cleared** (not in SENSITIVE_KEYS). Prevents bypass via sign-in/out cycling. Count persists even after logout and login. |
+| Guest logout cleanup | On logout: 7 SENSITIVE_KEYS cleared from localStorage + `navigate("/")` called to flush in-memory React state (Dashboard items, etc.). Guest trial key preserved. |
+| Global settings service | `globalSettingsService.js` caches `guest_*` limits from `/api/admin-general-config` in `datiq.globalSettings` (5-min TTL). Synchronous `getSettings()` for immediate use. `GuestTrialProvider` uses both `useState(getSettings)` on mount and async `loadSettings()` refresh. |
+| Admin general config | `admin-general-config.js` Netlify fn: GET merges `app_config key='general'` + DEFAULTS; POST is token-gated, sanitizes integer ranges, upserts to Supabase. `AdminGeneral.jsx` page calls `updateCachedSettings()` after save so changes propagate immediately in same tab. |
+| ExtractionProvider pre-flight | `extract()` checks `checkCanExtractSingle()` before starting. If blocked → sets `showHardBlock(true)` and returns early without extraction. |
+| Batch pre-flight | `handleRun()` in `Batch.jsx` checks `checkCanExtractBatch()` before starting. If blocked → sets `showHardBlock(true)` and returns early. |
 
 ---
 
@@ -351,6 +393,8 @@ ThemeProvider
 | `datiq.batchRuns` | batchRunsService.js — array of past batch run summaries (max 50) |
 | `datiq.batchMap` | batchRunsService.js — map of `{ extractionId: batchRunId }` for Dashboard tagging |
 | `datiq.batchDraft` | Batch.jsx — persisted textarea content; survives refresh + back-navigation; cleared on "New batch" |
+| `datiq.guestTrial` | guestTrialService.js — guest trial counts `{ count, batchCount, sid }`. **NEVER cleared on login or logout** — intentional bypass-prevention. |
+| `datiq.globalSettings` | globalSettingsService.js — cached guest limit settings from server (5-min TTL). Falls back to DEFAULTS when uncached or fetch fails. |
 
 ---
 
@@ -740,6 +784,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 115. **R15: Batch textarea localStorage draft** — `Batch.jsx` `pasteText` state initialized from: (1) `location.state.urls` (nav from Home FAB), (2) `localStorage.getItem("datiq.batchDraft")` fallback, (3) empty string. `useEffect` persists every `pasteText` change to `datiq.batchDraft`. "New batch" button clears the draft (`localStorage.removeItem`). Textarea content now survives page refresh and back-navigation.
 116. **R15: Batch Export ▾ unified dropdown** — Replaced 4 individual CSV/PDF/MD/JSON export buttons in `/batch` results with single `ExportDropdown` component (same pattern as Dashboard). Results actions bar: `[Export ▾] [New batch] [View in Dashboard →]`.
 117. **R15: Dashboard BatchRunsDropdown alignment** — `.batch-runs-menu` changed from `right: 0` to `left: 0`. The 300px dropdown was overflowing left off-screen because the button is on the far left of the toolbar. Now opens rightward from the button's left edge, within the page layout.
+118. **R17: Hard block not shown on page reload** — If count ≥ hardLimit and user refreshes, `GuestTrialProvider` mounted with `showHardBlock=false` (default). Fixed: mount `useEffect` with `[]` deps reads localStorage counts + `getSettings()` synchronously; calls `setShowHardBlock(true)` if either limit already reached. Ensures hard block appears immediately on page load without requiring an extraction attempt.
+119. **R17: Missing `setShowHardBlock(false)` in logout soft-prompt path** — Logout if/else chain set `showHardBlock(true)` for hard cases but never explicitly set it `false` for the soft-prompt or clean-slate branches. If `showHardBlock` was previously `true`, it could persist into the wrong gate. Fixed: explicit `setShowHardBlock(false)` added in both the soft-prompt branch and the else (clean-slate) branch.
+120. **R17: Hard block overlay transparent** — Hard block removes the backdrop `<div>`, so `.guest-trial-overlay` had no background. Clicks could reach page elements behind. Fixed: `.guest-trial-overlay.gtm-hard { background: rgba(0,0,0,.60); }` — overlay provides its own dark background. Also added `.gtm-icon-warn` CSS class for warning-coloured icon variant.
 
 ### Razorpay live payment — required Netlify env vars (INR only; Stripe/USD on hold)
 
@@ -777,6 +824,30 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 | Rule | Never re-introduce a single hardcoded provider in `ai.js`. Add new providers in `aiProviders.js` `ADAPTERS` + `PROVIDER_META` + `DEFAULT_MODELS`. |
 
 ## Outstanding tasks
+
+### R17 — On branch `claude/enrich-batch-mall-3tkc1s` (2026-06-17, NOT yet merged to main)
+
+**Files added/changed:**
+- `src/lib/globalSettingsService.js` (NEW) — 5-min TTL cache for admin-controlled guest limits
+- `netlify/functions/admin-general-config.js` (NEW) — GET/POST for `app_config key='general'`; token-gated POST; sanitizes 4 integer fields
+- `src/lib/guestTrialService.js` — added `batchCount`, `getGuestBatchCount`, `incrementGuestBatchCount`, `isSingleHardLimitReached`, `isBatchHardLimitReached`, `SINGLE_HARD_LIMIT`, `BATCH_HARD_LIMIT` exports
+- `src/components/GuestTrialProvider.jsx` — SENSITIVE_KEYS logout cleanup + navigate("/"); hard limit state; mount useEffect for page-reload restore; dynamic settings from globalSettingsService
+- `src/components/GuestTrialModal.jsx` — hard block mode (non-dismissible, own background, warning icon)
+- `src/components/GuestTrialBanner.jsx` — shows both single + batch remaining counts
+- `src/components/ExtractionProvider.jsx` — pre-flight `checkCanExtractSingle()` before extraction
+- `src/pages/Batch.jsx` — pre-flight `checkCanExtractBatch()` before run; `trackGuestBatchRun` instead of `trackGuestExtraction`
+- `src/lib/adminConfigService.js` — added `getGeneralConfig`, `saveGeneralConfig` exports
+- `src/pages/admin/AdminGeneral.jsx` (NEW) — 4 configurable fields; load/save/reset; Supabase-not-configured warning
+- `src/pages/admin/AdminLayout.jsx` — added `/admin/general` to NAV
+- `src/App.jsx` — added `AdminGeneral` import + route
+- `src/styles/screens.css` — admin-general-* CSS classes; `.guest-trial-overlay.gtm-hard` background; `.gtm-icon-warn`
+
+**Status:** E2E tested ✅ — branch pushed ✅ — Netlify branch deploy triggered ✅ — merge to main pending user validation
+
+- [ ] **Merge R17 to main** after user validates the Netlify branch deploy
+- [ ] Supabase `app_config` table needs the `general` key row — auto-created on first POST save via AdminGeneral page (upsert)
+
+---
 
 ### R14 — Merged to main (2026-06-15)
 
@@ -892,7 +963,9 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ```bash
 cd /home/user/scrapelite
-git pull origin main
+# R17 is on branch — switch to branch if continuing R17 work, or pull main if starting fresh after merge
+git checkout claude/enrich-batch-mall-3tkc1s
+git pull origin claude/enrich-batch-mall-3tkc1s
 npm run dev   # http://localhost:5173
 ```
 
@@ -1028,21 +1101,37 @@ npm run dev   # http://localhost:5173
 - `/dashboard` → filtered state shows `batch-filter-banner` with run label + "Clear filter" button
 - `/dashboard` → items from a batch run show "Batch" tag chip in table row and card view
 - Extraction on any provider fallback → `_providerAttempts` present in response (visible in network tab)
+- Home → extract as guest → after 3 extractions, GuestTrialModal soft prompt appears with "Sign up free" CTA
+- Home → soft prompt → "Continue as guest" dismisses it; attempting 2 more extractions re-shows it
+- Home → extract as guest → after 10 extractions, hard block modal appears — no dismiss button, no backdrop click, no Escape
+- Home → hard block → only "Sign up free" or "Sign in" buttons work; page behind not clickable
+- `/batch` → run batch as guest → after 5 batch runs, hard block modal appears (reason: "batch")
+- GuestTrialBanner → shows between TopBar and page content for guest users
+- GuestTrialBanner → correctly shows remaining single-URL credits AND batch credits
+- GuestTrialBanner → disappears when user is logged in
+- Guest extraction → sign in → GuestTrialBanner disappears; soft/hard prompt clears
+- Sign out (previously had extractions) → localStorage cleared (dashboard shows nothing); navigates to "/"
+- Sign out → re-open app on same machine → guest trial count is preserved (not cleared); banner shows remaining credits
+- `/admin/general` → accessible after admin PIN; shows 4 configurable fields with current values
+- `/admin/general` → change soft limit to 5, save → toast "General settings saved" → limit takes effect within 5 min
+- `/admin/general` → "Reset to defaults" → fields reset to 3 / 2 / 10 / 5
+- `/admin/general` → "Reload" button → re-fetches from server and updates form
+- `/admin/general` → without Supabase configured: shows warning banner; fields still load with defaults; changes are not persisted server-side
 
 ---
 
 ## Git log (recent)
 
 ```
-[pending]  chore: E2E test suite 89/89 passing; update external help docs + internal test report
+[branch]   chore: update CLAUDE.md — R17 session state, all sections updated
+09fbdda  feat(R17): logout data cleanup + guest hard limits + admin general settings
+52c6631  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R16: batch mode parity + guest trial gate
+663bda6  Update founder description for clarity
+9b5a7f8  fix(guest-trial): preserve count across sign-in/out cycles
+208dabb  feat: batch mode parity + guest trial gate
+aa7e6bd  chore: E2E test suite 89/89 passing; update help docs + internal test report
+35fbf4f  chore: update CLAUDE.md — R15 session state, fix stale docs for FAB/multi-URL/batch changes
 40ded1d  fix(dashboard): batch runs dropdown left-aligns to button instead of overflowing off-screen
 d3e21ab  feat(home+batch): streamline multi-URL flow — FAB navigates to /batch, draft persists
 f686d77  fix(home): replace inline multi-URL textarea with BulkUploadModal dialog
-9f545b4  fix(batch): replace 4 separate export buttons with unified Export dropdown
-397d0a4  chore: update CLAUDE.md — R14 merged to main, session state saved
-3bac184  Merge branch 'home-screen-enhancement' — R14b: intent chips, multi-URL, OG preview, batch history
-(merge)  Merge branch 'claude/firecrawl-fallback-analysis-qyksr4' — R14a: Firecrawl multi-provider fallback chain
-033278e  chore: update CLAUDE.md — R14 firecrawl fallback chain + active branches documented
-37e168d  feat(extract): multi-provider scraping fallback chain (Firecrawl→Spider→Jina→Direct)
-42b52e7  feat(batch+dashboard): unified intent chips, batch run history, Dashboard batch tagging
 ```

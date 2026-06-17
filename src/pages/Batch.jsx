@@ -344,6 +344,16 @@ export default function Batch() {
       return;
     }
 
+    // Enforce guest hard limit for batch runs
+    if (!user) {
+      const guestBatchCheck = guestTrial?.checkCanExtractBatch?.();
+      if (guestBatchCheck && !guestBatchCheck.allowed) {
+        guestTrial.setHardBlockReason?.("batch");
+        guestTrial.setShowHardBlock?.(true);
+        return;
+      }
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -386,8 +396,8 @@ export default function Batch() {
           "check-circle",
         );
 
-        // Track guest trial (1 credit per batch run, not per URL)
-        if (!user) guestTrial.trackGuestExtraction(1);
+        // Track guest trial (1 credit per batch run, separate from single-URL count)
+        if (!user) guestTrial.trackGuestBatchRun?.(1);
 
         // Auto-save successful results to Dashboard + record batch run history.
         const enrichMetaObj = getEnrichMetaForIntent(intent);

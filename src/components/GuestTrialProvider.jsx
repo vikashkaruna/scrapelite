@@ -1,26 +1,64 @@
-// GuestTrialProvider.jsx — tracks guest (non-logged-in) trial extraction usage
-// and exposes helpers to trigger the sign-up prompt after TRIAL_LIMIT extractions.
-// Must be placed INSIDE AuthProvider so it can react to login events.
+// GuestTrialProvider.jsx — tracks guest (non-logged-in) trial extraction usage.
 //
-// Key design: trial count is NEVER cleared on login. This prevents the bypass
-// where a user extracts N times as a guest → logs in → logs out → gets a fresh
-// trial. On logout, count is re-read from localStorage so prior usage is honoured.
+// Responsibilities:
+//  1. Soft gate  — show sign-up prompt after guest_trial_soft_limit extractions
+//                  (re-prompts every guest_trial_reprompt_interval after limit).
+//  2. Hard block — prevent further use after hard limits are reached:
+//                  • guest_single_hard_limit for single-URL extractions
+//                  • guest_batch_hard_limit  for batch runs
+//  3. Logout cleanup — on sign-out, clear all sensitive localStorage data so a
+//                  subsequent user on the same machine sees a clean slate. The
+//                  trial count itself is NEVER cleared (prevents bypass via
+//                  sign-in/out cycling). The app navigates to "/" after cleanup
+//                  to flush any in-memory state held by route components.
+//
+// Must be placed INSIDE AuthProvider (to react to login events) and INSIDE
+// BrowserRouter (to call useNavigate).
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider.jsx";
 import {
   getGuestCount,
+  getGuestBatchCount,
   incrementGuestCount,
+  incrementGuestBatchCount,
   shouldShowTrialPrompt,
   isTrialLimitReached,
+  isSingleHardLimitReached,
+  isBatchHardLimitReached,
   TRIAL_LIMIT,
+  SINGLE_HARD_LIMIT,
+  BATCH_HARD_LIMIT,
 } from "../lib/guestTrialService.js";
+import { getSettings, loadSettings } from "../lib/globalSettingsService.js";
+
+// Keys cleared on logout — must NOT include the guest trial key itself
+// (that persistence is intentional to prevent bypass via sign-in/out cycling).
+const SENSITIVE_KEYS = [
+  "datiq.saved",       // saved extractions list
+  "datiq.current",     // current extraction shown on /preview
+  "datiq.enrichments", // enrichment cache per URL
+  "datiq.batchRuns",   // batch run history
+  "datiq.batchMap",    // extractionId → batchRunId map
+  "datiq.batchDraft",  // batch textarea draft
+  "datiq.stats",       // cached aggregate stats (stale after logout)
+];
 
 const GuestTrialContext = createContext({
   count: 0,
+  batchCount: 0,
   showPrompt: false,
   setShowPrompt: () => {},
+  showHardBlock: false,
+  setShowHardBlock: () => {},
+  hardBlockReason: "single",
+  checkCanExtractSingle: () => ({ allowed: true }),
+  checkCanExtractBatch: () => ({ allowed: true }),
   trackGuestExtraction: () => {},
-  TRIAL_LIMIT: 3,
+  trackGuestBatchRun: () => {},
+  TRIAL_LIMIT,
+  SINGLE_LIMIT: SINGLE_HARD_LIMIT,
+  BATCH_LIMIT: BATCH_HARD_LIMIT,
 });
 
 export function useGuestTrial() {
@@ -28,54 +66,173 @@ export function useGuestTrial() {
 }
 
 export function GuestTrialProvider({ children }) {
+  const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Load limits from cache immediately; async-refresh from server on mount.
+  const [settings, setSettings] = useState(getSettings);
   const [count, setCount] = useState(getGuestCount);
+  const [batchCount, setBatchCount] = useState(getGuestBatchCount);
   const [showPrompt, setShowPrompt] = useState(false);
-  // Track previous user so we can detect login ↔ logout transitions.
+  const [showHardBlock, setShowHardBlock] = useState(false);
+  const [hardBlockReason, setHardBlockReason] = useState("single");
+
+  // On mount (guest only): if the hard limit was already reached from a previous
+  // session, show the block immediately so users can't extract without seeing it.
+  useEffect(() => {
+    if (user) return; // logged-in users are never gated
+    const s = getSettings();
+    const shl = s.guest_single_hard_limit  ?? SINGLE_HARD_LIMIT;
+    const bhl = s.guest_batch_hard_limit   ?? BATCH_HARD_LIMIT;
+    const initialCount      = getGuestCount();
+    const initialBatchCount = getGuestBatchCount();
+    if (isSingleHardLimitReached(initialCount, shl)) {
+      setHardBlockReason("single");
+      setShowHardBlock(true);
+    } else if (isBatchHardLimitReached(initialBatchCount, bhl)) {
+      setHardBlockReason("batch");
+      setShowHardBlock(true);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const prevUserRef = useRef(user);
 
+  // Async-refresh settings once on mount.
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  // Derived limits (fall back to built-in constants when settings haven't loaded yet).
+  const softLimit       = settings.guest_trial_soft_limit      ?? TRIAL_LIMIT;
+  const repromptInterval = settings.guest_trial_reprompt_interval ?? 2;
+  const singleHardLimit = settings.guest_single_hard_limit     ?? SINGLE_HARD_LIMIT;
+  const batchHardLimit  = settings.guest_batch_hard_limit      ?? BATCH_HARD_LIMIT;
+
+  // ── Auth transition handler ──────────────────────────────────────────────────
   useEffect(() => {
     const wasLoggedIn = prevUserRef.current != null;
     const isLoggedIn  = user != null;
 
     if (isLoggedIn && !wasLoggedIn) {
-      // ── Guest → Logged in ──────────────────────────────────────────────────
-      // Close any active trial prompt. Do NOT clear the localStorage count —
-      // if the user logs out again their prior usage history is restored and
-      // they cannot get a fresh 3-extraction window by cycling sign-in/out.
+      // ── Guest → Logged in ────────────────────────────────────────────────────
+      // Close any active prompt. Count is NOT cleared — if they log out later the
+      // prior usage is restored and they can't get a fresh window by cycling auth.
       setShowPrompt(false);
+      setShowHardBlock(false);
+
     } else if (!isLoggedIn && wasLoggedIn) {
-      // ── Logged in → Logged out ─────────────────────────────────────────────
-      // Re-read count from localStorage so prior guest usage is reinstated.
-      // This is the key fix: after sign-out the count picks up where it left
-      // off (e.g. if they extracted 3+ times before signing up, they're still
-      // over the limit and the prompt will fire on the next extraction attempt).
-      const restored = getGuestCount();
+      // ── Logged in → Logged out ───────────────────────────────────────────────
+      // Clear all sensitive localStorage keys so the next user on this machine
+      // cannot see the previous user's saved extractions, enrichments, etc.
+      SENSITIVE_KEYS.forEach((k) => {
+        try { localStorage.removeItem(k); } catch { /* skip */ }
+      });
+
+      // Restore trial counts from localStorage (the trial key is preserved).
+      const restored      = getGuestCount();
+      const restoredBatch = getGuestBatchCount();
       setCount(restored);
-      // If already past the limit, show the prompt immediately so they know.
-      if (isTrialLimitReached(restored)) {
+      setBatchCount(restoredBatch);
+
+      // Re-apply the appropriate gate for the restored counts.
+      if (isSingleHardLimitReached(restored, singleHardLimit)) {
+        setShowPrompt(false);
+        setHardBlockReason("single");
+        setShowHardBlock(true);
+      } else if (isBatchHardLimitReached(restoredBatch, batchHardLimit)) {
+        setShowPrompt(false);
+        setHardBlockReason("batch");
+        setShowHardBlock(true);
+      } else if (isTrialLimitReached(restored, softLimit)) {
+        setShowHardBlock(false); // ensure hard block cleared before soft prompt
         setShowPrompt(true);
+      } else {
+        // Below all limits — clean slate
+        setShowHardBlock(false);
+        setShowPrompt(false);
       }
+
+      // Navigate to home so in-memory React state (Dashboard items, etc.) is flushed.
+      navigate("/");
     }
 
     prevUserRef.current = user;
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pre-flight checks (called before an extraction starts) ───────────────────
+
+  const checkCanExtractSingle = useCallback(() => {
+    if (user) return { allowed: true };
+    if (isSingleHardLimitReached(count, singleHardLimit)) {
+      return { allowed: false, reason: "single" };
+    }
+    return { allowed: true };
+  }, [user, count, singleHardLimit]);
+
+  const checkCanExtractBatch = useCallback(() => {
+    if (user) return { allowed: true };
+    if (isBatchHardLimitReached(batchCount, batchHardLimit)) {
+      return { allowed: false, reason: "batch" };
+    }
+    return { allowed: true };
+  }, [user, batchCount, batchHardLimit]);
+
+  // ── Post-extraction tracking (called after a successful extraction) ───────────
 
   const trackGuestExtraction = useCallback(
     (n = 1) => {
       if (user) return; // logged-in users don't consume trial credits
       const newCount = incrementGuestCount(n);
       setCount(newCount);
-      if (shouldShowTrialPrompt(newCount)) {
+      if (isSingleHardLimitReached(newCount, singleHardLimit)) {
+        setHardBlockReason("single");
+        setShowHardBlock(true);
+      } else if (shouldShowTrialPrompt(newCount, softLimit, repromptInterval)) {
         setShowPrompt(true);
       }
     },
-    [user],
+    [user, singleHardLimit, softLimit, repromptInterval],
+  );
+
+  const trackGuestBatchRun = useCallback(
+    (n = 1) => {
+      if (user) return;
+      // Increment the batch-specific counter (for batch hard limit).
+      const newBatchCount = incrementGuestBatchCount(n);
+      setBatchCount(newBatchCount);
+      // Also increment the combined counter (for soft prompt).
+      const newCount = incrementGuestCount(n);
+      setCount(newCount);
+
+      if (isBatchHardLimitReached(newBatchCount, batchHardLimit)) {
+        setHardBlockReason("batch");
+        setShowHardBlock(true);
+      } else if (shouldShowTrialPrompt(newCount, softLimit, repromptInterval)) {
+        setShowPrompt(true);
+      }
+    },
+    [user, batchHardLimit, softLimit, repromptInterval],
   );
 
   return (
     <GuestTrialContext.Provider
-      value={{ count, showPrompt, setShowPrompt, trackGuestExtraction, TRIAL_LIMIT }}
+      value={{
+        count,
+        batchCount,
+        showPrompt,
+        setShowPrompt,
+        showHardBlock,
+        setShowHardBlock,
+        hardBlockReason,
+        setHardBlockReason,
+        checkCanExtractSingle,
+        checkCanExtractBatch,
+        trackGuestExtraction,
+        trackGuestBatchRun,
+        TRIAL_LIMIT: softLimit,
+        SINGLE_LIMIT: singleHardLimit,
+        BATCH_LIMIT: batchHardLimit,
+      }}
     >
       {children}
     </GuestTrialContext.Provider>
