@@ -22,7 +22,9 @@ function CouponRow({ coupon, onEdit, onToggle, onDelete }) {
       </td>
       <td>{coupon.uses} / {coupon.maxUses || "∞"}</td>
       <td>{coupon.expiresAt || "—"}</td>
-      <td>{coupon.planId || "All plans"}</td>
+      <td>{coupon.planId === "manual" ? (
+        <span className="coupon-plan-manual">Manual assign</span>
+      ) : coupon.planId || "All plans"}</td>
       <td><span className={"status-badge " + status}>{status}</span></td>
       <td className="coupon-actions">
         <button className="icon-action" title="Edit" onClick={() => onEdit(coupon)}>
@@ -149,7 +151,13 @@ export default function AdminCoupons() {
                   <option value="pro">Pro</option>
                   <option value="business">Business</option>
                   <option value="agency">Agency</option>
+                  <option value="manual">Manually Assigned To User(s)</option>
                 </select>
+                {form.planId === "manual" && (
+                  <p className="cf-hint" style={{ marginTop: 5 }}>
+                    This coupon will only appear in the admin user coupon picker — users cannot self-apply it.
+                  </p>
+                )}
               </div>
               <div className="cf-field">
                 <label>Expiry date (optional)</label>

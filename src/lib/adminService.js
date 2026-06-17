@@ -123,6 +123,7 @@ export function validateCoupon(code, currentPlanId) {
   const coupon = getCoupons().find((c) => c.code.toUpperCase() === code.toUpperCase());
   if (!coupon) return { valid: false, reason: "Coupon code not found." };
   if (!coupon.active) return { valid: false, reason: "This coupon has been deactivated." };
+  if (coupon.planId === "manual") return { valid: false, reason: "This coupon is for admin assignment only and cannot be self-applied." };
   if (coupon.maxUses && coupon.uses >= coupon.maxUses) return { valid: false, reason: "Coupon has reached its usage limit." };
   if (coupon.expiresAt && new Date(coupon.expiresAt) < now) return { valid: false, reason: "This coupon has expired." };
   if (coupon.planId && currentPlanId && coupon.planId !== currentPlanId) {

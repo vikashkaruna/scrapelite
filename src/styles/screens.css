@@ -1924,6 +1924,11 @@
 .icon-action:hover { background: var(--surface-2); color: var(--text); }
 .icon-action.danger:hover { background: color-mix(in srgb, #e0556b 12%, transparent); color: #e0556b; }
 .coupon-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.coupon-plan-manual {
+  display: inline-block; padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: .76em; font-weight: 700; letter-spacing: .03em;
+  background: color-mix(in srgb, #8b5cf6 14%, transparent); color: #7c3aed;
+}
 
 /* Admin Users */
 .admin-filters {

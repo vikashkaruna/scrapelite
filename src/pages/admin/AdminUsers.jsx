@@ -79,7 +79,8 @@ function ExtendModal({ user, onClose, onSave, saving }) {
 }
 
 function CouponModal({ user, onClose, onSave, saving }) {
-  const allCoupons = getCoupons().filter((c) => c.active);
+  // Only show coupons designated for manual admin assignment (planId === "manual").
+  const allCoupons = getCoupons().filter((c) => c.active && c.planId === "manual");
   const [code, setCode]           = useState(user.couponAvailed || "");
   const [customPct, setCustomPct] = useState(
     user.couponDiscount != null ? String(user.couponDiscount) : ""
@@ -106,8 +107,8 @@ function CouponModal({ user, onClose, onSave, saving }) {
           <button className="modal-close" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <p className="modal-sub">
-          Select an active coupon to silently assign to this user.
-          It will not appear as a manual apply option for the user.
+          Only coupons marked <strong>Manually Assigned To User(s)</strong> appear here.
+          These are silently assigned — the user cannot self-apply them.
         </p>
 
         <div className="cf-field">
@@ -123,7 +124,7 @@ function CouponModal({ user, onClose, onSave, saving }) {
               </option>
             ))}
             {allCoupons.length === 0 && (
-              <option value="" disabled>No active coupons — create one in Admin › Coupons</option>
+              <option value="" disabled>No manual-assign coupons — go to Admin › Coupons and set Restrict to Plan = "Manually Assigned To User(s)"</option>
             )}
           </select>
         </div>
