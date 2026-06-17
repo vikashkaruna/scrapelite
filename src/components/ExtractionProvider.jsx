@@ -56,6 +56,16 @@ export function ExtractionProvider({ children }) {
       return;
     }
 
+    // Enforce guest hard limit before starting (single-URL extraction)
+    if (!user) {
+      const guestCheck = guestTrial?.checkCanExtractSingle?.();
+      if (guestCheck && !guestCheck.allowed) {
+        guestTrial.setHardBlockReason?.("single");
+        guestTrial.setShowHardBlock?.(true);
+        return;
+      }
+    }
+
     const id = ++reqId.current;
     lastUrl.current = url;
     lastOpts.current = options;

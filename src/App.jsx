@@ -27,6 +27,7 @@ import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import AdminAI from "./pages/admin/AdminAI.jsx";
+import AdminGeneral from "./pages/admin/AdminGeneral.jsx";
 import About from "./pages/About.jsx";
 import Blog from "./pages/Blog.jsx";
 import Contact from "./pages/Contact.jsx";
@@ -69,6 +70,7 @@ function Shell() {
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="users"   element={<AdminUsers />} />
           <Route path="ai"      element={<AdminAI />} />
+          <Route path="general" element={<AdminGeneral />} />
         </Route>
       </Routes>
     );

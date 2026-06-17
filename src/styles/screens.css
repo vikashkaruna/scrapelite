@@ -4448,3 +4448,84 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ── AdminGeneral page ─────────────────────────────────────────────────────── */
+.admin-general-group {
+  margin-bottom: 24px;
+}
+.admin-general-group-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  color: var(--accent);
+}
+.admin-general-group-head > svg { margin-top: 2px; flex-shrink: 0; }
+.admin-general-group-title {
+  font-size: 1em;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 4px;
+}
+.admin-general-group-desc {
+  font-size: .85em;
+  color: var(--text-3);
+  margin: 0;
+  line-height: 1.5;
+}
+.admin-general-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+@media (max-width: 640px) {
+  .admin-general-fields { grid-template-columns: 1fr; }
+}
+.admin-general-field label {
+  font-weight: 600;
+  font-size: .88em;
+  margin-bottom: 4px;
+}
+.admin-general-field .cf-hint {
+  font-size: .8em;
+  color: var(--text-3);
+  margin: 2px 0 8px;
+  line-height: 1.45;
+}
+.admin-general-field input[type="number"] {
+  width: 100px;
+}
+.admin-general-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  font-size: .83em;
+  color: var(--text-3);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.admin-general-summary svg { flex-shrink: 0; margin-top: 2px; }
+.admin-general-summary b { color: var(--text-1); }
+.admin-general-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Hard-block overlay variant — own dark background (no dismissible backdrop div) */
+.guest-trial-overlay.gtm-hard {
+  background: rgba(0,0,0,.60);
+}
+.guest-trial-overlay.gtm-hard .guest-trial-modal {
+  border-color: var(--warning, #f59e0b);
+}
+.gtm-icon-warn {
+  background: var(--warning-soft, rgba(245,158,11,.12)) !important;
+  color: var(--warning, #f59e0b) !important;
+}
