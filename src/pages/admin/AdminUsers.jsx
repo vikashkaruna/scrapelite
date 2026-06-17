@@ -1,12 +1,22 @@
-// AdminUsers.jsx — user management: invite, extend limits, track sources.
-import { useState } from "react";
-import { getAdminUsers, updateAdminUser, addAdminUser } from "../../lib/adminService.js";
+// AdminUsers.jsx — real user management via Supabase Auth admin API.
+// Falls back to empty state (with a notice) when Supabase is not configured.
+import { useState, useEffect, useCallback } from "react";
+import { fetchRealUsers, extendUserBonus, inviteUserByEmail } from "../../lib/adminConfigService.js";
+import { addAdminUser } from "../../lib/adminService.js";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
+import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
-const PLAN_COLORS = { free: "#94a3b8", select: "#60a5fa", pro: "#818cf8", business: "#a78bfa", agency: "#f472b6" };
-const SOURCE_ICONS = { organic: "globe", referral: "share", linkedin: "linkedin", google: "search", "product-hunt": "zap", twitter: "twitter", direct: "arrow-right" };
+const PLAN_COLORS = {
+  free: "#94a3b8", select: "#60a5fa", pro: "#818cf8",
+  business: "#a78bfa", agency: "#f472b6",
+};
+const SOURCE_ICONS = {
+  organic: "globe", referral: "share", linkedin: "linkedin",
+  google: "search", "product-hunt": "zap", twitter: "twitter",
+  direct: "arrow-right", github: "github", invite: "send",
+};
 
 function PlanPill({ planId }) {
   const plan = getEffectivePlanById(planId);
@@ -17,7 +27,7 @@ function PlanPill({ planId }) {
   );
 }
 
-function ExtendModal({ user, onClose, onSave }) {
+function ExtendModal({ user, onClose, onSave, saving }) {
   const [bonus, setBonus] = useState(100);
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -33,7 +43,9 @@ function ExtendModal({ user, onClose, onSave }) {
             onChange={(e) => setBonus(Number(e.target.value))} />
         </div>
         <div className="modal-actions">
-          <Button variant="primary" size="sm" onClick={() => onSave(user, bonus)}>Apply</Button>
+          <Button variant="primary" size="sm" disabled={saving} onClick={() => onSave(user, bonus)}>
+            {saving ? "Saving…" : "Apply"}
+          </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
         </div>
       </div>
@@ -41,8 +53,16 @@ function ExtendModal({ user, onClose, onSave }) {
   );
 }
 
-function InviteModal({ onClose, onSave }) {
+function InviteModal({ onClose, onSave, saving }) {
   const [form, setForm] = useState({ name: "", email: "", planId: "free", source: "invite" });
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    setErr("");
+    try { await onSave(form); }
+    catch (e) { setErr(e.message); }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-box card card-pad" onClick={(e) => e.stopPropagation()}>
@@ -85,11 +105,14 @@ function InviteModal({ onClose, onSave }) {
             </select>
           </div>
         </div>
+        {err && <div className="admin-ai-notice warn" style={{ marginBottom: 0 }}>
+          <Icon name="alert-circle" size={14} /><span>{err}</span>
+        </div>}
         <div className="modal-actions">
           <Button variant="primary" size="sm" icon="send"
-            disabled={!form.name.trim() || !form.email.trim()}
-            onClick={() => onSave(form)}>
-            Send invite
+            disabled={saving || !form.name.trim() || !form.email.trim()}
+            onClick={submit}>
+            {saving ? "Sending…" : "Send invite"}
           </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
         </div>
@@ -99,11 +122,38 @@ function InviteModal({ onClose, onSave }) {
 }
 
 export default function AdminUsers() {
-  const [users, setUsers]         = useState(getAdminUsers);
-  const [search, setSearch]       = useState("");
+  const showToast = useToast();
+
+  const [users, setUsers]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [fromSeed, setFromSeed] = useState(false);
+  const [warning, setWarning]   = useState("");
+
+  const [search, setSearch]     = useState("");
+  const [planFilter, setPlan]   = useState("all");
+
   const [extendUser, setExtend]   = useState(null);
+  const [extSaving, setExtSaving] = useState(false);
   const [inviteOpen, setInvite]   = useState(false);
-  const [planFilter, setPlan]     = useState("all");
+  const [invSaving, setInvSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await fetchRealUsers();
+      setUsers(result.users || []);
+      setFromSeed(!!result.fromSeed);
+      setWarning(result.warning || "");
+    } catch (e) {
+      setError(e.message || "Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
@@ -112,15 +162,58 @@ export default function AdminUsers() {
     return matchQ && matchP;
   });
 
-  const handleExtend = (user, bonus) => {
-    const updated = { ...user, bonusExtractions: (user.bonusExtractions || 0) + bonus };
-    setUsers(updateAdminUser(updated));
-    setExtend(null);
+  const handleExtend = async (user, bonus) => {
+    setExtSaving(true);
+    try {
+      const result = await extendUserBonus(user.id, bonus);
+      setUsers((prev) =>
+        prev.map((u) => u.id === user.id ? { ...u, bonusExtractions: result.newBonus } : u)
+      );
+      showToast(`Added ${bonus} bonus extractions for ${user.name}.`);
+      setExtend(null);
+    } catch (e) {
+      showToast(e.message || "Failed to extend usage.");
+    } finally {
+      setExtSaving(false);
+    }
   };
 
-  const handleInvite = (form) => {
-    setUsers(addAdminUser({ ...form, inviteSent: true }));
-    setInvite(false);
+  const handleInvite = async (form) => {
+    setInvSaving(true);
+    try {
+      await inviteUserByEmail(form);
+      // Also optimistically add to local list so the invite appears immediately.
+      addAdminUser({ ...form, inviteSent: true });
+      setUsers((prev) => [
+        {
+          id: `local-${Date.now()}`,
+          name: form.name,
+          email: form.email,
+          planId: form.planId || "free",
+          bonusExtractions: 0,
+          source: form.source || "invite",
+          joinedAt: new Date().toISOString().slice(0, 10),
+          extractionsThisMonth: 0,
+          lastActive: new Date().toISOString().slice(0, 10),
+          inviteSent: true,
+          confirmed: false,
+        },
+        ...prev,
+      ]);
+      showToast(`Invite sent to ${form.email}.`);
+      setInvite(false);
+    } catch (e) {
+      if (e.localOnly) {
+        // Supabase not configured — fall back to local-only record
+        addAdminUser({ ...form, inviteSent: true });
+        showToast("Invite recorded locally (Supabase not configured).");
+        setInvite(false);
+      } else {
+        throw e; // re-throw so InviteModal can display the error
+      }
+    } finally {
+      setInvSaving(false);
+    }
   };
 
   return (
@@ -128,12 +221,36 @@ export default function AdminUsers() {
       <div className="admin-section-head">
         <div>
           <h2 className="admin-section-title">User Management</h2>
-          <p className="admin-section-sub">{users.length} users — track sources, extend limits, send invites.</p>
+          <p className="admin-section-sub">
+            {loading ? "Loading…" : `${users.length} registered user${users.length !== 1 ? "s" : ""}`}
+            {!loading && " — track sign-ups, extend limits, send invites."}
+          </p>
         </div>
-        <Button variant="primary" size="sm" icon="send" onClick={() => setInvite(true)}>
-          Send invite
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="ghost" size="sm" icon="refresh" onClick={load} disabled={loading}>
+            Refresh
+          </Button>
+          <Button variant="primary" size="sm" icon="send" onClick={() => setInvite(true)}>
+            Send invite
+          </Button>
+        </div>
       </div>
+
+      {/* Supabase-not-configured notice */}
+      {(fromSeed || warning) && !loading && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-triangle" size={15} />
+          <span>
+            {warning || "Supabase not configured — add SUPABASE_URL + SUPABASE_SERVICE_KEY to Netlify env to see real users."}
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-circle" size={15} /><span>{error}</span>
+        </div>
+      )}
 
       <div className="admin-filters card card-pad">
         <div className="field-shell admin-search-field">
@@ -152,64 +269,93 @@ export default function AdminUsers() {
       </div>
 
       <div className="card admin-table-card">
-        <div className="admin-table-scroll">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Plan</th>
-                <th>Extractions (mo)</th>
-                <th>Bonus</th>
-                <th>Source</th>
-                <th>Joined</th>
-                <th>Last active</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="admin-empty">No users match your filters.</td></tr>
-              ) : (
-                filtered.map((u) => (
-                  <tr key={u.id} className="user-row">
-                    <td>
-                      <div className="user-cell">
-                        <div className="user-avatar">{u.name[0]}</div>
-                        <div>
-                          <div className="user-name">
-                            {u.name}
-                            {u.inviteSent && <span className="invite-badge">invited</span>}
-                          </div>
-                          <div className="user-email">{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><PlanPill planId={u.planId} /></td>
-                    <td>{u.extractionsThisMonth}</td>
-                    <td>{u.bonusExtractions > 0 ? `+${u.bonusExtractions}` : "—"}</td>
-                    <td>
-                      <div className="source-cell">
-                        <Icon name={SOURCE_ICONS[u.source] ?? "globe"} size={13} />
-                        <span>{u.source}</span>
-                      </div>
-                    </td>
-                    <td>{u.joinedAt}</td>
-                    <td>{u.lastActive}</td>
-                    <td>
-                      <button className="icon-action" title="Extend usage" onClick={() => setExtend(u)}>
-                        <Icon name="zap" size={14} />
-                      </button>
+        {loading ? (
+          <div className="admin-ai-loading">
+            <Icon name="loader" size={18} className="spin" /> Loading users from Supabase…
+          </div>
+        ) : (
+          <div className="admin-table-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Plan</th>
+                  <th>Extractions (mo)</th>
+                  <th>Bonus</th>
+                  <th>Source</th>
+                  <th>Joined</th>
+                  <th>Last active</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="admin-empty">
+                      {users.length === 0
+                        ? fromSeed
+                          ? "No users yet — Supabase not configured or no sign-ups."
+                          : "No registered users yet."
+                        : "No users match your filters."}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((u) => (
+                    <tr key={u.id} className="user-row">
+                      <td>
+                        <div className="user-cell">
+                          <div className="user-avatar">{(u.name || u.email || "?")[0].toUpperCase()}</div>
+                          <div>
+                            <div className="user-name">
+                              {u.name}
+                              {u.inviteSent && !u.confirmed && (
+                                <span className="invite-badge">pending</span>
+                              )}
+                            </div>
+                            <div className="user-email">{u.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td><PlanPill planId={u.planId} /></td>
+                      <td>{u.extractionsThisMonth || "—"}</td>
+                      <td>{u.bonusExtractions > 0 ? `+${u.bonusExtractions}` : "—"}</td>
+                      <td>
+                        <div className="source-cell">
+                          <Icon name={SOURCE_ICONS[u.source] ?? "globe"} size={13} />
+                          <span>{u.source || "—"}</span>
+                        </div>
+                      </td>
+                      <td>{u.joinedAt || "—"}</td>
+                      <td>{u.lastActive || "—"}</td>
+                      <td>
+                        <button className="icon-action" title="Extend usage" onClick={() => setExtend(u)}>
+                          <Icon name="zap" size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {extendUser && <ExtendModal user={extendUser} onClose={() => setExtend(null)} onSave={handleExtend} />}
-      {inviteOpen  && <InviteModal onClose={() => setInvite(false)} onSave={handleInvite} />}
+      {extendUser && (
+        <ExtendModal
+          user={extendUser}
+          saving={extSaving}
+          onClose={() => setExtend(null)}
+          onSave={handleExtend}
+        />
+      )}
+      {inviteOpen && (
+        <InviteModal
+          saving={invSaving}
+          onClose={() => setInvite(false)}
+          onSave={handleInvite}
+        />
+      )}
     </div>
   );
 }

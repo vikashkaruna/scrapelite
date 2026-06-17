@@ -50,3 +50,42 @@ export async function saveGeneralConfig(settings) {
   if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
   return data;
 }
+
+// ── User management ──────────────────────────────────────────────────────────
+
+const USERS_ENDPOINT = "/api/admin-users";
+
+/** Fetch all registered users from Supabase auth. Returns { users, fromSeed, warning? }. */
+export async function fetchRealUsers() {
+  const res = await fetch(USERS_ENDPOINT, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Failed to load users (${res.status})`);
+  return data;
+}
+
+/** Extend a user's bonus extractions by writing to their auth metadata. */
+export async function extendUserBonus(userId, bonus) {
+  const res = await fetch(USERS_ENDPOINT, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ userId, bonus }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Extend failed (${res.status})`);
+  return data; // { ok, userId, newBonus }
+}
+
+/** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */
+export async function inviteUserByEmail(form) {
+  const res = await fetch(USERS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify(form),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Invite failed (${res.status})`), { status: res.status, localOnly: data.localOnly });
+  return data;
+}
+
