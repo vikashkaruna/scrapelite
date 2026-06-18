@@ -40,6 +40,7 @@ import VsBrowseAI from "./pages/VsBrowseAI.jsx";
 import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
+import Schedules from "./pages/Schedules.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
@@ -93,6 +94,7 @@ function Shell() {
           <Route path="/preview"                       element={<Preview />} />
           <Route path="/dashboard"                     element={<Dashboard />} />
           <Route path="/batch"                         element={<Batch />} />
+          <Route path="/schedules"                     element={<Schedules />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />

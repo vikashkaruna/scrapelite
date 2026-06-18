@@ -75,6 +75,30 @@ export function recordBatchItems(batchRunId, extractionIds) {
   } catch {}
 }
 
+/**
+ * Record one scheduled-run extraction into a per-schedule history group.
+ * All runs of the same schedule share the group id `schrun_<scheduleId>`, so the
+ * Dashboard collates a schedule's run history together. Marked kind:"schedule".
+ */
+export function recordScheduledItem(schedule, extractionId) {
+  if (!extractionId) return;
+  const runId = `schrun_${schedule.id}`;
+  recordBatchItems(runId, [extractionId]);
+  const existing = listBatchRuns().find((r) => r.id === runId);
+  saveBatchRun({
+    id: runId,
+    kind: "schedule",
+    scheduleId: schedule.id,
+    label: schedule.label,
+    intent: schedule.intent,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    lastRunAt: new Date().toISOString(),
+    totalUrls: schedule.type === "batch" ? (schedule.target?.length || 0) : 1,
+    successCount: (existing?.successCount || 0) + 1,
+    failedCount: existing?.failedCount || 0,
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const INTENT_LABELS = {

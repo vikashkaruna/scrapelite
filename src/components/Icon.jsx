@@ -6,6 +6,7 @@ import {
   Link,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   ArrowUpRight,
   Trash2,
   Download,
@@ -106,12 +107,17 @@ import {
   Columns,
   Briefcase,
   IndianRupee,
+  // Scheduler additions
+  Pause,
+  Bell,
+  CalendarClock,
 } from "lucide-react";
 
 const MAP = {
   link: Link,
   "arrow-left": ArrowLeft,
   "arrow-right": ArrowRight,
+  "arrow-up": ArrowUp,
   "arrow-up-right": ArrowUpRight,
   trash: Trash2,
   download: Download,
@@ -213,6 +219,10 @@ const MAP = {
   columns: Columns,
   briefcase: Briefcase,
   "indian-rupee": IndianRupee,
+  // Scheduler
+  pause: Pause,
+  bell: Bell,
+  "calendar-clock": CalendarClock,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {

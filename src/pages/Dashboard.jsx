@@ -1,5 +1,5 @@
 // Dashboard.jsx — historical view of saved extractions (route "/dashboard").
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -132,6 +132,22 @@ function DemoBadge() {
   return <span className="demo-badge"><Icon name="flask" size={11} /> Demo</span>;
 }
 
+// ── Source category (Single · Batch · Scheduled) ──────────────────────────────
+const CATEGORY_META = {
+  single:   { label: "Single",    icon: "globe",         cls: "cat-single" },
+  batch:    { label: "Batch",     icon: "layers-2",      cls: "cat-batch" },
+  schedule: { label: "Scheduled", icon: "calendar-clock", cls: "cat-schedule" },
+};
+
+function CategoryChip({ category }) {
+  const m = CATEGORY_META[category] || CATEGORY_META.single;
+  return (
+    <span className={"cat-chip " + m.cls} title={`${m.label} extraction`}>
+      <Icon name={m.icon} size={10} /> {m.label}
+    </span>
+  );
+}
+
 function RowActions({ item, onView, onDelete, compact }) {
   return (
     <div className="row-actions" onClick={(e) => e.stopPropagation()}>
@@ -145,7 +161,7 @@ function RowActions({ item, onView, onDelete, compact }) {
   );
 }
 
-function DashCard({ item, selected, onToggle, onView, onDelete, isBatch }) {
+function DashCard({ item, selected, onToggle, onView, onDelete, category }) {
   return (
     <div className={"dash-card card" + (selected ? " sel" : "") + (item._demo ? " demo-item" : "")} onClick={() => onView(item)}>
       <div className="dash-card-top">
@@ -153,7 +169,7 @@ function DashCard({ item, selected, onToggle, onView, onDelete, isBatch }) {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="dash-card-title">
             {item.page_title}{item._demo && <DemoBadge />}
-            {isBatch && <span className="batch-item-tag" title="Saved from a batch run"><Icon name="layers-2" size={10} /> Batch</span>}
+            {category !== "single" && <CategoryChip category={category} />}
           </div>
           <div className="dash-card-url">{hostOf(item.url)}{pathOf(item.url) !== "/" ? pathOf(item.url) : ""}</div>
         </div>
@@ -387,13 +403,29 @@ export default function Dashboard() {
   // Batch run history (localStorage-backed)
   const [batchRuns, setBatchRuns] = useState(() => listBatchRuns());
   const [batchFilter, setBatchFilter] = useState(null); // null = no filter
-  const batchMap = useRef(readBatchMap()); // { extractionId: batchRunId }
+  const [typeFilter, setTypeFilter] = useState("all");  // all | single | batch | schedule
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  const batchMap = useRef(readBatchMap()); // { extractionId: batchRunId | schrun_<id> }
 
   // Reload batch map when filtering changes (picks up runs saved mid-session)
   useEffect(() => {
     setBatchRuns(listBatchRuns());
     batchMap.current = readBatchMap();
-  }, [batchFilter]);
+  }, [batchFilter, items]);
+
+  // Resolve a run group's kind (batch vs scheduled) for categorisation.
+  const runKindOf = (gid) => {
+    if (!gid) return null;
+    const run = batchRuns.find((r) => r.id === gid);
+    return run?.kind || (String(gid).startsWith("schrun_") ? "schedule" : "batch");
+  };
+  const categoryOf = (id) => {
+    const gid = batchMap.current[id];
+    if (!gid) return "single";
+    return runKindOf(gid) === "schedule" ? "schedule" : "batch";
+  };
+  const toggleGroup = (gid) =>
+    setExpandedGroups((s) => { const n = new Set(s); n.has(gid) ? n.delete(gid) : n.add(gid); return n; });
 
   useEffect(() => {
     const onResize = () => setPageSize(rowsForViewport());
@@ -432,18 +464,59 @@ export default function Dashboard() {
     if (batchFilter) {
       result = result.filter((it) => batchMap.current[it.id] === batchFilter);
     }
+    // Category filter — single / batch / scheduled
+    if (typeFilter !== "all") {
+      result = result.filter((it) => categoryOf(it.id) === typeFilter);
+    }
     const q = query.trim().toLowerCase();
     if (!q) return result;
     const terms = q.split(/\s+/);
     return result.filter((it) => { const hay = haystack(it); return terms.every((t) => hay.includes(t)); });
-  }, [items, query, batchFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, query, batchFilter, typeFilter, batchRuns]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [query]);
+  // ── Group rows by their originating job/run (collapsible) ───────────────────
+  // Each "block" is either a standalone single extraction or a run group (batch /
+  // scheduled) holding its child extractions. Blocks are sorted newest-first and
+  // paginated, so grouping never breaks the pager.
+  const blocks = useMemo(() => {
+    const map = batchMap.current;
+    const groups = new Map();
+    const out = [];
+    for (const it of filtered) {
+      const gid = map[it.id];
+      if (gid) {
+        if (!groups.has(gid)) {
+          const run = batchRuns.find((r) => r.id === gid);
+          const block = {
+            type: "group", groupId: gid,
+            kind: runKindOf(gid),
+            label: run?.label || (String(gid).startsWith("schrun_") ? "Scheduled run" : "Batch run"),
+            items: [], date: it.created_at,
+          };
+          groups.set(gid, block);
+          out.push(block);
+        }
+        const g = groups.get(gid);
+        g.items.push(it);
+        if (new Date(it.created_at) > new Date(g.date)) g.date = it.created_at;
+      } else {
+        out.push({ type: "single", item: it, date: it.created_at });
+      }
+    }
+    out.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, batchRuns]);
+
+  const totalPages = Math.max(1, Math.ceil(blocks.length / pageSize));
+  useEffect(() => { setPage(1); }, [query, typeFilter, batchFilter]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const start = (page - 1) * pageSize;
-  const pageItems = filtered.slice(start, start + pageSize);
+  const pageBlocks = blocks.slice(start, start + pageSize);
+  // Flatten the page's blocks back to the items shown (for select-all + card view).
+  const pageItems = pageBlocks.flatMap((b) => (b.type === "group" ? b.items : [b.item]));
 
   const pageIds = pageItems.map((it) => it.id);
   const pageAllSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
@@ -543,8 +616,37 @@ export default function Dashboard() {
   const exportCount = selected.size || filtered.length;
   const exportLabel = selected.size ? `${selected.size} selected` : `all ${filtered.length}`;
 
-  // Tag: is this item from any batch run?
-  const isBatchItem = (id) => Boolean(batchMap.current[id]);
+  // Render one extraction row (used for standalone singles AND group children).
+  const renderItemRow = (it, child) => (
+    <tr
+      key={it.id}
+      className={(selected.has(it.id) ? "sel" : "") + (it._demo ? " demo-row" : "") + (child ? " dash-child-row" : "")}
+      onClick={() => view(it)}
+    >
+      <td className="col-check" onClick={(e) => e.stopPropagation()}>
+        {!it._demo && <Check checked={selected.has(it.id)} onChange={() => toggleOne(it.id)} title="Select extraction" />}
+      </td>
+      <td>
+        <div className="td-page">
+          <FaviconDot url={it.url} size={34} />
+          <div style={{ minWidth: 0 }}>
+            <div className="td-title">{it.page_title}{it._demo && <DemoBadge />}</div>
+            <div className="td-url">{hostOf(it.url)}{pathOf(it.url) !== "/" ? pathOf(it.url) : ""}</div>
+          </div>
+        </div>
+      </td>
+      <td className="col-type"><CategoryChip category={categoryOf(it.id)} /></td>
+      <td className="col-sum"><span className="td-sum">{snippet(it.ai_summary, 150)}</span></td>
+      <td className="col-struct">
+        <div className="td-struct">
+          <span><b>{it.headings.length}</b> headings</span>
+          <span><b>{it.links.length}</b> links</span>
+        </div>
+      </td>
+      <td className="col-date"><span className="td-date">{fmtDate(it.created_at)}</span></td>
+      <td className="col-act"><RowActions item={it} onView={view} onDelete={onDelete} /></td>
+    </tr>
+  );
 
   return (
     <div className="page fade">
@@ -633,6 +735,23 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
+            <div className="seg-filter dash-type-filter">
+              {[
+                { k: "all", label: "All", icon: "list-checks" },
+                { k: "single", label: "Single", icon: "globe" },
+                { k: "batch", label: "Batch", icon: "layers-2" },
+                { k: "schedule", label: "Scheduled", icon: "calendar-clock" },
+              ].map((t) => (
+                <button
+                  key={t.k}
+                  className={"seg-opt" + (typeFilter === t.k ? " on" : "")}
+                  onClick={() => setTypeFilter(t.k)}
+                  title={`Show ${t.label.toLowerCase()} extractions`}
+                >
+                  <Icon name={t.icon} size={13} /> <span className="dash-type-label">{t.label}</span>
+                </button>
+              ))}
+            </div>
             <div className="dash-toolbar-right">
               {selected.size > 0 ? (
                 <>
@@ -676,7 +795,7 @@ export default function Dashboard() {
           <>
             <div className="dash-grid rise">
               {pageItems.map((it) => (
-                <DashCard key={it.id} item={it} selected={selected.has(it.id)} onToggle={toggleOne} onView={view} onDelete={onDelete} isBatch={isBatchItem(it.id)} />
+                <DashCard key={it.id} item={it} selected={selected.has(it.id)} onToggle={toggleOne} onView={view} onDelete={onDelete} category={categoryOf(it.id)} />
               ))}
             </div>
             <Pager page={page} totalPages={totalPages} start={start} shown={pageItems.length} total={filtered.length} onPage={setPage} />
@@ -691,6 +810,7 @@ export default function Dashboard() {
                       <Check checked={pageAllSelected} indeterminate={pageSomeSelected && !pageAllSelected} onChange={togglePage} title="Select all on this page" />
                     </th>
                     <th>Page</th>
+                    <th className="col-type">Type</th>
                     <th className="col-sum">AI summary</th>
                     <th className="col-struct">Structure</th>
                     <th className="col-date">Extracted</th>
@@ -698,38 +818,29 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((it) => (
-                    <tr key={it.id} className={(selected.has(it.id) ? "sel" : "") + (it._demo ? " demo-row" : "")} onClick={() => view(it)}>
-                      <td className="col-check" onClick={(e) => e.stopPropagation()}>
-                        {!it._demo && <Check checked={selected.has(it.id)} onChange={() => toggleOne(it.id)} title="Select extraction" />}
-                      </td>
-                      <td>
-                        <div className="td-page">
-                          <FaviconDot url={it.url} size={34} />
-                          <div style={{ minWidth: 0 }}>
-                            <div className="td-title">
-                              {it.page_title}{it._demo && <DemoBadge />}
-                              {isBatchItem(it.id) && (
-                                <span className="batch-item-tag" title="Saved from a batch run">
-                                  <Icon name="layers-2" size={10} /> Batch
-                                </span>
-                              )}
+                  {pageBlocks.map((b) => {
+                    // ── Standalone single extraction ──
+                    if (b.type === "single") return renderItemRow(b.item, false);
+                    // ── Collapsible run group (batch / scheduled) ──
+                    const open = expandedGroups.has(b.groupId);
+                    const cat = b.kind === "schedule" ? "schedule" : "batch";
+                    return (
+                      <Fragment key={b.groupId}>
+                        <tr className={"dash-group-row" + (open ? " open" : "")} onClick={() => toggleGroup(b.groupId)}>
+                          <td className="col-check"><Icon name={open ? "chevron-down" : "chevron-right"} size={16} className="dash-group-caret" /></td>
+                          <td colSpan={6}>
+                            <div className="dash-group-head">
+                              <CategoryChip category={cat} />
+                              <span className="dash-group-label">{b.label}</span>
+                              <span className="dash-group-count"><Icon name="globe" size={11} /> {b.items.length} page{b.items.length !== 1 ? "s" : ""}</span>
+                              <span className="dash-group-date">{fmtDate(b.date)}</span>
                             </div>
-                            <div className="td-url">{hostOf(it.url)}{pathOf(it.url) !== "/" ? pathOf(it.url) : ""}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="col-sum"><span className="td-sum">{snippet(it.ai_summary, 150)}</span></td>
-                      <td className="col-struct">
-                        <div className="td-struct">
-                          <span><b>{it.headings.length}</b> headings</span>
-                          <span><b>{it.links.length}</b> links</span>
-                        </div>
-                      </td>
-                      <td className="col-date"><span className="td-date">{fmtDate(it.created_at)}</span></td>
-                      <td className="col-act"><RowActions item={it} onView={view} onDelete={onDelete} /></td>
-                    </tr>
-                  ))}
+                          </td>
+                        </tr>
+                        {open && b.items.map((it) => renderItemRow(it, true))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

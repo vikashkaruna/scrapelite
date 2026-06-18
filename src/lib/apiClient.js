@@ -65,4 +65,15 @@ export const apiClient = {
   /** Delete an extraction by id. */
   deleteExtraction: (id) =>
     request(`/extractions?id=${encodeURIComponent(id)}`, "DELETE"),
+
+  // ── Schedules CRUD (recurring extraction / track-changes) ───────────────────
+  /** List all schedules for the current session, newest first. */
+  listSchedules: () => request("/schedules", "GET"),
+
+  /** Create or update a schedule. Returns the saved row. */
+  upsertSchedule: (payload) => request("/schedules", "POST", payload),
+
+  /** Delete a schedule by id. */
+  deleteSchedule: (id) =>
+    request(`/schedules?id=${encodeURIComponent(id)}`, "DELETE"),
 };

@@ -42,6 +42,16 @@ function buildSummaryPrompt(extraction) {
   const links = (extraction.links || [])
     .map((l) => `- ${l.text} → ${l.href}`)
     .join("\n");
+  // Paste-anything: when the user pasted raw text/HTML, summarize the actual
+  // content (capped) rather than just the derived headings/links.
+  if (extraction.raw_text) {
+    return (
+      `You are summarizing pasted content for a non-technical researcher.\n` +
+      `Write a single concise paragraph (3–5 sentences) describing what the content is about, ` +
+      `its key points, and its apparent intent. Do not use markdown.\n\n` +
+      `Content:\n${String(extraction.raw_text).slice(0, 6000)}\n`
+    );
+  }
   return (
     `You are summarizing a web page for a non-technical researcher.\n` +
     `Write a single concise paragraph (3–5 sentences) describing what the page is about, ` +
