@@ -99,9 +99,9 @@ export default function HeroComposer({
   const ACTION = {
     schedule: { icon: "calendar-clock", label: "Schedule" },
     batch:    { icon: "layers-2",       label: `Extract${urlCount ? ` ${urlCount}` : ""}` },
-    text:     { icon: "arrow-up",       label: "Extract" },
+    text:     { icon: "zap",            label: "Extract" },
     map:      { icon: "network",        label: "Map" },
-    single:   { icon: "arrow-up",       label: "Extract" },
+    single:   { icon: "zap",            label: "Extract" },
   }[actionMode];
 
   // ── CSV / file import ──────────────────────────────────────────────────────
