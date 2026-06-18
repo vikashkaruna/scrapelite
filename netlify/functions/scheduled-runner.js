@@ -99,7 +99,75 @@ function sb() {
   };
 }
 
-async function fireAlert(schedule, changedSummary) {
+const SITE_URL = process.env.URL || process.env.SITE_URL || "https://scrapelite.netlify.app";
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+// Compose the change-alert email body.
+function changeEmailHtml(schedule, detectedAt) {
+  const isBatch = schedule.type === "batch";
+  const target = isBatch
+    ? `${schedule.target.length} URL${schedule.target.length !== 1 ? "s" : ""}`
+    : escapeHtml(schedule.target);
+  const row = (k, v) =>
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">${k}</td>` +
+    `<td style="padding:4px 0;color:#111827;font-size:13px;font-weight:600">${v}</td></tr>`;
+  return (
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
+    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
+    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Monitoring</div>` +
+    `<div style="font-size:20px;font-weight:800;margin-top:4px">Content changed</div></div>` +
+    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+    `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">` +
+    `Your schedule <strong>${escapeHtml(schedule.label)}</strong> detected a change since the last check.</p>` +
+    `<table style="border-collapse:collapse;margin-bottom:18px">` +
+    row("What", isBatch ? "Batch monitor" : "Tracked page") +
+    row("Target", target) +
+    row("Extracting", escapeHtml(schedule.intent || "summary")) +
+    row("Detected", new Date(detectedAt).toUTCString()) +
+    `</table>` +
+    `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;` +
+    `text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View in DatIQ →</a>` +
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">` +
+    `You're receiving this because you set up a DatIQ monitoring schedule with this email. ` +
+    `Pause or remove it anytime on the Schedules page.</p>` +
+    `</div></div>`
+  );
+}
+
+// Direct email via Resend (https://resend.com) — REST, no SDK. Returns true on send.
+async function sendAlertEmail(schedule, detectedAt) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !schedule.alertEmail) return false;
+  const from = process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to: [schedule.alertEmail],
+        subject: `DatIQ — content changed: ${schedule.label}`,
+        html: changeEmailHtml(schedule, detectedAt),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[DatIQ] Resend alert failed (${res.status})`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[DatIQ] Resend alert error:", err.message);
+    return false;
+  }
+}
+
+// Post a change event to the automation webhook (n8n / Zapier / Make), if set.
+async function postAlertWebhook(schedule, changedSummary, detectedAt, emailed) {
   const hook = process.env.SCHEDULE_ALERT_WEBHOOK || process.env.VITE_WEBHOOK_URL || "";
   if (!hook) return;
   try {
@@ -111,15 +179,25 @@ async function fireAlert(schedule, changedSummary) {
         scheduleId: schedule.id,
         label: schedule.label,
         type: schedule.type,
+        intent: schedule.intent,
         alertEmail: schedule.alertEmail || null,
+        emailSent: emailed,            // true if Resend already delivered the email
         target: schedule.target,
         ...changedSummary,
-        at: new Date().toISOString(),
+        at: detectedAt,
       }),
     });
   } catch (err) {
     console.warn("[DatIQ] alert webhook failed:", err.message);
   }
+}
+
+// Notify on a detected change: send a real email (Resend) AND post the webhook
+// event (for automations). Either path is optional; both degrade gracefully.
+async function fireAlert(schedule, changedSummary) {
+  const detectedAt = new Date().toISOString();
+  const emailed = await sendAlertEmail(schedule, detectedAt);
+  await postAlertWebhook(schedule, changedSummary, detectedAt, emailed);
 }
 
 // Scrape one target and return a content fingerprint string.

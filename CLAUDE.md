@@ -59,7 +59,14 @@ drop policy if exists "users own schedules" on public.scheduled_tasks;
 create policy "users own schedules" on public.scheduled_tasks
   for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
-Netlify env needed by the runner: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (service key bypasses RLS to read/update all users' schedules); optional `SCHEDULE_ALERT_WEBHOOK` (else falls back to `VITE_WEBHOOK_URL`) for change alerts. The scheduled function auto-registers on deploy (no toml change). Note: alert emails are sent via the webhook payload (`alertEmail` field) — wire an n8n/email flow to actually deliver them, or extend `fireAlert()` to call an email API.
+Netlify env needed by the runner: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (service key bypasses RLS to read/update all users' schedules). The scheduled function auto-registers on deploy (no toml change).
+
+**Alert email delivery (wired):** on a detected change, `fireAlert()` sends a real HTML email **directly via Resend** and also posts a `schedule.changed` event to the automation webhook. Email env (optional — both paths degrade gracefully):
+- `RESEND_API_KEY` — from resend.com; required to actually send email. Without it, no email is sent (webhook still fires).
+- `ALERT_EMAIL_FROM` — sender, e.g. `DatIQ Alerts <alerts@datiq.app>` (the domain must be verified in Resend). Defaults to that.
+- `SCHEDULE_ALERT_WEBHOOK` (else `VITE_WEBHOOK_URL`) — optional n8n/Zapier/Make webhook; receives the change event (`emailSent` flag included) for automations.
+- `URL`/`SITE_URL` — used for the "View in DatIQ" link (Netlify sets `URL` automatically).
+The manual "Run now" on /schedules is client-side and only toasts the change; automated (hourly) runs send the email.
 
 ---
 
