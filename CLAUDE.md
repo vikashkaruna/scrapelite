@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-18 — R19 (Scheduler + unified Home composer) built on branch `Implement_scheduler`, NOT merged to main — see "## R19" below**
+> **Last updated: 2026-06-20 — R19 (Scheduler + unified Home composer) MERGED to main (`980ac21`) + `scripts/scheduler.sql` (`6bc4731`); Netlify env already set — ONLY remaining step is running `scripts/scheduler.sql` in Supabase. See "## R19".**
 
 ---
 
@@ -17,15 +17,15 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `Implement_scheduler` — R19 (scheduler) — **pushed, NOT merged to main** |
-| **Latest main commit** | `df9e4ad` — R18: admin dashboard upgrades |
-| **Latest branch commit** | R19 — scheduler + composer (see `## R19`) |
+| **Current branch** | `main` — R19 merged + pushed |
+| **Latest main commit** | `6bc4731` — `scripts/scheduler.sql` (R19 DB setup); R19 merge = `980ac21` |
+| **Branch `Implement_scheduler`** | merged into main via PR #12; can be deleted |
 
 ---
 
-## R19 — Scheduler & unified Home composer (branch `Implement_scheduler`, NOT merged)
+## R19 — Scheduler & unified Home composer (MERGED to main — PR #12)
 
-> Built 2026-06-18 on branch `Implement_scheduler`. **Do NOT merge to main without the user's explicit go-ahead** — the user wants to test the branch first. Everything below works against the localStorage fallback in `npm run dev`; the recurring server-side execution needs the Supabase setup in the "R19 Supabase setup" block.
+> Built 2026-06-18, **merged to main 2026-06-20** (`980ac21`; PR #12). Netlify production auto-deployed. **The only remaining step to make recurring runs live is running `scripts/scheduler.sql` in Supabase** (creates `scheduled_tasks` + base `extractions`) — all required Netlify env vars are already set (verified 2026-06-20: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `SCHEDULE_ALERT_WEBHOOK`, scraping + AI keys). Until the SQL is run, the hourly runner errors on a missing table; schedules persist in localStorage and "Run now" works regardless.
 
 **Feature summary**
 1. **Unified Home composer** (`src/components/HeroComposer.jsx`) replaces the old single-line URL field. One textarea + bottom toolbar: `+` (Import CSV / paste multiple URLs), **Batch** toggle, **Schedule** preset dropdown, and a compact in-box action button whose icon changes by mode (single → `arrow-up`, batch → `layers-2`, scheduled → `calendar-clock`; scheduled button tinted purple). Drag-drop CSV anywhere on the box. Home is popup-free.
@@ -41,25 +41,10 @@
 **Files changed:** `App.jsx` (route `/schedules`), `TopBar.jsx` (nav link), `Icon.jsx` (+arrow-up, pause, bell, calendar-clock), `utils.js` (classifyInput/extractUrls/looksLikeUrl/looksLikeHtml/hashContent), `firecrawlService.js` + `aiService.js` (paste-anything), `apiClient.js` (schedules CRUD), `extractionsRepo.js` (saveScheduledExtraction), `batchRunsService.js` (recordScheduledItem + kind), `Batch.jsx` (autorun + kind), `Home.jsx` (uses HeroComposer), `Dashboard.jsx` (category/filter/grouping), `screens.css`. **Deleted:** `src/components/ScheduleModal.jsx` (replaced by inline ScheduleEditor).
 **New localStorage key:** `datiq.schedules`. **New routes:** `/schedules`.
 
-### R19 Supabase setup (REQUIRED for real recurring execution — pending the user)
-Without this, schedules persist in localStorage and "Run now" works, but the hourly server runner does nothing. Run in the Supabase SQL editor:
-```sql
-create table if not exists public.scheduled_tasks (
-  id text primary key,
-  user_id uuid references auth.users,
-  status text default 'active',
-  cron text,
-  next_run_at timestamptz,
-  data jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-alter table public.scheduled_tasks enable row level security;
-drop policy if exists "users own schedules" on public.scheduled_tasks;
-create policy "users own schedules" on public.scheduled_tasks
-  for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
-```
-Netlify env needed by the runner: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (service key bypasses RLS to read/update all users' schedules). The scheduled function auto-registers on deploy (no toml change).
+### R19 Supabase setup (THE one remaining step — run the SQL)
+**Run `scripts/scheduler.sql` in the Supabase SQL Editor** (idempotent; creates `public.scheduled_tasks` + base `public.extractions` with per-user RLS). That's it — the Netlify env below is **already set** (verified 2026-06-20). Without the table, the hourly runner errors on each run; schedules still persist in localStorage and "Run now" works.
+
+Netlify env needed by the runner (✅ all already set): `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (service key bypasses RLS to read/update all users' schedules). The scheduled function auto-registers on deploy (no toml change). After running the SQL, confirm Netlify → Functions shows `scheduled-runner`, and that the `ALERT_EMAIL_FROM` domain is verified in Resend.
 
 **Alert email delivery (wired):** on a detected change, `fireAlert()` sends a real HTML email **directly via Resend** and also posts a `schedule.changed` event to the automation webhook. Email env (optional — both paths degrade gracefully):
 - `RESEND_API_KEY` — from resend.com; required to actually send email. Without it, no email is sent (webhook still fires).
