@@ -11,14 +11,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
-import Button from "../components/Button.jsx";
-import { useExtraction } from "../components/ExtractionProvider.jsx";
+import HeroComposer from "../components/HeroComposer.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
-import { isValidUrl, normalizeUrl } from "../lib/utils.js";
-import { CONTACTS_PROMPT, QUICK_ACTIONS, enrichMeta } from "../lib/extractionPresets.js";
+import { classifyInput, normalizeUrl } from "../lib/utils.js";
+import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
 // Derive the pricing prompt from the existing QUICK_ACTIONS config.
@@ -70,7 +69,6 @@ function GuideTip({ tip, onDismiss }) {
 }
 
 export default function Home() {
-  const { extract } = useExtraction();
   const { personaId, userName, resetOnboarding } = usePersona();
   const billing = useBilling();
   const showToast = useToast();
@@ -118,15 +116,18 @@ export default function Home() {
     try { localStorage.setItem(`datiq.tip.${persona.id}`, "1"); } catch { /* skip */ }
   };
 
-  // ── OG preview: debounced fetch on valid URL changes ──────────────────
-  const valid = isValidUrl(url);
+  // ── OG preview: debounced fetch when the input is a single URL ─────────
+  // The composer accepts URLs, URL lists, or raw text — only fetch a preview
+  // when the whole input resolves to exactly one URL.
+  const classification = classifyInput(url);
+  const valid = classification.kind === "single";
 
   useEffect(() => {
     if (!valid) { setPreview(null); return; }
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
       try {
-        const target = normalizeUrl(url);
+        const target = normalizeUrl(classification.urls[0]);
         const res = await fetch(`/api/og-preview?url=${encodeURIComponent(target)}`);
         if (res.ok) {
           const data = await res.json();
@@ -160,35 +161,13 @@ export default function Home() {
     }
   }, []);
 
-  // ── Form submit ────────────────────────────────────────────────────────
-  const handleSubmit = (e) => {
-    e?.preventDefault();
-
-    // Single-URL path
-    if (!valid) { setTouched(true); return; }
-    const target = normalizeUrl(url);
-
-    if (intent === "map") {
-      extract(target, { mapMode: true });
-      return;
-    }
-
-    const prompt =
-      intent === "contacts" ? CONTACTS_PROMPT :
-      intent === "pricing"  ? PRICING_PROMPT :
-      intent === "custom"   ? customPrompt.trim() :
-      ""; // summary — no custom prompt
-
-    const opts = { renderJs, customPrompt: prompt };
-    if (prompt) {
-      opts.enrichMeta = enrichMeta(
-        intent === "contacts" ? "leadership" :
-        intent === "pricing"  ? "pricing" :
-        "custom"
-      );
-    }
-    extract(target, opts);
-  };
+  // Resolve the per-intent prompt that the composer carries into the extraction.
+  // (contacts / pricing have canned prompts; custom uses the user's text.)
+  const resolvedCustomPrompt =
+    intent === "contacts" ? CONTACTS_PROMPT :
+    intent === "pricing"  ? PRICING_PROMPT :
+    intent === "custom"   ? customPrompt.trim() :
+    "";
 
   // ── Copy for hero section ─────────────────────────────────────────────
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
@@ -313,60 +292,20 @@ export default function Home() {
           );
         })()}
 
-        {/* ── Main extraction form ─────────────────────────────────────── */}
-        <form
+        {/* ── Main extraction composer ─────────────────────────────────── */}
+        <div
           className="rise"
-          onSubmit={handleSubmit}
-          style={{ animationDelay: ".18s", width: "100%", maxWidth: 620, margin: "12px 0 0" }}
+          style={{ animationDelay: ".18s", width: "100%", maxWidth: 760, margin: "12px 0 0" }}
         >
-          {/* URL input row + FAB */}
-          <div className="home-input-row">
-              <div className={"field-shell" + (touched && !valid ? " field-error" : "")}>
-                <span className="field-lead"><Icon name="globe" size={20} /></span>
-                <input
-                  className="field-input"
-                  type="text"
-                  inputMode="url"
-                  placeholder={persona ? `https://${examples[0]}` : "https://example.com"}
-                  value={url}
-                  autoFocus
-                  onChange={(e) => {
-                    setUrl(e.target.value);
-                    if (touched) setTouched(false);
-                    setPreview(null);
-                  }}
-                  aria-label="Page URL to extract"
-                />
-                <Button
-                  variant="primary"
-                  type="submit"
-                  iconRight="arrow-right"
-                  style={{ height: 50, fontSize: "1em", background: persona ? persona.color : undefined }}
-                >
-                  {intent === "map" ? "Map domain" : "Extract"}
-                </Button>
-              </div>
-              {/* FAB: Bulk import — navigates to /batch */}
-              <button
-                type="button"
-                className="home-input-fab"
-                onClick={() => navigate("/batch")}
-                title="Extract multiple URLs in bulk"
-                aria-label="Bulk URL import"
-              >
-                <Icon name="layers-2" size={16} />
-                <span className="home-input-fab-label">Bulk import</span>
-              </button>
-            </div>
-
-          {/* Validation error */}
-          {touched && !valid && (
-            <div style={{ marginTop: 8, textAlign: "center" }}>
-              <span style={{ color: "#e0556b", fontSize: ".9em", fontWeight: 550 }}>
-                Hmm, that doesn't look like a valid URL.
-              </span>
-            </div>
-          )}
+          <HeroComposer
+            value={url}
+            onChange={(v) => { setUrl(v); if (touched) setTouched(false); setPreview(null); }}
+            intent={intent}
+            customPrompt={resolvedCustomPrompt}
+            renderJs={renderJs}
+            accentColor={persona ? persona.color : undefined}
+            placeholder={persona ? `https://${examples[0]}  ·  or paste any text to extract` : undefined}
+          />
 
           {/* OG Preview card */}
           {(previewLoading || preview) && (
@@ -482,7 +421,7 @@ export default function Home() {
             </div>
           )}
 
-        </form>
+        </div>
 
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
         <div className="rise home-features" style={{ animationDelay: ".26s" }}>

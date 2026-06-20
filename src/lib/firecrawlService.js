@@ -18,7 +18,7 @@ import {
   mockCustomExtraction,
   mockDomainMap,
 } from "../data/mockData.js";
-import { hostOf } from "./utils.js";
+import { hostOf, looksLikeHtml, hashContent } from "./utils.js";
 
 const MOCK_DELAY_MS = 2000;
 
@@ -121,6 +121,41 @@ async function realMap(url) {
   return raw?.mapLinks || [];
 }
 
+// ── Paste-anything path (raw text / HTML, no network) ──────────────────────────
+// When the user pastes content instead of a URL (a pricing table, an email
+// thread, newsletter HTML…), we build the same { page_title, headings, links }
+// structure locally. HTML is parsed with DOMParser; plain text is wrapped so the
+// downstream AI summary / custom extraction still works. The pseudo-URL keeps the
+// rest of the pipeline (save, enrichment store keyed by url) happy.
+function buildStructureFromText(rawText, options = {}) {
+  const text = String(rawText || "").trim();
+  const pseudoUrl = options.pseudoUrl || `text://pasted-${hashContent(text)}`;
+
+  if (looksLikeHtml(text)) {
+    const parsed = parseHtml(text, "https://pasted.local/");
+    return {
+      url: pseudoUrl,
+      page_title: parsed.page_title || "Pasted content",
+      headings: parsed.headings,
+      links: parsed.links,
+      is_pasted: true,
+      raw_text: text,
+    };
+  }
+
+  // Plain text: derive a title from the first non-empty line; keep the body as
+  // a single content blob the summarizer/custom-extractor can read.
+  const firstLine = text.split(/\n/).map((l) => l.trim()).find(Boolean) || "Pasted text";
+  return {
+    url: pseudoUrl,
+    page_title: firstLine.slice(0, 120),
+    headings: [{ tag: "H1", text: firstLine.slice(0, 120) }],
+    links: [],
+    is_pasted: true,
+    raw_text: text,
+  };
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -146,6 +181,11 @@ export async function mapDomain(url) {
  * @returns {Promise<object>}
  */
 export async function extractStructure(url, options = {}) {
+  // Paste-anything: when options.rawText is present, skip the network entirely and
+  // build the structure from the pasted content (handles raw text + HTML).
+  if (options.rawText) {
+    return buildStructureFromText(options.rawText, { pseudoUrl: url });
+  }
   if (options.mapMode) return mapDomain(url);
   return hasFirecrawl ? realScrape(url, options) : mockScrape(url, options);
 }

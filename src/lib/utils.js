@@ -66,6 +66,79 @@ export function normalizeUrl(value) {
   return u;
 }
 
+// ── Input classification (single URL · multi-URL · raw text) ─────────────────
+// The Home composer accepts anything: a single URL, a list of URLs, or raw
+// text / HTML pasted in. These helpers decide how to route the input.
+
+// True only when the whole trimmed string is a single bare URL (no spaces, one token).
+export function looksLikeUrl(value) {
+  const s = String(value).trim();
+  if (!s || /\s/.test(s)) return false;
+  return isValidUrl(s);
+}
+
+// Split a blob into the URLs it contains (newline / comma / semicolon / whitespace
+// separated), deduped and normalized to https://. Returns { valid, invalid }.
+export function extractUrls(text) {
+  const raw = String(text)
+    .split(/[\n,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const valid = [];
+  const invalid = [];
+  const seen = new Set();
+  for (const r of raw) {
+    if (!isValidUrl(r)) { invalid.push(r); continue; }
+    const n = normalizeUrl(r);
+    const key = n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    valid.push(n);
+  }
+  return { valid, invalid };
+}
+
+// Classify what the user typed/pasted into the composer.
+//   "single" — exactly one URL
+//   "multi"  — two or more URLs (and little/no other prose)
+//   "text"   — raw text / HTML to extract directly (paste-anything)
+//   "empty"  — nothing meaningful
+export function classifyInput(value) {
+  const s = String(value).trim();
+  if (!s) return { kind: "empty", urls: [] };
+  if (looksLikeUrl(s)) return { kind: "single", urls: [normalizeUrl(s)] };
+
+  const { valid } = extractUrls(s);
+  // Treat as a URL list when the input is essentially a set of links: every
+  // whitespace/line/comma token resolves to a URL (allow a couple of stray tokens).
+  const tokenCount = s.split(/[\n,;\s]+/).map((t) => t.trim()).filter(Boolean).length;
+  if (valid.length >= 2 && valid.length >= tokenCount - 1) {
+    return { kind: "multi", urls: valid };
+  }
+  if (valid.length === 1 && tokenCount === 1) {
+    return { kind: "single", urls: valid };
+  }
+  // Anything else is raw content (a pricing table, an email thread, newsletter HTML…).
+  return { kind: "text", urls: valid };
+}
+
+// Looks like an HTML fragment/document rather than plain prose.
+export function looksLikeHtml(text) {
+  return /<\/?[a-z][\s\S]*>/i.test(String(text));
+}
+
+// Lightweight, stable string hash (FNV-1a, hex) — used for change detection on
+// scheduled "track changes" runs. Not cryptographic; just a content fingerprint.
+export function hashContent(str) {
+  let h = 0x811c9dc5;
+  const s = String(str);
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
 // ── Email helpers (for emailing selected extractions) ────────────────────────
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-17 — R18 (Admin dashboard upgrades: live revenue, real users, INR pricing, coupon assignment) merged to main and deployed to Netlify**
+> **Last updated: 2026-06-18 — R19 (Scheduler + unified Home composer) built on branch `Implement_scheduler`, NOT merged to main — see "## R19" below**
 
 ---
 
@@ -17,9 +17,56 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — R18 merged and pushed |
-| **Latest main commit** | `df9e4ad` — R18: admin dashboard upgrades (live revenue, real users, INR pricing, coupon assignment) |
-| **Latest branch commit** | Same as main |
+| **Current branch** | `Implement_scheduler` — R19 (scheduler) — **pushed, NOT merged to main** |
+| **Latest main commit** | `df9e4ad` — R18: admin dashboard upgrades |
+| **Latest branch commit** | R19 — scheduler + composer (see `## R19`) |
+
+---
+
+## R19 — Scheduler & unified Home composer (branch `Implement_scheduler`, NOT merged)
+
+> Built 2026-06-18 on branch `Implement_scheduler`. **Do NOT merge to main without the user's explicit go-ahead** — the user wants to test the branch first. Everything below works against the localStorage fallback in `npm run dev`; the recurring server-side execution needs the Supabase setup in the "R19 Supabase setup" block.
+
+**Feature summary**
+1. **Unified Home composer** (`src/components/HeroComposer.jsx`) replaces the old single-line URL field. One textarea + bottom toolbar: `+` (Import CSV / paste multiple URLs), **Batch** toggle, **Schedule** preset dropdown, and a compact in-box action button whose icon changes by mode (single → `arrow-up`, batch → `layers-2`, scheduled → `calendar-clock`; scheduled button tinted purple). Drag-drop CSV anywhere on the box. Home is popup-free.
+2. **Paste-anything** — non-URL input is extracted as raw text/HTML locally (`extractStructure({ rawText })` → `buildStructureFromText` in `firecrawlService.js`; summary prompt reads `raw_text`). Pseudo-URL `text://pasted-…`.
+3. **Smart dispatch** (HeroComposer.runAction): single→inline extract; raw text→paste-anything; ≥2 URLs (or Batch on)→`/batch` with `{urls,intent,autorun:true}` (Batch.jsx auto-runs on `location.state.autorun`); preset armed→creates a schedule and routes to `/schedules`.
+4. **Scheduling** — Home only arms a **preset cadence** (works for single URL OR batch). "Custom schedule…" item in the dropdown routes to `/schedules` with the input prefilled (`location.state.draftSchedule` + `openEditor`). All real config lives on `/schedules`.
+5. **/schedules page** (`src/pages/Schedules.jsx`) — inline `ScheduleEditor` (create/edit, no modal), custom cadence builder (frequency · weekday/day-of-month · time → cron), **"Run until" end date**, alert email, name, intent. List cards: **expandable detail** (all params + cron + lifecycle), Run now (single, with change detection), Edit, Pause/Resume, Delete.
+6. **Dashboard** (`src/pages/Dashboard.jsx`) — new **Type column** + chip (Single / Batch / Scheduled), **category filter** (All/Single/Batch/Scheduled segmented control), and **collapsible job grouping**: batch runs and scheduled runs render as collapsible parent rows; single extractions standalone. Pagination is over *blocks* so grouping never breaks the pager.
+7. **Persistence** — schedules: `schedulerService.js` (localStorage `datiq.schedules` + `/api/schedules` sync). Scheduled run-now saves a tagged extraction to the dashboard (`saveScheduledExtraction` in extractionsRepo + `recordScheduledItem` in batchRunsService, group id `schrun_<scheduleId>`, `kind:"schedule"`). Batch runs now carry `kind:"batch"`.
+8. **Server execution** — `netlify/functions/scheduled-runner.js` (Netlify Scheduled Function, `config.schedule = "@hourly"`) reads active+due schedules (cron matcher, skips expired), re-scrapes, fingerprints, detects change, fires alert webhook. `netlify/functions/schedules.js` = per-user CRUD proxy (auth-gated, localStorage fallback).
+
+**Files added:** `src/components/HeroComposer.jsx`, `src/components/ScheduleEditor.jsx`, `src/lib/schedulerService.js`, `src/pages/Schedules.jsx`, `netlify/functions/schedules.js`, `netlify/functions/scheduled-runner.js`.
+**Files changed:** `App.jsx` (route `/schedules`), `TopBar.jsx` (nav link), `Icon.jsx` (+arrow-up, pause, bell, calendar-clock), `utils.js` (classifyInput/extractUrls/looksLikeUrl/looksLikeHtml/hashContent), `firecrawlService.js` + `aiService.js` (paste-anything), `apiClient.js` (schedules CRUD), `extractionsRepo.js` (saveScheduledExtraction), `batchRunsService.js` (recordScheduledItem + kind), `Batch.jsx` (autorun + kind), `Home.jsx` (uses HeroComposer), `Dashboard.jsx` (category/filter/grouping), `screens.css`. **Deleted:** `src/components/ScheduleModal.jsx` (replaced by inline ScheduleEditor).
+**New localStorage key:** `datiq.schedules`. **New routes:** `/schedules`.
+
+### R19 Supabase setup (REQUIRED for real recurring execution — pending the user)
+Without this, schedules persist in localStorage and "Run now" works, but the hourly server runner does nothing. Run in the Supabase SQL editor:
+```sql
+create table if not exists public.scheduled_tasks (
+  id text primary key,
+  user_id uuid references auth.users,
+  status text default 'active',
+  cron text,
+  next_run_at timestamptz,
+  data jsonb not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.scheduled_tasks enable row level security;
+drop policy if exists "users own schedules" on public.scheduled_tasks;
+create policy "users own schedules" on public.scheduled_tasks
+  for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+```
+Netlify env needed by the runner: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (service key bypasses RLS to read/update all users' schedules). The scheduled function auto-registers on deploy (no toml change).
+
+**Alert email delivery (wired):** on a detected change, `fireAlert()` sends a real HTML email **directly via Resend** and also posts a `schedule.changed` event to the automation webhook. Email env (optional — both paths degrade gracefully):
+- `RESEND_API_KEY` — from resend.com; required to actually send email. Without it, no email is sent (webhook still fires).
+- `ALERT_EMAIL_FROM` — sender, e.g. `DatIQ Alerts <alerts@datiq.app>` (the domain must be verified in Resend). Defaults to that.
+- `SCHEDULE_ALERT_WEBHOOK` (else `VITE_WEBHOOK_URL`) — optional n8n/Zapier/Make webhook; receives the change event (`emailSent` flag included) for automations.
+- `URL`/`SITE_URL` — used for the "View in DatIQ" link (Netlify sets `URL` automatically).
+The manual "Run now" on /schedules is client-side and only toasts the change; automated (hourly) runs send the email.
 
 ---
 

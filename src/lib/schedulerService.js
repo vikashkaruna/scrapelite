@@ -1,0 +1,258 @@
+// schedulerService.js — recurring extraction & "track changes" schedules.
+//
+// A schedule turns a one-shot extraction into a recurring workflow:
+//   • type "track"  → re-extract a single URL on a cadence; alert when content changes
+//   • type "batch"  → re-run a multi-URL batch on a cadence
+//
+// Persistence: localStorage-first (key `datiq.schedules`) so the feature works
+// with no backend, with optional Supabase sync via /api/schedules (same
+// degrade-gracefully pattern as extractionsRepo.js). The actual recurring
+// execution is performed server-side by netlify/functions/scheduled-runner.js
+// (a Netlify Scheduled Function) — see that file + the SQL in CLAUDE.md.
+
+import { uid, hashContent } from "./utils.js";
+import { apiClient } from "./apiClient.js";
+
+const LS_KEY = "datiq.schedules";
+
+// ── Cadence presets ──────────────────────────────────────────────────────────
+// Intelligent defaults covering the common monitoring rhythms. `cron` is a
+// standard 5-field expression evaluated server-side (UTC).
+export const SCHEDULE_PRESETS = [
+  { key: "6h",      label: "Every 6 hours",   desc: "Frequent monitoring",        icon: "clock",    cron: "0 */6 * * *",  approxPerDay: 4 },
+  { key: "12h",     label: "Twice daily",     desc: "Morning & evening",          icon: "clock",    cron: "0 9,21 * * *", approxPerDay: 2 },
+  { key: "daily",   label: "Daily",           desc: "Once every morning (9:00)",  icon: "calendar", cron: "0 9 * * *",    approxPerDay: 1 },
+  { key: "weekday", label: "Every weekday",   desc: "Mon–Fri at 9:00",            icon: "calendar", cron: "0 9 * * 1-5",  approxPerDay: 1 },
+  { key: "weekly",  label: "Weekly",          desc: "Mondays at 9:00",            icon: "calendar", cron: "0 9 * * 1",    approxPerDay: 0 },
+  { key: "monthly", label: "Monthly",         desc: "1st of the month at 9:00",   icon: "calendar", cron: "0 9 1 * *",    approxPerDay: 0 },
+];
+
+export const DEFAULT_PRESET_KEY = "daily";
+
+export function presetByKey(key) {
+  return SCHEDULE_PRESETS.find((p) => p.key === key) || SCHEDULE_PRESETS.find((p) => p.key === DEFAULT_PRESET_KEY);
+}
+
+// ── Custom cadence builder (used by the /schedules editor) ────────────────────
+const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Build a 5-field cron from friendly editor inputs.
+export function buildCron({ frequency = "daily", hour = 9, minute = 0, weekday = 1, dayOfMonth = 1, everyHours = 6 }) {
+  const m = Math.max(0, Math.min(59, Number(minute) || 0));
+  const h = Math.max(0, Math.min(23, Number(hour) || 0));
+  switch (frequency) {
+    case "hourly":  return `0 */${Math.max(1, Math.min(23, Number(everyHours) || 6))} * * *`;
+    case "weekly":  return `${m} ${h} * * ${weekday}`;
+    case "monthly": return `${m} ${h} ${Math.max(1, Math.min(28, Number(dayOfMonth) || 1))} * *`;
+    case "weekday": return `${m} ${h} * * 1-5`;
+    case "daily":
+    default:        return `${m} ${h} * * *`;
+  }
+}
+
+// Human-readable description of a cron string (covers the shapes we generate).
+export function describeCron(cron) {
+  const parts = String(cron || "").trim().split(/\s+/);
+  if (parts.length !== 5) return cron || "Custom";
+  const [min, hour, dom, , dow] = parts;
+  const time = () => {
+    const h = parseInt(hour, 10); const m = parseInt(min, 10) || 0;
+    if (!Number.isFinite(h)) return "";
+    const ap = h < 12 ? "AM" : "PM"; const hr = ((h + 11) % 12) + 1;
+    return ` at ${hr}:${String(m).padStart(2, "0")} ${ap}`;
+  };
+  if (hour.startsWith("*/")) return `Every ${hour.slice(2)} hours`;
+  if (dow === "1-5") return `Every weekday${time()}`;
+  if (dow !== "*" && dow !== "?") {
+    const days = dow.split(",").map((d) => DOW_NAMES[parseInt(d, 10)] || d).join(", ");
+    return `Weekly on ${days}${time()}`;
+  }
+  if (dom !== "*" && dom !== "?") return `Monthly on day ${dom}${time()}`;
+  return `Daily${time()}`;
+}
+
+export function cadenceLabel(schedule) {
+  if (!schedule) return "";
+  const p = SCHEDULE_PRESETS.find((x) => x.key === schedule.cadenceKey);
+  if (p) return p.label;
+  return describeCron(schedule.cron);
+}
+
+// ── Next-run estimation (display only; server is the source of truth) ─────────
+// A lightweight approximation so the UI can show "next run ~tomorrow 9:00".
+export function estimateNextRun(cron, from = new Date()) {
+  try {
+    const [min, hour] = cron.split(" ");
+    const next = new Date(from);
+    next.setSeconds(0, 0);
+    const targetHour = hour.includes("*") ? from.getHours() : parseInt(hour, 10);
+    const targetMin = min.includes("*") ? 0 : parseInt(min, 10);
+    if (Number.isFinite(targetHour) && Number.isFinite(targetMin)) {
+      next.setHours(targetHour, targetMin);
+      if (next <= from) next.setDate(next.getDate() + 1);
+      return next.toISOString();
+    }
+  } catch { /* fall through */ }
+  // Fallback: ~1 day out.
+  return new Date(from.getTime() + 86400000).toISOString();
+}
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+function readLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocal(list) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch { /* quota */ }
+}
+
+// Errors that mean "no backend / not reachable" → degrade to localStorage only.
+function shouldFallback(err) {
+  const s = err?.status;
+  return err?.useLocalStorage || s === undefined || s === 401 || s === 403 || s === 404 || s === 500 || s === 503;
+}
+
+// ── Public CRUD ───────────────────────────────────────────────────────────────
+
+// Build a schedule object from composer / editor state. Does not persist.
+// Pass either a preset `cadenceKey` OR cadenceKey:"custom" with an explicit `cron`.
+export function buildSchedule({
+  type, target, intent = "summary", customPrompt = "",
+  cadenceKey = DEFAULT_PRESET_KEY, cron = "", alertEmail = "", label = "",
+  renderJs = false, expiresAt = null,
+}) {
+  const isCustom = cadenceKey === "custom" && cron;
+  const preset = isCustom ? null : presetByKey(cadenceKey);
+  const effectiveCron = isCustom ? cron : preset.cron;
+  const now = new Date().toISOString();
+  return {
+    id: "sch_" + uid().slice(3),
+    type,                                  // "track" | "batch"
+    target,                                // string (track) | string[] (batch)
+    intent,
+    customPrompt,
+    renderJs,
+    cadenceKey: isCustom ? "custom" : preset.key,
+    cron: effectiveCron,
+    alertEmail: alertEmail.trim(),
+    expiresAt: expiresAt || null,          // ISO date string or null (no end)
+    label: label.trim() || defaultLabel(type, target),
+    status: "active",                      // "active" | "paused"
+    createdAt: now,
+    lastRunAt: null,
+    lastHash: null,
+    lastStatus: null,                      // "unchanged" | "changed" | "error" | null
+    lastChangeAt: null,
+    nextRunAt: estimateNextRun(effectiveCron),
+    runCount: 0,
+  };
+}
+
+// Apply editor changes to an existing schedule (preserves run history + id).
+export function applyEdits(schedule, edits = {}) {
+  const next = { ...schedule, ...edits };
+  if (edits.cron || edits.cadenceKey) {
+    next.nextRunAt = estimateNextRun(next.cron);
+  }
+  if (typeof next.label === "string") next.label = next.label.trim() || defaultLabel(next.type, next.target);
+  if (typeof next.alertEmail === "string") next.alertEmail = next.alertEmail.trim();
+  return next;
+}
+
+function defaultLabel(type, target) {
+  if (type === "batch") {
+    const n = Array.isArray(target) ? target.length : 0;
+    return `Batch monitor · ${n} URLs`;
+  }
+  try { return `Track · ${new URL(target).hostname.replace(/^www\./, "")}`; }
+  catch { return "Tracked page"; }
+}
+
+export async function listSchedules() {
+  try {
+    const remote = await apiClient.listSchedules();
+    if (Array.isArray(remote)) {
+      writeLocal(remote);
+      return remote;
+    }
+  } catch (err) {
+    if (!shouldFallback(err)) throw err;
+  }
+  return readLocal();
+}
+
+// Synchronous read for instant first paint (mirrors Dashboard's localStorage-first pattern).
+export function listSchedulesLocal() {
+  return readLocal();
+}
+
+export async function saveSchedule(schedule) {
+  // localStorage first so the UI updates immediately even if the backend is down.
+  const list = readLocal();
+  const idx = list.findIndex((s) => s.id === schedule.id);
+  if (idx >= 0) list[idx] = schedule; else list.unshift(schedule);
+  writeLocal(list);
+
+  try {
+    const saved = await apiClient.upsertSchedule(schedule);
+    if (saved?.id) {
+      const merged = readLocal().map((s) => (s.id === schedule.id ? { ...s, ...saved } : s));
+      writeLocal(merged);
+      return merged.find((s) => s.id === saved.id) || saved;
+    }
+  } catch (err) {
+    if (!shouldFallback(err)) throw err;
+  }
+  return schedule;
+}
+
+export async function deleteSchedule(id) {
+  writeLocal(readLocal().filter((s) => s.id !== id));
+  try { await apiClient.deleteSchedule(id); }
+  catch (err) { if (!shouldFallback(err)) throw err; }
+}
+
+export async function toggleSchedule(id) {
+  const list = readLocal();
+  const s = list.find((x) => x.id === id);
+  if (!s) return null;
+  s.status = s.status === "active" ? "paused" : "active";
+  if (s.status === "active") s.nextRunAt = estimateNextRun(s.cron);
+  writeLocal(list);
+  try { await apiClient.upsertSchedule(s); }
+  catch (err) { if (!shouldFallback(err)) throw err; }
+  return s;
+}
+
+// Record the outcome of a run (used by the local "Run now" action and to reflect
+// server runs that the UI re-fetches). Compares the new content hash against the
+// stored one to flag a change.
+export function recordRun(id, { content, error } = {}) {
+  const list = readLocal();
+  const s = list.find((x) => x.id === id);
+  if (!s) return null;
+  const now = new Date().toISOString();
+  s.lastRunAt = now;
+  s.runCount = (s.runCount || 0) + 1;
+  s.nextRunAt = estimateNextRun(s.cron, new Date());
+  if (error) {
+    s.lastStatus = "error";
+  } else {
+    const newHash = hashContent(content || "");
+    if (s.lastHash && s.lastHash !== newHash) {
+      s.lastStatus = "changed";
+      s.lastChangeAt = now;
+    } else {
+      s.lastStatus = "unchanged";
+    }
+    s.lastHash = newHash;
+  }
+  writeLocal(list);
+  return s;
+}

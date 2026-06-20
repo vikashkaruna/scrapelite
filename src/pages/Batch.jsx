@@ -432,6 +432,7 @@ export default function Batch() {
               // Persist the batch run metadata for Dashboard history
               saveBatchRun({
                 id: batchRunId,
+                kind: "batch",
                 label: makeBatchLabel(intent, urlCount, batchStarted),
                 intent,
                 createdAt: batchStarted,
@@ -463,6 +464,16 @@ export default function Batch() {
     setRunning(false);
     showToast("Batch cancelled.");
   };
+
+  // Auto-run once when arriving from the Home composer with autorun set.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    if (location.state?.autorun && inputTab === "paste" && pastedUrls.length >= MIN_URLS && !running && !results) {
+      autoRanRef.current = true;
+      handleRun();
+    }
+  }, [pastedUrls.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Export helpers ───────────────────────────────────────────────────────────
   // Strip batch-only fields so they don't appear in exported CSV/JSON/MD columns.

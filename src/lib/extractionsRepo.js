@@ -110,6 +110,23 @@ export async function saveExtraction(extraction) {
   }
 }
 
+/**
+ * Persist a scheduled-run extraction to the Dashboard. Strips paste-only and
+ * batch-status fields and never sends extra columns to Supabase — the
+ * "scheduled" categorisation is tracked client-side (batchRunsService), the same
+ * schema-free approach batch runs use. Returns the saved row.
+ */
+export async function saveScheduledExtraction(structure, schedule) {
+  const { _status, _error, is_pasted, raw_text, ...clean } = structure;
+  const record = {
+    ...clean,
+    id: uid(),
+    created_at: new Date().toISOString(),
+    ai_summary: structure.ai_summary || `Scheduled run · ${schedule.label}`,
+  };
+  return saveExtraction(record);
+}
+
 /** Sync just the enrichments map of an already-saved row (live Quick Enrichment). */
 export async function updateEnrichments(id, enrichments) {
   if (!id) return;
