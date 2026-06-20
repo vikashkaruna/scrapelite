@@ -1,4 +1,11 @@
-# DatIQ — Complete Product Documentation
+# DatIQ — Complete Product Documentation (Internal)
+
+> **INTERNAL master reference.** This document is the full product + architecture record, including
+> technical sections (stack, data model, persistence, environment). It is **not** the public help site.
+>
+> - **Public, end-user help** is generated from `docs/DatIQ-User-Guide.md` → `public/help/` (sanitized: no code, DB, or internals).
+> - **Public developer API reference** lives in `docs/DatIQ-Developer-API.md` → `public/help/developers.html`.
+> - Keep anything code-, database-, or infrastructure-specific in THIS file only — never in the two public sources above.
 
 > **Zero-code web extraction & enrichment platform**
 > Paste any URL → get its structure, an AI summary, and one-click B2B enrichment — no scraping scripts required.
@@ -6,11 +13,11 @@
 | | |
 |---|---|
 | **Product** | DatIQ |
-| **Documented version** | **v2.0** (current production release) |
-| **Live site** | https://datiq.app |
+| **Documented version** | **v2.0 core + R5–R19 increments** (current production release) |
+| **Live site** | https://datiq.app (Netlify project `datiqapp`) |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
-| **Document purpose** | Master reference for end-user help files (HTML help, in-app menu), onboarding, and a future support chatbot / knowledge base |
-| **Last updated** | 2026-06-06 |
+| **Document purpose** | Internal master reference for the product, its screens, and its architecture. Source of truth for the public help split-outs above, onboarding, and support knowledge base. |
+| **Last updated** | 2026-06-20 (R19 — scheduler + unified Home composer) |
 
 ---
 
@@ -320,13 +327,13 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 **Dark mode** (theme is one click in the top bar, and persists):
 
-![DatIQ Home in dark mode](assets/screenshots/03-home-dark.png)
+![DatIQ Home in dark mode](assets/screenshots/02-home-dark.png)
 
 ---
 
 ### 7.2 Screen 2 — Preview (Review & Enrich) · route `/preview`
 
-![DatIQ Preview screen](assets/screenshots/02-preview.png)
+![DatIQ Preview screen](assets/screenshots/03-preview.png)
 
 **Purpose:** review the extraction, enrich it, then save or discard.
 
@@ -347,7 +354,7 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 **Map-mode variant** — when you extracted with **Map entire domain**, the Overview tab shows a single **Domain map** card: a searchable list of every discovered URL, with a filter box and a count pill. (Quick enrichment is hidden in map mode.)
 
-![DatIQ domain map preview](assets/screenshots/06-domain-map.png)
+![DatIQ domain map preview](assets/screenshots/09-domain-map.png)
 
 **Behavior notes:**
 - Quick enrichment **never** shows the full-screen loader or navigates — the page stays put.
@@ -358,7 +365,7 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 ### 7.3 Screen 3 — Dashboard (Saved archive) · route `/dashboard`
 
-![DatIQ Dashboard, table view](assets/screenshots/04-dashboard-table.png)
+![DatIQ Dashboard, table view](assets/screenshots/06-dashboard-table.png)
 
 **Purpose:** your searchable archive of saved extractions; the hub for export, content generation, and email.
 
@@ -378,13 +385,37 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 **Card view** — the same data as cards (toggle persists):
 
-![DatIQ Dashboard, card view](assets/screenshots/05-dashboard-cards.png)
+![DatIQ Dashboard, card view](assets/screenshots/07-dashboard-cards.png)
 
 **Empty states** — a friendly empty state when nothing is saved ("No extractions yet") and a "No matches" state when a search returns nothing.
 
 ---
 
-### 7.4 Modals & system UI
+### 7.4 Screen 4 — Batch (Multi-URL extraction) · route `/batch`
+
+![DatIQ batch results](assets/screenshots/04-batch.png)
+
+Batch extracts many URLs in one run. Users **paste a list** (one URL per line) or **Import CSV**, choose an
+**intent** (same chips as single extraction), and run. A progress indicator tracks the run; on completion a
+**results table** lists each page with a summary snippet and per-URL status (failed URLs show a reason).
+All successful pages **auto-save to the Dashboard** and are grouped as one batch run. Results can be exported
+(CSV/PDF/Markdown/JSON) via a single **Export ▾** dropdown. The typed list is persisted (draft) so it survives
+refresh and back-navigation; **New batch** clears it. Per-URL extraction counts toward the monthly quota; plans
+cap URLs-per-batch.
+
+### 7.5 Screen 5 — Schedules (Monitoring) · route `/schedules`
+
+![DatIQ schedules screen](assets/screenshots/05-schedules.png)
+
+Schedules are recurring extractions that **watch a page for changes** and optionally alert by email. They are
+created either from the Home composer (preset cadence) or here via the inline **ScheduleEditor** (no modal). The
+editor sets URL, intent, a **cadence** (presets or a custom frequency · day · time builder), an optional
+**"run until" end date**, an alert email, and a name. List cards show cadence, last/next run, and an expandable
+detail panel; each supports **Run now** (with change detection), **Edit**, **Pause/Resume**, and **Delete**.
+Automated (hourly) runs detect changes, record them, and fire the alert email + automation webhook; the manual
+**Run now** is client-side and only reports the change on screen.
+
+### 7.6 Modals & system UI
 
 | Element | Trigger | What it does |
 |---|---|---|
@@ -585,6 +616,16 @@ create policy "anon full access" on public.extractions
 | `datiq.current` | The last-viewed extraction (restores Preview after reload). |
 | `datiq.theme` | `light` / `dark`. |
 | `datiq.dashLayout` | `table` / `cards`. |
+| `datiq.schedules` | R19 — scheduled tasks (cadence, intent, lifecycle); synced to `/api/schedules`. |
+| `datiq.batchRuns` | Batch + scheduled run summaries (max 50). |
+| `datiq.batchMap` | `{ extractionId → runId }` map for Dashboard grouping. |
+| `datiq.batchDraft` | Persisted Batch textarea content. |
+| `datiq.plan` | Active plan id (BillingProvider). |
+| `datiq.guestTrial` | Guest trial counters; **never cleared** (bypass-prevention). |
+| `datiq.globalSettings` | Cached guest-limit settings (5-min TTL). |
+
+> The complete, authoritative key list (including `scrapelite.*` internal keys) lives in `CLAUDE.md` —
+> treat that file as the live source of truth and this table as a summary.
 
 ### 11.4 Link categories
 
@@ -594,11 +635,12 @@ create policy "anon full access" on public.extractions
 
 ## 12. Privacy, security & data handling
 
-- **What DatIQ stores:** the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (`localStorage`) and, when configured, your own Supabase project.
-- **No accounts (today):** v2.0 has no auth; a configured Supabase uses an anon-access policy. Multi-user isolation (Supabase Auth) is on the roadmap before broad/enterprise use.
-- **Browser-side API keys — demo only.** The AI (and Firecrawl) keys can be bundled into the client for local/demo use. **For production, the AI calls should be proxied through a server/edge function** (a planned Netlify Function) so keys are never shipped to end users. This is called out as the top pre-production hardening task.
-- **Outbound calls** go only to the configured services (Firecrawl, Anthropic, Supabase, your webhook/email endpoint). Endpoints are forced absolute (`https://`) to avoid accidentally hitting the app's own origin.
-- **Email delivery** prefers your webhook/email API and falls back to the user's own mail client via `mailto` — content isn't silently routed anywhere unexpected.
+- **What DatIQ stores:** the public page content you extract (headings, links, summary, enrichments) plus your UI preferences — in your browser (`localStorage`) and, when configured, your Supabase project (per-user when signed in).
+- **Accounts & auth:** Supabase email + OAuth (Google/Microsoft/GitHub) auth is live (V3). Signed-in data is per-user; unauthenticated use is supported with localStorage and a guest-trial gate (soft + hard limits). Sign-out clears sensitive localStorage keys.
+- **Server-side keys.** AI and scraping keys live **server-side only** (Netlify Function env, no `VITE_` prefix). The browser calls `/api/*` proxies; provider keys are never shipped to end users (R4). Scraping uses a provider fallback chain; AI uses a multi-provider fallback chain — both server-side.
+- **Outbound calls** go only to the configured services (scrape providers, AI providers, Supabase, your webhook/email endpoint), all from server functions. Endpoints are forced absolute (`https://`).
+- **Email delivery** prefers the configured webhook/email API and falls back to the user's own mail client via `mailto`. Scheduled change alerts are sent server-side via the configured email provider.
+- **Privacy compliance** — the public Privacy Policy covers applicable data-protection regulations (incl. DPDP Act 2023); Terms specify governing law/arbitration.
 
 ---
 
@@ -655,26 +697,43 @@ All screenshots live in `docs/assets/screenshots/` and were captured from the ru
 
 | File | Screen |
 |---|---|
-| `01-home.png` | Home (light) |
-| `03-home-dark.png` | Home (dark) |
-| `02-preview.png` | Preview with enrichment tabs |
-| `06-domain-map.png` | Preview in domain-map mode |
-| `04-dashboard-table.png` | Dashboard, table view |
-| `05-dashboard-cards.png` | Dashboard, card view |
+| `01-home.png` | Home (light) — unified composer |
+| `02-home-dark.png` | Home (dark) |
+| `03-preview.png` | Preview with enrichment |
+| `04-batch.png` | Batch results |
+| `05-schedules.png` | Schedules / monitoring |
+| `06-dashboard-table.png` | Dashboard, table view |
+| `07-dashboard-cards.png` | Dashboard, card view |
+| `08-pricing.png` | Pricing |
+| `09-domain-map.png` | Preview in domain-map mode |
 
-To regenerate, run the dev server and capture each route. Stateful screens (Preview, Dashboard) need seeded data; the simplest method is a localStorage-only dev instance plus a small seed page that sets `datiq.saved` / `datiq.current` and then redirects into the route.
+**Regeneration is now scripted.** With the dev server running (`npm run dev`):
 
-### 15.2 Environment variables
+```bash
+node docs/capture-screenshots.mjs
+```
 
-| Variable | Purpose |
-|---|---|
-| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Cloud persistence (optional). |
-| `VITE_FIRECRAWL_API_KEY` | Real scraping & domain mapping. |
-| `VITE_AI_API_KEY` / `VITE_AI_MODEL` | Real Claude summaries, categorization, content. |
-| `VITE_WEBHOOK_URL` | Save notifications (n8n). |
-| `VITE_EMAIL_API_URL` | Email delivery endpoint. |
+This drives the running app with Playwright (system Chrome via `channel:"chrome"`, 1280px, 2× DPR),
+performs real flows (extraction, batch, schedule), and writes all PNGs to `docs/assets/screenshots/`.
+Then run `node docs/build-help.mjs` to copy them into the help site.
 
-Absent any of these, the corresponding feature uses its mock/fallback path.
+### 15.2 Environment variables (current)
+
+Browser-safe (`VITE_` prefix) and server-only (Netlify env, **no** `VITE_` prefix). Provider/payment
+secrets are server-only. The exhaustive, authoritative list is in `CLAUDE.md`; key ones:
+
+| Variable | Side | Purpose |
+|---|---|---|
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | browser | Auth + cloud persistence. |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | server | Stats, pricing config, scheduler reads. |
+| `AI_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` | server | AI provider fallback chain. |
+| `FIRECRAWL` / `SPIDER` / `JINA` keys | server | Scrape provider fallback chain. |
+| `RESEND_API_KEY` / `ALERT_EMAIL_FROM` | server | Scheduled change-alert email. |
+| `SCHEDULE_ALERT_WEBHOOK` / `VITE_WEBHOOK_URL` | server / browser | Automation webhook + save/capture notifications. |
+| Razorpay / Stripe keys | server (+ `VITE_` publishable) | Payments. |
+
+Absent any of these, the corresponding feature uses its mock/fallback path. **Never** add a `VITE_` prefix
+to a secret.
 
 ### 15.3 Run locally
 

@@ -1,6 +1,7 @@
-// build-docx.mjs — render docs/ScrapeLite-Product-Documentation.md to a Word
+// build-docx.mjs — render the INTERNAL product documentation markdown to a Word
 // .docx, embedding the screenshots and using real heading styles (so Word's
-// navigation pane + table of contents work).
+// navigation pane + table of contents work). The docx is the internal,
+// full-detail distributable; the public help site is built by build-help.mjs.
 //
 //   NODE_PATH unused (ESM). The docx lib is required by absolute path so the
 //   project's own dependencies stay untouched:
@@ -13,8 +14,8 @@ import { createRequire } from "node:module";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
-const SRC_MD = join(ROOT, "docs/ScrapeLite-Product-Documentation.md");
-const OUT = join(ROOT, "docs/ScrapeLite-Product-Documentation.docx");
+const SRC_MD = join(ROOT, "docs/internal/DatIQ-Product-Documentation-Internal.md");
+const OUT = join(ROOT, "docs/internal/DatIQ-Product-Documentation-Internal.docx");
 const DOCX_LIB = process.env.DOCX_LIB || "/tmp/docxlib/node_modules/docx";
 
 const require = createRequire(import.meta.url);
@@ -180,7 +181,9 @@ function tableBlock(header, rows) {
 }
 
 function imageBlock(alt, src) {
-  const abs = resolve(dirname(SRC_MD), src);
+  // Images are referenced as assets/screenshots/* relative to docs/ (the source
+  // doc lives in docs/internal/, but the screenshots stay under docs/assets).
+  const abs = resolve(join(ROOT, "docs"), src);
   let data;
   try {
     data = readFileSync(abs);

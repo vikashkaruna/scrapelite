@@ -133,7 +133,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/admin/users` | User management | Admin |
 | `/admin/ai` | AI provider chain editor (model, order, enable toggles, max tokens) | Admin |
 | `/admin/general` | Global application settings (guest limits, reprompt interval) | Admin |
-| `/help/index.html` | Static help site (16 pages, plain `<a>` — bypasses SPA router) | Public |
+| `/help/index.html` | Static help site (R20: overview + 15 user-guide sections + `developers.html` API ref; generated, plain `<a>` — bypasses SPA router) | Public |
 
 ---
 
@@ -352,12 +352,34 @@ public/
 │   ├── compare.html                  ★ R13: hero quick-links + all 4 comparison pages listed
 │   ├── apify.html                    ★ R13: DatIQ vs Apify comparison page (new)
 │   └── phantombuster.html            ★ R13: DatIQ vs PhantomBuster comparison page (new)
-└── help/
-    ├── index.html                    ★ R4: metadata table → datiq.app; R13: removed External/Internal labels + Internal section
+└── help/                            ★ R20: GENERATED — do NOT hand-edit. Run `node docs/build-help.mjs`.
+    ├── index.html                    Overview + section cards + "For developers" card
+    ├── 01..15-*.html                 15 EXTERNAL user-guide sections (sanitized: no code/DB/internals)
+    ├── developers.html               Public Developer API reference (forward-looking spec)
     ├── help.css
-    ├── 09-exports-and-sharing.html   ★ R13: full rewrite — all 5 export formats, plan requirements, tips
-    └── [14 other section HTML pages + 6 screenshot assets]
+    └── assets/screenshots/*.png      9 fresh R19 screenshots (home/dark/preview/batch/schedules/dashboard×2/pricing/map)
 ```
+
+### Documentation & help sources (R20 — split into external vs internal)
+
+> Help/docs are **generated from markdown**. Edit the markdown, then regenerate. Never hand-edit `public/help/*.html`.
+
+```
+docs/
+├── DatIQ-User-Guide.md              EXTERNAL, public. Source → public/help/01..15 + index. Sanitized: NO code, DB, env, internals.
+├── DatIQ-Developer-API.md           EXTERNAL, public. Source → public/help/developers.html. Public HTTP API spec only (no internals).
+├── build-help.mjs                   Generator: reads the two .md above → public/help/. Rebranded DatIQ; copies screenshots.
+├── build-docx.mjs                   Generator: internal .md → internal .docx (needs docx@7 at DOCX_LIB=/tmp/docxlib).
+├── capture-screenshots.mjs          Playwright (system Chrome) → docs/assets/screenshots/*.png. Run with dev server up.
+├── assets/screenshots/*.png         Canonical screenshots (copied into public/help by build-help).
+└── internal/                        NOT published. Full technical record (stack, data model, env, persistence).
+    ├── DatIQ-Product-Documentation-Internal.md   Internal master doc (R19-current).
+    ├── DatIQ-Product-Documentation-Internal.docx Generated Word version.
+    └── e2e-test-report-2026-06-16.md
+```
+
+**Rule:** anything code-, database-, infrastructure-, or env-specific goes ONLY in `docs/internal/` (and CLAUDE.md).
+The two public `.md` sources and everything under `public/help/` must stay free of internals.
 
 ---
 
