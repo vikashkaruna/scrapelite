@@ -2,7 +2,9 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-20 — R19 (Scheduler + unified Home composer) MERGED to main (`980ac21`) + `scripts/scheduler.sql` (`6bc4731`); Netlify env already set — ONLY remaining step is running `scripts/scheduler.sql` in Supabase. See "## R19".**
+> **Last updated: 2026-06-20 — main at `762d2e6`, clean & deployed (datiq.app, Netlify project `datiqapp`).**
+> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); **R20 docs/help overhaul** (`762d2e6`) — help/docs split into external (public, sanitized) vs internal, public Developer API reference, fresh R19 screenshots; all generated from markdown (see "Documentation & help sources").
+> Only remaining product step: run `scripts/scheduler.sql` in Supabase to make recurring scheduler runs live. See "## R19".
 
 ---
 
