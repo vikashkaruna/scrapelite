@@ -12,7 +12,7 @@
 |---|---|
 | **Project** | DatIQ — zero-code web-extraction + enrichment platform |
 | **Working dir** | `/home/user/scrapelite` (remote) or `/Users/vikash/Extracta` (local) |
-| **Live site** | https://scrapelite.netlify.app |
+| **Live site** | https://datiq.app (Netlify project `datiqapp`; also https://datiqapp.netlify.app — the old `scrapelite.netlify.app` host now 404s) |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
@@ -410,7 +410,7 @@ ThemeProvider
 | localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
 | Contact emails | `support@datiq.app` (payment), `legal@datiq.app` (terms), `privacy@datiq.app` (privacy) |
-| Naming | App brand is "DatIQ" everywhere in UI. Netlify URL stays `scrapelite.netlify.app` for now. |
+| Naming | App brand is "DatIQ" everywhere in UI. Live site is `https://datiq.app` (Netlify project renamed to `datiqapp`; old `scrapelite.netlify.app` host now 404s). |
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
 | Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
 | AI key | `hasAI = true` always; `AI_API_KEY` (no VITE_ prefix) lives in Netlify env only. Never export from config.js. |
@@ -962,7 +962,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] Add `RAZORPAY_KEY_ID` (server, no VITE_ prefix) — same value as above
 - [ ] Add `RAZORPAY_KEY_SECRET` (server, no VITE_ prefix) — from same Razorpay API Keys page
 - [ ] **Trigger a full redeploy** after adding the above — `VITE_RAZORPAY_KEY_ID` is baked at build time
-- [ ] Register Razorpay webhook → `https://scrapelite.netlify.app/.netlify/functions/payment-webhook?provider=razorpay` → copy secret → add as `RAZORPAY_WEBHOOK_SECRET` → redeploy
+- [ ] Register Razorpay webhook → `https://datiq.app/.netlify/functions/payment-webhook?provider=razorpay` → copy secret → add as `RAZORPAY_WEBHOOK_SECRET` → redeploy
 - [ ] **Enable auto-capture** in Razorpay Dashboard → Settings → Payment Capture (belt-and-suspenders; `verify-payment.js` also explicitly captures any `authorized` payment so uncaptured payments are never auto-refunded)
 - [ ] Register Stripe webhook (when USD/Stripe is enabled) → same base URL without `?provider` → `STRIPE_WEBHOOK_SECRET`
 - [ ] Add remaining env vars when ready (see env section above)

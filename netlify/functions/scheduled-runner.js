@@ -99,7 +99,7 @@ function sb() {
   };
 }
 
-const SITE_URL = process.env.URL || process.env.SITE_URL || "https://scrapelite.netlify.app";
+const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (

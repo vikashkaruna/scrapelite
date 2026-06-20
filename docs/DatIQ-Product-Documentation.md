@@ -7,7 +7,7 @@
 |---|---|
 | **Product** | DatIQ |
 | **Documented version** | **v2.0** (current production release) |
-| **Live site** | https://scrapelite.netlify.app |
+| **Live site** | https://datiq.app |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
 | **Document purpose** | Master reference for end-user help files (HTML help, in-app menu), onboarding, and a future support chatbot / knowledge base |
 | **Last updated** | 2026-06-06 |
