@@ -321,27 +321,28 @@ npm run preview
 
 ## 9. Environment Variables
 
-All variables are prefixed with `VITE_` (exposed to the browser by Vite at build time). All are optional — the app falls back to demo mode for any missing value.
+Only variables prefixed with `VITE_` are exposed to the browser. Provider secrets belong in Netlify/server environment variables without that prefix. Missing extraction or AI provider configuration activates the app's local mock fallback; missing payment configuration never activates a paid plan.
 
 | Variable | Type | Purpose | Default |
 |----------|------|---------|---------|
 | `VITE_SUPABASE_URL` | URL | Supabase project endpoint | — (localStorage fallback) |
 | `VITE_SUPABASE_ANON_KEY` | string | Supabase public anon key — enable RLS | — (localStorage fallback) |
-| `VITE_FIRECRAWL_API_KEY` | string | Firecrawl API key (firecrawl.dev) | — (mock extraction) |
-| `VITE_AI_API_KEY` | string | Anthropic Claude API key ⚠️ browser-exposed | — (mock summaries) |
+| `FIRECRAWL_API_KEY` | string | Server-only Firecrawl key used by `/api/extract` | — (mock extraction) |
+| `VITE_ENABLE_EXTRACT` | boolean | Browser feature flag that enables the server extraction path | `false` |
+| `AI_API_KEY` | string | Server-only Anthropic key used by `/api/ai` | — (mock AI fallback) |
 | `VITE_AI_MODEL` | string | Claude model ID | `claude-haiku-4-5-20251001` |
 | `VITE_WEBHOOK_URL` | URL | Webhook for `extraction.saved` + `email.send` events | — (no webhook) |
 | `VITE_EMAIL_API_URL` | URL | Dedicated email API endpoint | — (mailto fallback) |
 
-> ⚠️ **Security:** `VITE_AI_API_KEY` is bundled into the browser build. Safe for local development and internal demos. For production, proxy Anthropic API calls through a Netlify Function or similar edge runtime.
+> **Security:** API provider secrets must never use a `VITE_` prefix. DatIQ proxies extraction and AI calls through Netlify Functions. Production deployment must additionally configure authentication/rate limits, restrictive Supabase RLS, and authenticated webhook delivery; see `docs/testing.md` and the release checklist.
 
 **Configuration combinations**
 
 | Keys present | Behaviour |
 |---|---|
 | None | Full demo mode: mocks + localStorage |
-| Firecrawl only | Real web scraping; mocked AI |
-| Firecrawl + AI | Real extraction + real summaries + AI link categorisation + content generation |
+| `FIRECRAWL_API_KEY` + `VITE_ENABLE_EXTRACT=true` | Real web scraping; mocked AI |
+| Firecrawl + server AI provider | Real extraction + real summaries + AI link categorisation + content generation |
 | Firecrawl + AI + Supabase | Full real stack with multi-device sync |
 | All keys + Webhook | Full production setup with event notifications |
 
@@ -529,9 +530,9 @@ extractStructure(url: string, options?: {
 
 **Returns** `Extraction` object. When `mapMode` is true, returns `{ domain_map: string[], ... }` instead of headings/links.
 
-**Real path:** `POST https://api.firecrawl.dev/v1/scrape`
-- Auth: `Authorization: Bearer {VITE_FIRECRAWL_API_KEY}`
-- Body: `{ url, formats: ["html", "json"?], onlyMainContent: false, waitFor?: 3000, jsonOptions?: { prompt } }`
+**Real path:** browser → `POST /api/extract` → Netlify Function → configured provider chain (Firecrawl, Spider, Jina, direct fetch).
+- Provider credentials stay server-side; the browser sends no API key.
+- Requests are restricted to validated public HTTP(S) URLs before any server-side fetch.
 
 **Mock path:** 2 s delay. Returns Lumio fixture for `lumio.io`, synthetic data otherwise.
 
@@ -900,7 +901,7 @@ type QuickActionPreset = {
 
 ## 15. Link Categories
 
-Six categories assigned to every extracted link. Heuristics run on every extraction; AI refinement runs additionally when `VITE_AI_API_KEY` is set and the link count is ≤ 60.
+Six categories assigned to every extracted link. Heuristics run on every extraction; server-side AI refinement runs additionally when an AI provider is configured and the link count is ≤ 60.
 
 | Category | Icon | Heuristic rule |
 |----------|------|----------------|

@@ -22,3 +22,8 @@ dist-ssr
 
 # E2E test screenshots — generated on demand, not committed
 e2e-screenshots/*.png
+
+# Playwright diagnostics (traces, screenshots, video, and HTML report)
+playwright-report/
+test-results/
+coverage/
