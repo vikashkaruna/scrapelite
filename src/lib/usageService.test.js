@@ -218,3 +218,33 @@ describe("readSubscription / writeSubscription", () => {
     expect(s.bonusExtractions).toBe(50);
   });
 });
+
+describe("applyTrialCredit (FR-Z-02 / Q2 2026-07-15)", () => {
+  it("Free plan → applies the 25-extraction credit once", async () => {
+    const { applyTrialCredit } = await import("./usageService.js");
+    const r = applyTrialCredit("free");
+    expect(r.applied).toBe(true);
+    expect(r.credit).toBe(25);
+    expect(r.sub.bonusExtractions).toBe(25);
+    expect(r.sub.trialCreditAppliedAt).toBeTruthy();
+  });
+
+  it("is idempotent — re-running after the grant is a no-op", async () => {
+    const { applyTrialCredit } = await import("./usageService.js");
+    applyTrialCredit("free");
+    const r2 = applyTrialCredit("free");
+    expect(r2.applied).toBe(false);
+    expect(r2.credit).toBe(0);
+    // bonusExtractions stayed at 25 (not 50).
+    expect(readSubscription().bonusExtractions).toBe(25);
+  });
+
+  it("Paid plans (no trialCredit defined) → no credit applied", async () => {
+    const { applyTrialCredit, writeSubscription } = await import("./usageService.js");
+    writeSubscription({ planId: "select", bonusExtractions: 0 });
+    const r = applyTrialCredit("select");
+    expect(r.applied).toBe(false);
+    expect(r.credit).toBe(0);
+    expect(r.sub.bonusExtractions).toBe(0);
+  });
+});

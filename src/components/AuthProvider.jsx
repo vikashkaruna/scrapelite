@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { getSession, onAuthStateChange } from "../lib/authService.js";
 import { setAuthToken } from "../lib/apiClient.js";
+import { applyTrialCredit } from "../lib/usageService.js";
 
 const AuthContext = createContext(null);
 
@@ -42,7 +43,13 @@ export function AuthProvider({ children }) {
       setSession(s);
       setUser(s?.user ?? null);
       setAuthToken(s?.access_token ?? null);
-      if (_event === "SIGNED_IN") { setShowAuthModal(false); setAuthError(""); }
+      if (_event === "SIGNED_IN") {
+        setShowAuthModal(false);
+        setAuthError("");
+        // FR-Z-02 (Q2 2026-07-15): grant the once-only trial credit on signup
+        // (25 extractions for the Free plan). Idempotent — re-runs are no-ops.
+        try { applyTrialCredit("free"); } catch { /* localStorage unavailable */ }
+      }
     });
 
     return unsub;

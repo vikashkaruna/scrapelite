@@ -1,6 +1,6 @@
 // usageService.js — V5 usage metering. Tracks extractions + enrichments per month
 // in localStorage. BillingProvider syncs to Supabase via usageRepo.js.
-import { getEffectivePlanMap } from "./pricingOverrides.js";
+import { getEffectivePlanById, getEffectivePlanMap } from "./pricingOverrides.js";
 
 const USAGE_KEY = "datiq.usage";
 const SUB_KEY   = "datiq.subscription";
@@ -17,6 +17,33 @@ export function readSubscription() {
   return ls(SUB_KEY) ?? { planId: "free", activatedAt: null, addons: [], coupon: null, bonusExtractions: 0 };
 }
 export function writeSubscription(sub) { lsSet(SUB_KEY, sub); }
+
+/**
+ * Apply the once-only signup trial credit for a given plan.
+ *
+ * Reads `getEffectivePlanById(planId).trialCredit ?? 0` — only the Free plan
+ * currently defines a credit (25 extractions per the Q2 2026-07-15 decision).
+ * The grant is persisted in `datiq.subscription` as `trialCreditAppliedAt` so
+ * subsequent calls (e.g. a re-render or a fallback path) are idempotent.
+ *
+ * @param {string} planId
+ * @returns {{ applied: boolean, credit: number, sub: object }}
+ */
+export function applyTrialCredit(planId) {
+  const plan = getEffectivePlanById(planId);
+  const credit = plan?.trialCredit ?? 0;
+  const sub = readSubscription();
+  if (credit <= 0 || sub.trialCreditAppliedAt) {
+    return { applied: false, credit: 0, sub };
+  }
+  const updated = {
+    ...sub,
+    trialCreditAppliedAt: new Date().toISOString(),
+    bonusExtractions: (sub.bonusExtractions || 0) + credit,
+  };
+  writeSubscription(updated);
+  return { applied: true, credit, sub: updated };
+}
 
 // ── Monthly usage ─────────────────────────────────────────────────────────────
 export function readUsage() {
