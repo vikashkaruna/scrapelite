@@ -129,7 +129,6 @@ export const handler = async (event) => {
         custom_extraction,
         domain_map,
         enrichments,
-        id: _clientId,
         _saved: _s,
         _demo: _d,
         _status: _st,

@@ -9,8 +9,13 @@
 // Override with SCRAPE_PROVIDER_ORDER env var (comma-separated, e.g. "spider,jina,direct").
 // Each provider is skipped automatically when its API key is absent (except Jina + Direct,
 // which work without a key at reduced rate limits).
+//
+// SSRF guard (C-01): every inbound URL is run through isPublicHttpUrl
+// before any provider HTTP call. Private IPs, non-HTTP(S) schemes, and
+// malformed URLs are rejected with 400.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
+import { isPublicHttpUrl } from "./lib/publicUrl.js";
 
 function respond(statusCode, body) {
   return {
@@ -49,6 +54,16 @@ export const handler = async (event) => {
 
   const { url, options = {} } = reqBody;
   if (!url) return respond(400, { error: "url is required" });
+
+  // SSRF guard: reject private IPs, non-http(s) schemes, malformed URLs
+  // BEFORE we make any outbound provider HTTP call.
+  try {
+    if (!isPublicHttpUrl(url)) {
+      return respond(400, { error: "URL is not a public http(s) address" });
+    }
+  } catch (err) {
+    return respond(400, { error: err.message || "Invalid URL" });
+  }
 
   try {
     // ── Map mode: discover all URLs in a domain ──────────────────────────────
