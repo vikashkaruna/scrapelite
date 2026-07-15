@@ -161,7 +161,7 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onSwitchRole(); }}>
             <span className="nav-dd-icon"><Icon name="repeat" size={14} /></span>
-            Switch Role / Persona
+            Switch persona
           </button>
           <div className="nav-dropdown-divider" />
           {user ? (
@@ -277,7 +277,7 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
               </button>
               <button className="mobile-nav-item" onClick={() => { onSwitchRole(); onClose(); }}>
                 <span className="mobile-nav-icon"><Icon name="repeat" size={17} /></span>
-                Switch Role
+                Switch persona
               </button>
               <div className="mobile-nav-divider" />
               <button className="mobile-nav-item mobile-nav-danger" onClick={() => { onSignOut(); onClose(); }}>
