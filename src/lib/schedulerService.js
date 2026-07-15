@@ -14,6 +14,7 @@ import { uid, hashContent } from "./utils.js";
 import { apiClient } from "./apiClient.js";
 
 const LS_KEY = "datiq.schedules";
+const MAX_SCHEDULES = 50;
 
 // ── Cadence presets ──────────────────────────────────────────────────────────
 // Intelligent defaults covering the common monitoring rhythms. `cron` is a
@@ -196,7 +197,15 @@ export async function saveSchedule(schedule) {
   // localStorage first so the UI updates immediately even if the backend is down.
   const list = readLocal();
   const idx = list.findIndex((s) => s.id === schedule.id);
-  if (idx >= 0) list[idx] = schedule; else list.unshift(schedule);
+  if (idx >= 0) {
+    list[idx] = schedule;
+  } else {
+    // Cap at MAX_SCHEDULES — reject the 51st.
+    if (list.length >= MAX_SCHEDULES) {
+      throw new Error(`Schedule limit reached (${MAX_SCHEDULES}). Delete one before adding another.`);
+    }
+    list.unshift(schedule);
+  }
   writeLocal(list);
 
   try {

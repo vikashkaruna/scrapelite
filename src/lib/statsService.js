@@ -19,10 +19,16 @@ export async function getStats() {
     const res = await fetch("/api/stats");
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
+    // Normalize: missing teams / extractions → null so the UI can hide the
+    // section rather than render "undefined".
+    const normalized = {
+      teams: data && typeof data.teams === "number" ? data.teams : null,
+      extractions: data && typeof data.extractions === "number" ? data.extractions : null,
+    };
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), data }));
+      localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), data: normalized }));
     } catch { /* ignore */ }
-    return data;
+    return normalized;
   } catch {
     return { teams: null, extractions: null };
   }

@@ -35,6 +35,12 @@ export function getSettings() {
 
 /** Async: fetch from server, cache, and return merged settings. */
 export async function loadSettings() {
+  // Cache-first: avoid hitting the network on every call. The cache
+  // is invalidated by AdminGeneral's saveGeneralConfig (which calls
+  // updateCachedSettings) or by the 5-min TTL.
+  const cached = readCached();
+  if (cached) return { ...DEFAULTS, ...cached };
+
   try {
     const res = await fetch("/api/admin-general-config");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -46,8 +52,7 @@ export async function loadSettings() {
     }
     throw new Error("no settings in response");
   } catch {
-    const cached = readCached();
-    return cached ? { ...DEFAULTS, ...cached } : DEFAULTS;
+    return DEFAULTS;
   }
 }
 
