@@ -144,3 +144,31 @@ describe("updateEnrichments + deleteExtraction", () => {
     expect(JSON.parse(localStorage.getItem("datiq.saved"))).toEqual([]);
   });
 });
+
+describe("RC-03 — concurrent saveExtraction calls", () => {
+  it("two saveExtraction calls in the same tick → two unique ids, both stored (localStorage fallback)", async () => {
+    // Force localStorage fallback (the API path is mocked to 500).
+    apiMocks.createExtraction.mockRejectedValue({ status: 500 });
+    const a = { id: "ext_a", url: "https://a.example.com", page_title: "A", created_at: "2026-07-15T10:00:00.000Z", headings: [], links: [] };
+    const b = { id: "ext_b", url: "https://b.example.com", page_title: "B", created_at: "2026-07-15T10:01:00.000Z", headings: [], links: [] };
+    // Fire both saves in the same tick (Promise.all awaits both).
+    const [ra, rb] = await Promise.all([saveExtraction(a), saveExtraction(b)]);
+    expect(ra.id).toBe("ext_a");
+    expect(rb.id).toBe("ext_b");
+    // Both are persisted in datiq.saved.
+    const stored = JSON.parse(localStorage.getItem("datiq.saved"));
+    expect(stored.length).toBe(2);
+    expect(stored.map((r) => r.id).sort()).toEqual(["ext_a", "ext_b"]);
+  });
+
+  it("saveExtraction without an id → assigns a unique id from uid()", async () => {
+    apiMocks.createExtraction.mockRejectedValue({ status: 500 });
+    const r1 = await saveExtraction({ url: "https://x1.example.com", page_title: "X1", created_at: "2026-07-15T11:00:00.000Z", headings: [], links: [] });
+    const r2 = await saveExtraction({ url: "https://x2.example.com", page_title: "X2", created_at: "2026-07-15T11:01:00.000Z", headings: [], links: [] });
+    // Both rows have a non-empty id.
+    expect(r1.id).toBeTruthy();
+    expect(r2.id).toBeTruthy();
+    // The ids are distinct (uid() includes Math.random() + Date.now()).
+    expect(r1.id).not.toBe(r2.id);
+  });
+});

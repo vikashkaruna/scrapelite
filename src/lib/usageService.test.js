@@ -248,3 +248,47 @@ describe("applyTrialCredit (FR-Z-02 / Q2 2026-07-15)", () => {
     expect(r.sub.bonusExtractions).toBe(0);
   });
 });
+
+describe("RC-02 — concurrent usage writes are atomic (race conditions)", () => {
+  it("10x incrementExtractions(1) in the same tick → extractions === 10", async () => {
+    // Each call reads the current value, mutates, and writes back. The
+    // synchronous read-modify-write is atomic in jsdom's single-threaded
+    // environment, so 10 calls produce 10 (not a smaller value due to
+    // lost updates).
+    for (let i = 0; i < 10; i++) {
+      incrementExtractions(1);
+    }
+    expect(readUsage().extractions).toBe(10);
+  });
+
+  it("rapid plan upgrade from free → select does NOT double-increment datiq.usage", async () => {
+    const { applyTrialCredit, incrementExtractions, readUsage, writeSubscription } = await import("./usageService.js");
+    // Start on the Free plan, count 3 extractions.
+    incrementExtractions();
+    incrementExtractions();
+    incrementExtractions();
+    expect(readUsage().extractions).toBe(3);
+    // Plan upgrade: writes datiq.subscription.planId = "select".
+    writeSubscription({ ...readSubscription(), planId: "select" });
+    // 4 more extractions.
+    for (let i = 0; i < 4; i++) incrementExtractions();
+    // Total should be 7 (3 before + 4 after), not 14 (no double-count).
+    expect(readUsage().extractions).toBe(7);
+  });
+
+  it("applyTrialCredit concurrent calls — first wins, rest are no-ops", async () => {
+    const { applyTrialCredit, readSubscription } = await import("./usageService.js");
+    // Fire 5 concurrent calls (in the same tick). The first one applies
+    // the credit (25), the rest are no-ops because trialCreditAppliedAt
+    // is already set.
+    const results = [];
+    for (let i = 0; i < 5; i++) {
+      results.push(applyTrialCredit("free"));
+    }
+    const applied = results.filter((r) => r.applied);
+    expect(applied.length).toBe(1);
+    expect(applied[0].credit).toBe(25);
+    // The persisted bonusExtractions is exactly 25.
+    expect(readSubscription().bonusExtractions).toBe(25);
+  });
+});
