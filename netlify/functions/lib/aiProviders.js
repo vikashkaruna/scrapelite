@@ -186,7 +186,8 @@ export const SUPABASE_CONFIGURED = () =>
  */
 export async function runChain(messages, clientMaxTokens) {
   const cfg = await loadAiConfig();
-  const maxTokens = Number(clientMaxTokens) > 0 ? Number(clientMaxTokens) : cfg.maxTokens;
+  const requestedTokens = Number(clientMaxTokens) > 0 ? Number(clientMaxTokens) : cfg.maxTokens;
+  const maxTokens = Math.min(2_048, Math.max(1, requestedTokens));
   const attempts = [];
 
   for (const provider of cfg.order) {

@@ -18,18 +18,12 @@ import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
 import { listBatchRuns, readBatchMap, deleteBatchRun } from "../lib/batchRunsService.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
-import { readEnrichments } from "../lib/enrichmentStore.js";
+import { readEnrichments, mergeEnrichments } from "../lib/enrichmentStore.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
 // capability) so exports include every capability run against the URL.
 function withEnrichments(item) {
-  const merged = { ...(item.enrichments || {}) };
-  for (const [key, entry] of Object.entries(readEnrichments(item.url))) {
-    const prev = merged[key];
-    if (!prev || new Date(entry.created_at || 0) >= new Date(prev.created_at || 0)) {
-      merged[key] = entry;
-    }
-  }
+  const merged = mergeEnrichments(item.enrichments, readEnrichments(item.url));
   return Object.keys(merged).length ? { ...item, enrichments: merged } : item;
 }
 

@@ -5,6 +5,21 @@
 //      → HMAC-SHA256 verification (timing-safe)
 
 import { createHmac, timingSafeEqual } from "crypto";
+import { ALLOWED_BUNDLES, ALLOWED_PLANS } from "./lib/pricingSource.js";
+
+const STRIPE_PRICE_BY_PLAN = {
+  select: process.env.STRIPE_PRICE_SELECT || process.env.VITE_STRIPE_PRICE_SELECT || "",
+  pro: process.env.STRIPE_PRICE_PRO || process.env.VITE_STRIPE_PRICE_PRO || "",
+  business: process.env.STRIPE_PRICE_BUSINESS || process.env.VITE_STRIPE_PRICE_BUSINESS || "",
+  agency: process.env.STRIPE_PRICE_AGENCY || process.env.VITE_STRIPE_PRICE_AGENCY || "",
+  "extractions-bundle": process.env.STRIPE_PRICE_EXTRACTIONS_BUNDLE || process.env.VITE_STRIPE_PRICE_EXTRACTIONS_BUNDLE || "",
+  "scheduler-addon": process.env.STRIPE_PRICE_SCHEDULER_ADDON || process.env.VITE_STRIPE_PRICE_SCHEDULER_ADDON || "",
+  "hubspot-addon": process.env.STRIPE_PRICE_HUBSPOT_ADDON || process.env.VITE_STRIPE_PRICE_HUBSPOT_ADDON || "",
+};
+
+function isKnownPurchase(id) {
+  return ALLOWED_PLANS.has(id) || ALLOWED_BUNDLES.has(id);
+}
 
 export const handler = async (event) => {
   const headers = {
@@ -39,13 +54,22 @@ export const handler = async (event) => {
     const stripe = new Stripe(secretKey, { apiVersion: "2024-06-20" });
 
     try {
-      const session  = await stripe.checkout.sessions.retrieve(session_id);
+      const session  = await stripe.checkout.sessions.retrieve(session_id, { expand: ["line_items.data.price"] });
       const verified = session.payment_status === "paid" || session.status === "complete";
+      const planId = session.metadata?.planId || null;
+      const expectedPrice = STRIPE_PRICE_BY_PLAN[planId];
+      const actualPrice = session.line_items?.data?.[0]?.price?.id || null;
+      if (!verified || !isKnownPurchase(planId) || !expectedPrice || actualPrice !== expectedPrice) {
+        return {
+          statusCode: 400, headers,
+          body: JSON.stringify({ verified: false, error: "Checkout session does not match a configured DatIQ purchase.", code: "CHECKOUT_MISMATCH" }),
+        };
+      }
       return {
         statusCode: 200, headers,
         body: JSON.stringify({
-          verified,
-          planId:         session.metadata?.planId        || null,
+          verified: true,
+          planId,
           sessionId:      session.metadata?.sessionId     || null,
           billingPeriod:  session.metadata?.billingPeriod || "monthly",
           customerId:     session.customer                || null,
@@ -59,7 +83,7 @@ export const handler = async (event) => {
       return {
         statusCode: isNotFound ? 404 : 400, headers,
         body: JSON.stringify({
-          error:    isNotFound ? "Checkout session not found. Contact support@datiq.app if you were charged." : e.message,
+          error:    isNotFound ? "Checkout session not found. Contact support@datiq.app if you were charged." : "Unable to verify this checkout session right now. Please try again or contact support@datiq.app.",
           code:     e.code || "STRIPE_ERROR",
           verified: false,
         }),
@@ -77,7 +101,7 @@ export const handler = async (event) => {
       };
     }
 
-    const { provider, orderId, paymentId, signature, planId, sessionId, billingPeriod } = body;
+    const { provider, orderId, paymentId, signature } = body;
 
     if (provider !== "razorpay") {
       return {
@@ -169,6 +193,18 @@ export const handler = async (event) => {
         };
       }
 
+      // The order notes were created by create-checkout.js. Never activate a
+      // client-supplied plan/session; bind the verified payment to these values.
+      const serverPlanId = order.notes?.planId || "";
+      const serverSessionId = order.notes?.sessionId || "";
+      const serverBillingPeriod = order.notes?.billingPeriod || "monthly";
+      if (!isKnownPurchase(serverPlanId)) {
+        return {
+          statusCode: 400, headers,
+          body: JSON.stringify({ verified: false, error: "Payment order does not match a configured DatIQ purchase.", code: "ORDER_MISMATCH" }),
+        };
+      }
+
       // 3. Capture if still authorized (idempotent — re-capturing a captured payment
       //    returns the captured payment rather than erroring in most cases).
       let status = payment.status;
@@ -204,13 +240,13 @@ export const handler = async (event) => {
         statusCode: 200, headers,
         body: JSON.stringify({
           verified:      true,
-          planId:        planId,
-          sessionId:     sessionId,
+          planId:        serverPlanId,
+          sessionId:     serverSessionId,
           paymentId:     paymentId,
           orderId:       orderId,
           amount:        order.amount,
           currency:      order.currency,
-          billingPeriod: billingPeriod || "monthly",
+          billingPeriod: serverBillingPeriod,
         }),
       };
     } catch (apiErr) {

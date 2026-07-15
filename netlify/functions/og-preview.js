@@ -8,6 +8,8 @@
 const FETCH_TIMEOUT_MS = 5000;
 const HEAD_BYTES = 15000;
 
+import { fetchPublicHttpUrl, validatePublicHttpUrl } from "./lib/publicUrl.js";
+
 function headers(extra = {}) {
   return {
     "Content-Type": "application/json",
@@ -68,28 +70,24 @@ export const handler = async (event) => {
   const rawUrl = event.queryStringParameters?.url;
   if (!rawUrl) return respond(400, { error: "url required" });
 
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return respond(400, { error: "invalid url" });
-  }
+  const validatedUrl = validatePublicHttpUrl(rawUrl);
+  if (!validatedUrl.ok) return respond(400, { error: "invalid url" });
+  const parsed = new URL(validatedUrl.url);
 
   const { hostname } = parsed;
   const favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
-  const empty = { url: rawUrl, hostname, favicon, title: null, description: null };
+  const empty = { url: validatedUrl.url, hostname, favicon, title: null, description: null };
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const res = await fetch(rawUrl, {
+    const res = await fetchPublicHttpUrl(validatedUrl.url, {
       signal: controller.signal,
       headers: {
         "User-Agent": "DatIQ/2.0 Preview (+https://datiq.app)",
         Accept: "text/html,application/xhtml+xml",
       },
-      redirect: "follow",
     });
     clearTimeout(timer);
 
@@ -110,7 +108,7 @@ export const handler = async (event) => {
     const html = Buffer.concat(chunks).toString("utf8");
     const { title, description } = parseOg(html);
 
-    return respond(200, { url: rawUrl, hostname, favicon, title, description });
+    return respond(200, { url: validatedUrl.url, hostname, favicon, title, description });
   } catch {
     return respond(200, empty);
   }

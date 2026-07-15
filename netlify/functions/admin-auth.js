@@ -9,14 +9,12 @@
 //   ADMIN_PIN           — plaintext PIN (fallback if you can't pre-hash it)
 //   ADMIN_TOKEN_SECRET  — optional HMAC key for the session token (defaults to the hash)
 //
-// If NEITHER ADMIN_PIN_HASH nor ADMIN_PIN is set, the function runs in DEMO mode and
-// accepts "ADMIN123" (response includes demo:true so the UI can warn). Setting a strong
-// PIN disables demo mode. Choose a long, random PIN — strength is set at hash time.
+// This endpoint is disabled when no server-only secret is configured. Production
+// deployments must set ADMIN_PIN_HASH or ADMIN_PIN; there is no default/demo PIN.
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
-const DEMO_PIN = "ADMIN123";
 
 const sha256Hex = (s) => createHash("sha256").update(String(s)).digest("hex");
 
@@ -54,9 +52,15 @@ export const handler = async (event) => {
 
   const envHash = process.env.ADMIN_PIN_HASH;
   const envPin  = process.env.ADMIN_PIN;
-  const demo    = !envHash && !envPin;
+  if (!envHash && !envPin) {
+    return {
+      statusCode: 503,
+      headers,
+      body: JSON.stringify({ ok: false, error: "Admin access is not configured.", code: "ADMIN_NOT_CONFIGURED" }),
+    };
+  }
 
-  const expectedHash = demo ? sha256Hex(DEMO_PIN) : (envHash || sha256Hex(envPin));
+  const expectedHash = envHash || sha256Hex(envPin);
   const ok = safeEqualHex(sha256Hex(pin), expectedHash);
 
   // Small fixed delay to blunt online brute-forcing (client also enforces lockout).
@@ -67,5 +71,5 @@ export const handler = async (event) => {
 
   const secret = process.env.ADMIN_TOKEN_SECRET || expectedHash;
   const { token, exp } = signToken(secret);
-  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, token, exp, demo }) };
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, token, exp, demo: false }) };
 };

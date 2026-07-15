@@ -65,9 +65,9 @@ export default function PaymentSuccess() {
           grant          = false;
           resolvedPlanId = planId;
         } else {
-          // Demo mode or direct navigation — treat as success (local-only)
-          verified = true;
-          grant    = true;
+          // Never activate a paid plan from a deep link or an unknown provider.
+          // Payment activation must originate from a server-verified checkout.
+          verified = false;
         }
 
         if (!cancelled && verified && resolvedPlanId) {

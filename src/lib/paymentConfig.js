@@ -9,6 +9,9 @@ export const PAYMENT_PROVIDER_OVERRIDE  = import.meta.env.VITE_PAYMENT_PROVIDER 
 export const hasStripe   = Boolean(STRIPE_PUBLISHABLE_KEY);
 export const hasRazorpay = Boolean(RAZORPAY_KEY_ID);
 export const hasPayment  = hasStripe || hasRazorpay;
+// Local demos may opt in explicitly; production must never grant a paid plan
+// merely because payment configuration is absent.
+export const demoBillingEnabled = import.meta.env.VITE_ENABLE_DEMO_BILLING === "true";
 
 // Stripe recurring price IDs (create in Stripe Dashboard → Products → Add price → Recurring)
 export const STRIPE_PRICE_IDS = {

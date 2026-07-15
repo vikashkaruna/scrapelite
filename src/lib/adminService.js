@@ -8,7 +8,6 @@ const ADMIN_EXP_KEY   = "scrapelite.adminAuthExp";  // token expiry (ms epoch)
 const ADMIN_LOCK_KEY  = "datiq.adminLock";          // failed-attempt lockout state
 
 const FUNCTIONS = "/.netlify/functions";
-const DEMO_PIN  = "ADMIN123";
 const EIGHT_H   = 1000 * 60 * 60 * 8;
 
 export const ADMIN_MAX_ATTEMPTS = 5;
@@ -43,19 +42,10 @@ export async function adminLogin(pin) {
       return { ok: true, demo: !!data.demo };
     }
     if (res.status === 401) return { ok: false, reason: (data && data.error) || "Incorrect PIN." };
-    // Any other status (function missing / non-JSON) → fall through to dev fallback.
+    return { ok: false, reason: (data && data.error) || "Admin service is unavailable." };
   } catch {
-    // Network/proxy error (e.g. plain `npm run dev` without netlify dev) → dev fallback.
+    return { ok: false, reason: "Admin service is unavailable." };
   }
-  // DEV-ONLY fallback: usable only when the server is unreachable. A configured server
-  // PIN returns 401 above (handled before here), so this never bypasses a real PIN.
-  if (pin === DEMO_PIN) {
-    const exp = Date.now() + EIGHT_H;
-    localStorage.setItem(ADMIN_AUTH_KEY, `local.${exp}`);
-    localStorage.setItem(ADMIN_EXP_KEY, String(exp));
-    return { ok: true, demo: true };
-  }
-  return { ok: false, reason: "Incorrect PIN." };
 }
 
 export function adminLogout() {

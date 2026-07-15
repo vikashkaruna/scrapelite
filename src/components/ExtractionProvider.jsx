@@ -10,6 +10,7 @@ import {
   saveEnrichment,
   saveCurrent,
   readCurrent,
+  mergeEnrichments,
 } from "../lib/enrichmentStore.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
 import { useErrorModal } from "./ErrorModal.jsx";
@@ -219,18 +220,6 @@ export function ExtractionProvider({ children }) {
     view,
   };
   return <ExtractionContext.Provider value={value}>{children}</ExtractionContext.Provider>;
-}
-
-// Merge two enrichment maps, keeping the newer entry (by created_at) per key.
-function mergeEnrichments(a = {}, b = {}) {
-  const out = { ...(a || {}) };
-  for (const [key, entry] of Object.entries(b || {})) {
-    const prev = out[key];
-    if (!prev || new Date(entry.created_at || 0) >= new Date(prev.created_at || 0)) {
-      out[key] = entry;
-    }
-  }
-  return out;
 }
 
 // Stable callback ref — keeps the handler identity stable without useCallback.

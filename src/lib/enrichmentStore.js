@@ -40,6 +40,22 @@ export function saveEnrichment(url, entry) {
   writeAll(all);
 }
 
+/**
+ * Combine persisted and local enrichment maps. When the same capability exists
+ * in both places, retain the newest result so an older cross-device response
+ * cannot overwrite a freshly refreshed local tab.
+ */
+export function mergeEnrichments(persisted = {}, local = {}) {
+  const merged = { ...(persisted || {}) };
+  for (const [key, entry] of Object.entries(local || {})) {
+    const previous = merged[key];
+    if (!previous || new Date(entry?.created_at || 0) >= new Date(previous?.created_at || 0)) {
+      merged[key] = entry;
+    }
+  }
+  return merged;
+}
+
 /** Persist the last-viewed extraction so /preview survives a browser reload. */
 export function saveCurrent(extraction) {
   try {

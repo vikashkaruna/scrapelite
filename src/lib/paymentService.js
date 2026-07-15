@@ -2,7 +2,7 @@
 // Called by BillingProvider. Never calls UI code directly.
 
 import {
-  hasPayment,
+  hasPayment, demoBillingEnabled,
   STRIPE_PRICE_IDS, RAZORPAY_KEY_ID,
   getPaymentProvider,
 } from "./paymentConfig.js";
@@ -266,9 +266,6 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
               orderId:       rzpResponse.razorpay_order_id,
               paymentId:     rzpResponse.razorpay_payment_id,
               signature:     rzpResponse.razorpay_signature,
-              planId,
-              sessionId,
-              billingPeriod: billingPeriod || "monthly",
             }),
           });
         } catch (netErr) {
@@ -287,7 +284,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
           resolve({
             status:        "success",
             provider:      "razorpay",
-            planId,
+            planId:        verifyResult.planId,
             paymentId:     rzpResponse.razorpay_payment_id,
             orderId:       rzpResponse.razorpay_order_id,
             amount:        orderAmount,
@@ -332,7 +329,10 @@ export async function initiateTopupCheckout({ bundleId, currency, rates, qty = 1
 
 // ── Main entry point ─────────────────────────────────────────────────────────
 export async function initiateCheckout({ planId, currency, rates, billingPeriod, couponCode, sessionId, email, mobile, onStageChange }) {
-  if (!hasPayment) return { status: "demo_mode" };
+  if (!hasPayment) {
+    if (demoBillingEnabled) return { status: "demo_mode" };
+    throw new Error("Payments are not configured. Please contact support@datiq.app.");
+  }
 
   const provider = getPaymentProvider(currency);
   if (!provider) return { status: "contact_sales" };
@@ -354,4 +354,4 @@ export async function confirmStripeSession(stripeSessionId) {
   } catch { return null; }
 }
 
-export { hasPayment, getPaymentProvider };
+export { hasPayment, demoBillingEnabled, getPaymentProvider };

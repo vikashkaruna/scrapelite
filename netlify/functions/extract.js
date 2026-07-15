@@ -11,6 +11,7 @@
 // which work without a key at reduced rate limits).
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
+import { validatePublicHttpUrl } from "./lib/publicUrl.js";
 
 function respond(statusCode, body) {
   return {
@@ -48,12 +49,13 @@ export const handler = async (event) => {
   }
 
   const { url, options = {} } = reqBody;
-  if (!url) return respond(400, { error: "url is required" });
+  const validatedUrl = validatePublicHttpUrl(url);
+  if (!validatedUrl.ok) return respond(400, { error: validatedUrl.error });
 
   try {
     // ── Map mode: discover all URLs in a domain ──────────────────────────────
     if (options.mapMode) {
-      const result = await runMapChain(url);
+      const result = await runMapChain(validatedUrl.url);
       if (!result.ok) {
         return respond(502, {
           error: result.error,
@@ -68,7 +70,7 @@ export const handler = async (event) => {
     }
 
     // ── Scrape mode: extract page HTML + metadata ────────────────────────────
-    const result = await runScrapeChain(url, options);
+    const result = await runScrapeChain(validatedUrl.url, options);
     if (!result.ok) {
       return respond(502, {
         error: result.error,
@@ -90,6 +92,7 @@ export const handler = async (event) => {
       _providerAttempts: result.attempts,
     });
   } catch (err) {
-    return respond(502, { error: `Scrape chain failed: ${err.message}` });
+    console.error("[extract] scrape chain failed", err);
+    return respond(502, { error: "Unable to extract this URL right now. Please try again." });
   }
 };

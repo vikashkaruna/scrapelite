@@ -13,7 +13,7 @@ import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
 import {
-  initiateCheckout, initiateTopupCheckout, hasPayment,
+  initiateCheckout, initiateTopupCheckout, hasPayment, demoBillingEnabled,
   PAYMENT_STAGE, PAYMENT_STAGE_LABELS,
 } from "../lib/paymentService.js";
 import { syncSubscriptionToDb, fetchSubscriptionFromDb, logPaymentEvent, fetchPaymentHistory } from "../lib/paymentRepo.js";
@@ -167,8 +167,10 @@ export function BillingProvider({ children }) {
 
       } else if (result.status === "success") {
         // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
-        upgradePlan(confirmedPlanId);
-        await syncSubscriptionToDb(confirmedPlanId, result.provider, {
+        const verifiedPlanId = result.planId;
+        if (!verifiedPlanId) throw new Error("Payment was verified but the purchased plan could not be confirmed.");
+        upgradePlan(verifiedPlanId);
+        await syncSubscriptionToDb(verifiedPlanId, result.provider, {
           subscriptionId: result.subscriptionId,
           customerId:     result.customerId,
           orderId:        result.orderId,   // razorpay_order_id — persisted on subscription
@@ -177,7 +179,7 @@ export function BillingProvider({ children }) {
           type:        "payment.captured",
           provider:    result.provider,
           providerId:  result.paymentId || result.orderId, // razorpay_payment_id
-          planId:      confirmedPlanId,
+          planId:      verifiedPlanId,
           amountCents: result.amount,
           currency:    result.currency,
         });
@@ -220,10 +222,11 @@ export function BillingProvider({ children }) {
       writeSubscription(updated);
     };
 
-    if (!hasPayment) {
+    if (!hasPayment && demoBillingEnabled) {
       grantBundle(subscription);
       return { status: "demo_mode", bonusUrls, bonusExtr };
     }
+    if (!hasPayment) throw new Error("Payments are not configured. Please contact support@datiq.app.");
 
     setPaymentPlanName(bundle?.name || bundleId);
     setPaymentStage(PAYMENT_STAGE.IDLE);

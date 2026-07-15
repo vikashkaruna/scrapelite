@@ -12,6 +12,11 @@
 
 import { runChain, keyPresence } from "./lib/aiProviders.js";
 
+const MAX_MESSAGES = 12;
+const MAX_MESSAGE_CHARS = 8_000;
+const MAX_REQUEST_CHARS = 24_000;
+const MAX_OUTPUT_TOKENS = 2_048;
+
 function respond(statusCode, body) {
   return {
     statusCode,
@@ -49,9 +54,20 @@ export const handler = async (event) => {
 
   const { max_tokens, messages } = reqBody;
 
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return respond(400, { error: "messages array is required" });
+  if (
+    !messages ||
+    !Array.isArray(messages) ||
+    messages.length === 0 ||
+    messages.length > MAX_MESSAGES ||
+    !messages.every((m) => typeof m?.content === "string" && m.content.length <= MAX_MESSAGE_CHARS) ||
+    messages.reduce((total, m) => total + m.content.length, 0) > MAX_REQUEST_CHARS
+  ) {
+    return respond(400, { error: "Request exceeds the supported AI message limit." });
   }
+  const requestedTokens = Number(max_tokens);
+  const boundedTokens = Number.isFinite(requestedTokens) && requestedTokens > 0
+    ? Math.min(MAX_OUTPUT_TOKENS, Math.max(1, requestedTokens))
+    : undefined;
 
   // No provider has a key → behave like the old "not configured" path (503) so
   // aiService.js falls back to its local mock content.
@@ -61,9 +77,10 @@ export const handler = async (event) => {
   }
 
   try {
-    const result = await runChain(messages, max_tokens);
+    const result = await runChain(messages, boundedTokens);
     if (!result.ok) {
-      return respond(502, { error: result.error, detail: { attempts: result.attempts } });
+      console.warn("[ai] provider chain failed", result.attempts);
+      return respond(502, { error: "AI service is temporarily unavailable. Please try again." });
     }
     // Normalize to the Anthropic messages shape the browser already parses.
     return respond(200, {
@@ -72,6 +89,7 @@ export const handler = async (event) => {
       _model: result.model,
     });
   } catch (err) {
-    return respond(502, { error: `Upstream fetch failed: ${err.message}` });
+    console.error("[ai] request failed", err);
+    return respond(502, { error: "AI service is temporarily unavailable. Please try again." });
   }
 };

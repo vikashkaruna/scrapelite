@@ -14,6 +14,20 @@ import {
 
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
 
+// The client may display price IDs, but the server chooses the one it submits to
+// Stripe. Configure these without a VITE_ prefix in production; the VITE_* fallbacks
+// preserve existing deployments while preventing a caller from selecting another
+// account price for a higher-value plan.
+const STRIPE_PRICE_BY_PLAN = {
+  select: process.env.STRIPE_PRICE_SELECT || process.env.VITE_STRIPE_PRICE_SELECT || "",
+  pro: process.env.STRIPE_PRICE_PRO || process.env.VITE_STRIPE_PRICE_PRO || "",
+  business: process.env.STRIPE_PRICE_BUSINESS || process.env.VITE_STRIPE_PRICE_BUSINESS || "",
+  agency: process.env.STRIPE_PRICE_AGENCY || process.env.VITE_STRIPE_PRICE_AGENCY || "",
+  "extractions-bundle": process.env.STRIPE_PRICE_EXTRACTIONS_BUNDLE || process.env.VITE_STRIPE_PRICE_EXTRACTIONS_BUNDLE || "",
+  "scheduler-addon": process.env.STRIPE_PRICE_SCHEDULER_ADDON || process.env.VITE_STRIPE_PRICE_SCHEDULER_ADDON || "",
+  "hubspot-addon": process.env.STRIPE_PRICE_HUBSPOT_ADDON || process.env.VITE_STRIPE_PRICE_HUBSPOT_ADDON || "",
+};
+
 export const handler = async (event) => {
   const headers = {
     "Content-Type": "application/json",
@@ -33,7 +47,7 @@ export const handler = async (event) => {
   }
 
   const {
-    provider, planId, priceId, currency, amount,
+    provider, planId, currency, amount,
     billingPeriod, couponCode, sessionId, email,
     successUrl, cancelUrl,
   } = body;
@@ -90,8 +104,9 @@ export const handler = async (event) => {
         body: JSON.stringify({ error: "Stripe payment is not configured. Please contact support@datiq.app.", code: "STRIPE_NOT_CONFIGURED" }),
       };
     }
+    const priceId = STRIPE_PRICE_BY_PLAN[planId];
     if (!priceId) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: "priceId is required for Stripe.", code: "MISSING_PRICE_ID" }) };
+      return { statusCode: 503, headers, body: JSON.stringify({ error: "This plan is not configured for Stripe checkout. Please contact support@datiq.app.", code: "STRIPE_PRICE_NOT_CONFIGURED" }) };
     }
     if (!successUrl || !cancelUrl) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: "successUrl and cancelUrl are required.", code: "MISSING_URLS" }) };
@@ -133,7 +148,7 @@ export const handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ url: session.url, checkoutSessionId: session.id }) };
     } catch (e) {
       console.error("[create-checkout/stripe]", e.type, e.message);
-      return { statusCode: 400, headers, body: JSON.stringify({ error: classifyStripeError(e), code: "STRIPE_ERROR", raw: e.message }) };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: classifyStripeError(e), code: "STRIPE_ERROR" }) };
     }
   }
 
@@ -217,7 +232,7 @@ export const handler = async (event) => {
       console.error("[create-checkout/razorpay]", e.statusCode, e.error?.description || e.message);
       return {
         statusCode: 400, headers,
-        body: JSON.stringify({ error: classifyRazorpayCreateError(e), code: "RAZORPAY_ORDER_ERROR", raw: e.error?.description || e.message }),
+        body: JSON.stringify({ error: classifyRazorpayCreateError(e), code: "RAZORPAY_ORDER_ERROR" }),
       };
     }
   }

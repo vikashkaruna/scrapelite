@@ -81,6 +81,7 @@ function parseHtml(html, baseUrl) {
     } catch {
       continue;
     }
+    if (!/^https?:$/i.test(new URL(href).protocol)) continue;
     if (seen.has(href)) continue;
     seen.add(href);
     const text = (a.textContent || "").replace(/\s+/g, " ").trim() || href;

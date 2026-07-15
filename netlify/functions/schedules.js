@@ -130,6 +130,7 @@ export const handler = async (event) => {
 
     return respond(405, { error: "Method not allowed" });
   } catch (err) {
-    return respond(500, { error: err.message, code: err.code });
+    console.error("[schedules] request failed", err);
+    return respond(500, { error: "Unable to complete the schedule request right now." });
   }
 };

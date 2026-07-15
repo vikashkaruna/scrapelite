@@ -3,10 +3,8 @@
 // Token format: `${base64url(JSON {exp})}.${base64url(HMAC-SHA256(payload, secret))}`
 // where secret = ADMIN_TOKEN_SECRET || ADMIN_PIN_HASH || sha256(ADMIN_PIN).
 //
-// When no admin secret is configured (demo mode — same condition admin-auth.js
-// uses), there is nothing to verify against, so we accept any non-empty token and
-// flag it demo:true. Setting ADMIN_PIN_HASH (or ADMIN_PIN / ADMIN_TOKEN_SECRET)
-// enables real verification.
+// Admin endpoints are disabled until a server-only secret is configured. A
+// production function must never accept an arbitrary token as a "demo" session.
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 
@@ -16,7 +14,7 @@ function adminSecret() {
   if (process.env.ADMIN_TOKEN_SECRET) return process.env.ADMIN_TOKEN_SECRET;
   if (process.env.ADMIN_PIN_HASH) return process.env.ADMIN_PIN_HASH;
   if (process.env.ADMIN_PIN) return sha256Hex(process.env.ADMIN_PIN);
-  return null; // demo mode
+  return null;
 }
 
 function safeEqual(a, b) {
@@ -39,7 +37,7 @@ export function verifyAdminToken(token) {
   if (!token) return { ok: false, reason: "Missing admin token." };
 
   const secret = adminSecret();
-  if (!secret) return { ok: true, demo: true }; // demo mode — nothing to verify against
+  if (!secret) return { ok: false, reason: "Admin access is not configured." };
 
   const [payload, sig] = String(token).split(".");
   if (!payload || !sig) return { ok: false, reason: "Malformed token." };

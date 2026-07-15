@@ -21,6 +21,8 @@ const JINA_BASE      = "https://r.jina.ai";
 
 const TIMEOUT_MS = 20_000;
 
+import { fetchPublicHttpUrl, validatePublicHttpUrl } from "./publicUrl.js";
+
 function abortAfter(ms) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -150,14 +152,13 @@ async function scrapeJina(url, options, apiKey) {
 async function scrapeDirect(url, _options, _apiKey) {
   const { signal, clear } = abortAfter(TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublicHttpUrl(url, {
       headers: {
         "User-Agent":      "Mozilla/5.0 (compatible; DatIQ/1.0; +https://datiq.app)",
         Accept:            "text/html,application/xhtml+xml,*/*",
         "Accept-Language": "en-US,en;q=0.9",
       },
       signal,
-      redirect: "follow",
     });
     clear();
     if (!res.ok) return { ok: false, status: res.status, error: `Direct ${res.status}` };
@@ -230,7 +231,7 @@ async function mapSpider(url, apiKey) {
 async function mapDirect(url, _apiKey) {
   const { signal, clear } = abortAfter(TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublicHttpUrl(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; DatIQ/1.0; +https://datiq.app)" },
       signal,
     });
@@ -326,6 +327,11 @@ function resolveOrder() {
  * @returns {Promise<{ ok, source?, html?, title?, customExtraction?, attempts, error? }>}
  */
 export async function runScrapeChain(url, options = {}) {
+  const validatedUrl = validatePublicHttpUrl(url);
+  if (!validatedUrl.ok) {
+    return { ok: false, attempts: [], error: validatedUrl.error };
+  }
+  url = validatedUrl.url;
   const chain = resolveOrder();
   const attempts = [];
 
@@ -358,6 +364,11 @@ export async function runScrapeChain(url, options = {}) {
  * @returns {Promise<{ ok, source?, mapLinks?, attempts, error? }>}
  */
 export async function runMapChain(url) {
+  const validatedUrl = validatePublicHttpUrl(url);
+  if (!validatedUrl.ok) {
+    return { ok: false, attempts: [], error: validatedUrl.error };
+  }
+  url = validatedUrl.url;
   const chain = resolveOrder();
   const attempts = [];
 
