@@ -7,7 +7,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:unit": "vitest run src --exclude '**/*.integration.test.*' --exclude '**/__tests__/system/**'",
+    "test:contract": "vitest run netlify",
+    "test:integration": "vitest run 'integration.test'",
+    "test:system": "vitest run 'src/__tests__/system'",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.js e2e/smoke/",
+    "test:e2e:smoke:all-browsers": "playwright test --project=chromium --project=firefox --project=webkit e2e/smoke.spec.js e2e/smoke/",
+    "test:e2e:journeys": "playwright test e2e/journeys/",
+    "test:e2e:a11y": "playwright test e2e/a11y/",
+    "test:e2e:visual": "playwright test e2e/visual/",
+    "test:smoke": "npm run test:e2e:smoke",
+    "test:security": "node scripts/security-check.mjs",
+    "test:all": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -20,11 +35,18 @@
     "stripe": "^17.7.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
     "playwright": "^1.60.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^2.1.9",
+    "vitest-axe": "^0.1.0"
   }
 }

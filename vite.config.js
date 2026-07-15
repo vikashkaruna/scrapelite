@@ -1,9 +1,43 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { configDefaults } from "vitest/config";
 
 // https://vite.dev/config
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: "jsdom",
+    // setup.js handles jsdom polyfills + storage reset between specs.
+    // a11y-setup.js wires the `toHaveNoViolations` matcher from
+    // vitest-axe so every test can opt into a11y assertions.
+    setupFiles: ["./test/setup.js", "./test/a11y-setup.js"],
+    // Browser journeys are owned by Playwright. Keeping them out of Vitest
+    // prevents its collector from executing Playwright's test hooks.
+    exclude: [...configDefaults.exclude, "e2e/**"],
+    clearMocks: true,
+    restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary"],
+      reportsDirectory: "coverage",
+      include: [
+        "src/lib/utils.js",
+        "src/lib/linkCategorizer.js",
+        "src/lib/extractionPresets.js",
+        "src/lib/config.js",
+        "src/lib/errorMessages.js",
+        "src/lib/enrichmentStore.js",
+      ],
+      thresholds: {
+        // Initial release gate for the critical client-side logic listed above.
+        // Raise this as untested legacy export paths are brought under test.
+        lines: 70,
+        functions: 70,
+        statements: 70,
+        branches: 70,
+      },
+    },
+  },
   server: {
     port: 5173,
     open: true,
