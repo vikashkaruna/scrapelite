@@ -172,6 +172,125 @@ describe("create-checkout (C-13) — server ignores client amount/discount", () 
   });
 });
 
+// ── X-03 / X-07: client-supplied amount and discountPercent are IGNORED ──────
+// C-13 already covered the "amount wins" assertion in a single combined test.
+// X-03 and X-07 split that contract into dedicated security tests, with
+// additional coupon-path coverage (FR-X-03) and a server-side Stripe unit
+// amount check (FR-X-07) to close the path against tampered clients.
+describe("create-checkout (X-03) — client discountPercent is ignored", () => {
+  beforeEach(() => {
+    process.env.RAZORPAY_KEY_ID = "rzp_test";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_secret";
+  });
+
+  it("client discountPercent=99 with no valid coupon → server still charges full price", async () => {
+    mockEmptySupabase();
+    rzpOrdersCreate.mockResolvedValueOnce({ id: "o", amount: 0, currency: "INR", receipt: "r" });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        provider: "razorpay", planId: "pro", currency: "INR",
+        billingPeriod: "monthly", sessionId: "sess_abc",
+        discountPercent: 99, // attacker tries 99% off
+      }),
+    });
+    const order = rzpOrdersCreate.mock.calls[0][0];
+    // Server-computed amount (no coupon, no global sale) = base × 1.18 × 100.
+    // If the client-supplied 99% had been honoured, the order would be
+    // base × 0.01 × 1.18 × 100 ≈ 3,420 paise. It is NOT.
+    const base = 2899;
+    const fullPricePaise = Math.round(base * 1.18 * 100);
+    expect(order.amount).toBe(fullPricePaise);
+    expect(order.amount).toBeGreaterThan(fullPricePaise * 0.5); // sanity: not 50% off
+  });
+
+  it("client discountPercent=0 with valid coupon → server still applies coupon discount", async () => {
+    // Client tries to zero out the coupon discount by sending 0. Server
+    // recomputes from couponCode regardless of the client-supplied value.
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("/rest/v1/pricing_config")) {
+        return new Response(JSON.stringify([{
+          key: "coupons",
+          value: [{
+            code: "LAUNCH20", type: "percent", value: 20,
+            active: true, planIds: ["pro"], expiresAt: "2099-12-31",
+          }],
+        }]), { status: 200 });
+      }
+      if (u.includes("/rest/v1/rpc/redeem_coupon")) {
+        return new Response(JSON.stringify("ok"), { status: 200 });
+      }
+      return new Response("not-found", { status: 404 });
+    });
+    rzpOrdersCreate.mockResolvedValueOnce({ id: "o", amount: 0, currency: "INR", receipt: "r" });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        provider: "razorpay", planId: "pro", currency: "INR",
+        billingPeriod: "monthly", sessionId: "sess_abc",
+        couponCode: "LAUNCH20",
+        discountPercent: 0, // attacker tries to suppress the coupon
+      }),
+    });
+    const order = rzpOrdersCreate.mock.calls[0][0];
+    const base = 2899;
+    // 20% coupon applied: base × 0.80 × 1.18 × 100
+    const expected = Math.round(base * 0.8 * 1.18 * 100);
+    expect(order.amount).toBe(expected);
+    // And it must be strictly less than the full price (coupon took effect).
+    expect(order.amount).toBeLessThan(Math.round(base * 1.18 * 100));
+  });
+});
+
+describe("create-checkout (X-07) — client amount is ignored", () => {
+  beforeEach(() => {
+    process.env.RAZORPAY_KEY_ID = "rzp_test";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_secret";
+  });
+
+  it("client amount=1 (₹0.01) with no other fields → server uses table amount", async () => {
+    mockEmptySupabase();
+    rzpOrdersCreate.mockResolvedValueOnce({ id: "o", amount: 0, currency: "INR", receipt: "r" });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        provider: "razorpay", planId: "pro", currency: "INR",
+        billingPeriod: "monthly", sessionId: "sess_abc",
+        amount: 1, // attacker tries ₹0.01
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    const order = rzpOrdersCreate.mock.calls[0][0];
+    // Server uses table amount, not the client-sent 1 paise.
+    const base = 2899;
+    const expected = Math.round(base * 1.18 * 100);
+    expect(order.amount).toBe(expected);
+  });
+
+  it("client amount=99999999 → server still uses table amount (not 99999999×100)", async () => {
+    // Defends against an attacker overcharging (e.g. to drain a stolen card).
+    mockEmptySupabase();
+    rzpOrdersCreate.mockResolvedValueOnce({ id: "o", amount: 0, currency: "INR", receipt: "r" });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        provider: "razorpay", planId: "pro", currency: "INR",
+        billingPeriod: "monthly", sessionId: "sess_abc",
+        amount: 99999999, // attacker tries to overcharge
+      }),
+    });
+    const order = rzpOrdersCreate.mock.calls[0][0];
+    const base = 2899;
+    const expected = Math.round(base * 1.18 * 100);
+    expect(order.amount).toBe(expected);
+  });
+});
+
 // ── C-14: INR adds 18% GST; USD does not ──────────────────────────────────────
 describe("create-checkout (C-14) — GST 18% on INR only", () => {
   beforeEach(() => {

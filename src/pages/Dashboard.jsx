@@ -1,6 +1,6 @@
 // Dashboard.jsx — historical view of saved extractions (route "/dashboard").
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
@@ -393,7 +393,23 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(() => !localStorage.getItem("datiq.saved"));
   const [refreshing, setRefreshing] = useState(false);
   const [layout, setLayout] = useState(initialLayout);
-  const [query, setQuery] = useState("");
+  // BH-01: persist search filter to URL search params so goBack()/goForward()
+  // naturally restores it. Other dashboard filters stay in local state — only
+  // the search box is part of the BH-01 back/forward contract today.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQueryState] = useState(() => searchParams.get("q") || "");
+  const setQuery = (value) => {
+    setQueryState(value);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("q", value);
+        else next.delete("q");
+        return next;
+      },
+      { replace: true }
+    );
+  };
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(() => new Set());
   const [emailOpen, setEmailOpen] = useState(false);
