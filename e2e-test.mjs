@@ -1,11 +1,16 @@
-// DatIQ E2E Test Suite — comprehensive screen + feature testing
-// Run: node e2e-test.mjs
+// DatIQ E2E Test Suite — LEGACY, retained for reference. Superseded by the
+// Playwright specs under e2e/ (run with `npm run test:e2e:smoke` etc).
+// Kept here so anyone reading the repo can see the original test history.
+// If you need to run it: node e2e-test.mjs
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "fs";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASE = "http://localhost:5173";
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
-const SS_DIR = "/home/user/scrapelite/e2e-screenshots";
+const SS_DIR = resolve(__dirname, "e2e-screenshots");
 mkdirSync(SS_DIR, { recursive: true });
 
 const results = [];

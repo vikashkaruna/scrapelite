@@ -202,7 +202,7 @@ function imageBlock(alt, src) {
           type: "png",
           data,
           transformation: { width: dispW, height: dispH },
-          altText: { title: alt || "screenshot", description: alt || "ScrapeLite screenshot", name: alt || "screenshot" },
+          altText: { title: alt || "screenshot", description: alt || "DatIQ screenshot", name: alt || "screenshot" },
         }),
       ],
     }),
@@ -375,9 +375,9 @@ const toc = [
 const children = [body[titleIdx], ...toc, ...body.slice(titleIdx + 1)];
 
 const doc = new Document({
-  creator: "ScrapeLite",
-  title: "ScrapeLite — Complete Product Documentation",
-  description: "ScrapeLite v2.0 product documentation",
+  creator: "DatIQ",
+  title: "DatIQ — Complete Product Documentation",
+  description: "DatIQ v1.0 product documentation",
   styles: {
     default: { document: { run: { font: "Arial", size: 21 } } }, // ~10.5pt
     paragraphStyles: [
@@ -428,7 +428,7 @@ const doc = new Document({
             new Paragraph({
               alignment: AlignmentType.RIGHT,
               border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BORDER, space: 4 } },
-              children: [new TextRun({ text: "ScrapeLite · Product Documentation (v2.0)", size: 16, color: "97A0B0" })],
+              children: [new TextRun({ text: "DatIQ · Product Documentation (v1.0)", size: 16, color: "97A0B0" })],
             }),
           ],
         }),

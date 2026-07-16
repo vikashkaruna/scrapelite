@@ -1,8 +1,11 @@
-# ScrapeLite — project context for Codex
+# DatIQ — project context for Codex
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-06 (after full v2.0 build, test, and merge to main)**
+> **Last updated: 2026-07-16 (R20 docs split; quality-gate M0–M7 merged; v1.0 live)**
+>
+> **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
+> This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
 
 ---
 
@@ -10,14 +13,14 @@
 
 | Property | Value |
 |---|---|
-| **Project** | ScrapeLite — zero-code web-extraction + enrichment platform |
+| **Project** | DatIQ (rebranded from ScrapeLite in R6, 2026-06-09) — zero-code web-extraction + enrichment platform |
 | **Working dir** | `/Users/vikash/Extracta` |
-| **Live site** | https://scrapelite.netlify.app |
+| **Live site** | https://datiq.app (Netlify project `datiqapp`; site `0ac65a7e-bd3f-4cde-a8d3-66c23899c473`) |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
-| **Netlify** | https://app.netlify.com/projects/scrapelite |
+| **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (v2.0 merged; `version-2.0` branch still exists) |
-| **Latest commit** | `5b267d3` — Merge PR #1 (Netlify deploy w/ secrets-scanning bypass) |
+| **Current branch** | `main` (R20 + M0–M7 quality-gate merged 2026-07-16) |
+| **Latest commit** | See `git log --oneline -1` on main |
 
 ---
 

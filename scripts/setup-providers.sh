@@ -62,13 +62,14 @@ h "Step 1: Stripe Products & Prices"
 if ! require STRIPE_SECRET_KEY "Stripe secret key"; then
   warn "Skipping Stripe setup."
 else
-  SITE_URL="https://scrapelite.netlify.app"
-  declare -A PLAN_PRICES=([select]=1900 [pro]=2900 [business]=7900 [agency]=19900)
-  declare -A PLAN_NAMES=([select]="ScrapeLite Select" [pro]="ScrapeLite Pro" [business]="ScrapeLite Business" [agency]="ScrapeLite Agency")
+  SITE_URL="${VITE_SITE_URL:-https://datiq.app}"
+  # Prices in cents — match pricingConfig.js (current tiers as of R20)
+  declare -A PLAN_PRICES=([select]=1900 [pro]=2900 [business]=7900 [agency]=29900)
+  declare -A PLAN_NAMES=([select]="DatIQ Select" [pro]="DatIQ Pro" [business]="DatIQ Business" [agency]="DatIQ Agency")
   declare -A PLAN_TAGLINES=(
-    [select]="For individuals & freelancers — 100 extractions/month"
-    [pro]="For power users & consultants — 250 extractions/month"
-    [business]="For teams — 1,000 extractions/month"
+    [select]="For individuals & freelancers"
+    [pro]="For power users & consultants"
+    [business]="For teams — 1,000 extractions/month, API access"
     [agency]="Unlimited scale, your brand"
   )
   declare -A ENV_KEYS=([select]=VITE_STRIPE_PRICE_SELECT [pro]=VITE_STRIPE_PRICE_PRO [business]=VITE_STRIPE_PRICE_BUSINESS [agency]=VITE_STRIPE_PRICE_AGENCY)
@@ -98,7 +99,7 @@ else
       -d "unit_amount=${PLAN_PRICES[$plan]}" \
       -d "currency=usd" \
       -d "recurring[interval]=month" \
-      -d "nickname=ScrapeLite ${plan^} Monthly" \
+      -d "nickname=DatIQ ${plan^} Monthly" \
       -d "metadata[plan_id]=${plan}")
     PRICE_ID=$(echo "$PRICE" | jq -r '.id // empty')
     if [[ -z "$PRICE_ID" ]]; then
@@ -112,7 +113,7 @@ else
   # ── Top-up bundle one-time prices ─────────────────────────────────────────
   echo ""
   declare -A BUNDLE_PRICES=([extractions_bundle]=900 [scheduler_addon]=500 [hubspot_addon]=1200)
-  declare -A BUNDLE_NAMES=([extractions_bundle]="ScrapeLite Extractions Bundle" [scheduler_addon]="ScrapeLite Scheduler Add-on" [hubspot_addon]="ScrapeLite HubSpot/CRM Export")
+  declare -A BUNDLE_NAMES=([extractions_bundle]="DatIQ Extractions Bundle" [scheduler_addon]="DatIQ Scheduler Add-on" [hubspot_addon]="DatIQ HubSpot/CRM Export")
   declare -A BUNDLE_ENV=([extractions_bundle]=VITE_STRIPE_PRICE_EXTRACTIONS_BUNDLE [scheduler_addon]=VITE_STRIPE_PRICE_SCHEDULER_ADDON [hubspot_addon]=VITE_STRIPE_PRICE_HUBSPOT_ADDON)
 
   for bundle in extractions_bundle scheduler_addon hubspot_addon; do
@@ -162,7 +163,7 @@ else
       -d "enabled_events[]=customer.subscription.updated" \
       -d "enabled_events[]=customer.subscription.deleted" \
       -d "enabled_events[]=invoice.payment_failed" \
-      -d "description=ScrapeLite payment webhook")
+      -d "description=DatIQ payment webhook")
     WHSEC=$(echo "$WEBHOOK" | jq -r '.secret // empty')
     WHID=$(echo "$WEBHOOK" | jq -r '.id // empty')
     if [[ -z "$WHSEC" ]]; then
@@ -201,8 +202,8 @@ else
   warn "Razorpay webhook must be registered manually in the dashboard:"
   echo "  1. Go to: https://dashboard.razorpay.com/app/webhooks"
   echo "  2. Click '+ Add New Webhook'"
-  echo "  3. Webhook URL: https://scrapelite.netlify.app/.netlify/functions/payment-webhook?provider=razorpay"
-  echo "  4. Events: payment.captured, subscription.activated, subscription.cancelled"
+  echo "  3. Webhook URL: ${SITE_URL}/.netlify/functions/payment-webhook?provider=razorpay"
+  echo "  4. Events: payment.captured, payment.failed, subscription.activated, subscription.cancelled"
   echo "  5. Set a Secret → paste it into RAZORPAY_WEBHOOK_SECRET in .env"
 fi
 
