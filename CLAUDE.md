@@ -1007,8 +1007,8 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - `PaymentSuccess.jsx` Razorpay branch is display-only — never grants a plan (verification/activation happen in the modal handler).
 
 ### Payment provider (before going live)
-- [ ] Stripe: create Products + Prices for Select/Pro/Business/Agency → set `VITE_STRIPE_PRICE_*`
 - [ ] Razorpay: create Subscription Plans → set `VITE_RAZORPAY_PLAN_*`
+- [ ] **Stripe: DEFERRED to v2.0** — see [`docs/STRIPE-DEFERRAL.md`](docs/STRIPE-DEFERRAL.md). DatIQ v1.0 ships Razorpay/INR only; Stripe code is preserved (25 contract tests cover the full path) but disabled. Re-enable by setting `DATIQ_ENABLE_STRIPE=1` in `.env` and running `scripts/setup-providers.sh`.
 
 ### Future development
 - [x] ~~Full DatIQ rename: migrate `scrapelite.*` localStorage keys to `datiq.*`~~ — DONE via migrationService.js
@@ -1017,7 +1017,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~Add /contact page~~ — DONE (R4)
 - [x] ~~Add /use-cases hub~~ — DONE (R4)
 - [x] ~~Fix dead URLs (/docs, /compare)~~ — DONE (R4: /docs → window.location redirect, /compare → Navigate)
-- [ ] **Stripe**: update Agency plan Price IDs (plan changed $199 → $299); set `VITE_STRIPE_PRICE_AGENCY`
+- [ ] **Stripe**: DEFERRED to v2.0 — see [`docs/STRIPE-DEFERRAL.md`](docs/STRIPE-DEFERRAL.md). All Stripe code paths are contract-tested (55 tests in `netlify/__tests__/{create-checkout,verify-payment,payment-webhook}.test.js`); flip the switch in v2.0 with `DATIQ_ENABLE_STRIPE=1` + the 6-step re-enable runbook in `docs/STRIPE-DEFERRAL.md`. When reactivated: update Agency plan Price IDs (plan changed $199 → $299); set `VITE_STRIPE_PRICE_AGENCY`.
 - [ ] **Razorpay**: update Agency plan Plan IDs to match new ₹14,999/mo price
 - [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude (branch deploys auto-trigger via GitHub integration when not set)
 - [x] ~~Implement once-only 25-extraction trial credit at signup~~ — DONE (FR-Z-02, M5): `applyTrialCredit("free")` called from `AuthProvider.jsx:51` on `SIGNED_IN`; idempotent; covered by `usageService.test.js` "FR-Z-02" suite (Free → grants 25 once, no-ops on re-run, no-op on non-Free plans, concurrent-call race)

@@ -26,9 +26,15 @@ afterEach(() => {
 
 describe("initiateCheckout — demo mode (U-59)", () => {
   it("returns {status:'demo_mode'} when no payment keys are configured", async () => {
-    // config.js returns hasPayment=false when VITE_* keys are empty.
-    // The env defaults in the test runner are empty, so this should fire.
-    const r = await initiateCheckout({ planId: "pro", currency: "USD" });
+    // Force the demo path: Vite's .env loader pulls in real VITE_RAZORPAY_KEY_ID
+    // from the local .env, so hasPayment is true in the test runner. We stub
+    // the relevant env vars and reset the module cache so paymentConfig.js
+    // re-evaluates with the empty values.
+    vi.stubEnv("VITE_RAZORPAY_KEY_ID", "");
+    vi.stubEnv("VITE_STRIPE_PUBLISHABLE_KEY", "");
+    vi.resetModules();
+    const { initiateCheckout: freshInitiate } = await import("./paymentService.js");
+    const r = await freshInitiate({ planId: "pro", currency: "USD" });
     expect(r.status).toBe("demo_mode");
   });
 });

@@ -56,11 +56,22 @@ stripe_get() {
     -u "${STRIPE_SECRET_KEY}:"
 }
 
-# ── Step 1: Stripe — create products + recurring prices ───────────────────────
-h "Step 1: Stripe Products & Prices"
+# ── Step 1: Stripe — DEFERRED to v2.0 (see docs/STRIPE-DEFERRAL.md) ────────────
+# DatIQ v1.0 ships with Razorpay/INR only. USD/Stripe integration code is
+# preserved in the codebase but disabled at the routing layer (paymentConfig
+# getPaymentProvider() returns null for USD when no Stripe key is set, so
+# /pricing falls through to the "Contact us" path for non-INR currencies).
+# When USD/Stripe is reactivated, uncomment the block below.
+h "Step 1: Stripe Products & Prices — DEFERRED to v2.0"
 
-if ! require STRIPE_SECRET_KEY "Stripe secret key"; then
+if [[ "${DATIQ_ENABLE_STRIPE:-0}" != "1" ]]; then
+  warn "Stripe payment integration is deferred to v2.0 (see docs/STRIPE-DEFERRAL.md)."
+  warn "DatIQ v1.0 ships with Razorpay/INR only. Set DATIQ_ENABLE_STRIPE=1 in .env to re-enable."
   warn "Skipping Stripe setup."
+  # Comment in the block below + set DATIQ_ENABLE_STRIPE=1 to bootstrap Stripe products+prices.
+  # if ! require STRIPE_SECRET_KEY "Stripe secret key"; then
+  #   warn "Skipping Stripe setup."
+  # else
 else
   SITE_URL="${VITE_SITE_URL:-https://datiq.app}"
   # Prices in cents — match pricingConfig.js (current tiers as of R20)

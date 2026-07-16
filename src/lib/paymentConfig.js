@@ -29,11 +29,15 @@ export const RAZORPAY_PLAN_IDS = {
   agency:   import.meta.env.VITE_RAZORPAY_PLAN_AGENCY    || "",
 };
 
-// Razorpay handles INR (the only non-USD currency DatIQ supports). USD → Stripe.
-export const RAZORPAY_CURRENCIES = ["INR"];
+// Razorpay handles INR + USD (international cards). Stripe handles USD natively
+// (DEFERRED to v2.0 — see docs/STRIPE-DEFERRAL.md). v1.0 ships Razorpay; the
+// USD path is via Razorpay's international card support (no FX conversion by
+// DatIQ — the user is charged in their card's currency). USD-Stripe-native will
+// be added in v2.0 along with US sales tax compliance.
+export const RAZORPAY_CURRENCIES = ["INR", "USD"];
 
-// Auto-route: INR → Razorpay, everything else → Stripe.
-// Override via VITE_PAYMENT_PROVIDER=stripe|razorpay.
+// Auto-route: INR → Razorpay; USD → Stripe (if hasStripe) else Razorpay (USD
+// via international card); override via VITE_PAYMENT_PROVIDER.
 export function getPaymentProvider(currency) {
   if (PAYMENT_PROVIDER_OVERRIDE === "stripe"   && hasStripe)   return "stripe";
   if (PAYMENT_PROVIDER_OVERRIDE === "razorpay" && hasRazorpay) return "razorpay";
