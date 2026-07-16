@@ -60,7 +60,6 @@ export const PLANS = [
   {
     id: "select",
     name: "Select",
-    v1_active: false,
     price_usd: 19,
     price_usd_annual: 15,
     price_inr: 1899,
@@ -98,7 +97,6 @@ export const PLANS = [
   {
     id: "pro",
     name: "Pro",
-    v1_active: false,
     price_usd: 29,
     price_usd_annual: 23,
     price_inr: 2899,
@@ -136,7 +134,6 @@ export const PLANS = [
   {
     id: "business",
     name: "Business",
-    v1_active: false,
     price_usd: 79,
     price_usd_annual: 63,
     price_inr: 7899,
@@ -175,7 +172,6 @@ export const PLANS = [
   {
     id: "agency",
     name: "Agency",
-    v1_active: false,
     price_usd: 299,
     price_usd_annual: 239,
     price_inr: 29899,

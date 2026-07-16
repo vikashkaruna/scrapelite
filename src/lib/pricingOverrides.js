@@ -64,14 +64,6 @@ export function getEffectivePlanMap() {
   return Object.fromEntries(getEffectivePlans().map((p) => [p.id, p]));
 }
 
-// v1.0 ships with only the Free plan. The 4 paid tiers (Select / Pro /
-// Business / Agency) are flagged `v1_active: false` in pricingConfig.js and
-// filtered out of v1.0 UI via this helper. See docs/PAID-PLANS-DEFERRAL.md.
-// Default = active (preserves the v2.0+ behavior when the flag is absent).
-export function getV1Plans() {
-  return getEffectivePlans().filter((p) => p.v1_active !== false);
-}
-
 // ── Global discount ───────────────────────────────────────────────────────────
 export function getGlobalDiscount() {
   return ls(GLOBAL_DISCOUNT_KEY) ?? { percent: 0, label: "", active: false, expiresAt: null };

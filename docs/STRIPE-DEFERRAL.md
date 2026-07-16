@@ -1,9 +1,10 @@
 # Stripe Payment Integration — DEFERRED to v2.0
 
-> **DatIQ v1.0 ships with Razorpay/INR as the primary payment path. USD users
-> can still pay via Razorpay's international-card support (no native Stripe
-> checkout).** Native USD/Stripe Checkout is preserved in the codebase and
-> re-enabled in v2.0.
+> **DatIQ v1.0 ships with Razorpay/INR one-time Orders as the primary payment
+> path for all paid plans and bundles. USD users can still pay via Razorpay's
+> international-card support (no native Stripe checkout).** Native USD/Stripe
+> Checkout (and Razorpay Subscriptions / Stripe Subscriptions for recurring
+> billing) is preserved in the codebase and re-enabled in v2.0.
 
 ## Decision
 
@@ -29,7 +30,9 @@ moved to the v2.0 roadmap. Reasoning:
 
 ## What v1.0 does
 
-- INR users → Razorpay order (default)
+- **All 4 paid tiers (Select / Pro / Business / Agency) are active** in v1.0
+  with one-time Order payments via Razorpay
+- INR users → Razorpay INR order (default)
 - USD users → Razorpay USD order (international card support)
 - USD users with `VITE_STRIPE_PUBLISHABLE_KEY` set → Stripe Checkout (v2.0+;
   no production keys are set in v1.0)
@@ -37,7 +40,8 @@ moved to the v2.0 roadmap. Reasoning:
   regardless of currency
 
 The free tier is unaffected — all visitors can use DatIQ end-to-end without
-any payment integration.
+any payment integration. **Recurring billing** (auto-renewal, subscriptions)
+is separately deferred — see [`docs/RECURRING-BILLING-DEFERRAL.md`](RECURRING-BILLING-DEFERRAL.md).
 
 ## What's preserved (not removed)
 
