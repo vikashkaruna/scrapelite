@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./admin-ai-config.js");
+  const mod = await import("../functions/admin-ai-config.js");
   return mod.handler;
 }
 

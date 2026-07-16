@@ -13,7 +13,7 @@ import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, "..", "..", "..");
+const repoRoot = resolve(__dirname, "..", "..");
 
 describe("netlify/functions test harness (M0 contract smoke)", () => {
   it("vitest can import a node module from netlify/functions", async () => {

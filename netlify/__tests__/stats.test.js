@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./stats.js");
+  const mod = await import("../functions/stats.js");
   return mod.handler;
 }
 

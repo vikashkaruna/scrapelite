@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./og-preview.js");
+  const mod = await import("../functions/og-preview.js");
   return mod.handler;
 }
 

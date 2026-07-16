@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./ai.js");
+  const mod = await import("../functions/ai.js");
   return mod.handler;
 }
 

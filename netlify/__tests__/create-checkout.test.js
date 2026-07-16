@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./create-checkout.js");
+  const mod = await import("../functions/create-checkout.js");
   return mod.handler;
 }
 

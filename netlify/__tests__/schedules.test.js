@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllMocks(); });
 
 async function loadHandler() {
-  const mod = await import("./schedules.js");
+  const mod = await import("../functions/schedules.js");
   return mod.handler;
 }
 

@@ -8,7 +8,7 @@ import {
   runMapChain,
   runScrapeChain,
   scrapeProviderStatus,
-} from "./scrapeProviders.js";
+} from "../functions/lib/scrapeProviders.js";
 
 let fetchMock;
 
@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 async function load() {
-  return import("./scrapeProviders.js");
+  return import("../functions/lib/scrapeProviders.js");
 }
 
 function firecrawlScrapeOk(html = "<html><head><title>T</title></head><body>hi</body></html>") {

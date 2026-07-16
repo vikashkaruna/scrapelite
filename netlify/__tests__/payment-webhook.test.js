@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./payment-webhook.js");
+  const mod = await import("../functions/payment-webhook.js");
   return mod.handler;
 }
 

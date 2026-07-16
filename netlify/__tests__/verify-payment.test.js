@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./verify-payment.js");
+  const mod = await import("../functions/verify-payment.js");
   return mod.handler;
 }
 

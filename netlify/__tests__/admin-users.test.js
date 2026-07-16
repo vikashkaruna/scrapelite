@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./admin-users.js");
+  const mod = await import("../functions/admin-users.js");
   return mod.handler;
 }
 

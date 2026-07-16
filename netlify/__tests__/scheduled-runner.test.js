@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock the scrape chain so we can control what each target returns ──────────
 const { runScrapeChainMock } = vi.hoisted(() => ({ runScrapeChainMock: vi.fn() }));
-vi.mock("./lib/scrapeProviders.js", () => ({
+vi.mock("../functions/lib/scrapeProviders.js", () => ({
   runScrapeChain: runScrapeChainMock,
 }));
 
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./scheduled-runner.js");
+  const mod = await import("../functions/scheduled-runner.js");
   return mod.handler;
 }
 

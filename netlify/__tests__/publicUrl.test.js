@@ -2,7 +2,7 @@
 // C-37 — 100% branch coverage maintained.
 
 import { describe, expect, it } from "vitest";
-import { isPublicHttpUrl, isPublicHttpUrlAsync } from "./publicUrl.js";
+import { isPublicHttpUrl, isPublicHttpUrlAsync } from "../functions/lib/publicUrl.js";
 
 describe("isPublicHttpUrl — happy path", () => {
   it("accepts a public IPv4 http URL", () => {

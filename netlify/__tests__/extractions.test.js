@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./extractions.js");
+  const mod = await import("../functions/extractions.js");
   return mod.handler;
 }
 

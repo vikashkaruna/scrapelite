@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./admin-revenue.js");
+  const mod = await import("../functions/admin-revenue.js");
   return mod.handler;
 }
 

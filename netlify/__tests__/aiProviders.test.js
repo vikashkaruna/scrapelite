@@ -3,7 +3,7 @@
 // 502 when all fail. C-06 also tested: per-provider model from config.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ORDER, loadAiConfig, runChain } from "./aiProviders.js";
+import { DEFAULT_ORDER, loadAiConfig, runChain } from "../functions/lib/aiProviders.js";
 
 /**
  * Stub the global `fetch` (Node 18+ built-in) so the chain's adapter
@@ -37,7 +37,7 @@ afterEach(() => {
 
 async function load() {
   // Re-import after env mutations + cache reset.
-  return import("./aiProviders.js");
+  return import("../functions/lib/aiProviders.js");
 }
 
 describe("runChain (C-33)", () => {

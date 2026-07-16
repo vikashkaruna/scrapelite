@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHmac } from "crypto";
-import { bearerFromEvent, verifyAdminToken } from "./adminToken.js";
+import { bearerFromEvent, verifyAdminToken } from "../functions/lib/adminToken.js";
 
 const TEST_SECRET = "test-secret-do-not-use-in-prod";
 const sha256Hex = (s) => createHmac("sha256", "ignore").update(s).digest("hex");

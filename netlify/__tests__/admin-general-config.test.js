@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./admin-general-config.js");
+  const mod = await import("../functions/admin-general-config.js");
   return mod.handler;
 }
 

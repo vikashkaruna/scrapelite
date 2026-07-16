@@ -9,7 +9,7 @@ import {
   loadPricing,
   resolveCouponInfo,
   resolveDiscountFraction,
-} from "./pricingSource.js";
+} from "../functions/lib/pricingSource.js";
 
 let fetchMock;
 
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 async function load() {
-  return import("./pricingSource.js");
+  return import("../functions/lib/pricingSource.js");
 }
 
 describe("loadPricing — static defaults (C-35)", () => {

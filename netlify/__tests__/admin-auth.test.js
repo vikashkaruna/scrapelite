@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 async function loadHandler() {
-  const mod = await import("./admin-auth.js");
+  const mod = await import("../functions/admin-auth.js");
   return mod.handler;
 }
 
