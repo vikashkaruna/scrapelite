@@ -6,11 +6,13 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
 import ContentModal from "../components/ContentModal.jsx";
+import ExtractionCharts from "../components/ExtractionCharts.jsx";
+import ScrapeSimilarCard from "../components/ScrapeSimilarCard.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
-import { hostOf, pathOf, isExternal, timeAgo, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
+import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 
@@ -197,6 +199,11 @@ export default function Preview() {
     csvDownload([data]);
     showToast("Exported to CSV", "download");
   };
+  const onOpenInSheets = () => {
+    if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
+    openInGoogleSheets([data]);
+    showToast("CSV downloaded. Upload it to the Google Sheet that just opened (File → Import → Upload).", "sheet");
+  };
   const onDownloadMarkdown = () => {
     if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
     markdownDownload([data]);
@@ -256,6 +263,9 @@ export default function Preview() {
                 <div className="export-dropdown-menu">
                   <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
                     <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
+                    <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">All plans · downloads CSV + opens new Sheet</span></span>
                   </button>
                   <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
                     <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
@@ -324,6 +334,12 @@ export default function Preview() {
               <p className="summary-text">{data.ai_summary}</p>
             </div>
           </div>
+
+          {/* At-a-glance charts (QW#3) — auto-generated from extracted structure */}
+          {!isMap && <ExtractionCharts extraction={data} />}
+
+          {/* Scrape Similar (DeepSeq QW#1) — suggest 2-3 same-domain siblings */}
+          {!isMap && <ScrapeSimilarCard extraction={data} />}
 
           {/* Quick enrichment + Generate content (hidden in map mode). */}
           {!isMap && (

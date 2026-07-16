@@ -259,6 +259,23 @@ export function csvDownload(items) {
       ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
       : `datiq-export-${list.length}-pages.csv`;
   triggerDownload(blob, name);
+  return { csv, name, blob };
+}
+
+// DeepSeq QW#3 — "Open in Google Sheets" deep-link. The cleanest no-OAuth path:
+//   1. Download the CSV locally (so the user has the file)
+//   2. Open Google Drive's "new sheet" page in a new tab
+//   3. The user uploads the downloaded CSV via File → Import → Upload
+// This is the supported deep-link pattern (Google doesn't accept a CSV blob via
+// URL — uploading to Drive first is the canonical path).
+export const GOOGLE_SHEETS_NEW_URL = "https://docs.google.com/spreadsheets/create?usp=datiq_sheet";
+
+export function openInGoogleSheets(items) {
+  const meta = csvDownload(items);
+  if (typeof window !== "undefined" && window.open) {
+    window.open(GOOGLE_SHEETS_NEW_URL, "_blank", "noopener,noreferrer");
+  }
+  return meta;
 }
 
 // ── Markdown export ──────────────────────────────────────────────────────────

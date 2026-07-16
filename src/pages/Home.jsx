@@ -12,11 +12,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
+import RecentExtractions from "../components/RecentExtractions.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
-import { classifyInput, normalizeUrl } from "../lib/utils.js";
+import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
@@ -93,6 +94,10 @@ export default function Home() {
   // ── OG Preview state ───────────────────────────────────────────────────
   const [preview, setPreview]         = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // ── Multi-URL reveal (DeepSeq QW#4 — progressive disclosure for batch) ──
+  const [multiOpen, setMultiOpen] = useState(false);
+  const [multiText, setMultiText] = useState("");
 
   // ── Social proof ───────────────────────────────────────────────────────
   const [stats, setStats] = useState(null);
@@ -178,9 +183,9 @@ export default function Home() {
   const greeting = userName ? `Hi ${userName} —` : null;
 
   const DEFAULT_QUICK_CONTEXTS = [
-    { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
-    { label: "Company about page", url: "https://notion.so/about",   icon: "info" },
-    { label: "Blog / content",     url: "https://moz.com/blog",      icon: "book-open" },
+    { label: "example.com",      url: "https://example.com",         icon: "globe" },
+    { label: "stripe.com/pricing", url: "https://stripe.com/pricing", icon: "tag" },
+    { label: "anthropic.com",    url: "https://anthropic.com",       icon: "sparkles" },
   ];
 
   return (
@@ -333,6 +338,70 @@ export default function Home() {
             </div>
           )}
 
+          {/* Multi-URL reveal (DeepSeq QW#4) — secondary path, hidden by default */}
+          {!multiOpen ? (
+            <div className="multi-url-reveal-link">
+              <button
+                type="button"
+                onClick={() => setMultiOpen(true)}
+                title="Extract many URLs in parallel"
+              >
+                <Icon name="list-checks" size={13} />
+                Add multiple URLs
+                <span className="muted">— paste a list, one per line</span>
+              </button>
+            </div>
+          ) : (
+            <div className="multi-url-reveal rise">
+              <div className="mur-head">
+                <Icon name="list-checks" size={14} />
+                <span>Extract many URLs</span>
+                <button
+                  type="button"
+                  className="mur-close"
+                  onClick={() => { setMultiOpen(false); setMultiText(""); }}
+                  aria-label="Close multi-URL input"
+                >
+                  <Icon name="x" size={13} />
+                </button>
+              </div>
+              <textarea
+                className="mur-textarea"
+                rows={4}
+                placeholder={"one URL per line — e.g.\nhttps://stripe.com/pricing\nhttps://linear.app/pricing\nhttps://notion.so/pricing"}
+                value={multiText}
+                onChange={(e) => setMultiText(e.target.value)}
+                aria-label="URLs to extract, one per line"
+              />
+              <div className="mur-actions">
+                <span className="mur-count">
+                  {(() => {
+                    const { valid } = extractUrls(multiText);
+                    const n = valid.length;
+                    if (n === 0) return "Enter at least 2 URLs";
+                    if (n === 1) return "1 URL detected — add more for batch mode";
+                    return `${n} URL${n !== 1 ? "s" : ""} detected`;
+                  })()}
+                </span>
+                <button
+                  type="button"
+                  className="mur-go"
+                  disabled={(() => {
+                    const { valid } = extractUrls(multiText);
+                    return valid.length < 2;
+                  })()}
+                  onClick={() => {
+                    const { valid } = extractUrls(multiText);
+                    if (valid.length < 2) return;
+                    navigate("/batch", { state: { urls: valid, intent, autorun: true } });
+                  }}
+                >
+                  <Icon name="zap" size={13} /> Extract all
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Intent chips ─────────────────────────────────────────── */}
           <div className="intent-chips">
             <span className="intent-chips-label">What do you want to extract?</span>
@@ -421,6 +490,11 @@ export default function Home() {
             </div>
           )}
 
+        </div>
+
+        {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}
+        <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 760 }}>
+          <RecentExtractions />
         </div>
 
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}

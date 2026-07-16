@@ -665,6 +665,175 @@
 .qa-head { display: flex; align-items: center; gap: 12px; }
 .qa-head .ch-icon { flex-shrink: 0; }
 .qa-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+
+/* ── v1.0 Quick Wins — At-a-glance charts (QW#3) ──────────────── */
+.extraction-charts { padding: 0; }
+.extraction-charts .card-head { padding: 14px 18px 0; }
+.extraction-charts .card-pad { padding: 12px 18px 18px; }
+
+.chart-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+@media (min-width: 640px) {
+  .chart-stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.stat-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.stat-card-ico { color: var(--accent); display: inline-flex; }
+.stat-card-num {
+  font-size: 1.4em; font-weight: 800; line-height: 1.1;
+  color: var(--text); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stat-card-label {
+  font-size: .72em; font-weight: 600;
+  color: var(--text-3); text-transform: uppercase; letter-spacing: .04em;
+}
+
+.chart-row {
+  display: grid; grid-template-columns: 1fr; gap: 14px;
+}
+@media (min-width: 720px) {
+  .chart-row { grid-template-columns: 1fr 1fr; }
+}
+.chart-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px 10px;
+  min-width: 0;
+}
+.chart-block-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .76em; font-weight: 700; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 8px;
+}
+.chart-block-head svg { color: var(--accent); }
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-empty {
+  color: var(--text-3); font-size: .85em; padding: 12px 4px;
+  text-align: center; font-style: italic;
+}
+
+/* ── v1.0 Quick Wins — Scrape Similar card (DeepSeq QW#1) ───────── */
+.scrape-similar { padding: 0; }
+.scrape-similar .card-head { padding: 14px 18px 0; }
+.scrape-similar .card-pad  { padding: 12px 18px 18px; }
+.scrape-similar-row {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 1fr; gap: 8px;
+}
+@media (min-width: 720px) {
+  .scrape-similar-row { grid-template-columns: repeat(3, 1fr); }
+}
+.scrape-similar-btn {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  cursor: pointer; text-align: left;
+  font: inherit; color: inherit;
+  transition: border-color .15s, background .15s, transform .12s;
+  min-width: 0;
+}
+.scrape-similar-btn:hover {
+  border-color: var(--accent-on-soft);
+  background: var(--accent-soft);
+}
+.scrape-similar-btn:active { transform: scale(.99); }
+.ssr-label {
+  font-size: .9em; font-weight: 600; color: var(--text);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ssr-path {
+  font-size: .72em; color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 50%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ssr-arrow { color: var(--text-3); flex-shrink: 0; }
+.scrape-similar-btn:hover .ssr-arrow { color: var(--accent); }
+
+/* ── v1.0 Quick Wins — Multi-URL reveal on Home (DeepSeq QW#4) ─── */
+.multi-url-reveal-link {
+  margin-top: 10px;
+  display: flex; justify-content: center;
+}
+.multi-url-reveal-link button {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 0; cursor: pointer; font: inherit;
+  color: var(--text-2); font-size: .82em; font-weight: 600;
+  padding: 6px 10px; border-radius: var(--r-pill);
+}
+.multi-url-reveal-link button:hover {
+  color: var(--accent); background: var(--accent-soft);
+}
+.multi-url-reveal-link .muted { color: var(--text-3); font-weight: 500; }
+
+.multi-url-reveal {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+.mur-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .84em; font-weight: 700; color: var(--text);
+  margin-bottom: 8px;
+}
+.mur-head svg:first-child { color: var(--accent); }
+.mur-close {
+  margin-left: auto;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text-3); padding: 2px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mur-close:hover { color: var(--text); background: var(--surface-2); }
+.mur-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit; font-size: .88em; line-height: 1.5;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  resize: vertical;
+  outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mur-textarea:focus { border-color: var(--accent); background: var(--surface); }
+.mur-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 8px;
+}
+.mur-count {
+  font-size: .78em; color: var(--text-3);
+}
+.mur-go {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent); color: var(--accent-contrast);
+  border: 0; padding: 7px 12px; border-radius: var(--r-pill);
+  cursor: pointer; font: inherit; font-size: .82em; font-weight: 600;
+  transition: filter .15s;
+}
+.mur-go:hover:not(:disabled) { filter: brightness(.92); }
+.mur-go:disabled { opacity: .5; cursor: not-allowed; }
 .qa-btn {
   display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid var(--border); background: var(--surface-2);
@@ -2514,6 +2683,102 @@
 .persona-ctx-chip:hover { color: var(--accent); border-color: var(--accent-on-soft); background: var(--accent-soft); }
 .persona-ctx-chip svg { color: var(--accent); flex-shrink: 0; }
 
+/* ── v1.0 Quick Wins — Recent extractions widget on Home (QW#4) ─── */
+.recent-extractions {
+  width: 100%; margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.recent-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.recent-eyebrow {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .72em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.recent-head-right {
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.recent-search {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 2px 6px 2px 8px;
+  color: var(--text-3);
+}
+.recent-search input {
+  border: 0; background: transparent; outline: none;
+  font: inherit; font-size: .78em;
+  color: var(--text); width: 110px;
+}
+.recent-search input::placeholder { color: var(--text-3); }
+.recent-search-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; cursor: pointer; color: var(--text-3);
+  padding: 2px;
+}
+.recent-search-clear:hover { color: var(--text); }
+.recent-view-all {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; border: 0; cursor: pointer; font: inherit;
+  color: var(--accent); font-size: .78em; font-weight: 600;
+  padding: 4px 6px; border-radius: var(--r-pill);
+}
+.recent-view-all:hover { background: var(--accent-soft); }
+.recent-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 1fr; gap: 6px;
+}
+@media (min-width: 640px) {
+  .recent-grid { grid-template-columns: 1fr 1fr; }
+}
+.recent-card {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  cursor: pointer; text-align: left;
+  font: inherit; color: inherit;
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.recent-card:hover {
+  border-color: var(--accent-on-soft);
+  background: var(--accent-soft);
+}
+.recent-card:active { transform: scale(.99); }
+.recent-card-meta {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.recent-card-title {
+  font-size: .86em; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recent-card-sub {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .72em; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recent-host { font-weight: 500; color: var(--text-2); }
+.recent-dot { color: var(--text-3); }
+.recent-card-arrow { color: var(--text-3); flex-shrink: 0; }
+.recent-card:hover .recent-card-arrow { color: var(--accent); }
+.recent-empty, .recent-empty-mini {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 4px;
+  color: var(--text-3); font-size: .82em;
+}
+.recent-empty b { color: var(--text-2); font-weight: 600; display: block; }
+.recent-empty-text { display: flex; flex-direction: column; gap: 1px; }
+
 /* ── R1: Scrape options — 2-column grid ─────────────────────────── */
 .scrape-opts-grid {
   display: grid !important;
@@ -3802,6 +4067,13 @@
   color: var(--chip-accent, var(--accent));
   background: var(--accent-soft);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip-accent, var(--accent)) 14%, transparent);
+}
+[data-theme="dark"] .intent-chip-active {
+  /* In dark mode the full-strength accent doesn't pass WCAG AA on the
+     --accent-soft overlay. Use --accent-on-dark (a lighter indigo) instead. */
+  color: var(--accent-on-dark);
+  border-color: var(--accent-on-dark);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-on-dark) 22%, transparent);
 }
 .intent-chip svg { flex-shrink: 0; }
 

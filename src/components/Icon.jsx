@@ -111,6 +111,14 @@ import {
   Pause,
   Bell,
   CalendarClock,
+  // Quick Wins additions
+  GitCompareArrows,
+  History,
+  SearchX,
+  Type,
+  Clock3,
+  CopyPlus,
+  Sheet,
 } from "lucide-react";
 
 const MAP = {
@@ -223,6 +231,18 @@ const MAP = {
   pause: Pause,
   bell: Bell,
   "calendar-clock": CalendarClock,
+  // Quick Wins — content presets
+  "git-compare": GitCompareArrows,
+  // Quick Wins — recent extractions widget
+  history: History,
+  "search-x": SearchX,
+  // Quick Wins — extraction charts
+  type: Type,
+  "clock-3": Clock3,
+  // Quick Wins — Scrape Similar
+  "copy-plus": CopyPlus,
+  // Quick Wins — Open in Google Sheets
+  sheet: Sheet,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
