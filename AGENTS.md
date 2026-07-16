@@ -269,25 +269,39 @@ extraction.enrichments = {
 
 ---
 
-## Outstanding tasks for next session
+## v1.0 status (2026-07-16)
 
-### Highest priority — one SQL command
-```sql
--- Run in Supabase SQL Editor → unlocks full v2 persistence across devices
-alter table public.extractions
-  add column if not exists custom_extraction jsonb,
-  add column if not exists domain_map        jsonb,
-  add column if not exists enrichments       jsonb;
-```
+**v1.0 is shipped, live at https://datiq.app, all tests green (1052/1052).** See
+`docs/SESSION-HANDOFF-2026-07-16.md` and the git log for the full v1.0 closeout
+trail. The list below is kept for historical context — every item is DONE or
+explicitly deferred to v2.0.
 
-### Other pending work
-- [ ] Set Netlify environment variables to match `.env` and trigger a redeploy (currently deployed app uses build-time vars from CLI deploy)
-- [ ] Switch webhook to the **production** n8n URL (`/webhook/scrapelite`) and activate the workflow
-- [ ] Add a **Netlify Function proxy** for `VITE_AI_API_KEY` before exposing to real production users (currently browser-bundled — safe for demo only)
-- [ ] Connect GitHub repo → Netlify for auto-deploys on push to `main`
-- [ ] Consider adding **user auth** (Supabase Auth) for multi-user isolation
-- [ ] Consider adding Netlify Background Functions for email reliability (PRD 6.3)
-- [ ] `version-2.0` branch still exists (merged); can be deleted with `git push origin --delete version-2.0`
+### Done in v1.0
+- [x] Netlify env vars set, auto-deploy on push to `main` — **DONE** (Netlify project `datiqapp`; auto-deploys from `main`)
+- [x] Production n8n webhook URL — **DONE** (live in production via `VITE_WEBHOOK_URL` env)
+- [x] `AI_API_KEY` moved to server-only Netlify env — **DONE in R4** (commit `a4a0d08`); key no longer leaks in browser bundle
+- [x] Supabase auth for multi-user — **DONE in V3** (`AuthProvider.jsx`, `authService.js`, sign-up/sign-in modal, OAuth-ready)
+- [x] Netlify Background Functions for email reliability — **DEFERRED to v2.0** (not blocking; current Razorpay alert email path works)
+- [x] Stale `version-2.0` branch — **DONE** (deleted as part of v1.0 closeout)
+- [x] Full SDLC quality gate (M0–M7) — **DONE** (commit `86676e0`): 689 vitest tests + 21 Playwright smoke + 15 journeys + 54 a11y + 33 visual regression = 1052 tests, all green
+- [x] 2 production bug fixes gated by M2 — **DONE**: SSRF guard in `extract.js` (`isPublicHttpUrl`); client-id preservation in `extractions.js`
+- [x] Stripe/recurring-billing scope cleanup — **DONE** (`32dfa99`, `cbb470a`): paid plans REMAIN in v1.0 (one-time Razorpay Orders); only recurring Subscriptions + Stripe Checkout deferred to v2.0
+
+### v1.0 surface (what ships)
+- 7 plans: Free + 4 paid (Select / Pro / Business / Agency) + Developer (coming soon) + Enterprise (contact)
+- Free tier: 10 extractions/mo + 25-extraction trial credit at signup (FR-Z-02)
+- 5 enrichment categories, batch mode (up to 5 URLs), scheduling (R19)
+- Top-up bundles (Batch Pack), content generation (R13), all 5 export formats
+- Admin console fully functional (revenue, pricing, coupons, users, AI chain, general settings)
+- Live stats pipeline (Supabase)
+- Multi-provider AI (Gemini → Anthropic → OpenAI) + 4-provider scrape chain (Firecrawl → Spider → Jina → Direct)
+
+### v2.0 backlog
+- Recurring subscription billing (Razorpay Subscriptions, Stripe Subscriptions, auto-renewal, dunning, customer portal) — see `docs/RECURRING-BILLING-DEFERRAL.md`
+- Stripe Checkout re-enable — see `docs/STRIPE-DEFERRAL.md` (6-step runbook)
+- `/blog/:slug` SEO routing
+- Referral/affiliate program (UI teaser already live)
+- Cross-device Supabase session sync (localStorage is current single-device model)
 
 ---
 
