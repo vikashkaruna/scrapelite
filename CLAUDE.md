@@ -502,11 +502,15 @@ ThemeProvider
 - Free tier: 10 extractions/month + full-feature access (except API/white-label) + 1 workspace + once-only 25-extraction trial credit at signup (`trialCredit: 25` in config; UI shows it; actual grant wired in usageService/AuthProvider is a future task)
 
 ### Payment provider routing
-| Currency | Provider |
-|---|---|
-| INR | Razorpay |
-| USD | Stripe |
+| Currency | Provider (v1.0) | Provider (v2.0) |
+|---|---|---|
+| INR | Razorpay (one-time Orders) | Razorpay Subscriptions |
+| USD | **Razorpay (international card)** — see [STRIPE-DEFERRAL.md](docs/STRIPE-DEFERRAL.md) | Stripe Checkout |
 | Override | `VITE_PAYMENT_PROVIDER=stripe\|razorpay\|auto` |
+
+**v1.0 ships Free only** (with optional Batch Pack top-up). Paid tiers
+(Select / Pro / Business / Agency) are deferred to v2.0 — see
+[`docs/PAID-PLANS-DEFERRAL.md`](docs/PAID-PLANS-DEFERRAL.md).
 
 **Demo mode** (no keys): `initiateCheckout` → `{status:"demo_mode"}` → upgrades plan locally, no real charge.
 
@@ -1007,7 +1011,7 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - `PaymentSuccess.jsx` Razorpay branch is display-only — never grants a plan (verification/activation happen in the modal handler).
 
 ### Payment provider (before going live)
-- [ ] Razorpay: create Subscription Plans → set `VITE_RAZORPAY_PLAN_*`
+- [ ] **All paid plans DEFERRED to v2.0** — see [`docs/PAID-PLANS-DEFERRAL.md`](docs/PAID-PLANS-DEFERRAL.md). DatIQ v1.0 ships **Free only** (with 10 extractions/mo + 25-extraction trial credit). The 4 paid tiers (Select / Pro / Business / Agency) are flagged `v1_active: false` and rendered as a "Coming in v2.0" waitlist on `/pricing` with email capture. Top-up bundles (Batch Pack) remain active since they're one-time purchases, not subscriptions.
 - [ ] **Stripe: DEFERRED to v2.0** — see [`docs/STRIPE-DEFERRAL.md`](docs/STRIPE-DEFERRAL.md). DatIQ v1.0 ships Razorpay/INR only; Stripe code is preserved (25 contract tests cover the full path) but disabled. Re-enable by setting `DATIQ_ENABLE_STRIPE=1` in `.env` and running `scripts/setup-providers.sh`.
 
 ### Future development

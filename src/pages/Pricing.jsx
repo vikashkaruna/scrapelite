@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  getEffectivePlans, getEffectiveBundles,
+  getEffectivePlans, getEffectiveBundles, getV1Plans,
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
 import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
@@ -224,7 +224,10 @@ export default function Pricing() {
   const [localError, setLocalError]         = useState("");
   const [bundleModal, setBundleModal]       = useState(null);
 
-  const plans    = getEffectivePlans();
+  // v1.0: only Free is user-selectable. The 4 paid tiers (Select / Pro /
+  // Business / Agency) are hidden from the picker — they're rendered as
+  // "Coming in v2.0" waitlist cards below. See docs/PAID-PLANS-DEFERRAL.md.
+  const plans    = getV1Plans();
   const bundles  = getEffectiveBundles();
   const discount = getGlobalDiscount();
 
@@ -359,6 +362,11 @@ export default function Pricing() {
           <EnterpriseCard onContact={handleContactSales} />
         </div>
 
+        {/* v1.0: paid plans are deferred to v2.0. Show them here as a
+            waitlist so interested visitors can leave their email.
+            See docs/PAID-PLANS-DEFERRAL.md. */}
+        <V2WaitlistSection currency={currency} rates={rates} />
+
         {currency === "INR" && (
           <p className="inr-annual-note">
             <Icon name="info" size={13} />
@@ -442,5 +450,88 @@ export default function Pricing() {
         />
       )}
     </div>
+  );
+}
+
+// V2WaitlistSection — v1.0 ships with only the Free plan. The 4 paid tiers
+// (Select / Pro / Business / Agency) are deferred to v2.0 (see
+// docs/PAID-PLANS-DEFERRAL.md). Show them as waitlist cards with email
+// capture so interested visitors can be notified when paid plans launch.
+import { PLANS as ALL_PLANS } from "../lib/pricingConfig.js";
+function V2WaitlistSection({ currency, rates }) {
+  const v2Plans  = ALL_PLANS.filter((p) => p.v1_active === false);
+  const [email, setEmail]       = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleJoin = async (e) => {
+    e.preventDefault();
+    if (!email || submitting) return;
+    setSubmitting(true);
+    try {
+      // Save to local subscriber list (existing helper) + fire-and-forget
+      // webhook. Existing emailCaptureService handles dedup + webhook.
+      const { captureEmail } = await import("../lib/emailCaptureService.js");
+      await captureEmail(email, "pricing-v2-waitlist");
+      setSubmitted(true);
+    } catch {
+      setSubmitted(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <section className="v2-waitlist v2-waitlist-submitted">
+        <Icon name="check-circle" size={20} />
+        <h3>You're on the list.</h3>
+        <p>We'll email <strong>{email}</strong> when paid plans launch.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="v2-waitlist" aria-labelledby="v2-waitlist-title">
+      <div className="v2-waitlist-header">
+        <span className="v2-waitlist-badge">Coming in v2.0</span>
+        <h2 id="v2-waitlist-title">Paid plans — join the waitlist</h2>
+        <p>
+          Select, Pro, Business, and Agency launch in DatIQ v2.0 alongside
+          Razorpay Subscriptions (INR) and Stripe Checkout (USD). Leave your
+          email to get early access and a launch discount.
+        </p>
+      </div>
+      <div className="v2-waitlist-plans">
+        {v2Plans.map((p) => {
+          const usd = p.price_usd;
+          const inr = p.price_inr_annual || p.price_inr;
+          const inrAnnualDisplay = inr ? formatPrice(inr, "INR") : "—";
+          return (
+            <div key={p.id} className="v2-waitlist-plan">
+              <div className="v2-waitlist-plan-name">{p.name}</div>
+              <div className="v2-waitlist-plan-price">
+                {currency === "INR" ? inrAnnualDisplay : `$${usd}`}
+                <span className="v2-waitlist-plan-period">/mo</span>
+              </div>
+              <div className="v2-waitlist-plan-tagline">{p.tagline}</div>
+            </div>
+          );
+        })}
+      </div>
+      <form className="v2-waitlist-form" onSubmit={handleJoin}>
+        <input
+          type="email"
+          required
+          placeholder="you@company.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-label="Email for paid-plan waitlist"
+        />
+        <Button type="submit" variant="primary" disabled={submitting}>
+          {submitting ? "Joining…" : "Notify me at launch"}
+        </Button>
+      </form>
+    </section>
   );
 }

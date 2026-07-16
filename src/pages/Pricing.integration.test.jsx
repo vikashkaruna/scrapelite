@@ -2,8 +2,11 @@
 // I-39 — Pricing page integration.
 //
 //   - Annual billing is the default (toggle starts on Annual)
-//   - All 7 plan cards render (Free / Select / Pro / Business / Agency / Developer / Enterprise)
-//   - Developer card has a "Coming soon" badge
+//   - Free card + Enterprise card render in the main plan grid (v1.0 only ships Free + Enterprise)
+//   - The 4 paid tiers (Select / Pro / Business / Agency) are deferred to v2.0
+//     and render in a separate "Coming in v2.0" waitlist section (see
+//     docs/PAID-PLANS-DEFERRAL.md)
+//   - Developer card has a "Coming soon" badge (already in PLANS array, still coming soon)
 //   - Enterprise card has a "Contact sales" mailto
 //   - INR currency shows ₹-prefix prices
 
@@ -96,14 +99,20 @@ function Tree() {
   );
 }
 
-describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
-  it("renders all 7 plan cards (Free/Select/Pro/Business/Agency/Developer/Enterprise)", async () => {
+describe("I-39 — Pricing: plan cards + annual default + INR (v1.0 ships Free only; paid in v2.0 waitlist)", () => {
+  it("renders Free in the main grid, Enterprise in the main grid, and the 4 paid tiers in the v2.0 waitlist", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // Each plan name appears at least once in the page.
-    for (const name of ["Free", "Select", "Pro", "Business", "Agency", "Developer", "Enterprise"]) {
-      expect(screen.getAllByText(name).length).toBeGreaterThan(0);
-    }
+    // Free + Enterprise are the v1.0-active plan cards in the main grid.
+    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Enterprise").length).toBeGreaterThan(0);
+    // The 4 paid tiers are listed in the v2.0 waitlist section below the grid.
+    expect(screen.getAllByText("Select").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Business").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Agency").length).toBeGreaterThan(0);
+    // v2.0 waitlist badge is visible.
+    expect(screen.getByText(/coming in v2\.0/i)).toBeInTheDocument();
   });
 
   it("Developer card has a 'Coming soon' badge", async () => {
