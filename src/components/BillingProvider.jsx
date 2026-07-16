@@ -4,6 +4,7 @@ import { useAuth } from "./AuthProvider.jsx";
 import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
+  applyTrialCredit,
   canExtract, canEnrich, canExport, canEmailExport,
   canBatch, canExtractBatch,
 } from "../lib/usageService.js";
@@ -264,11 +265,20 @@ export function BillingProvider({ children }) {
   }, []);
 
   const trackExtraction = useCallback((count = 1) => {
+    // FR-Z-02 (Q2 2026-07-15) fallback: if the trial credit hasn't been
+    // applied yet (e.g. a logged-in user who never went through the
+    // signup-time branch), apply it now. Idempotent — re-runs are no-ops.
+    if (!user) {
+      const applied = applyTrialCredit(planId);
+      if (applied.applied) {
+        setSubscription(applied.sub);
+      }
+    }
     const u = incrementExtractions(count);
     setUsage(u);
     const currentPlan = getEffectivePlanMap()[planId] ?? planMap.free;
     checkAndFireAlerts(u, currentPlan, subscription).catch(() => {});
-  }, [planId, subscription, setUsage]);
+  }, [planId, subscription, setUsage, user]);
 
   const trackEnrichment = useCallback((url) => {
     setUsage(incrementEnrichments(url));

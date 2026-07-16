@@ -41,6 +41,7 @@ import VsClay from "./pages/VsClay.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
+import NotFound from "./pages/NotFound.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
@@ -115,7 +116,7 @@ function Shell() {
           <Route path="/docs"                          element={<DocsRedirect />} />
           <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
           <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />
-          <Route path="*"                              element={<Navigate to="/" replace />} />
+          <Route path="*"                              element={<NotFound />} />
         </Routes>
       </main>
       {showAuthModal && <AuthModal />}

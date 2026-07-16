@@ -87,8 +87,11 @@ export async function listExtractions() {
 
 /** Persist an extraction and notify the webhook. Returns the saved row. */
 export async function saveExtraction(extraction) {
+  // Strip batch-internal fields (added by runBatch). The schema does not
+  // know about them and they would otherwise be sent to Supabase.
+  const { _status, _error, ...clean } = extraction;
   try {
-    const saved = await apiClient.createExtraction(extraction);
+    const saved = await apiClient.createExtraction(clean);
     const result = { ...saved, _saved: true };
     local.upsert(result); // mirror locally for offline access
     notifyWebhook(result);
@@ -97,9 +100,9 @@ export async function saveExtraction(extraction) {
     if (shouldFallback(err)) {
       // localStorage fallback when Supabase is not configured.
       const saved = {
-        ...extraction,
-        id: extraction.id || uid(),
-        created_at: extraction.created_at || new Date().toISOString(),
+        ...clean,
+        id: clean.id || uid(),
+        created_at: clean.created_at || new Date().toISOString(),
         _saved: true,
       };
       local.upsert(saved);

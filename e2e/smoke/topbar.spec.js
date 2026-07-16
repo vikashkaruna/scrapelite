@@ -1,0 +1,36 @@
+// e2e/smoke/topbar.spec.js
+// K-17 — TopBar Explore dropdown opens and shows the 3 main section labels.
+
+import { expect, test } from "playwright/test";
+import { installOfflineMocks } from "../support.js";
+
+test.beforeEach(async ({ page }) => {
+  await installOfflineMocks(page);
+});
+
+test("clicking Explore opens the dropdown", async ({ page }) => {
+  await page.goto("/");
+  const exploreBtn = page.getByRole("button", { name: /explore/i }).first();
+  await exploreBtn.click();
+  // The dropdown menu has the role=menu container.
+  await expect(page.getByRole("menu")).toBeVisible({ timeout: 2000 });
+});
+
+test("Explore dropdown shows Pricing, Use Cases, and Contact entries", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /explore/i }).first().click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(page.getByRole("menu").getByText(/plans & pricing/i)).toBeVisible();
+  await expect(page.getByRole("menu").getByText(/use cases/i)).toBeVisible();
+  await expect(page.getByRole("menu").getByText(/contact us/i)).toBeVisible();
+});
+
+test("TopBar shows the brand + Sign in/Sign up buttons for unauthenticated visitors", async ({ page }) => {
+  // The Q2 arch gate: not-logged-in state shows Sign in + Sign up buttons
+  // in the TopBar. Logged-in users see the UserDropdown instead (covered by
+  // I-23 in the integration suite).
+  await page.goto("/");
+  await expect(page.getByText("DatIQ").first()).toBeVisible();
+  await expect(page.locator(".topbar-desktop-actions").getByRole("button", { name: /^sign in$/i })).toBeVisible();
+  await expect(page.locator(".topbar-desktop-actions").getByRole("button", { name: /^sign up$/i })).toBeVisible();
+});

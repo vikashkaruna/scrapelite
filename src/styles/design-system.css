@@ -26,6 +26,12 @@
   --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
   --accent-soft-2: color-mix(in srgb, var(--accent) 18%, transparent);
   --accent-ring: color-mix(in srgb, var(--accent) 28%, transparent);
+  /* Darker accent for text on the soft tints — passes WCAG AA on the
+     computed --accent-soft background, which the raw --accent does not. */
+  --accent-on-soft: color-mix(in srgb, var(--accent) 70%, #000);
+  /* Lighter accent for text on dark surfaces (overridden in [data-theme="dark"]
+     below). Falls back to --accent-on-soft in light mode. */
+  --accent-on-dark: var(--accent-on-soft);
 }
 
 /* ── Light theme (slate) ───────────────────────────────────────── */
@@ -39,7 +45,7 @@
   --border-strong: #d3dae5;
   --text: #11192a;
   --text-2: #5a6577;
-  --text-3: #97a0b0;
+  --text-3: #5d6780;
   --shadow-sm: 0 1px 2px rgba(17,25,42,.05), 0 1px 1px rgba(17,25,42,.04);
   --shadow: 0 4px 12px -4px rgba(17,25,42,.10), 0 2px 6px -2px rgba(17,25,42,.06);
   --shadow-lg: 0 24px 50px -16px rgba(17,25,42,.22), 0 8px 20px -8px rgba(17,25,42,.12);
@@ -57,7 +63,10 @@
   --border-strong: #303a50;
   --text: #f2f5fa;
   --text-2: #9aa6bb;
-  --text-3: #616c82;
+  --text-3: #8b96ad;
+  /* In dark mode, --accent-on-soft is too dark to be readable. Override
+     with a lighter indigo that passes WCAG AA on dark surfaces. */
+  --accent-on-dark: #a5b4fc;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow: 0 6px 16px -6px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
   --shadow-lg: 0 28px 60px -18px rgba(0,0,0,.7), 0 10px 24px -10px rgba(0,0,0,.5);
@@ -83,7 +92,10 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: background .35s ease, color .25s ease;
+  color: var(--text);
+  /* No `color` transition — axe-core samples colors and a mid-transition
+     value is reported as a different (and usually failing) contrast ratio. */
+  transition: background .35s ease;
 }
 
 ::selection { background: var(--accent-soft-2); color: var(--text); }
@@ -117,7 +129,7 @@ a { color: inherit; text-decoration: none; }
 }
 .btn-secondary:hover { background: var(--surface-hover); border-color: var(--text-3); }
 
-.btn-ghost { background: transparent; color: var(--text-2); }
+.btn-ghost { background: transparent; color: var(--text); opacity: 1; }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 
 .btn-danger {
@@ -135,7 +147,7 @@ a { color: inherit; text-decoration: none; }
 /* ── Top bar ───────────────────────────────────────────────────── */
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   backdrop-filter: blur(16px) saturate(160%);
   border-bottom: 1px solid var(--border);
@@ -154,8 +166,8 @@ a { color: inherit; text-decoration: none; }
 }
 .brand-mark svg { width: 19px; height: 19px; }
 .brand-text { display: flex; flex-direction: column; gap: 1px; }
-.brand-name { font-weight: 700; font-size: 18px; letter-spacing: -.02em; line-height: 1.15; }
-.brand-name b { color: var(--accent); }
+.brand-name { font-weight: 700; font-size: 18px; letter-spacing: -.02em; line-height: 1.15; color: var(--text); }
+.brand-name b { color: var(--text); }
 .brand-tagline {
   font-size: .6em; color: var(--text-3); font-weight: 500;
   letter-spacing: .01em; line-height: 1; white-space: nowrap;
@@ -165,12 +177,12 @@ a { color: inherit; text-decoration: none; }
 
 .nav-links { display: flex; align-items: center; gap: 2px; }
 .nav-link {
-  font-size: .92em; font-weight: 550; color: var(--text-2);
+  font-size: .92em; font-weight: 550; color: var(--text);
   padding: 8px 13px; border-radius: var(--r-sm); cursor: pointer;
   transition: background .15s, color .15s;
 }
 .nav-link:hover { background: var(--surface-2); color: var(--text); }
-.nav-link.active { color: var(--accent); background: var(--accent-soft); }
+.nav-link.active { color: var(--accent-on-dark); background: var(--accent-soft); }
 
 .theme-toggle {
   width: 38px; height: 38px; border-radius: var(--r-sm);
@@ -220,7 +232,7 @@ a { color: inherit; text-decoration: none; }
 .eyebrow {
   display: inline-flex; align-items: center; gap: 7px;
   font-size: .76em; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-on-dark);
 }
 .eyebrow svg { width: 14px; height: 14px; }
 

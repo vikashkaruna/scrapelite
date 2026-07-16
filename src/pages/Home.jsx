@@ -452,7 +452,7 @@ export default function Home() {
                   className="feature-ico"
                   style={
                     isSelected
-                      ? { background: "var(--accent-soft)", color: "var(--accent)" }
+                      ? { background: "var(--accent-soft)", color: "var(--accent-on-dark)" }
                       : isHighlighted
                       ? { background: `color-mix(in srgb, ${persona.color} 14%, transparent)`, color: persona.color }
                       : {}
@@ -466,7 +466,7 @@ export default function Home() {
                     {f.popular && !isSelected && (
                       <span
                         className="feature-tag"
-                        style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                        style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}
                       >
                         Popular
                       </span>
@@ -474,7 +474,7 @@ export default function Home() {
                     {isSelected && (
                       <span
                         className="feature-tag"
-                        style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                        style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}
                       >
                         Active
                       </span>

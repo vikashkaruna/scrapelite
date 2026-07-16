@@ -4,6 +4,17 @@ import Icon from "./Icon.jsx";
 
 const ToastContext = createContext(() => {});
 
+/**
+ * Subscribe to the ToastProvider. Returns the show function DIRECTLY (not
+ * an object wrapping it) — i.e. `const showToast = useToast()` is the
+ * correct usage; `useToast().showToast` is a TypeError. Calling
+ * `showToast(msg, icon)` renders a `.toast` node for ~2.6s.
+ *
+ * The default `icon` is "check-circle" (any lucide name registered in
+ * `Icon.jsx` works).
+ *
+ * @returns {(msg: string, icon?: string) => void}
+ */
 export function useToast() {
   return useContext(ToastContext);
 }

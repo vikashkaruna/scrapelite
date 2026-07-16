@@ -2,7 +2,7 @@
 // Each category has a test regex, a user-facing title, and a plain-English message.
 // Keeps technical jargon out of the UI while preserving the real error for devs.
 
-const CATEGORIES = [
+export const CATEGORIES = [
   {
     test: /failed to fetch dynamically imported module|dynamically imported/i,
     title: "App update available",

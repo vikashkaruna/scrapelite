@@ -55,8 +55,10 @@ export async function sendExtractionsEmail({ to, items }) {
   const { subject, body } = buildEmail(items);
 
   // Preferred: hand the email off to the configured webhook to deliver.
-  // If the webhook is unreachable (network error) fall through to mailto rather
-  // than surfacing a raw "Failed to fetch" message to the user.
+  // On 5xx the webhook is misbehaving (not "config wrong"); fall through to
+  // the email API so the user doesn't see a hard error. On 4xx the
+  // webhook is configured wrong — re-throw so the user knows to fix it.
+  // Network-level failures also fall through to mailto.
   if (hasWebhook) {
     try {
       const res = await fetch(WEBHOOK_URL, {
@@ -71,20 +73,24 @@ export async function sendExtractionsEmail({ to, items }) {
           data: items,
         }),
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(webhookErrorMessage(res.status, detail));
-      }
-      return { via: "webhook", count: recipients.length };
-    } catch (err) {
-      // Network-level failure (e.g. webhook server down, CORS): fall through to
-      // mailto so the user can still send without a broken error state.
-      if (err.message && !err.message.startsWith("Couldn't reach") && !err.message.startsWith("Email webhook")) {
-        console.warn("[DatIQ] Email webhook unreachable, falling back to mailto:", err.message);
-        // fall through to mailto below
+      if (res.ok) return { via: "webhook", count: recipients.length };
+      const status = res.status;
+      const detail = await res.text().catch(() => "");
+      // 5xx → misbehaving webhook, fall through
+      if (status >= 500 && status < 600) {
+        console.warn("[DatIQ] Email webhook returned", status, "— falling through to email API");
+        // fall through to email API below
       } else {
-        throw err; // re-throw HTTP-level errors (bad config, etc.)
+        // 4xx → configuration problem, surface to the user
+        throw new Error(webhookErrorMessage(status, detail));
       }
+    } catch (err) {
+      // Network-level failure (webhook down, CORS): fall through to mailto.
+      if (err && err.message && (err.message.startsWith("Couldn't reach") || err.message.startsWith("Email webhook"))) {
+        throw err; // configuration error from above
+      }
+      console.warn("[DatIQ] Email webhook unreachable, falling back:", err?.message);
+      // fall through to mailto below
     }
   }
 

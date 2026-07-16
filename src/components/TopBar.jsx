@@ -161,7 +161,7 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onSwitchRole(); }}>
             <span className="nav-dd-icon"><Icon name="repeat" size={14} /></span>
-            Switch Role / Persona
+            Switch persona
           </button>
           <div className="nav-dropdown-divider" />
           {user ? (
@@ -203,6 +203,11 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
         className={"mobile-nav" + (isOpen ? " mobile-nav-open" : "")}
         aria-label="Mobile navigation"
         aria-hidden={!isOpen}
+        // The `inert` attribute (HTML standard) removes the entire subtree
+        // from the focus order and from the a11y tree when the mobile menu
+        // is closed. Without it, `aria-hidden` only hides content from the
+        // a11y tree but Tab still moves into the offscreen buttons.
+        inert={!isOpen ? "" : undefined}
       >
         {/* Main links with icon + text */}
         <div className="mobile-nav-section">
@@ -277,7 +282,7 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
               </button>
               <button className="mobile-nav-item" onClick={() => { onSwitchRole(); onClose(); }}>
                 <span className="mobile-nav-icon"><Icon name="repeat" size={17} /></span>
-                Switch Role
+                Switch persona
               </button>
               <div className="mobile-nav-divider" />
               <button className="mobile-nav-item mobile-nav-danger" onClick={() => { onSignOut(); onClose(); }}>
