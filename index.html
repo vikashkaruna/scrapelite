@@ -117,6 +117,22 @@
       href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <!-- Apply the saved theme synchronously before React renders, so the
+         first paint uses the right colors. Without this, the page briefly
+         paints in the default light theme and axe-core samples a mid-
+         transition value that fails contrast checks. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("datiq.theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.setAttribute("data-theme", t);
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            document.documentElement.setAttribute("data-theme", "dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

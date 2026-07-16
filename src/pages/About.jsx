@@ -163,7 +163,7 @@ export default function About() {
           </div>
           <h2>Built by someone who felt the need</h2>
           <div className="about-founder">
-            <div className="about-founder-avatar" aria-label="Vikash Karuna">
+            <div className="about-founder-avatar" role="img" aria-label="Vikash Karuna">
               <Icon name="user" size={32} strokeWidth={1.5} />
             </div>
             <div className="about-founder-info">

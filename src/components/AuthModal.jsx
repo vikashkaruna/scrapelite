@@ -1,5 +1,5 @@
 // AuthModal.jsx — sign-in / sign-up modal with email+password, OAuth, and optional persona step.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
@@ -90,6 +90,13 @@ export default function AuthModal() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState("");
   const [showPersonaStep, setShowPersonaStep] = useState(false);
+
+  // A11y: Escape closes the modal. Standard dialog keyboard contract.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") closeAuth(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [closeAuth]);
 
   function switchTab(t) {
     setTab(t);

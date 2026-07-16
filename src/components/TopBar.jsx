@@ -203,6 +203,11 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
         className={"mobile-nav" + (isOpen ? " mobile-nav-open" : "")}
         aria-label="Mobile navigation"
         aria-hidden={!isOpen}
+        // The `inert` attribute (HTML standard) removes the entire subtree
+        // from the focus order and from the a11y tree when the mobile menu
+        // is closed. Without it, `aria-hidden` only hides content from the
+        // a11y tree but Tab still moves into the offscreen buttons.
+        inert={!isOpen ? "" : undefined}
       >
         {/* Main links with icon + text */}
         <div className="mobile-nav-section">
