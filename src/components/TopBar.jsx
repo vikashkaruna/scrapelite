@@ -336,10 +336,11 @@ export default function TopBar() {
   const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
   const mainLinks = [
-    { to: "/",          label: "Extract",   icon: "globe",     match: (p) => p === "/" || p === "/preview" },
-    { to: "/batch",     label: "Batch",     icon: "layers-2",  match: (p) => p === "/batch" },
-    { to: "/schedules", label: "Schedules", icon: "repeat",    match: (p) => p === "/schedules" },
-    { to: "/dashboard", label: "Dashboard", icon: "grid",      match: (p) => p === "/dashboard" },
+    { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" },
+    { to: "/batch",       label: "Batch",       icon: "layers-2",  match: (p) => p === "/batch" },
+    { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
+    { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
+    { to: "/collections", label: "Collections", icon: "folder",    match: (p) => p === "/collections" },
   ];
 
   async function handleSignOut() {

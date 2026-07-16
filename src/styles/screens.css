@@ -834,6 +834,323 @@
 }
 .mur-go:hover:not(:disabled) { filter: brightness(.92); }
 .mur-go:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── v1.0 Groke QW#2 — Tag chips on Preview ──────────────────────── */
+.tag-chips {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 10px;
+  position: relative;
+}
+.tc-eyebrow {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .68em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.tc-eyebrow svg { color: var(--accent); }
+.tc-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  min-height: 28px;
+}
+.tc-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-on-dark);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: var(--r-pill);
+  padding: 2px 4px 2px 9px;
+  font-size: .78em; font-weight: 600;
+  line-height: 1.4;
+}
+.tc-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; cursor: pointer;
+  color: inherit; opacity: .65;
+  padding: 2px; border-radius: 50%;
+  transition: opacity .12s, background .12s;
+}
+.tc-chip-x:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.tc-input {
+  flex: 1; min-width: 120px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit; font-size: .78em;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  outline: none;
+  transition: border-color .12s, background .12s;
+}
+.tc-input:focus { border-color: var(--accent); border-style: solid; background: var(--surface); }
+.tc-input::placeholder { color: var(--text-3); }
+.tc-limit-hint {
+  font-size: .72em; color: var(--text-3); font-style: italic;
+  padding: 0 6px;
+}
+.tc-suggest {
+  position: absolute; left: 0; top: 100%;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 220px; max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  z-index: 5;
+  margin-top: 4px;
+}
+.tc-suggest-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text);
+  font: inherit; font-size: .82em;
+  padding: 5px 8px; border-radius: var(--r-sm);
+  text-align: left;
+}
+.tc-suggest-item:hover { background: var(--accent-soft); color: var(--text); }
+.tc-suggest-item svg { color: var(--accent); flex-shrink: 0; }
+.tc-suggest-item span { display: inline-flex; align-items: center; gap: 5px; }
+.tc-suggest-host b { font-weight: 700; }
+.tc-suggest-host .tc-hint { color: var(--text-3); font-size: .9em; }
+
+/* ── v1.0 Groke QW#2 — Dashboard tag filter chips ─────────────── */
+.tag-filter {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;
+}
+.tag-filter-eyebrow {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .68em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.tag-filter-eyebrow svg { color: var(--accent); }
+.tag-filter-chips {
+  display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.tag-filter-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 3px 6px 3px 9px;
+  font-size: .74em; font-weight: 600;
+  cursor: pointer;
+  transition: all .12s;
+}
+.tag-filter-chip:hover { color: var(--text); border-color: var(--accent-on-soft); }
+.tag-filter-chip.on {
+  background: var(--accent-soft);
+  color: var(--accent-on-dark);
+  border-color: var(--accent);
+}
+.tag-filter-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: .85em; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tag-filter-chip.on .tag-filter-count { color: var(--accent-on-dark); }
+.tag-filter-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text-3); padding: 3px; border-radius: 50%;
+}
+.tag-filter-clear:hover { color: var(--text); background: var(--surface-2); }
+
+/* ── v1.0 Groke QW#3 — Dashboard collection filter dropdown ───── */
+.collection-filter {
+  display: flex; align-items: center; gap: 6px;
+}
+.collection-filter-select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-size: .82em; font-weight: 600;
+  padding: 5px 9px; border-radius: var(--r-pill);
+  cursor: pointer;
+  outline: none;
+  max-width: 200px;
+}
+.collection-filter-select:focus { border-color: var(--accent); }
+
+/* ── v1.0 Groke QW#3 — Collection picker (row action) ────────── */
+.collection-picker { position: relative; display: inline-block; }
+.cp-trigger {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--surface); color: var(--text-2);
+  border: 1px solid var(--border);
+  font: inherit; font-size: .76em; font-weight: 600;
+  padding: 4px 8px; border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: all .12s;
+  max-width: 150px;
+}
+.cp-trigger:hover { color: var(--text); border-color: var(--accent-on-soft); }
+.cp-trigger.cp-set { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.cp-trigger span, .cp-trigger > svg + svg { margin-left: 2px; }
+.cp-menu {
+  position: absolute; right: 0; top: calc(100% + 4px);
+  min-width: 220px; max-width: 320px;
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 50;
+}
+.cp-item {
+  display: flex; align-items: center; gap: 7px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text);
+  font: inherit; font-size: .82em;
+  padding: 6px 8px; border-radius: var(--r-sm);
+  text-align: left;
+}
+.cp-item:hover { background: var(--accent-soft); }
+.cp-item svg { color: var(--accent); flex-shrink: 0; }
+.cp-item > span { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cp-item b { font-weight: 600; }
+.cp-count { color: var(--text-3); font-size: .9em; }
+.cp-remove { color: #b95a5a; }
+.cp-remove:hover { background: rgba(185, 90, 90, .12); }
+.cp-remove svg { color: #b95a5a; }
+.cp-sep { height: 1px; background: var(--border); margin: 3px 4px; }
+.cp-empty { color: var(--text-3); font-size: .8em; padding: 8px; font-style: italic; }
+.cp-new { color: var(--accent); }
+.cp-create {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px;
+}
+.cp-create input {
+  flex: 1; min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit; font-size: .82em;
+  padding: 5px 8px; border-radius: var(--r-sm);
+  outline: none;
+}
+.cp-create input:focus { border-color: var(--accent); }
+.cp-create-go {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-contrast);
+  border: 0; padding: 5px 7px; border-radius: var(--r-sm);
+  cursor: pointer; font: inherit;
+}
+.cp-create-go:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── v1.0 Groke QW#3 — /collections page ─────────────────────── */
+.collections-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  margin-bottom: 28px;
+}
+.collections-head .eyebrow { color: var(--text-3); }
+.collections-title {
+  font-size: clamp(24px, 3vw, 32px); font-weight: 800; letter-spacing: -.02em;
+  margin: 6px 0 0; color: var(--text);
+}
+.collections-sub {
+  margin: 8px 0 0; color: var(--text-2); font-size: 1em;
+  max-width: 60ch;
+}
+.collections-layout {
+  display: grid; grid-template-columns: 1fr; gap: 20px;
+}
+@media (min-width: 720px) {
+  .collections-layout { grid-template-columns: 260px 1fr; }
+}
+.collections-sidebar { }
+.cs-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.cs-section-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .74em; font-weight: 700; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 8px;
+}
+.cs-section-head svg { color: var(--accent); }
+.cs-count {
+  margin-left: auto;
+  background: var(--surface-2);
+  color: var(--text-2);
+  padding: 1px 7px; border-radius: 10px;
+  font-size: .9em; font-weight: 700;
+}
+.cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cs-item {
+  display: flex; align-items: center; gap: 7px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text-2); font: inherit; font-size: .86em; font-weight: 600;
+  padding: 7px 9px; border-radius: var(--r-sm);
+  text-align: left;
+  width: 100%;
+}
+.cs-item:hover { color: var(--text); background: var(--surface-2); }
+.cs-item.on { color: var(--accent); background: var(--accent-soft); }
+.cs-item svg { color: var(--accent); flex-shrink: 0; }
+.cs-item-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cs-item-count {
+  background: var(--surface-2);
+  color: var(--text-3);
+  padding: 1px 6px; border-radius: 10px;
+  font-size: .85em; font-weight: 700;
+}
+.cs-item.on .cs-item-count { background: var(--accent-soft); color: var(--accent-on-dark); }
+.cs-empty { color: var(--text-3); font-size: .82em; padding: 8px 4px; font-style: italic; }
+
+.collections-main {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px;
+  min-height: 320px;
+  box-shadow: var(--shadow-sm);
+}
+.collections-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+  color: var(--text-3);
+  padding: 60px 24px;
+  text-align: center;
+}
+.collections-empty h2 { color: var(--text); font-size: 1.1em; font-weight: 700; margin: 6px 0 0; }
+.collections-empty p  { color: var(--text-2); font-size: .9em; margin: 0; max-width: 40ch; }
+.collections-empty a  { color: var(--accent); text-decoration: none; font-weight: 600; }
+.collections-empty a:hover { text-decoration: underline; }
+.collections-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ci-card {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 12px;
+  cursor: pointer; text-align: left;
+  font: inherit; color: inherit;
+  transition: border-color .12s, background .12s;
+}
+.ci-card:hover { border-color: var(--accent-on-soft); background: var(--accent-soft); }
+.ci-meta { flex: 1; min-width: 0; }
+.ci-title { font-size: .9em; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-sub { display: inline-flex; align-items: center; gap: 4px;
+  font-size: .74em; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-dot { color: var(--text-3); }
+.ci-arrow { color: var(--text-3); flex-shrink: 0; }
+.ci-card:hover .ci-arrow { color: var(--accent); }
 .qa-btn {
   display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid var(--border); background: var(--surface-2);

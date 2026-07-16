@@ -179,3 +179,36 @@ describe("runBatch — strips _status / _error from successful results before re
     expect(results[0]._error).toBeUndefined();
   });
 });
+
+describe("extractOne (Groke QW#4 — ba-4 per-URL retry)", () => {
+  it("returns a success-shaped result on a happy path", async () => {
+    const { extractStructure } = await import("./firecrawlService.js");
+    extractStructure.mockReset();
+    extractStructure.mockImplementation(async (url) => ({
+      url,
+      page_title: "P",
+      headings: [{ tag: "H1", text: "T" }],
+      links: [],
+    }));
+    const { extractOne } = await import("./batchService.js");
+    const out = await extractOne("https://a.com");
+    expect(out._status).toBe("success");
+    expect(out.url).toBe("https://a.com");
+    expect(out.ai_summary).toBeTruthy();
+    expect(out.id).toBeTruthy();
+    expect(out.created_at).toBeTruthy();
+  });
+
+  it("returns an _status:'error' object on failure (does not throw)", async () => {
+    const { extractStructure } = await import("./firecrawlService.js");
+    extractStructure.mockReset();
+    extractStructure.mockImplementation(async () => {
+      throw new Error("Boom");
+    });
+    const { extractOne } = await import("./batchService.js");
+    const out = await extractOne("https://fail.com");
+    expect(out._status).toBe("error");
+    expect(out._error).toBe("Boom");
+    expect(out.url).toBe("https://fail.com");
+  });
+});

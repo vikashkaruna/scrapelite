@@ -119,6 +119,9 @@ import {
   Clock3,
   CopyPlus,
   Sheet,
+  Folder,
+  Inbox,
+  FolderOpen,
 } from "lucide-react";
 
 const MAP = {
@@ -243,7 +246,15 @@ const MAP = {
   "copy-plus": CopyPlus,
   // Quick Wins — Open in Google Sheets
   sheet: Sheet,
+  // Groke QW#2/#3 — tags + collections
+  tag: Tag,
+  hash: Hash,
+  folder: Folder,
+  "rotate-cw": RotateCw,
+  inbox: Inbox,
+  "folder-open": FolderOpen,
 };
+
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
   const Cmp = MAP[name] || Circle;

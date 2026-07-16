@@ -8,6 +8,7 @@ import StructuredData from "../components/StructuredData.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import ExtractionCharts from "../components/ExtractionCharts.jsx";
 import ScrapeSimilarCard from "../components/ScrapeSimilarCard.jsx";
+import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -192,6 +193,35 @@ export default function Preview() {
     runQuickAction({ key: entry.key, label: entry.label, icon: entry.icon, prompt });
   };
 
+  // Groke QW#2 — tags + the global tag catalogue for auto-suggest.
+  const [knownTags, setKnownTags] = useState(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    import("../lib/tagsService.js").then(({ getAllTags }) => {
+      if (cancelled) return;
+      getAllTags().then((set) => { if (!cancelled) setKnownTags(set); }).catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [data?.id]);
+
+  // Groke QW#2 — persist a tag change. Local-only writes (no Supabase sync
+  // in v1.0 — Supabase column migration is v2.0 work).
+  const onTagsChange = async (nextTags) => {
+    const next = { ...data, tags: nextTags };
+    try {
+      // Add to local known-tags immediately so the suggestion list updates.
+      setKnownTags((prev) => {
+        const merged = new Set(prev);
+        for (const t of nextTags) merged.add(t);
+        return merged;
+      });
+      const { saveExtraction } = await import("../lib/extractionsRepo.js");
+      await saveExtraction(next);
+    } catch (e) {
+      console.warn("[DatIQ] Tag save failed:", e);
+    }
+  };
+
   const onViewDashboard = () => navigate("/dashboard");
 
   const onDownloadCsv = () => {
@@ -288,11 +318,18 @@ export default function Preview() {
         {/* page identity */}
         <div className="preview-head rise">
           <FaviconDot url={data.url} size={44} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <h1 className="preview-title">{data.page_title}</h1>
             <a className="preview-url" href={data.url} target="_blank" rel="noopener noreferrer">
               <Icon name="globe" size={15} /> {data.url} <Icon name="external" size={13} />
             </a>
+            {/* Groke QW#2 — inline tag editor (uses data so it auto-updates on change) */}
+            <TagChips
+              tags={data.tags || []}
+              url={data.url}
+              knownTags={knownTags}
+              onChange={(next) => onTagsChange(next)}
+            />
           </div>
           <div className="preview-stats">
             {isMap ? (

@@ -19,6 +19,7 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import Pricing from "./pages/Pricing.jsx";
 import Account from "./pages/Account.jsx";
+import Collections from "./pages/Collections.jsx";
 import PaymentSuccess from "./pages/PaymentSuccess.jsx";
 import PaymentCancel from "./pages/PaymentCancel.jsx";
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
@@ -94,6 +95,7 @@ function Shell() {
           <Route path="/onboarding"                    element={<Onboarding />} />
           <Route path="/preview"                       element={<Preview />} />
           <Route path="/dashboard"                     element={<Dashboard />} />
+          <Route path="/collections"                   element={<Collections />} />
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
           <Route path="/pricing"                       element={<Pricing />} />
