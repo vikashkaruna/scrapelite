@@ -1020,14 +1020,14 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [ ] **Stripe**: update Agency plan Price IDs (plan changed $199 → $299); set `VITE_STRIPE_PRICE_AGENCY`
 - [ ] **Razorpay**: update Agency plan Plan IDs to match new ₹14,999/mo price
 - [ ] Add `NETLIFY_AUTH_TOKEN` to session env for programmatic deploys from Claude (branch deploys auto-trigger via GitHub integration when not set)
-- [ ] Implement once-only 25-extraction trial credit at signup (`trialCredit: 25` is in plan config; grant not yet wired in usageService/AuthProvider)
+- [x] ~~Implement once-only 25-extraction trial credit at signup~~ — DONE (FR-Z-02, M5): `applyTrialCredit("free")` called from `AuthProvider.jsx:51` on `SIGNED_IN`; idempotent; covered by `usageService.test.js` "FR-Z-02" suite (Free → grants 25 once, no-ops on re-run, no-op on non-Free plans, concurrent-call race)
 - [ ] Referral/affiliate program — teaser UI is live on /pricing; backend not implemented
 - [ ] Supabase real auth → replace localStorage persona/session for cross-device sync
 - [ ] Switch webhook to production n8n URL
 - [ ] Add "Use cases" links to Footer Explore column
-- [ ] AdminPricing.jsx: add UI fields for `price_usd_annual` and `price_inr_annual` (currently only monthly prices editable in admin)
+- [x] ~~AdminPricing.jsx: add UI fields for `price_usd_annual` and `price_inr_annual`~~ — DONE (R18, `76bc06f`): both fields in plan editor with $-prefix + ₹-prefix + GST hint; collapsed header shows both USD and INR monthly
 - [ ] `/blog/:slug` routing for SEO-indexed posts (currently all content is in-page modal only)
-- [ ] `PaymentConfirmModal` — wire actual `initiatePayment` call through the confirm step in `BillingProvider` (currently confirm/cancel flow uses local state; payment initiation still triggered by the parent CTA click)
+- [x] ~~`PaymentConfirmModal` — wire actual `initiatePayment` call through the confirm step in `BillingProvider`~~ — DONE (R11+R13): `BillingProvider.jsx:125` `initiatePayment()` opens the confirm modal first via `confirmResolveRef`; on confirm → reads `confirmedPlanId` + `confirmedCoupon` and proceeds to real payment; on cancel → returns `{status:"cancelled"}`
 - [x] ~~Batch/multi-URL mode (10–500 URLs)~~ — DONE (R5: /batch page, batchService.js, plan limits, Batch Pack bundle)
 - [x] ~~CSV-import enrichment~~ — DONE (R5: Batch page "Import CSV" tab, parseUrlsFromCsv in batchService.js)
 - [x] ~~Markdown export~~ — DONE (R5: markdownDownload(), extractionsToMarkdown() in utils.js; Select+ plan)
