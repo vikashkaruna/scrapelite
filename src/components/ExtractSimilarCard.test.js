@@ -1,6 +1,6 @@
-// ScrapeSimilarCard.test.js — DeepSeq QW#1 unit tests for pickSiblings.
+// ExtractSimilarCard.test.js — DeepSeq QW#1 unit tests for pickSiblings.
 import { describe, it, expect } from "vitest";
-import { pickSiblings } from "./ScrapeSimilarCard.jsx";
+import { pickSiblings } from "./ExtractSimilarCard.jsx";
 
 describe("DeepSeq QW#1 — pickSiblings", () => {
   it("returns an empty list when there are no links or no baseUrl", () => {

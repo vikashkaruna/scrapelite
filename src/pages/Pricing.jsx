@@ -10,6 +10,7 @@ import { convertPrice, formatPrice } from "../lib/currencyService.js"; // conver
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
+import PricingMatrix from "../components/PricingMatrix.jsx";
 import Button from "../components/Button.jsx";
 import TopupBundleModal from "../components/TopupBundleModal.jsx";
 
@@ -410,6 +411,13 @@ export default function Pricing() {
             </div>
           </div>
         </div>
+
+        {/* F13 — tier × feature comparison matrix */}
+        <PricingMatrix
+          currentPlanId={currentPlanId}
+          currency={currency}
+          onSelectPlan={handleSelect}
+        />
 
         <div className="pricing-footer">
           <div className="pricing-faq-row">

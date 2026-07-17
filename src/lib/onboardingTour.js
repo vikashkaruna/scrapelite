@@ -32,15 +32,26 @@ const DEFAULT_STEPS = [
     placement: "bottom",
   },
   {
+    key: "modes",
+    title: "3. 12 extraction modes",
+    body:
+      "DatIQ has 12 preset extraction modes — pick one and we’ll wire the prompt for you.\n\n" +
+      "Outcome tiles (6): Lead list · Pricing · Competitor research · AI summary · Job board · Custom.\n" +
+      "Quick actions (5): Find contact info · Leadership & board · Social links · Company mission · Pricing & plans.\n" +
+      "Plus: free-text custom prompts. You can also stack modes (e.g. lead list + pricing) into one combined extraction.",
+    target: ".outcome-tiles",
+    placement: "bottom",
+  },
+  {
     key: "templates",
-    title: "3. Use a template",
+    title: "4. Use a template",
     body: "Need a starting point? The template library has 12 pre-built extraction recipes for YC companies, SaaS pricing, job boards, GitHub repos, and more.",
     target: ".template-gallery",
     placement: "top",
   },
   {
     key: "batch",
-    title: "4. Batch mode",
+    title: "5. Batch mode",
     body: "When you paste multiple URLs (or import a CSV) DatIQ auto-routes to Batch mode. You can also open Batch directly from the top nav.",
     target: ".topbar",
     placement: "bottom",
@@ -48,7 +59,7 @@ const DEFAULT_STEPS = [
   {
     key: "done",
     title: "That's the tour",
-    body: "You're all set. Press <kbd>?</kbd> any time to see keyboard shortcuts. Your work saves to the Dashboard automatically — visit it from the top nav.",
+    body: "You're all set. Press <kbd>?</kbd> any time to see keyboard shortcuts, or <kbd>mod+k</kbd> to jump anywhere. Your work saves to the Dashboard automatically — visit it from the top nav.",
     target: null,
     placement: "center",
   },

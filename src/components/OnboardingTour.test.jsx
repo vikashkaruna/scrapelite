@@ -45,21 +45,32 @@ describe("Q4 — OnboardingTour: overlay UI", () => {
 
   it("the last step's button label is 'Finish'", () => {
     render(<OnboardingTour forceOpen />);
-    // Step 1 of 6
-    for (let i = 0; i < 5; i++) {
+    // 7 steps now (added the 'modes' step)
+    for (let i = 0; i < 6; i++) {
       fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     }
-    expect(screen.getByText(/Step 6 of/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 7 of/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Finish/i })).toBeInTheDocument();
   });
 
   it("Finish marks the tour as completed", () => {
     render(<OnboardingTour forceOpen />);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     }
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
     expect(tourLib.isTourCompleted()).toBe(true);
+  });
+
+  it("the modes step enumerates the 5 quick actions and 6 outcome tiles", () => {
+    render(<OnboardingTour forceOpen />);
+    // Step 1 -> 2 -> 3 -> 4 (modes)
+    fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+    expect(screen.getByText(/12 extraction modes/i)).toBeInTheDocument();
+    expect(screen.getByText(/Outcome tiles \(6\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Quick actions \(5\)/i)).toBeInTheDocument();
   });
 
   it("onClose is called when the tour is closed", () => {

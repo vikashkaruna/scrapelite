@@ -125,7 +125,7 @@ describe("I-35 — Preview: action bar", () => {
     expect(view).toBeInTheDocument();
   });
 
-  it("Download ▾ opens a menu with CSV / PDF / Markdown / JSON options", async () => {
+  it("Download ▾ opens a menu with CSV / PDF / Markdown / JSON options (plus a Copy section)", async () => {
     const item = buildExtraction({ id: "ext_p2" });
     render(<Tree item={item} />);
     await act(async () => { await Promise.resolve(); });
@@ -133,11 +133,14 @@ describe("I-35 — Preview: action bar", () => {
     const dl = screen.getByRole("button", { name: /download/i });
     act(() => fireEvent.click(dl));
     await act(async () => { await Promise.resolve(); });
-    // The dropdown items render.
+    // The download section's items render (4 formats).
     expect(screen.getByText(/^CSV$/i)).toBeInTheDocument();
     expect(screen.getByText(/^PDF$/i)).toBeInTheDocument();
-    expect(screen.getByText(/markdown/i)).toBeInTheDocument();
-    expect(screen.getByText(/JSON/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Markdown$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^JSON$/i)).toBeInTheDocument();
+    // F01 — Copy section header is also present.
+    expect(screen.getByText(/Copy to clipboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/Copy summary/i)).toBeInTheDocument();
   });
 
   it("'Delete' returns the user to /", async () => {

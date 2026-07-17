@@ -18,6 +18,7 @@ import WorkspaceRedirect from "./components/WorkspaceRedirect.jsx";
 import { useHotkeys } from "./hooks/useHotkeys.js";
 import HotkeyHelp from "./components/HotkeyHelp.jsx";
 import OnboardingTour from "./components/OnboardingTour.jsx";
+import CommandPalette from "./components/CommandPalette.jsx";
 import Home from "./pages/Home.jsx";
 import Preview from "./pages/Preview.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -74,9 +75,11 @@ function Shell() {
   // Q11 — keyboard shortcuts (power-user mode)
   const [hotkeyHelpOpen, setHotkeyHelpOpen] = useState(false);
   const [tourForceOpen, setTourForceOpen] = useState(0);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   useHotkeys({
     "?": () => setHotkeyHelpOpen(true),
-    esc: () => setHotkeyHelpOpen(false),
+    esc: () => { setHotkeyHelpOpen(false); setCmdPaletteOpen(false); },
+    "mod+k": () => setCmdPaletteOpen(true),
     "g d": () => navigate("/dashboard"),
     "g b": () => navigate("/batch"),
     "g s": () => navigate("/schedules"),
@@ -84,6 +87,13 @@ function Shell() {
     "g w": () => navigate("/workspace"),
     "g t": () => setTourForceOpen((n) => n + 1),
   });
+
+  // F10 — listen for the synthetic event CommandPalette fires for "replay tour"
+  useEffect(() => {
+    const handler = () => setTourForceOpen((n) => n + 1);
+    window.addEventListener("datiq:replay-tour", handler);
+    return () => window.removeEventListener("datiq:replay-tour", handler);
+  }, []);
 
   // Q11 — "/" focuses the URL composer if one is on the current page
   useHotkeys({
@@ -171,6 +181,7 @@ function Shell() {
       <GuestTrialModal />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
+      <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
       <Footer />
     </>
   );

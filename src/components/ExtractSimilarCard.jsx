@@ -1,6 +1,6 @@
-// ScrapeSimilarCard.jsx — DeepSeq QW#1. Post-extraction CTA that suggests
+// ExtractSimilarCard.jsx — DeepSeq QW#1. Post-extraction CTA that suggests
 // same-domain sibling pages (2-3 internal links) so the user can quickly
-// "Scrape Similar" without going back to Home. Picks internal links from the
+// "Extract similar" without going back to Home. Picks internal links from the
 // current extraction, scores them by path-depth (prefer top-level pages), and
 // surfaces them as clickable cards. Click → run extract() for that URL.
 import { useMemo } from "react";
@@ -40,7 +40,7 @@ export function pickSiblings(links, baseUrl, limit = 3) {
   return candidates.slice(0, limit);
 }
 
-export default function ScrapeSimilarCard({ extraction }) {
+export default function ExtractSimilarCard({ extraction }) {
   const { extract } = useExtraction();
   const baseUrl = extraction?.url;
   const siblings = useMemo(() => pickSiblings(extraction?.links, baseUrl, 3), [extraction, baseUrl]);
@@ -54,13 +54,13 @@ export default function ScrapeSimilarCard({ extraction }) {
   };
 
   return (
-    <div className="card rise scrape-similar" style={{ animationDelay: ".08s" }}>
+    <div className="card rise extract-similar" style={{ animationDelay: ".08s" }}>
       <div className="card-head">
         <span className="ch-icon">
           <Icon name="copy-plus" size={18} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3>Scrape similar</h3>
+          <h3>Extract similar</h3>
           <p className="ch-sub">Other pages on <b>{hostOf(baseUrl)}</b> you might want next</p>
         </div>
         <span className="ai-badge ch-meta">
@@ -68,18 +68,18 @@ export default function ScrapeSimilarCard({ extraction }) {
         </span>
       </div>
       <div className="card-pad">
-        <ul className="scrape-similar-row">
+        <ul className="extract-similar-row">
           {siblings.map((s) => (
             <li key={s.href}>
               <button
                 type="button"
-                className="scrape-similar-btn"
+                className="extract-similar-btn"
                 onClick={() => handleClick(s.href)}
                 title={s.href}
               >
-                <span className="ssr-label">{s.label}</span>
-                <span className="ssr-path">{s.path}</span>
-                <Icon name="arrow-up-right" size={13} className="ssr-arrow" />
+                <span className="esr-label">{s.label}</span>
+                <span className="esr-path">{s.path}</span>
+                <Icon name="arrow-up-right" size={13} className="esr-arrow" />
               </button>
             </li>
           ))}

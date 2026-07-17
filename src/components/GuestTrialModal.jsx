@@ -4,14 +4,23 @@
 //  • Soft prompt (showPrompt)   — dismissible; re-appears every N extractions
 //  • Hard block (showHardBlock) — NOT dismissible; user must sign up or sign in
 //    to continue.  hardBlockReason: "single" | "batch"
+//
+// FA3 — task-aware + annual anchoring: the headline + body + benefits list
+// now reflect what the user was actually trying to do (single URL vs batch
+// with N URLs) and anchor on the annual upgrade price (per the council
+// note: "Upgrade screen at the exact moment of trial exhaustion, showing
+// which paid feature completes the current task; annual anchoring").
 import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
+import { buildPaywallCopy } from "../lib/paywallCopy.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 
 export default function GuestTrialModal() {
   const { user, openAuth } = useAuth();
+  const location = useLocation();
   const {
     showPrompt, setShowPrompt,
     showHardBlock, setShowHardBlock,
@@ -36,14 +45,27 @@ export default function GuestTrialModal() {
     ? () => setShowHardBlock(false) // only reachable via auth buttons; backdrop doesn't fire
     : () => setShowPrompt(false);
 
+  // FA3 — task-aware copy. For the hard block, force the kind to match the
+  // reason (so a blocked batch run sees batch copy, not single-URL copy).
+  const ctx = hardBlockReason === "batch"
+    ? { kind: "batch", urls: BATCH_LIMIT * 4 } // worst-case hint: a batch of 4× their limit
+    : hardBlockReason === "schedule"
+      ? { kind: "schedule" }
+      : undefined;
+  const paywall = buildPaywallCopy({
+    route: location.pathname,
+    usage: { extractions: SINGLE_LIMIT },
+    currentPlan: { id: "free", name: "Free", limits: { extractions: SINGLE_LIMIT } },
+    ctx,
+    currency: "USD",
+  });
+
   const headlineText = isHard
-    ? hardBlockReason === "batch"
-      ? `You've reached the guest batch limit (${BATCH_LIMIT} runs)`
-      : `You've reached the guest extraction limit (${SINGLE_LIMIT} extractions)`
+    ? paywall.title
     : `You've used your ${TRIAL_LIMIT} free trial extractions`;
 
   const bodyText = isHard
-    ? "Create a free account to keep going. No credit card required — free plan includes 10 extractions per month."
+    ? paywall.body
     : "Create a free account to keep going. The free plan includes 10 extractions per month, full AI summaries, and more.";
 
   return (
@@ -59,6 +81,15 @@ export default function GuestTrialModal() {
         </div>
         <h2 className="gtm-headline">{headlineText}</h2>
         <p className="gtm-body">{bodyText}</p>
+
+        {/* FA3 — annual-anchored upgrade badge for the hard block */}
+        {isHard && paywall.savingsLabel && (
+          <div className="gtm-anchor-pill">
+            <Icon name="trending-down" size={12} />
+            <span>{paywall.savingsLabel}</span>
+          </div>
+        )}
+
         <ul className="gtm-benefits">
           <li><Icon name="check" size={14} /> 10 free extractions every month</li>
           <li><Icon name="check" size={14} /> AI summaries + link intelligence</li>
@@ -72,7 +103,9 @@ export default function GuestTrialModal() {
             icon="user-plus"
             onClick={() => { openAuth("signup"); dismiss(); }}
           >
-            Create free account
+            {isHard
+              ? `Create free account & start ${paywall.recommendedPlanName}`
+              : "Create free account"}
           </Button>
           <Button
             variant="ghost"
