@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-17 — main at `ea3658a`, Cloud BI + alternate-model quick wins merged; v1.0+ live on datiq.app (Netlify project `datiqapp`).**
+> **Last updated: 2026-07-18 — main at `06a5b96` (Council feature followup merged); 11 features audited, 4 gaps closed, 4 polish items shipped. v1.0+ live on datiq.app (Netlify project `datiqapp`).**
 >
 > Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`.
 >
@@ -21,9 +21,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — R19 merged + pushed |
-| **Latest main commit** | `6bc4731` — `scripts/scheduler.sql` (R19 DB setup); R19 merge = `980ac21` |
-| **Branch `Implement_scheduler`** | merged into main via PR #12; can be deleted |
+| **Current branch** | `main` — Council feature followup merged (`06a5b96`); `feat/council-followup` synced |
+| **Latest main commit** | `06a5b96` — `Merge branch 'feat/council-followup' into main` (council audit followup); feature commit = `6b46cfc` |
+| **Branch `feat/council-followup`** | merged into main via merge commit `06a5b96`; synced with main; can be deleted if no longer needed |
 
 ---
 
@@ -1017,6 +1017,34 @@ After the Cloud BI drop, the user reviewed an alternate-model list and found two
 
 ---
 
+## Council feature followup (2026-07-18, MERGED to main)
+
+> 11 council-prioritised features audited. 5 already shipped, 4 had real gaps, 2 polish extras. All 4 gaps closed + 4 polish items landed in one drop. `main` at `06a5b96` (merge commit), `feat/council-followup` synced. **+53 net new tests (1029 → 1082), build clean in 1.88s, 0 regressions.**
+
+| # | Item | Files added | Tests |
+|---|---|---|---|
+| **F01** | "Copy to clipboard" in Export ▾ dropdowns (Dashboard/Batch/Preview) — CSV/MD/JSON, plan-gated same as file download | `src/lib/utils.js` (new `copyToClipboard` + `buildClipboardPayload`) | 11 in `utils.clipboard.test.js` |
+| **F13** | Tier × feature comparison matrix on `/pricing` (15 rows under Usage/Exports/Power/Team/Data, sticky first col, current-plan highlight, CTA footer) | `PricingMatrix.jsx` | 10 |
+| **F14** | 3-pill trust strip on Home (Encrypted in transit / Auto-deleted in 30 days / Never used to train AI), each linked to `/privacy` | `TrustStrip.jsx` | 4 |
+| **FA3** | Task-aware paywall + annual anchoring — `paywallCopy.js` recommends the plan that completes the current task; wired into `UsageUpsellBanner` (Shell ≥80%) and `GuestTrialModal` (hard block); CTA defaults to annual | `paywallCopy.js` | 13 |
+| **F07 rename** | `ScrapeSimilarCard` → `ExtractSimilarCard` (file + CSS class + label) to match the council wording | (rename) | 0 (existing tests) |
+| **F10** | Real mod+K command palette (7 actions, fuzzy filter, ↑↓ Enter Esc) — replaces the misleading "mod+k (future)" line in HotkeyHelp | `CommandPalette.jsx` | 13 |
+| **F15** | "12 extraction modes" tour step (new step 3 enumerating 6 outcome tiles + 5 quick actions + 1 custom). Tour is now 7 steps | `onboardingTour.js` | (count-update tweaks) |
+
+**Files added (8):** `TrustStrip.{jsx,test.jsx}`, `PricingMatrix.{jsx,test.jsx}`, `CommandPalette.{jsx,test.jsx}`, `paywallCopy.{js,test.js}`, `utils.clipboard.test.js` (1 util). **Modified (15):** `App.jsx`, `Home.jsx`, `Pricing.jsx`, `Dashboard/Batch/Preview.jsx`, `UsageUpsellBanner/GuestTrialModal.jsx`, `HotkeyHelp.jsx`, `onboardingTour.js`, `Icon.jsx` (4 new icons), `utils.js`, `screens.css`. **Renamed (2):** `ScrapeSimilarCard*` → `ExtractSimilarCard*`. **New doc:** `docs/SESSION-HANDOFF-2026-07-18-COUNCIL-FEATURES.md`.
+
+**Architectural patterns added:**
+- `paywallCopy.js` is the single source of truth for paywall messaging. Two helpers: `pickRecommendedPlan(ctx)` and `buildPaywallCopy({route, usage, currentPlan, ctx, currency})`. Always show `$X/mo, billed annually` in the CTA, never `$X/mo` alone. Annual anchoring is a v1.0 behavior change that v1.0's one-time Razorpay Orders can still honor (recurring billing is deferred to v2.0).
+- For mod+K palettes: keep `fuzzyScore(query, text)` and `filterActions(actions, query)` as separate pure functions exported from the component file. Keyboard nav through a single `useEffect` with the right deps so highlight resets when filter changes.
+- For Export-style dropdowns with section dividers: use `.export-dropdown-section` + `.export-dropdown-section-label` (added to screens.css). Cleaner than separate menus when actions are tightly related.
+- For PricingMatrix-style tables: sticky first column (`position: sticky; left: 0`) + sticky header + `min-width: 720px` on a horizontal-scroll wrapper.
+
+**Caveats documented in the handoff:**
+- The trust strip says "Auto-deleted in 30 days" — the message is honest but the actual Supabase cron is v2.0 work.
+- "Annual anchoring" commits to a flow that v1.0 one-time Razorpay Orders can still serve — the discount stack just doesn't kick in for v1.0.
+
+---
+
 ### R14 — Merged to main (2026-06-15)
 
 #### Firecrawl fallback chain (`claude/firecrawl-fallback-analysis-qyksr4` — merged)
@@ -1306,16 +1334,16 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-df9e4ad  feat(coupons+users): 'Manually Assigned To User(s)' coupon restriction
-fe1d2ba  fix(admin-users): coupon picker dropdown, discount %, persistence fix
-1b01650  feat(admin-revenue): load live KPIs and trend from Supabase, replace dummy data
-365aa4b  feat(admin-users): extractions, plan period, coupon columns + assign coupon action
-76bc06f  feat(admin-pricing): add INR price inputs with GST preview
-95de7c9  feat(admin): real user data from Supabase auth — AdminUsers page
-2a43a81  chore: update CLAUDE.md — R17 merged to main, session ready
-a4bca63  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R17: logout cleanup + guest hard limits + admin general settings
-3af49a5  chore: update CLAUDE.md — R16/R17 session state, all sections updated
-09fbdda  feat(R17): logout data cleanup + guest hard limits + admin general settings
-52c6631  Merge branch 'claude/enrich-batch-mall-3tkc1s' — R16: batch mode parity + guest trial gate
-663bda6  Update founder description for clarity
+06a5b96  Merge branch 'feat/council-followup' into main
+6b46cfc  feat(council-followup): F01 clipboard, F13 pricing matrix, F14 trust strip, FA3 task-aware paywall + mod+K palette
+405e401  docs(handoff): save session-2026-07-18 — clean v1.0+ state, v2.0 entry point
+0333e19  docs: session handoff 2026-07-17 - v1.0+ quick wins merged to main
+ea3658a  Merge feat/v1-quickwins: Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 — 11 quick wins, 229 new tests, 1029 green
+f5cd590  feat(v1-quickwins): Q1/Q3/Q4/Q5/Q11 — tour, demo, feedback, cap, shortcuts
+3e28ce6  fix(v1-quickwins): Q8 cross-browser shareable URLs + Q3 multi-select + UX dedup
+8cf8dbd  feat(v1-quickwins): Cloud BI Q1-Q11 - 11 quick wins, 139 new tests, 939 green
+5eedb74  docs(handoff): save session-2026-07-17 state for next session (3 rounds of Quick Wins)
+72dc612  feat(v1-quickwins): Groke AI quick wins — tags, collections, batch retry
+067059f  feat(v1-quickwins): MetaAI + DeepSeq quick wins with full test coverage
+0ae395b  test(v1.0): regenerate pricing visual snapshots + establish firefox/webkit baselines
 ```
