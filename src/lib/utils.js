@@ -311,6 +311,95 @@ export function openInGoogleSheets(items) {
   return meta;
 }
 
+// ── Clipboard copy (F01 — Export dropdown "Copy as …" option) ──────────────
+//
+// Each format produces the same string that the matching file-download
+// function would, but instead of triggering a download we put the text on
+// the clipboard. Falls back to a hidden <textarea> + execCommand for
+// browsers without `navigator.clipboard` (older Safari, non-secure contexts).
+//
+// Returns `{ ok: true, text, chars }` on success or `{ ok: false, reason }`
+// when the write is blocked (caller decides what to show).
+
+const CLIPBOARD_FORMATS = new Set(["csv", "json", "markdown", "summary"]);
+
+function summarizeText(extraction) {
+  const e = extraction || {};
+  return String(e.ai_summary || e.summary || e.description || "").trim();
+}
+
+export function buildClipboardPayload(items, format = "csv") {
+  const list = Array.isArray(items) ? items : [items];
+  switch (format) {
+    case "csv":      return { text: extractionsToCsv(list),       mime: "text/csv" };
+    case "json":     return { text: extractionsToJson(list), mime: "application/json" };
+    case "markdown": return { text: extractionsToMarkdown(list),  mime: "text/markdown" };
+    case "summary":  return { text: list.map(summarizeText).filter(Boolean).join("\n\n---\n\n"), mime: "text/plain" };
+    default:
+      throw new Error(`buildClipboardPayload: unknown format "${format}"`);
+  }
+}
+
+export function listClipboardFormats() {
+  return Array.from(CLIPBOARD_FORMATS);
+}
+
+async function writeViaExecCommand(text) {
+  if (typeof document === "undefined") return false;
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand && document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
+}
+
+export async function copyToClipboard(items, format = "csv") {
+  if (!CLIPBOARD_FORMATS.has(format)) {
+    return { ok: false, reason: `unsupported_format:${format}` };
+  }
+  let payload;
+  try {
+    payload = buildClipboardPayload(items, format);
+  } catch (err) {
+    return { ok: false, reason: `payload_error:${err?.message || err}` };
+  }
+  const text = payload.text;
+  if (!text || !text.length) {
+    return { ok: false, reason: "empty_payload" };
+  }
+
+  // Modern path
+  if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { ok: true, text, chars: text.length, format };
+    } catch (err) {
+      // Some browsers reject clipboard writes inside an unfocused window or
+      // outside a user gesture. Fall through to the legacy path.
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] clipboard.writeText failed, trying execCommand:", err);
+      }
+    }
+  }
+
+  // Legacy fallback
+  const ok = await writeViaExecCommand(text);
+  return ok
+    ? { ok: true, text, chars: text.length, format }
+    : { ok: false, reason: "execCommand_failed" };
+}
+
 // ── Markdown export ──────────────────────────────────────────────────────────
 
 function mdEsc(text) {

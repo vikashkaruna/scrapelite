@@ -137,6 +137,10 @@ import {
   MousePointerSquareDashed,
   PartyPopper,
   CircleCheckBig,
+  ShieldCheck,
+  Ban,
+  Columns3,
+  TrendingDown,
 } from "lucide-react";
 
 const MAP = {
@@ -285,6 +289,13 @@ const MAP = {
   "pointer-square": MousePointerSquareDashed,
   party: PartyPopper,
   "check-big": CircleCheckBig,
+  // F14 trust strip
+  "shield-check": ShieldCheck,
+  ban: Ban,
+  // F13 pricing matrix
+  "columns-3": Columns3,
+  // FA3 paywall
+  "trending-down": TrendingDown,
 };
 
 

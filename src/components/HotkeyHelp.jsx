@@ -8,7 +8,7 @@ const SHORTCUTS = [
   { combo: "?",            label: "Show this shortcuts panel",         group: "Help" },
   { combo: "Esc",          label: "Close modal / cancel",               group: "Help" },
   { combo: "/",            label: "Focus the URL composer",             group: "Compose" },
-  { combo: "mod+k",        label: "Open the command palette (future)",  group: "Compose" },
+  { combo: "mod+k",        label: "Open the command palette",           group: "Compose" },
   { combo: "mod+enter",    label: "Run extraction (when in composer)",  group: "Compose" },
   { combo: "g d",          label: "Go to Dashboard",                    group: "Navigate" },
   { combo: "g b",          label: "Go to Batch",                        group: "Navigate" },

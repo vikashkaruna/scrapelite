@@ -12,8 +12,16 @@ beforeEach(() => {
 });
 
 describe("Q4 — onboardingTour: pure logic", () => {
-  it("getTourSteps returns 6 steps", () => {
-    expect(getTourSteps()).toHaveLength(6);
+  it("getTourSteps returns 7 steps (added the 'modes' step in F15 follow-up)", () => {
+    expect(getTourSteps()).toHaveLength(7);
+  });
+
+  it("the modes step enumerates 5 quick actions and 6 outcome tiles", () => {
+    const steps = getTourSteps();
+    const modes = steps.find((s) => s.key === "modes");
+    expect(modes).toBeDefined();
+    expect(modes.body).toMatch(/Outcome tiles \(6\)/i);
+    expect(modes.body).toMatch(/Quick actions \(5\)/i);
   });
 
   it("each step has a key, title, body, target, and placement", () => {
@@ -52,9 +60,9 @@ describe("Q4 — onboardingTour: pure logic", () => {
   });
 
   it("nextStep clamps to the last index", () => {
-    expect(nextStep(0, 6)).toBe(1);
-    expect(nextStep(5, 6)).toBe(5);
-    expect(nextStep(10, 6)).toBe(5);
+    expect(nextStep(0, 7)).toBe(1);
+    expect(nextStep(6, 7)).toBe(6);
+    expect(nextStep(10, 7)).toBe(6);
   });
 
   it("prevStep clamps to 0", () => {
@@ -64,8 +72,8 @@ describe("Q4 — onboardingTour: pure logic", () => {
   });
 
   it("progressFraction computes a 0..1 ratio", () => {
-    expect(progressFraction(0, 6)).toBeCloseTo(1 / 6, 5);
-    expect(progressFraction(5, 6)).toBe(1);
+    expect(progressFraction(0, 7)).toBeCloseTo(1 / 7, 5);
+    expect(progressFraction(6, 7)).toBe(1);
     expect(progressFraction(0, 1)).toBe(1);
   });
 });

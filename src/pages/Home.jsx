@@ -17,6 +17,7 @@ import OutcomeTiles from "../components/OutcomeTiles.jsx";
 import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
+import TrustStrip from "../components/TrustStrip.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -424,6 +425,9 @@ export default function Home() {
               )}
             </div>
           )}
+
+          {/* F14 — in-product trust strip (under the composer) */}
+          <TrustStrip />
 
           {/* Q2 — pre-flight credit estimator (single URL) */}
           {classification.kind === "single" && (

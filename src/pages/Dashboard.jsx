@@ -19,7 +19,7 @@ import { listExtractions, deleteExtraction, saveExtraction } from "../lib/extrac
 import { listBatchRuns, readBatchMap, deleteBatchRun } from "../lib/batchRunsService.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
 import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
-import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
+import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 
@@ -204,7 +204,7 @@ function DashCard({ item, selected, onToggle, onView, onDelete, category }) {
 }
 
 // ── Export Dropdown ───────────────────────────────────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, disabled, label }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled, label }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -230,18 +230,33 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, disabled, label }) {
       </Button>
       {open && (
         <div className="export-dropdown-menu">
-          <button className="export-dropdown-item" onClick={() => { onCsv(); setOpen(false); }}>
-            <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
-          </button>
-          <button className="export-dropdown-item" onClick={() => { onPdf(); setOpen(false); }}>
-            <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
-          </button>
-          <button className="export-dropdown-item" onClick={() => { onMarkdown(); setOpen(false); }}>
-            <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
-          </button>
-          <button className="export-dropdown-item" onClick={() => { onJson(); setOpen(false); }}>
-            <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
-          </button>
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Download</div>
+            <button className="export-dropdown-item" onClick={() => { onCsv(); setOpen(false); }}>
+              <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onPdf(); setOpen(false); }}>
+              <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onMarkdown(); setOpen(false); }}>
+              <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onJson(); setOpen(false); }}>
+              <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+            </button>
+          </div>
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Copy to clipboard</div>
+            <button className="export-dropdown-item" onClick={() => { onCopyCsv && onCopyCsv(); setOpen(false); }}>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onCopyMarkdown && onCopyMarkdown(); setOpen(false); }}>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onCopyJson && onCopyJson(); setOpen(false); }}>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -413,7 +428,7 @@ function CollectionFilter({ items, value, onChange }) {
 }
 
 // ── Floating selection action bar ─────────────────────────────────────────────
-function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson }) {
+function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson }) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
@@ -452,18 +467,33 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCs
           </button>
           {exportOpen && (
             <div className="export-dropdown-menu export-dropdown-menu--up">
-              <button className="export-dropdown-item" onClick={() => { onCsv(); setExportOpen(false); }}>
-                <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
-              </button>
-              <button className="export-dropdown-item" onClick={() => { onPdf(); setExportOpen(false); }}>
-                <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
-              </button>
-              <button className="export-dropdown-item" onClick={() => { onMarkdown(); setExportOpen(false); }}>
-                <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
-              </button>
-              <button className="export-dropdown-item" onClick={() => { onJson(); setExportOpen(false); }}>
-                <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
-              </button>
+              <div className="export-dropdown-section">
+                <div className="export-dropdown-section-label">Download</div>
+                <button className="export-dropdown-item" onClick={() => { onCsv(); setExportOpen(false); }}>
+                  <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                </button>
+                <button className="export-dropdown-item" onClick={() => { onPdf(); setExportOpen(false); }}>
+                  <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+                </button>
+                <button className="export-dropdown-item" onClick={() => { onMarkdown(); setExportOpen(false); }}>
+                  <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+                </button>
+                <button className="export-dropdown-item" onClick={() => { onJson(); setExportOpen(false); }}>
+                  <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+                </button>
+              </div>
+              <div className="export-dropdown-section">
+                <div className="export-dropdown-section-label">Copy to clipboard</div>
+                <button className="export-dropdown-item" onClick={() => { onCopyCsv && onCopyCsv(); setExportOpen(false); }}>
+                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
+                </button>
+                <button className="export-dropdown-item" onClick={() => { onCopyMarkdown && onCopyMarkdown(); setExportOpen(false); }}>
+                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
+                </button>
+                <button className="export-dropdown-item" onClick={() => { onCopyJson && onCopyJson(); setExportOpen(false); }}>
+                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -773,6 +803,44 @@ export default function Dashboard() {
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
   };
 
+  // F01 — Clipboard copy. Plan-gate the same way as the file download.
+  const onCopyCsv = async () => {
+    if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    const out = await copyToClipboard(targets, "csv");
+    if (out.ok) {
+      analytics.exported({ format: "clipboard-csv", count: targets.length, source: "dashboard" });
+      showToast(`Copied ${targets.length} page${targets.length > 1 ? "s" : ""} to clipboard (CSV)`, "clipboard-copy");
+    } else {
+      showToast(`Copy failed (${out.reason || "unknown"}). Use the CSV download instead.`, "alert-triangle");
+    }
+  };
+  const onCopyMarkdown = async () => {
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    const out = await copyToClipboard(targets, "markdown");
+    if (out.ok) {
+      analytics.exported({ format: "clipboard-markdown", count: targets.length, source: "dashboard" });
+      showToast(`Copied ${targets.length} page${targets.length > 1 ? "s" : ""} to clipboard (Markdown)`, "clipboard-copy");
+    } else {
+      showToast(`Copy failed (${out.reason || "unknown"}). Use the Markdown download instead.`, "alert-triangle");
+    }
+  };
+  const onCopyJson = async () => {
+    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    const out = await copyToClipboard(targets, "json");
+    if (out.ok) {
+      analytics.exported({ format: "clipboard-json", count: targets.length, source: "dashboard" });
+      showToast(`Copied ${targets.length} page${targets.length > 1 ? "s" : ""} to clipboard (JSON)`, "clipboard-copy");
+    } else {
+      showToast(`Copy failed (${out.reason || "unknown"}). Use the JSON download instead.`, "alert-triangle");
+    }
+  };
+
   const handleDeleteBatchRun = (id) => {
     deleteBatchRun(id);
     setBatchRuns(listBatchRuns());
@@ -873,6 +941,9 @@ export default function Dashboard() {
                 onPdf={onExportPdf}
                 onMarkdown={onExportMarkdown}
                 onJson={onExportJson}
+                onCopyCsv={onCopyCsv}
+                onCopyMarkdown={onCopyMarkdown}
+                onCopyJson={onCopyJson}
                 disabled={exportCount === 0}
                 label={exportLabel}
               />
@@ -1052,6 +1123,9 @@ export default function Dashboard() {
           onPdf={onExportPdf}
           onMarkdown={onExportMarkdown}
           onJson={onExportJson}
+          onCopyCsv={onCopyCsv}
+          onCopyMarkdown={onCopyMarkdown}
+          onCopyJson={onCopyJson}
         />
       )}
 
