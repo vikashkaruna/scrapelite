@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMCA Takedown Process — DatIQ</title>
+<meta name="description" content="How to submit a DMCA takedown notice for a public extraction report on DatIQ. We honour valid takedown requests within 5 business days.">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<style>
+  .dmca-hero { text-align:center; padding:56px 0 24px; }
+  .dmca-hero h1 { font-size:clamp(1.8rem,4vw,2.4rem); font-weight:800; margin:0 0 12px; letter-spacing:-.02em; }
+  .dmca-hero p  { color:var(--text-2); font-size:1rem; max-width:580px; margin:0 auto 8px; }
+  .dmca-section { max-width:780px; margin:24px auto; }
+  .dmca-section h2 { font-size:1.15rem; font-weight:700; margin:24px 0 10px; }
+  .dmca-section p  { color:var(--text); line-height:1.7; margin:0 0 12px; font-size:0.95rem; }
+  .dmca-section ol, .dmca-section ul { padding-left:22px; margin:0 0 16px; line-height:1.7; font-size:0.95rem; }
+  .dmca-section li { margin-bottom:6px; }
+  .dmca-callout { background:var(--surface-2,#f9fafb); border:1px solid var(--border,#e5e7eb); border-left:3px solid var(--accent,#6366f1); padding:16px 20px; border-radius:8px; margin:24px 0; }
+  .dmca-callout p { margin:0; }
+  .dmca-back { text-align:center; padding:32px 0 64px; }
+  .dmca-back a { color:var(--accent,#6366f1); text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="container" style="max-width:820px; padding:0 20px;">
+  <section class="dmca-hero">
+    <span style="display:inline-block; padding:4px 12px; background:var(--surface-2,#f9fafb); border:1px solid var(--border,#e5e7eb); border-radius:20px; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-2); margin-bottom:16px;">F04 — Council condition D</span>
+    <h1>DMCA Takedown Process</h1>
+    <p>How to request the removal of a public extraction report from DatIQ.</p>
+  </section>
+
+  <section class="dmca-section">
+    <h2>1. Overview</h2>
+    <p>DatIQ is a zero-code web extraction platform. Any user can choose to publish their extraction as a public, shareable page (a "Public Report") at a unique URL like <code>/p/abcdef12</code>. These pages are user-generated content, and the originating user is responsible for ensuring they have the right to publish the material they extracted.</p>
+    <p>If you believe a public report on DatIQ infringes your copyright, you can submit a takedown notice. We honour valid DMCA takedown requests within <strong>5 business days</strong>.</p>
+  </section>
+
+  <section class="dmca-section">
+    <h2>2. What a valid takedown notice must include</h2>
+    <p>Under the U.S. Digital Millennium Copyright Act (17 U.S.C. § 512), a valid takedown notice must contain all of the following:</p>
+    <ol>
+      <li><strong>Identification of the copyrighted work</strong> you claim has been infringed (or a representative list if multiple works).</li>
+      <li><strong>Identification of the infringing material</strong> — the URL of the DatIQ public report (e.g. <code>https://datiq.app/p/abcdef12</code>).</li>
+      <li><strong>Your contact information</strong> — name, address, telephone number, and email address.</li>
+      <li><strong>A statement of good-faith belief</strong> that the use of the material is not authorised by the copyright owner, its agent, or the law.</li>
+      <li><strong>A statement of accuracy and authority</strong>, made under penalty of perjury, that the information in the notice is accurate and that you are authorised to act on behalf of the copyright owner.</li>
+      <li><strong>Your physical or electronic signature</strong>.</li>
+    </ol>
+  </section>
+
+  <section class="dmca-section">
+    <h2>3. How to submit</h2>
+    <p>Email the takedown notice to:</p>
+    <div class="dmca-callout">
+      <p><strong>DMCA Agent</strong><br>DatIQ · c/o Scraperight Technologies Pvt. Ltd.<br>Email: <a href="mailto:legal@datiq.app?subject=DMCA%20Takedown%20Notice">legal@datiq.app</a></p>
+    </div>
+    <p>Use the subject line "DMCA Takedown Notice" so the request is triaged correctly.</p>
+  </section>
+
+  <section class="dmca-section">
+    <h2>4. What happens after you submit</h2>
+    <ul>
+      <li>We acknowledge receipt within <strong>2 business days</strong>.</li>
+      <li>If the notice is valid, the public report is removed and the public slug is marked as <code>is_public=false</code> in our database within <strong>5 business days</strong> total.</li>
+      <li>The originating user is notified by email (if we have a contact on file) and may submit a counter-notice under §512(g).</li>
+      <li>Repeated DMCA strikes against a single account result in account suspension.</li>
+    </ul>
+  </section>
+
+  <section class="dmca-section">
+    <h2>5. Counter-notices</h2>
+    <p>If you believe your public report was removed in error, you may submit a counter-notice under 17 U.S.C. § 512(g) containing:</p>
+    <ol>
+      <li>Your physical or electronic signature.</li>
+      <li>Identification of the material removed and its location before removal.</li>
+      <li>A statement under penalty of perjury that you have a good-faith belief the material was removed by mistake or misidentification.</li>
+      <li>Your name, address, telephone number, and a consent to the jurisdiction of a federal court in your district (or any district where DatIQ may be found).</li>
+    </ol>
+    <p>Send counter-notices to the same <a href="mailto:legal@datiq.app?subject=DMCA%20Counter-Notice">legal@datiq.app</a> address.</p>
+  </section>
+
+  <section class="dmca-section">
+    <h2>6. Repeat infringers</h2>
+    <p>DatIQ reserves the right to suspend or terminate accounts of repeat infringers in accordance with §512(i). Our standard is three (3) valid takedown notices within twelve (12) months.</p>
+  </section>
+
+  <section class="dmca-section">
+    <h2>7. What is NOT a takedown notice</h2>
+    <p>The following are not valid takedown notices and will not be actioned:</p>
+    <ul>
+      <li>"I don't want my page here" without a copyright claim — use the unshare button on the report itself.</li>
+      <li>Generic complaints about DatIQ's product or pricing — contact <a href="mailto:support@datiq.app">support@datiq.app</a>.</li>
+      <li>Takedown notices sent by a party other than the copyright owner or an authorised agent.</li>
+    </ul>
+  </section>
+
+  <section class="dmca-section">
+    <h2>8. Indian law (for India-based complainants)</h2>
+    <p>DatIQ is incorporated in India. If you are based in India, the Information Technology Act, 2000 (and the IT Rules 2021) provide a parallel takedown process. The same notice submitted to <a href="mailto:legal@datiq.app?subject=IT%20Act%20Takedown%20Request">legal@datiq.app</a> with the subject line "IT Act Takedown Request" is honoured under both regimes.</p>
+  </section>
+
+  <div class="dmca-back">
+    <p><a href="https://datiq.app/">← Back to DatIQ</a> · <a href="https://datiq.app/privacy">Privacy Policy</a> · <a href="https://datiq.app/terms">Terms of Service</a></p>
+  </div>
+</div>
+</body>
+</html>

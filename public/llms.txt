@@ -48,6 +48,27 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Help documentation: https://datiq.app/help/index.html
 - Privacy Policy: https://datiq.app/privacy
 - Terms of Service: https://datiq.app/terms
+- Changelog: https://datiq.app/changelog
+- Public gallery of shared reports: https://datiq.app/gallery
+- DMCA takedown process: https://datiq.app/dmca
+
+## Persona landing pages
+- For sales teams: https://datiq.app/for-sales
+- For SEO teams: https://datiq.app/for-seo
+- For competitive intelligence: https://datiq.app/for-ci
+
+## Programmatic SEO pages
+- Extract pricing from any page: https://datiq.app/extract-pricing
+- Extract contacts from any page: https://datiq.app/extract-contacts
+- Extract headings from any page: https://datiq.app/extract-headings
+
+## Competitor comparisons
+- DatIQ vs Browse.ai: https://datiq.app/vs/browse-ai
+- DatIQ vs Clay: https://datiq.app/vs/clay
+- DatIQ vs Firecrawl: https://datiq.app/vs/firecrawl
+- DatIQ vs Apify: https://datiq.app/vs/apify.html
+- DatIQ vs PhantomBuster: https://datiq.app/vs/phantombuster.html
+- Battle-card generator (compare 2 competitor URLs): https://datiq.app/vs/battlecard
 
 ## API
 - Extract endpoint: POST https://datiq.app/api/extract

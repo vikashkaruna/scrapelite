@@ -1,6 +1,6 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
 import { useState, useEffect } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ErrorModalProvider } from "./components/ErrorModal.jsx";
@@ -47,6 +47,9 @@ import UseCaseSEO from "./pages/UseCaseSEO.jsx";
 import UseCaseResearch from "./pages/UseCaseResearch.jsx";
 import VsBrowseAI from "./pages/VsBrowseAI.jsx";
 import VsClay from "./pages/VsClay.jsx";
+import Changelog from "./pages/Changelog.jsx";
+import ProgrammaticRoute from "./pages/ProgrammaticRoute.jsx";
+import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
@@ -57,6 +60,7 @@ import Gallery from "./pages/Gallery.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
+import ReferralBanner from "./components/ReferralBanner.jsx";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 
 
@@ -66,11 +70,54 @@ function DocsRedirect() {
   return null;
 }
 
+// DmcaRedirect — F04 (DMCA takedown process page). The actual content
+// lives in /public/dmca.html (a static page that doesn't go through the SPA
+// shell), because it's a legal/process page that doesn't need the TopBar / Footer.
+function DmcaRedirect() {
+  if (typeof window !== "undefined") {
+    window.location.href = "/dmca.html";
+  }
+  return null;
+}
+
 function Shell() {
   const { loading, loadingUrl } = useExtraction();
   const { showAuthModal } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // FA2 — referral ?ref=CODE handler. Redeem the code on first paint, then
+  // strip the param from the URL so the user can't accidentally share it
+  // back to themselves. Toast fires on a successful redemption.
+  useEffect(() => {
+    const ref = searchParams.get("ref");
+    if (!ref) return;
+    import("./lib/referralService.js").then(({ redeemReferralCode }) => {
+      const r = redeemReferralCode(ref);
+      if (r.ok) {
+        // We can't call showToast from here without a context; surface the
+        // bonus as a query param flag and let the ReferralBanner pick it up.
+        // Cleaner: write the bonus to localStorage and show a one-shot toast
+        // via the Toast context if we can grab it.
+        const next = new URLSearchParams(searchParams);
+        next.delete("ref");
+        next.set("ref_redeemed", "1");
+        setSearchParams(next, { replace: true });
+      } else if (r.reason === "self") {
+        // Silently strip self-referrals.
+        const next = new URLSearchParams(searchParams);
+        next.delete("ref");
+        setSearchParams(next, { replace: true });
+      } else {
+        // Unknown / already redeemed / invalid — just strip and move on.
+        const next = new URLSearchParams(searchParams);
+        next.delete("ref");
+        setSearchParams(next, { replace: true });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Q11 — keyboard shortcuts (power-user mode)
   const [hotkeyHelpOpen, setHotkeyHelpOpen] = useState(false);
@@ -140,6 +187,7 @@ function Shell() {
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <TopBar />
       <GuestTrialBanner />
+      <ReferralBanner />
       <UsageUpsellBanner />
       <main id="main-content">
         <Routes>
@@ -168,6 +216,15 @@ function Shell() {
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
           <Route path="/vs/browse-ai"                  element={<VsBrowseAI />} />
           <Route path="/vs/clay"                       element={<VsClay />} />
+          <Route path="/changelog"                     element={<Changelog />} />
+          <Route path="/for-sales"                     element={<ProgrammaticRoute />} />
+          <Route path="/for-seo"                       element={<ProgrammaticRoute />} />
+          <Route path="/for-ci"                        element={<ProgrammaticRoute />} />
+          <Route path="/extract-pricing"               element={<ProgrammaticRoute />} />
+          <Route path="/extract-contacts"              element={<ProgrammaticRoute />} />
+          <Route path="/extract-headings"              element={<ProgrammaticRoute />} />
+          <Route path="/vs/battlecard"                 element={<BattleCard />} />
+          <Route path="/dmca"                          element={<DmcaRedirect />} />
           <Route path="/docs"                          element={<DocsRedirect />} />
           <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
           <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />

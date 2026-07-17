@@ -185,6 +185,21 @@ export default function PublicReport() {
                 {copied ? "Link copied" : "Copy this page's link"}
               </button>
             </p>
+            {/* FA1 + F04 — the "Powered by DatIQ" viral loop. The share
+                funnel rewards the originator (FA1 quota mechanic) and drives
+                every reader back to a one-click extraction on Home. */}
+            <div className="public-powered">
+              <Link to="/" className="public-powered-cta" aria-label="Powered by DatIQ — extract your own">
+                <span className="public-powered-label">Powered by</span>
+                <span className="public-powered-brand">
+                  <Icon name="layers" size={14} strokeWidth={2.4} />
+                  Dat<b>IQ</b>
+                </span>
+                <span className="public-powered-arrow">
+                  Make your own →
+                </span>
+              </Link>
+            </div>
           </footer>
         </article>
       </div>

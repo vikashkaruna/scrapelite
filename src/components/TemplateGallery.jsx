@@ -1,15 +1,32 @@
-// src/components/TemplateGallery.jsx — Q5 (template / example library) UI.
+// src/components/TemplateGallery.jsx — Q5 (template / example library) UI
+// + F06 (Recipe Packs) filter row.
 //
 // 10–15 prebuilt extraction recipes, browseable as a card grid. Clicking a
-// template fires `onSelect(template)` with the recipe pre-filled.
+// template fires `onSelect(template)` with the recipe pre-filled. The top of
+// the gallery now has a Pack filter row (Sales / CI / SEO / All) so users
+// can quickly narrow to the templates that match their role.
 
 import { useMemo, useState } from "react";
 import Icon from "./Icon.jsx";
-import { EXTRACTION_TEMPLATES, TEMPLATE_TAGS, filterTemplatesByTag } from "../lib/extractionTemplates.js";
+import {
+  EXTRACTION_TEMPLATES,
+  TEMPLATE_TAGS,
+  RECIPE_PACKS,
+  filterTemplatesByTag,
+  getTemplatesByPack,
+} from "../lib/extractionTemplates.js";
 
-export default function TemplateGallery({ onSelect, tag = "all" }) {
+export default function TemplateGallery({ onSelect, tag = "all", pack = "all" }) {
+  const [activePack, setActivePack] = useState(pack);
   const [activeTag, setActiveTag] = useState(tag);
-  const list = useMemo(() => filterTemplatesByTag(activeTag), [activeTag]);
+
+  const list = useMemo(() => {
+    let base = activePack === "all" ? EXTRACTION_TEMPLATES : getTemplatesByPack(activePack);
+    if (activeTag && activeTag !== "all") {
+      base = base.filter((t) => t.tags.includes(activeTag));
+    }
+    return base;
+  }, [activePack, activeTag]);
 
   return (
     <div className="template-gallery">
@@ -22,6 +39,35 @@ export default function TemplateGallery({ onSelect, tag = "all" }) {
           {EXTRACTION_TEMPLATES.length} prebuilt extraction recipes — click one to pre-fill
           the URL, intent, and prompt.
         </p>
+      </div>
+
+      {/* F06 — Recipe Pack filter row */}
+      <div className="template-packs" role="tablist" aria-label="Filter by Recipe Pack">
+        <button
+          type="button"
+          className={"template-pack" + (activePack === "all" ? " on" : "")}
+          onClick={() => setActivePack("all")}
+          role="tab"
+          aria-selected={activePack === "all"}
+        >
+          <Icon name="layers" size={12} />
+          All recipes
+        </button>
+        {RECIPE_PACKS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={"template-pack" + (activePack === p.key ? " on" : "")}
+            onClick={() => setActivePack(p.key)}
+            role="tab"
+            aria-selected={activePack === p.key}
+            title={p.description}
+            style={activePack === p.key ? { "--pack-accent": p.color } : {}}
+          >
+            <Icon name={p.icon} size={12} />
+            {p.label}
+          </button>
+        ))}
       </div>
 
       <div className="template-tags" role="tablist" aria-label="Filter by tag">
@@ -75,7 +121,7 @@ export default function TemplateGallery({ onSelect, tag = "all" }) {
           </button>
         ))}
         {list.length === 0 && (
-          <p className="template-empty">No templates for that tag yet.</p>
+          <p className="template-empty">No templates for that combination yet.</p>
         )}
       </div>
     </div>

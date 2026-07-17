@@ -36,6 +36,7 @@ const EXPLORE_ITEMS = [
       { label: "Compare Tools", icon: "bar-chart",   path: "/vs/compare.html", external: true },
       { label: "Public Gallery", icon: "library",   path: "/gallery" },
       { label: "Blog",          icon: "book-open",   path: "/blog" },
+      { label: "Changelog",     icon: "history",     path: "/changelog" },
       { label: "Help Center",   icon: "help-circle", path: "/help/index.html", external: true },
     ],
   },
@@ -43,7 +44,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
