@@ -2,9 +2,11 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-06-20 — main at `762d2e6`, clean & deployed (datiq.app, Netlify project `datiqapp`).**
-> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); **R20 docs/help overhaul** (`762d2e6`) — help/docs split into external (public, sanitized) vs internal, public Developer API reference, fresh R19 screenshots; all generated from markdown (see "Documentation & help sources").
-> Only remaining product step: run `scripts/scheduler.sql` in Supabase to make recurring scheduler runs live. See "## R19".
+> **Last updated: 2026-07-17 — main at `ea3658a`, Cloud BI + alternate-model quick wins merged; v1.0+ live on datiq.app (Netlify project `datiqapp`).**
+>
+> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`.
+>
+> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`ea3658a`).
 
 ---
 
@@ -910,6 +912,15 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 | DB | Run `scripts/ai-config.sql` (creates `public.app_config`, RLS-locked to service key). Empty table → built-in defaults. |
 | Rule | Never re-introduce a single hardcoded provider in `ai.js`. Add new providers in `aiProviders.js` `ADAPTERS` + `PROVIDER_META` + `DEFAULT_MODELS`. |
 
+| `datiq.analytics` | analyticsService.js — pending event buffer (writes-through to Supabase `analytics_events`; falls back to localStorage on failure) |
+| `datiq.summaryFeedback` | feedbackService.js — map: extractionId → { rating, comment, updatedAt } (Q5 thumbs up/down) |
+| `datiq.publicGallery` | shareService.js — gallery index (slug, title, url, created_at, intent), capped at 500 |
+| `datiq.sharedExtractions` | shareService.js — full public projections (mirror of `public_reports` table) |
+| `datiq.onboardingTour.v1` | onboardingTour.js — `{ completedAt?, skippedAt? }` for Q4 tour |
+
+
+---
+
 ## Outstanding tasks
 
 ### R18 — Merged to main (2026-06-17)
@@ -935,6 +946,74 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 - [x] ~~AdminUsers coupon assign modal: manual-only picker, discount %, persistence~~ — done (`fe1d2ba`)
 - [x] ~~AdminCoupons 'Manually Assigned To User(s)' planId='manual'~~ — done (`df9e4ad`)
 - [ ] Supabase `app_config` table needs the `general` key row — auto-created on first POST save via AdminGeneral page (upsert)
+
+---
+
+## v1.0+ Quick Wins (2026-07-17, MERGED to main — PR #14 closed)
+
+Three rounds of quick-wins landed on `feat/v1-quickwins` and merged to main at `ea3658a`. Net **+229 vitest tests** (800 → **1029**) across 24 new test files. Build clean (1.87 s). No regressions. v1.0+ live on `datiq.app`.
+
+### Round 1 — Cloud BI (3 commits, 11 features)
+
+| # | Item | Files added | Tests |
+|---|---|---|---|
+| **Q2** | Pre-flight credit estimator (Home + Batch, disables Run when over) | `creditEstimator.js`, `CreditEstimator.jsx` | 8 + 7 = **15** |
+| **Q3** | 6 outcome tiles above the hero, pre-wired URL + intent + prompt | `outcomeTiles.js`, `OutcomeTiles.jsx` | 5 + 4 = **9** |
+| **Q4** | `/workspace` route — logged-in command center, teaser for guests | `Workspace.jsx`, `WorkspaceRedirect.jsx` | **4** |
+| **Q5** | 12-template library (YC, SaaS pricing, jobs, contacts, products…) | `extractionTemplates.js` (12 templates), `TemplateGallery.jsx` | 8 + 6 = **14** |
+| **Q7** | UrlReviewTable — comparable grid (default expanded) in Batch paste | `UrlReviewTable.jsx` | **8** |
+| **Q10** | Annual-billing default (R4) — regression test in `Pricing.integration.test.jsx:126` | — | 0 (pre-existing) |
+
+### Round 2 — Intelligence (1 commit, 3 features)
+
+| # | Item | Files added | Tests |
+|---|---|---|---|
+| **Q1** | Smart multi-input — `classifyInput` returns `kind:"csv"`; composer dispatches single / multi / csv / text | `smartInput.test.js`, `HeroComposer.jsx` (updated) | **15** |
+| **Q8** | `e2e/smoke/claims-verification.spec.js` — 11 Playwright tests asserting marketing claims | `claims-verification.spec.js` | 0 (e2e) |
+| **Q11** | Custom Supabase analytics — `analytics_events` table + `track/flush/computeFunnel`; wired into ExtractionProvider, Dashboard, SchedulerService | `analyticsService.js`, `analytics.sql` | **14** |
+
+### Round 3 — Sharing + provenance (1 commit, 2 features)
+
+| # | Item | Files added | Tests |
+|---|---|---|---|
+| **Q6** | Shareable report links + `/gallery` — `shareService` (8-char slug), `/p/:slug` public report, `/gallery` listing, OG/Twitter meta, sitemap, Share button on Preview, TopBar Explore | `shareService.js`, `seoMeta.js`, `PublicReport.jsx`, `Gallery.jsx` | 11 + 6 + 4 + 4 = **25** |
+| **Q9** | Full per-field provenance — `provenanceService` wraps every field; `ProvenanceBadge` on Preview; `provenance.jsonb` column + 2 indexes | `provenanceService.js`, `ProvenanceBadge.jsx`, `provenance.sql` | 19 + 9 = **28** |
+
+### Defects found and fixed during the Cloud BI drop
+- `OutcomeTiles` test using `getByRole("listitem", { name })` failed — switched to `getByText(title).closest("button")`.
+- `TemplateGallery` test same issue — same fix.
+- `vi.mock(authService)` + `importActual` short-circuited on null supabase — full module mock + correct `getSession()` return shape.
+- `computeFunnel` ACTIVATION stage named `"activation"` but real events are `"extraction_success"` — renamed to `"extraction"` with a `firstInsight` prefix match.
+- `avgTimeToFirstInsightMs` returned 0 when first event was the insight itself — restructured to track non-insight "session start".
+- `getByRole("listitem", { name })` couldn't read text from a button with `role="listitem"` — switched to `getByText().closest("button")`.
+- Home integration test matched "Scrape pricing" / "leads" in both outcome tiles and templates — scoped to `.outcome-tile` / `.template-card`.
+
+---
+
+## v1.0+ Quick Wins — alternate model (2026-07-17, MERGED to main)
+
+After the Cloud BI drop, the user reviewed an alternate-model list and found two UX gaps plus five missing features. All five landed. **+74 vitest tests** (955 → 1029).
+
+### Fixes from the alternate-model review
+1. **Q8 shareable URL — cross-browser fix (CRITICAL)**: the previous share was localStorage-only — the URL only worked in the originator's browser. Now persisted to `public_reports` (Supabase, anon-read, owner-only update/delete). Cross-browser repro test added (`shareService.test.js`).
+2. **Q3 outcome tiles — multi-select**: clicking 2+ tiles now appends prompts (joined by `\n\n`) and auto-switches intent to "custom". A "Clear (N)" button removes all active tiles. 5 new integration tests.
+3. **Removed the duplicate "Add multiple URLs" reveal on Home** — the Q1 smart composer auto-detects multi-URL input and routes to `/batch`. The 5 obsolete MultiUrlReveal tests were deleted.
+
+### New features
+| # | Item | Files added | Tests |
+|---|---|---|---|
+| **Q11** | Keyboard shortcuts (power-user mode) — `useHotkeys` hook (chord-aware), HotkeyHelp modal, 11 shortcuts (`?`, `Esc`, `/`, `g d/b/s/p/w/t`, `mod+k`) | `hooks/useHotkeys.js`, `components/HotkeyHelp.jsx` | **15** unit |
+| **Q5** | AI Summary thumbs up/down feedback — `feedbackService` + `FeedbackWidget` (thumbs + comment), `summary_feedback` table | `lib/feedbackService.js`, `components/FeedbackWidget.jsx`, `scripts/summary-feedback.sql` | 14 + 8 = **22** |
+| **Q3** | Plan-aware saved-searches cap (free = 10, paid = unlimited) | `lib/savedSearches.js` | 10 + 2 = **12** |
+| **Q1 (alt)** | Interactive Try-an-Example demo — 5-step auto-playing walkthrough that types `lumio.io`, picks an intent, runs the mock extraction, reveals the summary. Pause / Replay. Respects `prefers-reduced-motion`. | `components/TryExampleDemo.jsx` | **5** component |
+| **Q4** | In-App Onboarding Tour overlay — 6 steps (intro / composer / outcomes / templates / batch / done), spotlight + popover with 5 placements, Esc to close, `g t` to replay | `lib/onboardingTour.js`, `components/OnboardingTour.jsx` | 9 + 7 = **16** |
+
+### Defects found and fixed during the alternate-model drop
+- `buildKey` separator was always space — switched to `+` for modifier+key combos.
+- Chord prefix detection was inside the match-truthy branch — restructured to detect chord prefixes regardless of match.
+- `isSupabaseEnabled` was mocked as a constant, not a getter — fixed in both `feedbackService.test.js` and `shareService.test.js`.
+- Recursive spread in feedbackService Supabase mock caused "Maximum call stack size exceeded" — refactored to a plain non-recursive object literal.
+- `vi.useFakeTimers()` was leaking between tests in the keyboard-shortcut test file — added `vi.useRealTimers()` to `beforeEach`.
 
 ---
 

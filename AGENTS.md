@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-16 (R20 docs split; quality-gate M0–M7 merged; v1.0 live)**
+> **Last updated: 2026-07-17 (Cloud BI + alternate-model quick wins merged; v1.0+ live)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
@@ -19,7 +19,7 @@
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (R20 + M0–M7 quality-gate merged 2026-07-16) |
+| **Current branch** | `main` (Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 merged 2026-07-17; PR #14 closed) |
 | **Latest commit** | See `git log --oneline -1` on main |
 
 ---
