@@ -11,6 +11,9 @@ import { BillingProvider } from "./components/BillingProvider.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Footer from "./components/Footer.jsx";
 import LoadingScreen from "./components/LoadingScreen.jsx";
+import Icon from "./components/Icon.jsx";
+import Button from "./components/Button.jsx";
+import WorkspaceRedirect from "./components/WorkspaceRedirect.jsx";
 import Home from "./pages/Home.jsx";
 import Preview from "./pages/Preview.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -43,6 +46,9 @@ import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import NotFound from "./pages/NotFound.jsx";
+import Workspace from "./pages/Workspace.jsx";
+import PublicReport from "./pages/PublicReport.jsx";
+import Gallery from "./pages/Gallery.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
@@ -92,6 +98,7 @@ function Shell() {
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />
+          <Route path="/workspace"                     element={<WorkspaceRedirect><Workspace /></WorkspaceRedirect>} />
           <Route path="/onboarding"                    element={<Onboarding />} />
           <Route path="/preview"                       element={<Preview />} />
           <Route path="/dashboard"                     element={<Dashboard />} />
@@ -118,6 +125,9 @@ function Shell() {
           <Route path="/docs"                          element={<DocsRedirect />} />
           <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
           <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />
+          {/* Q6 — shareable report links + public gallery */}
+          <Route path="/p/:slug"                       element={<PublicReport />} />
+          <Route path="/gallery"                       element={<Gallery />} />
           <Route path="*"                              element={<NotFound />} />
         </Routes>
       </main>

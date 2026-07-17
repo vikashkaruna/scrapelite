@@ -34,6 +34,7 @@ const EXPLORE_ITEMS = [
     items: [
       { label: "Integrations",  icon: "zap",         path: "/integrations" },
       { label: "Compare Tools", icon: "bar-chart",   path: "/vs/compare.html", external: true },
+      { label: "Public Gallery", icon: "library",   path: "/gallery" },
       { label: "Blog",          icon: "book-open",   path: "/blog" },
       { label: "Help Center",   icon: "help-circle", path: "/help/index.html", external: true },
     ],
@@ -42,7 +43,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
@@ -341,6 +342,7 @@ export default function TopBar() {
     { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     { to: "/collections", label: "Collections", icon: "folder",    match: (p) => p === "/collections" },
+    ...(user ? [{ to: "/workspace", label: "Workspace", icon: "layout-grid", match: (p) => p === "/workspace" }] : []),
   ];
 
   async function handleSignOut() {

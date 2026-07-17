@@ -12,6 +12,8 @@ import {
   readCurrent,
 } from "../lib/enrichmentStore.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
+import { lifecycle as analytics } from "../lib/analyticsService.js";
+import { attachProvenance } from "../lib/provenanceService.js";
 import { useErrorModal } from "./ErrorModal.jsx";
 import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
@@ -71,6 +73,7 @@ export function ExtractionProvider({ children }) {
     lastOpts.current = options;
     setLoadingUrl(url);
     setLoading(true);
+    const startedAt = Date.now();
     try {
       const structure = await extractStructure(url, options);
 
@@ -120,21 +123,37 @@ export function ExtractionProvider({ children }) {
         }
         result.enrichments = enrichments;
       }
-      commitCurrent(result);
+      // Q9 — wrap with provenance (per-record + per-field metadata)
+      const withProv = attachProvenance(result, { now: result.created_at });
+      commitCurrent(withProv);
       setLoading(false);
       billing?.trackExtraction?.();
       // Track guest trial for non-logged-in users (1 credit per single-URL extraction).
       if (!user) guestTrial?.trackGuestExtraction?.(1);
+      // Q11 — analytics: success + first-insight + activation
+      const props = {
+        url, intent: options.intent || "summary",
+        duration_ms: Date.now() - startedAt,
+        has_custom: Boolean(result.custom_extraction),
+        domain_map: Boolean(result.domain_map),
+      };
+      analytics.extractionSucceeded(props);
+      analytics.firstInsight(props);
       // Auto-save to database (fire-and-forget); marks the extraction as saved
       // so Preview shows "View Dashboard" instead of "Save to Dashboard".
       saveExtraction(result)
-        .then(() => commitCurrent({ ...result, _saved: true }))
+        .then(() => {
+          commitCurrent({ ...result, _saved: true });
+          analytics.saved({ url, intent: props.intent });
+        })
         .catch((err) => console.warn("[DatIQ] Auto-save failed:", err));
       navigate("/preview");
     } catch (err) {
       if (reqId.current !== id) return;
       console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
+      // Q11 — analytics: failure
+      analytics.extractionFailed({ url, intent: options.intent || "summary", error: String(err?.message || err) });
       navigate("/");
       // Show modal with a "Try again" button that re-submits the same URL + options.
       showError(err, {}, () => extract(lastUrl.current, lastOpts.current));

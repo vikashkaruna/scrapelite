@@ -8,11 +8,15 @@
 //   • Feature capability cards are clickable — click selects the matching intent
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
+import OutcomeTiles from "../components/OutcomeTiles.jsx";
+import TemplateGallery from "../components/TemplateGallery.jsx";
+import CreditEstimator from "../components/CreditEstimator.jsx";
+import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -174,6 +178,53 @@ export default function Home() {
     intent === "custom"   ? customPrompt.trim() :
     "";
 
+  // Q2 — pre-flight credit estimate for the current single-URL composer input.
+  // multiCount = 1 for single URL, 0 if empty, 2+ if multiOpen has 2+ URLs.
+  const multiCount = useMemo(() => {
+    if (multiOpen) {
+      const lines = (multiText || "").split(/[\n,;\s]+/).map((s) => s.trim()).filter(Boolean);
+      return lines.length;
+    }
+    return classification.kind === "single" ? 1 : 0;
+  }, [multiOpen, multiText, classification.kind]);
+  const estimate = useMemo(
+    () => estimateCredits({
+      count: multiCount,
+      planId: billing?.subscription?.planId || "free",
+      bonusExtractions: billing?.subscription?.bonusExtractions || 0,
+    }),
+    [multiCount, billing?.subscription?.planId, billing?.subscription?.bonusExtractions, billing?.usage?.extractions],
+  );
+
+  // Q3 — outcome tile click → pre-fill composer
+  const handleTileSelect = useCallback((tile) => {
+    setUrl(tile.example.url);
+    setTouched(false);
+    setPreview(null);
+    setIntent(tile.example.intent);
+    if (tile.example.intent === "custom") {
+      setCustomPrompt(tile.prompt);
+    } else {
+      setCustomPrompt("");
+    }
+    // Scroll extraction form into view
+    document.querySelector(".hero-composer, .intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  // Q5 — template card click → pre-fill composer
+  const handleTemplateSelect = useCallback((tpl) => {
+    setUrl(tpl.exampleUrl);
+    setTouched(false);
+    setPreview(null);
+    setIntent(tpl.intent);
+    if (tpl.intent === "custom") {
+      setCustomPrompt(tpl.prompt || "");
+    } else {
+      setCustomPrompt("");
+    }
+    document.querySelector(".hero-composer, .intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   // ── Copy for hero section ─────────────────────────────────────────────
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
   const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
@@ -268,6 +319,11 @@ export default function Home() {
           </div>
         )}
 
+        {/* Q3 — Outcome tiles above the hero composer */}
+        <div className="rise" style={{ animationDelay: ".17s", width: "100%", maxWidth: 880, margin: "8px 0 0" }}>
+          <OutcomeTiles onSelect={handleTileSelect} />
+        </div>
+
         {/* Quick-context chips */}
         {(() => {
           const contexts = persona
@@ -335,6 +391,13 @@ export default function Home() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* Q2 — pre-flight credit estimator (single URL) */}
+          {classification.kind === "single" && (
+            <div style={{ marginTop: 8 }}>
+              <CreditEstimator estimate={estimate} />
             </div>
           )}
 
@@ -570,6 +633,11 @@ export default function Home() {
               </div>
             );
           })}
+        </div>
+
+        {/* Q5 — Template library */}
+        <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
+          <TemplateGallery onSelect={handleTemplateSelect} />
         </div>
 
         {/* Social proof */}

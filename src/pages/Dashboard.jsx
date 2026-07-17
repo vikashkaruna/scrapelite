@@ -21,6 +21,7 @@ import { sendExtractionsEmail } from "../lib/emailService.js";
 import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
+import { lifecycle as analytics } from "../lib/analyticsService.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
 // capability) so exports include every capability run against the URL.
@@ -731,6 +732,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     csvDownload(targets);
+    analytics.exported({ format: "csv", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to CSV`, "download");
   };
 
@@ -741,6 +743,7 @@ export default function Dashboard() {
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
       extractionsToPdf(targets);
+      analytics.exported({ format: "pdf", count: targets.length, source: "dashboard" });
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);
@@ -757,6 +760,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     markdownDownload(targets);
+    analytics.exported({ format: "markdown", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to Markdown`, "file-code");
   };
 
@@ -765,6 +769,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     jsonDownload(targets);
+    analytics.exported({ format: "json", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
   };
 

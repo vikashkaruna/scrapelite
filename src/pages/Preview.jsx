@@ -13,6 +13,10 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
+import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl } from "../lib/shareService.js";
+import { lifecycle as analytics } from "../lib/analyticsService.js";
+import { summariseProvenance } from "../lib/provenanceService.js";
+import ProvenanceBadge, { ProvenanceSummary } from "../components/ProvenanceBadge.jsx";
 import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
@@ -121,7 +125,10 @@ export default function Preview() {
   const [activeTab, setActiveTab] = useState("overview");
   const [contentOpen, setContentOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharedSlug, setSharedSlug] = useState(() => current?.id ? getSharedSlugForId(current.id) : null);
   const downloadRef = useRef(null);
+  const shareRef = useRef(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -133,6 +140,49 @@ export default function Preview() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [downloadOpen]);
+
+  useEffect(() => {
+    if (!shareOpen) return;
+    const handler = (e) => { if (shareRef.current && !shareRef.current.contains(e.target)) setShareOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [shareOpen]);
+
+  // Q6 — when the current extraction changes (e.g. user opens a different one
+  // from Dashboard), refresh the share state to match.
+  useEffect(() => {
+    setSharedSlug(current?.id ? getSharedSlugForId(current.id) : null);
+  }, [current?.id]);
+
+  // Q6 — share handlers
+  const handleShare = () => {
+    if (!current?.id) { showToast("Save the extraction before sharing."); return; }
+    const slug = shareExtraction(current);
+    setSharedSlug(slug);
+    analytics.exported({ format: "share", source: "preview" });
+    setShareOpen(false);
+    showToast("Public link created — copy & share it anywhere.", "check");
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!sharedSlug) return;
+    const url = buildPublicUrl(sharedSlug);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied to clipboard.", "clipboard-copy");
+    } catch {
+      // Fallback: open prompt
+      window.prompt("Copy this link:", url);
+    }
+  };
+
+  const handleUnshare = () => {
+    if (!current?.id) return;
+    if (unshareExtraction(current.id)) {
+      setSharedSlug(null);
+      showToast("Public link removed.", "x");
+    }
+  };
 
   // Persisted enrichments for this extraction become tabs. Fall back to a saved
   // custom_extraction (older shape) so it still shows as a tab.
@@ -279,6 +329,56 @@ export default function Preview() {
             <Button variant="ghost" size="sm" icon="trash" onClick={onDelete} title="Delete this extraction">
               Delete
             </Button>
+            <div className="share-dropdown" ref={shareRef}>
+              <Button
+                variant={sharedSlug ? "secondary" : "ghost"}
+                size="sm"
+                icon="share"
+                onClick={() => setShareOpen((v) => !v)}
+                title={sharedSlug ? "Manage public link" : "Share as public link"}
+              >
+                {sharedSlug ? "Shared" : "Share"}
+              </Button>
+              {shareOpen && (
+                <div className="export-dropdown-menu share-menu">
+                  {sharedSlug ? (
+                    <>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={() => { handleCopyShareLink(); setShareOpen(false); }}
+                      >
+                        <Icon name="clipboard-copy" size={14} />
+                        <span>
+                          <b>Copy public link</b>
+                          <span className="export-plan-hint">Anyone with the URL can view this report</span>
+                        </span>
+                      </button>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={() => { handleUnshare(); setShareOpen(false); }}
+                      >
+                        <Icon name="x" size={14} />
+                        <span>
+                          <b>Remove public link</b>
+                          <span className="export-plan-hint">Hide from the gallery</span>
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="export-dropdown-item"
+                      onClick={handleShare}
+                    >
+                      <Icon name="share" size={14} />
+                      <span>
+                        <b>Create public link</b>
+                        <span className="export-plan-hint">A read-only URL anyone can view</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="export-dropdown" ref={downloadRef}>
               <Button
                 variant="secondary"
@@ -330,6 +430,10 @@ export default function Preview() {
               knownTags={knownTags}
               onChange={(next) => onTagsChange(next)}
             />
+            {/* Q9 — per-record provenance strip */}
+            {data._provenance && (
+              <ProvenanceSummary extraction={data} />
+            )}
           </div>
           <div className="preview-stats">
             {isMap ? (
@@ -369,6 +473,12 @@ export default function Preview() {
             </div>
             <div className="card-pad">
               <p className="summary-text">{data.ai_summary}</p>
+              {/* Q9 — provenance badge for the AI summary field */}
+              {data._provenance?.fields?.ai_summary && (
+                <div className="prov-row">
+                  <ProvenanceBadge prov={data._provenance.fields.ai_summary[0]} compact />
+                </div>
+              )}
             </div>
           </div>
 

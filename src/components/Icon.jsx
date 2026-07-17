@@ -122,6 +122,14 @@ import {
   Folder,
   Inbox,
   FolderOpen,
+  // Cloud BI Q1–Q11 additions
+  Trophy,
+  Library,
+  LayoutList,
+  BarChart3,
+  ShieldAlert,
+  ShoppingBag,
+  Github,
 } from "lucide-react";
 
 const MAP = {
@@ -253,6 +261,14 @@ const MAP = {
   "rotate-cw": RotateCw,
   inbox: Inbox,
   "folder-open": FolderOpen,
+  // Cloud BI Q1–Q11 additions
+  trophy: Trophy,
+  library: Library,
+  "layout-list": LayoutList,
+  "bar-chart-3": BarChart3,
+  "shield-alert": ShieldAlert,
+  "shopping-bag": ShoppingBag,
+  github: Github,
 };
 
 

@@ -183,9 +183,10 @@ export default function HeroComposer({
     }
 
     // Batch / multi-URL → dedicated screen (auto-runs).
-    if (isMulti) {
-      if (urlCount < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
-      navigate("/batch", { state: { urls: detectedUrls, intent, autorun: true } });
+    if (isMulti || classification.kind === "csv") {
+      const urls = classification.urls?.length ? classification.urls : detectedUrls;
+      if (urls.length < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
+      navigate("/batch", { state: { urls, intent, autorun: true, source: classification.kind === "csv" ? "csv" : "multi" } });
       return;
     }
 
@@ -270,8 +271,40 @@ export default function HeroComposer({
         autoFocus
       />
 
-      {/* URL count hint in batch mode */}
-      {isMulti && urlCount > 0 && (
+      {/* Q1 — Smart auto-detect hint: shows what the input was classified as. */}
+      {classification.kind !== "empty" && classification.kind !== "single" && (
+        <div className={`hero-composer-count hero-detect tone-${classification.kind}`}>
+          {classification.kind === "multi" && (
+            <>
+              <Icon name="globe" size={12} />
+              {urlCount} URL{urlCount !== 1 ? "s" : ""} detected — will run as batch
+            </>
+          )}
+          {classification.kind === "csv" && (
+            <>
+              <Icon name="file-up" size={12} />
+              CSV detected — {classification.urls.length} URL{classification.urls.length === 1 ? "" : "s"} found
+            </>
+          )}
+          {classification.kind === "text" && (
+            <>
+              <Icon name="file-text" size={12} />
+              Raw text detected — will run as paste-anything
+            </>
+          )}
+          {presetKey && (
+            <span className="hero-composer-armed">
+              <Icon name="calendar-clock" size={11} /> {presetByKey(presetKey).label}
+              <button type="button" onClick={() => setPresetKey(null)} aria-label="Clear schedule" className="hero-armed-x">
+                <Icon name="x" size={10} />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Legacy URL count hint for explicit batch mode */}
+      {isMulti && classification.kind === "single" && urlCount > 0 && (
         <div className="hero-composer-count">
           <Icon name="globe" size={12} /> {urlCount} URL{urlCount !== 1 ? "s" : ""} detected
           {presetKey && (

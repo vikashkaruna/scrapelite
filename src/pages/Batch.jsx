@@ -1,7 +1,7 @@
 // Batch.jsx — multi-URL extraction mode (route "/batch").
 // Supports: paste URLs textarea, CSV file import, progress tracking, and
 // combined export (CSV / PDF / Markdown / JSON).
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -11,6 +11,9 @@ import { useToast } from "../components/Toast.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
+import UrlReviewTable from "../components/UrlReviewTable.jsx";
+import CreditEstimator from "../components/CreditEstimator.jsx";
+import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { incrementBatchRuns } from "../lib/usageService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
@@ -231,6 +234,8 @@ export default function Batch() {
   const location = useLocation();
   const showToast = useToast();
   const billing = useBilling();
+  const subscription = billing?.subscription;
+  const usage = billing?.usage;
   const { view } = useExtraction();
   const { user } = useAuth();
   const guestTrial = useGuestTrial();
@@ -339,6 +344,17 @@ export default function Batch() {
   const planSupportsBatch = batchCheckOne.allowed ?? false;
   const planBatchLimit = batchCheckOne.allowed ? (batchCheckOne.remaining + 1) : 0;
   const MAX_URLS = planBatchLimit || ABSOLUTE_MAX_URLS;
+
+  // Q2 — pre-flight credit estimator
+  const estimate = useMemo(
+    () => estimateBatchCredits({
+      urlCount: Math.max(1, urlCount),
+      planId: subscription?.planId || "free",
+      bonusExtractions: subscription?.bonusExtractions || 0,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [urlCount, subscription?.planId, subscription?.bonusExtractions, usage?.extractions],
+  );
 
   // ── CSV file handling ────────────────────────────────────────────────────────
   const processCsvFile = useCallback((file) => {
@@ -673,6 +689,24 @@ export default function Batch() {
                         )}
                       </div>
                     )}
+                    {/* Q7 — comparable URL review grid (default table view) */}
+                    <UrlReviewTable
+                      urls={pastedUrls}
+                      invalid={invalidUrls}
+                      onRemove={(i) => {
+                        // Remove by index from the original dedup'd list
+                        setPasteText((prev) => {
+                          const lines = prev.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+                          // pastedUrls already deduped, so map index back through the original token list
+                          const removed = pastedUrls[i];
+                          if (!removed) return prev;
+                          // Remove ALL lines that normalize to the removed URL (rare but possible via repeated lines)
+                          const norm = (s) => s.replace(/^https?:\/\//i, "").replace(/^www\./, "").replace(/\/+$/, "").toLowerCase();
+                          return lines.filter((l) => norm(l) !== norm(removed)).join("\n");
+                        });
+                      }}
+                      onClear={() => { setPasteText(""); try { localStorage.removeItem("datiq.batchDraft"); } catch { /* skip */ } }}
+                    />
                   </div>
                 )}
 
@@ -871,6 +905,13 @@ export default function Batch() {
                   </p>
                 )}
 
+                {/* Q2 — pre-flight credit estimator */}
+                {urlCount > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <CreditEstimator estimate={estimate} />
+                  </div>
+                )}
+
                 {/* Run button */}
                 <div className="batch-run-row">
                   <Button
@@ -878,7 +919,7 @@ export default function Batch() {
                     icon="layers-2"
                     iconRight="arrow-right"
                     onClick={handleRun}
-                    disabled={urlCount < MIN_URLS || urlCount > ABSOLUTE_MAX_URLS}
+                    disabled={urlCount < MIN_URLS || urlCount > ABSOLUTE_MAX_URLS || (estimate && !estimate.allowed)}
                     style={{ minWidth: 200 }}
                   >
                     Extract {urlCount >= MIN_URLS ? urlCount : ""} URL{urlCount !== 1 ? "s" : ""}
