@@ -17,6 +17,7 @@ import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl 
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 import { summariseProvenance } from "../lib/provenanceService.js";
 import ProvenanceBadge, { ProvenanceSummary } from "../components/ProvenanceBadge.jsx";
+import FeedbackWidget from "../components/FeedbackWidget.jsx";
 import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
@@ -496,6 +497,14 @@ export default function Preview() {
                 <div className="prov-row">
                   <ProvenanceBadge prov={data._provenance.fields.ai_summary[0]} compact />
                 </div>
+              )}
+              {/* Q5 — thumbs up/down feedback widget on the AI summary */}
+              {data.id && (
+                <FeedbackWidget
+                  extractionId={data.id}
+                  url={data.url}
+                  intent={data.intent || "summary"}
+                />
               )}
             </div>
           </div>

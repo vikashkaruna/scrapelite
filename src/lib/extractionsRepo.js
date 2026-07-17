@@ -14,6 +14,17 @@
 import { apiClient } from "./apiClient.js";
 import { notifyWebhook } from "./webhook.js";
 import { uid } from "./utils.js";
+import { getSavedSearchesCap } from "./savedSearches.js";
+import { readSubscription } from "./usageService.js";
+
+function getCapForCurrentPlan() {
+  try {
+    const sub = readSubscription();
+    return getSavedSearchesCap(sub?.planId || "free");
+  } catch {
+    return getSavedSearchesCap("free");
+  }
+}
 
 const LS_KEY = "datiq.saved";
 
@@ -90,6 +101,20 @@ export async function saveExtraction(extraction) {
   // Strip batch-internal fields (added by runBatch). The schema does not
   // know about them and they would otherwise be sent to Supabase.
   const { _status, _error, ...clean } = extraction;
+
+  // Q3 — saved-searches cap (free plan = 10, paid = unlimited). We allow
+  // the save to proceed but flag the result so the UI can show a cap
+  // warning. The Dashboard / preview decide what to do with the flag.
+  const cap = getCapForCurrentPlan();
+  const existingCount = (local.read() || []).filter((e) => e?.id !== clean.id).length;
+  const wouldOverCap = cap !== Infinity && existingCount >= cap;
+  if (wouldOverCap) {
+    // Don't persist the new save; the UI will see _capHit=true and surface
+    // the upgrade CTA. We still return a *result* so callers don't crash.
+    notifyWebhook({ ...clean, _capHit: true, _cap: cap });
+    return { ...clean, _saved: false, _capHit: true, _cap: cap };
+  }
+
   try {
     const saved = await apiClient.createExtraction(clean);
     const result = { ...saved, _saved: true };

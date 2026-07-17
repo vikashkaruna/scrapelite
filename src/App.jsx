@@ -1,5 +1,6 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ErrorModalProvider } from "./components/ErrorModal.jsx";
@@ -14,6 +15,9 @@ import LoadingScreen from "./components/LoadingScreen.jsx";
 import Icon from "./components/Icon.jsx";
 import Button from "./components/Button.jsx";
 import WorkspaceRedirect from "./components/WorkspaceRedirect.jsx";
+import { useHotkeys } from "./hooks/useHotkeys.js";
+import HotkeyHelp from "./components/HotkeyHelp.jsx";
+import OnboardingTour from "./components/OnboardingTour.jsx";
 import Home from "./pages/Home.jsx";
 import Preview from "./pages/Preview.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -65,6 +69,38 @@ function Shell() {
   const { loading, loadingUrl } = useExtraction();
   const { showAuthModal } = useAuth();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  // Q11 — keyboard shortcuts (power-user mode)
+  const [hotkeyHelpOpen, setHotkeyHelpOpen] = useState(false);
+  const [tourForceOpen, setTourForceOpen] = useState(0);
+  useHotkeys({
+    "?": () => setHotkeyHelpOpen(true),
+    esc: () => setHotkeyHelpOpen(false),
+    "g d": () => navigate("/dashboard"),
+    "g b": () => navigate("/batch"),
+    "g s": () => navigate("/schedules"),
+    "g p": () => navigate("/pricing"),
+    "g w": () => navigate("/workspace"),
+    "g t": () => setTourForceOpen((n) => n + 1),
+  });
+
+  // Q11 — "/" focuses the URL composer if one is on the current page
+  useHotkeys({
+    "/": () => {
+      // Only fire on the pages that have a composer
+      const candidates = [
+        ".hero-composer-input",
+        ".hero-composer textarea",
+        "textarea[aria-label*='URL']",
+        "textarea[aria-label*='batch']",
+      ];
+      for (const sel of candidates) {
+        const el = document.querySelector(sel);
+        if (el) { el.focus(); return; }
+      }
+    },
+  });
 
   const isAdmin = pathname.startsWith("/admin");
 
@@ -133,6 +169,8 @@ function Shell() {
       </main>
       {showAuthModal && <AuthModal />}
       <GuestTrialModal />
+      <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
+      <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
       <Footer />
     </>
   );

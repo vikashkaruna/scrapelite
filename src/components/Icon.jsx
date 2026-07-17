@@ -130,6 +130,13 @@ import {
   ShieldAlert,
   ShoppingBag,
   Github,
+  Command,
+  ThumbsUp,
+  ThumbsDown,
+  Sparkle,
+  MousePointerSquareDashed,
+  PartyPopper,
+  CircleCheckBig,
 } from "lucide-react";
 
 const MAP = {
@@ -269,6 +276,15 @@ const MAP = {
   "shield-alert": ShieldAlert,
   "shopping-bag": ShoppingBag,
   github: Github,
+  // Q11 keyboard shortcuts
+  command: Command,
+  "thumbs-up": ThumbsUp,
+  "thumbs-down": ThumbsDown,
+  // Q4 / Q1 (alt) tour + demo
+  sparkle: Sparkle,
+  "pointer-square": MousePointerSquareDashed,
+  party: PartyPopper,
+  "check-big": CircleCheckBig,
 };
 
 

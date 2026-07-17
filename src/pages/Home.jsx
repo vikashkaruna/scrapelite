@@ -14,6 +14,7 @@ import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
 import OutcomeTiles from "../components/OutcomeTiles.jsx";
+import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
@@ -604,6 +605,11 @@ export default function Home() {
         {/* Q5 — Template library */}
         <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
           <TemplateGallery onSelect={handleTemplateSelect} />
+
+        {/* Q1 (alt) — Interactive Try-an-Example demo, shown above the gallery */}
+        <div className="rise" style={{ animationDelay: ".27s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
+          <TryExampleDemo />
+        </div>
         </div>
 
         {/* Social proof */}
