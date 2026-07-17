@@ -1,13 +1,15 @@
-// src/pages/PublicReport.jsx — Q6 (shareable report links) public view.
+// src/pages/PublicReport.jsx — Q8 (shareable report links) public view.
 //
 // Renders a single shared extraction at /p/:slug. No auth, no TopBar —
-// just a clean read-only report. Includes OG / Twitter meta tags for
-// social previews and SEO indexing via the static SSR step.
+// just a clean read-only report. The slug is looked up against the
+// Supabase `public_reports` table (so the URL works across browsers) with
+// a localStorage fallback for dev/offline. Includes OG / Twitter meta tags
+// for social previews and SEO indexing.
 
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
-import { getPublicBySlug } from "../lib/shareService.js";
+import { getPublicBySlug, buildPublicUrl } from "../lib/shareService.js";
 import { setMeta } from "../lib/seoMeta.js";
 
 function hostOf(url) {
@@ -24,7 +26,23 @@ function timeAgo(iso) {
 
 export default function PublicReport() {
   const { slug } = useParams();
-  const [ext, setExt] = useState(() => (slug ? getPublicBySlug(slug) : null));
+  const [ext, setExt] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  // Q8 — async lookup. Supabase first, then localStorage fallback. The
+  // previous sync version was BROKEN cross-browser (slug lived in the
+  // originator's localStorage only).
+  useEffect(() => {
+    let cancelled = false;
+    if (!slug) { setLoading(false); return; }
+    setLoading(true);
+    getPublicBySlug(slug)
+      .then((data) => { if (!cancelled) setExt(data); })
+      .catch(() => { if (!cancelled) setExt(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [slug]);
 
   // Set OG / SEO meta when we have a record.
   useEffect(() => {
@@ -33,6 +51,40 @@ export default function PublicReport() {
     const desc = (ext.ai_summary || `Shared extraction of ${ext.url}`).slice(0, 200);
     setMeta({ title, description: desc, url: typeof window !== "undefined" ? window.location.href : `/p/${slug}`, image: null });
   }, [ext, slug]);
+
+  const handleCopyUrl = async () => {
+    if (typeof window === "undefined") return;
+    const url = buildPublicUrl(slug);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy this link:", url);
+    }
+  };
+
+  const handleCopySummary = async () => {
+    if (!ext?.ai_summary || typeof window === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(ext.ai_summary);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy this summary:", ext.ai_summary);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="page public-page">
+        <div className="container public-container" style={{ paddingTop: 80, textAlign: "center" }}>
+          <Icon name="loader" size={28} className="spin" />
+          <p style={{ color: "var(--text-2)", marginTop: 12 }}>Loading shared report…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!ext) {
     return (
@@ -73,7 +125,18 @@ export default function PublicReport() {
 
           {ext.ai_summary && (
             <section className="public-section">
-              <h2><Icon name="sparkles" size={14} /> Summary</h2>
+              <div className="public-section-head">
+                <h2><Icon name="sparkles" size={14} /> Summary</h2>
+                <button
+                  type="button"
+                  className="public-copy-btn"
+                  onClick={handleCopySummary}
+                  title="Copy summary to clipboard"
+                >
+                  <Icon name={copied ? "check" : "clipboard-copy"} size={12} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
               <p>{ext.ai_summary}</p>
             </section>
           )}
@@ -115,6 +178,12 @@ export default function PublicReport() {
             <p>
               <Icon name="info" size={12} />
               Want your own? <Link to="/">Extract any page in seconds →</Link>
+            </p>
+            <p style={{ marginTop: 6 }}>
+              <Icon name="share" size={12} />
+              <button type="button" onClick={handleCopyUrl} className="public-copy-link">
+                {copied ? "Link copied" : "Copy this page's link"}
+              </button>
             </p>
           </footer>
         </article>

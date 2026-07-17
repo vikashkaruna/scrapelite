@@ -23,6 +23,7 @@ import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
+import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
 // Derive the pricing prompt from the existing QUICK_ACTIONS config.
@@ -99,9 +100,16 @@ export default function Home() {
   const [preview, setPreview]         = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // ── Multi-URL reveal (DeepSeq QW#4 — progressive disclosure for batch) ──
-  const [multiOpen, setMultiOpen] = useState(false);
-  const [multiText, setMultiText] = useState("");
+  // ── Multi-URL reveal (DeepSeq QW#4) REMOVED — the user can paste multiple
+  //    URLs into the main composer; the smart auto-detect (Q1) routes
+  //    multi-URL input to /batch. Keep the FAB → /batch link only. ──
+
+  // ── Outcome tile multi-select state (Q3 multi-select) ─────────────────
+  // activeTileKeys is an array of OUTCOME_TILES.key values. Clicking a tile
+  // toggles it in/out; multiple tiles are joined into a single combined
+  // prompt that pre-fills customPrompt. The first clicked tile seeds the
+  // example URL so the user can still see what an extraction looks like.
+  const [activeTileKeys, setActiveTileKeys] = useState([]);
 
   // ── Social proof ───────────────────────────────────────────────────────
   const [stats, setStats] = useState(null);
@@ -179,14 +187,12 @@ export default function Home() {
     "";
 
   // Q2 — pre-flight credit estimate for the current single-URL composer input.
-  // multiCount = 1 for single URL, 0 if empty, 2+ if multiOpen has 2+ URLs.
+  // multiCount = 1 for single URL, 0 if empty. (Q1 smart composer handles
+  // multi-URL input by routing to /batch — no in-Home multi-URL state since
+  // the duplicate multi-URL reveal was removed.)
   const multiCount = useMemo(() => {
-    if (multiOpen) {
-      const lines = (multiText || "").split(/[\n,;\s]+/).map((s) => s.trim()).filter(Boolean);
-      return lines.length;
-    }
     return classification.kind === "single" ? 1 : 0;
-  }, [multiOpen, multiText, classification.kind]);
+  }, [classification.kind]);
   const estimate = useMemo(
     () => estimateCredits({
       count: multiCount,
@@ -196,20 +202,44 @@ export default function Home() {
     [multiCount, billing?.subscription?.planId, billing?.subscription?.bonusExtractions, billing?.usage?.extractions],
   );
 
-  // Q3 — outcome tile click → pre-fill composer
-  const handleTileSelect = useCallback((tile) => {
-    setUrl(tile.example.url);
-    setTouched(false);
-    setPreview(null);
-    setIntent(tile.example.intent);
-    if (tile.example.intent === "custom") {
-      setCustomPrompt(tile.prompt);
-    } else {
+  // Q3 (multi-select) — outcome tile toggle. Clicking a tile toggles it in/out
+  // of the active set. The combined prompt = joined prompts of the active
+  // set, in click order. The intent chip auto-switches to "custom" so the
+  // extraction honours the combined prompt.
+  const OUTCOME_TILES_BY_KEY = useMemo(
+    () => Object.fromEntries(OUTCOME_TILES.map((t) => [t.key, t])),
+    [],
+  );
+  const handleTileToggle = useCallback((tile) => {
+    if (tile === "__clear__") {
+      setActiveTileKeys([]);
       setCustomPrompt("");
+      return;
     }
-    // Scroll extraction form into view
-    document.querySelector(".hero-composer, .intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
+    if (!tile || !tile.key) return;
+    setActiveTileKeys((prev) => {
+      const isActive = prev.includes(tile.key);
+      const next = isActive
+        ? prev.filter((k) => k !== tile.key)
+        : [...prev, tile.key];
+      const activeTiles = next.map((k) => OUTCOME_TILES_BY_KEY[k]).filter(Boolean);
+      const combined = activeTiles.map((t) => t.prompt).join("\n\n");
+      if (!isActive && next.length === 1) {
+        setUrl(tile.example.url);
+        setTouched(false);
+        setPreview(null);
+        document.querySelector(".hero-composer, .intent-chips")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      if (next.length > 0) {
+        setIntent("custom");
+        setCustomPrompt(combined);
+      } else {
+        setCustomPrompt("");
+      }
+      return next;
+    });
+  }, [OUTCOME_TILES_BY_KEY]);
 
   // Q5 — template card click → pre-fill composer
   const handleTemplateSelect = useCallback((tpl) => {
@@ -321,7 +351,7 @@ export default function Home() {
 
         {/* Q3 — Outcome tiles above the hero composer */}
         <div className="rise" style={{ animationDelay: ".17s", width: "100%", maxWidth: 880, margin: "8px 0 0" }}>
-          <OutcomeTiles onSelect={handleTileSelect} />
+          <OutcomeTiles activeKeys={activeTileKeys} onToggle={handleTileToggle} />
         </div>
 
         {/* Quick-context chips */}
@@ -401,71 +431,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Multi-URL reveal (DeepSeq QW#4) — secondary path, hidden by default */}
-          {!multiOpen ? (
-            <div className="multi-url-reveal-link">
-              <button
-                type="button"
-                onClick={() => setMultiOpen(true)}
-                title="Extract many URLs in parallel"
-              >
-                <Icon name="list-checks" size={13} />
-                Add multiple URLs
-                <span className="muted">— paste a list, one per line</span>
-              </button>
-            </div>
-          ) : (
-            <div className="multi-url-reveal rise">
-              <div className="mur-head">
-                <Icon name="list-checks" size={14} />
-                <span>Extract many URLs</span>
-                <button
-                  type="button"
-                  className="mur-close"
-                  onClick={() => { setMultiOpen(false); setMultiText(""); }}
-                  aria-label="Close multi-URL input"
-                >
-                  <Icon name="x" size={13} />
-                </button>
-              </div>
-              <textarea
-                className="mur-textarea"
-                rows={4}
-                placeholder={"one URL per line — e.g.\nhttps://stripe.com/pricing\nhttps://linear.app/pricing\nhttps://notion.so/pricing"}
-                value={multiText}
-                onChange={(e) => setMultiText(e.target.value)}
-                aria-label="URLs to extract, one per line"
-              />
-              <div className="mur-actions">
-                <span className="mur-count">
-                  {(() => {
-                    const { valid } = extractUrls(multiText);
-                    const n = valid.length;
-                    if (n === 0) return "Enter at least 2 URLs";
-                    if (n === 1) return "1 URL detected — add more for batch mode";
-                    return `${n} URL${n !== 1 ? "s" : ""} detected`;
-                  })()}
-                </span>
-                <button
-                  type="button"
-                  className="mur-go"
-                  disabled={(() => {
-                    const { valid } = extractUrls(multiText);
-                    return valid.length < 2;
-                  })()}
-                  onClick={() => {
-                    const { valid } = extractUrls(multiText);
-                    if (valid.length < 2) return;
-                    navigate("/batch", { state: { urls: valid, intent, autorun: true } });
-                  }}
-                >
-                  <Icon name="zap" size={13} /> Extract all
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Intent chips ─────────────────────────────────────────── */}
+{/* ── Intent chips ─────────────────────────────────────────── */}
           <div className="intent-chips">
             <span className="intent-chips-label">What do you want to extract?</span>
             <div className="intent-chips-row">

@@ -5949,3 +5949,44 @@
 .prov-summary-src   { color: var(--text-2); }
 .prov-summary-stat  { color: var(--text-2); }
 .prov-row { margin-top: 6px; }
+
+/* Q8 — Public report copy buttons + loading state */
+.public-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.public-section-head h2 { margin: 0; }
+.public-copy-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  font: inherit; font-size: .72rem; font-weight: 600; color: var(--text-2);
+  cursor: pointer; transition: background .14s, color .14s, border-color .14s;
+}
+.public-copy-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-ring); }
+.public-copy-link {
+  background: none; border: none; padding: 0; cursor: pointer; color: var(--accent);
+  font: inherit; font-weight: 600; text-decoration: underline;
+}
+
+/* Q3 multi-select — outcome tiles */
+.outcome-tiles-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; max-width: 880px;
+}
+.outcome-tiles-clear {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--accent-soft); border: 1px solid var(--accent-ring);
+  color: var(--accent); font-size: .72rem; font-weight: 600; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: .72rem;
+}
+.outcome-tiles-clear:hover { background: var(--accent); color: var(--accent-on-dark); }
+.outcome-tile-active {
+  border-color: var(--tile-accent, var(--accent)) !important;
+  background: color-mix(in srgb, var(--tile-accent, var(--accent)) 10%, var(--surface)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tile-accent, var(--accent)) 25%, transparent) !important;
+}
+.outcome-tile-active .outcome-tile-icon { color: var(--accent-on-dark); background: var(--tile-accent, var(--accent)); }
+.outcome-tile-check {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: .68rem; font-weight: 700; color: var(--tile-accent, var(--accent));
+  text-transform: uppercase; letter-spacing: .03em; margin-top: 2px;
+}

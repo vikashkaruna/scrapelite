@@ -1,7 +1,7 @@
-// src/pages/Gallery.test.jsx — Q6 public gallery listing page tests.
+// src/pages/Gallery.test.jsx — Q8 (public sample gallery) listing page tests.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import Gallery from "./Gallery.jsx";
 import { shareExtraction, _resetShareForTests } from "../lib/shareService.js";
@@ -28,33 +28,39 @@ const sample = (id, title, url) => ({
   created_at: new Date().toISOString(),
 });
 
-describe("Q6 — /gallery public sample gallery", () => {
-  it("renders the empty state when no extractions are shared", () => {
+describe("Q8 — /gallery public sample gallery", () => {
+  it("renders the empty state when no extractions are shared", async () => {
     renderGallery();
-    expect(screen.getByText(/No shared reports yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No shared reports yet/i)).toBeInTheDocument();
   });
 
-  it("renders a card for every shared extraction", () => {
-    shareExtraction(sample("ext_a", "A", "https://a.com"));
-    shareExtraction(sample("ext_b", "B", "https://b.com"));
-    shareExtraction(sample("ext_c", "C", "https://c.com"));
+  it("renders a card for every shared extraction", async () => {
+    await shareExtraction(sample("ext_a", "A", "https://a.com"));
+    await shareExtraction(sample("ext_b", "B", "https://b.com"));
+    await shareExtraction(sample("ext_c", "C", "https://c.com"));
     renderGallery();
-    expect(screen.getByText("A")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("A")).toBeInTheDocument();
+    });
     expect(screen.getByText("B")).toBeInTheDocument();
     expect(screen.getByText("C")).toBeInTheDocument();
   });
 
-  it("links each card to its public /p/:slug route", () => {
-    shareExtraction(sample("ext_link", "Linked", "https://linked.com"));
+  it("links each card to its public /p/:slug route", async () => {
+    await shareExtraction(sample("ext_link", "Linked", "https://linked.com"));
     renderGallery();
-    const link = screen.getByRole("link", { name: /Linked/i });
-    expect(link.getAttribute("href")).toMatch(/\/p\/[a-z0-9]{8}$/);
+    await waitFor(() => {
+      const link = screen.getByRole("link", { name: /Linked/i });
+      expect(link.getAttribute("href")).toMatch(/\/p\/[a-z0-9]{8}$/);
+    });
   });
 
-  it("shows the intent tag on each card", () => {
-    shareExtraction({ ...sample("ext_p", "P", "https://p.com"), intent: "pricing" });
+  it("shows the intent tag on each card", async () => {
+    await shareExtraction({ ...sample("ext_p", "P", "https://p.com"), intent: "pricing" });
     renderGallery();
-    // The intent tag is rendered in lowercase via text-transform: capitalize
-    expect(screen.getByText("pricing")).toBeInTheDocument();
+    await waitFor(() => {
+      // The intent tag is rendered in lowercase via text-transform: capitalize
+      expect(screen.getByText("pricing")).toBeInTheDocument();
+    });
   });
 });

@@ -155,13 +155,23 @@ export default function Preview() {
   }, [current?.id]);
 
   // Q6 — share handlers
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!current?.id) { showToast("Save the extraction before sharing."); return; }
-    const slug = shareExtraction(current);
-    setSharedSlug(slug);
-    analytics.exported({ format: "share", source: "preview" });
     setShareOpen(false);
-    showToast("Public link created — copy & share it anywhere.", "check");
+    try {
+      const { slug, persistedTo } = await shareExtraction(current);
+      setSharedSlug(slug);
+      analytics.exported({ format: "share", source: "preview", persistedTo });
+      const msg = persistedTo === "supabase"
+        ? "Public link created — works in any browser."
+        : persistedTo === "both"
+          ? "Public link created (local + cloud)."
+          : "Public link created locally — configure Supabase to share across browsers.";
+      showToast(msg, "check");
+    } catch (err) {
+      showToast("Share failed. Please try again.", "alert-triangle");
+      console.warn("[DatIQ] Share failed:", err);
+    }
   };
 
   const handleCopyShareLink = async () => {
@@ -176,11 +186,19 @@ export default function Preview() {
     }
   };
 
-  const handleUnshare = () => {
+  const handleUnshare = async () => {
     if (!current?.id) return;
-    if (unshareExtraction(current.id)) {
-      setSharedSlug(null);
-      showToast("Public link removed.", "x");
+    setShareOpen(false);
+    try {
+      const ok = await unshareExtraction(current.id);
+      if (ok) {
+        setSharedSlug(null);
+        showToast("Public link removed.", "x");
+      } else {
+        showToast("Nothing to remove.", "info");
+      }
+    } catch (err) {
+      showToast("Unshare failed. Please try again.", "alert-triangle");
     }
   };
 
