@@ -1,0 +1,106 @@
+// CollectionPicker.jsx — Groke QW#3. Compact "move to collection" dropdown
+// for the Dashboard row actions. Shows existing collections + an inline
+// "new collection…" option. Calls onSelect with the new collection name
+// (or "" to remove from a collection).
+import { useEffect, useRef, useState } from "react";
+import Icon from "./Icon.jsx";
+
+export default function CollectionPicker({ value, collections = [], onSelect, onCreate }) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState("");
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false); setCreating(false); setDraft("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const label = value || "No collection";
+
+  return (
+    <div className="collection-picker" ref={wrapRef}>
+      <button
+        type="button"
+        className={"cp-trigger" + (value ? " cp-set" : "")}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        title={value ? `In collection: ${value}` : "Add to a collection"}
+      >
+        <Icon name="folder" size={12} />
+        {value ? value : "Collection"}
+        <Icon name="chevron-down" size={10} />
+      </button>
+      {open && (
+        <div className="cp-menu" onClick={(e) => e.stopPropagation()}>
+          {value && (
+            <button
+              type="button"
+              className="cp-item cp-remove"
+              onClick={() => { onSelect(""); setOpen(false); }}
+            >
+              <Icon name="x" size={11} /> Remove from collection
+            </button>
+          )}
+          {value && <div className="cp-sep" />}
+          {collections.length === 0 && !creating && (
+            <div className="cp-empty">No collections yet. Create one below.</div>
+          )}
+          {collections
+            .filter((c) => c.name !== value)
+            .map((c) => (
+              <button
+                key={c.name}
+                type="button"
+                className="cp-item"
+                onClick={() => { onSelect(c.name); setOpen(false); }}
+              >
+                <Icon name="folder" size={11} />
+                <span><b>{c.name}</b><span className="cp-count">{c.count} item{c.count !== 1 ? "s" : ""}</span></span>
+              </button>
+            ))}
+          {creating ? (
+            <form
+              className="cp-create"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = draft.trim();
+                if (!name) return;
+                onCreate?.(name);
+                onSelect(name);
+                setOpen(false); setCreating(false); setDraft("");
+              }}
+            >
+              <Icon name="plus" size={11} />
+              <input
+                type="text"
+                autoFocus
+                placeholder="New collection name"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                aria-label="New collection name"
+                maxLength={48}
+              />
+              <button type="submit" className="cp-create-go" disabled={!draft.trim()}>
+                <Icon name="check" size={11} />
+              </button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="cp-item cp-new"
+              onClick={() => setCreating(true)}
+            >
+              <Icon name="plus" size={11} /> New collection…
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

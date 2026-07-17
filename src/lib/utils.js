@@ -101,6 +101,7 @@ export function extractUrls(text) {
 // Classify what the user typed/pasted into the composer.
 //   "single" — exactly one URL
 //   "multi"  — two or more URLs (and little/no other prose)
+//   "csv"    — a CSV-shaped input (header row + data rows) — needs to go to /batch
 //   "text"   — raw text / HTML to extract directly (paste-anything)
 //   "empty"  — nothing meaningful
 export function classifyInput(value) {
@@ -118,8 +119,40 @@ export function classifyInput(value) {
   if (valid.length === 1 && tokenCount === 1) {
     return { kind: "single", urls: valid };
   }
+  // Q1 — CSV detection. A CSV has a header line with column names + at least
+  // one data row. We treat as CSV when the first line is non-URL text with
+  // multiple comma-separated values and the second line is a comma-separated
+  // record (URLs or otherwise).
+  if (looksLikeCsv(s)) {
+    return { kind: "csv", urls: valid };
+  }
   // Anything else is raw content (a pricing table, an email thread, newsletter HTML…).
   return { kind: "text", urls: valid };
+}
+
+// CSV detection heuristic for Q1 smart composer.
+//   - Multi-line input
+//   - At least 2 lines
+//   - First line has ≥ 2 commas
+//   - First line is not a URL itself
+//   - Second line is not a URL itself (so we don't false-positive on
+//     paste-anything that has a stray comma)
+//   - We intentionally do NOT require the first line to have a "url" header
+//     word — even a "Name,Website,Description" CSV should be treated as CSV
+//     so the user can pick the URL column on /batch.
+export function looksLikeCsv(text) {
+  const s = String(text).trim();
+  if (!s.includes("\n")) return false;
+  const lines = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return false;
+  const headerCells = lines[0].split(",").map((c) => c.trim());
+  if (headerCells.length < 2) return false;
+  if (looksLikeUrl(lines[0])) return false;
+  // Second line: must be a comma-separated record, but not a single URL
+  const secondCells = lines[1].split(",").map((c) => c.trim());
+  if (secondCells.length < 2) return false;
+  if (looksLikeUrl(lines[1])) return false;
+  return true;
 }
 
 // Looks like an HTML fragment/document rather than plain prose.
@@ -259,6 +292,23 @@ export function csvDownload(items) {
       ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.csv`
       : `datiq-export-${list.length}-pages.csv`;
   triggerDownload(blob, name);
+  return { csv, name, blob };
+}
+
+// DeepSeq QW#3 — "Open in Google Sheets" deep-link. The cleanest no-OAuth path:
+//   1. Download the CSV locally (so the user has the file)
+//   2. Open Google Drive's "new sheet" page in a new tab
+//   3. The user uploads the downloaded CSV via File → Import → Upload
+// This is the supported deep-link pattern (Google doesn't accept a CSV blob via
+// URL — uploading to Drive first is the canonical path).
+export const GOOGLE_SHEETS_NEW_URL = "https://docs.google.com/spreadsheets/create?usp=datiq_sheet";
+
+export function openInGoogleSheets(items) {
+  const meta = csvDownload(items);
+  if (typeof window !== "undefined" && window.open) {
+    window.open(GOOGLE_SHEETS_NEW_URL, "_blank", "noopener,noreferrer");
+  }
+  return meta;
 }
 
 // ── Markdown export ──────────────────────────────────────────────────────────

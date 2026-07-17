@@ -111,6 +111,32 @@ import {
   Pause,
   Bell,
   CalendarClock,
+  // Quick Wins additions
+  GitCompareArrows,
+  History,
+  SearchX,
+  Type,
+  Clock3,
+  CopyPlus,
+  Sheet,
+  Folder,
+  Inbox,
+  FolderOpen,
+  // Cloud BI Q1–Q11 additions
+  Trophy,
+  Library,
+  LayoutList,
+  BarChart3,
+  ShieldAlert,
+  ShoppingBag,
+  Github,
+  Command,
+  ThumbsUp,
+  ThumbsDown,
+  Sparkle,
+  MousePointerSquareDashed,
+  PartyPopper,
+  CircleCheckBig,
 } from "lucide-react";
 
 const MAP = {
@@ -223,7 +249,44 @@ const MAP = {
   pause: Pause,
   bell: Bell,
   "calendar-clock": CalendarClock,
+  // Quick Wins — content presets
+  "git-compare": GitCompareArrows,
+  // Quick Wins — recent extractions widget
+  history: History,
+  "search-x": SearchX,
+  // Quick Wins — extraction charts
+  type: Type,
+  "clock-3": Clock3,
+  // Quick Wins — Scrape Similar
+  "copy-plus": CopyPlus,
+  // Quick Wins — Open in Google Sheets
+  sheet: Sheet,
+  // Groke QW#2/#3 — tags + collections
+  tag: Tag,
+  hash: Hash,
+  folder: Folder,
+  "rotate-cw": RotateCw,
+  inbox: Inbox,
+  "folder-open": FolderOpen,
+  // Cloud BI Q1–Q11 additions
+  trophy: Trophy,
+  library: Library,
+  "layout-list": LayoutList,
+  "bar-chart-3": BarChart3,
+  "shield-alert": ShieldAlert,
+  "shopping-bag": ShoppingBag,
+  github: Github,
+  // Q11 keyboard shortcuts
+  command: Command,
+  "thumbs-up": ThumbsUp,
+  "thumbs-down": ThumbsDown,
+  // Q4 / Q1 (alt) tour + demo
+  sparkle: Sparkle,
+  "pointer-square": MousePointerSquareDashed,
+  party: PartyPopper,
+  "check-big": CircleCheckBig,
 };
+
 
 export default function Icon({ name, size = 20, strokeWidth = 2, className, style }) {
   const Cmp = MAP[name] || Circle;

@@ -8,16 +8,23 @@
 //   • Feature capability cards are clickable — click selects the matching intent
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
+import RecentExtractions from "../components/RecentExtractions.jsx";
+import OutcomeTiles from "../components/OutcomeTiles.jsx";
+import TryExampleDemo from "../components/TryExampleDemo.jsx";
+import TemplateGallery from "../components/TemplateGallery.jsx";
+import CreditEstimator from "../components/CreditEstimator.jsx";
+import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
-import { classifyInput, normalizeUrl } from "../lib/utils.js";
+import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
+import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
 // Derive the pricing prompt from the existing QUICK_ACTIONS config.
@@ -94,6 +101,17 @@ export default function Home() {
   const [preview, setPreview]         = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // ── Multi-URL reveal (DeepSeq QW#4) REMOVED — the user can paste multiple
+  //    URLs into the main composer; the smart auto-detect (Q1) routes
+  //    multi-URL input to /batch. Keep the FAB → /batch link only. ──
+
+  // ── Outcome tile multi-select state (Q3 multi-select) ─────────────────
+  // activeTileKeys is an array of OUTCOME_TILES.key values. Clicking a tile
+  // toggles it in/out; multiple tiles are joined into a single combined
+  // prompt that pre-fills customPrompt. The first clicked tile seeds the
+  // example URL so the user can still see what an extraction looks like.
+  const [activeTileKeys, setActiveTileKeys] = useState([]);
+
   // ── Social proof ───────────────────────────────────────────────────────
   const [stats, setStats] = useState(null);
 
@@ -169,6 +187,75 @@ export default function Home() {
     intent === "custom"   ? customPrompt.trim() :
     "";
 
+  // Q2 — pre-flight credit estimate for the current single-URL composer input.
+  // multiCount = 1 for single URL, 0 if empty. (Q1 smart composer handles
+  // multi-URL input by routing to /batch — no in-Home multi-URL state since
+  // the duplicate multi-URL reveal was removed.)
+  const multiCount = useMemo(() => {
+    return classification.kind === "single" ? 1 : 0;
+  }, [classification.kind]);
+  const estimate = useMemo(
+    () => estimateCredits({
+      count: multiCount,
+      planId: billing?.subscription?.planId || "free",
+      bonusExtractions: billing?.subscription?.bonusExtractions || 0,
+    }),
+    [multiCount, billing?.subscription?.planId, billing?.subscription?.bonusExtractions, billing?.usage?.extractions],
+  );
+
+  // Q3 (multi-select) — outcome tile toggle. Clicking a tile toggles it in/out
+  // of the active set. The combined prompt = joined prompts of the active
+  // set, in click order. The intent chip auto-switches to "custom" so the
+  // extraction honours the combined prompt.
+  const OUTCOME_TILES_BY_KEY = useMemo(
+    () => Object.fromEntries(OUTCOME_TILES.map((t) => [t.key, t])),
+    [],
+  );
+  const handleTileToggle = useCallback((tile) => {
+    if (tile === "__clear__") {
+      setActiveTileKeys([]);
+      setCustomPrompt("");
+      return;
+    }
+    if (!tile || !tile.key) return;
+    setActiveTileKeys((prev) => {
+      const isActive = prev.includes(tile.key);
+      const next = isActive
+        ? prev.filter((k) => k !== tile.key)
+        : [...prev, tile.key];
+      const activeTiles = next.map((k) => OUTCOME_TILES_BY_KEY[k]).filter(Boolean);
+      const combined = activeTiles.map((t) => t.prompt).join("\n\n");
+      if (!isActive && next.length === 1) {
+        setUrl(tile.example.url);
+        setTouched(false);
+        setPreview(null);
+        document.querySelector(".hero-composer, .intent-chips")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      if (next.length > 0) {
+        setIntent("custom");
+        setCustomPrompt(combined);
+      } else {
+        setCustomPrompt("");
+      }
+      return next;
+    });
+  }, [OUTCOME_TILES_BY_KEY]);
+
+  // Q5 — template card click → pre-fill composer
+  const handleTemplateSelect = useCallback((tpl) => {
+    setUrl(tpl.exampleUrl);
+    setTouched(false);
+    setPreview(null);
+    setIntent(tpl.intent);
+    if (tpl.intent === "custom") {
+      setCustomPrompt(tpl.prompt || "");
+    } else {
+      setCustomPrompt("");
+    }
+    document.querySelector(".hero-composer, .intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   // ── Copy for hero section ─────────────────────────────────────────────
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
   const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
@@ -178,9 +265,9 @@ export default function Home() {
   const greeting = userName ? `Hi ${userName} —` : null;
 
   const DEFAULT_QUICK_CONTEXTS = [
-    { label: "SaaS pricing page", url: "https://stripe.com/pricing", icon: "tag" },
-    { label: "Company about page", url: "https://notion.so/about",   icon: "info" },
-    { label: "Blog / content",     url: "https://moz.com/blog",      icon: "book-open" },
+    { label: "example.com",      url: "https://example.com",         icon: "globe" },
+    { label: "stripe.com/pricing", url: "https://stripe.com/pricing", icon: "tag" },
+    { label: "anthropic.com",    url: "https://anthropic.com",       icon: "sparkles" },
   ];
 
   return (
@@ -263,6 +350,11 @@ export default function Home() {
           </div>
         )}
 
+        {/* Q3 — Outcome tiles above the hero composer */}
+        <div className="rise" style={{ animationDelay: ".17s", width: "100%", maxWidth: 880, margin: "8px 0 0" }}>
+          <OutcomeTiles activeKeys={activeTileKeys} onToggle={handleTileToggle} />
+        </div>
+
         {/* Quick-context chips */}
         {(() => {
           const contexts = persona
@@ -333,7 +425,14 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Intent chips ─────────────────────────────────────────── */}
+          {/* Q2 — pre-flight credit estimator (single URL) */}
+          {classification.kind === "single" && (
+            <div style={{ marginTop: 8 }}>
+              <CreditEstimator estimate={estimate} />
+            </div>
+          )}
+
+{/* ── Intent chips ─────────────────────────────────────────── */}
           <div className="intent-chips">
             <span className="intent-chips-label">What do you want to extract?</span>
             <div className="intent-chips-row">
@@ -423,6 +522,11 @@ export default function Home() {
 
         </div>
 
+        {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}
+        <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 760 }}>
+          <RecentExtractions />
+        </div>
+
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
         <div className="rise home-features" style={{ animationDelay: ".26s" }}>
           {ALL_FEATURES.map((f) => {
@@ -496,6 +600,16 @@ export default function Home() {
               </div>
             );
           })}
+        </div>
+
+        {/* Q5 — Template library */}
+        <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
+          <TemplateGallery onSelect={handleTemplateSelect} />
+
+        {/* Q1 (alt) — Interactive Try-an-Example demo, shown above the gallery */}
+        <div className="rise" style={{ animationDelay: ".27s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
+          <TryExampleDemo />
+        </div>
         </div>
 
         {/* Social proof */}

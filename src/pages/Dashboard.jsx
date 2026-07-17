@@ -7,6 +7,7 @@ import BrandLoader from "../components/BrandLoader.jsx";
 import EmailModal from "../components/EmailModal.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
+import CollectionPicker from "../components/CollectionPicker.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -14,11 +15,13 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
-import { listExtractions, deleteExtraction } from "../lib/extractionsRepo.js";
+import { listExtractions, deleteExtraction, saveExtraction } from "../lib/extractionsRepo.js";
 import { listBatchRuns, readBatchMap, deleteBatchRun } from "../lib/batchRunsService.js";
 import { sendExtractionsEmail } from "../lib/emailService.js";
+import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
+import { lifecycle as analytics } from "../lib/analyticsService.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
 // capability) so exports include every capability run against the URL.
@@ -148,9 +151,17 @@ function CategoryChip({ category }) {
   );
 }
 
-function RowActions({ item, onView, onDelete, compact }) {
+function RowActions({ item, onView, onDelete, compact, collectionProps }) {
   return (
     <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+      {collectionProps && (
+        <CollectionPicker
+          value={item.collection}
+          collections={collectionProps.collections}
+          onSelect={collectionProps.onSelect}
+          onCreate={collectionProps.onCreate}
+        />
+      )}
       <Button variant="secondary" size="sm" icon="arrow-up-right" onClick={() => onView(item)}>
         {compact ? "" : "View"}
       </Button>
@@ -320,6 +331,87 @@ function BatchRunsDropdown({ runs, activeRunId, onSelect, onDelete }) {
   );
 }
 
+// ── Groke QW#2 — tag filter chips (top 8 tags by usage) ──────────────────
+function TagFilter({ items, value, onChange }) {
+  const counts = useMemo(() => {
+    const map = new Map();
+    for (const it of items || []) {
+      for (const t of it?.tags || []) {
+        if (t) map.set(t, (map.get(t) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8);
+  }, [items]);
+  if (counts.length === 0) return null;
+  return (
+    <div className="tag-filter">
+      <span className="tag-filter-eyebrow">
+        <Icon name="tag" size={11} /> Tags
+      </span>
+      <div className="tag-filter-chips">
+        {counts.map(([t, n]) => (
+          <button
+            key={t}
+            type="button"
+            className={"tag-filter-chip" + (value === t ? " on" : "")}
+            onClick={() => onChange(value === t ? "" : t)}
+            title={`Filter by tag: ${t} (${n} item${n !== 1 ? "s" : ""})`}
+          >
+            {t}
+            <span className="tag-filter-count">{n}</span>
+          </button>
+        ))}
+        {value && (
+          <button
+            type="button"
+            className="tag-filter-clear"
+            onClick={() => onChange("")}
+            title="Clear tag filter"
+            aria-label="Clear tag filter"
+          >
+            <Icon name="x" size={10} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Groke QW#3 — collection filter dropdown ───────────────────────────────
+function CollectionFilter({ items, value, onChange }) {
+  const collections = useMemo(() => summariseCollections(items), [items]);
+  const untaggedCount = useMemo(
+    () => (items || []).filter((it) => !it?.collection).length,
+    [items]
+  );
+  if (collections.length === 0 && untaggedCount === 0) return null;
+  return (
+    <div className="collection-filter">
+      <span className="tag-filter-eyebrow">
+        <Icon name="folder" size={11} /> Collection
+      </span>
+      <select
+        className="collection-filter-select"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Filter by collection"
+      >
+        <option value="">All ({items?.length || 0})</option>
+        {collections.map((c) => (
+          <option key={c.name} value={c.name}>
+            {c.name} ({c.count})
+          </option>
+        ))}
+        {untaggedCount > 0 && (
+          <option value="__untagged__">Untagged ({untaggedCount})</option>
+        )}
+      </select>
+    </div>
+  );
+}
+
 // ── Floating selection action bar ─────────────────────────────────────────────
 function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson }) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -423,6 +515,33 @@ export default function Dashboard() {
   const [expandedGroups, setExpandedGroups] = useState(() => new Set());
   const batchMap = useRef(readBatchMap()); // { extractionId: batchRunId | schrun_<id> }
 
+  // Groke QW#2 — tag filter
+  const [tagFilter, setTagFilter] = useState(() => searchParams.get("tag") || "");
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tagFilter) next.set("tag", tagFilter);
+        else next.delete("tag");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [tagFilter, setSearchParams]);
+  // Groke QW#3 — collection filter
+  const [collectionFilter, setCollectionFilter] = useState(() => searchParams.get("collection") || "");
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (collectionFilter) next.set("collection", collectionFilter);
+        else next.delete("collection");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [collectionFilter, setSearchParams]);
+
   // Reload batch map when filtering changes (picks up runs saved mid-session)
   useEffect(() => {
     setBatchRuns(listBatchRuns());
@@ -474,6 +593,22 @@ export default function Dashboard() {
 
   const showingDemo = false;
 
+  // Groke QW#3 — collection summaries (recomputed whenever items change)
+  const collectionSummaries = useMemo(() => summariseCollections(items), [items]);
+  const handleSetCollection = async (it, name) => {
+    const next = { ...it };
+    const clean = normalizeCollectionName(name);
+    if (clean) next.collection = clean;
+    else delete next.collection;
+    try {
+      await saveExtraction(next);
+      setItems((prev) => prev.map((x) => (x.id === it.id ? next : x)));
+      showToast(clean ? `Added to "${clean}"` : "Removed from collection", "folder");
+    } catch (e) {
+      showToast("Couldn't update collection. Please try again.");
+    }
+  };
+
   const filtered = useMemo(() => {
     let result = items;
     // Batch run filter — show only items from the selected run
@@ -484,12 +619,25 @@ export default function Dashboard() {
     if (typeFilter !== "all") {
       result = result.filter((it) => categoryOf(it.id) === typeFilter);
     }
+    // Groke QW#2 — tag filter
+    if (tagFilter) {
+      const want = tagFilter.toLowerCase();
+      result = result.filter((it) => Array.isArray(it.tags) && it.tags.includes(want));
+    }
+    // Groke QW#3 — collection filter
+    if (collectionFilter) {
+      if (collectionFilter === "__untagged__") {
+        result = result.filter((it) => !it.collection);
+      } else {
+        result = result.filter((it) => it.collection === collectionFilter);
+      }
+    }
     const q = query.trim().toLowerCase();
     if (!q) return result;
     const terms = q.split(/\s+/);
     return result.filter((it) => { const hay = haystack(it); return terms.every((t) => hay.includes(t)); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, query, batchFilter, typeFilter, batchRuns]);
+  }, [items, query, batchFilter, typeFilter, tagFilter, collectionFilter, batchRuns]);
 
   // ── Group rows by their originating job/run (collapsible) ───────────────────
   // Each "block" is either a standalone single extraction or a run group (batch /
@@ -526,7 +674,7 @@ export default function Dashboard() {
   }, [filtered, batchRuns]);
 
   const totalPages = Math.max(1, Math.ceil(blocks.length / pageSize));
-  useEffect(() => { setPage(1); }, [query, typeFilter, batchFilter]);
+  useEffect(() => { setPage(1); }, [query, typeFilter, batchFilter, tagFilter, collectionFilter]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const start = (page - 1) * pageSize;
@@ -584,6 +732,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     csvDownload(targets);
+    analytics.exported({ format: "csv", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to CSV`, "download");
   };
 
@@ -594,6 +743,7 @@ export default function Dashboard() {
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
       extractionsToPdf(targets);
+      analytics.exported({ format: "pdf", count: targets.length, source: "dashboard" });
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);
@@ -610,6 +760,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     markdownDownload(targets);
+    analytics.exported({ format: "markdown", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to Markdown`, "file-code");
   };
 
@@ -618,6 +769,7 @@ export default function Dashboard() {
     const targets = exportTargets();
     if (!targets.length) return;
     jsonDownload(targets);
+    analytics.exported({ format: "json", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
   };
 
@@ -660,7 +812,18 @@ export default function Dashboard() {
         </div>
       </td>
       <td className="col-date"><span className="td-date">{fmtDate(it.created_at)}</span></td>
-      <td className="col-act"><RowActions item={it} onView={view} onDelete={onDelete} /></td>
+      <td className="col-act">
+        <RowActions
+          item={it}
+          onView={view}
+          onDelete={onDelete}
+          collectionProps={{
+            collections: collectionSummaries,
+            onSelect: (name) => handleSetCollection(it, name),
+            onCreate: (name) => handleSetCollection(it, name),
+          }}
+        />
+      </td>
     </tr>
   );
 
@@ -683,6 +846,18 @@ export default function Dashboard() {
               activeRunId={batchFilter}
               onSelect={setBatchFilter}
               onDelete={handleDeleteBatchRun}
+            />
+            {/* Groke QW#2 — tag filter chips */}
+            <TagFilter
+              items={items}
+              value={tagFilter}
+              onChange={setTagFilter}
+            />
+            {/* Groke QW#3 — collection filter dropdown */}
+            <CollectionFilter
+              items={items}
+              value={collectionFilter}
+              onChange={setCollectionFilter}
             />
             <div className="seg-filter layout-seg">
               <button className={"seg-opt" + (layout === "table" ? " on" : "")} onClick={() => changeLayout("table")} title="Table view">

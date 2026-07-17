@@ -193,6 +193,28 @@ export const CONTENT_FORMATS = [
       "Write 3 short, punchy social media posts (LinkedIn tone) promoting the value " +
       "of this page's offering. Number them. Each ≤ 3 sentences with a light hook.",
   },
+  {
+    key: "compare",
+    label: "Compare",
+    icon: "git-compare",
+    desc: "5-axis competitive comparison framework from this page.",
+    instruction:
+      "From the page content, derive a competitive comparison framework with 5 axes " +
+      "(e.g. pricing model, target customer, key strength, key gap, distribution channel). " +
+      "For each axis, give the position inferred from this page in 1–2 sentences. Use a " +
+      "markdown table. Be precise — only state things supported by the material.",
+  },
+  {
+    key: "explain",
+    label: "Explain",
+    icon: "help-circle",
+    desc: "Plain-language explanation of what this page offers.",
+    instruction:
+      "Explain the page in plain language as if to a smart non-expert. Start with a " +
+      "one-sentence summary, then 3 short sections: (1) what the offering is, (2) who " +
+      "it is for, (3) why someone would choose it. Use markdown headings. Avoid jargon. " +
+      "Base everything strictly on the material — do not invent facts.",
+  },
 ];
 
 function buildContentPrompt(extraction, format) {
@@ -249,6 +271,33 @@ async function mockContent(extraction, format) {
       `**Strengths.** Clear structure across ${extraction.headings?.length || 0} sections; strong calls to action.\n\n` +
       `**Likely gaps.** Limited public detail on pricing depth and technical specifics.\n`
     );
+  }
+  if (format.key === "compare") {
+    const axis = (n) => topics[n]?.text || `Dimension ${n + 1}`;
+    return [
+      `## Competitive comparison: ${title}\n`,
+      `| Axis | Position from this page |`,
+      `| --- | --- |`,
+      `| **${axis(0)}** | Implied by the page's primary positioning. |`,
+      `| **${axis(1)}** | ${topics[1]?.text ? `Centered on ${topics[1].text.toLowerCase()}.` : "Centered on the core value prop."} |`,
+      `| **Key strength** | Clear section structure across ${extraction.headings?.length || 0} headings. |`,
+      `| **Apparent gap** | Limited public detail on pricing depth & technical specifics. |`,
+      `| **Distribution** | Direct web presence; relies on organic search traffic. |`,
+      ``,
+      `_Inferred from the page content — verify before using in a strategy doc._`,
+    ].join("\n");
+  }
+  if (format.key === "explain") {
+    return [
+      `# ${title} — explained\n`,
+      `${title} is a ${(extraction.ai_summary || "web offering").split(/[.!?]/)[0].toLowerCase()}.\n`,
+      `## What it is`,
+      `${extraction.ai_summary || `${title} provides a focused offering around ${topics[0]?.text || "its core value proposition"}.`}\n`,
+      `## Who it is for`,
+      `Visitors who care about ${topics[0]?.text || "the core problem"} and want a clear path to ${topics[1]?.text || "the outcome"}.\n`,
+      `## Why someone would choose it`,
+      `It goes straight to the point — no fluff, ${extraction.headings?.length || 0} focused sections, every page element earns its place.`,
+    ].join("\n");
   }
   return (
     `1. ${title} just caught our eye — ${topics[0]?.text || "worth a look"}. Here's why it matters. 🚀\n\n` +

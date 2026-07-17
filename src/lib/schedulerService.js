@@ -200,6 +200,11 @@ export async function saveSchedule(schedule) {
   if (idx >= 0) {
     list[idx] = schedule;
   } else {
+    // Q11 — analytics: monitor / schedule created (only on first save, not updates)
+    try {
+      const { lifecycle: analytics } = await import("./analyticsService.js");
+      analytics.monitorCreated({ url: schedule.url, cadence: schedule.cadenceKey, name: schedule.name });
+    } catch { /* analytics is best-effort */ }
     // Cap at MAX_SCHEDULES — reject the 51st.
     if (list.length >= MAX_SCHEDULES) {
       throw new Error(`Schedule limit reached (${MAX_SCHEDULES}). Delete one before adding another.`);

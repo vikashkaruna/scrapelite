@@ -6,11 +6,19 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
 import ContentModal from "../components/ContentModal.jsx";
+import ExtractionCharts from "../components/ExtractionCharts.jsx";
+import ScrapeSimilarCard from "../components/ScrapeSimilarCard.jsx";
+import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
-import { hostOf, pathOf, isExternal, timeAgo, csvDownload, markdownDownload, jsonDownload } from "../lib/utils.js";
+import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl } from "../lib/shareService.js";
+import { lifecycle as analytics } from "../lib/analyticsService.js";
+import { summariseProvenance } from "../lib/provenanceService.js";
+import ProvenanceBadge, { ProvenanceSummary } from "../components/ProvenanceBadge.jsx";
+import FeedbackWidget from "../components/FeedbackWidget.jsx";
+import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 
@@ -118,7 +126,10 @@ export default function Preview() {
   const [activeTab, setActiveTab] = useState("overview");
   const [contentOpen, setContentOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharedSlug, setSharedSlug] = useState(() => current?.id ? getSharedSlugForId(current.id) : null);
   const downloadRef = useRef(null);
+  const shareRef = useRef(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -130,6 +141,67 @@ export default function Preview() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [downloadOpen]);
+
+  useEffect(() => {
+    if (!shareOpen) return;
+    const handler = (e) => { if (shareRef.current && !shareRef.current.contains(e.target)) setShareOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [shareOpen]);
+
+  // Q6 — when the current extraction changes (e.g. user opens a different one
+  // from Dashboard), refresh the share state to match.
+  useEffect(() => {
+    setSharedSlug(current?.id ? getSharedSlugForId(current.id) : null);
+  }, [current?.id]);
+
+  // Q6 — share handlers
+  const handleShare = async () => {
+    if (!current?.id) { showToast("Save the extraction before sharing."); return; }
+    setShareOpen(false);
+    try {
+      const { slug, persistedTo } = await shareExtraction(current);
+      setSharedSlug(slug);
+      analytics.exported({ format: "share", source: "preview", persistedTo });
+      const msg = persistedTo === "supabase"
+        ? "Public link created — works in any browser."
+        : persistedTo === "both"
+          ? "Public link created (local + cloud)."
+          : "Public link created locally — configure Supabase to share across browsers.";
+      showToast(msg, "check");
+    } catch (err) {
+      showToast("Share failed. Please try again.", "alert-triangle");
+      console.warn("[DatIQ] Share failed:", err);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!sharedSlug) return;
+    const url = buildPublicUrl(sharedSlug);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied to clipboard.", "clipboard-copy");
+    } catch {
+      // Fallback: open prompt
+      window.prompt("Copy this link:", url);
+    }
+  };
+
+  const handleUnshare = async () => {
+    if (!current?.id) return;
+    setShareOpen(false);
+    try {
+      const ok = await unshareExtraction(current.id);
+      if (ok) {
+        setSharedSlug(null);
+        showToast("Public link removed.", "x");
+      } else {
+        showToast("Nothing to remove.", "info");
+      }
+    } catch (err) {
+      showToast("Unshare failed. Please try again.", "alert-triangle");
+    }
+  };
 
   // Persisted enrichments for this extraction become tabs. Fall back to a saved
   // custom_extraction (older shape) so it still shows as a tab.
@@ -190,12 +262,46 @@ export default function Preview() {
     runQuickAction({ key: entry.key, label: entry.label, icon: entry.icon, prompt });
   };
 
+  // Groke QW#2 — tags + the global tag catalogue for auto-suggest.
+  const [knownTags, setKnownTags] = useState(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    import("../lib/tagsService.js").then(({ getAllTags }) => {
+      if (cancelled) return;
+      getAllTags().then((set) => { if (!cancelled) setKnownTags(set); }).catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [data?.id]);
+
+  // Groke QW#2 — persist a tag change. Local-only writes (no Supabase sync
+  // in v1.0 — Supabase column migration is v2.0 work).
+  const onTagsChange = async (nextTags) => {
+    const next = { ...data, tags: nextTags };
+    try {
+      // Add to local known-tags immediately so the suggestion list updates.
+      setKnownTags((prev) => {
+        const merged = new Set(prev);
+        for (const t of nextTags) merged.add(t);
+        return merged;
+      });
+      const { saveExtraction } = await import("../lib/extractionsRepo.js");
+      await saveExtraction(next);
+    } catch (e) {
+      console.warn("[DatIQ] Tag save failed:", e);
+    }
+  };
+
   const onViewDashboard = () => navigate("/dashboard");
 
   const onDownloadCsv = () => {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
     csvDownload([data]);
     showToast("Exported to CSV", "download");
+  };
+  const onOpenInSheets = () => {
+    if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
+    openInGoogleSheets([data]);
+    showToast("CSV downloaded. Upload it to the Google Sheet that just opened (File → Import → Upload).", "sheet");
   };
   const onDownloadMarkdown = () => {
     if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
@@ -242,6 +348,56 @@ export default function Preview() {
             <Button variant="ghost" size="sm" icon="trash" onClick={onDelete} title="Delete this extraction">
               Delete
             </Button>
+            <div className="share-dropdown" ref={shareRef}>
+              <Button
+                variant={sharedSlug ? "secondary" : "ghost"}
+                size="sm"
+                icon="share"
+                onClick={() => setShareOpen((v) => !v)}
+                title={sharedSlug ? "Manage public link" : "Share as public link"}
+              >
+                {sharedSlug ? "Shared" : "Share"}
+              </Button>
+              {shareOpen && (
+                <div className="export-dropdown-menu share-menu">
+                  {sharedSlug ? (
+                    <>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={() => { handleCopyShareLink(); setShareOpen(false); }}
+                      >
+                        <Icon name="clipboard-copy" size={14} />
+                        <span>
+                          <b>Copy public link</b>
+                          <span className="export-plan-hint">Anyone with the URL can view this report</span>
+                        </span>
+                      </button>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={() => { handleUnshare(); setShareOpen(false); }}
+                      >
+                        <Icon name="x" size={14} />
+                        <span>
+                          <b>Remove public link</b>
+                          <span className="export-plan-hint">Hide from the gallery</span>
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="export-dropdown-item"
+                      onClick={handleShare}
+                    >
+                      <Icon name="share" size={14} />
+                      <span>
+                        <b>Create public link</b>
+                        <span className="export-plan-hint">A read-only URL anyone can view</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="export-dropdown" ref={downloadRef}>
               <Button
                 variant="secondary"
@@ -256,6 +412,9 @@ export default function Preview() {
                 <div className="export-dropdown-menu">
                   <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
                     <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
+                    <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">All plans · downloads CSV + opens new Sheet</span></span>
                   </button>
                   <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
                     <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
@@ -278,11 +437,22 @@ export default function Preview() {
         {/* page identity */}
         <div className="preview-head rise">
           <FaviconDot url={data.url} size={44} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <h1 className="preview-title">{data.page_title}</h1>
             <a className="preview-url" href={data.url} target="_blank" rel="noopener noreferrer">
               <Icon name="globe" size={15} /> {data.url} <Icon name="external" size={13} />
             </a>
+            {/* Groke QW#2 — inline tag editor (uses data so it auto-updates on change) */}
+            <TagChips
+              tags={data.tags || []}
+              url={data.url}
+              knownTags={knownTags}
+              onChange={(next) => onTagsChange(next)}
+            />
+            {/* Q9 — per-record provenance strip */}
+            {data._provenance && (
+              <ProvenanceSummary extraction={data} />
+            )}
           </div>
           <div className="preview-stats">
             {isMap ? (
@@ -322,8 +492,28 @@ export default function Preview() {
             </div>
             <div className="card-pad">
               <p className="summary-text">{data.ai_summary}</p>
+              {/* Q9 — provenance badge for the AI summary field */}
+              {data._provenance?.fields?.ai_summary && (
+                <div className="prov-row">
+                  <ProvenanceBadge prov={data._provenance.fields.ai_summary[0]} compact />
+                </div>
+              )}
+              {/* Q5 — thumbs up/down feedback widget on the AI summary */}
+              {data.id && (
+                <FeedbackWidget
+                  extractionId={data.id}
+                  url={data.url}
+                  intent={data.intent || "summary"}
+                />
+              )}
             </div>
           </div>
+
+          {/* At-a-glance charts (QW#3) — auto-generated from extracted structure */}
+          {!isMap && <ExtractionCharts extraction={data} />}
+
+          {/* Scrape Similar (DeepSeq QW#1) — suggest 2-3 same-domain siblings */}
+          {!isMap && <ScrapeSimilarCard extraction={data} />}
 
           {/* Quick enrichment + Generate content (hidden in map mode). */}
           {!isMap && (

@@ -155,3 +155,49 @@ export function parseUrlsFromCsv(csvText) {
 
   return { urls, column: colName, errors };
 }
+
+// Groke QW#4 (ba-4) — single-URL extraction that mirrors the per-row logic in
+// runBatch. Used by the "Retry" button on failed batch rows. Returns a
+// { _status, _error, ...item } object in the same shape as runBatch results.
+export async function extractOne(url, options = {}) {
+  try {
+    const structure = await extractStructure(url, options);
+    if (structure.domain_map) {
+      return {
+        ...structure,
+        ai_summary: `Mapped ${structure.domain_map.length} URL${structure.domain_map.length === 1 ? "" : "s"} on ${url}.`,
+        id: uid(),
+        created_at: new Date().toISOString(),
+        _status: "success",
+      };
+    }
+    const [ai_summary, links] = await Promise.all([
+      summarize(structure),
+      categorizeLinks(structure.links, structure.url),
+    ]);
+    const result = {
+      ...structure,
+      links,
+      ai_summary,
+      id: uid(),
+      created_at: new Date().toISOString(),
+      _status: "success",
+    };
+    if (options.generateContent) {
+      try {
+        result.generated_content = await generateContent(result, options.generateContent);
+      } catch (err) {
+        console.warn("[DatIQ] Retry content generation failed for", url, err?.message);
+      }
+    }
+    return result;
+  } catch (err) {
+    return {
+      url,
+      id: uid(),
+      created_at: new Date().toISOString(),
+      _status: "error",
+      _error: err?.message || "Extraction failed",
+    };
+  }
+}

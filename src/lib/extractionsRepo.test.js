@@ -172,3 +172,66 @@ describe("RC-03 — concurrent saveExtraction calls", () => {
     expect(r1.id).not.toBe(r2.id);
   });
 });
+
+// ── Q3 — saved-searches cap (free plan) ──────────────────────────────────────
+import { readSubscription } from "./usageService.js";
+
+describe("Q3 — extractionsRepo: free-plan saved-searches cap", () => {
+  beforeEach(() => {
+    apiMocks.createExtraction.mockReset();
+    try { localStorage.clear(); } catch {}
+  });
+
+  it("refuses to save the 11th extraction on the free plan (returns _capHit)", async () => {
+    apiMocks.createExtraction.mockRejectedValue({ status: 500 });
+    // Seed 10 existing extractions.
+    const seed = Array.from({ length: 10 }, (_, i) => ({
+      id: `seed_${i}`,
+      url: `https://a${i}.example.com`,
+      page_title: `A${i}`,
+      created_at: "2026-07-15T10:00:00.000Z",
+      headings: [], links: [],
+    }));
+    localStorage.setItem("datiq.saved", JSON.stringify(seed));
+    // Force the subscription to be the free plan.
+    localStorage.setItem("datiq.subscription", JSON.stringify({ planId: "free" }));
+
+    const r = await saveExtraction({
+      id: "ext_overflow",
+      url: "https://overflow.example.com",
+      page_title: "Overflow",
+      created_at: "2026-07-15T12:00:00.000Z",
+      headings: [], links: [],
+    });
+    expect(r._capHit).toBe(true);
+    expect(r._cap).toBe(10);
+    expect(r._saved).toBe(false);
+    // The list should still be 10 (not 11) — the overflow is NOT persisted.
+    const stored = JSON.parse(localStorage.getItem("datiq.saved"));
+    expect(stored.length).toBe(10);
+    expect(stored.find((x) => x.id === "ext_overflow")).toBeUndefined();
+  });
+
+  it("allows saving on a paid plan (no cap)", async () => {
+    apiMocks.createExtraction.mockRejectedValue({ status: 500 });
+    const seed = Array.from({ length: 50 }, (_, i) => ({
+      id: `seed_${i}`,
+      url: `https://a${i}.example.com`,
+      page_title: `A${i}`,
+      created_at: "2026-07-15T10:00:00.000Z",
+      headings: [], links: [],
+    }));
+    localStorage.setItem("datiq.saved", JSON.stringify(seed));
+    localStorage.setItem("datiq.subscription", JSON.stringify({ planId: "pro" }));
+
+    const r = await saveExtraction({
+      id: "ext_pro",
+      url: "https://pro.example.com",
+      page_title: "Pro",
+      created_at: "2026-07-15T12:00:00.000Z",
+      headings: [], links: [],
+    });
+    expect(r._capHit).toBeFalsy();
+    expect(r._saved).toBe(true);
+  });
+});

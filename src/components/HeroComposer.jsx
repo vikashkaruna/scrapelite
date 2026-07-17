@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useToast } from "./Toast.jsx";
-import { parseUrlsFromCsv } from "../lib/batchService.js";
+import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
 import { buildSchedule, saveSchedule, SCHEDULE_PRESETS, presetByKey } from "../lib/schedulerService.js";
@@ -104,29 +104,31 @@ export default function HeroComposer({
     single:   { icon: "zap",            label: "Extract" },
   }[actionMode];
 
-  // ── CSV / file import ──────────────────────────────────────────────────────
-  const importCsvFile = useCallback((file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const { urls } = parseUrlsFromCsv(e.target.result);
-        if (urls && urls.length) {
-          setBatchMode(true);
-          onChange(urls.join("\n"));
-          showToast(`${urls.length} URLs imported from ${file.name}`, "file-up");
-        } else {
-          showToast("No URLs found in that file. Add a 'url' column.");
-        }
-      } catch {
-        showToast("Couldn't read that file. Please use a CSV with a url column.");
-      }
-    };
-    reader.readAsText(file);
+  // ── CSV / file / text import (QW#1 — plain-text URL drag-drop) ────────────
+  // Pure logic lives in lib/urlIngest.js (testable in isolation). The composer
+  // is just the FileReader + dataTransfer glue + state updates.
+  const importIngested = useCallback((text, sourceLabel) => {
+    const { urls, source } = ingestUrls(text);
+    if (urls.length === 0) {
+      showToast("No URLs found. Add one URL per line or a CSV with a 'url' column.");
+      return 0;
+    }
+    setBatchMode(true);
+    onChange(urls.join("\n"));
+    const via = source === "csv" ? "CSV" : "text";
+    showToast(`${urls.length} URL${urls.length === 1 ? "" : "s"} imported from ${sourceLabel} (${via})`, "file-up");
+    return urls.length;
   }, [onChange, showToast]);
 
+  const importFile = useCallback((file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => importIngested(String(e.target.result || ""), file.name);
+    reader.readAsText(file);
+  }, [importIngested]);
+
   const onFileChange = (e) => {
-    importCsvFile(e.target.files?.[0] ?? null);
+    importFile(e.target.files?.[0] ?? null);
     e.target.value = "";
   };
 
@@ -134,7 +136,14 @@ export default function HeroComposer({
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) importCsvFile(file);
+    if (file) { importFile(file); return; }
+    // No file — could be a URL dragged from the browser address bar, a
+    // selection dragged from another tab, or text dragged from a code editor.
+    const text =
+      e.dataTransfer.getData("text/uri-list") ||
+      e.dataTransfer.getData("text/plain") ||
+      "";
+    if (text.trim()) importIngested(text, "drop");
   };
 
   // Build a schedule draft from the current input (null when not schedulable).
@@ -174,9 +183,10 @@ export default function HeroComposer({
     }
 
     // Batch / multi-URL → dedicated screen (auto-runs).
-    if (isMulti) {
-      if (urlCount < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
-      navigate("/batch", { state: { urls: detectedUrls, intent, autorun: true } });
+    if (isMulti || classification.kind === "csv") {
+      const urls = classification.urls?.length ? classification.urls : detectedUrls;
+      if (urls.length < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
+      navigate("/batch", { state: { urls, intent, autorun: true, source: classification.kind === "csv" ? "csv" : "multi" } });
       return;
     }
 
@@ -242,7 +252,7 @@ export default function HeroComposer({
     >
       {dragOver && (
         <div className="hero-composer-dropzone">
-          <Icon name="upload" size={26} /> Drop a CSV to import URLs
+          <Icon name="upload" size={26} /> Drop a CSV, text file, or URL to import
         </div>
       )}
 
@@ -261,8 +271,40 @@ export default function HeroComposer({
         autoFocus
       />
 
-      {/* URL count hint in batch mode */}
-      {isMulti && urlCount > 0 && (
+      {/* Q1 — Smart auto-detect hint: shows what the input was classified as. */}
+      {classification.kind !== "empty" && classification.kind !== "single" && (
+        <div className={`hero-composer-count hero-detect tone-${classification.kind}`}>
+          {classification.kind === "multi" && (
+            <>
+              <Icon name="globe" size={12} />
+              {urlCount} URL{urlCount !== 1 ? "s" : ""} detected — will run as batch
+            </>
+          )}
+          {classification.kind === "csv" && (
+            <>
+              <Icon name="file-up" size={12} />
+              CSV detected — {classification.urls.length} URL{classification.urls.length === 1 ? "" : "s"} found
+            </>
+          )}
+          {classification.kind === "text" && (
+            <>
+              <Icon name="file-text" size={12} />
+              Raw text detected — will run as paste-anything
+            </>
+          )}
+          {presetKey && (
+            <span className="hero-composer-armed">
+              <Icon name="calendar-clock" size={11} /> {presetByKey(presetKey).label}
+              <button type="button" onClick={() => setPresetKey(null)} aria-label="Clear schedule" className="hero-armed-x">
+                <Icon name="x" size={10} />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Legacy URL count hint for explicit batch mode */}
+      {isMulti && classification.kind === "single" && urlCount > 0 && (
         <div className="hero-composer-count">
           <Icon name="globe" size={12} /> {urlCount} URL{urlCount !== 1 ? "s" : ""} detected
           {presetKey && (

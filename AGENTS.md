@@ -269,39 +269,50 @@ extraction.enrichments = {
 
 ---
 
-## v1.0 status (2026-07-16)
+## v1.0+ status (2026-07-17)
 
-**v1.0 is shipped, live at https://datiq.app, all tests green (1052/1052).** See
-`docs/SESSION-HANDOFF-2026-07-16.md` and the git log for the full v1.0 closeout
-trail. The list below is kept for historical context — every item is DONE or
-explicitly deferred to v2.0.
+**v1.0 is shipped + 3 rounds of Quick Wins landed on `feat/v1-quickwins`
+(PR #14, open).** Live at https://datiq.app, all tests green (1133/1133).
+See `docs/SESSION-HANDOFF-2026-07-16.md` (v1.0 closeout) and
+`docs/SESSION-HANDOFF-2026-07-17.md` (this session's quick-wins drop) for
+the full trail. The list below captures current state + the v2.0 backlog.
 
-### Done in v1.0
-- [x] Netlify env vars set, auto-deploy on push to `main` — **DONE** (Netlify project `datiqapp`; auto-deploys from `main`)
-- [x] Production n8n webhook URL — **DONE** (live in production via `VITE_WEBHOOK_URL` env)
-- [x] `AI_API_KEY` moved to server-only Netlify env — **DONE in R4** (commit `a4a0d08`); key no longer leaks in browser bundle
-- [x] Supabase auth for multi-user — **DONE in V3** (`AuthProvider.jsx`, `authService.js`, sign-up/sign-in modal, OAuth-ready)
-- [x] Netlify Background Functions for email reliability — **DEFERRED to v2.0** (not blocking; current Razorpay alert email path works)
-- [x] Stale `version-2.0` branch — **DONE** (deleted as part of v1.0 closeout)
-- [x] Full SDLC quality gate (M0–M7) — **DONE** (commit `86676e0`): 689 vitest tests + 21 Playwright smoke + 15 journeys + 54 a11y + 33 visual regression = 1052 tests, all green
-- [x] 2 production bug fixes gated by M2 — **DONE**: SSRF guard in `extract.js` (`isPublicHttpUrl`); client-id preservation in `extractions.js`
-- [x] Stripe/recurring-billing scope cleanup — **DONE** (`32dfa99`, `cbb470a`): paid plans REMAIN in v1.0 (one-time Razorpay Orders); only recurring Subscriptions + Stripe Checkout deferred to v2.0
+### Done in v1.0 + v1.0+ Quick Wins (this branch)
+- [x] All v1.0 items (Netlify env, Supabase auth, M0–M7 quality gate, 2 production bug fixes, etc.) — see session handoff
+- [x] **MetaAI Quick Wins (Round 1)**: drag-drop URL (`urlIngest.js`), persona example chips, At-a-glance charts on /preview (hand-rolled SVG), recent extractions widget on Home, +2 content presets (Compare, Explain)
+- [x] **DeepSeq Quick Wins (Round 2)**: Scrape Similar CTA, Open in Google Sheets, Add multiple URLs reveal-textarea
+- [x] **Groke AI Quick Wins (Drop 1 only — scope-split decision)**: inline tag editor on Preview + Dashboard tag filter, CollectionPicker + /collections page + Dashboard collection filter, per-URL Batch retry
+- [x] **A11y bonus fix**: dark-mode intent chip contrast (2.93:1 → passes WCAG AA via `--accent-on-dark`)
 
-### v1.0 surface (what ships)
-- 7 plans: Free + 4 paid (Select / Pro / Business / Agency) + Developer (coming soon) + Enterprise (contact)
-- Free tier: 10 extractions/mo + 25-extraction trial credit at signup (FR-Z-02)
-- 5 enrichment categories, batch mode (up to 5 URLs), scheduling (R19)
-- Top-up bundles (Batch Pack), content generation (R13), all 5 export formats
-- Admin console fully functional (revenue, pricing, coupons, users, AI chain, general settings)
-- Live stats pipeline (Supabase)
-- Multi-provider AI (Gemini → Anthropic → OpenAI) + 4-provider scrape chain (Firecrawl → Spider → Jina → Direct)
+### v1.0+ surface (what ships on this branch)
+- Everything in v1.0 (7 plans, free tier + trial credit, batch + scheduling, etc.)
+- Drag-drop / paste / file import for URLs (CSV + plain-text + browser drag)
+- "At a glance" charts on every extraction (3 visualisations: stats, heading depth, link categories)
+- Recent extractions carousel on Home + "Scrape similar" on Preview
+- 5 content generation presets (was 3): SEO / Competitor / Social / **Compare** / **Explain**
+- Open in Google Sheets export (CSV + new-sheet deep link)
+- Inline tag editor with auto-suggest (URL-host + known-tags)
+- Collection picker + /collections page for grouping extractions
+- Per-URL Retry on failed Batch rows
 
-### v2.0 backlog
-- Recurring subscription billing (Razorpay Subscriptions, Stripe Subscriptions, auto-renewal, dunning, customer portal) — see `docs/RECURRING-BILLING-DEFERRAL.md`
-- Stripe Checkout re-enable — see `docs/STRIPE-DEFERRAL.md` (6-step runbook)
-- `/blog/:slug` SEO routing
-- Referral/affiliate program (UI teaser already live)
-- Cross-device Supabase session sync (localStorage is current single-device model)
+### v2.0 backlog (deferred — see `docs/SESSION-HANDOFF-2026-07-17.md` for full details)
+- [ ] **Recurring subscription billing** (Razorpay Subscriptions, Stripe Subscriptions, auto-renewal, dunning, customer portal) — see `docs/RECURRING-BILLING-DEFERRAL.md`
+- [ ] **Stripe Checkout re-enable** — see `docs/STRIPE-DEFERRAL.md` (6-step runbook)
+- [ ] **Browser extension** (Chrome + Firefox + Edge, Manifest v3, OAuth, store submission) — multi-week project; the Groke AI "low effort" rating was wrong
+- [ ] **Bulk-tag UI on Dashboard** — ad-clutter risk; add if usage demands it
+- [ ] **Sidebar folders / Smart collections** (col-1 + col-3 variants) — overlap with the /collections page
+- [ ] **Batch templates** (ba-2) — save current batch as named template + replay on a schedule; combines with R19's scheduler
+- [ ] **Batch share** (ba-3) — public read-only link to a batch run; needs new Netlify Function + access control
+- [ ] **PNG export** of extractions (DeepSeq QW#5) — low ROI; PDF already exists
+- [ ] `/blog/:slug` SEO routing
+- [ ] Referral/affiliate program (UI teaser already live on /pricing)
+- [ ] Cross-device Supabase session sync (currently single-device localStorage)
+
+### Next session entry point
+- Branch: `feat/v1-quickwins` (PR #14 open against `main`)
+- Test count: 800 vitest + 363 Playwright = 1163 total, all green
+- Build: clean (1.87s)
+- The next step is to either **merge PR #14 to main** OR spin up a fresh `v2.0` branch from `main` (the v1.0+ features are stacked but not yet merged).
 
 ---
 
