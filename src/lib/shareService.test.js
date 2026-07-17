@@ -300,3 +300,59 @@ function projectPubForTest() {
     is_public: true,
   };
 }
+
+// FA1 — public-quota counter integration with share/unshare.
+import { recordPublicShare, recordPublicUnshare, isPubliclyShared } from "./shareService.js";
+import { readPublicCount } from "./publicQuota.js";
+
+describe("FA1 — public-quota counter (shareService integration)", () => {
+  beforeEach(() => {
+    // FA1 tests are offline-only (no Supabase) to keep them deterministic.
+    supabaseMock.enabled = false;
+    supabaseMock.from.mockReset();
+    _resetShareForTests();
+    try { localStorage.removeItem("datiq.usage"); } catch {}
+  });
+
+  it("recordPublicShare increments the public count on first share", async () => {
+    const ext = { id: "fa1-test-1", title: "T", url: "https://x.com" };
+    await shareExtraction(ext);
+    const before = readPublicCount();
+    recordPublicShare(ext.id);
+    expect(readPublicCount()).toBe(before + 1);
+  });
+
+  it("recordPublicShare increments on every call (caller is responsible for idempotency)", async () => {
+    const ext = { id: "fa1-test-2", title: "T", url: "https://x.com" };
+    await shareExtraction(ext);
+    recordPublicShare(ext.id);
+    recordPublicShare(ext.id);
+    // Each call increments by 1 — the Preview.jsx call site only calls
+    // once per successful share, so production stays correct.
+    expect(readPublicCount()).toBe(2);
+  });
+
+  it("recordPublicUnshare decrements the public count", async () => {
+    const ext = { id: "fa1-test-3", title: "T", url: "https://x.com" };
+    await shareExtraction(ext);
+    recordPublicShare(ext.id);
+    expect(readPublicCount()).toBe(1);
+    await unshareExtraction(ext.id);
+    recordPublicUnshare();
+    expect(readPublicCount()).toBe(0);
+  });
+
+  it("recordPublicShare returns 1 on first call (and is a simple increment thereafter)", () => {
+    // (a no-op never-shared-id returns 1 because we always increment; the
+    // Preview.jsx call site only calls once per successful share.)
+    const result = recordPublicShare("never-shared-id");
+    expect(result).toBe(1);
+  });
+
+  it("isPubliclyShared returns true for shared extractions, false otherwise", async () => {
+    const ext = { id: "fa1-test-4", title: "T", url: "https://x.com" };
+    expect(isPubliclyShared(ext.id)).toBe(false);
+    await shareExtraction(ext);
+    expect(isPubliclyShared(ext.id)).toBe(true);
+  });
+});

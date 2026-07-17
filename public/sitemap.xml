@@ -17,4 +17,14 @@
   <url><loc>https://datiq.app/terms</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
   <url><loc>https://datiq.app/help/index.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://datiq.app/gallery</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/changelog</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/dmca</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://datiq.app/for-sales</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/for-seo</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/for-ci</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/extract-pricing</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/extract-contacts</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/extract-headings</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/vs/firecrawl</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://datiq.app/vs/battlecard</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
 </urlset>

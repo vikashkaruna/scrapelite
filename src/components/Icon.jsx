@@ -80,6 +80,7 @@ import {
   Heart,
   Lightbulb,
   Rocket,
+  Swords,
   MessageSquare,
   // R1 additions
   Compass,
@@ -222,6 +223,7 @@ const MAP = {
   heart: Heart,
   lightbulb: Lightbulb,
   rocket: Rocket,
+  swords: Swords,
   "message-square": MessageSquare,
   // R1
   compass: Compass,

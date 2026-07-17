@@ -13,7 +13,7 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
-import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl } from "../lib/shareService.js";
+import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl, recordPublicShare, recordPublicUnshare } from "../lib/shareService.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 import { summariseProvenance } from "../lib/provenanceService.js";
 import ProvenanceBadge, { ProvenanceSummary } from "../components/ProvenanceBadge.jsx";
@@ -162,6 +162,8 @@ export default function Preview() {
     try {
       const { slug, persistedTo } = await shareExtraction(current);
       setSharedSlug(slug);
+      // FA1 — count this as a public report (free-tier quota mechanic)
+      recordPublicShare(current.id);
       analytics.exported({ format: "share", source: "preview", persistedTo });
       const msg = persistedTo === "supabase"
         ? "Public link created — works in any browser."
@@ -194,6 +196,8 @@ export default function Preview() {
       const ok = await unshareExtraction(current.id);
       if (ok) {
         setSharedSlug(null);
+        // FA1 — counter-sync on unshare
+        recordPublicUnshare();
         showToast("Public link removed.", "x");
       } else {
         showToast("Nothing to remove.", "info");

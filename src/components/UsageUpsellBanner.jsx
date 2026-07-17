@@ -9,6 +9,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";
+import { readPublicCount } from "../lib/publicQuota.js";
 
 const DISMISS_KEY = "datiq.upsellDismissedMonth";
 
@@ -98,6 +99,16 @@ export default function UsageUpsellBanner() {
               <>
                 {" "}
                 <span className="uub-remaining">{remaining} left on {plan.name} this month</span>
+              </>
+            )}
+            {/* FA1 — show the public-quota mechanic if the user has
+                published any extractions this month. Free plan only. */}
+            {plan.id === "free" && readPublicCount() > 0 && (
+              <>
+                {" "}
+                <span className="uub-public">
+                  · {readPublicCount()} public report{readPublicCount() === 1 ? "" : "s"} (unlimited)
+                </span>
               </>
             )}
           </span>

@@ -1,8 +1,13 @@
-// src/lib/extractionTemplates.js — Q5 (template / example library) data.
+// src/lib/extractionTemplates.js — Q5 (template / example library) data + F06 (Recipe Packs).
 //
 // 10–15 prebuilt extraction recipes. Each template is one click away:
 // pasting the example URL with the intent + prompt pre-filled gives the
 // user a structured, comparable result instead of a generic page summary.
+//
+// F06 (Recipe Packs): templates are grouped into persona-aligned packs so
+// users can pick a Pack ("Sales Pack", "CI Pack", "SEO Pack") and see only
+// the recipes that matter for their role. A template can belong to multiple
+// packs (e.g. "competitor-pricing" is in both CI and SEO).
 
 export const EXTRACTION_TEMPLATES = [
   {
@@ -15,6 +20,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract company name, one-line description, founders, batch (e.g. W21), and website URL. Return a JSON array.",
     tags: ["leads", "startups", "directory"],
+    packs: ["sales", "ci"],
   },
   {
     key: "saas-pricing",
@@ -24,6 +30,7 @@ export const EXTRACTION_TEMPLATES = [
     exampleUrl: "https://stripe.com/pricing",
     intent: "pricing",
     tags: ["pricing", "competitor", "saas"],
+    packs: ["ci", "seo"],
   },
   {
     key: "job-board",
@@ -35,6 +42,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "List every open job posting: title, department, location, and whether it's remote-friendly. Return a JSON array.",
     tags: ["jobs", "hiring", "research"],
+    packs: ["ci", "research"],
   },
   {
     key: "leadership-contacts",
@@ -44,6 +52,7 @@ export const EXTRACTION_TEMPLATES = [
     exampleUrl: "https://anthropic.com",
     intent: "contacts",
     tags: ["leads", "contacts"],
+    packs: ["sales"],
   },
   {
     key: "producthunt-launch",
@@ -55,6 +64,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract the product name, tagline, short description, key features, maker names, and external links.",
     tags: ["marketing", "products"],
+    packs: ["seo", "research"],
   },
   {
     key: "shopify-product",
@@ -66,6 +76,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract product title, current price, currency, available variants, in-stock flag, and review count.",
     tags: ["ecommerce", "products", "research"],
+    packs: ["research"],
   },
   {
     key: "seo-audit",
@@ -77,6 +88,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Return an object with: title, meta_description, h1 (array), h2 (array), canonical_url, og_image, json_ld_count.",
     tags: ["seo", "audit"],
+    packs: ["seo"],
   },
   {
     key: "tech-stack",
@@ -88,6 +100,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Identify front-end frameworks, analytics tools, hosting/CDN providers, and any third-party scripts visible in the source.",
     tags: ["research", "tech"],
+    packs: ["ci", "research"],
   },
   {
     key: "competitor-pricing",
@@ -97,6 +110,7 @@ export const EXTRACTION_TEMPLATES = [
     exampleUrl: "https://linear.app/pricing",
     intent: "pricing",
     tags: ["competitor", "pricing"],
+    packs: ["ci", "sales"],
   },
   {
     key: "news-article",
@@ -108,6 +122,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract headline, author, publication date, summary (3 sentences), and 5 key entities (people/companies/products).",
     tags: ["news", "research"],
+    packs: ["research", "seo"],
   },
   {
     key: "linkedin-profile",
@@ -119,6 +134,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract the person's name, current headline, current company + title, and 3 most recent roles with start dates.",
     tags: ["leads", "contacts"],
+    packs: ["sales"],
   },
   {
     key: "github-repo",
@@ -130,6 +146,38 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Extract repository name, owner, star count, primary language, topics, and a 2-sentence README summary.",
     tags: ["dev", "research"],
+    packs: ["research", "seo"],
+  },
+];
+
+// ── F06: Recipe Packs ────────────────────────────────────────────────────────
+// Each pack is a persona-aligned bundle of templates. Drives the Pack filter
+// row at the top of TemplateGallery and the "Choose your starter pack" step
+// in Onboarding. Adding a new pack is a one-line edit.
+export const RECIPE_PACKS = [
+  {
+    key: "sales",
+    label: "Sales Pack",
+    description: "Build your prospect pipeline. Extract contacts, leadership, and company briefs from any URL in 30 seconds.",
+    icon: "target",
+    color: "#4f46e5",
+    templateKeys: ["yc-companies", "leadership-contacts", "linkedin-profile", "competitor-pricing"],
+  },
+  {
+    key: "ci",
+    label: "CI Pack",
+    description: "Stay ahead of competitors. Track pricing, tech stack, and hiring signals across your competitive set.",
+    icon: "eye",
+    color: "#7c3aed",
+    templateKeys: ["yc-companies", "saas-pricing", "job-board", "tech-stack", "competitor-pricing"],
+  },
+  {
+    key: "seo",
+    label: "SEO Pack",
+    description: "Audit any site in one click. Pull heading structure, meta, links, and competitor content for content briefs.",
+    icon: "search",
+    color: "#0d9488",
+    templateKeys: ["saas-pricing", "producthunt-launch", "seo-audit", "news-article", "github-repo"],
   },
 ];
 
@@ -144,4 +192,18 @@ export function getTemplateByKey(key) {
 export function filterTemplatesByTag(tag) {
   if (!tag || tag === "all") return EXTRACTION_TEMPLATES;
   return EXTRACTION_TEMPLATES.filter((t) => t.tags.includes(tag));
+}
+
+export function getPackByKey(key) {
+  return RECIPE_PACKS.find((p) => p.key === key) || null;
+}
+
+export function getTemplatesByPack(packKey) {
+  const pack = getPackByKey(packKey);
+  if (!pack) return [];
+  return pack.templateKeys.map((k) => getTemplateByKey(k)).filter(Boolean);
+}
+
+export function getAllPackKeys() {
+  return RECIPE_PACKS.map((p) => p.key);
 }

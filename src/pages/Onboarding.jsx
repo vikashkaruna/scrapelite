@@ -1,12 +1,15 @@
-// Onboarding.jsx — V4 persona-selection + welcome flow (route "/onboarding").
+// Onboarding.jsx — V4 persona-selection + welcome flow (route "/onboarding")
+// + F06 (Recipe Packs) — Step 2 surfaces a "Choose your starter pack" picker
+// pre-tuned to the selected persona.
 // Step 1: Pick your role (7 persona cards).
-// Step 2: Optional name entry + persona-specific welcome.
+// Step 2: Choose a Recipe Pack (or skip) + optional name entry + persona welcome.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONAS } from "../lib/personaConfig.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
+import { RECIPE_PACKS, getPackByKey } from "../lib/extractionTemplates.js";
 
 const SIGN_IN_PERSONAS = PERSONAS;
 
@@ -72,6 +75,21 @@ function StepOne({ selected, onSelect, onNext }) {
 
 function StepTwo({ persona, onComplete }) {
   const [name, setName] = useState("");
+  // Default the pack to the persona's first relevant pack when there is one.
+  const defaultPackKey = persona?.id === "sales"
+    ? "sales"
+    : persona?.id === "competitive-intel"
+      ? "ci"
+      : persona?.id === "seo"
+        ? "seo"
+        : RECIPE_PACKS[0]?.key;
+  const [packKey, setPackKey] = useState(defaultPackKey);
+  const activePack = getPackByKey(packKey);
+
+  const handleComplete = () => {
+    try { localStorage.setItem("datiq.starterPack", packKey); } catch {}
+    onComplete(name);
+  };
 
   return (
     <div className="ob-step rise">
@@ -92,6 +110,47 @@ function StepTwo({ persona, onComplete }) {
         {persona.welcomeBody}
       </p>
 
+      {/* F06 — Recipe Pack picker. Lets the user pre-load 3–5 templates
+          tuned to their role, surfaced on the Home Template Gallery on
+          first visit (read from datiq.starterPack). */}
+      <div className="ob-pack-picker" role="radiogroup" aria-label="Choose a starter Recipe Pack">
+        <div className="ob-pack-picker-label">
+          <Icon name="layers" size={13} />
+          Choose your starter Recipe Pack
+          <span className="ob-pack-hint">(you can switch any time)</span>
+        </div>
+        <div className="ob-pack-row">
+          {RECIPE_PACKS.map((p) => {
+            const isActive = packKey === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                className={"ob-pack-card" + (isActive ? " ob-pack-card-active" : "")}
+                onClick={() => setPackKey(p.key)}
+                role="radio"
+                aria-checked={isActive}
+                style={isActive ? { "--pack-accent": p.color } : {}}
+              >
+                <span className="ob-pack-icon" style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
+                  <Icon name={p.icon} size={16} />
+                </span>
+                <span className="ob-pack-label">{p.label}</span>
+                <span className="ob-pack-count">{p.templateKeys.length} templates</span>
+                {isActive && (
+                  <span className="ob-pack-check" style={{ background: p.color }}>
+                    <Icon name="check" size={11} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {activePack && (
+          <p className="ob-pack-desc">{activePack.description}</p>
+        )}
+      </div>
+
       <div className="ob-name-field">
         <label className="ob-name-label" htmlFor="ob-name">
           What should we call you? <span className="ob-name-hint">(optional)</span>
@@ -103,7 +162,7 @@ function StepTwo({ persona, onComplete }) {
           placeholder="Your first name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onComplete(name)}
+          onKeyDown={(e) => e.key === "Enter" && handleComplete()}
           autoFocus
           autoComplete="given-name"
         />
@@ -112,7 +171,7 @@ function StepTwo({ persona, onComplete }) {
       <Button
         variant="primary"
         iconRight="arrow-right"
-        onClick={() => onComplete(name)}
+        onClick={handleComplete}
         style={{ minWidth: 220, height: 52, fontSize: "1.05em" }}
       >
         Start extracting

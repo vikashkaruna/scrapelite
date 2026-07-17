@@ -11,6 +11,7 @@
 
 import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
+import { incrementPublicExtractions, decrementPublicExtractions } from "./publicQuota.js";
 
 const TABLE = "public_reports";
 const LS_INDEX = "datiq.publicGallery";
@@ -169,6 +170,32 @@ export async function shareExtraction(extraction, opts = {}) {
   }
 
   return { slug, persistedTo, supabaseError };
+}
+
+/** Was the given extraction already shared publicly? (sync) */
+export function isPubliclyShared(id) {
+  if (!id) return false;
+  return Boolean(getSharedSlugForId(id));
+}
+
+/**
+ * Notify the public-quota counter that an extraction was shared.
+ * Called from the Preview share flow after a successful share.
+ * Simple increment — the call site (Preview.jsx) is responsible for not
+ * double-counting (it only calls this on a successful new share, never on
+ * the idempotent re-share path inside shareExtraction).
+ */
+export function recordPublicShare(extractionId) {
+  if (!extractionId) return null;
+  return incrementPublicExtractions(1);
+}
+
+/**
+ * Notify the public-quota counter that an extraction was unshared.
+ * Matches recordPublicShare — decrements by 1 (never below 0).
+ */
+export function recordPublicUnshare() {
+  return decrementPublicExtractions(1);
 }
 
 /**
