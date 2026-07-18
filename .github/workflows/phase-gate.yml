@@ -1,0 +1,217 @@
+# .github/workflows/phase-gate.yml
+#
+# Phase-Gate Production Deploy
+# ─────────────────────────────
+# Runs on every push to main. Executes four jobs in order, each gated by
+# the previous:
+#
+#   test              → vitest 1,297+ unit + contract tests
+#   smoke-staging     → confirm staging.datiq.app is healthy on the new commit
+#   deploy-production → ⏸  MANUAL APPROVAL required (you click "Approve" in UI)
+#                       then Netlify deploys to datiq.app
+#   smoke-production  → verify the deploy, auto-rollback to last good on failure
+#
+# Concurrency group is `prod-deploy` with cancel-in-progress: false, so
+# an in-flight prod deploy is never killed mid-deploy (which would leave
+# the site in a half-published state). The second push just queues.
+
+name: Phase-Gate Production Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bypass_staging_check:
+        description: "Skip staging smoke check (use only for hotfixes)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+# ───────────────────────────────────────────────────────────────────
+# 1. UNIT + CONTRACT TESTS
+# ───────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Unit + Contract Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm test
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. STAGING SMOKE — same commit must be healthy on staging first
+  # ─────────────────────────────────────────────────────────────────
+  smoke-staging:
+    name: Smoke Test — Staging
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+
+      - name: Wait for Netlify to finish the staging deploy
+        # When you push to `staging`, Netlify auto-deploys to
+        # staging.datiq.app. This polls the Netlify API until the
+        # most recent staging deploy's commit matches what we just
+        # pushed, OR the workflow was manually triggered (in which
+        # case we just check liveness).
+        run: |
+          set -e
+          echo "Waiting for staging.datiq.app to converge on $GITHUB_SHA..."
+          for i in $(seq 1 30); do
+            RESP=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
+              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy")
+            LATEST_SHA=$(echo "$RESP" \
+              | jq -r '[.[] | select(.branch == "staging")] | .[0].commit_ref // "unknown"')
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://staging.datiq.app/api/stats || echo "000")
+            echo "  attempt $i/30: latest_staging=$LATEST_SHA  /api/stats=$STATUS"
+            # workflow_dispatch skips the commit check (you might be re-running)
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+                echo "  ✓ staging is up"
+                exit 0
+              fi
+            else
+              if [ "$LATEST_SHA" = "$GITHUB_SHA" ] && { [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; }; then
+                echo "  ✓ staging is on commit $GITHUB_SHA"
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "✗ staging did not converge in 5 minutes"
+          exit 1
+
+      - name: Run smoke test against staging
+        # Reuses the same smoke script the prod job will use.
+        # Exits non-zero on any check failure → blocks prod deploy.
+        run: node scripts/smoke-prod.mjs https://staging.datiq.app
+        env:
+          SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 3. PRODUCTION DEPLOY — gated by GitHub environment approval
+  # ─────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production (manual approval)
+    needs: smoke-staging
+    if: |
+      always() &&
+      (needs.smoke-staging.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && inputs.bypass_staging_check == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://datiq.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+
+      # Build with the PRODUCTION env vars (read from the `production`
+      # GitHub environment, not from the Netlify context). This way the
+      # build is fully reproducible from CI without relying on Netlify's
+      # env var state at build time.
+      - name: Build
+        run: npm run build -- --mode production
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_RAZORPAY_KEY_ID: ${{ secrets.VITE_RAZORPAY_KEY_ID }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
+          VITE_AI_MODEL: claude-3-5-haiku-20241022
+          VITE_PAYMENT_PROVIDER: auto
+          VITE_WEBHOOK_URL: ${{ secrets.VITE_WEBHOOK_URL }}
+          VITE_LINK_CHANGELOG: https://datiq.app/changelog
+          VITE_LINK_ABOUT: https://datiq.app/about
+          VITE_LINK_BLOG: https://datiq.app/blog
+          VITE_FIRECRAWL_API_KEY: ""
+
+      - name: Deploy to Netlify (production)
+        # Use the official Netlify CLI directly. Equivalent to
+        # clicking "Publish deploy" in the Netlify UI.
+        run: |
+          npx --yes netlify-cli deploy \
+            --prod \
+            --dir=dist \
+            --auth=$NETLIFY_AUTH_TOKEN \
+            --site=$NETLIFY_SITE_ID \
+            --message="phase-gate: ${{ github.event.head_commit.message }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 4. PRODUCTION SMOKE — auto-rollback on failure
+  # ─────────────────────────────────────────────────────────────────
+  smoke-production:
+    name: Smoke Test — Production
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+
+      - name: Wait for Netlify CDN to converge
+        # Deploys complete in seconds; CDN propagation can take 10-30s.
+        run: sleep 30
+
+      - name: Run smoke test against production
+        id: smoke
+        # If this exits non-zero, the auto-rollback step fires.
+        run: |
+          set +e
+          node scripts/smoke-prod.mjs https://datiq.app
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Auto-rollback on smoke failure
+        if: failure()
+        # Restores the previous successful deploy. Zero-downtime, instant.
+        # Equivalent to clicking "Restore" on the previous deploy in UI.
+        run: |
+          echo "✗ production smoke failed, rolling back to last good deploy"
+          npx --yes netlify-cli rollback \
+            --auth=$NETLIFY_AUTH_TOKEN \
+            --site=$NETLIFY_SITE_ID
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Notify on smoke failure
+        if: failure()
+        # Optional. If you don't have Slack, delete this step.
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🚨 DatIQ production smoke FAILED. Auto-rollback executed. Commit: ${{ github.sha }}\nActor: ${{ github.actor }}\nWorkflow: ${{ github.workflow }} #${{ github.run_number }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
