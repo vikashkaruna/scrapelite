@@ -22,6 +22,9 @@
     "test:e2e:visual": "playwright test e2e/visual/",
     "test:smoke": "npm run test:e2e:smoke",
     "test:security": "node scripts/security-check.mjs",
+    "smoke": "node scripts/smoke-prod.mjs",
+    "smoke:prod": "node scripts/smoke-prod.mjs https://datiq.app",
+    "smoke:staging": "node scripts/smoke-prod.mjs https://staging.datiq.app",
     "test:all": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
     "migrate:prod": "node scripts/migrate-prod.mjs"
   },
