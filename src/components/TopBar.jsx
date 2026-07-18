@@ -293,16 +293,10 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
               </button>
             </>
           ) : (
-            <>
-              <button className="mobile-nav-item" onClick={() => { onSignIn("signin"); onClose(); }}>
-                <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
-                Sign in
-              </button>
-              <button className="mobile-nav-item" onClick={() => { onSignIn("signup"); onClose(); }}>
-                <span className="mobile-nav-icon"><Icon name="user-plus" size={17} /></span>
-                Sign up
-              </button>
-            </>
+            <button className="mobile-nav-item mobile-nav-item-primary" onClick={() => { onSignIn("signin"); onClose(); }}>
+              <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
+              Sign in
+            </button>
           )}
         </div>
       </nav>
@@ -413,10 +407,7 @@ export default function TopBar() {
               onSignIn={() => openAuth("signin")}
             />
           ) : (
-            <>
-              <Button variant="ghost" size="sm" icon="log-in" onClick={() => openAuth("signin")}>Sign in</Button>
-              <Button variant="primary" size="sm" onClick={() => openAuth("signup")}>Sign up</Button>
-            </>
+            <Button variant="primary" size="sm" icon="log-in" onClick={() => openAuth("signin")}>Sign in</Button>
           )}
         </div>
 

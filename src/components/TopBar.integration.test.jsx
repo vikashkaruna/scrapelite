@@ -1,7 +1,7 @@
 // src/components/TopBar.integration.test.jsx
 // I-23..25 + I-49 — TopBar integration.
 //
-//   - I-23: Logged out → "Sign in" + "Sign up" buttons; logged in → UserDropdown
+//   - I-23: Logged out → single primary "Sign in" button; logged in → UserDropdown
 //   - I-24: Explore dropdown opens, shows the (flat) item list with the
 //           expected top-level entries
 //   - I-25: Mobile viewport (<600px) → hamburger button visible
@@ -87,7 +87,7 @@ function LocationProbe() {
 }
 
 describe("I-23 — TopBar: auth state", () => {
-  it("logged out → 'Sign in' + 'Sign up' buttons", async () => {
+  it("logged out → single primary 'Sign in' button", async () => {
     render(
       <Providers>
         <TopBar />
@@ -96,8 +96,11 @@ describe("I-23 — TopBar: auth state", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^sign up$/i })).toBeInTheDocument();
+    const signIn = screen.getByRole("button", { name: /^sign in$/i });
+    expect(signIn).toBeInTheDocument();
+    // No separate "Sign up" button — both auth modes open the same dialog,
+    // so a single primary CTA is enough.
+    expect(screen.queryByRole("button", { name: /^sign up$/i })).not.toBeInTheDocument();
   });
 
   it("logged in → UserDropdown trigger (chevron + label)", async () => {

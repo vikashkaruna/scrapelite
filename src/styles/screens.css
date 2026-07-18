@@ -3308,6 +3308,12 @@
 }
 .mobile-nav-item:hover { background: var(--surface-2); color: var(--text); }
 .mobile-nav-item.active { color: var(--accent-on-soft); background: var(--accent-soft); }
+.mobile-nav-item.mobile-nav-item-primary {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.mobile-nav-item.mobile-nav-item-primary .mobile-nav-icon { background: var(--accent); color: #fff; }
 .mobile-nav-item.mobile-nav-danger { color: #e0556b; }
 .mobile-nav-icon {
   width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
@@ -5092,17 +5098,6 @@
   transition: background .15s;
 }
 .gtb-cta:hover { background: rgba(255,255,255,.28); }
-.gtb-signin {
-  background: none;
-  border: none;
-  color: rgba(255,255,255,.8);
-  font-size: .82em;
-  cursor: pointer;
-  text-decoration: underline;
-  white-space: nowrap;
-  padding: 0;
-}
-.gtb-signin:hover { color: #fff; }
 
 /* ── Guest Trial Modal ────────────────────────────────────────────── */
 .guest-trial-overlay {
