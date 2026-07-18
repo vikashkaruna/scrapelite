@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildDigest,
   _internal,
-} from "./reengagement.js";
+} from "../functions/reengagement.js";
 const { digestHtml, reengagementHtml, isMonday, isOlderThan, getISOWeek, escapeHtml } = _internal;
 
 describe("buildDigest (F49)", () => {

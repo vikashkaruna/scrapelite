@@ -6,7 +6,7 @@ import {
   headlessOptions,
   headlessAttribution,
   _internal,
-} from "./headlessProvider.js";
+} from "../../functions/lib/headlessProvider.js";
 
 const { UPSTREAM_HEADLESS_PROVIDERS } = _internal;
 

@@ -6,7 +6,7 @@ import {
   pickProxy,
   resetProxyCounterForTests,
   _internal,
-} from "./proxyConfig.js";
+} from "../../functions/lib/proxyConfig.js";
 
 const { parseProxies } = _internal;
 

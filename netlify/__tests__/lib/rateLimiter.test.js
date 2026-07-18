@@ -1,7 +1,7 @@
 // netlify/functions/lib/rateLimiter.test.js — FD3 (per-host rate limiter).
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { _internal, takeToken, takeTokenBlocking, _resetRateLimiterForTests, configFromEnv } from "./rateLimiter.js";
+import { _internal, takeToken, takeTokenBlocking, _resetRateLimiterForTests, configFromEnv } from "../../functions/lib/rateLimiter.js";
 
 const { TokenBucket } = _internal;
 

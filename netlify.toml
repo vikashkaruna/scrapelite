@@ -5,6 +5,18 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # Defensive: never bundle test files, hidden metadata, or editor cruft
+  # from the functions directory. Netlify auto-deploys every top-level .js
+  # in netlify/functions/ as a serverless function, so a stray test file
+  # with a `.` in its name — e.g. `reengagement.test.js` — produces a
+  # function named `reengagement.test`, which Netlify rejects as an
+  # invalid name and fails the build. Keep this list in sync with the
+  # test layout in netlify/__tests__/.
+  ignored_files = [
+    "netlify/functions/**/*.test.js",
+    "netlify/functions/**/*.spec.js",
+    "netlify/functions/**/.*",
+  ]
 
 [build.environment]
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js"

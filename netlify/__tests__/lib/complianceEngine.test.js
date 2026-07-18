@@ -1,7 +1,7 @@
 // netlify/functions/lib/complianceEngine.test.js — FD3 (robots.txt parser + check).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { _internal, isPathAllowed, checkCompliance, _resetRobotsCacheForTests } from "./complianceEngine.js";
+import { _internal, isPathAllowed, checkCompliance, _resetRobotsCacheForTests } from "../../functions/lib/complianceEngine.js";
 
 const { parseRobots, DEFAULT_CRAWL_DELAY_MS } = _internal;
 
