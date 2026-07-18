@@ -25,7 +25,8 @@ Paste a URL (or many), choose what you want, and DatIQ does the rest.
 12. Accounts, trial & sign-in
 13. Privacy & your data
 14. FAQ & troubleshooting
-15. Glossary
+15. Keyboard shortcuts
+16. Glossary
 
 ---
 
@@ -239,8 +240,16 @@ DatIQ exports your data in the format that fits your workflow. Exports are avail
 | **Markdown** | Pasting into docs, wikis, or notes. |
 | **JSON** | Structured data for further processing. |
 | **Email** | Send selected extractions straight from the Dashboard. |
+| **Copy to clipboard** | Paste Markdown / JSON / CSV straight into a doc or chat. Available from the same Export menu. |
 
 Some formats are available on higher plans — the export menu shows which.
+
+### Sharing a single extraction
+
+From any extraction on the Dashboard or Preview, click **Share** to get a public link. The link
+opens a read-only report at `datiq.app/p/<short-code>` that anyone can view — no sign-in needed.
+Public reports can be unshared at any time. Recent public extractions also surface on the
+**`/gallery`** page.
 
 ---
 
@@ -258,6 +267,9 @@ supported, with monthly and annual billing (annual saves you money).
 
 Manage everything from the **Account** screen: your current plan, usage this month, usage alerts,
 coupon entry, and payment history. Before any charge, a confirmation shows the full breakdown (including taxes where applicable).
+
+A detailed **plan comparison matrix** sits below the plan cards on the pricing page — it lists every
+capability by tier so you can see at a glance which plan unlocks what.
 
 ---
 
@@ -306,9 +318,53 @@ the manual **Run now** button just shows you the result on screen.
 **How do I export to a spreadsheet?**
 Use **CSV** from any export menu, then open it in your spreadsheet tool.
 
+**Can I share an extraction with someone who doesn't have a DatIQ account?**
+Yes — every extraction has a **Share** button that creates a public link at
+`datiq.app/p/<short-code>`. The recipient sees a read-only report, no sign-in required. You can
+revoke the link at any time.
+
+**How do I get to a specific page fast?**
+Press <kbd>mod</kbd>+<kbd>k</kbd> (or <kbd>ctrl</kbd>+<kbd>k</kbd>) anywhere to open the command
+palette. Type a page name (Home, Dashboard, Pricing, Schedule, etc.) and press <kbd>Enter</kbd>.
+
+**What are those chips above the URL box?**
+Those are **outcome tiles** — pre-wired shortcuts for the six most common jobs (AI summary, lead
+list, pricing, competitor research, job board, custom). Click one to pre-fill the URL, intent, and
+prompt. Click several to combine prompts into one extraction.
+
+**What is the Workspace page?**
+When you sign in, the top nav gains a **Workspace** entry — a logged-in command center for your
+recent extractions, schedules, batch runs, and notifications.
+
+**What is the Gallery?**
+`/gallery` lists recent public extractions. Useful for browsing what others have shared and for
+discovering new use-cases.
+
 ---
 
-## 15. Glossary
+## 15. Keyboard shortcuts
+
+DatIQ has power-user shortcuts for fast navigation and common actions. Press <kbd>?</kbd> any time
+to see the full list.
+
+| Shortcut | Action |
+|---|---|
+| <kbd>?</kbd> | Show this help. |
+| <kbd>Esc</kbd> | Close any open modal or overlay. |
+| <kbd>/</kbd> | Focus the search / URL input. |
+| <kbd>mod</kbd>+<kbd>k</kbd> | Open the command palette (jump anywhere). |
+| <kbd>g</kbd> then <kbd>d</kbd> | Go to Dashboard. |
+| <kbd>g</kbd> then <kbd>b</kbd> | Go to Batch. |
+| <kbd>g</kbd> then <kbd>s</kbd> | Go to Schedules. |
+| <kbd>g</kbd> then <kbd>p</kbd> | Go to Pricing. |
+| <kbd>g</kbd> then <kbd>w</kbd> | Go to Workspace. |
+| <kbd>g</kbd> then <kbd>t</kbd> | Replay the onboarding tour. |
+
+(`mod` = <kbd>⌘</kbd> on Mac, <kbd>Ctrl</kbd> on Windows / Linux.)
+
+---
+
+## 16. Glossary
 
 - **Extraction** — one run of DatIQ against a page, producing structured results.
 - **Intent** — what you want from a page (summary, contacts, pricing, map, or custom).
@@ -320,3 +376,9 @@ Use **CSV** from any export menu, then open it in your spreadsheet tool.
 - **Content generation** — turning an extracted page into a draft (blog outline, competitor summary, or social posts).
 - **Map site** — discovering the set of indexed URLs across a domain.
 - **Top-up bundle** — extra capacity added to your current plan.
+- **Outcome tile** — a pre-wired shortcut chip above the URL box (lead list, pricing, etc.).
+- **Template** — a pre-built extraction recipe (YC companies, SaaS pricing, etc.) you can apply in one click.
+- **Workspace** — your logged-in command center for recent extractions and activity.
+- **Public report** — a read-only shareable link at `datiq.app/p/<short-code>`.
+- **Provenance** — a label that tells you where each piece of extracted data came from.
+- **Command palette** — press <kbd>mod</kbd>+<kbd>k</kbd> to jump anywhere.

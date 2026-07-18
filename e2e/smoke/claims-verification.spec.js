@@ -22,18 +22,18 @@ test("CLAIM: /pricing shows all 4 paid tiers (Select/Pro/Business/Agency)", asyn
 test("CLAIM: Annual billing is the default toggle on /pricing", async ({ page }) => {
   await page.goto("/pricing");
   // Annual toggle is the active one by default
-  const annualBtn = page.getByRole("button", { name: /^Annual$/i });
+  const annualBtn = page.getByRole("button", { name: /Annual billing/i });
   await expect(annualBtn).toBeVisible();
-  // Active state via aria-pressed (R4 implementation uses pressed attr)
-  const pressed = await annualBtn.getAttribute("aria-pressed");
-  expect(pressed === "true" || annualBtn.evaluate((el) => el.classList.contains("on"))).toBeTruthy();
+  // Active state via aria-pressed (toggle now exposes it explicitly)
+  await expect(annualBtn).toHaveAttribute("aria-pressed", "true");
 });
 
 test("CLAIM: Select plan starts at $19/month (monthly billing)", async ({ page }) => {
   await page.goto("/pricing");
   // Switch to monthly if it's not already
-  const monthlyBtn = page.getByRole("button", { name: /^Monthly$/i });
+  const monthlyBtn = page.getByRole("button", { name: /Monthly billing/i });
   if (await monthlyBtn.isVisible()) await monthlyBtn.click();
+  await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
   // Look for the $19 price in the Select card
   await expect(page.getByText(/\$19/).first()).toBeVisible();
 });
@@ -78,8 +78,8 @@ test("CLAIM: Single-URL extraction surfaces the Preview page", async ({ page }) 
   // Type a valid URL into the composer
   const ta = page.locator(".hero-composer-input, [aria-label*='URL or content']").first();
   await ta.fill("https://example.com");
-  // Click the inline action button
-  await page.locator(".hero-composer-action, .hero-composer-run").first().click();
+  // Click the inline action button (label varies by mode: arrow-up / layers / calendar-clock)
+  await page.locator(".hero-action-btn").first().click();
   await expect(page).toHaveURL(/\/preview/);
 });
 

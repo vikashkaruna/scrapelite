@@ -68,19 +68,25 @@ function resolvePrice(plan, billingPeriod, currency, rates) {
 
 function BillingToggle({ value, onChange }) {
   return (
-    <div className="billing-toggle-wrap">
+    <div className="billing-toggle-wrap" role="group" aria-label="Billing period">
       <button
+        type="button"
         className={"billing-toggle-btn" + (value === "monthly" ? " active" : "")}
         onClick={() => onChange("monthly")}
+        aria-pressed={value === "monthly"}
+        aria-label="Monthly billing"
       >
         Monthly
       </button>
       <button
+        type="button"
         className={"billing-toggle-btn" + (value === "annual" ? " active" : "")}
         onClick={() => onChange("annual")}
+        aria-pressed={value === "annual"}
+        aria-label="Annual billing"
       >
         Annual
-        <span className="billing-save-badge">Save 20%</span>
+        <span className="billing-save-badge" aria-hidden="true">Save 20%</span>
       </button>
     </div>
   );

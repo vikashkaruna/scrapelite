@@ -58,7 +58,8 @@ test("Guest 3 → soft prompt; 10 → hard block; 'Sign in' opens AuthModal", as
   await page.reload();
   const hardBlock = page.getByRole("dialog", { name: /Sign up to continue/i });
   await expect(hardBlock).toBeVisible();
-  await expect(hardBlock.getByText(/guest extraction limit/i)).toBeVisible();
+  // Headline is "You've used all 10 free extractions" (FA3 task-aware copy)
+  await expect(hardBlock.getByText(/used all 10 free extractions/i)).toBeVisible();
 
   // The hard block is non-dismissible: backdrop is absent, and the only
   // escape is via the auth buttons.

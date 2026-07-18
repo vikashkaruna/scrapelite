@@ -37,7 +37,7 @@ test("pricing monthly USD", async ({ page }) => {
   await page.goto("/pricing");
   await page.waitForLoadState("networkidle");
   // Click the Monthly toggle.
-  await page.getByRole("button", { name: /^Monthly$/i }).click();
+  await page.getByRole("button", { name: /Monthly billing/i }).click();
   await page.waitForTimeout(200);
   await expect(page).toHaveScreenshot("pricing-monthly-usd.png", {
     fullPage: true,
