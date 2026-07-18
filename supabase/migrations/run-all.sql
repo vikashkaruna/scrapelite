@@ -35,6 +35,26 @@
 -- Run in: Supabase Dashboard → SQL Editor → New query → paste → Run
 -- All statements are idempotent (safe to run multiple times).
 
+-- ── Core: extractions table (created here so 0001 is self-contained on a fresh DB).
+-- 0004 also runs `create table if not exists public.extractions (...)` + the per-user
+-- RLS policy, but on a brand-new Supabase project that table doesn't exist yet, so
+-- the V2 ALTERs below would fail with "relation public.extractions does not exist".
+-- This CREATE mirrors the schema 0004 would create; the duplicate 0004 create is a
+-- no-op after this runs.
+create table if not exists public.extractions (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid references auth.users,
+  url               text,
+  page_title        text,
+  ai_summary        text,
+  headings          jsonb,
+  links             jsonb,
+  custom_extraction jsonb,
+  domain_map        jsonb,
+  enrichments       jsonb,
+  created_at        timestamptz default now()
+);
+
 -- ── V2: extractions table columns (safe if already exist) ─────────────────────
 alter table public.extractions add column if not exists custom_extraction jsonb;
 alter table public.extractions add column if not exists domain_map        jsonb;
