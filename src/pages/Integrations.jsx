@@ -1,8 +1,11 @@
 // Integrations.jsx — /integrations catalog page
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
+import NotifyMeModal from "../components/NotifyMeModal.jsx";
+import { isWaitlisted } from "../lib/integrationsNotify.js";
 
 const INTEGRATIONS = [
   {
@@ -48,8 +51,17 @@ const INTEGRATIONS = [
     action: { label: "Notify me", path: null },
   },
   {
+    icon: "layers",
+    title: "Airtable",
+    slug: "airtable",
+    status: "coming-soon",
+    desc: "Push extraction rows straight into an Airtable base. Field mapping handles contacts, links, and headings automatically.",
+    action: { label: "Notify me", path: null },
+  },
+  {
     icon: "bookmark",
     title: "Notion",
+    slug: "notion",
     status: "coming-soon",
     desc: "Export structured extraction data to a Notion database with field mapping.",
     action: { label: "Notify me", path: null },
@@ -57,13 +69,15 @@ const INTEGRATIONS = [
   {
     icon: "table",
     title: "Google Sheets",
-    status: "coming-soon",
-    desc: "Send extraction results to a connected Google Sheet — auto-append rows on every new extraction.",
-    action: { label: "Notify me", path: null },
+    slug: "google-sheets",
+    status: "available",
+    desc: "Download a CSV and upload to a new Google Sheet — or use 'Open in Google Sheets' from any export dropdown for the one-click path.",
+    action: { label: "Open in Sheets", path: "/dashboard" },
   },
   {
     icon: "message-square",
     title: "Slack",
+    slug: "slack",
     status: "coming-soon",
     desc: "Get Slack notifications when monitored URLs change or new extractions complete.",
     action: { label: "Notify me", path: null },
@@ -71,6 +85,7 @@ const INTEGRATIONS = [
   {
     icon: "share",
     title: "Zapier",
+    slug: "zapier",
     status: "coming-soon",
     desc: "Connect DatIQ to 5,000+ apps via Zapier. Trigger zaps on new extractions, enrichments, or monitoring alerts.",
     action: { label: "Notify me", path: null },
@@ -101,6 +116,16 @@ const STATUS_META = {
 export default function Integrations() {
   const navigate = useNavigate();
   const toast = useToast();
+  const [notifyOpen, setNotifyOpen] = useState(null); // { slug, label } or null
+
+  const handleNotifyClick = (item) => {
+    if (!item.slug) {
+      // Legacy: no slug → show a toast instead of a modal.
+      toast(`We'll let you know when ${item.title} launches — subscribe on our Blog for updates.`, "info");
+      return;
+    }
+    setNotifyOpen({ slug: item.slug, label: item.title });
+  };
 
   return (
     <div className="page">
@@ -141,9 +166,9 @@ export default function Integrations() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => toast(`We'll let you know when ${item.title} launches — subscribe on our Blog for updates.`, "info")}
+                        onClick={() => handleNotifyClick(item)}
                       >
-                        {item.action.label}
+                        {isWaitlisted(item.slug) ? "You're on the list" : item.action.label}
                       </Button>
                     )}
                     {item.action && item.status === "agency-plan" && (
@@ -187,6 +212,13 @@ export default function Integrations() {
           </div>
 
       </div>
+
+      <NotifyMeModal
+        open={Boolean(notifyOpen)}
+        slug={notifyOpen?.slug}
+        label={notifyOpen?.label}
+        onClose={() => setNotifyOpen(null)}
+      />
     </div>
   );
 }

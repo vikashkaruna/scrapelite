@@ -187,10 +187,10 @@ describe("F-16 — Comparison pages", () => {
 });
 
 describe("F-17 — Integrations page", () => {
-  it("renders 12 integration cards", async () => {
+  it("renders 13 integration cards (12 original + 1 Airtable added in F18)", async () => {
     const { container } = render(<Tree path="/integrations"><Integrations /></Tree>);
     await act(async () => { await Promise.resolve(); });
     const cards = container.querySelectorAll(".int-card");
-    expect(cards.length).toBe(12);
+    expect(cards.length).toBe(13);
   });
 });

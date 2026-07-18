@@ -13,6 +13,7 @@ import { readSubscription, readUsage } from "../lib/usageService.js";
 import { listExtractions } from "../lib/extractionsRepo.js";
 import { listBatchRuns } from "../lib/batchRunsService.js";
 import { listSchedules } from "../lib/schedulerService.js";
+import WatchlistCard from "../components/WatchlistCard.jsx";
 
 function timeAgo(iso) {
   if (!iso) return "—";
@@ -99,6 +100,9 @@ export default function Workspace() {
             {planName} plan
           </div>
         </header>
+
+        {/* FC1 — Watchlist card (logged-in only) */}
+        {schedules.length > 0 && <WatchlistCard schedules={schedules} />}
 
         <section className="ws-section rise" aria-labelledby="ws-quick-title">
           <h2 id="ws-quick-title" className="ws-section-title">
