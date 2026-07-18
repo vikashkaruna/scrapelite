@@ -16,6 +16,8 @@ import { notifyWebhook } from "./webhook.js";
 import { uid } from "./utils.js";
 import { getSavedSearchesCap } from "./savedSearches.js";
 import { readSubscription } from "./usageService.js";
+import { getSessionId } from "./usageRepo.js";
+import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
 
 function getCapForCurrentPlan() {
   try {
@@ -23,6 +25,26 @@ function getCapForCurrentPlan() {
     return getSavedSearchesCap(sub?.planId || "free");
   } catch {
     return getSavedSearchesCap("free");
+  }
+}
+
+// Identify the current "owner" of an extraction. Logged-in users get
+// their auth user id; guests get a stable per-browser session id. The
+// Recent Extractions widget on Home uses this to filter items so user A
+// never sees user B's saved extractions on a shared device. Items that
+// predate this change (no owner field) are hidden from the per-user
+// widget — they still appear in the full Dashboard.
+async function getOwnerId() {
+  try {
+    if (isSupabaseEnabled && supabase) {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.id) return { userId: data.user.id, sessionId: null };
+    }
+  } catch { /* fall through to sessionId */ }
+  try {
+    return { userId: null, sessionId: getSessionId() };
+  } catch {
+    return { userId: null, sessionId: "anonymous" };
   }
 }
 
@@ -102,21 +124,28 @@ export async function saveExtraction(extraction) {
   // know about them and they would otherwise be sent to Supabase.
   const { _status, _error, ...clean } = extraction;
 
+  // Attach the current owner (auth user id for signed-in users, per-browser
+  // session id for guests) so the Recent Extractions widget on Home can
+  // filter to the current user. Done before the cap check so the same
+  // shape is returned whether or not the save proceeds.
+  const owner = await getOwnerId();
+  const owned = { ...clean, user_id: owner.userId, session_id: owner.sessionId };
+
   // Q3 — saved-searches cap (free plan = 10, paid = unlimited). We allow
   // the save to proceed but flag the result so the UI can show a cap
   // warning. The Dashboard / preview decide what to do with the flag.
   const cap = getCapForCurrentPlan();
-  const existingCount = (local.read() || []).filter((e) => e?.id !== clean.id).length;
+  const existingCount = (local.read() || []).filter((e) => e?.id !== owned.id).length;
   const wouldOverCap = cap !== Infinity && existingCount >= cap;
   if (wouldOverCap) {
     // Don't persist the new save; the UI will see _capHit=true and surface
     // the upgrade CTA. We still return a *result* so callers don't crash.
-    notifyWebhook({ ...clean, _capHit: true, _cap: cap });
-    return { ...clean, _saved: false, _capHit: true, _cap: cap };
+    notifyWebhook({ ...owned, _capHit: true, _cap: cap });
+    return { ...owned, _saved: false, _capHit: true, _cap: cap };
   }
 
   try {
-    const saved = await apiClient.createExtraction(clean);
+    const saved = await apiClient.createExtraction(owned);
     const result = { ...saved, _saved: true };
     local.upsert(result); // mirror locally for offline access
     notifyWebhook(result);
@@ -125,9 +154,9 @@ export async function saveExtraction(extraction) {
     if (shouldFallback(err)) {
       // localStorage fallback when Supabase is not configured.
       const saved = {
-        ...clean,
-        id: clean.id || uid(),
-        created_at: clean.created_at || new Date().toISOString(),
+        ...owned,
+        id: owned.id || uid(),
+        created_at: owned.created_at || new Date().toISOString(),
         _saved: true,
       };
       local.upsert(saved);

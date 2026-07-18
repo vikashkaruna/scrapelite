@@ -1,11 +1,11 @@
-// src/components/OutcomeTiles.test.jsx — Q3 (outcome tiles, multi-select) component tests.
+// src/components/OutcomeTiles.test.jsx — Q3 outcome tiles, single-select.
 
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import OutcomeTiles from "./OutcomeTiles.jsx";
 import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 
-describe("Q3 (multi-select) — OutcomeTiles: above-hero grid", () => {
+describe("Q3 (single-select) — OutcomeTiles: above-hero grid", () => {
   it("renders one button per tile in the data file", () => {
     render(<OutcomeTiles onToggle={() => {}} />);
     for (const tile of OUTCOME_TILES) {
@@ -14,7 +14,7 @@ describe("Q3 (multi-select) — OutcomeTiles: above-hero grid", () => {
     expect(screen.getAllByRole("listitem").length).toBe(OUTCOME_TILES.length);
   });
 
-  it("calls onToggle with the tile object when a tile is clicked", () => {
+  it("calls onToggle with the tile object when an inactive tile is clicked", () => {
     const onToggle = vi.fn();
     render(<OutcomeTiles onToggle={onToggle} />);
     const first = screen.getByText(OUTCOME_TILES[0].title).closest("button");
@@ -25,45 +25,32 @@ describe("Q3 (multi-select) — OutcomeTiles: above-hero grid", () => {
     );
   });
 
-  it("marks active tiles with aria-pressed=true and the .outcome-tile-active class", () => {
-    const activeKeys = [OUTCOME_TILES[0].key, OUTCOME_TILES[2].key];
-    render(<OutcomeTiles activeKeys={activeKeys} onToggle={() => {}} />);
+  it("calls onToggle with null when the active tile is clicked again (deselect)", () => {
+    const onToggle = vi.fn();
+    render(<OutcomeTiles activeKey={OUTCOME_TILES[0].key} onToggle={onToggle} />);
+    const active = screen.getByText(OUTCOME_TILES[0].title).closest("button");
+    fireEvent.click(active);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledWith(null);
+  });
+
+  it("marks the active tile with aria-pressed=true and the .outcome-tile-active class", () => {
+    render(<OutcomeTiles activeKey={OUTCOME_TILES[2].key} onToggle={() => {}} />);
     const items = screen.getAllByRole("listitem");
-    expect(items[0]).toHaveAttribute("aria-pressed", "true");
-    expect(items[0]).toHaveClass("outcome-tile-active");
-    expect(items[1]).toHaveAttribute("aria-pressed", "false");
     expect(items[2]).toHaveAttribute("aria-pressed", "true");
-    expect(items[3]).toHaveAttribute("aria-pressed", "false");
+    expect(items[2]).toHaveClass("outcome-tile-active");
+    expect(items[0]).toHaveAttribute("aria-pressed", "false");
+    expect(items[1]).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("shows the 'Selected' check on every active tile", () => {
-    const activeKeys = [OUTCOME_TILES[0].key];
-    render(<OutcomeTiles activeKeys={activeKeys} onToggle={() => {}} />);
-    const selectedLabels = screen.getAllByText(/selected/i);
-    expect(selectedLabels.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("does not show a Clear button when no tiles are active", () => {
-    render(<OutcomeTiles activeKeys={[]} onToggle={() => {}} />);
+  it("never shows a multi-select Clear (N) button", () => {
+    render(<OutcomeTiles activeKey={OUTCOME_TILES[0].key} onToggle={() => {}} />);
     expect(screen.queryByRole("button", { name: /^Clear \(\d+\)$/ })).toBeNull();
   });
 
-  it("shows a Clear (N) button when at least one tile is active", () => {
-    const activeKeys = [OUTCOME_TILES[0].key, OUTCOME_TILES[1].key, OUTCOME_TILES[2].key];
-    render(<OutcomeTiles activeKeys={activeKeys} onToggle={() => {}} />);
-    const clearBtn = screen.getByRole("button", { name: /^Clear \(3\)$/ });
-    expect(clearBtn).toBeInTheDocument();
-    fireEvent.click(clearBtn);
-    // Clear button emits the "__clear__" sentinel so the parent can clear all
-    expect(clearBtn).toBeInTheDocument(); // still rendered
-  });
-
-  it("Clear button fires onToggle with the '__clear__' sentinel", () => {
-    const onToggle = vi.fn();
-    const activeKeys = [OUTCOME_TILES[0].key];
-    render(<OutcomeTiles activeKeys={activeKeys} onToggle={onToggle} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Clear \(1\)$/ }));
-    expect(onToggle).toHaveBeenCalledWith("__clear__");
+  it("does not show a 'Selected' badge (single-select uses the check icon, not text)", () => {
+    render(<OutcomeTiles activeKey={OUTCOME_TILES[0].key} onToggle={() => {}} />);
+    expect(screen.queryByText(/^Selected$/i)).toBeNull();
   });
 
   it("disables every tile when disabled=true", () => {
@@ -79,5 +66,11 @@ describe("Q3 (multi-select) — OutcomeTiles: above-hero grid", () => {
     expect(
       screen.getByRole("list", { name: /Common jobs to be done/i }),
     ).toBeInTheDocument();
+  });
+
+  it("the section header reads 'Common jobs' (not 'What do you want to extract?')", () => {
+    render(<OutcomeTiles onToggle={() => {}} />);
+    expect(screen.getByText(/^Common jobs$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/What do you want to extract/i)).toBeNull();
   });
 });

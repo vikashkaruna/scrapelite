@@ -3158,6 +3158,12 @@
 @media (min-width: 640px) {
   .recent-grid { grid-template-columns: 1fr 1fr; }
 }
+@media (min-width: 900px) {
+  .recent-grid { grid-template-columns: 1fr 1fr 1fr; }
+}
+@media (min-width: 1180px) {
+  .recent-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
 .recent-card {
   width: 100%;
   display: flex; align-items: center; gap: 10px;

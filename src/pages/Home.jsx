@@ -106,12 +106,13 @@ export default function Home() {
   //    URLs into the main composer; the smart auto-detect (Q1) routes
   //    multi-URL input to /batch. Keep the FAB → /batch link only. ──
 
-  // ── Outcome tile multi-select state (Q3 multi-select) ─────────────────
-  // activeTileKeys is an array of OUTCOME_TILES.key values. Clicking a tile
-  // toggles it in/out; multiple tiles are joined into a single combined
-  // prompt that pre-fills customPrompt. The first clicked tile seeds the
-  // example URL so the user can still see what an extraction looks like.
-  const [activeTileKeys, setActiveTileKeys] = useState([]);
+  // ── Outcome tile single-select state (Q3) ─────────────────────────────
+  // activeTileKey is the OUTCOME_TILES.key of the currently selected tile,
+  // or null. Picking a tile pre-fills the composer (URL + intent + prompt);
+  // clicking the active tile clears the selection. The first section above
+  // the composer is a single-select picker; the precise intent lives on
+  // the intent-chips row further down.
+  const [activeTileKey, setActiveTileKey] = useState(null);
 
   // ── Social proof ───────────────────────────────────────────────────────
   const [stats, setStats] = useState(null);
@@ -204,44 +205,52 @@ export default function Home() {
     [multiCount, billing?.subscription?.planId, billing?.subscription?.bonusExtractions, billing?.usage?.extractions],
   );
 
-  // Q3 (multi-select) — outcome tile toggle. Clicking a tile toggles it in/out
-  // of the active set. The combined prompt = joined prompts of the active
-  // set, in click order. The intent chip auto-switches to "custom" so the
-  // extraction honours the combined prompt.
+  // Q3 (single-select) — outcome tile click. Picking a tile seeds the
+  // composer with the tile's example URL and the canned prompt for its
+  // intent (contacts / pricing). Clicking the active tile clears the
+  // selection. This replaced the earlier multi-select behaviour, which
+  // duplicated the "What do you want to extract?" label and confused the
+  // first-time UX (one tile is enough to start; combine prompts in the
+  // Custom intent instead).
   const OUTCOME_TILES_BY_KEY = useMemo(
     () => Object.fromEntries(OUTCOME_TILES.map((t) => [t.key, t])),
     [],
   );
   const handleTileToggle = useCallback((tile) => {
-    if (tile === "__clear__") {
-      setActiveTileKeys([]);
+    // tile === null → the active tile was clicked again → clear selection
+    if (!tile) {
+      setActiveTileKey(null);
       setCustomPrompt("");
       return;
     }
-    if (!tile || !tile.key) return;
-    setActiveTileKeys((prev) => {
-      const isActive = prev.includes(tile.key);
-      const next = isActive
-        ? prev.filter((k) => k !== tile.key)
-        : [...prev, tile.key];
-      const activeTiles = next.map((k) => OUTCOME_TILES_BY_KEY[k]).filter(Boolean);
-      const combined = activeTiles.map((t) => t.prompt).join("\n\n");
-      if (!isActive && next.length === 1) {
-        setUrl(tile.example.url);
-        setTouched(false);
-        setPreview(null);
-        document.querySelector(".hero-composer, .intent-chips")
-          ?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-      if (next.length > 0) {
-        setIntent("custom");
-        setCustomPrompt(combined);
-      } else {
-        setCustomPrompt("");
-      }
-      return next;
-    });
-  }, [OUTCOME_TILES_BY_KEY]);
+    if (!tile.key) return;
+    setActiveTileKey(tile.key);
+    setUrl(tile.example.url);
+    setTouched(false);
+    setPreview(null);
+    // Map tile to the matching intent chip (uses the existing CARD_TO_INTENT
+    // map plus the tile→intent table). Summary/custom/contacts/pricing/map
+    // tiles land on their own intent; "lead-list" and "competitor" land on
+    // "custom" with the tile's prompt pre-filled.
+    const tileToIntent = {
+      summary:     "summary",
+      "lead-list": "custom",
+      pricing:     "pricing",
+      competitor:  "custom",
+      "job-board": "custom",
+      contacts:    "contacts",
+      map:         "map",
+    };
+    const targetIntent = tileToIntent[tile.key] || "custom";
+    setIntent(targetIntent);
+    if (targetIntent === "custom") {
+      setCustomPrompt(tile.prompt || "");
+    } else {
+      setCustomPrompt("");
+    }
+    document.querySelector(".hero-composer, .intent-chips")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   // Q5 — template card click → pre-fill composer
   const handleTemplateSelect = useCallback((tpl) => {
@@ -353,7 +362,7 @@ export default function Home() {
 
         {/* Q3 — Outcome tiles above the hero composer */}
         <div className="rise" style={{ animationDelay: ".17s", width: "100%", maxWidth: 880, margin: "8px 0 0" }}>
-          <OutcomeTiles activeKeys={activeTileKeys} onToggle={handleTileToggle} />
+          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle} />
         </div>
 
         {/* Quick-context chips */}
@@ -527,7 +536,7 @@ export default function Home() {
         </div>
 
         {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}
-        <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 760 }}>
+        <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 1080 }}>
           <RecentExtractions />
         </div>
 

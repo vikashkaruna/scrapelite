@@ -5,11 +5,21 @@
 // localStorage key Dashboard uses), supports a search filter, and falls through
 // to /dashboard for the full list. Click on a card → /preview (via
 // ExtractionProvider.view()).
-import { useEffect, useMemo, useState } from "react";
+//
+// USER-SPECIFIC FILTER (Q-UI): the widget is filtered to the current
+// owner so user A never sees user B's saved extractions on a shared
+// device. Owner resolution: signed-in user → auth user id; guest →
+// per-browser session id. Items that predate this change (no owner
+// field) are excluded from the per-user widget — they still appear in
+// the full Dashboard.
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import FaviconDot from "./FaviconDot.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
+import { useAuth } from "./AuthProvider.jsx";
+import { getSessionId } from "../lib/usageRepo.js";
+import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
 import { hostOf, timeAgo } from "../lib/utils.js";
 
 const LS_KEY = "datiq.saved";
@@ -25,14 +35,39 @@ function readRecent() {
     const seen = new Set();
     return items
       .filter((it) => it && it.id && !seen.has(it.id) && seen.add(it.id))
-      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
-      .slice(0, MAX_SHOWN);
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
   } catch {
     return [];
   }
 }
 
-function EmptyState({ onCtaClick }) {
+// Resolve the current owner (matches extractionsRepo.getOwnerId):
+//   1. Supabase auth user id if signed in
+//   2. Per-browser session id for guests
+//   3. null if both fail
+async function resolveCurrentOwner() {
+  try {
+    if (isSupabaseEnabled && supabase) {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.id) return { userId: data.user.id, sessionId: null };
+    }
+  } catch { /* fall through */ }
+  try {
+    return { userId: null, sessionId: getSessionId() };
+  } catch {
+    return { userId: null, sessionId: null };
+  }
+}
+
+function matchesOwner(item, owner) {
+  if (!owner || (!owner.userId && !owner.sessionId)) return false;
+  if (owner.userId) {
+    return item.user_id === owner.userId;
+  }
+  return item.session_id === owner.sessionId;
+}
+
+function EmptyState() {
   return (
     <div className="recent-empty">
       <Icon name="bookmark" size={18} />
@@ -47,17 +82,27 @@ function EmptyState({ onCtaClick }) {
 export default function RecentExtractions() {
   const navigate = useNavigate();
   const { view } = useExtraction();
-  const [items, setItems] = useState(readRecent);
-  const [query, setQuery] = useState("");
+  const { user } = useAuth();
+  const [items, setItems]   = useState([]);
+  const [owner, setOwner]   = useState(null);
+  const [query, setQuery]   = useState("");
 
-  // Re-read whenever the localStorage key changes (another tab or a recent save).
+  // Resolve the current owner on mount + when the auth user changes.
+  useEffect(() => {
+    let cancelled = false;
+    resolveCurrentOwner().then((o) => {
+      if (!cancelled) setOwner(o);
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  // Re-read whenever the localStorage key changes (another tab or a recent
+  // save). Also re-read on visibility change so a fresh save shows up next
+  // time the user returns to this tab.
   useEffect(() => {
     const refresh = () => setItems(readRecent());
     refresh();
     window.addEventListener("storage", refresh);
-    // The same page may save an extraction while the user is on Home; poll
-    // a single time on visibility change so a fresh save shows up next time
-    // the user returns to this tab.
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
@@ -65,21 +110,30 @@ export default function RecentExtractions() {
     };
   }, []);
 
+  // Filter to the current owner's items, then take the latest 5.
+  const ownedItems = useMemo(() => {
+    if (!owner) return [];
+    return items.filter((it) => matchesOwner(it, owner)).slice(0, MAX_SHOWN);
+  }, [items, owner]);
+
   const shown = useMemo(() => {
-    if (!query.trim()) return items;
+    if (!query.trim()) return ownedItems;
     const q = query.trim().toLowerCase();
-    return items.filter((it) => {
+    return ownedItems.filter((it) => {
       const t = (it.page_title || "").toLowerCase();
       const u = (it.url || "").toLowerCase();
       return t.includes(q) || u.includes(q) || hostOf(it.url || "").includes(q);
     });
-  }, [items, query]);
+  }, [ownedItems, query]);
 
-  const handleView = (it) => {
+  const handleView = useCallback((it) => {
     try { view(it); } catch (e) { console.warn("[DatIQ] recent.view failed:", e); }
-  };
+  }, [view]);
 
-  if (!items.length) return null;
+  // While the owner resolves (or if the user has zero items) we hide the
+  // whole widget so the Home page doesn't flash an empty box.
+  if (!owner) return null;
+  if (!ownedItems.length) return null;
 
   return (
     <section className="recent-extractions rise" aria-label="Recent extractions">
@@ -89,7 +143,7 @@ export default function RecentExtractions() {
           Recent extractions
         </span>
         <div className="recent-head-right">
-          {items.length > 1 && (
+          {ownedItems.length > 1 && (
             <div className="recent-search">
               <Icon name="search" size={12} />
               <input
