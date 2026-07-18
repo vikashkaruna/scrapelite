@@ -92,7 +92,6 @@
   VITE_LINK_CHANGELOG = "https://datiq.app/changelog"
   VITE_LINK_ABOUT = "https://datiq.app/about"
   VITE_LINK_BLOG = "https://datiq.app/blog"
-  VITE_SUPABASE_ANON_KEY = "PROD_ANON_KEY"   # duplicate of above for clarity
 
 # ── STAGING: staging.datiq.app → dev Supabase, test Razorpay ───────────────
 [context.staging.environment]
