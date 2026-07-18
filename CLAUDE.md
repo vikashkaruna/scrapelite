@@ -2,11 +2,11 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-19 — main has the multi-env migration plans + 3 production-isolation fixes merged (psql→pg, 0001 self-contained, phase-gate workflow, per-context env blocks). v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative).**
+> **Last updated: 2026-07-19 — main is at `074abfe`. 4 small build/CI/UX fixes since the pre-cutover drop: TOML duplicate key, secrets scanner false positives, missing `scripts/smoke-prod.mjs`, TopBar single CTA. v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative). Session detail: `docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`.**
 >
-> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`. **2026-07-19: Pre-cutover production isolation** — `NETLIFY-ENVIRONMENTS.md` (recommended) + `FIREBASE-MIGRATION.md` (alternative) plans merged; 3 prod-isolation fixes (psql→pg, 0001 self-contained, phase-gate workflow); per-context env blocks in `netlify.toml`. See "Outstanding tasks → Pre-cutover: Production isolation" below.
+> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`. **2026-07-19: Pre-cutover production isolation** — `NETLIFY-ENVIRONMENTS.md` (recommended) + `FIREBASE-MIGRATION.md` (alternative) plans merged; 3 prod-isolation fixes (psql→pg, 0001 self-contained, phase-gate workflow); per-context env blocks in `netlify.toml`. See "Outstanding tasks → Pre-cutover: Production isolation" below. **2026-07-19 (late): 4 small fixes** — TOML duplicate `VITE_SUPABASE_ANON_KEY` (`b8b1e53`); secrets scanner omits (`71a2586`); missing `scripts/smoke-prod.mjs` (`92b3af9`); TopBar single primary CTA (`074abfe`).
 >
-> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`ea3658a`).
+> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`074abfe`).
 
 ---
 
@@ -21,9 +21,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — Council feature followup merged (`06a5b96`); `feat/council-followup` synced |
-| **Latest main commit** | `06a5b96` — `Merge branch 'feat/council-followup' into main` (council audit followup); feature commit = `6b46cfc` |
-| **Branch `feat/council-followup`** | merged into main via merge commit `06a5b96`; synced with main; can be deleted if no longer needed |
+| **Current branch** | `main` — 4 small fixes since the pre-cutover drop (TOML duplicate, secrets scanner, phase-gate smoke script, TopBar single CTA) merged at `074abfe` |
+| **Latest main commit** | `074abfe` — `Merge branch 'fix/topbar-single-cta' into main`; feature commit = `dc4289d` |
 
 ---
 
@@ -948,6 +947,22 @@ Two pre-cutover migration plans + 3 production-isolation fixes merged to main in
 - [ ] **Phase 3 — Razorpay:** register **test** webhook for `https://staging.datiq.app/api/payment-webhook?provider=razorpay`; register **live** webhook for `https://datiq.app/api/payment-webhook?provider=razorpay` (after prod goes live). Different secrets per env.
 - [ ] **Phase 4 — GitHub:** create `production` environment (Settings → Environments → New → production) with yourself as required reviewer, restrict to `main` branch. Create `staging` env (no reviewers). Add repo secrets: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `SLACK_WEBHOOK_URL` (optional). Add `production` env secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_RAZORPAY_KEY_ID`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_WEBHOOK_URL`, `PRODUCTION_ADMIN_PIN`. Add `staging` env secret: `STAGING_ADMIN_PIN`. Add branch protection on `main`: require PR + 1 approval + `test` + `smoke-staging` checks; do not allow bypassing.
 - [ ] **Phase 5 — Verify:** push trivial change to `staging` → auto-deploys to `staging.datiq.app` → `node scripts/smoke-prod.mjs https://staging.datiq.app` should be all green. Open PR from `staging` to `main` → watch phase-gate pause at "manual approval" → click Approve → verify `https://datiq.app` shows new version → smoke test passes. Test auto-rollback by pushing a broken change.
+
+### Build / CI / UX fixes (2026-07-19 late — MERGED to main)
+
+Four small fixes shipped on top of the pre-cutover drop. Detail in `docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`.
+
+| Commit | What | Why |
+|---|---|---|
+| `b8b1e53` | `fix(netlify):` remove duplicate `VITE_SUPABASE_ANON_KEY` in production env | TOML parse error blocked deploy (`Can't redefine existing key`) |
+| `71a2586` | `fix(netlify):` add `netlify.toml` + `NETLIFY-ENVIRONMENTS.md` to `SECRETS_SCAN_OMIT_PATHS` | 16 false-positive secret detections (placeholders contain env-var name as substring) |
+| `92b3af9` | `fix(ci):` add the missing `scripts/smoke-prod.mjs` that phase-gate depends on | Phase-gate had been failing on every run with "Cannot find module"; 10 lightweight HTTP probes + 2 admin probes (opt-in) + 15 unit tests |
+| `074abfe` | `fix(topbar):` collapse Sign in + Sign up to a single primary CTA | Both buttons opened the same auth modal; one button is enough. Drop Sign in from the trial banner for the same reason |
+
+**Outstanding follow-ups (flagged in the handoff doc, not blocking):**
+- Phase-gate's `deploy-production` job does `netlify-cli deploy --prod` while Netlify ALSO auto-deploys on push to `main` — double deploy, ambiguous auto-rollback. Recommend: turn off auto-publish for production in Netlify and let phase-gate own the deploy.
+- GitHub secrets for end-to-end phase-gate runs: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `STAGING_ADMIN_PIN`, plus production `VITE_*` keys.
+- `staging.datiq.app` may not be configured yet — `smoke-staging` will time out if the staging branch isn't wired to a Netlify site.
 - [ ] ⚠️  **TODO(SCHEDULE_ALERT_WEBHOOK):** wire up the real n8n/Zapier endpoint and add it to Netlify per context. Currently silently dropped (`netlify/functions/scheduled-runner.js:170`). Production context → real n8n URL; staging context → staging n8n URL (or empty); deploy-preview → empty.
 
 **Cost estimate at current scale (~$45-90/mo):**
@@ -1389,4 +1404,17 @@ f5cd590  feat(v1-quickwins): Q1/Q3/Q4/Q5/Q11 — tour, demo, feedback, cap, shor
 72dc612  feat(v1-quickwins): Groke AI quick wins — tags, collections, batch retry
 067059f  feat(v1-quickwins): MetaAI + DeepSeq quick wins with full test coverage
 0ae395b  test(v1.0): regenerate pricing visual snapshots + establish firefox/webkit baselines
+```
+
+### Recent build/CI/UX fixes (2026-07-19 late)
+
+```
+074abfe  Merge branch 'fix/topbar-single-cta' into main
+dc4289d  fix(topbar): collapse Sign in + Sign up to a single primary CTA
+92b3af9  Merge branch 'fix/phase-gate-smoke-script' into main
+424cea5  fix(ci): add scripts/smoke-prod.mjs that phase-gate depends on
+71a2586  Merge branch 'fix/netlify-secrets-scan-omit' into main
+abc590c  fix(netlify): add netlify.toml + docs to secrets scan omit list
+b8b1e53  Merge branch 'fix/netlify-toml-duplicate-key' into main
+bda448e  fix(netlify): remove duplicate VITE_SUPABASE_ANON_KEY in production env
 ```
