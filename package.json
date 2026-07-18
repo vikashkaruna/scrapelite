@@ -22,7 +22,8 @@
     "test:e2e:visual": "playwright test e2e/visual/",
     "test:smoke": "npm run test:e2e:smoke",
     "test:security": "node scripts/security-check.mjs",
-    "test:all": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security"
+    "test:all": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
+    "migrate:prod": "node scripts/migrate-prod.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -42,6 +43,7 @@
     "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.20",
     "jsdom": "^25.0.1",
+    "pg": "^8.22.0",
     "playwright": "^1.60.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",

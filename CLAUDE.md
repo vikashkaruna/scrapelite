@@ -2,9 +2,9 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-18 — main at `06a5b96` (Council feature followup merged); 11 features audited, 4 gaps closed, 4 polish items shipped. v1.0+ live on datiq.app (Netlify project `datiqapp`).**
+> **Last updated: 2026-07-19 — main has the multi-env migration plans + 3 production-isolation fixes merged (psql→pg, 0001 self-contained, phase-gate workflow, per-context env blocks). v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative).**
 >
-> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`.
+> Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`. **2026-07-19: Pre-cutover production isolation** — `NETLIFY-ENVIRONMENTS.md` (recommended) + `FIREBASE-MIGRATION.md` (alternative) plans merged; 3 prod-isolation fixes (psql→pg, 0001 self-contained, phase-gate workflow); per-context env blocks in `netlify.toml`. See "Outstanding tasks → Pre-cutover: Production isolation" below.
 >
 > Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`ea3658a`).
 
@@ -923,6 +923,42 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ## Outstanding tasks
 
+### Pre-cutover: Production isolation (2026-07-19, MERGED to main)
+
+Two pre-cutover migration plans + 3 production-isolation fixes merged to main in one drop. All work on `fix/migrate-prod-fresh-db` branch (now merged + deleted). See `docs/SESSION-HANDOFF-2026-07-19.md` for the full session log.
+
+**Shipped (6 commits, 0 source-code behavior changes — infra/env/CI only):**
+
+| Commit | What |
+|---|---|
+| `af9904c` | `docs:` add `FIREBASE-MIGRATION.md` + `NETLIFY-ENVIRONMENTS.md` (two pre-cutover plans; 1,228 + 1,436 lines) |
+| `a57cde5` | `fix(scripts):` use `node pg` instead of `psql` for `migrate-prod` (works on any macOS without Homebrew libpq) |
+| `35ed90a` | `fix(migrations):` add missing `CREATE TABLE public.extractions` to `0001_core_tables_and_billing.sql` + `run-all.sql` (was failing on fresh DBs) |
+| `47631dc` | `ci:` add `.github/workflows/phase-gate.yml` — 4-job gated deploy (test → smoke-staging → manual-approve → deploy-prod → smoke-prod + auto-rollback) |
+| `82ee415` | `ci:` phase-gate end-to-end test (trivial commit) |
+| `5ca1345` | `chore(netlify):` add `[context.production|staging|deploy-preview.environment]` blocks to `netlify.toml` (placeholders only; real values go in Netlify UI); add `env.*` to `.gitignore`; add `TODO(SCHEDULE_ALERT_WEBHOOK)` in `scheduled-runner.js` |
+
+**New env var support:**
+- `scripts/migrate-prod.mjs` — Node-based migration runner. `npm run migrate:prod -- --list` to discover; `--dry-run` to test connection; auto-discovers `00*.sql` in lexical order. Each file in its own transaction. Idempotent (every migration uses `IF NOT EXISTS` / `OR REPLACE`).
+
+**Next steps (per `NETLIFY-ENVIRONMENTS.md` §17, 20-step sequencing):**
+
+- [ ] **Phase 1 — Supabase:** create `datiq-prod` project in `ap-south-1`. Get direct connection string. Run `PROD_SUPABASE_DB_URL=... npm run migrate:prod`. Verify schema (16 tables), RLS (`rowsecurity = t`), and empty data (`SELECT COUNT(*)` should be 0 on all user-data tables).
+- [ ] **Phase 2 — Netlify:** set env vars per context (production/staging/deploy-preview) using the table in `NETLIFY-ENVIRONMENTS.md` §5.2. The toml has placeholders; the UI has the real values. Add `staging.datiq.app` custom subdomain (Cloudflare users: DNS-only / grey cloud, NOT orange). Wire to `staging` branch. Turn OFF Netlify's "Auto publishing" for production.
+- [ ] **Phase 3 — Razorpay:** register **test** webhook for `https://staging.datiq.app/api/payment-webhook?provider=razorpay`; register **live** webhook for `https://datiq.app/api/payment-webhook?provider=razorpay` (after prod goes live). Different secrets per env.
+- [ ] **Phase 4 — GitHub:** create `production` environment (Settings → Environments → New → production) with yourself as required reviewer, restrict to `main` branch. Create `staging` env (no reviewers). Add repo secrets: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `SLACK_WEBHOOK_URL` (optional). Add `production` env secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_RAZORPAY_KEY_ID`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_WEBHOOK_URL`, `PRODUCTION_ADMIN_PIN`. Add `staging` env secret: `STAGING_ADMIN_PIN`. Add branch protection on `main`: require PR + 1 approval + `test` + `smoke-staging` checks; do not allow bypassing.
+- [ ] **Phase 5 — Verify:** push trivial change to `staging` → auto-deploys to `staging.datiq.app` → `node scripts/smoke-prod.mjs https://staging.datiq.app` should be all green. Open PR from `staging` to `main` → watch phase-gate pause at "manual approval" → click Approve → verify `https://datiq.app` shows new version → smoke test passes. Test auto-rollback by pushing a broken change.
+- [ ] ⚠️  **TODO(SCHEDULE_ALERT_WEBHOOK):** wire up the real n8n/Zapier endpoint and add it to Netlify per context. Currently silently dropped (`netlify/functions/scheduled-runner.js:170`). Production context → real n8n URL; staging context → staging n8n URL (or empty); deploy-preview → empty.
+
+**Cost estimate at current scale (~$45-90/mo):**
+- Netlify Pro: $19/mo (unchanged)
+- Supabase dev: Free → Pro $25/mo (existing)
+- Supabase prod: Pro $25/mo (new — this is the main cost increase)
+- Razorpay: 2% per transaction (unchanged)
+- Resend: Free → $20/mo at scale (unchanged)
+
+---
+
 ### R18 — Merged to main (2026-06-17)
 
 **Files added/changed:**
@@ -1334,6 +1370,13 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
+<merge-commit>  Merge branch 'fix/migrate-prod-fresh-db' into main
+5ca1345  chore(netlify): add per-context env blocks + protect env files
+82ee415  ci: phase-gate end-to-end test
+47631dc  ci: add phase-gate production deploy workflow
+35ed90a  fix(migrations): make 0001 self-contained for fresh DBs
+a57cde5  fix(scripts): use node pg instead of psql for migrate-prod
+af9904c  docs: add Firebase and Netlify multi-environment migration plans
 06a5b96  Merge branch 'feat/council-followup' into main
 6b46cfc  feat(council-followup): F01 clipboard, F13 pricing matrix, F14 trust strip, FA3 task-aware paywall + mod+K palette
 405e401  docs(handoff): save session-2026-07-18 — clean v1.0+ state, v2.0 entry point

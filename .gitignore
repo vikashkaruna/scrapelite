@@ -7,7 +7,12 @@ dist-ssr
 # Local env — never commit real secrets
 .env
 .env.*
+env.*
 !.env.example
+
+# Safety backup of netlify.toml (kept on disk as a reference for
+# manual rollback; ignore to keep it out of git)
+netlify.backup.toml
 
 # Editor
 .vscode/*
