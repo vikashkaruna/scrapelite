@@ -16,6 +16,10 @@
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
 import { isPublicHttpUrl } from "./lib/publicUrl.js";
+import { getCached, setCached } from "./lib/resultCacheStore.js";
+import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
+import { checkCompliance } from "./lib/complianceEngine.js";
+import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 
 function respond(statusCode, body) {
   return {
@@ -65,6 +69,35 @@ export const handler = async (event) => {
     return respond(400, { error: err.message || "Invalid URL" });
   }
 
+  // FD3: robots.txt compliance (skip when explicitly bypassed).
+  const bypassCompliance = options.bypassCompliance === true;
+  if (!bypassCompliance) {
+    try {
+      const compliance = await checkCompliance(url, {
+        permittedHosts: process.env.PERMITTED_HOSTS || "",
+      });
+      if (!compliance.allowed) {
+        return respond(403, {
+          error: compliance.reason,
+          _complianceBlocked: true,
+          _crawlDelayMs: compliance.crawlDelayMs,
+        });
+      }
+    } catch (err) {
+      // Fail open on compliance-engine errors.
+      console.warn("[DatIQ] compliance check errored (failing open):", err.message);
+    }
+  }
+
+  // FD3: per-host rate limiter. Wait for a token before any provider call.
+  if (!bypassCompliance) {
+    try {
+      await takeTokenBlocking(url, configFromEnv());
+    } catch (err) {
+      console.warn("[DatIQ] rate limiter errored (continuing):", err.message);
+    }
+  }
+
   try {
     // ── Map mode: discover all URLs in a domain ──────────────────────────────
     if (options.mapMode) {
@@ -82,6 +115,25 @@ export const handler = async (event) => {
       });
     }
 
+    // ── FD2: result cache + URL-level dedup ─────────────────────────────────
+    // If the same URL (modulo tracking params) was scraped within the cache
+    // TTL and the options are cacheable, return the cached result without
+    // calling any provider. Caching is opt-out via `options.noCache: true`.
+    let cacheHit = null;
+    if (isCacheable(options) && !options.noCache) {
+      const key = buildCacheKey(url, options);
+      try {
+        cacheHit = await getCached(key);
+      } catch { /* cache miss on any error */ }
+    }
+    if (cacheHit && cacheHit.result) {
+      return respond(200, {
+        data: cacheHit.result.data,
+        source: `${cacheHit.result.source || "cache"} (cached)`,
+        _cacheHit: true,
+      });
+    }
+
     // ── Scrape mode: extract page HTML + metadata ────────────────────────────
     const result = await runScrapeChain(url, options);
     if (!result.ok) {
@@ -91,11 +143,8 @@ export const handler = async (event) => {
       });
     }
 
-    // Normalise to the shape firecrawlService.js / realScrape() expects:
-    //   raw?.data?.html         → page HTML
-    //   raw?.data?.metadata?.title → page title
-    //   raw?.data?.json         → LLM custom extraction (Firecrawl only; null for others)
-    return respond(200, {
+    // Build the normalised response.
+    const responseBody = {
       data: {
         html: result.html,
         metadata: { title: result.title || "" },
@@ -103,7 +152,19 @@ export const handler = async (event) => {
       },
       source: result.source,
       _providerAttempts: result.attempts,
-    });
+    };
+
+    // FD2: write to cache (best-effort, fire-and-forget).
+    if (isCacheable(options) && !options.noCache) {
+      try {
+        const key = buildCacheKey(url, options);
+        // Don't await — the response goes back to the client immediately.
+        setCached(key, "ok", { data: responseBody.data, source: result.source })
+          .catch(() => {});
+      } catch { /* cache write failure is non-fatal */ }
+    }
+
+    return respond(200, responseBody);
   } catch (err) {
     return respond(502, { error: `Scrape chain failed: ${err.message}` });
   }

@@ -6577,3 +6577,42 @@
 .bc-foot a   { color: var(--accent); text-decoration: none; font-weight: 600; }
 .bc-footer   { padding: 32px 0 64px; text-align: center; color: var(--text-2); font-size: .9rem; }
 .bc-footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+/* ── FC1: Watchlist card ─────────────────────────────────────────────── */
+.watchlist-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+.watchlist-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.watchlist-title { font-size: 1.15rem; font-weight: 700; margin: 4px 0 4px; letter-spacing: -.01em; }
+.watchlist-sub { color: var(--text-2); font-size: .85rem; margin: 0; }
+.watchlist-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; font-size: .85rem; font-weight: 600; }
+.watchlist-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.watchlist-list li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; transition: transform .12s; }
+.watchlist-list li:hover { transform: translateX(2px); }
+.watchlist-icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; flex-shrink: 0; }
+.wc-delta-changed .watchlist-icon { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #f59e0b; }
+.wc-delta-ok      .watchlist-icon { background: color-mix(in srgb, #10b981 14%, transparent); color: #10b981; }
+.wc-delta-stale   .watchlist-icon { background: var(--surface); color: var(--text-2); }
+.wc-delta-idle    .watchlist-icon { background: var(--surface); color: var(--text-2); }
+.wc-delta-unknown .watchlist-icon { background: var(--surface); color: var(--text-2); }
+.watchlist-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.watchlist-label { font-size: .9rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watchlist-meta { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); font-size: .78rem; flex-wrap: wrap; }
+.watchlist-meta svg { opacity: .7; }
+.watchlist-sep  { opacity: .4; }
+.watchlist-ago  { color: var(--text-2); }
+.watchlist-cta  { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: var(--text-2); transition: color .15s, background .15s; }
+.watchlist-cta:hover { color: var(--accent); background: var(--surface); }
+
+/* ── F18: Notify-me modal ────────────────────────────────────────────── */
+.notify-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.notify-modal { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px 20px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.notify-modal-close { position: absolute; top: 10px; right: 10px; background: transparent; border: 0; color: var(--text-2); cursor: pointer; padding: 6px; border-radius: 6px; }
+.notify-modal-close:hover { color: var(--text); background: var(--surface-2); }
+.notify-modal-eyebrow { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.notify-modal-title { font-size: 1.25rem; font-weight: 700; margin: 12px 0 6px; letter-spacing: -.01em; }
+.notify-modal-sub { color: var(--text-2); font-size: .9rem; margin: 0 0 16px; line-height: 1.5; }
+.notify-modal-form { display: flex; flex-direction: column; gap: 8px; }
+.notify-modal-input { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: .95rem; }
+.notify-modal-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.notify-modal-error { color: #e0556b; font-size: .82rem; }
+.notify-modal-secondary { background: transparent; border: 0; color: var(--text-2); font-size: .85rem; margin-top: 10px; cursor: pointer; align-self: center; }
+.notify-modal-secondary:hover { color: var(--accent); }

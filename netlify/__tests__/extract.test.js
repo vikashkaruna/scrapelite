@@ -11,8 +11,16 @@ beforeEach(() => {
   delete process.env.SPIDER_API_KEY;
   delete process.env.JINA_API_KEY;
   delete process.env.SCRAPE_PROVIDER_ORDER;
+  // FD3: no permitted-hosts configured in tests → compliance is permissive.
+  delete process.env.PERMITTED_HOSTS;
   vi.resetModules();
   fetchMock = vi.fn();
+  // The extract.js handler fires two kinds of fetch:
+  //   1. The compliance pre-check hits the host's /robots.txt.
+  //   2. The provider chain calls the configured scrape provider.
+  // Pre-queue an empty 200 for #1 so the compliance check is permissive
+  // and the test's own `mockResolvedValueOnce` (if any) fires on #2.
+  fetchMock.mockResolvedValueOnce(new Response("", { status: 200 })); // robots.txt
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -96,8 +104,9 @@ describe("extract — provider chain (C-02)", () => {
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.body);
     expect(body.source).toBe("firecrawl");
-    // Only 1 fetch (no fallbacks)
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 2 fetches: 1 for FD3 robots.txt compliance pre-check + 1 for firecrawl.
+    // (The chain short-circuits after firecrawl, so no fallbacks.)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("all providers fail → 502 with _providerAttempts", async () => {
