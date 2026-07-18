@@ -41,9 +41,6 @@ export default function GuestTrialBanner() {
         <button className="gtb-cta" onClick={() => openAuth("signup")}>
           {atAnyLimit ? "Create free account" : "Sign up free"} →
         </button>
-        <button className="gtb-signin" onClick={() => openAuth("signin")}>
-          Sign in
-        </button>
       </div>
     </div>
   );
