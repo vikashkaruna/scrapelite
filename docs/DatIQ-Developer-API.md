@@ -388,3 +388,86 @@ console.log(content.content);
 
 Questions about the API? Email **support@datiq.app**. For account, billing, and plan upgrades to unlock
 API access, see the **Account** screen in the app.
+
+---
+
+## v1.0 preview endpoints
+
+The following endpoints are scheduled for the v1.0 release. They are documented here ahead of general
+availability so integrators can plan around them; treat them as a preview and pin to the versioned
+base URL.
+
+### Create a public shareable report
+
+```http
+POST /v1/extractions/{id}/share
+```
+
+Turn an existing extraction into a public, read-only report at
+`https://datiq.app/p/{slug}`. Anyone with the link can view it; no DatIQ account required.
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ttl_days` | integer | no | Auto-expire the public report after N days. Omit for "no expiry". |
+
+**Response**
+
+```json
+{
+  "slug": "a8K2mQ4x",
+  "url": "https://datiq.app/p/a8K2mQ4x",
+  "expires_at": "2026-08-15T00:00:00Z"
+}
+```
+
+### Revoke a public report
+
+```http
+DELETE /v1/extractions/{id}/share
+```
+
+Removes the public report; the underlying extraction is unaffected.
+
+### List public gallery
+
+```http
+GET /v1/gallery?limit=20&cursor=...
+```
+
+Returns recent public extractions across all users. Useful for discovery integrations.
+
+**Response**
+
+```json
+{
+  "data": [
+    {
+      "slug": "a8K2mQ4x",
+      "title": "Acme pricing",
+      "intent": "pricing",
+      "url": "https://datiq.app/p/a8K2mQ4x",
+      "created_at": "2026-07-15T10:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+### Submit feedback on an AI summary
+
+```http
+POST /v1/extractions/{id}/feedback
+```
+
+Record a thumbs-up / thumbs-down rating on the AI summary, optionally with a free-text comment.
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `rating` | string | yes | `up` or `down`. |
+| `comment` | string | no | Free-text feedback. |
+
+This data is used to improve the AI model.
