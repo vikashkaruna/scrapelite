@@ -1370,7 +1370,7 @@ npm run dev   # http://localhost:5173
 ## Git log (recent)
 
 ```
-<merge-commit>  Merge branch 'fix/migrate-prod-fresh-db' into main
+e1fa0e0  Merge branch 'fix/migrate-prod-fresh-db' into main
 5ca1345  chore(netlify): add per-context env blocks + protect env files
 82ee415  ci: phase-gate end-to-end test
 47631dc  ci: add phase-gate production deploy workflow
