@@ -167,6 +167,16 @@ async function sendAlertEmail(schedule, detectedAt) {
 }
 
 // Post a change event to the automation webhook (n8n / Zapier / Make), if set.
+//
+// TODO(SCHEDULE_ALERT_WEBHOOK): wire up a real automation endpoint and add
+// it to Netlify per context before the production cutover:
+//   • production context  → real n8n/Zapier URL that posts to Slack / email / etc.
+//   • staging context     → staging n8n URL (or empty for now)
+//   • deploy-preview      → empty (skip alerts for PR previews)
+// Until this is set, change alerts are silently dropped (this function returns
+// early on the empty `hook` check below). See NETLIFY-ENVIRONMENTS.md §5.2
+// for the full per-context env var list, and the VITE_WEBHOOK_URL row in
+// §6 for the build-time fallback that's currently the only value wired.
 async function postAlertWebhook(schedule, changedSummary, detectedAt, emailed) {
   const hook = process.env.SCHEDULE_ALERT_WEBHOOK || process.env.VITE_WEBHOOK_URL || "";
   if (!hook) return;

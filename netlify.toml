@@ -16,8 +16,6 @@
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
-# Map /api/* → /.netlify/functions/* so the browser can call /api/extract
-# instead of /.netlify/functions/extract.
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
@@ -31,3 +29,136 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ Environment-specific env vars                                            ║
+# ║                                                                          ║
+# ║ Order of precedence (lowest → highest):                                  ║
+# ║   1. Default in this file                                                 ║
+# ║   2. Netlify UI "Environment variables" (shared across contexts)           ║
+# ║   3. [context.<name>.environment] in this file (highest)                  ║
+# ║                                                                          ║
+# ║ RECOMMENDED: set shared values (NODE_VERSION, etc.) in the Netlify UI,    ║
+# ║ and put CONTEXT-SPECIFIC values (Supabase URLs, Razorpay keys) here.      ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ── PRODUCTION: datiq.app → prod Supabase, live Razorpay ───────────────────
+# Override EVERY secret to the production value. No inheritance from below.
+[context.production.environment]
+  # Supabase — prod project
+  VITE_SUPABASE_URL = "https://PROD_REF.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "PROD_ANON_KEY"
+  SUPABASE_URL = "https://PROD_REF.supabase.co"
+  SUPABASE_SERVICE_KEY = "PROD_SERVICE_KEY"
+
+  # Razorpay — LIVE mode (real money)
+  VITE_RAZORPAY_KEY_ID = "rzp_live_PROD_KEY_ID"
+  RAZORPAY_KEY_ID = "rzp_live_PROD_KEY_ID"
+  RAZORPAY_KEY_SECRET = "PROD_RAZORPAY_SECRET"
+  RAZORPAY_WEBHOOK_SECRET = "PROD_RAZORPAY_WEBHOOK_SECRET"
+
+  # Stripe — LIVE mode (deferred per docs/STRIPE-DEFERRAL.md but stub here)
+  VITE_STRIPE_PUBLISHABLE_KEY = "pk_live_PROD"
+  STRIPE_SECRET_KEY = "sk_live_PROD"
+  STRIPE_WEBHOOK_SECRET = "PROD_STRIPE_WEBHOOK_SECRET"
+
+  # AI — prod keys
+  AI_API_KEY = "PROD_ANTHROPIC_KEY"
+  GEMINI_API_KEY = "PROD_GEMINI_KEY"
+  OPENAI_API_KEY = "PROD_OPENAI_KEY"
+  AI_PROVIDER_ORDER = "gemini,anthropic,openai"
+  AI_MODEL = "claude-3-5-haiku-20241022"
+  VITE_AI_MODEL = "claude-3-5-haiku-20241022"
+
+  # Scraping — prod keys
+  FIRECRAWL_API_KEY = "PROD_FIRECRAWL_KEY"
+  SPIDER_API_KEY = "PROD_SPIDER_KEY"
+  JINA_API_KEY = "PROD_JINA_KEY"
+  SCRAPE_PROVIDER_ORDER = "firecrawl,spider,jina,direct"
+
+  # Email + alerts
+  RESEND_API_KEY = "PROD_RESEND_KEY"
+  ALERT_EMAIL_FROM = "DatIQ <alerts@datiq.app>"
+  SCHEDULE_ALERT_WEBHOOK = "https://hooks.n8n.cloud/PROD_WEBHOOK"
+
+  # Admin
+  ADMIN_PIN_HASH = "PROD_PIN_HASH"           # SHA-256 hex
+  ADMIN_TOKEN_SECRET = "PROD_TOKEN_SECRET"   # random 32+ bytes
+
+  # Frontend (no real secrets — these are public)
+  VITE_PAYMENT_PROVIDER = "auto"
+  VITE_WEBHOOK_URL = "https://hooks.n8n.cloud/PROD_WEBHOOK"
+  VITE_FIRECRAWL_API_KEY = ""                # deliberately empty in prod build
+  VITE_LINK_CHANGELOG = "https://datiq.app/changelog"
+  VITE_LINK_ABOUT = "https://datiq.app/about"
+  VITE_LINK_BLOG = "https://datiq.app/blog"
+  VITE_SUPABASE_ANON_KEY = "PROD_ANON_KEY"   # duplicate of above for clarity
+
+# ── STAGING: staging.datiq.app → dev Supabase, test Razorpay ───────────────
+[context.staging.environment]
+  # Supabase — dev project (shared with PR previews)
+  VITE_SUPABASE_URL = "https://DEV_REF.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "DEV_ANON_KEY"
+  SUPABASE_URL = "https://DEV_REF.supabase.co"
+  SUPABASE_SERVICE_KEY = "DEV_SERVICE_KEY"
+
+  # Razorpay — TEST mode (no real money)
+  VITE_RAZORPAY_KEY_ID = "rzp_test_STAGING_KEY_ID"
+  RAZORPAY_KEY_ID = "rzp_test_STAGING_KEY_ID"
+  RAZORPAY_KEY_SECRET = "STAGING_RAZORPAY_SECRET"
+  RAZORPAY_WEBHOOK_SECRET = "STAGING_RAZORPAY_WEBHOOK_SECRET"
+
+  # Stripe — TEST mode
+  VITE_STRIPE_PUBLISHABLE_KEY = "pk_test_STAGING"
+  STRIPE_SECRET_KEY = "sk_test_STAGING"
+  STRIPE_WEBHOOK_SECRET = "STAGING_STRIPE_WEBHOOK_SECRET"
+
+  # AI — can be shared with prod (separate keys optional)
+  AI_API_KEY = "STAGING_ANTHROPIC_KEY"
+  GEMINI_API_KEY = "STAGING_GEMINI_KEY"
+  OPENAI_API_KEY = "STAGING_OPENAI_KEY"
+
+  # Scraping — staging can use same keys as dev (cheap scraping)
+  FIRECRAWL_API_KEY = "STAGING_FIRECRAWL_KEY"
+  SPIDER_API_KEY = ""
+  JINA_API_KEY = ""
+
+  # Email + alerts — staging can send to a test inbox
+  RESEND_API_KEY = "STAGING_RESEND_KEY"
+  ALERT_EMAIL_FROM = "DatIQ Staging <staging@datiq.app>"
+  SCHEDULE_ALERT_WEBHOOK = "https://hooks.n8n.cloud/STAGING_WEBHOOK"
+
+  # Admin — staging can keep a known PIN for QA
+  ADMIN_PIN_HASH = "STAGING_PIN_HASH"
+  ADMIN_TOKEN_SECRET = "STAGING_TOKEN_SECRET"
+
+  # Frontend
+  VITE_PAYMENT_PROVIDER = "auto"
+  VITE_WEBHOOK_URL = "https://hooks.n8n.cloud/STAGING_WEBHOOK"
+  VITE_FIRECRAWL_API_KEY = "STAGING_FIRECRAWL_KEY"
+  VITE_LINK_CHANGELOG = "https://staging.datiq.app/changelog"
+  VITE_LINK_ABOUT = "https://staging.datiq.app/about"
+  VITE_LINK_BLOG = "https://staging.datiq.app/blog"
+
+# ── DEPLOY PREVIEWS: PR previews → dev Supabase, test Razorpay ─────────────
+# Same target as staging but auto-applied to every PR's preview URL.
+[context.deploy-preview.environment]
+  VITE_SUPABASE_URL = "https://DEV_REF.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "DEV_ANON_KEY"
+  SUPABASE_URL = "https://DEV_REF.supabase.co"
+  SUPABASE_SERVICE_KEY = "DEV_SERVICE_KEY"
+  VITE_RAZORPAY_KEY_ID = "rzp_test_STAGING_KEY_ID"
+  RAZORPAY_KEY_ID = "rzp_test_STAGING_KEY_ID"
+  RAZORPAY_KEY_SECRET = "STAGING_RAZORPAY_SECRET"
+  RAZORPAY_WEBHOOK_SECRET = "STAGING_RAZORPAY_WEBHOOK_SECRET"
+  VITE_STRIPE_PUBLISHABLE_KEY = "pk_test_STAGING"
+  STRIPE_SECRET_KEY = "sk_test_STAGING"
+  VITE_PAYMENT_PROVIDER = "auto"
+  ADMIN_PIN_HASH = "STAGING_PIN_HASH"
+  ADMIN_TOKEN_SECRET = "STAGING_TOKEN_SECRET"
+  AI_API_KEY = "STAGING_ANTHROPIC_KEY"
+  GEMINI_API_KEY = "STAGING_GEMINI_KEY"
+  OPENAI_API_KEY = "STAGING_OPENAI_KEY"
+  FIRECRAWL_API_KEY = "STAGING_FIRECRAWL_KEY"
+  RESEND_API_KEY = "STAGING_RESEND_KEY"
+  ALERT_EMAIL_FROM = "DatIQ Preview <preview@datiq.app>"
