@@ -4,16 +4,19 @@ import {
   getUserAvatar,
   getUserDisplayName,
   getUserInitials,
+  resetPasswordForEmail,
+  resendSignUpConfirmation,
   signInWithEmail,
   signInWithOAuth,
   signOut,
   signUpWithEmail,
+  updatePassword,
 } from "./authService.js";
 
 /**
- * U-45..46 — authService is a thin wrapper over Supabase Auth. Tests
- * mock the supabase client; the production code only touches the
- * documented surface (signUp / signInWithOAuth).
+ * U-45..46 + U-47 (password reset) — authService is a thin wrapper over
+ * Supabase Auth. Tests mock the supabase client; the production code only
+ * touches the documented surface.
  */
 
 const mockSupabase = vi.hoisted(() => ({
@@ -24,6 +27,9 @@ const mockSupabase = vi.hoisted(() => ({
     signOut: vi.fn(),
     getSession: vi.fn(),
     onAuthStateChange: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
+    updateUser: vi.fn(),
+    resend: vi.fn(),
   },
 }));
 
@@ -121,5 +127,52 @@ describe("authEnabled flag", () => {
   it("is true when supabase is configured", () => {
     // The mock resolves to true via the module-level `supabase` import
     expect(typeof authEnabled).toBe("boolean");
+  });
+});
+
+describe("resetPasswordForEmail (U-47)", () => {
+  it("calls supabase.auth.resetPasswordForEmail with the email and a redirectTo at <origin>/reset-password", async () => {
+    mockSupabase.auth.resetPasswordForEmail.mockResolvedValue({ data: {}, error: null });
+    await resetPasswordForEmail("alice@example.com");
+    const args = mockSupabase.auth.resetPasswordForEmail.mock.calls[0];
+    expect(args[0]).toBe("alice@example.com");
+    expect(args[1]).toEqual({ redirectTo: `${window.location.origin}/reset-password` });
+  });
+
+  it("throws when supabase returns an error", async () => {
+    const err = new Error("Email rate limit exceeded");
+    mockSupabase.auth.resetPasswordForEmail.mockResolvedValue({ data: null, error: err });
+    await expect(resetPasswordForEmail("a@b.com")).rejects.toBe(err);
+  });
+});
+
+describe("updatePassword (U-47)", () => {
+  it("calls supabase.auth.updateUser with the new password", async () => {
+    mockSupabase.auth.updateUser.mockResolvedValue({ data: { user: { id: "u_1" } }, error: null });
+    await updatePassword("hunter3hunter");
+    expect(mockSupabase.auth.updateUser).toHaveBeenCalledWith({ password: "hunter3hunter" });
+  });
+
+  it("throws on supabase error", async () => {
+    const err = new Error("Auth session missing");
+    mockSupabase.auth.updateUser.mockResolvedValue({ data: null, error: err });
+    await expect(updatePassword("pw1234")).rejects.toBe(err);
+  });
+});
+
+describe("resendSignUpConfirmation (U-47)", () => {
+  it("calls supabase.auth.resend with type=signup and emailRedirectTo at window.location.origin", async () => {
+    mockSupabase.auth.resend.mockResolvedValue({ data: {}, error: null });
+    await resendSignUpConfirmation("a@b.com");
+    const args = mockSupabase.auth.resend.mock.calls[0][0];
+    expect(args.type).toBe("signup");
+    expect(args.email).toBe("a@b.com");
+    expect(args.options.emailRedirectTo).toBe(window.location.origin);
+  });
+
+  it("throws on supabase error", async () => {
+    const err = new Error("Email rate limit exceeded");
+    mockSupabase.auth.resend.mockResolvedValue({ data: null, error: err });
+    await expect(resendSignUpConfirmation("a@b.com")).rejects.toBe(err);
   });
 });

@@ -1382,6 +1382,39 @@
 }
 .auth-footer-note a { color: var(--text-2); text-decoration: underline; }
 
+/* ── Auth: forgot-password link + in-line CTA on error feedback ─── */
+.auth-forgot-row {
+  display: flex; justify-content: flex-end; margin: -2px 0 4px;
+}
+.auth-forgot-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: .78em; color: var(--text-3); font-family: inherit;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.auth-forgot-link:hover { color: var(--accent); }
+.auth-feedback {
+  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+}
+.auth-feedback-cta {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: inherit; font-weight: 650; color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  font-family: inherit;
+}
+.auth-feedback-cta:hover { color: var(--accent-on-soft, var(--accent)); }
+.auth-link-button {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: inherit; color: var(--accent); text-decoration: underline;
+  text-underline-offset: 2px; font-family: inherit;
+}
+.auth-link-button:hover { color: var(--accent-on-soft, var(--accent)); }
+.auth-back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 0; margin: 14px 0 0;
+  cursor: pointer; font-size: .82em; color: var(--text-3); font-family: inherit;
+}
+.auth-back-link:hover { color: var(--text); }
+
 /* ── R1: Auth modal persona step ───────────────────────────────── */
 .auth-persona-step { display: flex; flex-direction: column; align-items: center; }
 .auth-persona-grid {
@@ -6617,3 +6650,26 @@
 .notify-modal-error { color: #e0556b; font-size: .82rem; }
 .notify-modal-secondary { background: transparent; border: 0; color: var(--text-2); font-size: .85rem; margin-top: 10px; cursor: pointer; align-self: center; }
 .notify-modal-secondary:hover { color: var(--accent); }
+
+/* ── Password reset landing page ────────────────────────────────── */
+.reset-pw-card {
+  max-width: 440px; margin: 60px auto; padding: 32px 28px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg, 16px);
+  box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  text-align: center;
+}
+.reset-pw-icon {
+  width: 56px; height: 56px; margin: 0 auto 14px;
+  display: grid; place-items: center; border-radius: 14px;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent));
+  color: var(--accent);
+}
+.reset-pw-icon-success { background: color-mix(in srgb, #10b981 14%, transparent); color: #10b981; }
+.reset-pw-icon-error   { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #f59e0b; }
+.reset-pw-title { font-size: 1.4rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -.01em; }
+.reset-pw-sub   { color: var(--text-2); font-size: .92rem; margin: 0 0 22px; line-height: 1.5; }
+.reset-pw-card .auth-form { text-align: left; }
+@media (max-width: 480px) {
+  .reset-pw-card { margin: 32px 14px; padding: 24px 20px; }
+}

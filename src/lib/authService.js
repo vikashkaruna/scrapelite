@@ -48,6 +48,48 @@ export async function signOut() {
   if (error) throw error;
 }
 
+// ── Password reset ───────────────────────────────────────────────────────────
+
+/**
+ * Send a password-reset email. The link in the email lands the user back on
+ * `<origin>/reset-password#access_token=...&type=recovery` where they can
+ * pick a new password. Requires Supabase Site URL + redirect allowlist to
+ * include `<origin>/reset-password` — see docs/SUPABASE-AUTH-SETUP.md.
+ */
+export async function resetPasswordForEmail(email) {
+  if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
+  const redirectTo = `${window.location.origin}/reset-password`;
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Update the password for the currently signed-in user. Used on the
+ * /reset-password page after the user arrives via the recovery link.
+ */
+export async function updatePassword(newPassword) {
+  if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
+  const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Resend the signup confirmation email. The link uses the same
+ * `emailRedirectTo` as the original signup (origin).
+ */
+export async function resendSignUpConfirmation(email) {
+  if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
+  const { data, error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: { emailRedirectTo: window.location.origin },
+  });
+  if (error) throw error;
+  return data;
+}
+
 // ── Session helpers ───────────────────────────────────────────────────────────
 
 export async function getSession() {
