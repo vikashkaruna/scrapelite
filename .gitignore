@@ -8,6 +8,7 @@ dist-ssr
 .env
 .env.*
 env.*
+scripts/env/
 !.env.example
 
 # Safety backup of netlify.toml (kept on disk as a reference for
