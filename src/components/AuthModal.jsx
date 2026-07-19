@@ -1,4 +1,5 @@
 // AuthModal.jsx — sign-in / sign-up modal with email+password, OAuth, and optional persona step.
+// Also handles the forgot-password request view (in-modal email entry + reset link send).
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -11,8 +12,11 @@ import {
   signInWithEmail,
   signUpWithEmail,
   signInWithOAuth,
+  resetPasswordForEmail,
+  resendSignUpConfirmation,
   authEnabled,
 } from "../lib/authService.js";
+import { classifyAuthError } from "../lib/authErrors.js";
 
 function GoogleLogo() {
   return (
@@ -46,6 +50,124 @@ function GitHubLogo() {
 
 function Spinner() {
   return <span className="btn-spinner" aria-hidden="true" />;
+}
+
+// ── Forgot-password view ────────────────────────────────────────────────────
+// Two states inside the same shell: "forgot" (email input) and "forgot-sent"
+// (confirmation that the reset link is on its way). Both render in place of
+// the sign-in / sign-up form so the user keeps the same mental context.
+function ForgotView({
+  tab,
+  email,
+  setEmail,
+  error,
+  errorCta,
+  onErrorCta,
+  onSubmit,
+  onBack,
+  loading,
+  setError,
+  setErrorCta,
+  setInfo,
+}) {
+  const sent = tab === "forgot-sent";
+  return (
+    <>
+      <div className="auth-brand">
+        <Icon name="layers" size={20} strokeWidth={2.2} />
+        <span>DatIQ</span>
+      </div>
+
+      <h2 className="auth-title">
+        {sent ? "Check your email" : "Reset your password"}
+      </h2>
+      <p className="auth-sub">
+        {sent
+          ? `If an account exists for ${email || "that address"}, we've sent a password reset link. It expires in 1 hour.`
+          : "Enter the email address you signed up with. We'll send you a link to set a new password."}
+      </p>
+
+      {!sent && (
+        <form className="auth-form" onSubmit={onSubmit} noValidate>
+          {error && (
+            <div className="auth-feedback auth-error" role="alert">
+              <Icon name="alert-triangle" size={14} />
+              <span>{error}</span>
+              {errorCta && (
+                <button
+                  type="button"
+                  className="auth-feedback-cta"
+                  onClick={() => onErrorCta(errorCta.action)}
+                >
+                  {errorCta.label}
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="auth-field">
+            <label htmlFor="auth-forgot-email">Email</label>
+            <input
+              id="auth-forgot-email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoFocus
+            />
+          </div>
+
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={!!loading}
+            style={{ width: "100%", justifyContent: "center" }}
+          >
+            {loading === "forgot" ? "Sending…" : "Send reset link"}
+          </Button>
+        </form>
+      )}
+
+      {sent && (
+        <div className="auth-feedback auth-info" role="status">
+          <Icon name="check-circle" size={14} />
+          <span>
+            Didn't get the email? Check your spam folder, or{" "}
+            <button
+              type="button"
+              className="auth-link-button"
+              onClick={() => {
+                setError("");
+                setErrorCta(null);
+                setInfo("");
+                onBack(); // back to "forgot" form
+              }}
+            >
+              try again
+            </button>
+            .
+          </span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="auth-back-link"
+        onClick={() => {
+          setError("");
+          setErrorCta(null);
+          setInfo("");
+          onBack();
+        }}
+      >
+        <Icon name="arrow-left" size={14} />
+        Back to sign in
+      </button>
+    </>
+  );
 }
 
 // ── Persona picker step (shown after sign-up if not yet onboarded) ──
@@ -83,10 +205,12 @@ export default function AuthModal() {
   const { onboarded, selectPersona, completeOnboarding } = usePersona();
   const navigate = useNavigate();
 
+  // "signin" | "signup" | "forgot" | "forgot-sent"
   const [tab, setTab] = useState(authMode === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(authError || "");
+  const [errorCta, setErrorCta] = useState(null); // {label, action} from classifyAuthError
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState("");
   const [showPersonaStep, setShowPersonaStep] = useState(false);
@@ -101,7 +225,40 @@ export default function AuthModal() {
   function switchTab(t) {
     setTab(t);
     setError("");
+    setErrorCta(null);
     setInfo("");
+  }
+
+  /** Run a CTA attached to a classified error (back-to-signin, open-forgot, …). */
+  function handleErrorCta(action) {
+    if (action === "back-to-signin") {
+      switchTab("signin");
+    } else if (action === "open-forgot") {
+      switchTab("forgot");
+    } else if (action === "resend-confirmation") {
+      handleResendConfirmation();
+    }
+  }
+
+  async function handleResendConfirmation() {
+    if (!email) {
+      switchTab("signup");
+      return;
+    }
+    setError("");
+    setErrorCta(null);
+    setInfo("");
+    setLoading("resend");
+    try {
+      await resendSignUpConfirmation(email);
+      setInfo("A fresh confirmation link is on its way. Check your inbox (and spam folder).");
+    } catch (err) {
+      const friendly = classifyAuthError(err);
+      setError(friendly.message);
+      setErrorCta(friendly.cta);
+    } finally {
+      setLoading("");
+    }
   }
 
   function handlePersonaSelect(id) {
@@ -124,6 +281,7 @@ export default function AuthModal() {
       return;
     }
     setError("");
+    setErrorCta(null);
     setInfo("");
     setLoading("email");
     try {
@@ -139,7 +297,31 @@ export default function AuthModal() {
         }
       }
     } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
+      const friendly = classifyAuthError(err);
+      setError(friendly.message);
+      setErrorCta(friendly.cta);
+    } finally {
+      setLoading("");
+    }
+  }
+
+  async function handleForgotSubmit(e) {
+    e.preventDefault();
+    if (!authEnabled) {
+      setError("Auth not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+      return;
+    }
+    setError("");
+    setErrorCta(null);
+    setInfo("");
+    setLoading("forgot");
+    try {
+      await resetPasswordForEmail(email);
+      setTab("forgot-sent");
+    } catch (err) {
+      const friendly = classifyAuthError(err);
+      setError(friendly.message);
+      setErrorCta(friendly.cta);
     } finally {
       setLoading("");
     }
@@ -173,6 +355,21 @@ export default function AuthModal() {
 
         {showPersonaStep ? (
           <PersonaStep onSelect={handlePersonaSelect} onSkip={handlePersonaSkip} />
+        ) : tab === "forgot" || tab === "forgot-sent" ? (
+          <ForgotView
+            tab={tab}
+            email={email}
+            setEmail={setEmail}
+            error={error}
+            errorCta={errorCta}
+            onErrorCta={handleErrorCta}
+            onSubmit={handleForgotSubmit}
+            onBack={() => switchTab("signin")}
+            loading={loading}
+            setError={setError}
+            setErrorCta={setErrorCta}
+            setInfo={setInfo}
+          />
         ) : (
           <>
             {/* Brand */}
@@ -220,7 +417,17 @@ export default function AuthModal() {
             <form className="auth-form" onSubmit={handleEmail} noValidate>
               {error && (
                 <div className="auth-feedback auth-error" role="alert">
-                  <Icon name="alert-triangle" size={14} />{error}
+                  <Icon name="alert-triangle" size={14} />
+                  <span>{error}</span>
+                  {errorCta && (
+                    <button
+                      type="button"
+                      className="auth-feedback-cta"
+                      onClick={() => handleErrorCta(errorCta.action)}
+                    >
+                      {errorCta.label}
+                    </button>
+                  )}
                 </div>
               )}
               {info && (
@@ -238,6 +445,18 @@ export default function AuthModal() {
                 <label htmlFor="auth-password">Password</label>
                 <input id="auth-password" type="password" autoComplete={tab === "signin" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
               </div>
+
+              {tab === "signin" && (
+                <div className="auth-forgot-row">
+                  <button
+                    type="button"
+                    className="auth-forgot-link"
+                    onClick={() => switchTab("forgot")}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
 
               <Button variant="primary" size="sm" type="submit" disabled={!!loading} style={{ width: "100%", justifyContent: "center" }}>
                 {loading === "email" ? "Loading…" : tab === "signin" ? "Sign in" : "Create account"}

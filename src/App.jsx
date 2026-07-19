@@ -57,6 +57,7 @@ import NotFound from "./pages/NotFound.jsx";
 import Workspace from "./pages/Workspace.jsx";
 import PublicReport from "./pages/PublicReport.jsx";
 import Gallery from "./pages/Gallery.jsx";
+import ResetPassword from "./pages/ResetPassword.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
@@ -231,6 +232,8 @@ function Shell() {
           {/* Q6 — shareable report links + public gallery */}
           <Route path="/p/:slug"                       element={<PublicReport />} />
           <Route path="/gallery"                       element={<Gallery />} />
+          {/* Password recovery landing — Supabase redirects here with #type=recovery */}
+          <Route path="/reset-password"                element={<ResetPassword />} />
           <Route path="*"                              element={<NotFound />} />
         </Routes>
       </main>

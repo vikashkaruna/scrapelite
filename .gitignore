@@ -10,6 +10,18 @@ dist-ssr
 env.*
 !.env.example
 
+# Operator-only env files: real Supabase service keys + admin PIN hashes.
+# Created locally by the pre-cutover Netlify-env workflow, never committed.
+scripts/env/
+
+# `supabase link` writes the linked project ref here. Sensitive (it
+# identifies your Supabase org + project) and operator-only.
+supabase/.temp/
+
+# Deno lockfile — only appears if you've run a Deno-based tool locally.
+# Not part of the build; safe to ignore.
+deno.lock
+
 # Safety backup of netlify.toml (kept on disk as a reference for
 # manual rollback; ignore to keep it out of git)
 netlify.backup.toml

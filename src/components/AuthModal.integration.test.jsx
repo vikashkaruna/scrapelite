@@ -1,11 +1,13 @@
 // src/components/AuthModal.integration.test.jsx
-// I-42 — AuthModal integration.
+// I-42 + I-43 — AuthModal integration.
 //
 //   - When opened with authMode='signin' → "Sign in" tab is active by default.
 //   - When opened with authMode='signup' → "Create account" tab is active.
 //   - The authError from AuthProvider is shown in the error banner.
 //   - All three OAuth buttons (Google, Microsoft, GitHub) are present.
 //   - Submitting the email form calls signInWithEmail / signUpWithEmail.
+//   - "Forgot password?" link switches to the reset-request view.
+//   - Supabase surface errors are replaced with friendly copy + a CTA.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -21,6 +23,9 @@ const authMocks = vi.hoisted(() => ({
   signInWithOAuth: vi.fn(),
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  resendSignUpConfirmation: vi.fn(),
+  updatePassword: vi.fn(),
 }));
 
 vi.mock("../lib/authService.js", async () => {
@@ -32,6 +37,9 @@ vi.mock("../lib/authService.js", async () => {
     signInWithOAuth: authMocks.signInWithOAuth,
     getSession: authMocks.getSession,
     onAuthStateChange: authMocks.onAuthStateChange,
+    resetPasswordForEmail: authMocks.resetPasswordForEmail,
+    resendSignUpConfirmation: authMocks.resendSignUpConfirmation,
+    updatePassword: authMocks.updatePassword,
   };
 });
 
@@ -193,5 +201,112 @@ describe("I-42 — AuthModal", () => {
     const alert = document.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert.textContent).toContain("Demo error from provider");
+  });
+});
+
+describe("I-43 — AuthModal password reset flow", () => {
+  it("renders a 'Forgot password?' link on the Sign in tab", async () => {
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const link = screen.getByRole("button", { name: /forgot password\?/i });
+    expect(link).toBeInTheDocument();
+  });
+
+  it("clicking 'Forgot password?' switches the modal to the reset-request view", async () => {
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /forgot password\?/i }));
+    });
+    expect(screen.getByRole("heading", { name: /reset your password/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send reset link/i })).toBeInTheDocument();
+  });
+
+  it("submitting the reset form calls resetPasswordForEmail and shows the success state", async () => {
+    authMocks.resetPasswordForEmail.mockResolvedValue({});
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /forgot password\?/i }));
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "alice@example.com" },
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /send reset link/i }));
+    });
+    expect(authMocks.resetPasswordForEmail).toHaveBeenCalledWith("alice@example.com");
+    expect(screen.getByRole("heading", { name: /check your email/i })).toBeInTheDocument();
+  });
+
+  it("'Back to sign in' from the forgot view returns to the sign-in form", async () => {
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /forgot password\?/i }));
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /back to sign in/i }));
+    });
+    expect(screen.getByRole("heading", { name: /welcome back/i })).toBeInTheDocument();
+  });
+});
+
+describe("I-44 — AuthModal friendly error copy", () => {
+  it("'Invalid login credentials' surfaces the friendly title with a 'Reset password' CTA", async () => {
+    authMocks.signInWithEmail.mockRejectedValue(new Error("Invalid login credentials"));
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "alice@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "wrong-pw" },
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+    });
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    // The friendly message body + the actionable CTA both live in the alert.
+    expect(alert.textContent).toMatch(/double-check the email address and password/i);
+    // The CTA is rendered as a button inside the feedback.
+    const cta = alert.querySelector("button");
+    expect(cta).not.toBeNull();
+    expect(cta.textContent).toMatch(/reset password/i);
+  });
+
+  it("'Email not confirmed' surfaces the resend CTA that calls resendSignUpConfirmation", async () => {
+    authMocks.signInWithEmail.mockRejectedValue(new Error("Email not confirmed"));
+    authMocks.resendSignUpConfirmation.mockResolvedValue({});
+    render(<Shell authMode="signin" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "good-pw" },
+    });
+    await act(async => {
+      fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+    });
+    const cta = document.querySelector('[role="alert"] button');
+    await act(async => {
+      fireEvent.click(cta);
+    });
+    expect(authMocks.resendSignUpConfirmation).toHaveBeenCalledWith("new@example.com");
   });
 });
