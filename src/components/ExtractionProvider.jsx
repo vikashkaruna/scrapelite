@@ -38,18 +38,6 @@ export function ExtractionProvider({ children }) {
   const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
   const [loadingUrl, setLoadingUrl] = useState("");
-  // Inline progress shown on the Home page. null when no extraction is in flight.
-  // When non-null, the Home page renders a stepped indicator in the preview
-  // area (replacing the OG preview card) and reveals a "Preview" button on
-  // completion so the user can navigate to /preview themselves.
-  //
-  //   { url, step: 0|1|2|3, completed: false, error: null }
-  //
-  // The four steps mirror the full-screen loader (LoadingScreen) so the UX is
-  // consistent. The Shell-level LoadingScreen (loading=true) is still used for
-  // routes other than /, so an extraction in flight looks the same wherever
-  // the user is when the network round-trip completes.
-  const [progress, setProgress] = useState(null);
   const reqId = useRef(0);
   const lastUrl = useRef("");
   const lastOpts = useRef({});
@@ -85,20 +73,15 @@ export function ExtractionProvider({ children }) {
     lastOpts.current = options;
     setLoadingUrl(url);
     setLoading(true);
-    setProgress({ url, step: 0, completed: false, error: null });
     const startedAt = Date.now();
     try {
-      // Mark "Parsing structure" once the first network round-trip resolves —
-      // this is the natural breakpoint between "Fetching webpage" and
-      // "Extracting links" since the netlify function returns both at once.
       const structure = await extractStructure(url, options);
-      if (reqId.current !== id) return;
-      setProgress((p) => (p ? { ...p, step: 2 } : p));
 
       let result;
       if (structure.domain_map) {
         // Domain-mapping mode: no page to summarize or links to categorize —
         // just carry the discovered URL list straight to the preview.
+        if (reqId.current !== id) return;
         result = {
           ...structure,
           ai_summary:
@@ -109,7 +92,6 @@ export function ExtractionProvider({ children }) {
         };
       } else {
         // Standard (and custom-extraction) mode: summarize and AI-tag concurrently.
-        setProgress((p) => (p ? { ...p, step: 3 } : p));
         const [ai_summary, links] = await Promise.all([
           summarize(structure),
           categorizeLinks(structure.links, structure.url),
@@ -145,11 +127,6 @@ export function ExtractionProvider({ children }) {
       const withProv = attachProvenance(result, { now: result.created_at });
       commitCurrent(withProv);
       setLoading(false);
-      // Mark the inline progress as completed so the Home page can swap in
-      // the "Preview" button. We keep `progress` populated (don't clear it)
-      // so the button stays visible until the user navigates away or starts
-      // a new extraction.
-      setProgress((p) => (p ? { ...p, completed: true } : p));
       billing?.trackExtraction?.();
       // Track guest trial for non-logged-in users (1 credit per single-URL extraction).
       if (!user) guestTrial?.trackGuestExtraction?.(1);
@@ -170,17 +147,14 @@ export function ExtractionProvider({ children }) {
           analytics.saved({ url, intent: props.intent });
         })
         .catch((err) => console.warn("[DatIQ] Auto-save failed:", err));
-      // No automatic navigate("/preview") — the Home page now shows an inline
-      // "Preview" button that the user clicks to land on /preview. The button
-      // is wired to the same `view(current)` path the Dashboard uses, which
-      // re-reads the current extraction (already committed above) and routes.
+      navigate("/preview");
     } catch (err) {
       if (reqId.current !== id) return;
       console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
-      setProgress((p) => (p ? { ...p, error: String(err?.message || err), completed: false } : p));
       // Q11 — analytics: failure
       analytics.extractionFailed({ url, intent: options.intent || "summary", error: String(err?.message || err) });
+      navigate("/");
       // Show modal with a "Try again" button that re-submits the same URL + options.
       showError(err, {}, () => extract(lastUrl.current, lastOpts.current));
     }
@@ -258,10 +232,6 @@ export function ExtractionProvider({ children }) {
     setCurrent: commitCurrent,
     loading,
     loadingUrl,
-    progress,
-    // Clear inline progress (called when the user navigates away from the
-    // preview button or starts a new URL).
-    clearProgress: () => setProgress(null),
     extract,
     enrich,
     save,
