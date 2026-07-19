@@ -22,22 +22,6 @@ const firecrawlMocks = vi.hoisted(() => ({
   extractStructure: vi.fn(),
 }));
 
-const aiMocks = vi.hoisted(() => ({
-  summarize: vi.fn(() => Promise.resolve("Mocked AI summary.")),
-  categorizeLinks: vi.fn(() => Promise.resolve([])),
-}));
-
-const extractionsRepoMocks = vi.hoisted(() => ({
-  saveExtraction: vi.fn(() => Promise.resolve({ id: "saved_1" })),
-  updateEnrichments: vi.fn(() => Promise.resolve()),
-  listExtractions: vi.fn(() => Promise.resolve([])),
-  deleteExtraction: vi.fn(() => Promise.resolve()),
-}));
-
-const provenanceMocks = vi.hoisted(() => ({
-  attachProvenance: vi.fn((r) => r),
-}));
-
 const authMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
@@ -57,15 +41,6 @@ vi.mock("../lib/firecrawlService.js", () => ({
   extractStructure: firecrawlMocks.extractStructure,
   mapDomain: vi.fn(),
 }));
-
-vi.mock("../lib/aiService.js", () => ({
-  summarize: aiMocks.summarize,
-  categorizeLinks: aiMocks.categorizeLinks,
-}));
-
-vi.mock("../lib/extractionsRepo.js", () => extractionsRepoMocks);
-
-vi.mock("../lib/provenanceService.js", () => provenanceMocks);
 
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn() }));
 
@@ -190,45 +165,5 @@ describe("I-11 — ExtractionProvider: pre-flight guest hard block", () => {
       await Promise.resolve();
     });
     expect(firecrawlMocks.extractStructure).toHaveBeenCalled();
-  });
-});
-
-describe("I-12 — ExtractionProvider: inline progress state", () => {
-  it("extract() sets progress to step 0 on start and does NOT auto-navigate to /preview on completion", async () => {
-    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 0, batchCount: 0, sid: "s1" }));
-    render(<Tree />);
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => {
-      screen.getByTestId("extract").click();
-      await Promise.resolve();
-      // Flush microtasks: extractStructure → step 2 → Promise.all(summarize, categorize)
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // We should still be on Home, not /preview — the user clicks the inline
-    // Preview button to navigate (preserves the "stay on Home, see progress
-    // inline" UX from R-series).
-    expect(screen.getByTestId("pathname").textContent).toBe("/");
-    // Progress is now completed: { url, completed: true, ... }
-    // The Probe doesn't expose progress yet, so we infer it via loading=false.
-    expect(screen.getByTestId("loading").textContent).toBe("false");
-    // The auto-save still happened (background).
-    expect(extractionsRepoMocks.saveExtraction).toHaveBeenCalled();
-  });
-
-  it("extract() failure sets progress.error and does NOT auto-navigate", async () => {
-    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 0, batchCount: 0, sid: "s1" }));
-    firecrawlMocks.extractStructure.mockRejectedValueOnce(new Error("boom"));
-    render(<Tree />);
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => {
-      screen.getByTestId("extract").click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(screen.getByTestId("pathname").textContent).toBe("/");
-    expect(screen.getByTestId("loading").textContent).toBe("false");
   });
 });

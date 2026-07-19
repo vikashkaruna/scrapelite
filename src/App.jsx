@@ -180,12 +180,7 @@ function Shell() {
   }
 
   const isAppPage = ["/", "/preview", "/dashboard", "/account", "/batch"].includes(pathname);
-  // Skip the full-screen loader on Home — the Home page renders its own
-  // inline progress + "Preview" button in the preview area below the
-  // composer (see HomeInlineProgress). The full-screen loader is still
-  // used on /preview, /dashboard, /account, /batch so an extraction in
-  // flight looks the same wherever the user is when the round-trip ends.
-  if (loading && isAppPage && pathname !== "/") return <LoadingScreen url={loadingUrl} />;
+  if (loading && isAppPage) return <LoadingScreen url={loadingUrl} />;
 
   return (
     <>

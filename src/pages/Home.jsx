@@ -12,7 +12,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
-import HomeInlineProgress from "../components/HomeInlineProgress.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
 import OutcomeTiles from "../components/OutcomeTiles.jsx";
 import TryExampleDemo from "../components/TryExampleDemo.jsx";
@@ -23,7 +22,6 @@ import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
@@ -83,12 +81,6 @@ export default function Home() {
   const billing = useBilling();
   const showToast = useToast();
   const navigate = useNavigate();
-  // Inline progress + view-current-extraction helpers from the provider.
-  // `progress` powers the HomeInlineProgress card; `view(current)` is the
-  // same path the Dashboard uses to land on /preview with the current
-  // extraction re-merged from cache + Supabase. The local `extract` is
-  // used by the "Try again" button in the error state.
-  const { progress, clearProgress, current, view, extract } = useExtraction();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
@@ -417,28 +409,8 @@ export default function Home() {
             placeholder={persona ? `https://${examples[0]}  ·  or paste any text to extract` : undefined}
           />
 
-          {/* Inline extraction progress / Preview CTA — shown in the preview
-              area below the composer when an extraction is in flight. Takes
-              priority over the OG preview card so the user can see what's
-              happening AND click "Preview" when done without leaving Home. */}
-          {progress && (
-            <HomeInlineProgress
-              progress={progress}
-              onPreview={() => {
-                clearProgress();
-                if (current) view(current);
-                else navigate("/preview");
-              }}
-              onRetry={() => {
-                clearProgress();
-                extract(url, { renderJs });
-              }}
-            />
-          )}
-
-          {/* OG Preview card — hidden while an extraction is in flight so the
-              inline progress has the full preview area. */}
-          {!progress && (previewLoading || preview) && (
+          {/* OG Preview card */}
+          {(previewLoading || preview) && (
             <div className="url-preview-card">
               {previewLoading ? (
                 <span className="url-preview-loading">
