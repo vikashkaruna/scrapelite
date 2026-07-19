@@ -112,6 +112,11 @@ async function realScrape(url, options = {}) {
     result.custom_extraction =
       data.json || data.extract || data.llm_extraction || null;
   }
+  // F36 — headless attribution. Surfaced in the UI so the user knows
+  // whether JS was actually executed.
+  if (raw && raw._headless) {
+    result._headless = raw._headless;
+  }
   return result;
 }
 

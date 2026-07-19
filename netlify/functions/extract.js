@@ -20,6 +20,7 @@ import { getCached, setCached } from "./lib/resultCacheStore.js";
 import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
+import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
 
 function respond(statusCode, body) {
   return {
@@ -152,7 +153,23 @@ export const handler = async (event) => {
       },
       source: result.source,
       _providerAttempts: result.attempts,
+      // F36 — headless attribution. Only surface when the caller asked for
+      // JS rendering; otherwise we omit the field so the UI doesn't show a
+      // confusing "rendered via X" message on plain HTTP extractions.
+      ...(options.renderJs
+        ? { _headless: headlessAttribution(result.source) }
+        : {}),
     };
+
+    // If the caller asked for renderJs but no headless-capable provider is
+    // configured, the chain will fall through to jina/direct (both static).
+    // Surface a hint so the UI can warn the user.
+    if (options.renderJs && !isHeadlessAvailable()) {
+      responseBody._headless = {
+        rendered: false,
+        note: "JS rendering requested but no headless provider (Firecrawl / Spider) is configured. Falling back to a static HTML snapshot.",
+      };
+    }
 
     // FD2: write to cache (best-effort, fire-and-forget).
     if (isCacheable(options) && !options.noCache) {

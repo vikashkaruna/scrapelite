@@ -4,20 +4,37 @@
 // data changed'). Free D7 lift once accounts + monitoring exist; deep links
 // resume exact context."
 //
-// Two email surfaces, both fire via Resend (same key as the change alert):
+// Three email surfaces, all fire via Resend:
 //
-//   1. Weekly digest (Mondays only): "Your [N] schedules ran [N] times
+//   1. Welcome:        fired once per user, on first sign-in. Browser
+//                      calls /api/welcome-email separately; this function
+//                      is the orchestrator. (Implemented in welcome-email.js
+//                      — included here as a comment for discoverability.)
+//
+//   2. Daily schedule-ran digest: at 9pm UTC, every active user with at
+//      least one run today gets a "your schedules ran N times today"
+//      email. Deep links to /schedules so they can see what changed.
+//
+//   3. Weekly digest (Mondays only): "Your [N] schedules ran [N] times
 //      this week, [N] detected changes, [N] errors."
 //
-//   2. D7 re-engagement: user hasn't visited the app in 7+ days. Email
+//   4. D7 re-engagement: user hasn't visited the app in 7+ days. Email
 //      them a one-liner with a deep link to /workspace so they resume
 //      with their watchlist context.
+//
+//   5. D30 abandoned trial: longer-tail nudge for free-tier users who
+//      haven't run anything in 30+ days. Suggests a sample template to
+//      re-activate.
 //
 // For v1 the function reads a small `reengagement_log` Supabase table
 // (created by scripts/reengagement-log.sql) to dedup so we never email
 // the same user twice for the same trigger window. Service-key only.
 
 export const config = { schedule: "@daily" };
+
+// Daily schedule-ran digest fires only at this UTC hour. Default 21:00 UTC
+// = ~5pm ET / 2:30am IST. Operators can override via env.
+const DAILY_DIGEST_HOUR_UTC = parseInt(process.env.DAILY_DIGEST_HOUR_UTC || "21", 10) || 21;
 
 const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
 const FROM = process.env.ALERT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
@@ -108,6 +125,52 @@ function reengagementHtml({ userName, lastSeen }) {
   );
 }
 
+// F49 — daily schedule-ran digest. Aggregates the day's run activity for
+// one user into a single short email.
+function dailyRanHtml({ userName, runCount, changeCount, errorCount, dayKey }) {
+  const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
+  const hasChange = changeCount > 0;
+  return (
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
+    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
+    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Daily summary</div>` +
+    `<div style="font-size:20px;font-weight:800;margin-top:4px">Your schedules ran today</div></div>` +
+    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+    `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — here&apos;s a quick recap of <strong>${escapeHtml(dayKey)}</strong>:</p>` +
+    `<table style="border-collapse:collapse;margin-bottom:18px">` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">Schedule runs</td><td style="padding:4px 0;font-size:14px;font-weight:600">${runCount}</td></tr>` +
+    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">Detected changes</td><td style="padding:4px 0;font-size:14px;font-weight:600">${changeCount}</td></tr>` +
+    (errorCount > 0 ? `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">Errors</td><td style="padding:4px 0;font-size:14px;font-weight:600">${errorCount}</td></tr>` : "") +
+    `</table>` +
+    (hasChange
+      ? `<p style="margin:0 0 14px;color:#374151;font-size:14px">We detected changes on ${changeCount} schedule${changeCount !== 1 ? "s" : ""} — open DatIQ to see what shifted.</p>`
+      : `<p style="margin:0 0 14px;color:#374151;font-size:14px">No content changes today. Your monitors are quiet and steady.</p>`) +
+    `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Open your schedules →</a>` +
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
+    `</div></div>`
+  );
+}
+
+// F49 — D30 abandoned-trial nudge. Suggests a sample template to
+// re-activate the user.
+function abandonedTrialHtml({ userName, lastRun }) {
+  const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
+  const ago = lastRun ? new Date(lastRun).toLocaleDateString() : "a while back";
+  return (
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
+    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
+    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · 30-day check-in</div>` +
+    `<div style="font-size:20px;font-weight:800;margin-top:4px">A lot has changed in a month</div></div>` +
+    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+    `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — you last ran an extraction on <strong>${escapeHtml(ago)}</strong>. Since then, we&apos;ve shipped batch CSV import, Airtable + Notion export, and a one-click template gallery.</p>` +
+    `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.55">Try a fresh template — pick a starting point and we&apos;ll pre-fill the right intent for you:</p>` +
+    `<a href="${SITE_URL}/" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 20px;border-radius:9px;margin-right:8px">Browse templates →</a>` +
+    `<a href="${SITE_URL}/batch" style="display:inline-block;background:#fff;color:#4f46e5;border:1px solid #4f46e5;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Try a batch</a>` +
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
+    `</div></div>`
+  );
+}
+
 // ── Supabase query helpers ────────────────────────────────────────────────────
 
 async function fetchActiveUsers(db) {
@@ -174,6 +237,23 @@ export function buildDigest(rows) {
   };
 }
 
+// F49 — "your schedule ran today" digest. Counts runs whose lastRunAt
+// falls in the current UTC day. Pure helper (testable in isolation).
+export function buildDailyDigest(rows, now = new Date()) {
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  let runs = 0, changes = 0, errors = 0;
+  for (const row of rows) {
+    const d = row.data || {};
+    const t = d.lastRunAt ? new Date(d.lastRunAt) : null;
+    if (!t || t < dayStart || t >= dayEnd) continue;
+    runs++;
+    if (d.lastStatus === "changed") changes++;
+    else if (d.lastStatus === "error") errors++;
+  }
+  return { runCount: runs, changeCount: changes, errorCount: errors };
+}
+
 export const handler = async () => {
   const db = sb();
   if (!db) {
@@ -187,6 +267,7 @@ export const handler = async () => {
   const today = now.toISOString().slice(0, 10);
   const weekKey = `${now.getUTCFullYear()}-W${String(getISOWeek(now)).padStart(2, "0")}`;
   const isMon = isMonday(now.toISOString());
+  const isDigestHour = now.getUTCHours() === DAILY_DIGEST_HOUR_UTC;
 
   const rows = await fetchActiveUsers(db);
   const byEmail = new Map();
@@ -198,7 +279,27 @@ export const handler = async () => {
 
   let sent = 0;
   for (const [email, userRows] of byEmail.entries()) {
-    // (1) Weekly digest — only on Mondays.
+    // (1) Daily "your schedules ran today" digest — fires once per day
+    // at DAILY_DIGEST_HOUR_UTC. Skip on days with zero runs.
+    if (isDigestHour) {
+      const dailyWindow = `daily:${today}`;
+      if (!(await alreadySent(db, email, "daily", dailyWindow))) {
+        const daily = buildDailyDigest(userRows, now);
+        if (daily.runCount > 0) {
+          const ok = await sendEmail({
+            to: email,
+            subject: `Your DatIQ day: ${daily.runCount} run${daily.runCount !== 1 ? "s" : ""}, ${daily.changeCount} change${daily.changeCount !== 1 ? "s" : ""}`,
+            html: dailyRanHtml({ userName: email.split("@")[0], ...daily, dayKey: today }),
+          });
+          if (ok) {
+            sent++;
+            await markSent(db, email, "daily", dailyWindow);
+          }
+        }
+      }
+    }
+
+    // (2) Weekly digest — only on Mondays.
     if (isMon) {
       const window = `digest:${weekKey}`;
       if (!(await alreadySent(db, email, "digest", window))) {
@@ -217,26 +318,52 @@ export const handler = async () => {
       }
     }
 
-    // (2) D7 re-engagement — any user with no schedule runs in 7+ days
+    // (3) D7 re-engagement — any user with no schedule runs in 7+ days
     // (proxy for "user is inactive"). We don't track per-user visits in
     // v1, so this fires for users whose most-recent run is older than 7d
     // AND they haven't been emailed for re-engagement in the last 7d.
     const reengageWindow = `d7:${today}`;
-    if (await alreadySent(db, email, "d7", reengageWindow)) continue;
-    const lastRun = userRows
-      .map((r) => r.data?.lastRunAt)
-      .filter(Boolean)
-      .sort()
-      .pop();
-    if (lastRun && isOlderThan(lastRun, 7)) {
-      const ok = await sendEmail({
-        to: email,
-        subject: "Your DatIQ schedules are still running",
-        html: reengagementHtml({ userName: email.split("@")[0], lastSeen: lastRun }),
-      });
-      if (ok) {
-        sent++;
-        await markSent(db, email, "d7", reengageWindow);
+    if (!(await alreadySent(db, email, "d7", reengageWindow))) {
+      const lastRun = userRows
+        .map((r) => r.data?.lastRunAt)
+        .filter(Boolean)
+        .sort()
+        .pop();
+      if (lastRun && isOlderThan(lastRun, 7)) {
+        const ok = await sendEmail({
+          to: email,
+          subject: "Your DatIQ schedules are still running",
+          html: reengagementHtml({ userName: email.split("@")[0], lastSeen: lastRun }),
+        });
+        if (ok) {
+          sent++;
+          await markSent(db, email, "d7", reengageWindow);
+        }
+      }
+    }
+
+    // (4) D30 abandoned-trial nudge — same proxy as D7 but at the 30-day
+    // window. Skip free-tier users with no runs at all in 30d. (Operators
+    // can opt out via env D30_ENABLED=false.)
+    if (process.env.D30_ENABLED !== "false") {
+      const d30Window = `d30:${today}`;
+      if (!(await alreadySent(db, email, "d30", d30Window))) {
+        const lastRun = userRows
+          .map((r) => r.data?.lastRunAt)
+          .filter(Boolean)
+          .sort()
+          .pop();
+        if (lastRun && isOlderThan(lastRun, 30)) {
+          const ok = await sendEmail({
+            to: email,
+            subject: "A lot has changed in a month — here's what's new in DatIQ",
+            html: abandonedTrialHtml({ userName: email.split("@")[0], lastRun }),
+          });
+          if (ok) {
+            sent++;
+            await markSent(db, email, "d30", d30Window);
+          }
+        }
       }
     }
   }
@@ -261,10 +388,14 @@ function getISOWeek(d) {
 // strips unused exports in production, but tests need them.)
 export const _internal = {
   buildDigest,
+  buildDailyDigest,
   digestHtml,
   reengagementHtml,
+  dailyRanHtml,
+  abandonedTrialHtml,
   isMonday,
   isOlderThan,
   getISOWeek,
   escapeHtml,
+  DAILY_DIGEST_HOUR_UTC,
 };
