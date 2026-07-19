@@ -19,7 +19,12 @@
   # looks like a known key, including the placeholders. Real values go
   # in the Netlify UI ("Environment variables") per docs/NETLIFY-ENVIRONMENTS.md,
   # so the scanner should ignore this file. Same for the operator doc.
-  SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js,netlify.toml,NETLIFY-ENVIRONMENTS.md"
+  #
+  # Session handoff docs also legitimately name env vars (e.g. describing
+  # a past fix that mentioned "RAZORPAY_KEY_SECRET" or pasting an example
+  # like `VITE_SUPABASE_ANON_KEY = "PROD_ANON_KEY"`). The scanner's
+  # substring matcher trips on those too, so they're omitted as well.
+  SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js,netlify.toml,NETLIFY-ENVIRONMENTS.md,docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md,docs/SESSION-HANDOFF-2026-07-19.md"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
 [[redirects]]
