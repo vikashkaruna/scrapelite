@@ -8,6 +8,7 @@ import EmailModal from "../components/EmailModal.jsx";
 import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import CollectionPicker from "../components/CollectionPicker.jsx";
+import ExportIntegrations from "../components/ExportIntegrations.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -204,7 +205,7 @@ function DashCard({ item, selected, onToggle, onView, onDelete, category }) {
 }
 
 // ── Export Dropdown ───────────────────────────────────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled, label }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo, disabled, label }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -257,6 +258,14 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
               <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
             </button>
           </div>
+          {onSendTo && (
+            <div className="export-dropdown-section">
+              <div className="export-dropdown-section-label">Send to</div>
+              <button className="export-dropdown-item" onClick={() => { onSendTo(); setOpen(false); }}>
+                <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -428,7 +437,7 @@ function CollectionFilter({ items, value, onChange }) {
 }
 
 // ── Floating selection action bar ─────────────────────────────────────────────
-function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson }) {
+function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo }) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
@@ -494,6 +503,14 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCs
                   <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
                 </button>
               </div>
+              {onSendTo && (
+                <div className="export-dropdown-section">
+                  <div className="export-dropdown-section-label">Send to</div>
+                  <button className="export-dropdown-item" onClick={() => { onSendTo(); setExportOpen(false); }}>
+                    <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -536,6 +553,7 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(() => new Set());
   const [emailOpen, setEmailOpen] = useState(false);
   const [contentItem, setContentItem] = useState(null);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [pageSize, setPageSize] = useState(rowsForViewport);
 
   // Batch run history (localStorage-backed)
@@ -756,6 +774,7 @@ export default function Dashboard() {
   };
 
   const exportTargets = () => (selected.size ? selectedItems : filtered).map(withEnrichments);
+  const exportItems = exportTargets();
 
   const onExportCsv = () => {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
@@ -944,6 +963,7 @@ export default function Dashboard() {
                 onCopyCsv={onCopyCsv}
                 onCopyMarkdown={onCopyMarkdown}
                 onCopyJson={onCopyJson}
+                onSendTo={() => setIntegrationsOpen(true)}
                 disabled={exportCount === 0}
                 label={exportLabel}
               />
@@ -1126,6 +1146,7 @@ export default function Dashboard() {
           onCopyCsv={onCopyCsv}
           onCopyMarkdown={onCopyMarkdown}
           onCopyJson={onCopyJson}
+          onSendTo={() => selectedItems.length > 0 && setIntegrationsOpen(true)}
         />
       )}
 
@@ -1140,6 +1161,13 @@ export default function Dashboard() {
 
       {contentItem && (
         <ContentModal item={contentItem} onClose={() => setContentItem(null)} />
+      )}
+
+      {integrationsOpen && (
+        <ExportIntegrations
+          items={exportItems || []}
+          onClose={() => setIntegrationsOpen(false)}
+        />
       )}
     </div>
   );

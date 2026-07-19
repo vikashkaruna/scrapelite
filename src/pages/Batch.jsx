@@ -13,6 +13,7 @@ import { useAuth } from "../components/AuthProvider.jsx";
 import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
 import UrlReviewTable from "../components/UrlReviewTable.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
+import ExportIntegrations from "../components/ExportIntegrations.jsx";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { incrementBatchRuns } from "../lib/usageService.js";
@@ -73,7 +74,7 @@ function parseUrlsFromText(text) {
 }
 
 // ── Export Dropdown (matches Dashboard pattern) ───────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -126,6 +127,14 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
               <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
             </button>
           </div>
+          {onSendTo && (
+            <div className="export-dropdown-section">
+              <div className="export-dropdown-section-label">Send to</div>
+              <button className="export-dropdown-item" onClick={() => { onSendTo(); setOpen(false); }}>
+                <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -308,6 +317,10 @@ export default function Batch() {
 
   // Run state
   const [running, setRunning] = useState(false);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  // F16 — results table filter + sort
+  const [resultsFilter, setResultsFilter] = useState("all"); // all | success | error
+  const [resultsSort, setResultsSort] = useState("original"); // original | url-asc | url-desc | status | title | headings
   const [progress, setProgress] = useState({ completed: 0, total: 0, current: "" });
   const [results, setResults] = useState(null);
   const [retryingIndex, setRetryingIndex] = useState(-1);
@@ -558,6 +571,29 @@ export default function Batch() {
   const successResults = (results || [])
     .filter((r) => r?._status === "success")
     .map(({ _status, _error, ...clean }) => clean);
+
+  // F16 — derived view of the results table (filter + sort applied)
+  const displayedResults = useMemo(() => {
+    const list = Array.isArray(results) ? results : [];
+    const filtered = resultsFilter === "all"
+      ? list
+      : list.filter((r) => (r?._status || "success") === resultsFilter);
+    const sorted = [...filtered];
+    switch (resultsSort) {
+      case "url-asc":   sorted.sort((a, b) => (a?.url || "").localeCompare(b?.url || "")); break;
+      case "url-desc":  sorted.sort((a, b) => (b?.url || "").localeCompare(a?.url || "")); break;
+      case "status":    sorted.sort((a, b) => {
+        const oa = a?._status === "error" ? 0 : 1;
+        const ob = b?._status === "error" ? 0 : 1;
+        return oa - ob;
+      }); break;
+      case "title":     sorted.sort((a, b) => (a?.page_title || a?.url || "").localeCompare(b?.page_title || b?.url || "")); break;
+      case "headings":  sorted.sort((a, b) => (b?.headings?.length || 0) - (a?.headings?.length || 0)); break;
+      case "original":
+      default: break;
+    }
+    return sorted;
+  }, [results, resultsFilter, resultsSort]);
 
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
@@ -1029,6 +1065,7 @@ export default function Batch() {
                       onCopyCsv={onCopyCsv}
                       onCopyMarkdown={onCopyMarkdown}
                       onCopyJson={onCopyJson}
+                      onSendTo={() => setIntegrationsOpen(true)}
                       disabled={!successResults.length}
                     />
                     <Button
@@ -1052,6 +1089,50 @@ export default function Batch() {
                 </div>
 
                 <div className="card table-wrap batch-table-wrap">
+                  <div className="batch-table-controls">
+                    <div className="batch-table-control-group">
+                      <span className="batch-table-control-label">Filter</span>
+                      <div className="batch-filter-chips">
+                        {[
+                          { key: "all",     label: "All",      icon: "list-checks" },
+                          { key: "success", label: "Success",  icon: "check" },
+                          { key: "error",   label: "Failed",   icon: "x" },
+                        ].map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            className={"batch-filter-chip" + (resultsFilter === f.key ? " batch-filter-chip-active" : "")}
+                            onClick={() => setResultsFilter(f.key)}
+                            title={`Show ${f.label.toLowerCase()} rows`}
+                          >
+                            <Icon name={f.icon} size={11} />
+                            {f.label}
+                            <span className="batch-filter-chip-count">
+                              {f.key === "all" ? results.length :
+                                f.key === "success" ? results.filter((r) => r?._status === "success").length :
+                                results.filter((r) => r?._status === "error").length}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="batch-table-control-group">
+                      <span className="batch-table-control-label">Sort</span>
+                      <select
+                        className="batch-sort-select"
+                        value={resultsSort}
+                        onChange={(e) => setResultsSort(e.target.value)}
+                        aria-label="Sort batch results"
+                      >
+                        <option value="original">Original order</option>
+                        <option value="url-asc">URL (A→Z)</option>
+                        <option value="url-desc">URL (Z→A)</option>
+                        <option value="status">Status (errors first)</option>
+                        <option value="title">Title (A→Z)</option>
+                        <option value="headings">Most headings</option>
+                      </select>
+                    </div>
+                  </div>
                   <table className="batch-table">
                     <thead>
                       <tr>
@@ -1063,16 +1144,21 @@ export default function Batch() {
                       </tr>
                     </thead>
                     <tbody>
-                      {results.map((item, i) => (
-                        <ResultRow
-                          key={item?.id || i}
-                          item={item}
-                          index={i}
-                          onView={view}
-                          onRetry={handleRetry}
-                          retrying={retryingIndex === i}
-                        />
-                      ))}
+                      {displayedResults.map((item, i) => {
+                        // Map filtered/sorted index back to the original results
+                        // index so retry/view handlers still work correctly.
+                        const originalIdx = results.indexOf(item);
+                        return (
+                          <ResultRow
+                            key={item?.id || originalIdx}
+                            item={item}
+                            index={originalIdx}
+                            onView={view}
+                            onRetry={handleRetry}
+                            retrying={retryingIndex === originalIdx}
+                          />
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1081,6 +1167,13 @@ export default function Batch() {
           </>
         )}
       </div>
+
+      {integrationsOpen && successResults.length > 0 && (
+        <ExportIntegrations
+          items={successResults}
+          onClose={() => setIntegrationsOpen(false)}
+        />
+      )}
     </div>
   );
 }
