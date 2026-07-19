@@ -2,7 +2,7 @@
   "name": "datiq",
   "private": true,
   "version": "1.0.0",
-  "description": "DatIQ — extract webpage structure (headings + links) with an AI summary. No code required.",
+  "description": "DatIQ V1.0 — zero-code web extraction + enrichment. Single URL, batch, schedules, AI summaries, contacts, pricing, custom fields, shareable reports.",
   "type": "module",
   "scripts": {
     "dev": "vite",

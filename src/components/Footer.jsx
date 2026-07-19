@@ -35,9 +35,18 @@ export default function Footer() {
           ))}
         </div>
 
-        {/* Copyright centre */}
+        {/* Copyright centre + version tag */}
         <span className="footer-copy">
           © {new Date().getFullYear()} DatIQ · Data + IQ, intelligence from every URL
+          <a
+            className="footer-version-tag"
+            href="/changelog"
+            onClick={(e) => { e.preventDefault(); navigate("/changelog"); }}
+            aria-label="DatIQ V1.0 — what's new"
+            title="See what's in DatIQ V1.0"
+          >
+            V1.0
+          </a>
         </span>
 
         {/* Legal */}

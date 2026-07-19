@@ -24,9 +24,9 @@ The premise was simple: if a human can read a web page and extract structured in
 
 DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.
 
-## What we shipped in v2.0
+## What we shipped in V1.0
 
-The current release (v2.0) includes:
+The current release (V1.0) includes:
 - **Custom extraction** — describe any field in plain English ("find the pricing tiers") and the AI locates and structures it
 - **Domain mapping** — crawl an entire site and return every indexed URL
 - **Lead enrichment** — surface leadership contacts and emails from any company page
