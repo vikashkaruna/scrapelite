@@ -125,11 +125,12 @@ function Tree() {
 describe("I-44 — AdminRevenue: KPIs + Refresh + fromSeed warning", () => {
   it("renders the KPI cards once data loads (MRR, ARR, users, coupons)", async () => {
     render(<Tree />);
-    // Cold CI runners can exceed waitFor's 1s default while the full
-    // provider tree mounts — give the async load explicit headroom.
+    // getAllByText: the amount renders in the KPI card AND (depending on
+    // locale formatting) in the trend mini-bar — multiple matches are fine.
+    // 5s timeout: cold CI runners exceed waitFor's 1s default.
     await waitFor(
       () => {
-        expect(screen.getByText(/\$1[,.]?234/)).toBeInTheDocument();
+        expect(screen.getAllByText(/\$1[,.]?234/).length).toBeGreaterThan(0);
       },
       { timeout: 5000 }
     );
@@ -156,7 +157,7 @@ describe("I-44 — AdminRevenue: KPIs + Refresh + fromSeed warning", () => {
     render(<Tree />);
     await waitFor(
       () => {
-        expect(screen.getByText(/\$1[,.]?234/)).toBeInTheDocument();
+        expect(screen.getAllByText(/\$1[,.]?234/).length).toBeGreaterThan(0);
       },
       { timeout: 5000 }
     );
