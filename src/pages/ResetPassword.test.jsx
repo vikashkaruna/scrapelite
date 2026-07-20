@@ -25,6 +25,8 @@ vi.mock("../lib/authService.js", async () => {
   const actual = await vi.importActual("../lib/authService.js");
   return {
     ...actual,
+    // Tests mock every auth call, so the configured-guard must not block them
+    authEnabled: true,
     getSession: authMocks.getSession,
     onAuthStateChange: authMocks.onAuthStateChange,
     updatePassword: authMocks.updatePassword,

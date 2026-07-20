@@ -1,0 +1,165 @@
+# .github/workflows/staging-gate.yml
+#
+# Staging Gate
+# ────────────
+# The staging branch is the integration line: whatever is pushed for feature
+# testing lands here first. This gate enforces the staging release policy:
+#
+#   Staging Gate: Test Suites          → functional, regression, security,
+#                                        integration and end-to-end suites green
+#   Staging Gate: Vulnerabilities      → no high/critical npm-audit advisories
+#                                        (unless bypassed with a TODO + expiry in
+#                                        .github/gate-bypass/vulnerabilities.json)
+#   Staging Gate: Open Issues/Defects  → no open bug/defect/vulnerability issues
+#                                        (unless labeled gate-bypass with a TODO)
+#   Staging Gate: Deployed & Smoke Tested
+#                                      → after push to staging, waits for the
+#                                        Netlify branch deploy and smoke-tests
+#                                        https://staging.datiq.app
+#
+# The three named checks above are exactly what branch protection should
+# require on `staging` (and at minimum "Staging Gate: Test Suites" on `main`).
+# The jobs also run on pull requests INTO staging and main so the checks
+# exist on the PR before merge.
+
+name: Staging Gate
+
+on:
+  push:
+    branches: [staging]
+  pull_request:
+    branches: [staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: staging-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # 1. TEST SUITES — functional / regression / integration / system /
+  #    end-to-end smoke / security, plus a production build.
+  # ─────────────────────────────────────────────────────────────────
+  test-suites:
+    name: "Staging Gate: Test Suites"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+
+      - name: Unit tests (functional + regression)
+        run: npm run test:unit
+
+      - name: Contract tests (netlify functions)
+        run: npm run test:contract
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: System tests
+        run: npm run test:system
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke tests (Playwright)
+        run: npm run test:e2e:smoke
+
+      - name: Security suite
+        run: npm run test:security
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. VULNERABILITIES — npm audit, bypassable only via allowlist
+  #    entries that carry a TODO and an unexpired expiry date.
+  # ─────────────────────────────────────────────────────────────────
+  vulnerabilities:
+    name: "Staging Gate: Vulnerabilities"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Audit dependencies (high/critical block)
+        run: node scripts/check-vulnerabilities.mjs
+
+  # ─────────────────────────────────────────────────────────────────
+  # 3. OPEN ISSUES / DEFECTS — open bug/defect/vulnerability issues
+  #    block, unless labeled gate-bypass with a TODO in the body.
+  # ─────────────────────────────────────────────────────────────────
+  open-defects:
+    name: "Staging Gate: Open Issues/Defects"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check open defects
+        run: node scripts/check-open-defects.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 4. DEPLOY VERIFIED — push-to-staging only. Netlify auto-deploys the
+  #    staging branch to staging.datiq.app; this waits for that deploy
+  #    to converge on the pushed commit and smoke-tests it.
+  # ─────────────────────────────────────────────────────────────────
+  deploy-verified:
+    name: "Staging Gate: Deployed & Smoke Tested"
+    if: github.event_name == 'push'
+    needs: [test-suites, vulnerabilities, open-defects]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging-release
+      url: https://staging.datiq.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+
+      - name: Wait for Netlify staging deploy to converge
+        run: |
+          set -e
+          echo "Waiting for staging.datiq.app to converge on $GITHUB_SHA..."
+          for i in $(seq 1 30); do
+            RESP=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
+              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy")
+            LATEST_SHA=$(echo "$RESP" \
+              | jq -r '[.[] | select(.branch == "staging")] | .[0].commit_ref // "unknown"')
+            STATE=$(echo "$RESP" \
+              | jq -r '[.[] | select(.branch == "staging")] | .[0].state // "unknown"')
+            echo "  attempt $i/30: latest_staging=$LATEST_SHA state=$STATE"
+            if [ "$LATEST_SHA" = "$GITHUB_SHA" ] && [ "$STATE" = "ready" ]; then
+              echo "  ✓ staging deploy is live on $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "✗ staging did not converge in 5 minutes"
+          exit 1
+
+      - name: Smoke test staging
+        run: node scripts/smoke-prod.mjs https://staging.datiq.app
+        env:
+          SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
