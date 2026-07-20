@@ -25,12 +25,15 @@ test("Explore dropdown shows Pricing, Use Cases, and Contact entries", async ({ 
   await expect(page.getByRole("menu").getByText(/contact us/i)).toBeVisible();
 });
 
-test("TopBar shows the brand + Sign in/Sign up buttons for unauthenticated visitors", async ({ page }) => {
-  // The Q2 arch gate: not-logged-in state shows Sign in + Sign up buttons
-  // in the TopBar. Logged-in users see the UserDropdown instead (covered by
-  // I-23 in the integration suite).
+test("TopBar shows the brand + a single Sign in CTA for unauthenticated visitors", async ({ page }) => {
+  // Post-074abfe: the not-logged-in state shows ONE primary "Sign in" CTA
+  // (Sign in + Sign up were collapsed — both opened the same auth modal).
+  // Logged-in users see the UserDropdown instead (covered by I-23 in the
+  // integration suite).
   await page.goto("/");
   await expect(page.getByText("DatIQ").first()).toBeVisible();
-  await expect(page.locator(".topbar-desktop-actions").getByRole("button", { name: /^sign in$/i })).toBeVisible();
-  await expect(page.locator(".topbar-desktop-actions").getByRole("button", { name: /^sign up$/i })).toBeVisible();
+  const actions = page.locator(".topbar-desktop-actions");
+  await expect(actions.getByRole("button", { name: /^sign in$/i })).toBeVisible();
+  // The redundant Sign up button was intentionally removed.
+  await expect(actions.getByRole("button", { name: /^sign up$/i })).toHaveCount(0);
 });

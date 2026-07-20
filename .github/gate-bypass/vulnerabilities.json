@@ -1,0 +1,27 @@
+{
+  "bypasses": [
+    {
+      "id": "GHSA-4w7w-66w2-5vf9",
+      "package": "vite",
+      "reason": "Dev-server-only advisories (fs.deny bypass); vite never runs in production — the site ships as static dist/ on Netlify. Fix requires breaking upgrade to vite 8.",
+      "todo": "TODO: migrate the toolchain to vite 8 + vitest 3 in the v2.0 tooling refresh, then remove this bypass",
+      "expires": "2026-10-31",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "id": "GHSA-5xrq-8626-4rwp",
+      "package": "vitest",
+      "reason": "Vitest browser-mode API RCE affects only local dev/test runs, never production. Fix requires breaking upgrade to vitest 3 (1,300+ tests to re-baseline).",
+      "todo": "TODO: migrate the toolchain to vite 8 + vitest 3 in the v2.0 tooling refresh, then remove this bypass",
+      "expires": "2026-10-31",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@vitest/coverage-v8",
+      "reason": "Transitive of vitest (same advisory chain, dev-only coverage tooling).",
+      "todo": "TODO: migrate the toolchain to vite 8 + vitest 3 in the v2.0 tooling refresh, then remove this bypass",
+      "expires": "2026-10-31",
+      "approvedBy": "vikashkaruna"
+    }
+  ]
+}

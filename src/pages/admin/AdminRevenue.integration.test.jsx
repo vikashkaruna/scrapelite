@@ -125,9 +125,15 @@ function Tree() {
 describe("I-44 — AdminRevenue: KPIs + Refresh + fromSeed warning", () => {
   it("renders the KPI cards once data loads (MRR, ARR, users, coupons)", async () => {
     render(<Tree />);
-    await waitFor(() => {
-      expect(screen.getByText(/\$1[,.]?234/)).toBeInTheDocument();
-    });
+    // getAllByText: the amount renders in the KPI card AND (depending on
+    // locale formatting) in the trend mini-bar — multiple matches are fine.
+    // 5s timeout: cold CI runners exceed waitFor's 1s default.
+    await waitFor(
+      () => {
+        expect(screen.getAllByText(/\$1[,.]?234/).length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 }
+    );
     // The fromSeed warning is NOT shown.
     expect(screen.queryByText(/from seed|fallback/i)).toBeNull();
   });
@@ -139,21 +145,30 @@ describe("I-44 — AdminRevenue: KPIs + Refresh + fromSeed warning", () => {
       fromSeed: true,
     });
     render(<Tree />);
-    await waitFor(() => {
-      expect(screen.getByText(/from seed|fallback|supabase/i)).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/from seed|fallback|supabase/i)).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
   });
 
   it("Refresh button re-fetches the data", async () => {
     render(<Tree />);
-    await waitFor(() => {
-      expect(screen.getByText(/\$1[,.]?234/)).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getAllByText(/\$1[,.]?234/).length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 }
+    );
     // Click Refresh — fetch should be called again.
     const before = adminConfigMocks.getRevenueData.mock.calls.length;
     act(() => screen.getByRole("button", { name: /refresh/i }).click());
-    await waitFor(() => {
-      expect(adminConfigMocks.getRevenueData.mock.calls.length).toBeGreaterThan(before);
-    });
+    await waitFor(
+      () => {
+        expect(adminConfigMocks.getRevenueData.mock.calls.length).toBeGreaterThan(before);
+      },
+      { timeout: 5000 }
+    );
   });
 });
