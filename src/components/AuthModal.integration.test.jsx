@@ -39,6 +39,19 @@ vi.mock("../lib/apiClient.js", () => ({
   setAuthToken: vi.fn(),
 }));
 
+vi.mock("../lib/supabaseClient.js", () => ({
+  supabase: {
+    auth: {
+      signInWithPassword: vi.fn(),
+      signUp: vi.fn(),
+      signInWithOAuth: vi.fn(),
+      signOut: vi.fn(),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      onAuthStateChange: vi.fn(),
+    },
+  },
+}));
+
 function ModalDriver({ authMode, authError }) {
   const auth = useAuth();
   // Drive the modal open on mount with the requested initial mode.
