@@ -1,6 +1,6 @@
 // ExtractionProvider.jsx — orchestrates the extract → preview → save flow and
 // shares the "current" extraction across routes.
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { extractStructure } from "../lib/firecrawlService.js";
 import { summarize, categorizeLinks } from "../lib/aiService.js";
@@ -38,9 +38,24 @@ export function ExtractionProvider({ children }) {
   const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
   const [loadingUrl, setLoadingUrl] = useState("");
+  // Non-blocking background-extraction job that drives the global progress dock.
+  // Shape: { status: "running" | "done", url, phase: 0-3, path, resultId }.
+  // A null job means the dock is hidden. This REPLACES the old full-screen
+  // LoadingScreen that blanked the whole app while a single extraction ran.
+  const [job, setJob] = useState(null);
   const reqId = useRef(0);
   const lastUrl = useRef("");
   const lastOpts = useRef({});
+
+  // Advance the dock's stepped progress (Fetching → Parsing → Links → AI) while
+  // the job is running. Purely cosmetic pacing — the real work is async below.
+  useEffect(() => {
+    if (job?.status !== "running") return;
+    const t = setInterval(() => {
+      setJob((j) => (j && j.status === "running" ? { ...j, phase: Math.min(j.phase + 1, 3) } : j));
+    }, 700);
+    return () => clearInterval(t);
+  }, [job?.status]);
 
   // Set `current` and mirror it to localStorage (so a reload restores the page).
   const commitCurrent = (next) => {
@@ -73,6 +88,11 @@ export function ExtractionProvider({ children }) {
     lastOpts.current = options;
     setLoadingUrl(url);
     setLoading(true);
+    // Remember where the extraction was launched from. On completion we only
+    // auto-navigate to /preview if the user is STILL on this page; if they've
+    // moved on, we leave them be and surface a "View" button in the dock.
+    const startedPath = typeof window !== "undefined" ? window.location.pathname : "/";
+    setJob({ status: "running", url, phase: 0, path: startedPath });
     const startedAt = Date.now();
     try {
       const structure = await extractStructure(url, options);
@@ -147,11 +167,24 @@ export function ExtractionProvider({ children }) {
           analytics.saved({ url, intent: props.intent });
         })
         .catch((err) => console.warn("[DatIQ] Auto-save failed:", err));
-      navigate("/preview");
+      // Completion handling: if the user is still on the page they launched
+      // from, take them straight to the result (the expected flow). If they've
+      // navigated elsewhere, DON'T yank them — leave a "done" dock with a
+      // "View extraction" button and a toast so they can jump over when ready.
+      const stillOnStartPage =
+        typeof window !== "undefined" && window.location.pathname === startedPath;
+      if (stillOnStartPage) {
+        setJob(null);
+        navigate("/preview");
+      } else {
+        setJob({ status: "done", url, phase: 3, path: startedPath, resultId: result.id });
+        showToast?.("Extraction ready — open it from the panel.", "check-circle");
+      }
     } catch (err) {
       if (reqId.current !== id) return;
       console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
+      setJob(null);
       // Q11 — analytics: failure
       analytics.extractionFailed({ url, intent: options.intent || "summary", error: String(err?.message || err) });
       navigate("/");
@@ -227,11 +260,21 @@ export function ExtractionProvider({ children }) {
     navigate("/preview");
   };
 
+  // Dock controls: dismiss the completed/running job, or jump to its result.
+  const dismissJob = () => setJob(null);
+  const viewJob = () => {
+    setJob(null);
+    navigate("/preview");
+  };
+
   const value = {
     current,
     setCurrent: commitCurrent,
     loading,
     loadingUrl,
+    job,
+    dismissJob,
+    viewJob,
     extract,
     enrich,
     save,
