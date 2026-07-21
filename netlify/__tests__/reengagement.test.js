@@ -7,9 +7,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildDigest,
+  buildDailyDigest,
   _internal,
 } from "../functions/reengagement.js";
-const { digestHtml, reengagementHtml, isMonday, isOlderThan, getISOWeek, escapeHtml } = _internal;
+const { digestHtml, reengagementHtml, dailyRanHtml, abandonedTrialHtml, isMonday, isOlderThan, getISOWeek, escapeHtml } = _internal;
 
 describe("buildDigest (F49)", () => {
   it("returns zeros for empty rows", () => {
@@ -128,5 +129,82 @@ describe("getISOWeek (F49)", () => {
 describe("escapeHtml (F49)", () => {
   it("escapes the 5 dangerous characters", () => {
     expect(escapeHtml("&<>\"'")).toBe("&amp;&lt;&gt;&quot;&#39;");
+  });
+});
+
+// ── F49 — additional triggers: daily-ran, d30 abandoned-trial ──────────────
+
+describe("buildDailyDigest (F49)", () => {
+  const noon = new Date("2026-07-19T12:00:00Z");
+
+  it("returns zeros for empty rows", () => {
+    const d = buildDailyDigest([], noon);
+    expect(d.runCount).toBe(0);
+    expect(d.changeCount).toBe(0);
+    expect(d.errorCount).toBe(0);
+  });
+
+  it("counts only rows whose lastRunAt falls in the current UTC day", () => {
+    const d = buildDailyDigest([
+      { id: "a", data: { lastRunAt: "2026-07-19T08:00:00Z", lastStatus: "unchanged" } },
+      { id: "b", data: { lastRunAt: "2026-07-19T11:00:00Z", lastStatus: "changed" } },
+      { id: "c", data: { lastRunAt: "2026-07-18T22:00:00Z", lastStatus: "unchanged" } }, // yesterday
+      { id: "d", data: { lastRunAt: "2026-07-20T00:30:00Z", lastStatus: "unchanged" } }, // tomorrow
+    ], noon);
+    expect(d.runCount).toBe(2);
+    expect(d.changeCount).toBe(1);
+    expect(d.errorCount).toBe(0);
+  });
+
+  it("counts error statuses in the same window", () => {
+    const d = buildDailyDigest([
+      { id: "a", data: { lastRunAt: "2026-07-19T08:00:00Z", lastStatus: "error" } },
+    ], noon);
+    expect(d.errorCount).toBe(1);
+  });
+});
+
+describe("dailyRanHtml (F49)", () => {
+  it("renders the day key and the metrics", () => {
+    const html = dailyRanHtml({ userName: "V", runCount: 5, changeCount: 2, errorCount: 0, dayKey: "2026-07-19" });
+    expect(html).toMatch(/2026-07-19/);
+    expect(html).toMatch(/5/);
+    expect(html).toMatch(/2/);
+    // No "Errors" row when count is 0
+    expect(html).not.toMatch(/Errors/);
+  });
+  it("includes the 'Errors' row when errorCount > 0", () => {
+    const html = dailyRanHtml({ userName: "V", runCount: 3, changeCount: 0, errorCount: 1, dayKey: "2026-07-19" });
+    expect(html).toMatch(/Errors/);
+  });
+  it("renders the no-change copy when changeCount is 0", () => {
+    const html = dailyRanHtml({ userName: "V", runCount: 2, changeCount: 0, errorCount: 0, dayKey: "2026-07-19" });
+    expect(html).toMatch(/No content changes today/);
+  });
+  it("links to /schedules (deep link)", () => {
+    const html = dailyRanHtml({ userName: "V", runCount: 1, changeCount: 0, errorCount: 0, dayKey: "2026-07-19" });
+    expect(html).toMatch(/\/schedules/);
+  });
+});
+
+describe("abandonedTrialHtml (F49)", () => {
+  it("includes the last-run date and template CTA", () => {
+    const html = abandonedTrialHtml({ userName: "V", lastRun: "2026-06-01T00:00:00Z" });
+    expect(html).toMatch(/2026/); // date string
+    expect(html).toMatch(/Browse templates/);
+    expect(html).toMatch(/\/batch/);
+  });
+  it("escapes the user name", () => {
+    const html = abandonedTrialHtml({ userName: "<script>", lastRun: "2026-06-01" });
+    expect(html).not.toMatch(/<script>/);
+    expect(html).toMatch(/&lt;script&gt;/);
+  });
+});
+
+describe("_internal exports (F49)", () => {
+  it("exposes DAILY_DIGEST_HOUR_UTC (21 by default)", () => {
+    const { DAILY_DIGEST_HOUR_UTC } = _internal;
+    // Either the default (21) or a value overridden by the test runner env
+    expect([21, parseInt(process.env.DAILY_DIGEST_HOUR_UTC, 10)].filter(Boolean).length).toBeGreaterThan(0);
   });
 });

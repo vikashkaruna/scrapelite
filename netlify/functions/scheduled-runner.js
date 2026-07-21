@@ -14,6 +14,7 @@
 // Netlify auto-registers any function that exports `config.schedule`.
 
 import { runScrapeChain } from "./lib/scrapeProviders.js";
+import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 
 export const config = { schedule: "@hourly" };
 
@@ -208,6 +209,14 @@ async function fireAlert(schedule, changedSummary) {
   const detectedAt = new Date().toISOString();
   const emailed = await sendAlertEmail(schedule, detectedAt);
   await postAlertWebhook(schedule, changedSummary, detectedAt, emailed);
+  // F17: also post a Slack Block Kit message when SLACK_WEBHOOK_URL is set.
+  if (process.env.SLACK_WEBHOOK_URL) {
+    const payload = buildSlackChangeAlert(schedule, changedSummary, detectedAt);
+    const r = await postToSlack(payload);
+    if (!r.ok) {
+      console.warn(`[DatIQ] Slack alert failed (${r.status || r.error})`);
+    }
+  }
 }
 
 // Scrape one target and return a content fingerprint string.

@@ -49,6 +49,21 @@ export function AuthProvider({ children }) {
         // FR-Z-02 (Q2 2026-07-15): grant the once-only trial credit on signup
         // (25 extractions for the Free plan). Idempotent — re-runs are no-ops.
         try { applyTrialCredit("free"); } catch { /* localStorage unavailable */ }
+        // F49 — fire-and-forget welcome email. The server is idempotent
+        // (it checks the `welcomeEmailSent` user-metadata flag before
+        // sending) so this is safe to call on every sign-in.
+        try {
+          const u = s?.user;
+          if (u && u.id && u.email) {
+            const name = u.user_metadata?.name || u.user_metadata?.full_name || "";
+            fetch("/api/welcome-email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${s.access_token}` },
+              body: JSON.stringify({ userId: u.id, email: u.email, name, planLabel: "Free" }),
+              keepalive: true,
+            }).catch(() => { /* best-effort */ });
+          }
+        } catch { /* best-effort */ }
       }
     });
 

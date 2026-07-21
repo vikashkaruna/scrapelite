@@ -5,12 +5,12 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  # CRITICAL: never commit test files inside netlify/functions/. Netlify's
-  # bundler auto-deploys every top-level .js in this directory as a
-  # serverless function, and a test file like `reengagement.test.js`
-  # produces a function named `reengagement.test` — the `.` violates
-  # Netlify's function-name rule (`^[a-zA-Z0-9_-]+$`) and the build fails.
-  # Tests for Netlify Functions belong in netlify/__tests__/.
+# CRITICAL: never commit test files inside netlify/functions/. Netlify's
+# bundler auto-deploys every top-level .js in this directory as a
+# serverless function, and a test file like `reengagement.test.js`
+# produces a function named `reengagement.test` — the `.` violates
+# Netlify's function-name rule (`^[a-zA-Z0-9_-]+$`) and the build fails.
+# Tests for Netlify Functions belong in netlify/__tests__/.
 
 [build.environment]
   # The Netlify secret scanner does substring matching on values against

@@ -8,6 +8,7 @@ dist-ssr
 .env
 .env.*
 env.*
+scripts/env/
 !.env.example
 
 # Operator-only env files: real Supabase service keys + admin PIN hashes.
@@ -47,3 +48,6 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+
+# Netlify dev artifacts (Deno runtime used by some plugins)
+deno.lock

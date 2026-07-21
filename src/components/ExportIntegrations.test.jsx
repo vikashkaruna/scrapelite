@@ -1,0 +1,208 @@
+// src/components/ExportIntegrations.test.jsx — F18 (export modal).
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import ExportIntegrations from "./ExportIntegrations.jsx";
+
+vi.mock("../lib/airtable.js", async () => {
+  const actual = await vi.importActual("../lib/airtable.js");
+  return {
+    ...actual,
+    pushToAirtable: vi.fn(),
+  };
+});
+vi.mock("../lib/notion.js", async () => {
+  const actual = await vi.importActual("../lib/notion.js");
+  return {
+    ...actual,
+    pushToNotion: vi.fn(),
+    fetchNotionSchema: vi.fn(),
+  };
+});
+vi.mock("../lib/utils.js", async () => {
+  const actual = await vi.importActual("../lib/utils.js");
+  return {
+    ...actual,
+    openInGoogleSheets: vi.fn(),
+  };
+});
+
+import { pushToAirtable } from "../lib/airtable.js";
+import { pushToNotion, fetchNotionSchema } from "../lib/notion.js";
+import { openInGoogleSheets } from "../lib/utils.js";
+
+const sampleItems = [
+  { id: "ext_a", url: "https://a.com", page_title: "A", host: "a.com", ai_summary: "s", created_at: "2026-07-19T00:00:00Z" },
+  { id: "ext_b", url: "https://b.com", page_title: "B", host: "b.com", ai_summary: "s", created_at: "2026-07-19T00:00:00Z" },
+];
+
+function renderModal(overrides = {}) {
+  const onClose = vi.fn();
+  const result = render(<ExportIntegrations items={sampleItems} onClose={onClose} {...overrides} />);
+  return { onClose, ...result };
+}
+
+beforeEach(() => {
+  try {
+    localStorage.removeItem("datiq.airtableConfig");
+    localStorage.removeItem("datiq.notionConfig");
+  } catch {}
+  pushToAirtable.mockReset();
+  pushToNotion.mockReset();
+  fetchNotionSchema.mockReset();
+  openInGoogleSheets.mockReset();
+});
+
+describe("ExportIntegrations (F18)", () => {
+  it("renders the modal title and the three destination tabs", () => {
+    renderModal();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/Send to a destination/i)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Google Sheets/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Airtable/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Notion/i })).toBeInTheDocument();
+  });
+
+  it("shows the row count in the subtitle", () => {
+    renderModal();
+    expect(screen.getByText(/Push 2 selected rows/i)).toBeInTheDocument();
+  });
+
+  it("shows the empty-state hint when no items are passed", () => {
+    renderModal({ items: [] });
+    expect(screen.getByText(/No rows selected/i)).toBeInTheDocument();
+  });
+
+  it("Google Sheets tab is the default and explains the upload flow", () => {
+    renderModal();
+    expect(screen.getByRole("tab", { name: /Google Sheets/i })).toHaveAttribute("aria-selected", "true");
+    // Help text contains the upload step instructions (matches both the
+    // paragraph and the ordered list — they describe the same flow)
+    expect(screen.getAllByText(/File . Import . Upload/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clicking the Sheets CTA downloads CSV + opens Google Sheets in a new tab", async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderModal();
+    await user.click(screen.getByRole("button", { name: /Open Google Sheets/i }));
+    expect(openInGoogleSheets).toHaveBeenCalledWith(sampleItems);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("switching to Airtable shows the API key + Base + Table fields", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+    expect(screen.getByLabelText(/API key/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Base ID/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Table ID/i)).toBeInTheDocument();
+  });
+
+  it("Airtable push shows validation errors when fields are empty", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+    await user.click(screen.getByRole("button", { name: /Push .* record/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/API key is required/i)).toBeInTheDocument();
+    });
+    expect(pushToAirtable).not.toHaveBeenCalled();
+  });
+
+  it("Airtable push with valid config calls pushToAirtable and closes the modal on success", async () => {
+    const user = userEvent.setup();
+    pushToAirtable.mockResolvedValue({ ok: true, pushed: 2, total: 2, errors: [], failedRecords: [] });
+    const { onClose } = renderModal();
+    await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+    await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+    await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+    await user.type(screen.getByLabelText(/Table ID/i), "tblABCDEFGHIJK");
+    await user.click(screen.getByRole("button", { name: /Push .* record/i }));
+    await waitFor(() => expect(pushToAirtable).toHaveBeenCalledWith(
+      sampleItems,
+      expect.objectContaining({ apiKey: "patABCDEFGHIJKLMNOP", baseId: "appABCDEFGHIJK", tableId: "tblABCDEFGHIJK" }),
+    ));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Airtable push with failure shows the failed-records error", async () => {
+    const user = userEvent.setup();
+    pushToAirtable.mockResolvedValue({
+      ok: false, pushed: 0, total: 2, errors: ["1 record(s) failed"],
+      failedRecords: [{ url: "https://a.com", error: "422 INVALID_VALUE_FOR_COLUMN" }],
+    });
+    renderModal();
+    await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+    await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+    await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+    await user.type(screen.getByLabelText(/Table ID/i), "tblABCDEFGHIJK");
+    await user.click(screen.getByRole("button", { name: /Push .* record/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/422 INVALID_VALUE_FOR_COLUMN/i)).toBeInTheDocument();
+    });
+  });
+
+  it("Notion push shows validation errors when database ID is empty", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("tab", { name: /Notion/i }));
+    await user.type(screen.getByLabelText(/API key/i), "secret_xxxxxxxxxxxxxx");
+    await user.click(screen.getByRole("button", { name: /Push .* page/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Database ID is required/i)).toBeInTheDocument();
+    });
+    expect(pushToNotion).not.toHaveBeenCalled();
+  });
+
+  it("Notion: clicking 'Load columns' calls fetchNotionSchema and shows the schema list", async () => {
+    const user = userEvent.setup();
+    fetchNotionSchema.mockResolvedValue({
+      ok: true,
+      titleColumn: "Name",
+      properties: { Name: "title", URL: "url", Summary: "rich_text" },
+      rawTitle: "My DB",
+    });
+    renderModal();
+    await user.click(screen.getByRole("tab", { name: /Notion/i }));
+    await user.type(screen.getByLabelText(/API key/i), "secret_xxxxxxxxxxxxxx");
+    await user.type(screen.getByLabelText(/Database ID/i), "abcdef0123456789abcdef0123456789");
+    await user.click(screen.getByRole("button", { name: /Load columns/i }));
+    await waitFor(() => {
+      expect(fetchNotionSchema).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "secret_xxxxxxxxxxxxxx", databaseId: "abcdef0123456789abcdef0123456789" }));
+    });
+    expect(screen.getByText(/Schema loaded/i)).toBeInTheDocument();
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("title")).toBeInTheDocument();
+  });
+
+  it("Notion push with valid config calls pushToNotion and closes the modal on success", async () => {
+    const user = userEvent.setup();
+    pushToNotion.mockResolvedValue({ ok: true, pushed: 2, total: 2, errors: [], failedRecords: [] });
+    const { onClose } = renderModal();
+    await user.click(screen.getByRole("tab", { name: /Notion/i }));
+    await user.type(screen.getByLabelText(/API key/i), "secret_xxxxxxxxxxxxxx");
+    await user.type(screen.getByLabelText(/Database ID/i), "abcdef0123456789abcdef0123456789");
+    await user.click(screen.getByRole("button", { name: /Push .* page/i }));
+    await waitFor(() => expect(pushToNotion).toHaveBeenCalled());
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Esc closes the modal", async () => {
+    const { onClose } = renderModal();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("backdrop click closes the modal", () => {
+    const { onClose } = renderModal();
+    const overlay = screen.getByRole("dialog");
+    fireEvent.click(overlay);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("clicking inside the modal does NOT close it", () => {
+    const { onClose } = renderModal();
+    fireEvent.click(screen.getByText(/Send to a destination/i));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
