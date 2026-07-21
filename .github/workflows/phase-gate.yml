@@ -14,11 +14,27 @@
 #                                             and its commit is CONTAINED in this
 #                                             main commit (staging was released,
 #                                             deployed and tested first)
-#   5. Deploy to Production                 → ⏸ MANUAL APPROVAL required via the
-#                                             `production-release` GitHub
-#                                             environment, then Netlify deploy
-#   6. Smoke Test — Production              → verify the deploy; auto-rollback
+#   5. Await Manual Approval                → ⏸ the run PAUSES here. An approval
+#                                             issue is opened and the deploy waits
+#                                             until an authorized approver comments
+#                                             `approved`. This works on a PRIVATE
+#                                             repo on the GitHub FREE plan (it uses
+#                                             Issues, not the Pro-only Environment
+#                                             "required reviewers" feature, which
+#                                             returns HTTP 422 on Free).
+#   6. Deploy to Production                 → Netlify deploy, only after approval.
+#   7. Smoke Test — Production              → verify the deploy; auto-rollback
 #                                             to the last good deploy on failure
+#
+# ⚠️  FREE-PLAN ENFORCEMENT NOTE
+# Branch protection + Environment required-reviewers are Pro/public-only. To
+# make this gate actually binding on a Free private repo you MUST ALSO turn OFF
+# Netlify "Auto publishing" for production (Netlify → Site → Build & deploy →
+# Continuous deployment → Production branch → Stop auto publishing). Otherwise
+# Netlify auto-deploys every push to `main` and bypasses this entire workflow.
+# With auto-publish OFF, production only changes via the gated `netlify deploy
+# --prod` step below (after the manual approval). See docs/PHASE-GATE.md §"Free
+# plan alternative".
 #
 # Concurrency group `prod-deploy` with cancel-in-progress: false, so an
 # in-flight prod deploy is never killed mid-deploy. The second push queues.
@@ -37,7 +53,7 @@ on:
 
 permissions:
   contents: read
-  issues: read
+  issues: write # the manual-approval gate opens/updates an approval issue
 
 concurrency:
   group: prod-deploy
@@ -162,11 +178,20 @@ jobs:
           SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
 
   # ─────────────────────────────────────────────────────────────────
-  # 5. PRODUCTION DEPLOY — gated by manual approval on the
-  #    `production-release` GitHub environment (required reviewers).
+  # 5. MANUAL APPROVAL — free-plan replacement for the Pro-only
+  #    Environment "required reviewers" gate. Opens an approval issue and
+  #    BLOCKS until an authorized approver comments `approved` (or `denied`
+  #    to cancel). Works on a private repo on the GitHub Free plan.
+  #
+  #    The `production-release` environment is intentionally KEPT on the
+  #    deploy job below (for the deployment URL + branch-policy restriction
+  #    to `main`, both of which DO work on Free). If you later upgrade to
+  #    Pro / go public and add required reviewers to that environment, you
+  #    get a belt-and-suspenders double gate at no extra cost — delete this
+  #    job then if you want a single approval prompt.
   # ─────────────────────────────────────────────────────────────────
-  deploy-production:
-    name: Deploy to Production (manual approval)
+  approve:
+    name: Await Manual Approval
     needs: [test-suites, vulnerabilities, open-defects, staging-released]
     if: |
       always() &&
@@ -175,6 +200,31 @@ jobs:
       needs.open-defects.result == 'success' &&
       (needs.staging-released.result == 'success' ||
        (github.event_name == 'workflow_dispatch' && inputs.bypass_staging_check == true))
+    runs-on: ubuntu-latest
+    # Generous timeout — this is a human gate. Adjust to your review SLA.
+    timeout-minutes: 1440
+    steps:
+      - name: Wait for an approver to comment "approved"
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          # Comma-separated GitHub usernames allowed to approve/deny.
+          approvers: vikashkaruna
+          minimum-approvals: 1
+          issue-title: "🚦 Approve production release of ${{ github.sha }}"
+          issue-body: >
+            All production gates are green (tests, vulnerabilities, open
+            defects, staging released & tested). Comment **approved** to ship
+            ${{ github.sha }} to https://datiq.app, or **denied** to cancel.
+          # Auto-close the approval issue when the workflow finishes.
+          exclude-workflow-initiator-as-approver: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # 6. PRODUCTION DEPLOY — runs only after the manual approval passes.
+  # ─────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    needs: approve
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -219,7 +269,7 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
   # ─────────────────────────────────────────────────────────────────
-  # 6. PRODUCTION SMOKE — auto-rollback on failure
+  # 7. PRODUCTION SMOKE — auto-rollback on failure
   # ─────────────────────────────────────────────────────────────────
   smoke-production:
     name: Smoke Test — Production
