@@ -81,7 +81,7 @@ const SECTIONS = [
       },
       {
         heading: "Deletion",
-        text: "You can delete individual extractions from the Dashboard. To request deletion of your account and all associated data, contact us at privacy@datiq.app.",
+        text: "You can delete individual extractions from the Dashboard. To request deletion of your account and all associated data, contact us at hello@datiq.app.",
       },
       {
         heading: "GDPR and CCPA",
@@ -111,7 +111,7 @@ const SECTIONS = [
       },
       {
         heading: "Lawful basis for processing",
-        text: "We process your personal data on the basis of your consent, given at the time of registration or use of the Service, or on the basis of legitimate purposes as specified under the DPDP Act. You may withdraw your consent at any time by contacting privacy@datiq.app, though withdrawal may limit your ability to use certain features of the Service.",
+        text: "We process your personal data on the basis of your consent, given at the time of registration or use of the Service, or on the basis of legitimate purposes as specified under the DPDP Act. You may withdraw your consent at any time by contacting hello@datiq.app, though withdrawal may limit your ability to use certain features of the Service.",
       },
       {
         heading: "Rights of Data Principals",
@@ -119,7 +119,7 @@ const SECTIONS = [
       },
       {
         heading: "Grievance Officer (India)",
-        text: "For grievances under the DPDP Act, please contact our designated officer at privacy@datiq.app with the subject line 'DPDP Grievance'. We will acknowledge your complaint within 48 hours and endeavour to resolve it within 15 business days.",
+        text: "For grievances under the DPDP Act, please contact our designated officer at hello@datiq.app with the subject line 'DPDP Grievance'. We will acknowledge your complaint within 48 hours and endeavour to resolve it within 15 business days.",
       },
       {
         heading: "Cross-border data transfers",
@@ -211,8 +211,8 @@ export default function Privacy() {
           </p>
           <div className="legal-contact-row">
             <Icon name="mail" size={16} />
-            <a href="mailto:privacy@datiq.app" className="legal-link">
-              privacy@datiq.app
+            <a href="mailto:hello@datiq.app" className="legal-link">
+              hello@datiq.app
             </a>
           </div>
         </div>

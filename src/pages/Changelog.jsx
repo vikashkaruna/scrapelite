@@ -135,21 +135,6 @@ const FEATURE_GROUPS = [
     ],
   },
   {
-    id: "admin",
-    icon: "settings",
-    title: "Admin console",
-    items: [
-      "PIN-gated (server-side, HMAC-signed session token, 5-attempt lockout)",
-      "Revenue dashboard (live KPIs from Supabase: MRR, ARR, users, coupons, 6-month trend)",
-      "User management (plan, period, coupon, extractions; assign-coupon modal)",
-      "Pricing config (per-plan USD + INR + GST preview; bundle editor)",
-      "Coupons (with manual-assign type for admin-only coupons)",
-      "AI provider chain editor (reorder, model, enable toggles, key presence)",
-      "Global settings (soft limit, reprompt interval, single + batch hard limits)",
-      "Collapsible sidebar with pin (persists across reloads)",
-    ],
-  },
-  {
     id: "ux",
     icon: "zap",
     title: "UX & power-user",
@@ -178,6 +163,7 @@ const FEATURE_GROUPS = [
       "Sitemap.xml + robots.txt + 3 JSON-LD schemas (Organization, WebSite, SoftwareApplication)",
       "About / Contact / Privacy / Terms / Use Cases / Integrations / Changelog pages",
       "Comparison pages (/vs/browse-ai, /vs/clay, /vs/apify, /vs/phantombuster)",
+      "One support inbox — reach us at hello@datiq.app for product, billing, legal & privacy",
     ],
   },
   {
@@ -255,7 +241,7 @@ export default function Changelog() {
             </div>
             <a
               className="cl-ph-link"
-              href="mailto:support@datiq.app?subject=Notify%20me%20on%20Product%20Hunt%20launch"
+              href="mailto:hello@datiq.app?subject=Notify%20me%20on%20Product%20Hunt%20launch"
             >
               Notify me →
             </a>

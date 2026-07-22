@@ -117,10 +117,10 @@ describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
   it("Enterprise card has a 'Contact sales' mailto link", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // The Enterprise card CTA is a mailto: link to support@datiq.app.
+    // The Enterprise card CTA is a mailto: link to hello@datiq.app.
     const mailto = document.querySelector('a[href^="mailto:"]');
     expect(mailto).not.toBeNull();
-    expect(mailto.getAttribute("href")).toMatch(/mailto:support@datiq\.app/);
+    expect(mailto.getAttribute("href")).toMatch(/mailto:hello@datiq\.app/);
   });
 
   it("Annual billing is the default toggle state", async () => {

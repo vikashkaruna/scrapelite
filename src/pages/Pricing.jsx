@@ -288,7 +288,7 @@ export default function Pricing() {
   };
 
   const handleContactSales = () => {
-    window.open("mailto:support@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
+    window.open("mailto:hello@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
   };
 
   const showError = localError || paymentError;
@@ -413,7 +413,7 @@ export default function Pricing() {
             <div className="referral-teaser-title">Referral program — coming soon</div>
             <div className="referral-teaser-desc">
               Earn 10% lifetime discount for every friend you refer, or a 40% one-time discount on your current plan.
-              <a href="mailto:support@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Get early access →</a>
+              <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Get early access →</a>
             </div>
           </div>
         </div>

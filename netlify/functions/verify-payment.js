@@ -59,7 +59,7 @@ export const handler = async (event) => {
       return {
         statusCode: isNotFound ? 404 : 400, headers,
         body: JSON.stringify({
-          error:    isNotFound ? "Checkout session not found. Contact support@datiq.app if you were charged." : e.message,
+          error:    isNotFound ? "Checkout session not found. Contact hello@datiq.app if you were charged." : e.message,
           code:     e.code || "STRIPE_ERROR",
           verified: false,
         }),
@@ -193,7 +193,7 @@ export const handler = async (event) => {
           statusCode: 200, headers,
           body: JSON.stringify({
             verified: false,
-            error:    `Payment is not captured (status: ${status}). If you were charged, contact support@datiq.app with Payment ID ${paymentId}.`,
+            error:    `Payment is not captured (status: ${status}). If you were charged, contact hello@datiq.app with Payment ID ${paymentId}.`,
             code:     "NOT_CAPTURED",
           }),
         };
@@ -221,7 +221,7 @@ export const handler = async (event) => {
         statusCode: 200, headers,
         body: JSON.stringify({
           verified: false,
-          error:    `Your payment was received but confirmation is pending. Please contact support@datiq.app with Payment ID ${paymentId}.`,
+          error:    `Your payment was received but confirmation is pending. Please contact hello@datiq.app with Payment ID ${paymentId}.`,
           code:     "CONFIRMATION_PENDING",
           paymentId,
         }),

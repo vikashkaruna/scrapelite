@@ -80,12 +80,12 @@ export default function PaymentSuccess() {
           setStatus("success");
         } else if (!cancelled) {
           setStatus("error");
-          setError("We could not verify your payment. Please contact support@datiq.app.");
+          setError("We could not verify your payment. Please contact hello@datiq.app.");
         }
       } catch (e) {
         if (!cancelled) {
           setStatus("error");
-          setError(e.message || "Verification failed. Please contact support@datiq.app.");
+          setError(e.message || "Verification failed. Please contact hello@datiq.app.");
         }
       }
     }
@@ -150,7 +150,7 @@ export default function PaymentSuccess() {
             )}
           </div>
           <p className="payment-sub" style={{ marginTop: 8, fontSize: ".84em", color: "var(--text-3)" }}>
-            Email <strong>support@datiq.app</strong> with the details above and we'll resolve it within 24 hours.
+            Email <strong>hello@datiq.app</strong> with the details above and we'll resolve it within 24 hours.
           </p>
           <div className="payment-actions">
             <Button variant="primary" onClick={() => navigate("/pricing")}>Back to Pricing</Button>

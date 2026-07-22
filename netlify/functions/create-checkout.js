@@ -87,7 +87,7 @@ export const handler = async (event) => {
     if (!secretKey) {
       return {
         statusCode: 501, headers,
-        body: JSON.stringify({ error: "Stripe payment is not configured. Please contact support@datiq.app.", code: "STRIPE_NOT_CONFIGURED" }),
+        body: JSON.stringify({ error: "Stripe payment is not configured. Please contact hello@datiq.app.", code: "STRIPE_NOT_CONFIGURED" }),
       };
     }
     if (!priceId) {
@@ -144,7 +144,7 @@ export const handler = async (event) => {
     if (!keyId || !keySecret) {
       return {
         statusCode: 501, headers,
-        body: JSON.stringify({ error: "Razorpay payment is not configured. Please contact support@datiq.app.", code: "RAZORPAY_NOT_CONFIGURED" }),
+        body: JSON.stringify({ error: "Razorpay payment is not configured. Please contact hello@datiq.app.", code: "RAZORPAY_NOT_CONFIGURED" }),
       };
     }
 
@@ -231,21 +231,21 @@ function classifyStripeError(e) {
   const type = e.type  || "";
   const msg  = (e.message || "").toLowerCase();
   if (type === "StripeInvalidRequestError" && msg.includes("no such price")) {
-    return "The selected plan is not configured in Stripe. Please contact support@datiq.app.";
+    return "The selected plan is not configured in Stripe. Please contact hello@datiq.app.";
   }
   if (type === "StripeAuthenticationError") {
-    return "Payment gateway authentication failed. Please contact support@datiq.app.";
+    return "Payment gateway authentication failed. Please contact hello@datiq.app.";
   }
   if (msg.includes("card was declined")) {
     return "Your card was declined. Please try a different payment method.";
   }
-  return "Payment setup failed. Please try again or contact support@datiq.app.";
+  return "Payment setup failed. Please try again or contact hello@datiq.app.";
 }
 
 function classifyRazorpayCreateError(e) {
   const desc = ((e.error?.description) || e.message || "").toLowerCase();
   if (desc.includes("authentication") || desc.includes("key_id") || desc.includes("key id")) {
-    return "Payment gateway authentication failed. Please contact support@datiq.app.";
+    return "Payment gateway authentication failed. Please contact hello@datiq.app.";
   }
   if (desc.includes("bad request") || desc.includes("invalid amount")) {
     return "Invalid payment details. Please try again.";
@@ -253,5 +253,5 @@ function classifyRazorpayCreateError(e) {
   if (desc.includes("network") || desc.includes("econnrefused") || desc.includes("etimedout")) {
     return "Could not reach the payment gateway. Please check your internet connection and try again.";
   }
-  return "Payment gateway error. Please try again or contact support@datiq.app.";
+  return "Payment gateway error. Please try again or contact hello@datiq.app.";
 }
