@@ -194,7 +194,7 @@ export default function Integrations() {
               discuss custom integration options for Agency plan customers.
             </p>
             <a
-              href="mailto:support@datiq.app"
+              href="mailto:hello@datiq.app"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -207,7 +207,7 @@ export default function Integrations() {
               }}
             >
               <Icon name="mail" size={16} />
-              Talk to us — support@datiq.app
+              Talk to us — hello@datiq.app
             </a>
           </div>
 

@@ -25,7 +25,8 @@
     "smoke": "node scripts/smoke-prod.mjs",
     "smoke:prod": "node scripts/smoke-prod.mjs https://datiq.app",
     "smoke:staging": "node scripts/smoke-prod.mjs https://staging.datiq.app",
-    "test:all": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
+    "readiness": "node .claude/skills/production-readiness/scripts/audit.mjs",
+    "test:all": "npm run readiness && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
     "migrate:prod": "node scripts/migrate-prod.mjs"
   },
   "dependencies": {

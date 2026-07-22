@@ -114,7 +114,7 @@ function describeRazorpayFailure(code, description, reason) {
     return "Network error during payment. Please check your connection and try again.";
   if (lc.includes("expired"))
     return "Payment session expired. Please try again.";
-  return `Payment failed${description ? `: ${description}` : ""}. Please try a different method or contact support@datiq.app.`;
+  return `Payment failed${description ? `: ${description}` : ""}. Please try a different method or contact hello@datiq.app.`;
 }
 
 // ── Stripe Checkout (redirect flow) ─────────────────────────────────────────
@@ -124,7 +124,7 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
 
   if (!priceId) {
     window.open(
-      `mailto:support@datiq.app?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(
+      `mailto:hello@datiq.app?subject=${encodeURIComponent(`Upgrade to ${plan.name}`)}&body=${encodeURIComponent(
         `Hi,\n\nI'd like to upgrade to the ${plan.name} plan ($${plan.price_usd}/mo).\n\nSession: ${sessionId}`
       )}`,
       "_blank"
@@ -274,7 +274,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
         } catch (netErr) {
           reject(new Error(
             `Payment was processed, but verification failed due to a network error. ` +
-            `Please contact support@datiq.app and quote your Payment ID: ${rzpResponse.razorpay_payment_id}`
+            `Please contact hello@datiq.app and quote your Payment ID: ${rzpResponse.razorpay_payment_id}`
           ));
           return;
         }
@@ -297,7 +297,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
         } else {
           reject(new Error(
             `Payment signature verification failed. ` +
-            `If your account was charged, please email support@datiq.app with Payment ID: ${rzpResponse.razorpay_payment_id}`
+            `If your account was charged, please email hello@datiq.app with Payment ID: ${rzpResponse.razorpay_payment_id}`
           ));
         }
       },

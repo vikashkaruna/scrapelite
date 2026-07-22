@@ -3708,6 +3708,11 @@
   margin: 22px 0 8px; color: var(--text);
 }
 .blog-post-p { font-size: .95em; color: var(--text-2); line-height: 1.7; margin: 0 0 10px; }
+.blog-post-img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  margin: 16px 0; border-radius: 12px; border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .08);
+}
 .blog-inline-code {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 4px; padding: 1px 5px; font-size: .88em; font-family: monospace;

@@ -49,7 +49,7 @@ export default function Contact() {
         message,
       ].join("\n");
       window.open(
-        `mailto:support@datiq.app?subject=${encodeURIComponent(`[${type}] ${subject || "Contact form submission"}`)}&body=${encodeURIComponent(body)}`,
+        `mailto:hello@datiq.app?subject=${encodeURIComponent(`[${type}] ${subject || "Contact form submission"}`)}&body=${encodeURIComponent(body)}`,
         "_blank"
       );
       setStatus("sent");
@@ -161,7 +161,7 @@ export default function Contact() {
                 </div>
 
                 {status === "error" && (
-                  <p className="contact-error">Something went wrong — please try emailing us directly at support@datiq.app</p>
+                  <p className="contact-error">Something went wrong — please try emailing us directly at hello@datiq.app</p>
                 )}
 
                 <Button
@@ -185,25 +185,11 @@ export default function Contact() {
                 Email us directly
               </div>
               <div className="contact-info-links">
-                <a href="mailto:support@datiq.app" className="contact-info-link">
-                  <Icon name="help-circle" size={14} />
+                <a href="mailto:hello@datiq.app" className="contact-info-link">
+                  <Icon name="mail" size={14} />
                   <div>
-                    <div className="cil-label">Product support</div>
-                    <div className="cil-email">support@datiq.app</div>
-                  </div>
-                </a>
-                <a href="mailto:legal@datiq.app" className="contact-info-link">
-                  <Icon name="file" size={14} />
-                  <div>
-                    <div className="cil-label">Legal & terms</div>
-                    <div className="cil-email">legal@datiq.app</div>
-                  </div>
-                </a>
-                <a href="mailto:privacy@datiq.app" className="contact-info-link">
-                  <Icon name="shield" size={14} />
-                  <div>
-                    <div className="cil-label">Privacy & DPDP</div>
-                    <div className="cil-email">privacy@datiq.app</div>
+                    <div className="cil-label">One inbox for everything — product, billing, legal &amp; privacy</div>
+                    <div className="cil-email">hello@datiq.app</div>
                   </div>
                 </a>
               </div>
