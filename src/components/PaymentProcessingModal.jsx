@@ -91,7 +91,7 @@ export default function PaymentProcessingModal({ stage, stageMsg, planName, onRe
               </button>
             )}
             <a
-              href="mailto:support@datiq.app?subject=Payment%20issue"
+              href="mailto:hello@datiq.app?subject=Payment%20issue"
               className="btn btn-ghost btn-sm"
             >
               <Icon name="mail" size={14} />

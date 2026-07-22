@@ -35,13 +35,58 @@ The current release (V1.0) includes:
 
 ## What's coming
 
-We're building toward API access for developers, scheduled monitoring for change tracking, and HubSpot / Salesforce native export. If you have a use case we haven't covered yet, reach out at support@datiq.app.
+We're building toward API access for developers, scheduled monitoring for change tracking, and HubSpot / Salesforce native export. If you have a use case we haven't covered yet, reach out at hello@datiq.app.
 
 Start with any URL. No sign-up required.
   `.trim(),
 };
 
 const POSTS = [
+  {
+    slug: "monitor-any-page-for-changes",
+    tag: "Release",
+    title: "Set It and Know: Monitor Any Web Page for Changes with DatIQ Schedules",
+    excerpt:
+      "Your competitor drops their price at 2am. A target account posts a new job that signals budget. A supplier quietly edits their terms. You shouldn't have to refresh a tab to catch it — DatIQ Schedules watches the page for you and emails you the moment it changes.",
+    date: "July 22, 2026",
+    readTime: "4 min read",
+    coverIcon: "calendar-clock",
+    fullContent: `
+![The DatIQ Schedules screen — a saved monitor with its cadence, target, and run history.](/help/assets/screenshots/05-schedules.png)
+
+If your job depends on what a web page says today versus last week, you already know the tax: the manual re-check. Open the pricing page. Compare it to the screenshot you took. Open the careers page. Scan for the role that wasn't there Monday. It's the kind of work that's too important to skip and too dull to do reliably — so it gets skipped, and you find out late.
+
+DatIQ Schedules exists to end that ritual. Point it at a page, pick a cadence, and DatIQ re-extracts on your schedule, fingerprints the result, and tells you **only when something actually changed**.
+
+## Who this is for
+
+**Competitive intelligence & revenue teams.** Watch a competitor's pricing, plans, and positioning. The day they change a number, it's in your inbox — not discovered three weeks later by a prospect on a call.
+
+**Sales & recruiting.** Monitor target-account careers pages and leadership pages. A new senior hire or an open req is a buying signal; catch it while it's fresh.
+
+**SEO & content.** Track a rival's key landing pages and title tags for the edits that hint at a strategy shift.
+
+## How it works
+
+You don't need a scraper, a cron server, or a single line of code.
+
+- **Pick a target and a cadence.** Hourly, daily, weekly, or a custom builder (frequency · weekday · time). Add a "run until" date to time-box a launch you're watching.
+- **DatIQ does the runs.** Each run re-extracts the page, fingerprints the content, and diffs it against the last known state.
+- **You hear about it only when it matters.** On a real change, DatIQ emails you a diff preview — and posts the same event to Slack if you've wired a webhook. No change, no noise.
+
+Every run is saved to your Dashboard under the **Scheduled** type, so you always have the history of what changed and when.
+
+## From "I should check that" to "I'll know"
+
+The quiet win here isn't automation for its own sake — it's confidence. You stop carrying a mental list of pages you're supposed to babysit. You set the monitor once, and the next move surfaces itself.
+
+## Try it
+
+Open the **Home composer**, paste a URL, choose a schedule from the cadence dropdown, and you're monitoring. Full walkthrough in the [Scheduling & change monitoring](/help/08-scheduling-and-change-monitoring.html) help guide. Questions? We read every message at **hello@datiq.app**.
+
+Set it once. Know the moment it changes.
+`,
+  },
   {
     slug: "extract-competitor-pricing",
     tag: "Guide",
@@ -313,11 +358,17 @@ function PostCard({ post, large, onOpen }) {
 function PostModal({ post, onClose }) {
   if (!post) return null;
 
-  // Parse minimal markdown: ## headings, **bold**, `code`
+  // Parse minimal markdown: ## headings, ![alt](src) images, **bold**, `code`
   function renderContent(text) {
     return text.split("\n").map((line, i) => {
       if (line.startsWith("## ")) {
         return <h3 key={i} className="blog-post-h3">{line.slice(3)}</h3>;
+      }
+      const img = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (img) {
+        return (
+          <img key={i} className="blog-post-img" src={img[2]} alt={img[1]} loading="lazy" />
+        );
       }
       if (!line.trim()) return <br key={i} />;
       const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
