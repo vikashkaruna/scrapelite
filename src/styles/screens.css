@@ -482,6 +482,66 @@
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
+/* ── Extraction progress dock (non-blocking background extraction) ─ */
+.extract-dock {
+  position: fixed; right: 22px; bottom: 22px; z-index: 1150;
+  width: min(340px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow-lg);
+  padding: 14px 14px 15px;
+  animation: dock-in .32s cubic-bezier(.2,.8,.3,1) both;
+}
+.extract-dock-done { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+@keyframes dock-in {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.extract-dock-top { display: flex; align-items: center; gap: 11px; }
+.extract-dock-orb {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+}
+.extract-dock-done .extract-dock-orb { background: var(--accent); color: #fff; }
+.extract-dock-head { min-width: 0; flex: 1; }
+.extract-dock-title { font-weight: 700; font-size: .95em; letter-spacing: -.01em; }
+.extract-dock-url {
+  margin-top: 2px; display: flex; align-items: center; gap: 5px;
+  color: var(--text-3); font-size: .8em; font-weight: 550;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.extract-dock-url svg { flex-shrink: 0; }
+.extract-dock-x {
+  flex-shrink: 0; border: none; background: transparent; cursor: pointer;
+  color: var(--text-3); padding: 4px; border-radius: 8px; line-height: 0;
+  transition: background .15s, color .15s;
+}
+.extract-dock-x:hover { background: var(--surface-hover); color: var(--text); }
+.extract-dock-bar-wrap {
+  margin-top: 13px; height: 5px; border-radius: 99px;
+  background: var(--surface-2); overflow: hidden;
+}
+.extract-dock-bar {
+  height: 100%; border-radius: 99px; background: var(--accent);
+  transition: width .6s cubic-bezier(.3,.8,.3,1);
+}
+.extract-dock-step {
+  margin-top: 9px; display: flex; align-items: center; gap: 6px;
+  color: var(--text-2); font-size: .82em; font-weight: 600;
+}
+.extract-dock-actions { margin-top: 13px; }
+.extract-dock-view {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; cursor: pointer; border-radius: 10px;
+  background: var(--accent); color: #fff;
+  padding: 10px 14px; font-weight: 650; font-size: .9em;
+  box-shadow: var(--shadow-accent); transition: filter .15s;
+}
+.extract-dock-view:hover { filter: brightness(1.06); }
+@media (max-width: 520px) {
+  .extract-dock { right: 12px; left: 12px; bottom: 12px; width: auto; }
+}
+
 /* ── Error Modal ───────────────────────────────────────────────── */
 .error-backdrop {
   position: fixed; inset: 0; z-index: 1200;

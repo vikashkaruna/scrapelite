@@ -11,7 +11,7 @@ import { PersonaProvider } from "./components/PersonaProvider.jsx";
 import { BillingProvider } from "./components/BillingProvider.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Footer from "./components/Footer.jsx";
-import LoadingScreen from "./components/LoadingScreen.jsx";
+import ExtractionProgressDock from "./components/ExtractionProgressDock.jsx";
 import Icon from "./components/Icon.jsx";
 import Button from "./components/Button.jsx";
 import WorkspaceRedirect from "./components/WorkspaceRedirect.jsx";
@@ -82,7 +82,6 @@ function DmcaRedirect() {
 }
 
 function Shell() {
-  const { loading, loadingUrl } = useExtraction();
   const { showAuthModal } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -179,9 +178,6 @@ function Shell() {
     );
   }
 
-  const isAppPage = ["/", "/preview", "/dashboard", "/account", "/batch"].includes(pathname);
-  if (loading && isAppPage) return <LoadingScreen url={loadingUrl} />;
-
   return (
     <>
       {/* Skip-to-content link for keyboard/screen reader users */}
@@ -242,6 +238,9 @@ function Shell() {
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
+      {/* Non-blocking background-extraction progress dock (replaces the old
+          full-screen LoadingScreen). Global so it persists across route changes. */}
+      <ExtractionProgressDock />
       <Footer />
     </>
   );
