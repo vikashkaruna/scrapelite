@@ -62,8 +62,12 @@ node .claude/skills/production-readiness/scripts/audit.mjs
 It checks, and prints PASS/WARN/FAIL for, each of these:
 
 1. **Admin leakage** — admin terms on any external surface (hard FAIL).
-2. **Email consistency** — every customer-facing contact address is the single
-   support alias `hello@datiq.app` (no `support@`/`legal@`/`privacy@` splits).
+2. **Email routing** — every customer-facing contact address is one of the two
+   live inboxes: `hello@datiq.app` (product, bugs, features, billing, general)
+   or `admin@datiq.app` (enterprise/agency, legal & terms, privacy & DPDP). The
+   retired `support@`/`legal@`/`privacy@` aliases fail the check; `--fix-emails`
+   rewrites each to the inbox that now owns it. Test files are exempt — they
+   name the retired addresses in order to assert they are gone.
 3. **Help build drift** — `public/help/*.html` is regenerated from the markdown
    sources (someone hand-edited HTML, or forgot to rebuild).
 4. **Screenshot integrity** — every `assets/screenshots/*` referenced by help

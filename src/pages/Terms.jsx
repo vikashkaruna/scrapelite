@@ -69,7 +69,7 @@ const SECTIONS = [
   {
     title: "Contact",
     content:
-      "If you have questions about these Terms of Service, please contact us at hello@datiq.app.",
+      "If you have questions about these Terms of Service, please contact us at admin@datiq.app.",
   },
 ];
 
@@ -139,8 +139,8 @@ export default function Terms() {
           </p>
           <div className="legal-contact-row">
             <Icon name="mail" size={16} />
-            <a href="mailto:hello@datiq.app" className="legal-link">
-              hello@datiq.app
+            <a href="mailto:admin@datiq.app" className="legal-link">
+              admin@datiq.app
             </a>
           </div>
         </div>

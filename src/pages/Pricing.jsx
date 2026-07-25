@@ -288,7 +288,7 @@ export default function Pricing() {
   };
 
   const handleContactSales = () => {
-    window.open("mailto:hello@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
+    window.open("mailto:admin@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
   };
 
   const showError = localError || paymentError;

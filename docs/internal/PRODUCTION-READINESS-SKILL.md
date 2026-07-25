@@ -54,7 +54,7 @@ The heart of "runs the same from any model." Seven checks:
 | # | Check | Severity | Auto-fix |
 |---|-------|----------|----------|
 | 1 | Admin/confidential leakage on external surfaces | FAIL | — (remove manually) |
-| 2 | Customer email consolidation → `hello@datiq.app` | FAIL | `--fix-emails` |
+| 2 | Customer email routing → `hello@datiq.app` + `admin@datiq.app` | FAIL | `--fix-emails` |
 | 3 | Help build freshness (markdown vs generated HTML) | WARN | run `docs/build-help.mjs` |
 | 4 | Screenshot integrity (broken ref) / staleness | FAIL / WARN | regenerate screenshots |
 | 5 | Version coherence (changelog vs docs) | WARN | — |
