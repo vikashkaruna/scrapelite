@@ -2,11 +2,13 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-19 — main is at `074abfe`. 4 small build/CI/UX fixes since the pre-cutover drop: TOML duplicate key, secrets scanner false positives, missing `scripts/smoke-prod.mjs`, TopBar single CTA. v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative). Session detail: `docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`.**
+> **Last updated: 2026-07-25 — main is at `dc71fe5`, staging at `4ea6883`, both in sync with origin. Contact-form rework shipped: two customer inboxes (`hello@` / `admin@`), delivery moved to Resend via `POST /api/contact-email` with server-authoritative routing, and mail senders split one env var per sender. v1.0+ live on datiq.app. Session detail: `docs/SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md`.**
+>
+> Prior: 2026-07-19 — main was at `074abfe`.  4 small build/CI/UX fixes since the pre-cutover drop: TOML duplicate key, secrets scanner false positives, missing `scripts/smoke-prod.mjs`, TopBar single CTA. v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative). Session detail: `docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`.**
 >
 > Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`. **2026-07-19: Pre-cutover production isolation** — `NETLIFY-ENVIRONMENTS.md` (recommended) + `FIREBASE-MIGRATION.md` (alternative) plans merged; 3 prod-isolation fixes (psql→pg, 0001 self-contained, phase-gate workflow); per-context env blocks in `netlify.toml`. See "Outstanding tasks → Pre-cutover: Production isolation" below. **2026-07-19 (late): 4 small fixes** — TOML duplicate `VITE_SUPABASE_ANON_KEY` (`b8b1e53`); secrets scanner omits (`71a2586`); missing `scripts/smoke-prod.mjs` (`92b3af9`); TopBar single primary CTA (`074abfe`).
 >
-> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`074abfe`).
+> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`dc71fe5`).
 
 ---
 
