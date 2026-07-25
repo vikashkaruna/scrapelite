@@ -178,6 +178,11 @@ jobs:
       - name: Smoke test staging
         run: node scripts/smoke-prod.mjs https://staging.datiq.app
         env:
+          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
+          # no working IPv6 route, so `fetch` fails with an opaque
+          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
+          # Forcing IPv4 removes that whole class of phantom gate failure.
+          NODE_OPTIONS: --dns-result-order=ipv4first
           SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
 
   # ─────────────────────────────────────────────────────────────────
@@ -293,6 +298,11 @@ jobs:
       - name: Run smoke test against production
         run: node scripts/smoke-prod.mjs https://datiq.app
         env:
+          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
+          # no working IPv6 route, so `fetch` fails with an opaque
+          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
+          # Forcing IPv4 removes that whole class of phantom gate failure.
+          NODE_OPTIONS: --dns-result-order=ipv4first
           SMOKE_ADMIN_PIN: ${{ secrets.PRODUCTION_ADMIN_PIN }}
 
       - name: Auto-rollback on smoke failure

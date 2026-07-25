@@ -142,20 +142,45 @@ jobs:
 
       - name: Wait for Netlify staging deploy to converge
         run: |
-          set -e
+          set -euo pipefail
           echo "Waiting for staging.datiq.app to converge on $GITHUB_SHA..."
+
+          # A single imperfect poll must not kill the whole wait. The Netlify
+          # API can answer with something that is not an array of deploy
+          # objects — an error envelope ({"message":"Not Found"}), a bare
+          # number, an HTML error page from a proxy, or an empty body on a
+          # blip. Feeding any of those to `jq '.[] | select(.branch)'` makes jq
+          # exit non-zero ("Cannot index number with string \"branch\"") and,
+          # under `set -e`, fails the step on what is really a transient blip.
+          #
+          # Hardening:
+          #   * `curl -fsS`     — HTTP >= 400 yields no body to misparse
+          #   * `|| true`       — a failed poll is non-fatal; we retry
+          #   * `if type=="array"` — a non-array body can no longer crash jq
+          # We poll to a real timeout instead of dying on the first bad answer.
           for i in $(seq 1 30); do
-            RESP=$(curl -s \
+            RESP=$(curl -fsS \
               -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy")
-            LATEST_SHA=$(echo "$RESP" \
-              | jq -r '[.[] | select(.branch == "staging")] | .[0].commit_ref // "unknown"')
-            STATE=$(echo "$RESP" \
-              | jq -r '[.[] | select(.branch == "staging")] | .[0].state // "unknown"')
+              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy" \
+              2>/dev/null || true)
+
+            LATEST_SHA=$(printf '%s' "$RESP" | jq -r '
+              if type == "array"
+              then ([.[] | select(type == "object" and .branch == "staging")] | .[0].commit_ref // "unknown")
+              else "unknown" end' 2>/dev/null || echo "unknown")
+            STATE=$(printf '%s' "$RESP" | jq -r '
+              if type == "array"
+              then ([.[] | select(type == "object" and .branch == "staging")] | .[0].state // "unknown")
+              else "unknown" end' 2>/dev/null || echo "unknown")
+
             echo "  attempt $i/30: latest_staging=$LATEST_SHA state=$STATE"
             if [ "$LATEST_SHA" = "$GITHUB_SHA" ] && [ "$STATE" = "ready" ]; then
               echo "  ✓ staging deploy is live on $GITHUB_SHA"
               exit 0
+            fi
+            if [ "$STATE" = "error" ]; then
+              echo "  ✗ Netlify reports the staging deploy FAILED — not waiting out the timeout"
+              exit 1
             fi
             sleep 10
           done
@@ -165,4 +190,9 @@ jobs:
       - name: Smoke test staging
         run: node scripts/smoke-prod.mjs https://staging.datiq.app
         env:
+          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
+          # no working IPv6 route, so `fetch` fails with an opaque
+          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
+          # Forcing IPv4 removes that whole class of phantom gate failure.
+          NODE_OPTIONS: --dns-result-order=ipv4first
           SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
