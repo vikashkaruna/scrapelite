@@ -137,7 +137,22 @@ const content = await fetch(`${API}/extractions/${extraction.id}/content`, {
   body: JSON.stringify({ format: "competitor_summary" }),
 }).then((r) =&gt; r.json());
 
-console.log(content.content);</code></pre><hr><h2 id="support">Support</h2><p>Questions about the API? Email <strong>hello@datiq.app</strong>. For account, billing, and plan upgrades to unlock API access, see the <strong>Account</strong> screen in the app.</p>
+console.log(content.content);</code></pre><hr><h2 id="support">Support</h2><p>Questions about the API? Email <strong>hello@datiq.app</strong>. For account, billing, and plan upgrades to unlock API access, see the <strong>Account</strong> screen in the app.</p><hr><h2 id="v10-preview-endpoints">v1.0 preview endpoints</h2><p>The following endpoints are scheduled for the v1.0 release. They are documented here ahead of general availability so integrators can plan around them; treat them as a preview and pin to the versioned base URL.</p><h3 id="create-a-public-shareable-report">Create a public shareable report</h3><pre class="code lang-http"><code>POST /v1/extractions/{id}/share</code></pre><p>Turn an existing extraction into a public, read-only report at <code>https://datiq.app/p/{slug}</code>. Anyone with the link can view it; no DatIQ account required.</p><p><strong>Request body</strong></p><div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>ttl_days</code></td><td>integer</td><td>no</td><td>Auto-expire the public report after N days. Omit for "no expiry".</td></tr></tbody></table></div><p><strong>Response</strong></p><pre class="code lang-json"><code>{
+  "slug": "a8K2mQ4x",
+  "url": "https://datiq.app/p/a8K2mQ4x",
+  "expires_at": "2026-08-15T00:00:00Z"
+}</code></pre><h3 id="revoke-a-public-report">Revoke a public report</h3><pre class="code lang-http"><code>DELETE /v1/extractions/{id}/share</code></pre><p>Removes the public report; the underlying extraction is unaffected.</p><h3 id="list-public-gallery">List public gallery</h3><pre class="code lang-http"><code>GET /v1/gallery?limit=20&amp;cursor=...</code></pre><p>Returns recent public extractions across all users. Useful for discovery integrations.</p><p><strong>Response</strong></p><pre class="code lang-json"><code>{
+  "data": [
+    {
+      "slug": "a8K2mQ4x",
+      "title": "Acme pricing",
+      "intent": "pricing",
+      "url": "https://datiq.app/p/a8K2mQ4x",
+      "created_at": "2026-07-15T10:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}</code></pre><h3 id="submit-feedback-on-an-ai-summary">Submit feedback on an AI summary</h3><pre class="code lang-http"><code>POST /v1/extractions/{id}/feedback</code></pre><p>Record a thumbs-up / thumbs-down rating on the AI summary, optionally with a free-text comment.</p><p><strong>Request body</strong></p><div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>rating</code></td><td>string</td><td>yes</td><td><code>up</code> or <code>down</code>.</td></tr><tr><td><code>comment</code></td><td>string</td><td>no</td><td>Free-text feedback.</td></tr></tbody></table></div><p>This data is used to improve the AI model.</p>
       <div class="page-nav"><a class="pn-btn" href="16-glossary.html"><span class="pn-dir">← Previous</span><span class="pn-title">Glossary</span></a><span></span></div>
     </article>
     <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
