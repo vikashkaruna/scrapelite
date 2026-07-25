@@ -50,6 +50,14 @@ export const apiClient = {
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
   ai: (payload) => request("/ai", "POST", payload),
 
+  // ── Contact form ───────────────────────────────────────────────────────────
+  /**
+   * Deliver a /contact submission as email (Resend, server-side).
+   * The destination inbox is resolved by the function from `type` — the client
+   * cannot address the mail. Payload: { type, name, email, subject, message }.
+   */
+  sendContactEmail: (payload) => request("/contact-email", "POST", payload),
+
   // ── Extractions CRUD ───────────────────────────────────────────────────────
   /** List all saved extractions, newest first. */
   listExtractions: () => request("/extractions", "GET"),

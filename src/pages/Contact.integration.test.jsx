@@ -2,7 +2,7 @@
 // I-41 — Contact form integration.
 //
 //   - ?type=bug → "Bug report" pre-selected, subject pre-filled "Bug report: "
-//   - Submit delivers through contactService (Web3Forms), not a mailto: window
+//   - Submit delivers through contactService (Resend), not a mailto: window
 //   - Enquiry type drives which of the two inboxes the form shows and routes to
 //   - A delivery failure surfaces a mailto: fallback instead of a dead end
 
@@ -186,7 +186,7 @@ describe("I-41 — Contact form", () => {
       message: "Please help with X.",
     });
     expect(screen.getByText(/message received/i)).toBeInTheDocument();
-    // Web3Forms replaces the old mailto: hand-off on the happy path.
+    // Server-side Resend delivery replaces the old mailto: hand-off.
     expect(window.open).not.toHaveBeenCalled();
   });
 

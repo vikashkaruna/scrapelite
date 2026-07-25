@@ -1,19 +1,18 @@
 // contactService.test.js — /contact submission orchestration.
 //
 // The rules under test:
-//   1. Web3Forms is the primary path — its outcome is what the caller sees.
+//   1. POST /api/contact-email (Resend, server-side) is the primary path — its
+//      outcome is what the caller sees.
 //   2. The CRM webhook and subscriber capture run in parallel and can NEVER
 //      fail or delay a submission.
 //   3. Routing metadata always matches the enquiry type's inbox.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
-  accessKeyForInbox,
+  buildContactPayload,
   buildMailtoFallback,
-  buildWeb3FormsFields,
   submitContactForm,
 } from "./contactService.js";
-import { WEB3FORMS_ACCESS_KEY } from "./config.js";
 
 const BASE = {
   type: "support",
@@ -25,7 +24,7 @@ const BASE = {
 
 function deps(overrides = {}) {
   return {
-    submitToWeb3Forms: vi.fn(() => Promise.resolve({ ok: true })),
+    sendContactEmail: vi.fn(() => Promise.resolve({ ok: true, inbox: "hello", routeTo: "hello@datiq.app" })),
     notifyContactWebhook: vi.fn(() => Promise.resolve({ delivered: true })),
     captureEmail: vi.fn(() => Promise.resolve({ ok: true })),
     ...overrides,
@@ -34,49 +33,44 @@ function deps(overrides = {}) {
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-describe("contactService — buildWeb3FormsFields", () => {
-  it("carries the routing metadata for a hello@ enquiry", () => {
-    const fields = buildWeb3FormsFields({ ...BASE, inbox: "hello" });
-    expect(fields.inbox).toBe("hello");
-    expect(fields.route_to).toBe("hello@datiq.app");
-    expect(fields.subject).toBe("[HELLO] Product support — Cannot export CSV");
-    expect(fields.enquiry_type).toBe("Product support");
+describe("contactService — buildContactPayload", () => {
+  it("sends the enquiry type, not a recipient — the server addresses the mail", () => {
+    const payload = buildContactPayload(BASE);
+    expect(payload.type).toBe("support");
+    const serialised = JSON.stringify(payload);
+    expect(serialised).not.toContain("@datiq.app");
+    expect(payload.to).toBeUndefined();
+    expect(payload.routeTo).toBeUndefined();
   });
 
-  it("carries the routing metadata for an admin@ enquiry", () => {
-    const fields = buildWeb3FormsFields({ ...BASE, type: "legal" });
-    expect(fields.inbox).toBe("admin");
-    expect(fields.route_to).toBe("admin@datiq.app");
-    expect(fields.subject).toBe("[ADMIN] Legal & terms — Cannot export CSV");
+  it("normalises an unknown type before it leaves the browser", () => {
+    expect(buildContactPayload({ ...BASE, type: "refund" }).type).toBe("support");
   });
 
-  it("sets replyto so a reply reaches the sender, not the form", () => {
-    expect(buildWeb3FormsFields(BASE).replyto).toBe("alice@example.com");
+  it("carries the fields the email body needs", () => {
+    const payload = buildContactPayload(BASE);
+    expect(payload).toMatchObject({
+      name: "Alice",
+      email: "alice@example.com",
+      subject: "Cannot export CSV",
+      message: "The export button does nothing.",
+      source: "contact-form",
+    });
   });
 
-  it("includes the botcheck honeypot field", () => {
-    expect(buildWeb3FormsFields(BASE).botcheck).toBe("");
+  it("includes an empty botcheck honeypot", () => {
+    expect(buildContactPayload(BASE).botcheck).toBe("");
   });
 
-  it("substitutes a placeholder when no name is given", () => {
-    expect(buildWeb3FormsFields({ ...BASE, name: "  " }).name).toBe("(not provided)");
+  it("trims whitespace-only name and subject to empty strings", () => {
+    const payload = buildContactPayload({ ...BASE, name: "   ", subject: "  " });
+    expect(payload.name).toBe("");
+    expect(payload.subject).toBe("");
   });
 
   it("never emits undefined for a field the user left blank", () => {
-    const fields = buildWeb3FormsFields({ type: "other" });
-    expect(Object.values(fields).every((v) => v !== undefined)).toBe(true);
-  });
-});
-
-describe("contactService — accessKeyForInbox", () => {
-  it("uses the default key for the hello inbox", () => {
-    expect(accessKeyForInbox("hello")).toBe(WEB3FORMS_ACCESS_KEY);
-  });
-
-  it("falls back to the default key for admin until a second key is registered", () => {
-    // VITE_WEB3FORMS_ACCESS_KEY_ADMIN is unset in the test env, so both inboxes
-    // share one key — the documented interim behaviour.
-    expect(accessKeyForInbox("admin")).toBe(WEB3FORMS_ACCESS_KEY);
+    const payload = buildContactPayload({ type: "other" });
+    expect(Object.values(payload).every((v) => v !== undefined)).toBe(true);
   });
 });
 
@@ -96,15 +90,34 @@ describe("contactService — buildMailtoFallback", () => {
 });
 
 describe("contactService — submitContactForm", () => {
-  it("sends via Web3Forms and reports success with the routed inbox", async () => {
-    const d = deps();
+  it("posts to the contact endpoint and reports the routed inbox", async () => {
+    const d = deps({
+      sendContactEmail: vi.fn(() => Promise.resolve({
+        ok: true, inbox: "admin", routeTo: "admin@datiq.app",
+      })),
+    });
     const res = await submitContactForm({ ...BASE, type: "enterprise" }, d);
 
     expect(res).toEqual({ ok: true, inbox: "admin", routeTo: "admin@datiq.app" });
-    expect(d.submitToWeb3Forms).toHaveBeenCalledTimes(1);
-    const [fields, opts] = d.submitToWeb3Forms.mock.calls[0];
-    expect(fields.route_to).toBe("admin@datiq.app");
-    expect(opts.accessKey).toBe(WEB3FORMS_ACCESS_KEY);
+    expect(d.sendContactEmail).toHaveBeenCalledTimes(1);
+    expect(d.sendContactEmail.mock.calls[0][0].type).toBe("enterprise");
+  });
+
+  it("reports the server's routing when it differs from the local guess", async () => {
+    // The server owns the decision; the client only guesses for optimistic UI.
+    const d = deps({
+      sendContactEmail: vi.fn(() => Promise.resolve({
+        ok: true, inbox: "admin", routeTo: "admin@datiq.app",
+      })),
+    });
+    const res = await submitContactForm({ ...BASE, type: "support" }, d);
+    expect(res.routeTo).toBe("admin@datiq.app");
+  });
+
+  it("falls back to the local routing when the server omits it", async () => {
+    const d = deps({ sendContactEmail: vi.fn(() => Promise.resolve({ ok: true })) });
+    const res = await submitContactForm({ ...BASE, type: "legal" }, d);
+    expect(res).toEqual({ ok: true, inbox: "admin", routeTo: "admin@datiq.app" });
   });
 
   it("fires the CRM webhook in parallel with the email", async () => {
@@ -127,7 +140,7 @@ describe("contactService — submitContactForm", () => {
     const d = deps({
       notifyContactWebhook: vi.fn(() => { order.push("webhook"); return Promise.resolve(); }),
       captureEmail:         vi.fn(() => { order.push("capture"); return Promise.resolve(); }),
-      submitToWeb3Forms:    vi.fn(() => { order.push("email");   return Promise.resolve({ ok: true }); }),
+      sendContactEmail:     vi.fn(() => { order.push("email");   return Promise.resolve({ ok: true }); }),
     });
     await submitContactForm(BASE, d);
     expect(order).toEqual(["webhook", "capture", "email"]);
@@ -149,20 +162,20 @@ describe("contactService — submitContactForm", () => {
     expect(d.captureEmail).not.toHaveBeenCalled();
   });
 
-  it("returns ok:false plus a mailto fallback when Web3Forms fails", async () => {
+  it("returns ok:false plus a mailto fallback when the endpoint fails", async () => {
     const d = deps({
-      submitToWeb3Forms: vi.fn(() => Promise.reject(new Error("Invalid Access Key"))),
+      sendContactEmail: vi.fn(() => Promise.reject(new Error("Email delivery is not configured."))),
     });
     const res = await submitContactForm({ ...BASE, type: "privacy" }, d);
 
     expect(res.ok).toBe(false);
-    expect(res.error).toBe("Invalid Access Key");
+    expect(res.error).toBe("Email delivery is not configured.");
     expect(res.inbox).toBe("admin");
     expect(res.mailto).toMatch(/^mailto:admin@datiq\.app\?/);
   });
 
   it("still delivers to the CRM webhook when the email fails", async () => {
-    const d = deps({ submitToWeb3Forms: vi.fn(() => Promise.reject(new Error("down"))) });
+    const d = deps({ sendContactEmail: vi.fn(() => Promise.reject(new Error("down"))) });
     await submitContactForm(BASE, d);
     expect(d.notifyContactWebhook).toHaveBeenCalledTimes(1);
   });

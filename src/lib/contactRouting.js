@@ -27,7 +27,7 @@ export const INBOX_LABEL = {
 };
 
 // Subject prefix stamped on outgoing mail so a single receiving mailbox can
-// filter/forward by inbox while both routes still share one Web3Forms key.
+// see at a glance which inbox a message was routed to.
 export const INBOX_TAG = {
   [INBOX.HELLO]: "HELLO",
   [INBOX.ADMIN]: "ADMIN",

@@ -8,7 +8,7 @@
 // wiring the real endpoint so consumers don't have to change.
 //
 // This path must NEVER block or fail a contact submission: the email (via
-// Web3Forms) is the delivery guarantee, this is best-effort enrichment.
+// /api/contact-email) is the delivery guarantee, this is best-effort enrichment.
 
 import { CONTACT_WEBHOOK_URL } from "./config.js";
 

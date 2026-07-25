@@ -2,68 +2,49 @@
 //
 // Two things happen per submission:
 //
-//   1. PRIMARY (awaited)   — Web3Forms sends the email. Its success/failure is
-//                            what the user sees.
+//   1. PRIMARY (awaited)   — POST /api/contact-email sends the mail through
+//                            Resend, server-side. Its success/failure is what
+//                            the user sees.
 //   2. PARALLEL (detached) — the CRM/automation webhook and the subscriber
 //                            capture both fire without blocking the email, and
 //                            can never fail the submission.
 //
 // Both side-channels start BEFORE the email is awaited, so a slow webhook costs
 // nothing in wall-clock time.
+//
+// The browser never names a recipient. It sends an enquiry *type*; the function
+// resolves the destination from the same routing table used to label the form,
+// so the endpoint can't be turned into an open relay. The inbox values below are
+// for display and telemetry only — the server's decision is the one that ships.
 
 import {
-  WEB3FORMS_ACCESS_KEY,
-  WEB3FORMS_ACCESS_KEY_ADMIN,
-} from "./config.js";
-import {
-  INBOX,
   INBOX_EMAIL,
   buildSubject,
   inboxForType,
   labelForType,
   normalizeContactType,
 } from "./contactRouting.js";
-import { submitToWeb3Forms } from "./web3forms.js";
+import { apiClient } from "./apiClient.js";
 import { notifyContactWebhook } from "./contactWebhook.js";
 import { captureEmail } from "./emailCaptureService.js";
 
-/**
- * Which access key delivers a given inbox. Both inboxes share the default key
- * today; setting VITE_WEB3FORMS_ACCESS_KEY_ADMIN splits admin traffic onto its
- * own key with no other change.
- */
-export function accessKeyForInbox(inbox) {
-  if (inbox === INBOX.ADMIN && WEB3FORMS_ACCESS_KEY_ADMIN) {
-    return WEB3FORMS_ACCESS_KEY_ADMIN;
-  }
-  return WEB3FORMS_ACCESS_KEY;
-}
-
-/** Build the exact field set Web3Forms receives. Pure — used directly in tests. */
-export function buildWeb3FormsFields(submission) {
+/** Build the request body for POST /api/contact-email. Pure — used in tests. */
+export function buildContactPayload(submission) {
   const type = normalizeContactType(submission.type);
-  const inbox = inboxForType(type);
-  const routeTo = INBOX_EMAIL[inbox];
   return {
-    // Web3Forms reserved fields
-    subject: buildSubject(type, submission.subject),
-    from_name: "DatIQ Contact Form",
-    replyto: submission.email || "",
-    botcheck: "",
-    // Payload the human reads in the email body
-    name: submission.name?.trim() || "(not provided)",
+    type,
+    name: submission.name?.trim() || "",
     email: submission.email || "",
-    enquiry_type: labelForType(type),
-    // Routing metadata: one key delivers both inboxes today, so the receiving
-    // mailbox filters on these to forward correctly.
-    inbox,
-    route_to: routeTo,
+    subject: submission.subject?.trim() || "",
     message: submission.message || "",
     source: submission.source || "contact-form",
+    // Honeypot. A real browser never fills this; the function 200s and drops
+    // the message when it arrives non-empty.
+    botcheck: "",
   };
 }
 
-/** mailto: fallback URL, used when Web3Forms delivery fails. */
+/** mailto: fallback URL, used when server-side delivery fails. */
 export function buildMailtoFallback(submission) {
   const type = normalizeContactType(submission.type);
   const body = [
@@ -89,7 +70,7 @@ export function buildMailtoFallback(submission) {
  *                    error?: string, mailto?: string}>}
  */
 export async function submitContactForm(submission, deps = {}) {
-  const send    = deps.submitToWeb3Forms   || submitToWeb3Forms;
+  const send    = deps.sendContactEmail     || apiClient.sendContactEmail;
   const hook    = deps.notifyContactWebhook || notifyContactWebhook;
   const capture = deps.captureEmail         || captureEmail;
 
@@ -104,10 +85,14 @@ export async function submitContactForm(submission, deps = {}) {
 
   // ── Primary: the email itself. ─────────────────────────────────────────────
   try {
-    await send(buildWeb3FormsFields(enriched), {
-      accessKey: accessKeyForInbox(inbox),
-    });
-    return { ok: true, inbox, routeTo };
+    // Trust the server's routing over the local guess — they agree today, and
+    // if they ever diverge the address that actually received the mail wins.
+    const res = await send(buildContactPayload(enriched));
+    return {
+      ok: true,
+      inbox:   res?.inbox   || inbox,
+      routeTo: res?.routeTo || routeTo,
+    };
   } catch (err) {
     return {
       ok: false,

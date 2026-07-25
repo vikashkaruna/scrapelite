@@ -39,27 +39,13 @@ export const WEBHOOK_URL = endpoint(runtime.webhookUrl, env.VITE_WEBHOOK_URL);
 export const EMAIL_API_URL = endpoint(runtime.emailApiUrl, env.VITE_EMAIL_API_URL);
 
 // Contact form delivery ──────────────────────────────────────────────────────
-// Web3Forms is the primary delivery path for /contact. Access keys are public by
-// design (they ship in the form markup), so a default is baked in and any env or
-// runtime value overrides it.
-//
-// A Web3Forms access key delivers to the single address it was registered with,
-// so today both inboxes share one key and the submission carries `route_to` +
-// a subject prefix for mailbox-side filtering. Register a second key for the
-// admin inbox and set VITE_WEB3FORMS_ACCESS_KEY_ADMIN to split delivery for real
-// — contactService picks the admin key up automatically, no code change needed.
-const WEB3FORMS_DEFAULT_KEY = "d7378b9e-dce4-4f18-804a-3b6e8dc51719";
-export const WEB3FORMS_ACCESS_KEY =
-  String(runtime.web3formsAccessKey || "").trim() ||
-  env.VITE_WEB3FORMS_ACCESS_KEY ||
-  WEB3FORMS_DEFAULT_KEY;
-export const WEB3FORMS_ACCESS_KEY_ADMIN =
-  String(runtime.web3formsAccessKeyAdmin || "").trim() ||
-  env.VITE_WEB3FORMS_ACCESS_KEY_ADMIN ||
-  "";
-export const WEB3FORMS_ENDPOINT = "https://api.web3forms.com/submit";
+// /contact posts to POST /api/contact-email, which sends through Resend using
+// the server-only RESEND_API_KEY — the same provider that already sends welcome,
+// re-engagement, and schedule-alert mail. There is deliberately no browser-side
+// key or endpoint config here: the destination inbox is resolved server-side
+// from the enquiry type, so the client can't address the mail.
 
-// Optional CRM/automation webhook fired in parallel with the Web3Forms email.
+// Optional CRM/automation webhook fired in parallel with the contact email.
 // Falls back to the generic n8n webhook so contact events flow there today; the
 // dedicated endpoint gets wired in when the CRM pipeline is built.
 export const CONTACT_WEBHOOK_URL = endpoint(
@@ -86,7 +72,6 @@ export const hasFirecrawl = Boolean(
 export const hasAI = true;
 export const hasWebhook = Boolean(WEBHOOK_URL);
 export const hasEmail = Boolean(EMAIL_API_URL);
-export const hasWeb3Forms = Boolean(WEB3FORMS_ACCESS_KEY);
 export const hasContactWebhook = Boolean(CONTACT_WEBHOOK_URL);
 
 // Convenience summary used by the UI to show the current backend mode.

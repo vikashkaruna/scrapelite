@@ -40,8 +40,8 @@ export default function Contact() {
     setErrorMsg("");
     setFallbackMailto("");
 
-    // The email goes out via Web3Forms; the CRM webhook + subscriber capture
-    // fire in parallel inside the service and can't fail the submission.
+    // The email goes out via /api/contact-email (Resend); the CRM webhook +
+    // subscriber capture fire in parallel and can't fail the submission.
     const result = await submitContactForm({ type, name, email, subject, message });
 
     if (result.ok) {

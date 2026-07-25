@@ -436,7 +436,7 @@ ThemeProvider
 | localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
 | Contact emails | **Exactly two customer-facing inboxes.** `hello@datiq.app` — product support, bug reports, feature requests, billing, anything general. `admin@datiq.app` — enterprise/agency, legal & terms, privacy & DPDP (incl. the DPDP grievance officer). `support@` / `legal@` / `privacy@` are retired; the readiness audit fails the build if they reappear. Source of truth: `src/lib/contactRouting.js`. |
-| Contact form delivery | `/contact` posts to **Web3Forms** (`src/lib/web3forms.js`) as the primary path; the CRM webhook (`src/lib/contactWebhook.js`) and subscriber capture fire in parallel and can never fail or delay a submission. Orchestrated in `src/lib/contactService.js`. A Web3Forms access key delivers to one registered address, so both inboxes share one key today and every submission carries `route_to` + a `[HELLO]`/`[ADMIN]` subject tag for mailbox-side filtering. Set `VITE_WEB3FORMS_ACCESS_KEY_ADMIN` to split admin traffic onto its own key — no code change needed. |
+| Contact form delivery | `/contact` → `apiClient.sendContactEmail` → **POST `/api/contact-email`** ([netlify/functions/contact-email.js](netlify/functions/contact-email.js)) → **Resend**, the same provider used for welcome / re-engagement / schedule-alert mail. **Routing is server-authoritative**: the browser sends an enquiry *type*, never a recipient, and the function resolves the destination from `src/lib/contactRouting.js` — so the endpoint can't be used as an open relay and exactly ONE inbox receives each message (no duplicate delivery). `RESEND_API_KEY` stays server-side. Honeypot (`botcheck`) returns 200 and drops. On failure the UI shows a pre-filled `mailto:` fallback. The CRM webhook ([contactWebhook.js](src/lib/contactWebhook.js)) and subscriber capture fire in parallel and can never fail or delay a submission. Orchestrated in [contactService.js](src/lib/contactService.js). |
 | Naming | App brand is "DatIQ" everywhere in UI. Live site is `https://datiq.app` (Netlify project renamed to `datiqapp`; old `scrapelite.netlify.app` host now 404s). |
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
 | Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
@@ -695,10 +695,8 @@ VITE_AI_API_KEY=               # sk-ant-... (browser-side demo only)
 VITE_AI_MODEL=claude-haiku-4-5-20251001
 VITE_WEBHOOK_URL=              # n8n webhook (also used for email capture)
 # ── Contact form (/contact) ──
-# Web3Forms access keys are PUBLIC by design (they ship in the form markup), so a
-# default is baked into src/lib/config.js and these only override it.
-VITE_WEB3FORMS_ACCESS_KEY=       # optional override of the default contact-form key
-VITE_WEB3FORMS_ACCESS_KEY_ADMIN= # optional 2nd key so admin@ traffic gets its own inbox
+# Delivery is server-side via Resend — there is deliberately NO browser-side mail
+# key. See CONTACT_EMAIL_FROM in the server-only block below.
 VITE_CONTACT_WEBHOOK_URL=        # optional CRM endpoint; falls back to VITE_WEBHOOK_URL
 VITE_PAYMENT_PROVIDER=auto     # auto | stripe | razorpay
 VITE_STRIPE_PUBLISHABLE_KEY=   # pk_live_...
@@ -736,6 +734,10 @@ ADMIN_PIN_HASH=                # SHA-256 hex of a STRONG admin PIN (preferred). 
                                #   printf '%s' 'your-strong-pin' | shasum -a 256
 ADMIN_PIN=                     # plaintext admin PIN (fallback if you can't pre-hash)
 ADMIN_TOKEN_SECRET=            # optional HMAC key for the admin session token
+RESEND_API_KEY=                # Resend — sends contact-form mail AND welcome/re-engagement/alerts
+CONTACT_EMAIL_FROM=            # optional From for /contact mail; falls back to ALERT_EMAIL_FROM,
+                               # then "DatIQ Contact <noreply@datiq.app>". Domain must be verified
+                               # in Resend. Recipients are resolved server-side, never from env.
 ```
 
 > **Admin PIN is verified server-side** by `netlify/functions/admin-auth.js` — the secret
