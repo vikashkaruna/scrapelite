@@ -15,6 +15,9 @@
 //                         In CI this is the per-environment secret
 //                         (STAGING_ADMIN_PIN / PRODUCTION_ADMIN_PIN).
 //   SMOKE_TIMEOUT_MS   — per-request timeout in ms (default 15000)
+//   SMOKE_RETRIES      — attempts per probe on TRANSPORT failure (default 3).
+//                         HTTP responses are never retried — only requests that
+//                         never completed (cold CDN, deploy propagating, DNS blip).
 //
 // Probes (kept small so a full run is < 30s even on a cold CDN):
 //   1. SPA routes     — /, /dashboard, /pricing, /batch return 200 and the
@@ -65,6 +68,25 @@ export function assertContentType(res, expected, label) {
   }
 }
 
+/**
+ * Turn undici's opaque "fetch failed" into something diagnosable.
+ *
+ * Node's fetch reports every transport failure as the same TypeError — the real
+ * reason (ENOTFOUND, ECONNREFUSED, ECONNRESET, a TLS code, UND_ERR_CONNECT_TIMEOUT)
+ * is hidden on `err.cause`. Without digging it out, a wrong hostname, a dead
+ * origin, a DNS outage, and a TLS failure all print the identical line, and a
+ * red gate tells you nothing about which one you're looking at.
+ */
+export function describeFetchError(err) {
+  const cause = err?.cause ?? {};
+  const code = cause.code || cause.errno;
+  const base = err?.message || "request failed";
+  if (code) return `${base} (${code})`;
+  if (cause.message && cause.message !== base) return `${base} (${cause.message})`;
+  return base;
+}
+
+/** Single attempt. Throws a timeout message on abort, an enriched error otherwise. */
 export async function fetchWithTimeout(url, init = {}, timeoutMs = 15000, fetcher = fetch) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -74,10 +96,40 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = 15000, fetche
     if (err.name === "AbortError") {
       throw new Error(`timed out after ${timeoutMs}ms`);
     }
-    throw err;
+    throw new Error(describeFetchError(err), { cause: err });
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * fetchWithTimeout with retries for TRANSPORT failures only.
+ *
+ * `fetch` resolves for every HTTP status, so it only throws when the request
+ * never completed — exactly the class worth retrying (cold CDN, a deploy still
+ * propagating, a transient DNS blip). An assertion failure on a response that
+ * DID arrive is never retried: a wrong content-type or a 500 is a real result,
+ * and re-running it would just slow the gate down before failing anyway.
+ */
+export async function fetchWithRetry(url, init = {}, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 15000;
+  const retries = Math.max(1, opts.retries ?? 3);
+  const backoffMs = opts.backoffMs ?? 1000;
+  const fetcher = opts.fetcher ?? fetch;
+  const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fetchWithTimeout(url, init, timeoutMs, fetcher);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) await sleep(backoffMs * attempt);
+    }
+  }
+  throw new Error(`${lastErr?.message || "request failed"} (after ${retries} attempts)`, {
+    cause: lastErr,
+  });
 }
 
 /**
@@ -89,7 +141,10 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = 15000, fetche
 export async function runSmoke(baseUrl, opts = {}) {
   const ADMIN_PIN = opts.adminPin ?? "";
   const TIMEOUT_MS = opts.timeoutMs ?? 15000;
+  const RETRIES = opts.retries ?? 3;
+  const BACKOFF_MS = opts.backoffMs ?? 1000;
   const _fetch = opts.fetcher ?? fetch;
+  const _sleep = opts.sleep;
   const log = opts.logger?.log ?? console.log.bind(console);
   const err = opts.logger?.error ?? console.error.bind(console);
 
@@ -111,18 +166,24 @@ export async function runSmoke(baseUrl, opts = {}) {
     }
   }
 
+  const retryOpts = {
+    timeoutMs: TIMEOUT_MS,
+    retries: RETRIES,
+    backoffMs: BACKOFF_MS,
+    fetcher: _fetch,
+    ...(_sleep ? { sleep: _sleep } : {}),
+  };
   const get = (path) =>
-    fetchWithTimeout(new URL(path, baseUrl).toString(), {}, TIMEOUT_MS, _fetch);
+    fetchWithRetry(new URL(path, baseUrl).toString(), {}, retryOpts);
   const postJson = (path, body) =>
-    fetchWithTimeout(
+    fetchWithRetry(
       new URL(path, baseUrl).toString(),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       },
-      TIMEOUT_MS,
-      _fetch
+      retryOpts
     );
 
   log(`\n[smoke] ${baseUrl}  (timeout ${TIMEOUT_MS}ms / probe)\n`);
@@ -236,6 +297,13 @@ export async function runSmoke(baseUrl, opts = {}) {
 // Only run when this file is the main module, not when imported by tests.
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const BASE = process.argv[2];
+  // Fail fast with a readable message. Without this, a relative or malformed
+  // base surfaces later as an opaque `new URL()` TypeError on the first probe.
+  if (BASE && !/^https?:\/\//i.test(BASE)) {
+    console.error(`Base URL must be absolute (http:// or https://) — got: ${BASE}`);
+    console.error("  e.g. node scripts/smoke-prod.mjs https://datiq.app");
+    process.exit(2);
+  }
   if (!BASE) {
     // console.error, not `err` — that binding is scoped inside runSmoke, so
     // referencing it here threw a ReferenceError instead of printing usage.
@@ -247,6 +315,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = await runSmoke(BASE, {
     adminPin: process.env.SMOKE_ADMIN_PIN || "",
     timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS) || 15000,
+    retries: Number(process.env.SMOKE_RETRIES) || 3,
   });
 
   process.exit(result.failed > 0 ? 1 : 0);

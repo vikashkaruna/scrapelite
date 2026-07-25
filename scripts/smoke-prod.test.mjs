@@ -4,7 +4,14 @@
 // hitting the network. Runs in < 200ms — safe for CI on every push.
 
 import { describe, expect, it, vi } from "vitest";
-import { assertContentType, assertOk, fetchWithTimeout, runSmoke } from "./smoke-prod.mjs";
+import {
+  assertContentType,
+  assertOk,
+  describeFetchError,
+  fetchWithRetry,
+  fetchWithTimeout,
+  runSmoke,
+} from "./smoke-prod.mjs";
 
 // ── In-memory fetcher that responds by path ──────────────────────────────
 //
@@ -142,6 +149,101 @@ describe("fetchWithTimeout", () => {
     await expect(
       fetchWithTimeout("https://x.test/", {}, 1000, fetcher)
     ).rejects.toThrow(/fetch failed/);
+  });
+});
+
+describe("describeFetchError", () => {
+  // Node's fetch reports every transport failure as the same opaque TypeError.
+  // The real reason lives on err.cause — without surfacing it, a dead host, a
+  // wrong hostname and a TLS failure all print one identical, useless line.
+  const withCause = (msg, cause) => Object.assign(new TypeError(msg), { cause });
+
+  it("surfaces err.cause.code — the whole point", () => {
+    expect(describeFetchError(withCause("fetch failed", { code: "ENOTFOUND" })))
+      .toBe("fetch failed (ENOTFOUND)");
+  });
+
+  it.each(["ECONNREFUSED", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "CERT_HAS_EXPIRED"])(
+    "names %s so the failure is diagnosable", (code) => {
+      expect(describeFetchError(withCause("fetch failed", { code })))
+        .toBe(`fetch failed (${code})`);
+    });
+
+  it("falls back to errno when there is no code", () => {
+    expect(describeFetchError(withCause("fetch failed", { errno: -3008 })))
+      .toBe("fetch failed (-3008)");
+  });
+
+  it("falls back to the cause message when there is no code or errno", () => {
+    expect(describeFetchError(withCause("fetch failed", { message: "socket hang up" })))
+      .toBe("fetch failed (socket hang up)");
+  });
+
+  it("does not duplicate an identical cause message", () => {
+    expect(describeFetchError(withCause("fetch failed", { message: "fetch failed" })))
+      .toBe("fetch failed");
+  });
+
+  it("degrades safely on a bare error or a non-error", () => {
+    expect(describeFetchError(new Error("boom"))).toBe("boom");
+    expect(describeFetchError(undefined)).toBe("request failed");
+  });
+});
+
+describe("fetchWithTimeout — error enrichment", () => {
+  it("enriches a transport error with its cause code", async () => {
+    const fetcher = vi.fn().mockRejectedValue(
+      Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } })
+    );
+    await expect(fetchWithTimeout("https://x.test/", {}, 1000, fetcher))
+      .rejects.toThrow(/ECONNREFUSED/);
+  });
+});
+
+describe("fetchWithRetry", () => {
+  const noSleep = () => Promise.resolve();
+
+  it("returns the first successful response without retrying", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+    const res = await fetchWithRetry("https://x.test/", {}, { fetcher, sleep: noSleep });
+    expect(res.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a transport failure and succeeds on a later attempt", async () => {
+    const fetcher = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }))
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const res = await fetchWithRetry("https://x.test/", {}, { fetcher, sleep: noSleep });
+    expect(res.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after `retries` attempts and reports the count plus the cause", async () => {
+    const fetcher = vi.fn().mockRejectedValue(
+      Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } })
+    );
+    await expect(fetchWithRetry("https://x.test/", {}, { fetcher, retries: 3, sleep: noSleep }))
+      .rejects.toThrow(/ENOTFOUND.*after 3 attempts/);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("does NOT retry an HTTP error — fetch resolved, so the result is real", async () => {
+    // A 500 is an answer, not a transport failure. Retrying it would only slow
+    // the gate down before failing anyway.
+    const fetcher = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    const res = await fetchWithRetry("https://x.test/", {}, { fetcher, sleep: noSleep });
+    expect(res.status).toBe(500);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("backs off progressively between attempts", async () => {
+    const waits = [];
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(fetchWithRetry("https://x.test/", {}, {
+      fetcher, retries: 3, backoffMs: 100, sleep: (ms) => { waits.push(ms); return Promise.resolve(); },
+    })).rejects.toThrow();
+    expect(waits).toEqual([100, 200]);
   });
 });
 
@@ -305,6 +407,26 @@ describe("runSmoke — failure paths", () => {
     });
     const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
     expect(result.failed).toBe(0);
+  });
+
+  it("a transport failure names its cause instead of a bare 'fetch failed'", async () => {
+    const boom = Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
+    const fetcher = vi.fn().mockRejectedValue(boom);
+    const result = await runSmoke("https://x.test", {
+      fetcher, logger: quiet, retries: 1, sleep: () => Promise.resolve(),
+    });
+    expect(result.failed).toBeGreaterThan(0);
+    // Every failure line must be diagnosable, not 10 identical opaque lines.
+    expect(result.failures.every((f) => /ENOTFOUND/.test(f))).toBe(true);
+  });
+
+  it("retries transport failures across the whole run", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await runSmoke("https://x.test", {
+      fetcher, logger: quiet, retries: 2, sleep: () => Promise.resolve(),
+    });
+    // 10 probes x 2 attempts each.
+    expect(fetcher).toHaveBeenCalledTimes(20);
   });
 
   it("counts multiple failures correctly", async () => {
