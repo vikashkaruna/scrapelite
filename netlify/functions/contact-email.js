@@ -81,10 +81,20 @@ export const handler = async (event) => {
     // 503 → the client shows its mailto: fallback rather than losing the message.
     return json(503, { error: "Email delivery is not configured. Please email us directly." });
   }
-  const FROM =
-    process.env.CONTACT_EMAIL_FROM ||
-    process.env.ALERT_EMAIL_FROM ||
-    "DatIQ Contact <noreply@datiq.app>";
+  // INBOUND mail — visitor → our own inbox. A no-reply sender is correct here
+  // and should not be "corrected" to hello@: the submitter's address is
+  // unverified, so sending as them would forge an identity we haven't checked,
+  // and sending as hello@ would make hello@ mail itself. `reply_to` below
+  // carries the real human, so hitting Reply in the mailbox still works.
+  //
+  // OUTBOUND mail — DatIQ → a user (welcome, re-engagement) — is the opposite
+  // case and sends from hello@datiq.app. See welcome-email.js / reengagement.js.
+  //
+  // Deliberately NOT falling back to ALERT_EMAIL_FROM: that variable configures
+  // the outbound sender, and pointing it at hello@ (the natural thing to do)
+  // would make this inbound path mail hello@ from hello@. CONTACT_EMAIL_FROM is
+  // the only override, so the two directions can never bleed into each other.
+  const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ Contact <noreply@datiq.app>";
 
   const name    = String(body.name || "").trim();
   const subject = String(body.subject || "").trim();

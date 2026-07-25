@@ -208,22 +208,26 @@ describe("contact-email", () => {
   // ── From address ───────────────────────────────────────────────────────────
 
   it("defaults the From address to the no-reply sender", async () => {
+    // Inbound-only mail: the submitter's address is unverified, so this is sent
+    // from a no-reply sender to our own inbox. reply_to carries the human.
     const r = await handler(makeEvent());
     expect(r.statusCode).toBe(200);
     expect(sentPayload().from).toBe("DatIQ Contact <noreply@datiq.app>");
   });
 
-  it("prefers CONTACT_EMAIL_FROM over ALERT_EMAIL_FROM", async () => {
-    process.env.ALERT_EMAIL_FROM = "DatIQ Alerts <alerts@datiq.app>";
+  it("CONTACT_EMAIL_FROM overrides the default sender", async () => {
     process.env.CONTACT_EMAIL_FROM = "DatIQ Contact <forms@datiq.app>";
     await handler(makeEvent());
     expect(sentPayload().from).toBe("DatIQ Contact <forms@datiq.app>");
   });
 
-  it("falls back to ALERT_EMAIL_FROM when CONTACT_EMAIL_FROM is unset", async () => {
-    process.env.ALERT_EMAIL_FROM = "DatIQ Alerts <alerts@datiq.app>";
+  it("ignores ALERT_EMAIL_FROM — that variable configures OUTBOUND mail", async () => {
+    // Guard against the inbound/outbound sender identities bleeding together:
+    // pointing ALERT_EMAIL_FROM at hello@ must not make this path mail hello@
+    // from hello@.
+    process.env.ALERT_EMAIL_FROM = "DatIQ <hello@datiq.app>";
     await handler(makeEvent());
-    expect(sentPayload().from).toBe("DatIQ Alerts <alerts@datiq.app>");
+    expect(sentPayload().from).toBe("DatIQ Contact <noreply@datiq.app>");
   });
 
   // ── Failure modes ──────────────────────────────────────────────────────────

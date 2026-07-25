@@ -902,7 +902,7 @@ If you see an "Auth redirect URL not in allowlist" error in production, add the 
 The prod Supabase has its own email templates (confirmation, magic link, password reset). Customize them in Authentication → Email Templates:
 
 - "From name": `DatIQ`
-- "From email": `noreply@datiq.app` (or your custom sender domain — requires Supabase custom SMTP setup)
+- "From email": `hello@datiq.app` (or your custom sender domain — requires Supabase custom SMTP setup)
 - Confirmation URL: `${SITE_URL}/auth/callback` (Supabase substitutes `SITE_URL` automatically based on what you set in §9.3)
 
 If you use Resend for transactional email (the codebase already has `RESEND_API_KEY` wired), the same key works for both tiers. If you want different from-addresses per tier, set `ALERT_EMAIL_FROM` per context (§5.2 already does this).
