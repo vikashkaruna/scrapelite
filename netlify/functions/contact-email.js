@@ -90,11 +90,11 @@ export const handler = async (event) => {
   // OUTBOUND mail — DatIQ → a user (welcome, re-engagement) — is the opposite
   // case and sends from hello@datiq.app. See welcome-email.js / reengagement.js.
   //
-  // Deliberately NOT falling back to ALERT_EMAIL_FROM: that variable configures
-  // the outbound sender, and pointing it at hello@ (the natural thing to do)
-  // would make this inbound path mail hello@ from hello@. CONTACT_EMAIL_FROM is
-  // the only override, so the two directions can never bleed into each other.
-  const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ Contact <noreply@datiq.app>";
+  // Reads FORM_EMAIL_FROM and nothing else. The other two senders are outbound
+  // (CONTACT_EMAIL_FROM = hello@ for user mail, ALERT_EMAIL_FROM = alerts@ for
+  // schedule alerts); if this path fell back to either, pointing them at hello@
+  // would make hello@ mail itself. One variable per direction, no fallbacks.
+  const FROM = process.env.FORM_EMAIL_FROM || "DatIQ Contact <noreply@datiq.app>";
 
   const name    = String(body.name || "").trim();
   const subject = String(body.subject || "").trim();

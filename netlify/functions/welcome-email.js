@@ -18,7 +18,7 @@ export const handler = async (event) => {
   const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   const RESEND_KEY = process.env.RESEND_API_KEY;
-  const FROM = process.env.ALERT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
+  const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
   const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {

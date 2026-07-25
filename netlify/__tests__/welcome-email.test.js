@@ -38,7 +38,7 @@ describe("welcome-email (F49)", () => {
     process.env.SUPABASE_URL = "https://test.supabase.co";
     process.env.SUPABASE_SERVICE_KEY = "service-key";
     process.env.RESEND_API_KEY = "resend-key";
-    process.env.ALERT_EMAIL_FROM = "DatIQ <hello@datiq.app>";
+    process.env.CONTACT_EMAIL_FROM = "DatIQ <hello@datiq.app>";
     process.env.URL = "https://datiq.app";
     global.fetch = vi.fn();
   });
@@ -126,6 +126,50 @@ describe("welcome-email (F49)", () => {
     expect(updateMock).toHaveBeenCalledWith("u-123", expect.objectContaining({
       user_metadata: expect.objectContaining({ welcomeEmailSent: true }),
     }));
+  });
+
+  describe("sender identity — OUTBOUND", () => {
+    function stubUser() {
+      return import("@supabase/supabase-js").then(({ createClient }) => {
+        createClient.mockReturnValue({
+          auth: {
+            admin: {
+              getUserById: vi.fn().mockResolvedValue({
+                data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } },
+                error: null,
+              }),
+              updateUserById: vi.fn().mockResolvedValue({ user: {} }),
+            },
+          },
+        });
+        global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => "ok" });
+      });
+    }
+    const from = () => JSON.parse(global.fetch.mock.calls[0][1].body).from;
+
+    it("sends from hello@ by default — a user received it, so a reply must reach us", async () => {
+      delete process.env.CONTACT_EMAIL_FROM;
+      await stubUser();
+      await handler(makeEvent());
+      expect(from()).toBe("DatIQ <hello@datiq.app>");
+    });
+
+    it("CONTACT_EMAIL_FROM overrides the outbound sender", async () => {
+      process.env.CONTACT_EMAIL_FROM = "DatIQ Team <team@datiq.app>";
+      await stubUser();
+      await handler(makeEvent());
+      expect(from()).toBe("DatIQ Team <team@datiq.app>");
+    });
+
+    it("ignores ALERT_EMAIL_FROM — that variable is for schedule alerts only", async () => {
+      // Symmetric to the guard in contact-email: one variable per sender, so
+      // repointing the alert sender can't silently change user-facing mail.
+      delete process.env.CONTACT_EMAIL_FROM;
+      process.env.ALERT_EMAIL_FROM = "DatIQ Alerts <alerts@datiq.app>";
+      await stubUser();
+      await handler(makeEvent());
+      expect(from()).toBe("DatIQ <hello@datiq.app>");
+    });
   });
 
   it("returns 502 when Resend rejects the send", async () => {

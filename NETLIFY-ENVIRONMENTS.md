@@ -379,9 +379,11 @@ Replace the current `netlify.toml` (which is small) with this — **additive onl
   JINA_API_KEY = "PROD_JINA_KEY"
   SCRAPE_PROVIDER_ORDER = "firecrawl,spider,jina,direct"
 
-  # Email + alerts
+  # Email — one sender per purpose; no function falls back between them.
   RESEND_API_KEY = "PROD_RESEND_KEY"
-  ALERT_EMAIL_FROM = "DatIQ <alerts@datiq.app>"
+  CONTACT_EMAIL_FROM = "DatIQ <hello@datiq.app>"              # outbound to users
+  ALERT_EMAIL_FROM = "DatIQ Alerts <alerts@datiq.app>"        # schedule alerts
+  FORM_EMAIL_FROM = "DatIQ Contact <noreply@datiq.app>"       # inbound /contact form
   SCHEDULE_ALERT_WEBHOOK = "https://hooks.n8n.cloud/PROD_WEBHOOK"
 
   # Admin
@@ -426,9 +428,11 @@ Replace the current `netlify.toml` (which is small) with this — **additive onl
   SPIDER_API_KEY = ""
   JINA_API_KEY = ""
 
-  # Email + alerts — staging can send to a test inbox
+  # Email — staging senders are prefixed so a stray send is obvious in the inbox
   RESEND_API_KEY = "STAGING_RESEND_KEY"
-  ALERT_EMAIL_FROM = "DatIQ Staging <staging@datiq.app>"
+  CONTACT_EMAIL_FROM = "DatIQ Staging <staging@datiq.app>"
+  ALERT_EMAIL_FROM = "DatIQ Staging Alerts <staging@datiq.app>"
+  FORM_EMAIL_FROM = "DatIQ Staging Contact <staging@datiq.app>"
   SCHEDULE_ALERT_WEBHOOK = "https://hooks.n8n.cloud/STAGING_WEBHOOK"
 
   # Admin — staging can keep a known PIN for QA
@@ -464,7 +468,9 @@ Replace the current `netlify.toml` (which is small) with this — **additive onl
   OPENAI_API_KEY = "STAGING_OPENAI_KEY"
   FIRECRAWL_API_KEY = "STAGING_FIRECRAWL_KEY"
   RESEND_API_KEY = "STAGING_RESEND_KEY"
+  CONTACT_EMAIL_FROM = "DatIQ Preview <preview@datiq.app>"
   ALERT_EMAIL_FROM = "DatIQ Preview <preview@datiq.app>"
+  FORM_EMAIL_FROM = "DatIQ Preview <preview@datiq.app>"
 ```
 
 ### 5.3 Where secrets actually live
@@ -905,7 +911,7 @@ The prod Supabase has its own email templates (confirmation, magic link, passwor
 - "From email": `hello@datiq.app` (or your custom sender domain — requires Supabase custom SMTP setup)
 - Confirmation URL: `${SITE_URL}/auth/callback` (Supabase substitutes `SITE_URL` automatically based on what you set in §9.3)
 
-If you use Resend for transactional email (the codebase already has `RESEND_API_KEY` wired), the same key works for both tiers. If you want different from-addresses per tier, set `ALERT_EMAIL_FROM` per context (§5.2 already does this).
+If you use Resend for transactional email (the codebase already has `RESEND_API_KEY` wired), the same key works for both tiers. From-addresses are split three ways so each can be repointed independently — set `CONTACT_EMAIL_FROM` (outbound to users), `ALERT_EMAIL_FROM` (schedule alerts), and `FORM_EMAIL_FROM` (inbound /contact form) per context (§5.2 already does this). No function falls back from one to another, so changing one sender never moves the others.
 
 ---
 

@@ -37,7 +37,7 @@ export const config = { schedule: "@daily" };
 const DAILY_DIGEST_HOUR_UTC = parseInt(process.env.DAILY_DIGEST_HOUR_UTC || "21", 10) || 21;
 
 const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
-const FROM = process.env.ALERT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
+const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || "";

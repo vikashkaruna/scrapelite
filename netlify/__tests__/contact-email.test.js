@@ -36,6 +36,7 @@ describe("contact-email", () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
     process.env.RESEND_API_KEY = "resend-key";
+    delete process.env.FORM_EMAIL_FROM;
     delete process.env.CONTACT_EMAIL_FROM;
     delete process.env.ALERT_EMAIL_FROM;
     global.fetch = vi.fn(() => Promise.resolve(resendOk()));
@@ -215,17 +216,18 @@ describe("contact-email", () => {
     expect(sentPayload().from).toBe("DatIQ Contact <noreply@datiq.app>");
   });
 
-  it("CONTACT_EMAIL_FROM overrides the default sender", async () => {
-    process.env.CONTACT_EMAIL_FROM = "DatIQ Contact <forms@datiq.app>";
+  it("FORM_EMAIL_FROM overrides the default sender", async () => {
+    process.env.FORM_EMAIL_FROM = "DatIQ Contact <forms@datiq.app>";
     await handler(makeEvent());
     expect(sentPayload().from).toBe("DatIQ Contact <forms@datiq.app>");
   });
 
-  it("ignores ALERT_EMAIL_FROM — that variable configures OUTBOUND mail", async () => {
-    // Guard against the inbound/outbound sender identities bleeding together:
-    // pointing ALERT_EMAIL_FROM at hello@ must not make this path mail hello@
-    // from hello@.
-    process.env.ALERT_EMAIL_FROM = "DatIQ <hello@datiq.app>";
+  it("ignores the two OUTBOUND sender variables", async () => {
+    // The senders are split one-per-direction precisely so this can't happen:
+    // pointing the outbound vars at hello@ must never make this inbound path
+    // send hello@ → hello@.
+    process.env.CONTACT_EMAIL_FROM = "DatIQ <hello@datiq.app>";
+    process.env.ALERT_EMAIL_FROM = "DatIQ Alerts <alerts@datiq.app>";
     await handler(makeEvent());
     expect(sentPayload().from).toBe("DatIQ Contact <noreply@datiq.app>");
   });

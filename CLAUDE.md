@@ -437,7 +437,7 @@ ThemeProvider
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
 | Contact emails | **Exactly two customer-facing inboxes.** `hello@datiq.app` — product support, bug reports, feature requests, billing, anything general. `admin@datiq.app` — enterprise/agency, legal & terms, privacy & DPDP (incl. the DPDP grievance officer). `support@` / `legal@` / `privacy@` are retired; the readiness audit fails the build if they reappear. Source of truth: `src/lib/contactRouting.js`. |
 | Contact form delivery | `/contact` → `apiClient.sendContactEmail` → **POST `/api/contact-email`** ([netlify/functions/contact-email.js](netlify/functions/contact-email.js)) → **Resend**, the same provider used for welcome / re-engagement / schedule-alert mail. **Routing is server-authoritative**: the browser sends an enquiry *type*, never a recipient, and the function resolves the destination from `src/lib/contactRouting.js` — so the endpoint can't be used as an open relay and exactly ONE inbox receives each message (no duplicate delivery). `RESEND_API_KEY` stays server-side. Honeypot (`botcheck`) returns 200 and drops. On failure the UI shows a pre-filled `mailto:` fallback. The CRM webhook ([contactWebhook.js](src/lib/contactWebhook.js)) and subscriber capture fire in parallel and can never fail or delay a submission. Orchestrated in [contactService.js](src/lib/contactService.js). |
-| Email direction rule | **Sender identity follows direction, not preference.** OUTBOUND (DatIQ → a user: welcome, re-engagement, auth, alerts) sends from **`hello@datiq.app`** — a human can reply and reach us. INBOUND (a visitor's form submission → our own inbox) sends from **`noreply@datiq.app`**, because the submitter's address is unverified: sending as them would forge an unchecked identity, and sending as `hello@` would make `hello@` mail itself. `reply_to` carries the real person, so Reply still works. `contact-email.js` reads only `CONTACT_EMAIL_FROM` — never `ALERT_EMAIL_FROM` — so the two directions can't bleed together. |
+| Email sender rule | **One env var per sender — no fallback chains between them.** Three senders, split by who reads the mail: `CONTACT_EMAIL_FROM` → **`hello@datiq.app`** for outbound human mail (welcome, re-engagement); `ALERT_EMAIL_FROM` → **`alerts@datiq.app`** for machine-generated schedule alerts; `FORM_EMAIL_FROM` → **`noreply@datiq.app`** for the inbound /contact form. Each function reads exactly one and never falls back to another, so repointing one sender can't silently move the others — in particular, setting the outbound sender to `hello@` must never make the inbound form mail `hello@` from `hello@`. Regression tests in `netlify/__tests__/{contact-email,welcome-email}.test.js` assert the isolation in both directions. Every outbound address is one a human can reply to; only the inbound form uses `noreply@`, because the submitter's address is unverified and `reply_to` carries them instead. |
 | Naming | App brand is "DatIQ" everywhere in UI. Live site is `https://datiq.app` (Netlify project renamed to `datiqapp`; old `scrapelite.netlify.app` host now 404s). |
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
 | Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
@@ -736,12 +736,16 @@ ADMIN_PIN_HASH=                # SHA-256 hex of a STRONG admin PIN (preferred). 
 ADMIN_PIN=                     # plaintext admin PIN (fallback if you can't pre-hash)
 ADMIN_TOKEN_SECRET=            # optional HMAC key for the admin session token
 RESEND_API_KEY=                # Resend — sends contact-form mail AND welcome/re-engagement/alerts
-# Sender identity is split by DIRECTION — see the "Email direction rule" below.
-CONTACT_EMAIL_FROM=            # INBOUND only: From for /contact mail. Defaults to
-                               # "DatIQ Contact <noreply@datiq.app>". Deliberately does NOT read
-                               # ALERT_EMAIL_FROM. Recipients are resolved server-side, never env.
-ALERT_EMAIL_FROM=              # OUTBOUND only: From for welcome / re-engagement / schedule alerts.
-                               # Defaults to "DatIQ <hello@datiq.app>" (alerts@ in scheduled-runner).
+# Three senders, one env var each — see the "Email sender rule" above. No function
+# falls back from one to another. All defaults work unset; set them per Netlify
+# context only when a context needs a different sender (e.g. staging).
+CONTACT_EMAIL_FROM=            # OUTBOUND, human      → "DatIQ <hello@datiq.app>"
+                               #   welcome-email.js, reengagement.js
+ALERT_EMAIL_FROM=              # OUTBOUND, machine    → "DatIQ Alerts <alerts@datiq.app>"
+                               #   scheduled-runner.js (change alerts)
+FORM_EMAIL_FROM=               # INBOUND              → "DatIQ Contact <noreply@datiq.app>"
+                               #   contact-email.js. Recipients are resolved server-side
+                               #   from contactRouting.js, never from env.
 ```
 
 > **Admin PIN is verified server-side** by `netlify/functions/admin-auth.js` — the secret
