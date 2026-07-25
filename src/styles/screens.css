@@ -3585,7 +3585,13 @@
   background: var(--accent-soft); border-color: var(--accent-on-soft); color: var(--accent-on-soft);
 }
 .contact-type-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.contact-route-hint {
+  display: flex; align-items: center; gap: 6px;
+  margin: 10px 0 0; font-size: .82em; color: var(--text-3, var(--text-2));
+}
+.contact-route-hint strong { color: var(--accent); font-weight: 700; }
 .contact-error { color: #e0556b; font-size: .87em; margin: 0; }
+.contact-error a { color: inherit; font-weight: 700; }
 .contact-success { text-align: center; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .contact-success-icon { color: #16a34a; }
 .contact-success h2 { margin: 0; font-size: 1.4em; font-weight: 800; }

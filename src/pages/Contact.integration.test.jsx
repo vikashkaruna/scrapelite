@@ -2,7 +2,9 @@
 // I-41 — Contact form integration.
 //
 //   - ?type=bug → "Bug report" pre-selected, subject pre-filled "Bug report: "
-//   - Submit opens a mailto: link (the form's primary delivery)
+//   - Submit delivers through contactService (Web3Forms), not a mailto: window
+//   - Enquiry type drives which of the two inboxes the form shows and routes to
+//   - A delivery failure surfaces a mailto: fallback instead of a dead end
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
@@ -21,8 +23,8 @@ const authMocks = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
 }));
 
-const emailCaptureMocks = vi.hoisted(() => ({
-  captureEmail: vi.fn(() => Promise.resolve()),
+const contactMocks = vi.hoisted(() => ({
+  submitContactForm: vi.fn(),
 }));
 
 const usageRepoMocks = vi.hoisted(() => ({
@@ -46,7 +48,7 @@ vi.mock("../lib/authService.js", async () => {
   };
 });
 
-vi.mock("../lib/emailCaptureService.js", () => emailCaptureMocks);
+vi.mock("../lib/contactService.js", () => contactMocks);
 
 vi.mock("../lib/usageRepo.js", () => usageRepoMocks);
 vi.mock("../lib/paymentRepo.js", () => usageRepoMocks);
@@ -71,10 +73,23 @@ beforeEach(() => {
   localStorage.clear();
   authMocks.getSession.mockResolvedValue(null);
   authMocks.onAuthStateChange.mockReturnValue(() => {});
-  // Stub window.open so the mailto: click doesn't open a real window.
+  contactMocks.submitContactForm.mockResolvedValue({
+    ok: true, inbox: "hello", routeTo: "hello@datiq.app",
+  });
+  // Stub window.open so nothing tries to open a real window.
   vi.spyOn(window, "open").mockImplementation(() => null);
   window.history.replaceState(null, "", window.location.pathname);
 });
+
+/** Fill the two required fields and press Send. */
+async function fillAndSend({ email = "alice@example.com", message = "Please help with X." } = {}) {
+  fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText(/message/i), { target: { value: message } });
+  await act(async () => {
+    screen.getByRole("button", { name: /send message/i }).click();
+    await Promise.resolve();
+  });
+}
 
 function Tree({ initialPath = "/contact" }) {
   return (
@@ -121,19 +136,95 @@ describe("I-41 — Contact form", () => {
     expect(supportBtn.className).toMatch(/active|on|selected/);
   });
 
-  it("submitting the form with email + message calls captureEmail + opens a mailto: window", async () => {
+  it("?type=privacy → 'Privacy & DPDP' pre-selected and routed to admin@datiq.app", async () => {
+    render(<Tree initialPath="/contact?type=privacy" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("button", { name: /privacy & dpdp/i }).className)
+      .toMatch(/active|on|selected/);
+    expect(screen.getByText(/goes to/i).textContent).toContain("admin@datiq.app");
+  });
+
+  it("an unknown ?type falls back to the default rather than breaking the form", async () => {
+    render(<Tree initialPath="/contact?type=refund" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("button", { name: /product support/i }).className)
+      .toMatch(/active|on|selected/);
+  });
+
+  it("switching enquiry type updates the destination inbox shown to the user", async () => {
     render(<Tree initialPath="/contact" />);
     await act(async () => { await Promise.resolve(); });
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "alice@example.com" } });
-    fireEvent.change(screen.getByLabelText(/message/i), { target: { value: "Please help with X." } });
-    act(() => {
-      screen.getByRole("button", { name: /send message/i }).click();
+    expect(screen.getByText(/goes to/i).textContent).toContain("hello@datiq.app");
+
+    await act(async () => {
+      screen.getByRole("button", { name: /enterprise \/ agency/i }).click();
     });
+    expect(screen.getByText(/goes to/i).textContent).toContain("admin@datiq.app");
+  });
+
+  it("the sidebar lists both inboxes and no retired address", async () => {
+    render(<Tree initialPath="/contact" />);
     await act(async () => { await Promise.resolve(); });
-    expect(emailCaptureMocks.captureEmail).toHaveBeenCalledWith("alice@example.com", expect.stringMatching(/contact-form/));
-    expect(window.open).toHaveBeenCalled();
-    const openArg = window.open.mock.calls[0][0];
-    expect(openArg).toMatch(/^mailto:/);
+    const html = document.body.innerHTML;
+    expect(html).toContain("hello@datiq.app");
+    expect(html).toContain("admin@datiq.app");
+    for (const retired of ["support@datiq.app", "legal@datiq.app", "privacy@datiq.app"]) {
+      expect(html).not.toContain(retired);
+    }
+  });
+
+  it("submitting delivers through contactService and shows the success state", async () => {
+    render(<Tree initialPath="/contact" />);
+    await act(async () => { await Promise.resolve(); });
+    await fillAndSend();
+
+    expect(contactMocks.submitContactForm).toHaveBeenCalledWith({
+      type: "support",
+      name: "",
+      email: "alice@example.com",
+      subject: "",
+      message: "Please help with X.",
+    });
+    expect(screen.getByText(/message received/i)).toBeInTheDocument();
+    // Web3Forms replaces the old mailto: hand-off on the happy path.
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("submitting a legal enquiry routes it to the admin inbox", async () => {
+    contactMocks.submitContactForm.mockResolvedValue({
+      ok: true, inbox: "admin", routeTo: "admin@datiq.app",
+    });
+    render(<Tree initialPath="/contact?type=legal" />);
+    await act(async () => { await Promise.resolve(); });
+    await fillAndSend();
+    expect(contactMocks.submitContactForm.mock.calls[0][0].type).toBe("legal");
+  });
+
+  it("a delivery failure shows the error plus a mailto: fallback link", async () => {
+    contactMocks.submitContactForm.mockResolvedValue({
+      ok: false,
+      inbox: "hello",
+      routeTo: "hello@datiq.app",
+      error: "Invalid Access Key",
+      mailto: "mailto:hello@datiq.app?subject=x&body=y",
+    });
+    render(<Tree initialPath="/contact" />);
+    await act(async () => { await Promise.resolve(); });
+    await fillAndSend();
+
+    const errorEl = screen.getByText(/invalid access key/i);
+    expect(errorEl).toBeInTheDocument();
+    expect(screen.queryByText(/message received/i)).not.toBeInTheDocument();
+    // Scope to the error paragraph — the sidebar also links hello@datiq.app.
+    const link = errorEl.closest(".contact-error").querySelector("a");
+    expect(link.getAttribute("href")).toBe("mailto:hello@datiq.app?subject=x&body=y");
+  });
+
+  it("does not submit when required fields are empty", async () => {
+    render(<Tree initialPath="/contact" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(contactMocks.submitContactForm).not.toHaveBeenCalled();
   });
 });
 
