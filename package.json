@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:unit": "vitest run src --exclude '**/*.integration.test.*' --exclude '**/__tests__/system/**'",
+    "test:unit": "vitest run src scripts --exclude '**/*.integration.test.*' --exclude '**/__tests__/system/**'",
     "test:contract": "vitest run netlify",
     "test:integration": "vitest run 'integration.test'",
     "test:system": "vitest run 'src/__tests__/system'",
