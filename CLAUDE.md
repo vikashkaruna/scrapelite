@@ -2,13 +2,15 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-25 — main is at `dc71fe5`, staging at `4ea6883`, both in sync with origin. Contact-form rework shipped: two customer inboxes (`hello@` / `admin@`), delivery moved to Resend via `POST /api/contact-email` with server-authoritative routing, and mail senders split one env var per sender. v1.0+ live on datiq.app. Session detail: `docs/SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md`.**
+> **Last updated: 2026-07-25 (late) — `main` and `staging` point at the SAME commit, in sync with origin. THE REPO HAS ONLY TWO BRANCHES NOW: `main` and `staging`. Six already-merged branches were deleted locally and on origin (their SHAs are recorded in the handoff if one ever needs restoring). CI: the Staging Gate's three code checks are GREEN, and `Test Suites` went from a 25-minute timeout to 10m51s after the e2e smoke was corrected to run chromium only (it had been silently running all three browsers — 294 tests instead of 98). One check stays RED: `Deployed & Smoke Tested` at 11/12, because staging's Netlify `ADMIN_PIN_HASH` and the `STAGING_ADMIN_PIN` GitHub secret disagree. THAT IS A CONSOLE FIX, NOT A REPO FIX — do not try to solve it in code. Also: `staging.datiq.app` is NOT provisioned (CNAME points at the wrong site slug, and no cert covers it), so the gate smoke-tests `staging--datiqapp.netlify.app` via the `STAGING_URL` repo variable. Session detail: `docs/SESSION-HANDOFF-2026-07-25-BRANCH-CLEANUP-AND-GATE.md`.**
+>
+> Prior: 2026-07-25 — main was at `dc71fe5`, staging at `4ea6883`. Contact-form rework shipped: two customer inboxes (`hello@` / `admin@`), delivery moved to Resend via `POST /api/contact-email` with server-authoritative routing, and mail senders split one env var per sender. Session detail: `docs/SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md`.
 >
 > Prior: 2026-07-19 — main was at `074abfe`.  4 small build/CI/UX fixes since the pre-cutover drop: TOML duplicate key, secrets scanner false positives, missing `scripts/smoke-prod.mjs`, TopBar single CTA. v1.0+ live on datiq.app. Pre-cutover for 3-tier Netlify + isolated prod Supabase. See `NETLIFY-ENVIRONMENTS.md` (recommended) or `FIREBASE-MIGRATION.md` (alternative). Session detail: `docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`.**
 >
 > Recent: R19 (Scheduler + unified Home composer, `980ac21`); SEO URL fix `scrapelite.netlify.app`→`datiq.app` (`f535e75`); R20 docs/help overhaul (`762d2e6`); **v1.0 closeout + M0–M7 quality-gate** (vitest 800 + playwright 363, `0ae395b`); **Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 quick wins** (vitest 800 → **1029**, 24 new test files, 4 new SQL scripts, 4 new routes — `/workspace`, `/p/:slug`, `/gallery`, on-demand tour replay via `g t`). PR #14 closed; feat/v1-quickwins fast-forwarded to `ea3658a`. **2026-07-19: Pre-cutover production isolation** — `NETLIFY-ENVIRONMENTS.md` (recommended) + `FIREBASE-MIGRATION.md` (alternative) plans merged; 3 prod-isolation fixes (psql→pg, 0001 self-contained, phase-gate workflow); per-context env blocks in `netlify.toml`. See "Outstanding tasks → Pre-cutover: Production isolation" below. **2026-07-19 (late): 4 small fixes** — TOML duplicate `VITE_SUPABASE_ANON_KEY` (`b8b1e53`); secrets scanner omits (`71a2586`); missing `scripts/smoke-prod.mjs` (`92b3af9`); TopBar single primary CTA (`074abfe`).
 >
-> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main` (`dc71fe5`).
+> Next session entry point: read `AGENTS.md` → `CLAUDE.md` (this file) → `git log --oneline -10` → `git status`. If starting a v2.0 effort, branch from `main`.
 
 ---
 
@@ -23,8 +25,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` — 4 small fixes since the pre-cutover drop (TOML duplicate, secrets scanner, phase-gate smoke script, TopBar single CTA) merged at `074abfe` |
-| **Latest main commit** | `074abfe` — `Merge branch 'fix/topbar-single-cta' into main`; feature commit = `dc4289d` |
+| **Branches** | **Only `main` and `staging` exist** — both at the same commit, in sync with origin. Every other branch was deleted 2026-07-25 after confirming each was fully merged into `staging`. Branch from `main` for new work. |
+| **Latest commit** | Run `git log --oneline -5` — the last drop was three CI fixes (`0676ed1`, `372c29a`, `af4dc5c`) merged via PRs #16 and #17 |
 
 ---
 
