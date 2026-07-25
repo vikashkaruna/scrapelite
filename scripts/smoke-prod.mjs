@@ -21,11 +21,14 @@
 //                       root contains "DatIQ" / "Extract" (rules out a
 //                       generic 502/404 page from the SPA fallback)
 //   2. Marketing       — /favicon.svg, /robots.txt, /sitemap.xml, /llms.txt
-//                       (GEO/SEO assets; missing = discoverability regression)
+//                       (GEO/SEO assets; missing = discoverability regression).
+//                       Status AND content-type are asserted — see
+//                       assertContentType for why status alone is not enough.
 //   3. Help site       — /help/index.html (static; missing = docs regression)
 //   4. API function    — /api/stats returns 200 OR 503 (the function is
 //                       allowed to be down when Supabase isn't configured;
-//                       we just need it to ANSWER, not hang)
+//                       we just need it to ANSWER, not hang) and must answer
+//                       in JSON, not the SPA's HTML
 //   5. Admin (opt-in)  — /admin returns 200; admin-auth function returns
 //                       200 with a token when SMOKE_ADMIN_PIN is set
 //
@@ -39,6 +42,26 @@ import { pathToFileURL } from "node:url";
 export function assertOk(res, label) {
   if (res.status < 200 || res.status >= 400) {
     throw new Error(`${label || "request"} returned HTTP ${res.status} ${res.statusText || ""}`.trim());
+  }
+}
+
+/**
+ * Assert the response Content-Type contains `expected` (case-insensitive
+ * substring, e.g. "application/json", "image/svg", "xml").
+ *
+ * WHY THIS EXISTS: netlify.toml ends with an SPA catch-all, `/* → /index.html`
+ * at status 200. That means a MISSING /robots.txt, /sitemap.xml, /llms.txt, or
+ * /api/stats does not 404 — it silently serves the app's HTML with a 200, and
+ * a status-only smoke check passes on a deploy where those are genuinely gone.
+ * Requiring the content-type is what unmasks that class of failure.
+ */
+export function assertContentType(res, expected, label) {
+  const actual = (res.headers?.get?.("content-type") || "").toLowerCase();
+  if (!actual.includes(String(expected).toLowerCase())) {
+    throw new Error(
+      `${label || "request"} returned content-type "${actual || "(none)"}" — expected "${expected}". ` +
+      `A 200 with text/html here usually means the SPA catch-all served index.html because the file is missing.`
+    );
   }
 }
 
@@ -127,20 +150,31 @@ export async function runSmoke(baseUrl, opts = {}) {
   });
 
   // 2. Marketing/SEO assets ───────────────────────────────────────────────
-  await probe("GET /favicon.svg", async () => {
-    assertOk(await get("/favicon.svg"), "GET /favicon.svg");
+  // Each asserts its content-type as well as its status — see assertContentType:
+  // without it the SPA catch-all serves index.html at 200 for a missing file
+  // and the probe passes on a broken deploy.
+  await probe("GET /favicon.svg (image/svg)", async () => {
+    const res = await get("/favicon.svg");
+    assertOk(res, "GET /favicon.svg");
+    assertContentType(res, "image/svg", "GET /favicon.svg");
   });
 
-  await probe("GET /robots.txt", async () => {
-    assertOk(await get("/robots.txt"), "GET /robots.txt");
+  await probe("GET /robots.txt (text/plain)", async () => {
+    const res = await get("/robots.txt");
+    assertOk(res, "GET /robots.txt");
+    assertContentType(res, "text/plain", "GET /robots.txt");
   });
 
-  await probe("GET /sitemap.xml", async () => {
-    assertOk(await get("/sitemap.xml"), "GET /sitemap.xml");
+  await probe("GET /sitemap.xml (xml)", async () => {
+    const res = await get("/sitemap.xml");
+    assertOk(res, "GET /sitemap.xml");
+    assertContentType(res, "xml", "GET /sitemap.xml");
   });
 
-  await probe("GET /llms.txt (AI agent discovery)", async () => {
-    assertOk(await get("/llms.txt"), "GET /llms.txt");
+  await probe("GET /llms.txt (AI agent discovery, text/plain)", async () => {
+    const res = await get("/llms.txt");
+    assertOk(res, "GET /llms.txt");
+    assertContentType(res, "text/plain", "GET /llms.txt");
   });
 
   // 3. Help site ──────────────────────────────────────────────────────────
@@ -149,10 +183,21 @@ export async function runSmoke(baseUrl, opts = {}) {
   });
 
   // 4. API function (200 OR 503 acceptable) ──────────────────────────────
-  await probe("GET /api/stats (200 or 503)", async () => {
+  await probe("GET /api/stats (200 or 503, JSON)", async () => {
     const res = await get("/api/stats");
     if (res.status !== 200 && res.status !== 503) {
       throw new Error(`HTTP ${res.status} — expected 200 (Supabase configured) or 503 (not configured)`);
+    }
+    // The most valuable content-type assertion of the set: if the function
+    // failed to deploy, the /api/* redirect falls through to the SPA and this
+    // returns the app's HTML at 200 — indistinguishable from success on status.
+    //
+    // Only checked on 200. The catch-all can only forge a 200, so that is the
+    // sole maskable case; a 503 comes from the platform (the function is gone
+    // or crashed) and its content-type is not ours to predict. All we require
+    // there is that something answered.
+    if (res.status === 200) {
+      assertContentType(res, "application/json", "GET /api/stats");
     }
   });
 
@@ -192,8 +237,10 @@ export async function runSmoke(baseUrl, opts = {}) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const BASE = process.argv[2];
   if (!BASE) {
-    err("Usage: node scripts/smoke-prod.mjs <base-url>");
-    err("  e.g. node scripts/smoke-prod.mjs https://datiq.app");
+    // console.error, not `err` — that binding is scoped inside runSmoke, so
+    // referencing it here threw a ReferenceError instead of printing usage.
+    console.error("Usage: node scripts/smoke-prod.mjs <base-url>");
+    console.error("  e.g. node scripts/smoke-prod.mjs https://datiq.app");
     process.exit(2);
   }
 

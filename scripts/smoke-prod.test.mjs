@@ -4,7 +4,7 @@
 // hitting the network. Runs in < 200ms — safe for CI on every push.
 
 import { describe, expect, it, vi } from "vitest";
-import { assertOk, fetchWithTimeout, runSmoke } from "./smoke-prod.mjs";
+import { assertContentType, assertOk, fetchWithTimeout, runSmoke } from "./smoke-prod.mjs";
 
 // ── In-memory fetcher that responds by path ──────────────────────────────
 //
@@ -14,23 +14,31 @@ import { assertOk, fetchWithTimeout, runSmoke } from "./smoke-prod.mjs";
 
 function makeFetcher(handlers = {}) {
   const calls = [];
+  // Content types mirror what Netlify actually serves. They matter: the smoke
+  // script asserts them to unmask an SPA catch-all serving index.html at 200
+  // in place of a missing static file or function.
   const defaults = {
-    "/": { status: 200, body: "<html>DatIQ — Extract & enrich</html>" },
-    "/dashboard": { status: 200, body: "<html>SPA</html>" },
-    "/pricing": { status: 200, body: "<html>SPA</html>" },
-    "/batch": { status: 200, body: "<html>SPA</html>" },
-    "/favicon.svg": { status: 200, body: "<svg/>" },
-    "/robots.txt": { status: 200, body: "User-agent: *\nAllow: /" },
-    "/sitemap.xml": { status: 200, body: "<urlset/>" },
-    "/llms.txt": { status: 200, body: "# DatIQ" },
-    "/help/index.html": { status: 200, body: "<html>Help</html>" },
-    "/api/stats": { status: 200, body: JSON.stringify({ teams: 0, extractions: 0 }) },
+    "/": { status: 200, body: "<html>DatIQ — Extract & enrich</html>", contentType: "text/html; charset=UTF-8" },
+    "/dashboard": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
+    "/pricing": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
+    "/batch": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
+    "/favicon.svg": { status: 200, body: "<svg/>", contentType: "image/svg+xml" },
+    "/robots.txt": { status: 200, body: "User-agent: *\nAllow: /", contentType: "text/plain; charset=utf-8" },
+    "/sitemap.xml": { status: 200, body: "<urlset/>", contentType: "application/xml" },
+    "/llms.txt": { status: 200, body: "# DatIQ", contentType: "text/plain; charset=utf-8" },
+    "/help/index.html": { status: 200, body: "<html>Help</html>", contentType: "text/html" },
+    "/api/stats": { status: 200, body: JSON.stringify({ teams: 0, extractions: 0 }), contentType: "application/json" },
     "/.netlify/functions/admin-auth": {
       status: 200,
       body: JSON.stringify({ ok: true, token: "tok_abc", exp: 1234 }),
+      contentType: "application/json",
     },
-    "/admin": { status: 200, body: "<html>Admin</html>" },
+    "/admin": { status: 200, body: "<html>Admin</html>", contentType: "text/html" },
   };
+
+  // What the SPA catch-all returns for a path that does not exist on disk:
+  // the app shell, at 200, as HTML. This is the failure the guard must catch.
+  const SPA_FALLBACK = { status: 200, body: "<html>DatIQ app shell</html>", contentType: "text/html; charset=UTF-8" };
   const routes = { ...defaults, ...handlers };
 
   const fetcher = async (url, init = {}) => {
@@ -47,8 +55,11 @@ function makeFetcher(handlers = {}) {
     });
   };
 
-  return { fetcher, calls, routes };
+  return { fetcher, calls, routes, SPA_FALLBACK };
 }
+
+// Standalone copy for tests that build their own handler overrides.
+const SPA_FALLBACK = { status: 200, body: "<html>DatIQ app shell</html>", contentType: "text/html; charset=UTF-8" };
 
 // Quiet logger so test output stays clean
 const quiet = {
@@ -68,6 +79,38 @@ describe("assertOk", () => {
       .toThrow(/home.*HTTP 404/);
     expect(() => assertOk({ status: 500, statusText: "Server Error" }, "api"))
       .toThrow(/api.*HTTP 500/);
+  });
+});
+
+describe("assertContentType", () => {
+  const res = (ct) => ({ headers: new Headers(ct ? { "Content-Type": ct } : {}) });
+
+  it("accepts an exact match", () => {
+    expect(() => assertContentType(res("application/json"), "application/json")).not.toThrow();
+  });
+
+  it("accepts a match with charset or vendor suffix", () => {
+    expect(() => assertContentType(res("text/plain; charset=utf-8"), "text/plain")).not.toThrow();
+    expect(() => assertContentType(res("image/svg+xml"), "image/svg")).not.toThrow();
+    expect(() => assertContentType(res("application/xml"), "xml")).not.toThrow();
+  });
+
+  it("is case-insensitive", () => {
+    expect(() => assertContentType(res("APPLICATION/JSON"), "application/json")).not.toThrow();
+  });
+
+  it("rejects a mismatch and names both types", () => {
+    expect(() => assertContentType(res("text/html"), "application/json", "GET /api/stats"))
+      .toThrow(/GET \/api\/stats.*text\/html.*application\/json/);
+  });
+
+  it("explains the SPA-catch-all cause in the message", () => {
+    expect(() => assertContentType(res("text/html"), "text/plain"))
+      .toThrow(/catch-all served index\.html/);
+  });
+
+  it("rejects a missing Content-Type header", () => {
+    expect(() => assertContentType(res(null), "application/json")).toThrow(/\(none\)/);
   });
 });
 
@@ -212,6 +255,56 @@ describe("runSmoke — failure paths", () => {
     });
     expect(result.failed).toBe(1);
     expect(result.failures[0]).toMatch(/no token/);
+  });
+
+  // ── The failure class the content-type guard exists to catch ────────────
+  //
+  // netlify.toml ends with `/* -> /index.html 200`. A file that is missing from
+  // the deploy therefore returns the app shell at status 200. Every one of
+  // these cases passes a status-only check and must fail a content-type check.
+
+  it.each([
+    ["/robots.txt", /robots\.txt/],
+    ["/sitemap.xml", /sitemap\.xml/],
+    ["/llms.txt", /llms\.txt/],
+    ["/favicon.svg", /favicon\.svg/],
+  ])("catches %s masked by the SPA catch-all (200 + text/html)", async (path, pattern) => {
+    const { fetcher } = makeFetcher({ [path]: SPA_FALLBACK });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(1);
+    expect(result.failures[0]).toMatch(pattern);
+    expect(result.failures[0]).toMatch(/content-type/i);
+  });
+
+  it("catches a missing /api/stats function masked as the app shell", async () => {
+    // The /api/* redirect fell through to the SPA: 200 + HTML. Status alone
+    // reads as a healthy function.
+    const { fetcher } = makeFetcher({ "/api/stats": SPA_FALLBACK });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(1);
+    expect(result.failures[0]).toMatch(/api\/stats/);
+    expect(result.failures[0]).toMatch(/content-type/i);
+  });
+
+  it("does not demand JSON from a 503 — only the forgeable 200 is checked", async () => {
+    // A 503 comes from the platform, not the function, so its content-type is
+    // not ours to predict. The catch-all cannot produce a 503, so nothing is
+    // masked and nothing needs asserting.
+    const { fetcher } = makeFetcher({
+      "/api/stats": { status: 503, body: "Service Unavailable", contentType: "text/html" },
+    });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(0);
+  });
+
+  it("accepts real-world content-type headers with charset parameters", async () => {
+    const { fetcher } = makeFetcher({
+      "/robots.txt": { status: 200, body: "User-agent: *", contentType: "text/plain; charset=UTF-8" },
+      "/sitemap.xml": { status: 200, body: "<urlset/>", contentType: "text/xml; charset=UTF-8" },
+      "/favicon.svg": { status: 200, body: "<svg/>", contentType: "image/svg+xml" },
+    });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(0);
   });
 
   it("counts multiple failures correctly", async () => {
