@@ -77,6 +77,10 @@ beforeEach(() => {
   localStorage.clear();
   authMocks.getSession.mockResolvedValue(null);
   authMocks.onAuthStateChange.mockReturnValue(() => {});
+  // vi.clearAllMocks() clears call history but not implementations, so a
+  // mockResolvedValue() set by an earlier test leaks into the next one.
+  // Re-establish the empty default explicitly.
+  apiMocks.listExtractions.mockResolvedValue([]);
   window.history.replaceState(null, "", window.location.pathname);
 });
 
