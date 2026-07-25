@@ -49,19 +49,41 @@ must never reference the internal items above.
 
 ## The email policy
 
-There is exactly **one** customer contact address: **`hello@datiq.app`**.
+There are exactly **two** customer contact addresses:
 
-Do not reintroduce role-split inboxes (`support@`, `legal@`, `privacy@`,
-`billing@`, …) on any customer surface — one inbox is simpler for the customer
-and for us, and the audit (Check 2) fails the build if a deprecated address
-reappears. Legal surfaces (Terms, Privacy/DPDP grievance officer, the DMCA
-agent) also use `hello@datiq.app`; the local-part is not legally required to be
-role-specific, and a single monitored inbox is more reliable than three that
-might go unwatched.
+| Inbox | Owns |
+|---|---|
+| `hello@datiq.app` | Product support, bug reports, feature requests, billing, and anything general. |
+| `admin@datiq.app` | Enterprise & agency, legal & terms, privacy & DPDP — including the DPDP grievance officer and the DMCA agent. |
 
-System senders are different and are **not** customer contact points — leave
-them alone: `alerts@datiq.app` (scheduled-change alert emails), `noreply@…`.
-They are in the audit's `ignoreEmails` list.
+Two is the whole list. Do not reintroduce further role-split inboxes
+(`support@`, `legal@`, `privacy@`, `billing@`, …) on any customer surface — the
+audit (Check 2) fails the build if a deprecated address reappears, and
+`--fix-emails` rewrites each to the inbox that now owns it. The split is drawn
+where the *reader* differs, not where the topic does: general enquiries go to
+whoever is on support, while legal, privacy, and enterprise threads want a
+named accountable owner.
+
+`src/lib/contactRouting.js` is the single source of truth. The contact form
+labels itself from it, and `netlify/functions/contact-email.js` imports it to
+choose the actual recipient, so the address a customer is shown and the address
+that receives the mail cannot drift apart.
+
+### Sender identity follows direction
+
+Which address DatIQ sends *from* depends on which way the mail is travelling —
+this is a rule, not a preference, so don't "consolidate" it:
+
+- **Outbound** (DatIQ → a user: welcome, re-engagement, auth, alerts) sends from
+  **`hello@datiq.app`**. A human received it, so a human must be able to reply.
+- **Inbound** (a visitor's form submission → our own inbox) sends from
+  **`noreply@datiq.app`**. The submitter's address is unverified, so sending as
+  them would forge an identity we haven't checked; sending as `hello@` would
+  make `hello@` mail itself. `reply_to` carries the real person.
+
+`alerts@datiq.app` (scheduled-change alerts) and `noreply@datiq.app` are system
+senders, **not** customer contact points. They are in the audit's `ignoreEmails`
+list and should be left alone.
 
 To re-consolidate at any time: `node scripts/audit.mjs --fix-emails`.
 

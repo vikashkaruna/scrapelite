@@ -38,6 +38,21 @@ const ENABLE_EXTRACT  = Boolean(env.VITE_ENABLE_EXTRACT);
 export const WEBHOOK_URL = endpoint(runtime.webhookUrl, env.VITE_WEBHOOK_URL);
 export const EMAIL_API_URL = endpoint(runtime.emailApiUrl, env.VITE_EMAIL_API_URL);
 
+// Contact form delivery ──────────────────────────────────────────────────────
+// /contact posts to POST /api/contact-email, which sends through Resend using
+// the server-only RESEND_API_KEY — the same provider that already sends welcome,
+// re-engagement, and schedule-alert mail. There is deliberately no browser-side
+// key or endpoint config here: the destination inbox is resolved server-side
+// from the enquiry type, so the client can't address the mail.
+
+// Optional CRM/automation webhook fired in parallel with the contact email.
+// Falls back to the generic n8n webhook so contact events flow there today; the
+// dedicated endpoint gets wired in when the CRM pipeline is built.
+export const CONTACT_WEBHOOK_URL = endpoint(
+  runtime.contactWebhookUrl,
+  env.VITE_CONTACT_WEBHOOK_URL
+) || WEBHOOK_URL;
+
 // Optional footer page links. When unset, the corresponding nav item is hidden.
 export const LINK_ABOUT     = env.VITE_LINK_ABOUT     || "";
 export const LINK_BLOG      = env.VITE_LINK_BLOG      || "";
@@ -57,6 +72,7 @@ export const hasFirecrawl = Boolean(
 export const hasAI = true;
 export const hasWebhook = Boolean(WEBHOOK_URL);
 export const hasEmail = Boolean(EMAIL_API_URL);
+export const hasContactWebhook = Boolean(CONTACT_WEBHOOK_URL);
 
 // Convenience summary used by the UI to show the current backend mode.
 export const integrations = {

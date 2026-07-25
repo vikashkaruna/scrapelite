@@ -4,26 +4,21 @@ import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { captureEmail } from "../lib/emailCaptureService.js";
-
-const CONTACT_TYPES = [
-  { value: "support",    label: "Product support",     icon: "help-circle" },
-  { value: "bug",        label: "Bug report",          icon: "alert-triangle" },
-  { value: "billing",    label: "Billing question",    icon: "credit-card" },
-  { value: "feature",    label: "Feature request",     icon: "lightbulb" },
-  { value: "enterprise", label: "Enterprise / agency", icon: "briefcase" },
-  { value: "other",      label: "Other",               icon: "message-square" },
-];
+import { submitContactForm } from "../lib/contactService.js";
+import {
+  CONTACT_TYPES,
+  INBOX,
+  INBOX_EMAIL,
+  emailForType,
+  normalizeContactType,
+} from "../lib/contactRouting.js";
 
 export default function Contact() {
   const navigate = useNavigate();
   const { search } = useLocation();
   const showToast = useToast();
 
-  const initialType = (() => {
-    const t = new URLSearchParams(search).get("type");
-    return CONTACT_TYPES.some((ct) => ct.value === t) ? t : "support";
-  })();
+  const initialType = normalizeContactType(new URLSearchParams(search).get("type"));
 
   const [type,    setType]    = useState(initialType);
   const [name,    setName]    = useState("");
@@ -31,31 +26,31 @@ export default function Contact() {
   const [subject, setSubject] = useState(initialType === "bug" ? "Bug report: " : "");
   const [message, setMessage] = useState("");
   const [status,  setStatus]  = useState("idle"); // idle | submitting | sent | error
+  const [errorMsg, setErrorMsg] = useState("");
+  const [fallbackMailto, setFallbackMailto] = useState("");
+
+  // Address this enquiry type is routed to — shown live so the user knows who
+  // is receiving the message before they send it.
+  const destination = emailForType(type);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !message) return;
     setStatus("submitting");
-    try {
-      // Capture email for CRM, then send form via mailto or webhook
-      await captureEmail(email, `contact-form:${type}`);
-      // Open mailto as primary delivery (webhook can be wired later)
-      const body = [
-        `Name: ${name || "(not provided)"}`,
-        `Email: ${email}`,
-        `Type: ${type}`,
-        `Subject: ${subject || "(none)"}`,
-        "",
-        message,
-      ].join("\n");
-      window.open(
-        `mailto:hello@datiq.app?subject=${encodeURIComponent(`[${type}] ${subject || "Contact form submission"}`)}&body=${encodeURIComponent(body)}`,
-        "_blank"
-      );
+    setErrorMsg("");
+    setFallbackMailto("");
+
+    // The email goes out via /api/contact-email (Resend); the CRM webhook +
+    // subscriber capture fire in parallel and can't fail the submission.
+    const result = await submitContactForm({ type, name, email, subject, message });
+
+    if (result.ok) {
       setStatus("sent");
       showToast("Message sent! We'll get back to you within 24 hours.");
-    } catch {
+    } else {
       setStatus("error");
+      setErrorMsg(result.error || "");
+      setFallbackMailto(result.mailto || "");
     }
   };
 
@@ -86,7 +81,7 @@ export default function Contact() {
                 </div>
                 <h2>Message received!</h2>
                 <p>We'll get back to you at <strong>{email}</strong> within 24 hours.</p>
-                <Button variant="secondary" size="sm" onClick={() => { setStatus("idle"); setMessage(""); setSubject(""); }}>
+                <Button variant="secondary" size="sm" onClick={() => { setStatus("idle"); setMessage(""); setSubject(""); setErrorMsg(""); setFallbackMailto(""); }}>
                   Send another message
                 </Button>
               </div>
@@ -107,6 +102,10 @@ export default function Contact() {
                       </button>
                     ))}
                   </div>
+                  <p className="contact-route-hint">
+                    <Icon name="arrow-right" size={12} />
+                    Goes to <strong>{destination}</strong>
+                  </p>
                 </div>
 
                 <div className="contact-row">
@@ -161,7 +160,10 @@ export default function Contact() {
                 </div>
 
                 {status === "error" && (
-                  <p className="contact-error">Something went wrong — please try emailing us directly at hello@datiq.app</p>
+                  <p className="contact-error">
+                    We couldn&apos;t send that{errorMsg ? ` — ${errorMsg.replace(/\.?$/, ".")}` : "."} Email us directly at{" "}
+                    <a href={fallbackMailto || `mailto:${destination}`}>{destination}</a> and we&apos;ll pick it up there.
+                  </p>
                 )}
 
                 <Button
@@ -185,11 +187,18 @@ export default function Contact() {
                 Email us directly
               </div>
               <div className="contact-info-links">
-                <a href="mailto:hello@datiq.app" className="contact-info-link">
+                <a href={`mailto:${INBOX_EMAIL[INBOX.HELLO]}`} className="contact-info-link">
                   <Icon name="mail" size={14} />
                   <div>
-                    <div className="cil-label">One inbox for everything — product, billing, legal &amp; privacy</div>
-                    <div className="cil-email">hello@datiq.app</div>
+                    <div className="cil-label">Product support, bug reports, feature requests, billing &amp; anything general</div>
+                    <div className="cil-email">{INBOX_EMAIL[INBOX.HELLO]}</div>
+                  </div>
+                </a>
+                <a href={`mailto:${INBOX_EMAIL[INBOX.ADMIN]}`} className="contact-info-link">
+                  <Icon name="shield" size={14} />
+                  <div>
+                    <div className="cil-label">Enterprise &amp; agency, legal &amp; terms, privacy &amp; DPDP</div>
+                    <div className="cil-email">{INBOX_EMAIL[INBOX.ADMIN]}</div>
                   </div>
                 </a>
               </div>

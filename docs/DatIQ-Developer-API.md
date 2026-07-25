@@ -386,7 +386,7 @@ console.log(content.content);
 
 ## Support
 
-Questions about the API? Email **support@datiq.app**. For account, billing, and plan upgrades to unlock
+Questions about the API? Email **hello@datiq.app**. For account, billing, and plan upgrades to unlock
 API access, see the **Account** screen in the app.
 
 ---

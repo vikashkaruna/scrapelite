@@ -26,9 +26,18 @@ const ROOT = join(__dirname, "..", "..", "..", ".."); // repo root
 // CONFIG — the only project-specific part.
 // ─────────────────────────────────────────────────────────────────────────────
 const CONFIG = {
-  // The single customer-facing support address. Everything else is deprecated.
+  // DatIQ runs exactly two customer-facing inboxes. Anything else is deprecated.
+  //   hello@ — product support, bugs, features, billing, general
+  //   admin@ — enterprise/agency, legal & terms, privacy & DPDP
   supportEmail: "hello@datiq.app",
-  deprecatedEmails: ["support@datiq.app", "legal@datiq.app", "privacy@datiq.app"],
+  adminEmail: "admin@datiq.app",
+  customerEmails: ["hello@datiq.app", "admin@datiq.app"],
+  // Deprecated address → the inbox it now belongs to (used by --fix-emails).
+  deprecatedEmailMap: {
+    "support@datiq.app": "hello@datiq.app",
+    "legal@datiq.app":   "admin@datiq.app",
+    "privacy@datiq.app": "admin@datiq.app",
+  },
   // Senders that are system-only (not a customer contact) — never flagged.
   ignoreEmails: ["alerts@datiq.app", "noreply@datiq.app"],
 
@@ -67,6 +76,9 @@ const CONFIG = {
   // Where customer emails may appear and get --fix-emails treatment. Includes
   // netlify functions because their error strings are shown to customers.
   emailFixRoots: ["src", "public", "netlify"],
+  // Individual customer-facing files outside those roots (the SEO JSON-LD block
+  // in index.html and the published API doc both print a contact address).
+  emailFixFiles: ["index.html", "docs/DatIQ-Developer-API.md", "docs/DatIQ-User-Guide.md"],
 
   // Source of truth + derived surfaces for other checks.
   pricingSource: "src/lib/pricingConfig.js",
@@ -159,19 +171,28 @@ function checkConfidentialLeakage() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Check 2 — Customer email consolidation (FAIL, --fix-emails auto-resolves)
 // ─────────────────────────────────────────────────────────────────────────────
+// Test files legitimately name the retired addresses — that is how they assert
+// the addresses are gone. They never ship, so they are not a customer surface.
+const isTestFile = (f) => /\.(test|spec)\.[jt]sx?$/.test(f) || /__tests__/.test(f);
+
 function scanEmails() {
-  const files = CONFIG.emailFixRoots.flatMap((r) =>
-    walk(r, [".js", ".jsx", ".ts", ".tsx", ".html", ".txt", ".md"]));
+  const files = [
+    ...CONFIG.emailFixRoots.flatMap((r) =>
+      walk(r, [".js", ".jsx", ".ts", ".tsx", ".html", ".txt", ".md"])),
+    ...CONFIG.emailFixFiles.map((f) => join(ROOT, f)).filter((f) => existsSync(f)),
+  ].filter((f) => !isTestFile(f));
+  const deprecated = Object.keys(CONFIG.deprecatedEmailMap);
   const hits = [];
   for (const f of files) {
     const text = readFileSync(f, "utf8");
-    for (const dep of CONFIG.deprecatedEmails) {
+    for (const dep of deprecated) {
       if (text.includes(dep)) hits.push({ file: f, email: dep });
     }
   }
   return { files, hits };
 }
 function checkEmails() {
+  const inboxes = CONFIG.customerEmails.join(" + ");
   let { hits } = scanEmails();
   if (FIX_EMAILS && hits.length) {
     const touched = new Set();
@@ -179,8 +200,10 @@ function checkEmails() {
       if (touched.has(file)) continue;
       touched.add(file);
       let text = readFileSync(file, "utf8");
-      for (const dep of CONFIG.deprecatedEmails) {
-        text = text.split(dep).join(CONFIG.supportEmail);
+      // Each deprecated address maps to the inbox that now owns it, so legal@
+      // and privacy@ land on admin@ rather than being flattened into hello@.
+      for (const [dep, replacement] of Object.entries(CONFIG.deprecatedEmailMap)) {
+        text = text.split(dep).join(replacement);
       }
       writeFileSync(file, text);
     }
@@ -188,7 +211,7 @@ function checkEmails() {
     record("Customer email consolidation", hits.length ? "FAIL" : "PASS",
       hits.length
         ? `Still found after fix: ${hits.map((h) => rel(h.file)).join(", ")}`
-        : `Fixed ${touched.size} file(s); all customer emails are ${CONFIG.supportEmail}.`);
+        : `Fixed ${touched.size} file(s); all customer emails are ${inboxes}.`);
     return;
   }
   if (hits.length) {
@@ -198,7 +221,7 @@ function checkEmails() {
       byFile.join("\n    "));
   } else {
     record("Customer email consolidation", "PASS",
-      `All customer contact points use ${CONFIG.supportEmail}.`);
+      `All customer contact points use ${inboxes}.`);
   }
 }
 
