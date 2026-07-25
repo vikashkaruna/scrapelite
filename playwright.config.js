@@ -18,9 +18,15 @@ const testEnv = {
 export default defineConfig({
   testDir: "./e2e",
   // FR-CB-01: ship the cross-browser support matrix in Playwright config.
-  // The CI gate uses chromium for speed; the `test:e2e:smoke:all-browsers`
-  // script and a separate nightly workflow cover firefox + webkit. Default
-  // project (chromium) matches what every other e2e:* script runs.
+  // The CI gate uses chromium for speed; `test:e2e:smoke:all-browsers` covers
+  // firefox + webkit.
+  //
+  // NOTE: listing a project here does NOT make it opt-in. `playwright test`
+  // with no --project runs EVERY project below, so a bare `test:e2e:smoke` was
+  // running all three (294 tests instead of 98) and taking ~21 min — which is
+  // what pushed the gate past its 25-minute cap. The browser choice therefore
+  // lives in the npm scripts, which pass --project explicitly. `browserName`
+  // under `use` does NOT narrow this list.
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
