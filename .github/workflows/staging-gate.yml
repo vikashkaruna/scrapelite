@@ -129,9 +129,22 @@ jobs:
     needs: [test-suites, vulnerabilities, open-defects]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Where staging actually is. The vanity host staging.datiq.app is NOT
+    # provisioned: its DNS CNAMEs to `staging--datiq.netlify.app` (site slug
+    # `datiq`, which 404s) rather than `staging--datiqapp.netlify.app` (slug
+    # `datiqapp`, this site — the rename is noted in CLAUDE.md), and because no
+    # site claims the hostname Netlify serves its default `*.netlify.app`
+    # wildcard for it. That cert cannot cover a .datiq.app name, so every probe
+    # died on ERR_TLS_CERT_ALTNAME_INVALID while the deploy itself was green.
+    #
+    # Default to the branch-deploy host, which is real, healthy and has a valid
+    # cert. Once staging.datiq.app is added as a domain alias on `datiqapp` and
+    # its cert issues, set the repo variable STAGING_URL to it — no code change.
+    env:
+      STAGING_URL: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
     environment:
       name: staging-release
-      url: https://staging.datiq.app
+      url: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -143,7 +156,7 @@ jobs:
       - name: Wait for Netlify staging deploy to converge
         run: |
           set -euo pipefail
-          echo "Waiting for staging.datiq.app to converge on $GITHUB_SHA..."
+          echo "Waiting for $STAGING_URL to converge on $GITHUB_SHA..."
 
           # A single imperfect poll must not kill the whole wait. The Netlify
           # API can answer with something that is not an array of deploy
@@ -188,7 +201,7 @@ jobs:
           exit 1
 
       - name: Smoke test staging
-        run: node scripts/smoke-prod.mjs https://staging.datiq.app
+        run: node scripts/smoke-prod.mjs "$STAGING_URL"
         env:
           # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
           # no working IPv6 route, so `fetch` fails with an opaque

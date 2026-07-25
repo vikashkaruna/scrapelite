@@ -176,7 +176,10 @@ jobs:
           fi
 
       - name: Smoke test staging
-        run: node scripts/smoke-prod.mjs https://staging.datiq.app
+        # staging.datiq.app is not provisioned (no cert covers it — see the note
+        # in staging-gate.yml). Default to the branch-deploy host; override with
+        # the STAGING_URL repo variable once the vanity domain is live.
+        run: node scripts/smoke-prod.mjs "${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}"
         env:
           # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
           # no working IPv6 route, so `fetch` fails with an opaque
