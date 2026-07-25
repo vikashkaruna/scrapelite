@@ -6,7 +6,7 @@ Two gated pipelines protect releases:
 
 | Pipeline | Workflow | Trigger | Deploys to |
 |---|---|---|---|
-| **Staging Gate** | `.github/workflows/staging-gate.yml` | push to `staging`, PRs into `staging`/`main` | `staging.datiq.app` (Netlify branch deploy) |
+| **Staging Gate** | `.github/workflows/staging-gate.yml` | push to `staging`, PRs into `staging`/`main` | `staging--datiqapp.netlify.app` (Netlify branch deploy; override with the `STAGING_URL` repo variable) |
 | **Phase-Gate Production Deploy** | `.github/workflows/phase-gate.yml` | push to `main`, manual dispatch | `datiq.app` (Netlify prod, via CI CLI deploy) |
 
 ## Staging release conditions (branch `staging`)
@@ -21,7 +21,7 @@ Two gated pipelines protect releases:
    `gate-bypass` label **and** a `TODO:` note in its body.
 5. **`Staging Gate: Deployed & Smoke Tested`** — after the three checks pass on a push,
    waits for the Netlify staging branch deploy to converge on the pushed commit and
-   runs `scripts/smoke-prod.mjs https://staging.datiq.app`. Uses the `staging-release`
+   runs `scripts/smoke-prod.mjs "$STAGING_URL"`. Uses the `staging-release`
    GitHub environment (no reviewers — staging is self-serve).
 
 ## Production release conditions (branch `main`)
@@ -114,8 +114,16 @@ free. Bad code can land on `main`, but it can never *ship* unless the gate is gr
   above) — otherwise the site updates on every `main` push before the manual
   approval and the whole gate is bypassed. This is the single most important
   operational step on the Free plan.
-- `staging.datiq.app` must be wired as a Netlify branch deploy for the staging gate's
-  deploy-verified job and the production gate's staging check to pass.
+- The staging smoke target is the `STAGING_URL` repo variable, defaulting to
+  `https://staging--datiqapp.netlify.app` (the Netlify branch deploy for `staging`).
+  The vanity host `staging.datiq.app` is NOT usable yet: its CNAME points at the
+  wrong site slug (`staging--datiq`, which 404s, instead of `staging--datiqapp`),
+  and since no site claims the hostname Netlify answers with its default
+  `*.netlify.app` wildcard cert — which cannot cover a `.datiq.app` name, so every
+  probe fails with `ERR_TLS_CERT_ALTNAME_INVALID`. To switch over: add
+  `staging.datiq.app` as a domain alias on site `datiqapp`, point the CNAME at
+  `staging--datiqapp.netlify.app` (Cloudflare: DNS-only / grey cloud), wait for the
+  cert, then set `STAGING_URL=https://staging.datiq.app`.
 - The old production smoke step swallowed its own exit code (`set +e` + output capture),
   so the auto-rollback never fired; fixed on 2026-07-20 — the step now fails naturally
   and `if: failure()` triggers the rollback.
