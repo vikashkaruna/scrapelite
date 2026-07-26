@@ -5,7 +5,7 @@
 const ENDPOINT = "/api/admin-ai-config";
 const ADMIN_AUTH_KEY = "scrapelite.adminAuth"; // session token (see adminService.js)
 
-function adminToken() {
+export function adminToken() {
   return localStorage.getItem(ADMIN_AUTH_KEY) || "";
 }
 

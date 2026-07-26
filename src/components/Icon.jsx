@@ -143,6 +143,11 @@ import {
   Ban,
   Columns3,
   TrendingDown,
+  RotateCcw,
+  Timer,
+  Activity,
+  RefreshCw,
+  MousePointerClick,
 } from "lucide-react";
 
 const MAP = {
@@ -179,6 +184,11 @@ const MAP = {
   zap: Zap,
   filter: Filter,
   sparkles: Sparkles,
+  "rotate-ccw": RotateCcw,
+  timer: Timer,
+  activity: Activity,
+  "refresh-cw": RefreshCw,
+  "mouse-pointer-click": MousePointerClick,
   dot: Circle,
   database: Database,
   mail: Mail,

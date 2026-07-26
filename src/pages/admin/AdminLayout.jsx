@@ -9,12 +9,13 @@ import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
 const NAV = [
-  { to: "/admin/revenue",  label: "Revenue",  icon: "bar-chart" },
-  { to: "/admin/pricing",  label: "Pricing",  icon: "dollar-sign" },
-  { to: "/admin/coupons",  label: "Coupons",  icon: "bookmark" },
-  { to: "/admin/users",    label: "Users",    icon: "users" },
-  { to: "/admin/ai",       label: "AI",       icon: "sparkles" },
-  { to: "/admin/general",  label: "General",  icon: "settings" },
+  { to: "/admin/revenue",    label: "Revenue",    icon: "bar-chart" },
+  { to: "/admin/pricing",    label: "Pricing",    icon: "dollar-sign" },
+  { to: "/admin/coupons",    label: "Coupons",    icon: "bookmark" },
+  { to: "/admin/users",      label: "Users",      icon: "users" },
+  { to: "/admin/ai",         label: "AI",         icon: "sparkles" },
+  { to: "/admin/general",    label: "General",    icon: "settings" },
+  { to: "/admin/automation", label: "Automation", icon: "zap" },
 ];
 
 const LS_COL = "datiq.adminSidebarCollapsed";
