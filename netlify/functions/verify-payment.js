@@ -5,6 +5,8 @@
 //      → HMAC-SHA256 verification (timing-safe)
 
 import { createHmac, timingSafeEqual } from "crypto";
+import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
+import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
 
 export const handler = async (event) => {
   const headers = {
@@ -199,18 +201,65 @@ export const handler = async (event) => {
         };
       }
 
-      console.log(`[verify-payment/razorpay] ✓ Verified & captured: orderId=${orderId} paymentId=${paymentId} amount=${order.amount}${order.currency} planId=${planId}`);
+      // ── Issue the invoice, and take the AUTHORITATIVE plan from it ───────────
+      //
+      // SECURITY: this function used to read `planId` and `billingPeriod`
+      // straight out of the request body and echo them back, with nothing ever
+      // cross-checking them against the order. BillingProvider then activated
+      // whatever came back. While entitlements were client-side that was merely
+      // untidy; now that the server grants access it is a free-upgrade path
+      // (pay for Select, claim Agency). The draft — written server-side at
+      // order creation and keyed by the order id — is the only trustworthy
+      // source, so the response is now built from the ISSUED INVOICE.
+      //
+      // finalizeInvoice is idempotent: if the webhook already issued this
+      // invoice we get the same row back with created:false and no second
+      // number, no second email.
+      const { invoice, created, reason } = await finalizeInvoice({
+        orderId,
+        paymentId,
+        provider: "razorpay",
+        order,
+      });
+
+      if (invoice) {
+        await activateFromInvoice(invoice);
+        if (created) {
+          // Fire-and-forget: a mail failure must never make a paid customer
+          // think their payment failed. The invoice exists and is downloadable
+          // either way, and invoice_emails guards against a duplicate send.
+          sendInvoiceEmail(invoice).catch((e) =>
+            console.error("[verify-payment] invoice email failed:", e?.message),
+          );
+        }
+      } else {
+        console.error(
+          `[verify-payment] no invoice issued for order ${orderId} (${reason}) — payment IS captured`,
+        );
+      }
+
+      const resolvedPlanId = invoice?.plan_id ?? planId;
+      const resolvedPeriod = invoice?.billing_period ?? billingPeriod ?? "monthly";
+      if (invoice && planId && invoice.plan_id !== planId) {
+        console.warn(
+          `[verify-payment] client claimed planId='${planId}' but the order was for '${invoice.plan_id}' — using the order`,
+        );
+      }
+
+      console.log(`[verify-payment/razorpay] ✓ Verified & captured: orderId=${orderId} paymentId=${paymentId} amount=${order.amount}${order.currency} planId=${resolvedPlanId}`);
       return {
         statusCode: 200, headers,
         body: JSON.stringify({
           verified:      true,
-          planId:        planId,
+          planId:        resolvedPlanId,
           sessionId:     sessionId,
           paymentId:     paymentId,
           orderId:       orderId,
           amount:        order.amount,
           currency:      order.currency,
-          billingPeriod: billingPeriod || "monthly",
+          billingPeriod: resolvedPeriod,
+          invoiceId:     invoice?.id ?? null,
+          invoiceNo:     invoice?.invoice_no ?? null,
         }),
       };
     } catch (apiErr) {
