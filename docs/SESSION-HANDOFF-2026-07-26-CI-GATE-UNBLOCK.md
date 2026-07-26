@@ -1,14 +1,20 @@
 # Session handoff — 2026-07-26 · CI gate unblock (staging → production path)
 
-> **State at close:** `main` and `staging` both at `5bcbfa1`, in sync with origin.
-> Only two branches exist. All Staging Gate checks are **GREEN, including
+> **State at close:** `main` and `staging` in sync with origin. Only two
+> branches exist. All Staging Gate checks are **GREEN, including
 > `Deployed & Smoke Tested` at 12/12** — the check that had been red at 11/12
 > since 2026-07-25.
 >
-> **Production has NOT shipped yet.** `datiq.app` still serves `527a8ee`
-> (2026-07-19). The final blocker was found and fixed this session, but the
-> resulting Phase-Gate run needs a human approval before it deploys.
-> **Next action: approve the newest Phase-Gate run on `main`.**
+> **PRODUCTION SHIPPED.** The full Phase-Gate ran green end to end on
+> `5201cd4` at 2026-07-26 06:43Z — every gate, the human approval, deploy,
+> production smoke, and `Re-lock Production`. `datiq.app` had been frozen on
+> `527a8ee` since 2026-07-19; that ~7-day gap is now closed and a fresh
+> `node scripts/smoke-prod.mjs https://datiq.app` is 10/10. Production is
+> locked again, which is the intended steady state.
+>
+> **Release policy changed after that deploy:** production now requires a
+> **manual unlock in the Netlify UI** in addition to the approval comment. The
+> workflow no longer unlocks for you — see "Two human acts" below.
 
 ---
 
@@ -154,6 +160,27 @@ gate. Re-lock by hand: Netlify → Deploys → published deploy → *Stop auto
 publishing*. Narrowing that window needs a Netlify "publish this specific
 deploy" primitive rather than a global lock.
 
+### 5. Release policy: two human acts (changed after the first successful ship)
+
+The fix in (4) auto-unlocked production once the approval passed. That shipped
+`5201cd4` successfully, and the policy was then tightened by request: an
+approval comment alone must not be able to change what `datiq.app` serves.
+
+`deploy-production` no longer unlocks. It **verifies** the unlock and fails fast
+with instructions if it is missing. Releasing production now takes:
+
+1. **Unlock production in the Netlify UI** — Netlify → Deploys → the published
+   production deploy → *Unlock deploys* / *Resume auto publishing*.
+2. **Comment `approved`** on the approval issue.
+
+The approval issue body spells out both steps. Approving while still locked
+fails `Deploy to Production` immediately, publishes nothing, and leaves
+production untouched — unlock, then *Re-run failed jobs*.
+
+`relock-production` still runs `always()` at the end, so **every** release needs
+a fresh manual unlock. The lock is a control that deliberately lives outside
+this repo: merging code cannot satisfy it.
+
 ---
 
 ## Verified state at close
@@ -171,28 +198,31 @@ Merged this session: PR #18, #20, #21, #23.
 
 ---
 
+## Closed this session
+
+- ~~Approve the Phase-Gate run so production actually ships~~ — **DONE.**
+  `5201cd4` published 2026-07-26 06:43Z, production smoke green, re-locked.
+- ~~Replace staging's `ADMIN123` admin PIN~~ — **DONE.** Verified: `ADMIN123`
+  returns `BAD_PIN` on both `staging--datiqapp.netlify.app` and a live
+  `deploy-preview-*` URL, so the published demo PIN no longer opens any
+  non-production admin console.
+
 ## Next actions
 
-1. **Approve the newest Phase-Gate run on `main`** (Actions → Phase-Gate
-   Production Deploy → the run for `5bcbfa1` → the approval issue it opens →
-   comment `approved`). This is the first run that can actually publish.
-   Watch `Deploy to Production` → `Smoke Test — Production` →
-   `Re-lock Production`. Confirm afterwards that
-   `published_deploy.locked` is `true` again.
-   Note this ships ~7 days of accumulated merges in one release; be at the
-   keyboard for it. Auto-rollback covers a failed smoke.
-2. ⚠️ **Replace staging's admin PIN if it is still `ADMIN123`.** That is the
-   documented demo PIN, published in `CLAUDE.md` and in
-   `netlify/functions/admin-auth.js` as `DEMO_PIN`; its SHA-256 is trivially
-   computed. Anyone reading the repo can open staging's admin console.
-3. **Separate `deploy-preview` from staging's PIN.** The same `ADMIN_PIN_HASH`
-   value covers `branch:staging`, `deploy-preview` and `branch-deploy`. Preview
-   URLs are publicly reachable and guessable.
-4. **Phase gate still allows a stale main commit to deploy.** A queued or
+1. **Separate `deploy-preview` from staging's PIN.** Still open. All three
+   non-production contexts (`branch:staging`, `deploy-preview`,
+   `branch-deploy`) share **one** `ADMIN_PIN_HASH` value — confirmed by
+   comparing masked-value fingerprints, which are identical. The shared PIN is
+   no longer `ADMIN123`, so this is now a blast-radius concern rather than a
+   public-credential one: preview URLs are publicly reachable and guessable, and
+   they currently carry the same credential as staging. Give
+   `branch:staging` its own branch-scoped value, or clear `deploy-preview`
+   entirely (unset falls back to demo mode, which is its own tradeoff).
+2. **Phase gate still allows a stale main commit to deploy.** A queued or
    manually re-run *older* `main` commit passes the ancestry check and would
    roll production backwards. Fix: compare `GITHUB_SHA` against `origin/main`'s
    tip before the approval step.
-5. Pre-existing, untouched: `/Users/vikash/Extracta` (the non-worktree checkout)
+3. Pre-existing, untouched: `/Users/vikash/Extracta` (the non-worktree checkout)
    sits on detached `3df0b90` with 6 dirty files (`package.json`,
    `package-lock.json`, `public/favicon.png`, plus untracked `HASHED-PIN/`,
    `ai-powered-growth-stack-playbook.md`, `step.sh`). Not mine; left alone.
