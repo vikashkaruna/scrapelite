@@ -38,11 +38,16 @@
 # blocks every publish path — including this workflow's own `netlify deploy
 # --prod`, which fails with:
 #   Error: Deployments are "locked" for production context of this project
-# That is not a misconfiguration to undo; it is the protection working. The
-# workflow therefore owns the lock: `deploy-production` unlocks after the gates
-# and the human approval have passed, and `relock-production` (job 8, always())
-# locks it again once smoke + any rollback are done. Leave production locked
-# between releases — that is the steady state this gate expects.
+# That is not a misconfiguration to undo; it is the protection working.
+#
+# RELEASING PRODUCTION THEREFORE TAKES TWO HUMAN ACTS, on purpose:
+#   (a) unlock production in the Netlify UI, and
+#   (b) comment `approved` on the approval issue.
+# The workflow will NOT unlock for you. `deploy-production` only verifies the
+# unlock and fails fast with instructions if it is missing, so an approval alone
+# can never change what datiq.app serves. `relock-production` (job 8, always())
+# re-locks once smoke + any rollback are done, so each release needs a fresh
+# unlock. Leave production locked between releases — that is the steady state.
 #
 # Concurrency group `prod-deploy` with cancel-in-progress: false, so an
 # in-flight prod deploy is never killed mid-deploy. The second push queues.
@@ -257,8 +262,29 @@ jobs:
           issue-title: "🚦 Approve production release of ${{ github.sha }}"
           issue-body: >
             All production gates are green (tests, vulnerabilities, open
-            defects, staging released & tested). Comment **approved** to ship
-            ${{ github.sha }} to https://datiq.app, or **denied** to cancel.
+            defects, staging released & tested).
+
+
+            ⚠️ **TWO STEPS ARE REQUIRED — approving alone will not ship.**
+
+
+            **1. Unlock production on Netlify.** Netlify → Deploys → the
+            published production deploy → *Unlock deploys* (or "Resume auto
+            publishing"). Production is kept locked between releases so no push
+            to `main` can publish itself, and the deploy job deliberately does
+            NOT lift that lock for you — an unlock is a hands-on confirmation
+            that a human intends to change what datiq.app serves right now.
+
+
+            **2. Then comment `approved`** to ship ${{ github.sha }} to
+            https://datiq.app, or **denied** to cancel.
+
+
+            If you approve while production is still locked, `Deploy to
+            Production` fails immediately with instructions and nothing is
+            published — unlock and re-run the job. After a successful deploy
+            (or an auto-rollback) the `Re-lock Production` job locks production
+            again, so the next release needs a fresh manual unlock.
           # Auto-close the approval issue when the workflow finishes.
           exclude-workflow-initiator-as-approver: false
 
@@ -300,29 +326,63 @@ jobs:
           VITE_FIRECRAWL_API_KEY: ""
 
       # Production deploys are kept LOCKED between releases. That is what stops
-      # Netlify auto-publishing every push to `main` and bypassing this gate —
-      # but a lock blocks ALL publishing, including this job's own
+      # Netlify auto-publishing every push to `main` and bypassing this gate.
+      # A lock blocks ALL publishing, including this job's own
       # `netlify deploy --prod`, which fails with:
       #   Error: Deployments are "locked" for production context of this project
-      # So the gate unlocks deliberately here, having already passed every gate
-      # and the human approval, and `relock-production` locks it again at the
-      # end of the run. Do NOT "fix" this by switching to
-      # `--prod-if-unlocked`: while locked that silently produces a DRAFT
-      # deploy, the smoke job then tests the still-old production and passes,
-      # and the run reports a successful release that never shipped.
-      - name: Unlock production deploys
+      #
+      # By deliberate policy the workflow does NOT unlock for you. Lifting the
+      # lock is a hands-on confirmation, in the Netlify UI, that a human intends
+      # to change what datiq.app serves right now — a second control that does
+      # not live in this repo and cannot be satisfied by merging code. So this
+      # step only VERIFIES the unlock and fails fast with instructions if it is
+      # missing, rather than papering over it.
+      #
+      # `relock-production` (job 8) locks production again at the end of the
+      # run, so every release needs a fresh manual unlock.
+      #
+      # Do NOT "fix" a lock failure by switching to `--prod-if-unlocked`, which
+      # the CLI suggests in its own error message: while locked that silently
+      # produces a DRAFT deploy, the smoke job then tests the still-old
+      # production and passes, and the run reports a successful release that
+      # never shipped.
+      - name: Require manual unlock of production
         run: |
           set -euo pipefail
-          PUBLISHED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
+          SITE_JSON=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
+          PUBLISHED=$(echo "$SITE_JSON" | jq -r '.published_deploy.id // empty')
+          LOCKED=$(echo "$SITE_JSON"    | jq -r '.published_deploy.locked // false')
+
           if [ -z "$PUBLISHED" ]; then
-            echo "no published deploy to unlock (first deploy?) — continuing"
+            echo "no published production deploy yet (first release) — nothing to unlock"
             exit 0
           fi
-          echo "unlocking currently published deploy $PUBLISHED"
-          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/deploys/$PUBLISHED/unlock" -o /dev/null
-          echo "  ✓ unlocked"
+
+          echo "published deploy : $PUBLISHED"
+          echo "locked           : $LOCKED"
+
+          if [ "$LOCKED" = "true" ]; then
+            echo "::error title=Production is locked::Unlock production on Netlify, then re-run this job."
+            cat <<'MSG'
+
+          ✗ Production deploys are LOCKED, so this deploy cannot publish.
+
+            This gate requires the unlock to be done by a human, on purpose:
+
+              Netlify → Deploys → the published production deploy
+                      → "Unlock deploys" / "Resume auto publishing"
+
+            Then re-run this job (Actions → this run → Re-run failed jobs).
+            Nothing has been published, and production is untouched.
+
+            After the deploy and smoke test finish, "Re-lock Production"
+            locks production again, so the next release needs a fresh unlock.
+          MSG
+            exit 1
+          fi
+
+          echo "  ✓ production is unlocked — proceeding to deploy"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -392,8 +452,9 @@ jobs:
         continue-on-error: true
 
   # ─────────────────────────────────────────────────────────────────
-  # 8. RE-LOCK PRODUCTION — restores the "no auto-publish" protection
-  #    that `deploy-production` had to lift in order to publish.
+  # 8. RE-LOCK PRODUCTION — restores the "no auto-publish" protection that the
+  #    operator lifted by hand in order to let this release publish, so the
+  #    NEXT release needs a fresh manual unlock.
   #
   #    Runs LAST and `always()`, so it also covers the rollback path:
   #    `netlify rollback` publishes a previous deploy and is itself blocked
