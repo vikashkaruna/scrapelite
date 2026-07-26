@@ -1,5 +1,5 @@
 // Account.jsx — V5 billing & usage: plan details, usage, alerts, coupon, payment history.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
@@ -8,6 +8,9 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import InvoiceModal from "../components/InvoiceModal.jsx";
+import { formatMoney } from "../lib/invoiceModel.js";
+import { fetchInvoices } from "../lib/billingRepo.js";
 
 function UsageMeter({ label, used, limit, icon }) {
   const isUnlimited = limit === Infinity || limit == null;
@@ -90,6 +93,85 @@ function AlertsSection() {
   );
 }
 
+/**
+ * Invoices & receipts.
+ *
+ * Tabular list; clicking a row opens the document to view and download.
+ * Deliberately separate from "Payment history" below: payment_events is a
+ * gateway audit trail, whereas an invoice is the legal document a customer
+ * files with their accountant. They can also legitimately differ — a
+ * reconstructed invoice, or a payment recorded offline by an admin.
+ */
+function InvoiceHistorySection({ invoices, loading, onOpen }) {
+  if (loading) {
+    return (
+      <div className="card card-pad">
+        <div className="card-section-title"><Icon name="receipt" size={15} />Invoices &amp; receipts</div>
+        <div className="inv-empty">Loading your invoices…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card card-pad invoice-history-card">
+      <div className="card-section-title"><Icon name="receipt" size={15} />Invoices &amp; receipts</div>
+
+      {!invoices.length ? (
+        // Unlike PaymentHistorySection (which renders null when empty), an
+        // explicit empty state tells the user where invoices WILL appear.
+        <div className="inv-empty">
+          <Icon name="file" size={22} />
+          <p>No invoices yet. Your invoice appears here as soon as a payment completes, and a copy is emailed to you automatically.</p>
+        </div>
+      ) : (
+        <div className="ph-table-wrap">
+          <table className="ph-table inv-table">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Plan</th>
+                <th className="inv-col-amt">Amount</th>
+                <th>Status</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr
+                  key={inv.id}
+                  className="inv-row"
+                  onClick={() => onOpen(inv)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View invoice ${inv.invoice_no}`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpen(inv);
+                    }
+                  }}
+                >
+                  <td className="inv-no">{inv.invoice_no}</td>
+                  <td className="ph-date">{new Date(inv.issued_at).toLocaleDateString()}</td>
+                  <td><span className="ph-plan">{inv.plan_id || "—"}</span></td>
+                  <td className="inv-col-amt">{formatMoney(inv.total_minor, inv.currency)}</td>
+                  <td>
+                    <span className={`status-badge ${inv.status}`}>{inv.status.replace(/_/g, " ")}</span>
+                  </td>
+                  <td className="inv-col-act">
+                    <Icon name="chevron-right" size={15} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PaymentHistorySection({ history, dbSubscription }) {
   if (!history || history.length === 0) return null;
   return (
@@ -155,6 +237,18 @@ export default function Account() {
 
   const [couponInput, setCouponInput] = useState("");
   const [applying, setApplying]       = useState(false);
+
+  const [invoices, setInvoices]             = useState([]);
+  const [invoicesLoading, setInvoicesLoad]  = useState(true);
+  const [openInvoice, setOpenInvoice]       = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchInvoices()
+      .then((rows) => { if (!cancelled) setInvoices(rows); })
+      .finally(() => { if (!cancelled) setInvoicesLoad(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const totalExtractionLimit = plan.limits.extractions === Infinity
     ? Infinity
@@ -314,6 +408,11 @@ export default function Account() {
             </div>
 
             {/* Payment history (only if there are records) */}
+            <InvoiceHistorySection
+              invoices={invoices}
+              loading={invoicesLoading}
+              onOpen={setOpenInvoice}
+            />
             <PaymentHistorySection
               history={paymentHistory}
               dbSubscription={dbSubscription}
@@ -415,6 +514,9 @@ export default function Account() {
           </div>
         </div>
       </div>
+      {openInvoice && (
+        <InvoiceModal invoice={openInvoice} onClose={() => setOpenInvoice(null)} />
+      )}
     </div>
   );
 }

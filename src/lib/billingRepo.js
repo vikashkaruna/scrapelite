@@ -56,6 +56,47 @@ export async function claimBillingSession(sessionId = getSessionId()) {
 }
 
 /**
+ * List the signed-in user's invoices, newest first.
+ *
+ * Scoped by RLS (`invoices select own`) AND by an explicit user_id filter —
+ * the same defence-in-depth extractions.js uses. Returns [] for a signed-out
+ * user rather than throwing, so the Account page degrades to an empty state.
+ */
+export async function fetchInvoices(limit = 50) {
+  if (!supabase) return [];
+  try {
+    const userId = await getAuthUserId();
+    if (!userId) return [];
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("*")
+      .eq("user_id", userId)
+      .order("issued_at", { ascending: false })
+      .limit(limit);
+    if (error) return [];
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Line items for one invoice, ordered for display. */
+export async function fetchInvoiceLines(invoiceId) {
+  if (!supabase || !invoiceId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("invoice_lines")
+      .select("*")
+      .eq("invoice_id", invoiceId)
+      .order("line_no", { ascending: true });
+    if (error) return [];
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Read the signed-in user's entitlement row.
  *
  * Uses the user's own JWT under the `entitlements select own` RLS policy — no
