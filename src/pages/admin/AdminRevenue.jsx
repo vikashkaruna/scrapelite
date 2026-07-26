@@ -1,5 +1,5 @@
 // AdminRevenue.jsx — revenue dashboard loaded from live Supabase data.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getRevenueData } from "../../lib/adminConfigService.js";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useBilling } from "../../components/BillingProvider.jsx";
@@ -75,19 +75,30 @@ export default function AdminRevenue() {
   const [warning, setWarning] = useState("");
   const [fromSeed, setFromSeed] = useState(false);
 
+  // Guards every setState below. `load` is also called by the Refresh button,
+  // so this has to be a ref rather than an effect-scoped flag: a fetch started
+  // by a click can still be in flight when the component unmounts. Without it
+  // a late resolve calls setState on a dead tree — a no-op warning in the app,
+  // but an unhandled "window is not defined" (and a red suite) under vitest,
+  // where the jsdom environment is torn down the moment the file finishes.
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const data = await getRevenueData();
+      if (!alive.current) return;
       setMetrics(data.metrics);
       setTrend(data.trend);
       setFromSeed(!!data.fromSeed);
       setWarning(data.warning || "");
     } catch (e) {
+      if (!alive.current) return;
       setError(e.message || "Failed to load revenue data.");
     } finally {
-      setLoading(false);
+      if (alive.current) setLoading(false);
     }
   }, []);
 
