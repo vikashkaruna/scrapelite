@@ -52,13 +52,24 @@ export function BillingProvider({ children }) {
   // Reload effective plan map on every render to pick up admin overrides immediately
   const planMap = getEffectivePlanMap();
 
-  useEffect(() => { getRates().then(setRates); }, []);
+  // Every mount fetch below is guarded by a `cancelled` flag. These resolve on
+  // the network's schedule, so any of them can land after the provider has
+  // unmounted — setState on a dead tree. Harmless in the app, but under vitest
+  // the jsdom environment is gone by then, so React's dispatchSetState throws
+  // "window is not defined" as an unhandled rejection and fails the suite even
+  // though every test passed.
+  useEffect(() => {
+    let cancelled = false;
+    getRates().then((r) => { if (!cancelled) setRates(r); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Hydrate usage + subscription from Supabase on mount
   useEffect(() => {
+    let cancelled = false;
     const current = readUsage();
     fetchUsageFromDb(current.month).then((dbRow) => {
-      if (!dbRow) return;
+      if (cancelled || !dbRow) return;
       setUsageState({
         month:       dbRow.month,
         extractions: Math.max(current.extractions, dbRow.extractions),
@@ -67,7 +78,7 @@ export function BillingProvider({ children }) {
     });
 
     fetchSubscriptionFromDb().then((dbSub) => {
-      if (!dbSub) return;
+      if (cancelled || !dbSub) return;
       setDbSubscription(dbSub);
       const localSub = readSubscription();
       if (dbSub.plan_id && dbSub.plan_id !== localSub.planId) {
@@ -77,7 +88,9 @@ export function BillingProvider({ children }) {
       }
     });
 
-    fetchPaymentHistory().then(setPaymentHistory);
+    fetchPaymentHistory().then((h) => { if (!cancelled) setPaymentHistory(h); });
+
+    return () => { cancelled = true; };
   }, []);
 
   const planId = subscription.planId  || "free";
