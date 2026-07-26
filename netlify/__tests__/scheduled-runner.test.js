@@ -165,7 +165,7 @@ describe("scheduled-runner — change detection", () => {
     expect(calledUrls.some(u => u.startsWith("https://api.resend.com"))).toBe(false);
   });
 
-  it("content change vs lastHash → status=changed, alert fires (webhook + Resend)", async () => {
+  it("content change vs lastHash → status=changed, enqueues schedule.changed event (replaces direct webhook + Resend)", async () => {
     process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
     process.env.RESEND_API_KEY = "re_test";
     sbWith([
@@ -181,19 +181,50 @@ describe("scheduled-runner — change detection", () => {
     const r = await h();
     expect(r.body).toMatch(/changed 1/);
 
-    // Webhook fired
-    const webhookCalls = fetchMock.mock.calls.filter(c => String(c[0]).startsWith("https://n8n.example/"));
-    expect(webhookCalls).toHaveLength(1);
-    const whBody = JSON.parse(webhookCalls[0][1].body);
-    expect(whBody.event).toBe("schedule.changed");
-    expect(whBody.scheduleId).toBe("sch_change");
+    // v2: the runner no longer talks to Resend or the automation webhook
+    // directly — it enqueues a workflow_event. The orchestrator + n8n
+    // take it from there. Verify the enqueue happened.
+    const enqueueCalls = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).includes("/rest/v1/workflow_events") && (c[1]?.method || "GET").toUpperCase() === "POST"
+    );
+    expect(enqueueCalls).toHaveLength(1);
+    const eqBody = JSON.parse(enqueueCalls[0][1].body);
+    expect(eqBody.kind).toBe("schedule.changed");
+    expect(eqBody.ref_id).toBe("sch_change");
+    expect(eqBody.state).toBe("pending");
+    expect(eqBody.payload.scheduleId).toBe("sch_change");
+    expect(eqBody.payload.label).toBe("Daily check");
+    expect(eqBody.payload.alertEmail).toBe("user@example.com");
+    expect(eqBody.payload.previousHash).toBe("OLD_HASH_OLD");
+    expect(eqBody.payload.newHash).toBeDefined();
+    expect(eqBody.channels).toEqual([
+      expect.objectContaining({ type: "email", to: "user@example.com" }),
+      expect.objectContaining({ type: "slack", channel: "#monitoring" }),
+    ]);
 
-    // Resend fired
-    const resendCalls = fetchMock.mock.calls.filter(c => String(c[0]).startsWith("https://api.resend.com/"));
-    expect(resendCalls).toHaveLength(1);
-    const emBody = JSON.parse(resendCalls[0][1].body);
-    expect(emBody.to).toEqual(["user@example.com"]);
-    expect(emBody.subject).toMatch(/changed/);
+    // No direct Resend/webhook calls
+    const resendCalls = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("https://api.resend.com/"));
+    expect(resendCalls).toHaveLength(0);
+    const webhookCalls = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("https://n8n.example/"));
+    expect(webhookCalls).toHaveLength(0);
+  });
+
+  it("content change with no supabase → logs and continues (enqueue dropped)", async () => {
+    // No Supabase configured → sb() returns null → runSchedule still
+    // updates the schedule's lastHash (in-memory) but skips the enqueue.
+    // The runner must NOT throw and must NOT call any external API.
+    process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
+    process.env.RESEND_API_KEY = "re_test";
+    // No supabase env vars — handler should skip with "no supabase" body.
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    runScrapeChainMock.mockReset();
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
+    const h = await loadHandler();
+    const r = await h();
+    expect(r.body).toMatch(/no supabase/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("no content change → no alert (webhook / Resend NOT called)", async () => {

@@ -14,23 +14,24 @@
 -- partially-migrated database.
 --
 -- ORDER MATTERS:
---   0001  ScrapeLite V5 + V5c database migrations
---   0002  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
---   0003  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
---   0004  DatIQ — R19 Scheduler setup (ready-to-paste)
---   0005  scripts/analytics.sql
---   0006  scripts/provenance.sql
---   0007  scripts/public-reports.sql
---   0008  scripts/summary-feedback.sql
---   0009  FD2 (idempotent result cache).
---   0010  FD3 (per-host rate limit log).
---   0011  F49 (re-engagement email dedup log).
+--   0001  base extractions + V2 columns + V5/V5c usage/billing tables
+--   0002  pricing_config + coupon redemptions + redeem_coupon RPC
+--   0003  app_config (AI provider chain)
+--   0004  scheduler (scheduled_tasks)
+--   0005  analytics (analytics_events)
+--   0006  provenance column
+--   0007  public_reports (shareable URLs)
+--   0008  summary_feedback
+--   0009  extraction_cache (optional, for FD2)
+--   0010  rate_limit_log (optional, for FD3)
+--   0011  reengagement_log (optional, for F49)
 --   0012  PR1 (billing identity + server-authoritative entitlements).
 --   0013  PR1 step 2 of 3 (backfill user_id).
 --   0014  PR1 step 3 of 3 (lock down the billing tables).
 --   0015  PR1 (system pause flag + privilege fix).
 --   0016  PR2 (invoice drafts, invoices, gapless FY numbering).
 --   0017  PR3 (dunning log + admin audit trail).
+--   0018  workflow_events / workflow_runs / workflow_subscriptions (v2 plan §5)
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -1524,3 +1525,159 @@ notify pgrst, 'reload schema';
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0018_workflow_events.sql
+-- ============================================================
+-- ============================================================================
+-- DatIQ — 0018 workflow_events / workflow_runs / workflow_subscriptions
+-- ============================================================================
+-- v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §5
+--
+-- Three tables that back the n8n + self-hosted-n8n-MCP-server workflow pipeline:
+--
+--   1. public.workflow_events
+--        The queue. One row per automation event. State machine:
+--        pending → processing → done | failed | cancelled.
+--        Polled every 5 min by netlify/functions/workflow-orchestrator.js
+--        and dispatched to self-hosted n8n (Hostinger VPS).
+--
+--   2. public.workflow_runs
+--        Per-attempt log. One row per dispatch attempt of a workflow_event.
+--        Lets you answer "what happened on attempt 2 of wfe_xyz?" — without
+--        this table, debugging a stuck event means staring at n8n logs.
+--
+--   3. public.workflow_subscriptions
+--        Per-user channel preferences. Powers the "also DM me on Telegram
+--        when this changes" idea; today the only implicit subscription is
+--        "this user wants email for schedule X" (stored in scheduled_tasks.data).
+--
+-- RLS posture:
+--   • workflow_events        — service key only (no anon policy). Written/read
+--                               by Netlify Functions (orchestrator, scheduled-runner)
+--                               and the n8n Supabase node (which uses the service key).
+--   • workflow_runs          — same. Always joined to an event anyway.
+--   • workflow_subscriptions — per-user CRUD for the owning user, service key
+--                               for the orchestrator.
+--
+-- Idempotent (IF NOT EXISTS / OR REPLACE) — safe to re-run.
+-- Run after 0011 (last existing migration).
+-- ============================================================================
+
+
+-- ── 1. workflow_events ────────────────────────────────────────────────────
+create table if not exists public.workflow_events (
+  id              text primary key,                  -- 'wfe_' + nanoid; client-generated
+  kind            text not null,                     -- 'schedule.changed' | 'contact.received' |
+                                                     -- 'user.lifecycle'  | 'op.alert'
+  ref_id          text,                              -- sch_xxx | contact id | user_id (nullable)
+  user_id         uuid references auth.users,        -- nullable (guests / system events)
+  payload         jsonb not null default '{}'::jsonb,-- full event data, kept as-is for replay
+  channels        jsonb not null default '[]'::jsonb,-- [{type:'email'|'slack'|'n8n'|'webhook', target, template}]
+  state           text not null default 'pending',   -- pending | processing | done | failed | cancelled
+  attempts        integer not null default 0,
+  max_attempts    integer not null default 5,
+  next_attempt_at timestamptz not null default now(),
+  started_at      timestamptz,                       -- when state → processing
+  finished_at     timestamptz,                       -- when state → done | failed | cancelled
+  last_error      text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+
+  constraint workflow_events_state_chk check (
+    state in ('pending', 'processing', 'done', 'failed', 'cancelled')
+  )
+);
+
+-- Indexes for the orchestrator's poll + the diagnostic MCP tools.
+create index if not exists workflow_events_state_next_attempt_idx
+  on public.workflow_events (state, next_attempt_at);
+create index if not exists workflow_events_ref_id_idx
+  on public.workflow_events (ref_id);
+create index if not exists workflow_events_user_id_idx
+  on public.workflow_events (user_id);
+create index if not exists workflow_events_kind_idx
+  on public.workflow_events (kind);
+create index if not exists workflow_events_created_at_idx
+  on public.workflow_events (created_at desc);
+
+alter table public.workflow_events enable row level security;
+-- No anon policy: service key bypasses RLS; this table is server-side only.
+
+
+-- ── 2. workflow_runs ──────────────────────────────────────────────────────
+create table if not exists public.workflow_runs (
+  id              text primary key,                  -- 'wfr_' + nanoid
+  event_id        text not null references public.workflow_events(id) on delete cascade,
+  attempt_n       integer not null,
+  channel         text,                              -- 'n8n' | 'email' | 'slack' | 'webhook' | 'force-dispatch'
+  request         jsonb,                             -- the request body sent
+  response_status integer,                           -- HTTP status (null if never reached)
+  response_body   text,                              -- truncated to 4 KB to keep the table small
+  started_at      timestamptz not null default now(),
+  finished_at     timestamptz,
+  duration_ms     integer,
+  error           text,
+
+  unique (event_id, attempt_n)
+);
+
+create index if not exists workflow_runs_event_id_idx
+  on public.workflow_runs (event_id, attempt_n desc);
+
+alter table public.workflow_runs enable row level security;
+-- No anon policy: server-side only.
+
+
+-- ── 3. workflow_subscriptions ─────────────────────────────────────────────
+create table if not exists public.workflow_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users on delete cascade,
+  kind        text not null,                        -- 'schedule' | 'contact' | 'payment' | 'user'
+  ref_id      text,                                 -- schedule id, payment id, etc. NULL = applies to all of this kind for the user
+  channels    jsonb not null default '[]'::jsonb,  -- [{type:'email'|'slack'|'telegram'|'discord'|'webhook', target, enabled, template?}]
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+
+  unique (user_id, kind, ref_id)
+);
+
+create index if not exists workflow_subscriptions_user_id_idx
+  on public.workflow_subscriptions (user_id);
+
+alter table public.workflow_subscriptions enable row level security;
+
+-- Per-user CRUD. The orchestrator uses the service key to read these.
+drop policy if exists "users own workflow_subscriptions" on public.workflow_subscriptions;
+create policy "users own workflow_subscriptions" on public.workflow_subscriptions
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+
+-- ── 4. updated_at trigger (shared) ────────────────────────────────────────
+-- Both workflow_events and workflow_subscriptions have an updated_at column;
+-- a tiny trigger keeps it fresh on every UPDATE.
+create or replace function public.workflow_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at := now();
+  return new;
+end; $$;
+
+drop trigger if exists workflow_events_set_updated_at on public.workflow_events;
+create trigger workflow_events_set_updated_at
+  before update on public.workflow_events
+  for each row execute function public.workflow_set_updated_at();
+
+drop trigger if exists workflow_subscriptions_set_updated_at on public.workflow_subscriptions;
+create trigger workflow_subscriptions_set_updated_at
+  before update on public.workflow_subscriptions
+  for each row execute function public.workflow_set_updated_at();
+
+
+-- ── Done. Verify: ─────────────────────────────────────────────────────────
+--   select count(*) from public.workflow_events;     -- should be 0 on a fresh DB
+--   select count(*) from public.workflow_runs;
+--   select count(*) from public.workflow_subscriptions;
+--   \d public.workflow_events                        -- expect 15 columns + 5 indexes

@@ -1,0 +1,184 @@
+{
+  "name": "datiq_contact_router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "datiq/contact-router",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a2d8-a61ceb384c40",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "=#datiq-support",
+        "text": "=:envelope: New contact: *{{ $json.type }}* from {{ $json.from }}\n>{{ $json.subject }}\n>{{ ($json.body || '').slice(0, 200) }}"
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a626-ff7ea86f1cc0",
+      "name": "Notify Slack",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "datiq-slack-monitoring",
+          "name": "datiq-slack-monitoring"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VITE_CONTACT_WEBHOOK_URL || $env.VITE_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        300
+      ],
+      "id": "00000000-0000-4000-a193-d57313964660",
+      "name": "Forward to CRM"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"state\": \"done\", \"finished_at\": \"={{ $now.toISO() }}\", \"last_error\": null }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        300
+      ],
+      "id": "00000000-0000-4000-a689-58de5c59cb40",
+      "name": "Mark done"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ],
+      "id": "00000000-0000-4000-a15f-47d0e0fe81b0",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Notify Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Slack": {
+      "main": [
+        [
+          {
+            "node": "Forward to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to CRM": {
+      "main": [
+        [
+          {
+            "node": "Mark done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a0e8-1f2f9d454690",
+  "id": "00000000-0000-4000-a56c-177b693c4740",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

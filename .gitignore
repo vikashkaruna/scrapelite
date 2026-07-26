@@ -51,3 +51,8 @@ playwright/.cache/
 
 # Netlify dev artifacts (Deno runtime used by some plugins)
 deno.lock
+
+# Operator-only scripts and docs (never committed)
+HASHED-PIN/
+ai-powered-growth-stack-playbook.md
+step.sh

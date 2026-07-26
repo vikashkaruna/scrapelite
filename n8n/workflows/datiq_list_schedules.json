@@ -1,0 +1,112 @@
+{
+  "name": "datiq_list_schedules",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_list_schedules",
+        "toolDescription": "Lists monitoring schedules. Filter by `user_id` to get one user's schedules, or omit to list all (admin-only).",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "active",
+                "paused"
+              ]
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a5d6-650381033600",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks?select=id,user_id,status,cron,next_run_at,data,created_at,updated_at&order=updated_at.desc{{ $json.user_id ? '&user_id=eq.' + $json.user_id : '' }}{{ $json.status ? '&status=eq.' + $json.status : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a010-4b2986dac440",
+      "name": "List schedules"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a0ab-b2fd0feab548",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "List schedules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List schedules": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a5cb-a9d8c47f6bc0",
+  "id": "00000000-0000-4000-a7e4-b4536f8993c0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}
