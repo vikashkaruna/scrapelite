@@ -21,6 +21,7 @@ import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
+import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
 
 function respond(statusCode, body) {
   return {
@@ -68,6 +69,20 @@ export const handler = async (event) => {
     }
   } catch (err) {
     return respond(400, { error: err.message || "Invalid URL" });
+  }
+
+  // Subscription gate. Placed AFTER the SSRF guard (never spend a DB round-trip
+  // on a request we are about to reject anyway) and BEFORE any provider call.
+  //
+  // Signed-in users only: guests fall through untouched and are still governed
+  // solely by the per-host token bucket below. Fails OPEN when Supabase is
+  // unreachable — see the header of lib/requireEntitlement.js for why that
+  // asymmetry is deliberate and must not be "fixed".
+  try {
+    const { check } = await requireCapability(event, "extract");
+    if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
+  } catch (err) {
+    console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
   }
 
   // FD3: robots.txt compliance (skip when explicitly bypassed).

@@ -27,7 +27,8 @@
     "smoke:staging": "node scripts/smoke-prod.mjs https://staging.datiq.app",
     "readiness": "node .claude/skills/production-readiness/scripts/audit.mjs",
     "test:all": "npm run readiness && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
-    "migrate:prod": "node scripts/migrate-prod.mjs"
+    "migrate:prod": "node scripts/migrate-prod.mjs",
+    "build:sql": "node scripts/build-run-all.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

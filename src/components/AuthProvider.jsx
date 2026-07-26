@@ -6,6 +6,8 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { getSession, onAuthStateChange } from "../lib/authService.js";
 import { setAuthToken } from "../lib/apiClient.js";
 import { applyTrialCredit } from "../lib/usageService.js";
+import { claimBillingSession } from "../lib/billingRepo.js";
+import { clearEntitlementCache } from "../lib/entitlementClient.js";
 
 const AuthContext = createContext(null);
 
@@ -49,6 +51,17 @@ export function AuthProvider({ children }) {
         // FR-Z-02 (Q2 2026-07-15): grant the once-only trial credit on signup
         // (25 extractions for the Free plan). Idempotent — re-runs are no-ops.
         try { applyTrialCredit("free"); } catch { /* localStorage unavailable */ }
+        // Claim this browser's billing session for the signed-in user, so a
+        // purchase made before signing in (or in a previous session) is bound
+        // to the account rather than to localStorage. Idempotent, and refuses
+        // if the session already belongs to somebody else. Then drop the
+        // entitlement cache so the first render after sign-in reflects the
+        // freshly-merged plan rather than the signed-out one.
+        try {
+          claimBillingSession()
+            .catch(() => { /* best-effort */ })
+            .finally(() => { clearEntitlementCache(); });
+        } catch { /* best-effort */ }
         // F49 — fire-and-forget welcome email. The server is idempotent
         // (it checks the `welcomeEmailSent` user-metadata flag before
         // sending) so this is safe to call on every sign-in.
@@ -64,6 +77,11 @@ export function AuthProvider({ children }) {
             }).catch(() => { /* best-effort */ });
           }
         } catch { /* best-effort */ }
+      }
+      if (_event === "SIGNED_OUT") {
+        // The cached entitlement belongs to the user who just left. Leaving it
+        // behind would let the next person on this browser see their plan.
+        try { clearEntitlementCache(); } catch { /* ignore */ }
       }
     });
 

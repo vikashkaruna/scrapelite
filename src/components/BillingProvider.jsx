@@ -5,9 +5,9 @@ import {
   readSubscription, writeSubscription, readUsage,
   incrementExtractions, incrementEnrichments,
   applyTrialCredit,
-  canExtract, canEnrich, canExport, canEmailExport,
-  canBatch, canExtractBatch,
 } from "../lib/usageService.js";
+import { can, computeLifecycle } from "../lib/entitlementModel.js";
+import { clearEntitlementCache, getCachedEntitlement, loadEntitlement } from "../lib/entitlementClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
@@ -39,6 +39,10 @@ export function BillingProvider({ children }) {
   const [paymentError, setPaymentError]     = useState("");
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [dbSubscription, setDbSubscription] = useState(null);
+  // Server-authoritative entitlement row (null until loaded, or for guests).
+  // Seeded synchronously from the cache so the first paint already knows the
+  // lifecycle state and a suspended user never sees a flash of full access.
+  const [entitlementRow, setEntitlementRow] = useState(() => getCachedEntitlement());
 
   // ── Payment progress state (drives PaymentProcessingModal) ──────────────────
   const [paymentStage, setPaymentStage]     = useState(PAYMENT_STAGE.IDLE);
@@ -93,9 +97,53 @@ export function BillingProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  const planId = subscription.planId  || "free";
+  // Load the server-authoritative entitlement, and reload whenever the signed-in
+  // user changes. AuthProvider clears the cache on both sign-in and sign-out, so
+  // this always refetches rather than serving the previous user's row.
+  useEffect(() => {
+    let cancelled = false;
+    loadEntitlement()
+      .then((row) => { if (!cancelled) setEntitlementRow(row); })
+      .catch(() => { /* offline / unconfigured — plan-only gating still works */ });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  /** Force a re-read of the entitlement (after a payment, or on demand). */
+  const refreshEntitlement = useCallback(async () => {
+    clearEntitlementCache();
+    const row = await loadEntitlement({ force: true }).catch(() => null);
+    setEntitlementRow(row);
+    return row;
+  }, []);
+
+  const planId = entitlementRow?.plan_id || subscription.planId || "free";
   const bonus  = subscription.bonusExtractions || 0;
   const plan   = planMap[planId] ?? planMap.free;
+
+  /**
+   * The entitlement the gates decide against.
+   *
+   * The server row wins whenever we have one — it is the authoritative answer
+   * and the only place lifecycle status exists. localStorage is the fallback so
+   * a signed-out or offline user still gets sensible plan-only gating, and so
+   * nothing regresses before the migrations are applied.
+   *
+   * `status` deliberately defaults to "active": a user with no row is a
+   * legitimate free user, not a suspended one.
+   */
+  const entitlement = useMemo(
+    () => ({
+      plan_id:    planId,
+      status:     entitlementRow?.status ?? "active",
+      source:     entitlementRow?.source ?? null,
+      period_end: entitlementRow?.period_end ?? null,
+      comp_until: entitlementRow?.comp_until ?? null,
+    }),
+    [planId, entitlementRow],
+  );
+
+  const lifecycle = useMemo(() => computeLifecycle(entitlement), [entitlement]);
+  const isSuspended = lifecycle.status !== "active";
 
   const setCurrency = (c) => {
     setCurrencyState(c);
@@ -297,12 +345,39 @@ export function BillingProvider({ children }) {
     setUsage(incrementEnrichments(url));
   }, [setUsage]);
 
-  const checkCanExtract      = useCallback(() => canExtract(planId, bonus), [planId, bonus]);
-  const checkCanEnrich       = useCallback((url) => canEnrich(planId, url), [planId]);
-  const checkCanExport       = useCallback((fmt) => canExport(planId, fmt), [planId]);
-  const checkCanEmail        = useCallback(() => canEmailExport(planId), [planId]);
-  const checkCanBatch        = useCallback((urlCount) => canBatch(planId, urlCount, subscription.bonusBatchUrls || 0), [planId, subscription]);
-  const checkCanExtractBatch = useCallback((urlCount) => canExtractBatch(planId, urlCount, bonus), [planId, bonus]);
+  // ── Capability gates ────────────────────────────────────────────────────────
+  // Reimplemented over entitlementModel.can(), the same pure function the
+  // Netlify functions use, so the browser and the server can never disagree.
+  //
+  // Signatures and return shapes are UNCHANGED — including checkCanExport and
+  // checkCanEmail returning a bare boolean — so the ~28 call sites in Preview /
+  // Dashboard / Batch / ExtractionProvider need no edits. Reason strings for
+  // plan limits are identical to before; the new case is lifecycle (suspended /
+  // deactivated), which the existing per-call-site toasts cannot express. That
+  // is deliberate: suspended UX belongs in one global banner and route guards
+  // (PR3), not in 20 rewritten toast strings. Use whyCannot() for the reason.
+  const gateCtx = useCallback(
+    (extra) => ({ planMap, usage: readUsage(), bonus, bonusBatchUrls: subscription.bonusBatchUrls || 0, ...extra }),
+    [planMap, bonus, subscription.bonusBatchUrls],
+  );
+
+  const checkCanExtract      = useCallback(() => can(entitlement, "extract", gateCtx()), [entitlement, gateCtx, usage]);
+  const checkCanEnrich       = useCallback((url) => can(entitlement, "enrich", gateCtx({ url })), [entitlement, gateCtx, usage]);
+  const checkCanExport       = useCallback((fmt) => can(entitlement, `export.${fmt}`, gateCtx()).allowed, [entitlement, gateCtx]);
+  const checkCanEmail        = useCallback(() => can(entitlement, "export.email", gateCtx()).allowed, [entitlement, gateCtx]);
+  const checkCanBatch        = useCallback((urlCount) => can(entitlement, "batch", gateCtx({ urlCount })), [entitlement, gateCtx]);
+  const checkCanExtractBatch = useCallback((urlCount) => can(entitlement, "extract.batch", gateCtx({ urlCount })), [entitlement, gateCtx, usage]);
+
+  /**
+   * Full denial detail for any capability — `{ allowed, reason, code, upgradeTo }`.
+   * Companion to the boolean gates above, for callers that need to explain WHY
+   * (in particular to distinguish "your plan doesn't include this" from "your
+   * subscription lapsed").
+   */
+  const whyCannot = useCallback(
+    (capability, extra) => can(entitlement, capability, gateCtx(extra)),
+    [entitlement, gateCtx],
+  );
 
   const applyBonus = useCallback((extra) => {
     const sub = { ...subscription, bonusExtractions: (subscription.bonusExtractions || 0) + extra };
@@ -388,7 +463,8 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch,
+    checkCanBatch, checkCanExtractBatch, whyCannot,
+    entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess,
   }), [
@@ -402,7 +478,8 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch,
+    checkCanBatch, checkCanExtractBatch, whyCannot,
+    entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess,
   ]);

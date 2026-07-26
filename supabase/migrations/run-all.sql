@@ -1,28 +1,37 @@
 -- supabase/migrations/run-all.sql
 -- ============================================================================
--- DatIQ v1.0 — Production migration orchestrator (single-file variant)
+-- DatIQ — Production migration orchestrator (single-file variant)
 -- ============================================================================
 --
+-- GENERATED FILE — DO NOT EDIT BY HAND.
+-- Regenerate with:  npm run build:sql
+-- Verify in CI with: npm run build:sql -- --check
+--
 -- Paste this file in the Supabase SQL Editor → New query → Run.
--- It is the concatenation of every numbered migration in this directory,
--- in dependency order, with each script idempotent (IF NOT EXISTS / OR REPLACE),
--- so it is safe to re-run on a fresh or partially-migrated database.
+-- It is the concatenation of every numbered migration in this directory, in
+-- lexical (== dependency) order. Every script is idempotent
+-- (IF NOT EXISTS / OR REPLACE), so it is safe to re-run on a fresh or
+-- partially-migrated database.
 --
 -- ORDER MATTERS:
---   0001  base extractions + V2 columns + V5/V5c usage/billing tables
---   0002  pricing_config + coupon redemptions + redeem_coupon RPC
---   0003  app_config (AI provider chain)
---   0004  scheduler (scheduled_tasks)
---   0005  analytics (analytics_events)
---   0006  provenance column
---   0007  public_reports (shareable URLs)
---   0008  summary_feedback
---   0009  extraction_cache (optional, for FD2)
---   0010  rate_limit_log (optional, for FD3)
---   0011  reengagement_log (optional, for F49)
+--   0001  ScrapeLite V5 + V5c database migrations
+--   0002  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
+--   0003  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
+--   0004  DatIQ — R19 Scheduler setup (ready-to-paste)
+--   0005  scripts/analytics.sql
+--   0006  scripts/provenance.sql
+--   0007  scripts/public-reports.sql
+--   0008  scripts/summary-feedback.sql
+--   0009  FD2 (idempotent result cache).
+--   0010  FD3 (per-host rate limit log).
+--   0011  F49 (re-engagement email dedup log).
+--   0012  PR1 (billing identity + server-authoritative entitlements).
+--   0013  PR1 step 2 of 3 (backfill user_id).
+--   0014  PR1 step 3 of 3 (lock down the billing tables).
+--   0015  PR1 (system pause flag + privilege fix).
 --
--- Individual files are also committed for source control. If you prefer to
--- run them one at a time, paste each numbered file separately in order.
+-- Individual files are also committed for source control. If you prefer to run
+-- them one at a time, paste each numbered file separately in the order above.
 --
 -- VERIFY: see README.md §3 for the list of tables that should exist after.
 -- ROLLBACK: see rollback.sql for a destructive rollback (DESTRUCTIVE).
@@ -151,6 +160,7 @@ do $$ begin
   end if;
 end $$;
 
+
 -- ============================================================
 -- 0002_pricing_and_coupons.sql
 -- ============================================================
@@ -218,6 +228,7 @@ END; $$;
 -- PostgREST may 404 the new table/RPC until its schema cache reloads:
 NOTIFY pgrst, 'reload schema';
 
+
 -- ============================================================
 -- 0003_ai_config.sql
 -- ============================================================
@@ -252,6 +263,7 @@ ALTER TABLE public.app_config ENABLE ROW LEVEL SECURITY;
 --     "enabled":{"gemini":true,"anthropic":true,"openai":true},
 --     "maxTokens":1024}'::jsonb
 -- ) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
 
 -- ============================================================
 -- 0004_scheduler.sql
@@ -353,6 +365,7 @@ create policy "users own schedules" on public.scheduled_tasks
 -- Done. Verify:
 --   select id, status, cron, next_run_at from public.scheduled_tasks;
 
+
 -- ============================================================
 -- 0005_analytics.sql
 -- ============================================================
@@ -396,6 +409,7 @@ CREATE POLICY "anon insert access"
 
 -- No UPDATE / DELETE policy — events are append-only.
 
+
 -- ============================================================
 -- 0006_provenance.sql
 -- ============================================================
@@ -422,6 +436,7 @@ CREATE INDEX IF NOT EXISTS extractions_provenance_checked_idx
 CREATE INDEX IF NOT EXISTS extractions_provenance_fields_gin
   ON public.extractions USING gin ((provenance->'fields') jsonb_path_ops)
   WHERE provenance IS NOT NULL;
+
 
 -- ============================================================
 -- 0007_public_reports.sql
@@ -508,6 +523,7 @@ CREATE TRIGGER public_reports_updated_at_trg
   BEFORE UPDATE ON public.public_reports
   FOR EACH ROW EXECUTE FUNCTION public.public_reports_touch_updated_at();
 
+
 -- ============================================================
 -- 0008_summary_feedback.sql
 -- ============================================================
@@ -563,6 +579,7 @@ CREATE POLICY "owner delete"
     OR session_id = current_setting('request.headers', true)::json->>'x-session-id'
   );
 
+
 -- ============================================================
 -- 0009_extraction_cache.sql
 -- ============================================================
@@ -611,5 +628,433 @@ CREATE POLICY "anon read"
 
 -- Writes are service-key-only (bypasses RLS). No anon write policy.
 
--- Final: refresh the PostgREST schema cache so the API picks up the new tables/RPCs immediately.
+
+-- ============================================================
+-- 0010_rate_limit_log.sql
+-- ============================================================
+-- scripts/rate-limit-log.sql — FD3 (per-host rate limit log).
+-- Optional Supabase table for cross-warm-container rate enforcement.
+-- The primary in-process limiter lives in netlify/functions/lib/rateLimiter.js
+-- and works without this table. This table is the durable extension point
+-- for shared infra with multiple warm containers (each container has its
+-- own in-process bucket; the table aggregates them).
+--
+-- Run this in the Supabase SQL Editor. Safe to re-run.
+
+CREATE TABLE IF NOT EXISTS public.rate_limit_log (
+  id          bigserial PRIMARY KEY,
+  host        text NOT NULL,
+  at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- The compliance + monitoring dashboards query this by host + time.
+CREATE INDEX IF NOT EXISTS rate_limit_log_host_at_idx
+  ON public.rate_limit_log (host, at DESC);
+
+-- Auto-prune older than 7 days (Supabase pg_cron handles this; manual
+-- cleanup via a scheduled function is out of scope for v1).
+-- For v1, run manually: DELETE FROM rate_limit_log WHERE at < now() - interval '7 days';
+
+ALTER TABLE public.rate_limit_log ENABLE ROW LEVEL SECURITY;
+
+-- Service key bypasses RLS; no anon policy needed (server-only writes).
+
+
+-- ============================================================
+-- 0011_reengagement_log.sql
+-- ============================================================
+-- scripts/reengagement-log.sql — F49 (re-engagement email dedup log).
+-- Run this in the Supabase SQL Editor. Safe to re-run.
+--
+-- One row per (user_email, kind, window_key) tuple. The reengagement.js
+-- Netlify function writes here so it never emails the same user twice
+-- for the same trigger (e.g. the same ISO week for the weekly digest).
+
+CREATE TABLE IF NOT EXISTS public.reengagement_log (
+  id          bigserial PRIMARY KEY,
+  user_email  text NOT NULL,
+  kind        text NOT NULL,          -- 'digest' | 'd7' (future: 'd30')
+  window_key  text NOT NULL,          -- 'digest:2026-W29' or 'd7:2026-07-18'
+  sent_at     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_email, kind, window_key)
+);
+
+-- Read-by-(email, kind, window) is the hot path; the UNIQUE constraint
+-- already provides an index for it. Add an explicit one for the
+-- analytics queries (e.g. "how many digests sent in 2026?")
+CREATE INDEX IF NOT EXISTS reengagement_log_window_idx
+  ON public.reengagement_log (kind, window_key);
+
+ALTER TABLE public.reengagement_log ENABLE ROW LEVEL SECURITY;
+
+-- Service-key bypasses RLS; no anon policy needed.
+
+
+-- ============================================================
+-- 0012_billing_identity.sql
+-- ============================================================
+-- scripts/billing-identity.sql — PR1 (billing identity + server-authoritative entitlements).
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run.
+--
+-- WHY THIS EXISTS
+-- Billing rows have always been keyed on `session_id` — a random UUID kept in
+-- the browser's localStorage (`datiq.sessionId`, see src/lib/usageRepo.js).
+-- That means: clearing site data orphans a paying customer's history, two
+-- people sharing a browser share a subscription, and nothing can be tied to
+-- the signed-in user. Invoices carry names, addresses and amounts, so before
+-- any of that exists the billing tables have to hang off `auth.users.id`.
+--
+-- This migration is deliberately ADDITIVE ONLY — every column is nullable and
+-- nothing reads them yet. Behaviour is unchanged until 0013 (backfill) and
+-- 0014 (RLS lockdown) land. See the ordering note at the bottom.
+
+-- ── 1. user_id on the session-keyed billing tables ────────────────────────────
+-- Nullable on purpose: genuine logged-out purchases keep working and simply
+-- carry a null user_id until the buyer signs in and claims the session.
+alter table public.subscriptions  add column if not exists user_id uuid references auth.users;
+alter table public.payment_events add column if not exists user_id uuid references auth.users;
+alter table public.usage_records  add column if not exists user_id uuid references auth.users;
+
+create index if not exists subscriptions_user_idx  on public.subscriptions  (user_id);
+create index if not exists payment_events_user_idx on public.payment_events (user_id);
+create index if not exists usage_records_user_idx  on public.usage_records  (user_id);
+
+-- ── 2. session → user link table ──────────────────────────────────────────────
+-- A link table rather than a bare backfill because one browser session id can
+-- legitimately be presented by two different humans (shared machine), and this
+-- is money — we want the audit row saying who claimed what and when.
+create table if not exists public.billing_identity_links (
+  session_id text primary key,
+  user_id    uuid not null references auth.users on delete cascade,
+  linked_at  timestamptz not null default now(),
+  source     text                                  -- 'signin' | 'checkout' | 'admin'
+);
+create index if not exists billing_identity_links_user_idx
+  on public.billing_identity_links (user_id);
+
+alter table public.billing_identity_links enable row level security;
+-- RLS on with no policy = service key only. The claim RPC below is SECURITY
+-- DEFINER, so the browser never needs direct access to this table.
+
+-- ── 3. entitlements — the resolved answer, one row per user ───────────────────
+-- Kept SEPARATE from `subscriptions` on purpose. `subscriptions` is provider-
+-- shaped and is clobbered on every purchase by the onConflict:session_id upsert
+-- in src/lib/paymentRepo.js. `entitlements` is the single resolved answer to
+-- "what may this user do right now" — a primary-key lookup, cheap to cache.
+--
+-- TWO AXES, NEVER CONFLATED: `plan_id` is what they bought, `status` is where
+-- they are in the lifecycle. A suspended Pro user stays plan_id='pro' with
+-- status='suspended'. Encoding lifecycle into plan_id (a "suspended" pseudo
+-- plan) would be silently DANGEROUS: getEffectivePlanById() in
+-- src/lib/pricingOverrides.js falls back to `free` for unknown ids, so a
+-- suspended user would be granted the Free tier instead of being denied.
+create table if not exists public.entitlements (
+  user_id              uuid primary key references auth.users on delete cascade,
+  plan_id              text not null default 'free',
+  status               text not null default 'active',   -- active|suspended|deactivated|purged
+  billing_period       text,                             -- monthly|annual|once
+  period_start         timestamptz,
+  period_end           timestamptz,
+  scheduled_plan_id    text,                             -- pending downgrade target
+  scheduled_at         timestamptz,
+  bonus_extractions    integer not null default 0,
+  bonus_batch_urls     integer not null default 0,
+  credit_balance_minor bigint  not null default 0,
+  suspended_at         timestamptz,
+  deactivated_at       timestamptz,
+  purge_after          timestamptz,
+  comp_until           timestamptz,                      -- admin grace; suppresses notices
+  last_notice_kind     text,                             -- purge interlock reads this
+  source               text,                             -- 'payment'|'admin'|'migration'
+  version              bigint  not null default 1,       -- bumped on write; drives cache busting
+  updated_at           timestamptz not null default now()
+);
+
+create index if not exists entitlements_period_end_idx on public.entitlements (period_end)
+  where period_end is not null;                          -- the daily lifecycle cron's scan
+create index if not exists entitlements_status_idx on public.entitlements (status);
+
+alter table public.entitlements enable row level security;
+
+drop policy if exists "entitlements select own" on public.entitlements;
+create policy "entitlements select own" on public.entitlements
+  for select to authenticated using (auth.uid() = user_id);
+
+-- No insert/update/delete policy for ANYONE. Every write goes through the
+-- service key (checkout, verify-payment, webhook, crons, admin). A user must
+-- never be able to write their own entitlement row.
+revoke insert, update, delete on public.entitlements from authenticated, anon;
+
+-- ── 4. plan ranking (used by the merge rule) ──────────────────────────────────
+create or replace function public.plan_rank(p_plan text)
+returns integer language sql immutable as $$
+  select case lower(coalesce(p_plan, 'free'))
+    when 'agency'    then 5
+    when 'business'  then 4
+    when 'developer' then 3
+    when 'pro'       then 3
+    when 'select'    then 2
+    when 'free'      then 1
+    else 0                              -- unknown plan ranks LOWEST, never wins a merge
+  end;
+$$;
+
+-- ── 5. merge subscriptions → entitlements for one user ────────────────────────
+-- Called after a claim. Rule: NEVER DOWNGRADE. Later period_end wins; on a tie
+-- (or when both are null, which is the norm today because the one-time-order
+-- path never sets current_period_end) the higher plan rank wins. Bonuses sum.
+--
+-- Deliberate safety choice: rows migrated from `subscriptions` land with
+-- source='migration' and period_end=null, which means computeLifecycle() can
+-- never suspend them. Existing customers are not retro-suspended by this
+-- migration; the lifecycle only starts at their next real payment.
+create or replace function public.merge_entitlement_from_subscriptions(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare best record;
+begin
+  if p_user is null then return; end if;
+
+  select s.plan_id, s.current_period_start, s.current_period_end
+    into best
+    from public.subscriptions s
+   where s.user_id = p_user
+     and coalesce(s.status, 'active') <> 'cancelled'
+   order by s.current_period_end desc nulls last,
+            public.plan_rank(s.plan_id) desc,
+            s.updated_at desc nulls last
+   limit 1;
+
+  if not found then return; end if;
+
+  insert into public.entitlements (user_id, plan_id, period_start, period_end, source)
+  values (p_user, coalesce(best.plan_id, 'free'), best.current_period_start,
+          best.current_period_end, 'migration')
+  on conflict (user_id) do update
+    set plan_id = case
+          when public.plan_rank(excluded.plan_id) > public.plan_rank(public.entitlements.plan_id)
+          then excluded.plan_id else public.entitlements.plan_id end,
+        period_end = greatest(
+          coalesce(public.entitlements.period_end, '-infinity'::timestamptz),
+          coalesce(excluded.period_end,            '-infinity'::timestamptz)),
+        version    = public.entitlements.version + 1,
+        updated_at = now()
+    where public.entitlements.status = 'active';   -- never resurrect a purged row
+end $$;
+
+-- ── 6. claim_billing_session — the browser-callable claim RPC ─────────────────
+-- SECURITY DEFINER + auth.uid() read INTERNALLY, so it is safe to call directly
+-- from the client with the user's JWT: the caller cannot name a different user.
+-- Refuses if the session is already linked to somebody else — that is the
+-- anti-theft check (a shared/guessed session id must not transfer a paid plan).
+create or replace function public.claim_billing_session(p_session_id text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); owner uuid;
+begin
+  if uid is null or p_session_id is null or p_session_id = '' then
+    return jsonb_build_object('claimed', false, 'reason', 'no_auth');
+  end if;
+
+  select user_id into owner from public.billing_identity_links
+   where session_id = p_session_id;
+
+  if owner is not null and owner <> uid then
+    return jsonb_build_object('claimed', false, 'reason', 'already_linked');
+  end if;
+
+  insert into public.billing_identity_links (session_id, user_id, source)
+  values (p_session_id, uid, 'signin')
+  on conflict (session_id) do nothing;
+
+  update public.subscriptions  set user_id = uid where session_id = p_session_id and user_id is null;
+  update public.payment_events set user_id = uid where session_id = p_session_id and user_id is null;
+  update public.usage_records  set user_id = uid where session_id = p_session_id and user_id is null;
+
+  perform public.merge_entitlement_from_subscriptions(uid);
+
+  return jsonb_build_object('claimed', true);
+end $$;
+
+revoke execute on function public.claim_billing_session(text) from anon;
+grant   execute on function public.claim_billing_session(text) to authenticated;
+revoke execute on function public.merge_entitlement_from_subscriptions(uuid) from anon, authenticated;
+
+-- ── Ordering note ─────────────────────────────────────────────────────────────
+-- This file is step 1 of 3 and is behaviour-neutral on its own.
+--   0012 (this)  nullable columns + link table + entitlements. Deploy alone.
+--   ...          ship the dual-write release (claim on sign-in, user_id on all
+--                new rows) and let it run for at least one release.
+--   0013         backfill user_id from billing_identity_links; report orphans.
+--   0014         flip RLS: drop `anon full access` on subscriptions/payment_events.
+-- Only after 0014 may any server read entitlements for authorization.
+
+notify pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0013_billing_backfill.sql
+-- ============================================================
+-- scripts/billing-backfill.sql — PR1 step 2 of 3 (backfill user_id).
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run (idempotent by
+-- construction: every UPDATE is guarded by `user_id is null`).
+--
+-- RUN THIS ONLY AFTER the dual-write release has been live for at least one
+-- release cycle. Before then, billing_identity_links is empty and this file is
+-- a no-op — harmless, but pointless.
+--
+-- What it does: every session that has been claimed by a signed-in user gets
+-- its historical billing rows stamped with that user_id. Rows that remain null
+-- afterwards are genuine logged-out purchases; they stay session-keyed and are
+-- reachable only via the emailed invoice link. We do NOT try to adopt them by
+-- matching email addresses — that would be an account-takeover vector.
+
+update public.subscriptions s
+   set user_id = l.user_id
+  from public.billing_identity_links l
+ where l.session_id = s.session_id
+   and s.user_id is null;
+
+update public.payment_events p
+   set user_id = l.user_id
+  from public.billing_identity_links l
+ where l.session_id = p.session_id
+   and p.user_id is null;
+
+update public.usage_records u
+   set user_id = l.user_id
+  from public.billing_identity_links l
+ where l.session_id = u.session_id
+   and u.user_id is null;
+
+-- Rebuild entitlements for every user touched above, applying the never-
+-- downgrade merge rule. Cheap: one row per linked user.
+do $$
+declare r record;
+begin
+  for r in select distinct user_id from public.billing_identity_links loop
+    perform public.merge_entitlement_from_subscriptions(r.user_id);
+  end loop;
+end $$;
+
+-- ── Orphan report ─────────────────────────────────────────────────────────────
+-- Not an error. These are unclaimed guest purchases. Review the count before
+-- running 0014 — after the RLS flip they are service-key-only, which is the
+-- intended end state, but you want to know how many exist first.
+do $$
+declare orphan_subs int; orphan_events int;
+begin
+  select count(*) into orphan_subs   from public.subscriptions  where user_id is null;
+  select count(*) into orphan_events from public.payment_events where user_id is null;
+  raise notice 'billing backfill: % unclaimed subscription rows, % unclaimed payment_event rows',
+    orphan_subs, orphan_events;
+end $$;
+
+notify pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0014_billing_rls.sql
+-- ============================================================
+-- scripts/billing-rls.sql — PR1 step 3 of 3 (lock down the billing tables).
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run.
+--
+-- WHAT THIS FIXES
+-- 0001_core_tables_and_billing.sql created `subscriptions` and `payment_events`
+-- with the policy:
+--     create policy "anon full access" ... for all using (true) with check (true)
+-- i.e. anyone holding the PUBLIC anon key — which ships in the browser bundle —
+-- can read every customer's payment history, and can run
+--     update subscriptions set plan_id = 'agency';
+-- That was survivable only because entitlements were decided client-side and
+-- the server never trusted these tables. The moment a server reads them for
+-- authorization it becomes a privilege-escalation path, so this MUST land
+-- before any entitlement enforcement ships.
+--
+-- End state: authenticated users may SELECT their own rows and nothing else.
+-- Every write goes through the service key (create-checkout, verify-payment,
+-- payment-webhook, the crons, admin). Guest/unclaimed rows (user_id is null)
+-- become service-key-only, which is intended — they are reachable through the
+-- signed link in the invoice email.
+
+-- ── subscriptions ─────────────────────────────────────────────────────────────
+drop policy if exists "anon full access"      on public.subscriptions;
+drop policy if exists "subscriptions select own" on public.subscriptions;
+create policy "subscriptions select own" on public.subscriptions
+  for select to authenticated using (auth.uid() = user_id);
+
+revoke all                      on public.subscriptions from anon;
+revoke insert, update, delete   on public.subscriptions from authenticated;
+grant  select                   on public.subscriptions to authenticated;
+
+-- ── payment_events ────────────────────────────────────────────────────────────
+drop policy if exists "anon full access"        on public.payment_events;
+drop policy if exists "payment_events select own" on public.payment_events;
+create policy "payment_events select own" on public.payment_events
+  for select to authenticated using (auth.uid() = user_id);
+
+revoke all                      on public.payment_events from anon;
+revoke insert, update, delete   on public.payment_events from authenticated;
+grant  select                   on public.payment_events to authenticated;
+
+-- ── Deliberately NOT changed here ─────────────────────────────────────────────
+-- `usage_records` and `usage_alerts` keep their `anon full access` policy for
+-- now. Locking them breaks guest usage sync from src/lib/usageRepo.js, which
+-- writes with the anon key for signed-out visitors. That is a privacy leak but
+-- NOT an entitlement-escalation path (nothing authorizes off usage rows), so it
+-- is tracked as its own follow-up rather than bundled into this change.
+-- Do not "tidy" them into this file without first moving guest usage writes
+-- behind a server function.
+
+notify pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0015_scheduler_hardening.sql
+-- ============================================================
+-- scripts/scheduler-hardening.sql — PR1 (system pause flag + privilege fix).
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run.
+--
+-- WHY THIS IS IN PR1 AND NOT PR3
+-- Two separate problems, one of which is a live security issue:
+--
+-- 1. SECURITY. netlify/functions/schedules.js builds its upsert row straight
+--    from the client-supplied object, so the browser dictates `status`. Once
+--    the lifecycle can pause a lapsed user's schedules, the very next client
+--    upsert would silently un-pause them. Worse, today a client can already
+--    write whatever it likes into these columns.
+--
+-- 2. The hourly runner needs the column to exist before it can filter on it.
+--
+-- THE DESIGN: two independent axes.
+--   `status`        = USER intent      ('active' | 'paused')  — client-writable
+--   `system_paused` = PLATFORM intent  (lapsed subscription, plan limit)
+--
+-- Keeping them separate is what makes requirement "a schedule the user had
+-- manually paused stays paused after reactivation" fall out for free: resume
+-- only clears `system_paused`, and the user's own 'paused' status is untouched.
+
+alter table public.scheduled_tasks
+  add column if not exists system_paused boolean not null default false;
+alter table public.scheduled_tasks
+  add column if not exists system_pause_reason text;   -- 'subscription_suspended' | 'plan_limit'
+
+-- The hourly runner's scan predicate: status='active' AND system_paused=false.
+create index if not exists scheduled_tasks_runner_idx
+  on public.scheduled_tasks (status, system_paused);
+
+-- ── Column-level privilege lock ───────────────────────────────────────────────
+-- RLS cannot protect individual columns, only rows. A column REVOKE can, and it
+-- is declarative and testable. schedules.js also strips these fields from the
+-- payload (belt and braces) — but this is the part an attacker cannot route
+-- around by calling PostgREST directly with a user JWT.
+revoke insert (system_paused, system_pause_reason) on public.scheduled_tasks from authenticated, anon;
+revoke update (system_paused, system_pause_reason) on public.scheduled_tasks from authenticated, anon;
+
+-- NOTE: `user_id` is deliberately NOT revoked here. It is already protected by
+-- the existing per-user RLS policy (auth.uid() = user_id in both USING and
+-- WITH CHECK), and revoking UPDATE on it would break the legitimate
+-- INSERT ... ON CONFLICT DO UPDATE upsert that schedules.js performs.
+
+notify pgrst, 'reload schema';
+
+-- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

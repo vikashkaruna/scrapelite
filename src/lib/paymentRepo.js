@@ -2,14 +2,21 @@
 // Silently degrades to no-op when Supabase is not configured.
 import { supabase } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
+import { getAuthUserId } from "./billingRepo.js";
 
 // ── Subscription ─────────────────────────────────────────────────────────────
 export async function syncSubscriptionToDb(planId, provider, providerData = {}) {
   if (!supabase) return;
   try {
+    // Dual-write phase (see the ordering note in 0012_billing_identity.sql):
+    // every NEW row carries user_id from the moment it is created, so the 0013
+    // backfill only ever has historical rows left to fix. Null for a logged-out
+    // purchase — that row is claimed later when the buyer signs in.
+    const userId = await getAuthUserId();
     const { error } = await supabase.from("subscriptions").upsert(
       {
         session_id:                getSessionId(),
+        user_id:                   userId,
         plan_id:                   planId,
         status:                    "active",
         provider:                  provider || null,
@@ -45,8 +52,10 @@ export async function fetchSubscriptionFromDb() {
 export async function logPaymentEvent({ type, provider, providerId, planId, amountCents, currency, status = "completed" }) {
   if (!supabase) return;
   try {
+    const userId = await getAuthUserId();
     await supabase.from("payment_events").insert({
       session_id:        getSessionId(),
+      user_id:           userId,
       event_type:        type,
       provider:          provider,
       provider_event_id: providerId  || null,
