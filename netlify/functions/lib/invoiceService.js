@@ -272,6 +272,35 @@ export async function activateFromInvoice(invoice, { now = new Date() } = {}) {
       headers: { ...d.headers, Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(patch),
     });
+
+    // Requirement 10: whatever the payment bought comes back on immediately,
+    // with no action from the user. Automation that the lifecycle paused for a
+    // lapse is un-paused here rather than at the next daily sweep — a customer
+    // who has just paid should not watch their monitors stay dead until
+    // tomorrow.
+    //
+    // Scoped by system_pause_reason so it resumes ONLY what the platform
+    // paused. A schedule the user paused themselves carries status='paused'
+    // and is deliberately left alone (requirement 11: reactivate what they
+    // actually had, not more).
+    if (!isBundle) {
+      try {
+        await fetch(
+          `${d.base}/scheduled_tasks?user_id=eq.${encodeURIComponent(userId)}` +
+            `&system_pause_reason=eq.subscription_suspended`,
+          {
+            method: "PATCH",
+            headers: { ...d.headers, Prefer: "return=minimal" },
+            body: JSON.stringify({ system_paused: false, system_pause_reason: null }),
+          },
+        );
+      } catch (err) {
+        // The entitlement is already restored; a failed resume is recoverable
+        // by the daily sweep and must not fail the payment.
+        console.warn("[invoiceService] schedule resume failed:", err?.message);
+      }
+    }
+
     return up.ok;
   } catch (err) {
     console.error("[invoiceService] activateFromInvoice:", err?.message);
