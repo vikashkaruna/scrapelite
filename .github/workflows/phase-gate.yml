@@ -32,9 +32,17 @@
 # Netlify "Auto publishing" for production (Netlify → Site → Build & deploy →
 # Continuous deployment → Production branch → Stop auto publishing). Otherwise
 # Netlify auto-deploys every push to `main` and bypasses this entire workflow.
-# With auto-publish OFF, production only changes via the gated `netlify deploy
-# --prod` step below (after the manual approval). See docs/PHASE-GATE.md §"Free
-# plan alternative".
+# See docs/PHASE-GATE.md §"Free plan alternative".
+#
+# "Stop auto publishing" LOCKS the published production deploy, and a lock
+# blocks every publish path — including this workflow's own `netlify deploy
+# --prod`, which fails with:
+#   Error: Deployments are "locked" for production context of this project
+# That is not a misconfiguration to undo; it is the protection working. The
+# workflow therefore owns the lock: `deploy-production` unlocks after the gates
+# and the human approval have passed, and `relock-production` (job 8, always())
+# locks it again once smoke + any rollback are done. Leave production locked
+# between releases — that is the steady state this gate expects.
 #
 # Concurrency group `prod-deploy` with cancel-in-progress: false, so an
 # in-flight prod deploy is never killed mid-deploy. The second push queues.
@@ -291,6 +299,34 @@ jobs:
           VITE_LINK_BLOG: https://datiq.app/blog
           VITE_FIRECRAWL_API_KEY: ""
 
+      # Production deploys are kept LOCKED between releases. That is what stops
+      # Netlify auto-publishing every push to `main` and bypassing this gate —
+      # but a lock blocks ALL publishing, including this job's own
+      # `netlify deploy --prod`, which fails with:
+      #   Error: Deployments are "locked" for production context of this project
+      # So the gate unlocks deliberately here, having already passed every gate
+      # and the human approval, and `relock-production` locks it again at the
+      # end of the run. Do NOT "fix" this by switching to
+      # `--prod-if-unlocked`: while locked that silently produces a DRAFT
+      # deploy, the smoke job then tests the still-old production and passes,
+      # and the run reports a successful release that never shipped.
+      - name: Unlock production deploys
+        run: |
+          set -euo pipefail
+          PUBLISHED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
+          if [ -z "$PUBLISHED" ]; then
+            echo "no published deploy to unlock (first deploy?) — continuing"
+            exit 0
+          fi
+          echo "unlocking currently published deploy $PUBLISHED"
+          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/deploys/$PUBLISHED/unlock" -o /dev/null
+          echo "  ✓ unlocked"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
       - name: Deploy to Netlify (production)
         run: |
           npx --yes netlify-cli deploy \
@@ -354,3 +390,43 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # 8. RE-LOCK PRODUCTION — restores the "no auto-publish" protection
+  #    that `deploy-production` had to lift in order to publish.
+  #
+  #    Runs LAST and `always()`, so it also covers the rollback path:
+  #    `netlify rollback` publishes a previous deploy and is itself blocked
+  #    by a lock, so the lock must stay off until smoke-production is done.
+  #
+  #    If this job is skipped (run cancelled mid-flight), production is left
+  #    UNLOCKED and the next push to `main` would auto-publish, bypassing the
+  #    gate. Re-lock by hand in that case: Netlify → Deploys → the published
+  #    deploy → "Stop auto publishing".
+  # ─────────────────────────────────────────────────────────────────
+  relock-production:
+    name: Re-lock Production
+    needs: [deploy-production, smoke-production]
+    if: always() && needs.deploy-production.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lock the currently published deploy
+        run: |
+          set -euo pipefail
+          PUBLISHED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
+          if [ -z "$PUBLISHED" ]; then
+            echo "::error::could not resolve the published deploy — production may be left UNLOCKED"
+            exit 1
+          fi
+          echo "locking published deploy $PUBLISHED"
+          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/deploys/$PUBLISHED/lock" -o /dev/null
+          LOCKED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.locked')
+          echo "  published_deploy.locked = $LOCKED"
+          [ "$LOCKED" = "true" ] || { echo "::error::lock did not take effect"; exit 1; }
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
