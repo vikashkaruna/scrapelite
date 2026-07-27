@@ -14,24 +14,24 @@
 -- partially-migrated database.
 --
 -- ORDER MATTERS:
---   0001  base extractions + V2 columns + V5/V5c usage/billing tables
---   0002  pricing_config + coupon redemptions + redeem_coupon RPC
---   0003  app_config (AI provider chain)
---   0004  scheduler (scheduled_tasks)
---   0005  analytics (analytics_events)
---   0006  provenance column
---   0007  public_reports (shareable URLs)
---   0008  summary_feedback
---   0009  extraction_cache (optional, for FD2)
---   0010  rate_limit_log (optional, for FD3)
---   0011  reengagement_log (optional, for F49)
+--   0001  ScrapeLite V5 + V5c database migrations
+--   0002  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
+--   0003  Run this in the Supabase SQL Editor (project wvdpfhzolppshnzwprgt).
+--   0004  DatIQ — R19 Scheduler setup (ready-to-paste)
+--   0005  scripts/analytics.sql
+--   0006  scripts/provenance.sql
+--   0007  scripts/public-reports.sql
+--   0008  scripts/summary-feedback.sql
+--   0009  FD2 (idempotent result cache).
+--   0010  FD3 (per-host rate limit log).
+--   0011  F49 (re-engagement email dedup log).
 --   0012  PR1 (billing identity + server-authoritative entitlements).
 --   0013  PR1 step 2 of 3 (backfill user_id).
 --   0014  PR1 step 3 of 3 (lock down the billing tables).
 --   0015  PR1 (system pause flag + privilege fix).
 --   0016  PR2 (invoice drafts, invoices, gapless FY numbering).
 --   0017  PR3 (dunning log + admin audit trail).
---   0018  workflow_events / workflow_runs / workflow_subscriptions (v2 plan §5)
+--   0018  v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -1523,17 +1523,18 @@ alter table public.billing_cron_runs enable row level security;   -- service key
 
 notify pgrst, 'reload schema';
 
--- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
-NOTIFY pgrst, 'reload schema';
-
 
 -- ============================================================
 -- 0018_workflow_events.sql
 -- ============================================================
+-- scripts/workflow-events.sql — v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run (every statement is
+-- IF NOT EXISTS or guarded).
+-- Full context: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §5
+--
 -- ============================================================================
 -- DatIQ — 0018 workflow_events / workflow_runs / workflow_subscriptions
 -- ============================================================================
--- v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §5
 --
 -- Three tables that back the n8n + self-hosted-n8n-MCP-server workflow pipeline:
 --
@@ -1681,3 +1682,6 @@ create trigger workflow_subscriptions_set_updated_at
 --   select count(*) from public.workflow_runs;
 --   select count(*) from public.workflow_subscriptions;
 --   \d public.workflow_events                        -- expect 15 columns + 5 indexes
+
+-- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
+NOTIFY pgrst, 'reload schema';

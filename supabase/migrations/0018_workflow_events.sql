@@ -1,7 +1,11 @@
+-- scripts/workflow-events.sql — v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
+-- Run in: Supabase Dashboard → SQL Editor. Safe to re-run (every statement is
+-- IF NOT EXISTS or guarded).
+-- Full context: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §5
+--
 -- ============================================================================
--- DatIQ — 0012 workflow_events / workflow_runs / workflow_subscriptions
+-- DatIQ — 0018 workflow_events / workflow_runs / workflow_subscriptions
 -- ============================================================================
--- v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §5
 --
 -- Three tables that back the n8n + self-hosted-n8n-MCP-server workflow pipeline:
 --
