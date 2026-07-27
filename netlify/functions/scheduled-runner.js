@@ -18,6 +18,10 @@ import { computeLifecycle } from "../../src/lib/entitlementModel.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 
+// NOTE: this `config` export does NOT register the cron — it is only honoured
+// for v2 functions (`export default`), and this is a v1 handler. The real
+// schedule lives in netlify.toml under [functions."scheduled-runner"]. Keep both in sync;
+// netlify.toml is authoritative.
 export const config = { schedule: "@hourly" };
 
 // Cap batch schedules so one run can't fan out unbounded.

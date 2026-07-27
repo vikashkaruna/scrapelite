@@ -23,6 +23,10 @@ import {
 import { pickDueNotice, noticeCopy } from "../../src/lib/billingNotices.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 
+// NOTE: this `config` export does NOT register the cron — it is only honoured
+// for v2 functions (`export default`), and this is a v1 handler. The real
+// schedule lives in netlify.toml under [functions."billing-lifecycle"]. Keep both in sync;
+// netlify.toml is authoritative.
 export const config = { schedule: "@daily" };
 
 const LOOKAHEAD_DAYS = 8; // enough to catch renewal_t7 plus a day of slack

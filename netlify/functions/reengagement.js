@@ -30,6 +30,10 @@
 // (created by scripts/reengagement-log.sql) to dedup so we never email
 // the same user twice for the same trigger window. Service-key only.
 
+// NOTE: this `config` export does NOT register the cron — it is only honoured
+// for v2 functions (`export default`), and this is a v1 handler. The real
+// schedule lives in netlify.toml under [functions."reengagement"]. Keep both in sync;
+// netlify.toml is authoritative.
 export const config = { schedule: "@daily" };
 
 // Daily schedule-ran digest fires only at this UTC hour. Default 21:00 UTC

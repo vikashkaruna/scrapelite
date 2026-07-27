@@ -25,6 +25,10 @@
 // payment_events. Tax law requires invoice retention for years regardless of a
 // deletion request, and the account row is what lets someone come back. Only
 // the user's CONTENT goes.
+// NOTE: this `config` export does NOT register the cron — it is only honoured
+// for v2 functions (`export default`), and this is a v1 handler. The real
+// schedule lives in netlify.toml under [functions."billing-purge"]. Keep both in sync;
+// netlify.toml is authoritative.
 export const config = { schedule: "@daily" };
 
 const STALE_HOURS = 48;
