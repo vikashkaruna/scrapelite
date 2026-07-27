@@ -21,7 +21,7 @@
 import { runScrapeChain } from "./lib/scrapeProviders.js";
 import { computeLifecycle } from "../../src/lib/entitlementModel.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
-import { enqueue } from "./lib/workflowEnqueue.js";
+import { enqueue, buildCtx } from "./lib/workflowEnqueue.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -188,6 +188,10 @@ async function enqueueChange(client, schedule, changedSummary) {
       detectedAt,
       siteUrl: SITE_URL,
     },
+    // _ctx flows with the event so n8n knows which DatIQ environment
+    // produced it (used for the Supabase URL, site URL, branch name).
+    // See netlify/functions/lib/workflowEnqueue.js buildCtx().
+    _ctx: buildCtx(),
     channels: [
       // Default delivery channels for this event kind. The n8n workflow
       // also reads `workflow_subscriptions` for per-user preferences and

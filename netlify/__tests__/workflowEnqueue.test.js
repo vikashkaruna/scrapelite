@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildEvent,
+  buildCtx,
   enqueue,
   enqueueEvent,
   backoffMs,
@@ -65,6 +66,65 @@ describe("workflowEnqueue.genId", () => {
     const a = genId();
     const b = genId();
     expect(a).not.toBe(b);
+  });
+});
+
+describe("workflowEnqueue.buildCtx", () => {
+  it("reads Netlify-provided env vars into a _ctx object", () => {
+    const env = {
+      CONTEXT: "production",
+      URL: "https://datiq.app",
+      SUPABASE_URL: "aubwooslkkrprdxuiyvj.supabase.co",
+      BRANCH: "main",
+      COMMIT_REF: "abc123",
+    };
+    const ctx = buildCtx(env);
+    expect(ctx).toEqual({
+      env: "production",
+      branch: "main",
+      site_url: "https://datiq.app",
+      supabase_url: "aubwooslkkrprdxuiyvj.supabase.co",
+      commit_ref: "abc123",
+    });
+  });
+
+  it("returns null for missing optional fields instead of undefined", () => {
+    const env = { CONTEXT: "dev" };
+    const ctx = buildCtx(env);
+    expect(ctx.env).toBe("dev");
+    expect(ctx.branch).toBeNull();
+    expect(ctx.site_url).toBeNull();
+    expect(ctx.supabase_url).toBeNull();
+    expect(ctx.commit_ref).toBeNull();
+  });
+
+  it("falls back to SITE_URL and VITE_SUPABASE_URL when URL/SUPABASE_URL are unset", () => {
+    const env = {
+      CONTEXT: "staging",
+      SITE_URL: "https://staging.datiq.app",
+      VITE_SUPABASE_URL: "https://staging.supabase.co",
+    };
+    const ctx = buildCtx(env);
+    expect(ctx.site_url).toBe("https://staging.datiq.app");
+    expect(ctx.supabase_url).toBe("https://staging.supabase.co");
+  });
+
+  it("prefers URL over SITE_URL and DEPLOY_PRIME_URL", () => {
+    const env = {
+      CONTEXT: "branch-deploy",
+      URL: "https://main.datiq.app",
+      SITE_URL: "https://staging.datiq.app",
+      DEPLOY_PRIME_URL: "https://deploy-123.datiq.app",
+    };
+    const ctx = buildCtx(env);
+    expect(ctx.site_url).toBe("https://main.datiq.app");
+  });
+
+  it("lets the caller override individual fields without losing auto-detected ones", () => {
+    const env = { CONTEXT: "production", URL: "https://datiq.app" };
+    const ctx = buildCtx(env, { env: "staging-eu" });
+    expect(ctx.env).toBe("staging-eu");
+    expect(ctx.site_url).toBe("https://datiq.app"); // still auto-detected
   });
 });
 
@@ -134,6 +194,49 @@ describe("workflowEnqueue.buildEvent", () => {
     expect(e.user_id).toBe("11111111-1111-1111-1111-111111111111");
     expect(e.payload).toEqual({ reason: "scrape failed 3x" });
     expect(e.channels).toEqual([{ type: "slack", channel: "#datiq-alerts" }]);
+  });
+
+  it("stashes _ctx in payload._ctx when provided (deployment context flows with the event)", () => {
+    const e = buildEvent({
+      kind: "schedule.changed",
+      payload: { url: "https://example.com" },
+      _ctx: {
+        env: "production",
+        branch: "main",
+        site_url: "https://datiq.app",
+        supabase_url: "aubwooslkkrprdxuiyvj.supabase.co",
+      },
+    });
+    expect(e.payload).toEqual({
+      url: "https://example.com",
+      _ctx: {
+        env: "production",
+        branch: "main",
+        site_url: "https://datiq.app",
+        supabase_url: "aubwooslkkrprdxuiyvj.supabase.co",
+      },
+    });
+  });
+
+  it("does not add payload._ctx when _ctx is omitted", () => {
+    const e = buildEvent({ kind: "schedule.changed" });
+    expect(e.payload).toEqual({});
+    expect("_ctx" in e.payload).toBe(false);
+  });
+
+  it("overwrites an existing payload._ctx if both are passed (explicit _ctx wins)", () => {
+    const e = buildEvent({
+      kind: "schedule.changed",
+      payload: { _ctx: { env: "stale" }, url: "https://x.com" },
+      _ctx: { env: "production" },
+    });
+    expect(e.payload._ctx).toEqual({ env: "production" });
+    expect(e.payload.url).toBe("https://x.com");
+  });
+
+  it("rejects a non-object _ctx", () => {
+    expect(() => buildEvent({ kind: "schedule.changed", _ctx: "not-an-object" })).toThrow(/must be a plain object/);
+    expect(() => buildEvent({ kind: "schedule.changed", _ctx: ["array"] })).toThrow(/must be a plain object/);
   });
 
   it("throws on missing kind", () => {

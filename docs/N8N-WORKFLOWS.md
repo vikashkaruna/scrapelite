@@ -38,14 +38,34 @@ The DatIQ v2 workflow pipeline uses **17 n8n workflows** total: **11 MCP tool wo
 
 1. Log in to your n8n instance at `https://n8n-k8q6.srv1738397.hstgr.cloud/`
 2. Settings → API → Create API Key (save this; it's `DATIQ_N8N_API_KEY`)
-3. In each workflow JSON, replace these placeholders with real values:
-   - `{{SUPABASE_URL}}` → your Supabase project URL (e.g. `https://abc.supabase.co`)
-   - `{{SITE_URL}}` → `https://datiq.app`
-   - `{{WEBHOOK_URL}}` → `https://n8n-k8q6.srv1738397.hstgr.cloud`
-4. For each workflow, open in n8n UI and:
+3. **No JSON edits needed** — the workflows are environment-agnostic. They read the host from `$json._ctx.*` (per-event, set by the orchestrator) or from `$env.N8N_BASE_URL` / `$env.SITE_URL` (per-instance, set in n8n's `.env`).
+4. Configure n8n's `.env` (one-time, on the n8n host):
+
+   ```bash
+   # This n8n's own URL — the workflows POST back to it via $env.N8N_BASE_URL
+   N8N_BASE_URL=https://n8n-k8q6.srv1738397.hstgr.cloud
+   # Schedule-triggered workflows (no event body) need this for the ping URL
+   SITE_URL=https://datiq.app
+   ```
+
+   See `n8n/ops/SECRETS.md` for the full list and what each variable does.
+5. For each workflow, open in n8n UI and:
    - Create the credentials it needs (`datiq-resend`, `datiq-slack-monitoring`, `datiq-supabase-service`, `datiq-orchestrator`)
    - Bind the credentials to the relevant nodes
    - Activate the workflow (toggle in the top-right)
+
+### Why the workflows don't need per-environment editing
+
+Every URL/host in the generated workflow JSONs is an n8n expression that reads from the per-event `_ctx` field (set by the DatIQ orchestrator at dispatch time) or from `$env.*` (n8n's own `.env`). The mapping:
+
+| What | Lives in | Example n8n expression |
+|---|---|---|
+| Supabase project host | `_ctx.supabase_url` (per event) | `"={{ 'https://' + $json._ctx.supabase_url + '/rest/v1/workflow_events' }}"` |
+| DatIQ site host | `_ctx.site_url` (per event) or `$env.SITE_URL` (per instance) | `"={{ 'https://' + $json._ctx.site_url + '/api/workflow-orchestrator/dispatch' }}"` |
+| n8n's own host (for internal webhook URLs) | `$env.N8N_BASE_URL` (per instance) | `"={{ $env.N8N_BASE_URL + '/webhook/datiq/schedule-changed' }}"` |
+| Supabase service key | n8n credential `datiq-supabase-service` | `"=Bearer {{ $credentials['datiq-supabase-service'].value }}"` |
+
+So the SAME `n8n/workflows/*.json` works in production, staging, and every branch deploy. The DatIQ orchestrator reads `process.env` (Netlify-set per context) at enqueue time, builds `_ctx`, and carries it in the event payload. n8n reads `_ctx` from `$json` per event.
 
 ### Bulk import (existing instance)
 

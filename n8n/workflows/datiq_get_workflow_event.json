@@ -29,7 +29,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event_id }}&select=*",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.event_id + '&select=*') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

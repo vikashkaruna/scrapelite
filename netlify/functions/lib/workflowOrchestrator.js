@@ -109,6 +109,21 @@ export async function claimPending(client, { limit = POLL_LIMIT, now = new Date(
 }
 
 // ── 3. Dispatch a single event to n8n ──────────────────────────────────
+// Build the dispatch body. n8n workflows read `$json._ctx.*` to learn
+// which DatIQ environment the event came from, so we denormalize
+// `row.payload._ctx` to a top-level `_ctx` field in the body. n8n sees
+// a flat object: { id, kind, ..., _ctx: { env, branch, site_url, ... } }.
+//
+// Exported for testing — production code goes through dispatchOne().
+export function buildDispatchBody(row) {
+  const { _ctx, ...rest } = row.payload || {};
+  return {
+    ...row,
+    payload: rest,
+    _ctx: _ctx && typeof _ctx === "object" ? _ctx : {},
+  };
+}
+
 export async function dispatchOne(env, client, row, { fetchImpl = fetch, now = new Date() } = {}) {
   const path = KIND_TO_N8N_WEBHOOK[row.kind];
   if (!path) {
@@ -118,7 +133,8 @@ export async function dispatchOne(env, client, row, { fetchImpl = fetch, now = n
     return await markFailed(client, row, "N8N_BASE_URL not configured", { now });
   }
   const url = n8nFetch(env, path);
-  const rawBody = JSON.stringify(row);
+  const body = buildDispatchBody(row);
+  const rawBody = JSON.stringify(body);
   const headers = {
     "Content-Type": "application/json",
     "X-DatIQ-Signature": buildHeader(env.n8nSecret || "", rawBody, now.getTime()),

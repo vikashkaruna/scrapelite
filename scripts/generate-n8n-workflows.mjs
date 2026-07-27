@@ -6,7 +6,7 @@
 // files in n8n/workflows/ are the source of truth that gets imported
 // into n8n; this script is the editor for those files.
 //
-// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §4.3
+// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §4.3, §11
 //
 // Run: node scripts/generate-n8n-workflows.mjs
 //   (no args — generates everything; safe to re-run; idempotent)
@@ -16,6 +16,22 @@
 // "trigger → http request → error branch → update DB"). Hand-writing
 // 200+ lines of JSON for each is error-prone; a generator is ~30
 // lines per spec and the JSON is always consistent.
+//
+// ── URL/HOST PLACEHOLDERS (replaces the previous {{SUPABASE_URL}} etc.) ──
+// The generated workflow JSONs never contain raw host placeholders.
+// Every URL/host that varies by environment is emitted as a n8n
+// expression that reads from the per-event `_ctx` field (or from
+// `$env` for n8n-instance config):
+//
+//   {{SUPABASE_URL}}   →  $json._ctx.supabase_url   (per DatIQ env, from Netlify)
+//   {{SITE_URL}}       →  $json._ctx.site_url       (per DatIQ env, from Netlify)
+//   {{WEBHOOK_URL}}    →  $env.N8N_BASE_URL         (this n8n's own URL)
+//
+// The orchestrator puts `_ctx` in the top level of the dispatch body
+// (see netlify/functions/lib/workflowOrchestrator.js buildDispatchBody).
+// A re-import of the same workflow JSONs therefore works unchanged
+// across production, staging, and branch deploys — only the orchestrator
+// env vars change.
 
 import { writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -27,9 +43,37 @@ const __dirname = dirname(__filename);
 const ROOT = resolve(__dirname, "..");
 const OUT_DIR = join(ROOT, "n8n", "workflows");
 
-const SUPABASE_BASE = "https://{{SUPABASE_URL}}/rest/v1";
-const DATIQ_API_BASE = "https://{{SITE_URL}}/api";
-const N8N_WEBHOOK_BASE = "{{WEBHOOK_URL}}/webhook/datiq";
+// ── URL expression helpers ─────────────────────────────────────────────
+//
+// n8n URL / header / jsonBody fields accept a JS expression when prefixed
+// with `=`. We compose URLs as JS string concatenation so the host is
+// read from the per-event `_ctx` and the path/query is literal.
+//
+// `sb(pathAndQuery)` returns an expression for a Supabase REST URL.
+//   sb("/rest/v1/workflow_events?id=eq." + $json.event_id)
+//   →  "={{ 'https://' + $json._ctx.supabase_url + '/rest/v1/workflow_events?id=eq.' + $json.event_id }}"
+//
+// `api(pathAndQuery)` returns an expression for a DatIQ API URL.
+//   api("/api/workflow-orchestrator/dispatch")
+//   →  "={{ 'https://' + $json._ctx.site_url + '/api/workflow-orchestrator/dispatch' }}"
+//
+// `n8nWebhook(pathAndQuery)` returns an expression for an internal n8n
+// webhook URL (read from $env because the webhook is INSIDE this n8n
+// instance, not a DatIQ env thing).
+function jsExpr(literal) {
+  // Wrap a literal string in single quotes. Doubled-up single quotes
+  // are not currently used by the inputs, so this stays simple.
+  return `'${literal.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+function sb(exprStr) {
+  return `={{ ${jsExpr("https://")} + $json._ctx.supabase_url + (${exprStr}) }}`;
+}
+function api(exprStr) {
+  return `={{ ${jsExpr("https://")} + $json._ctx.site_url + (${exprStr}) }}`;
+}
+function n8nWebhook(exprStr) {
+  return `={{ $env.N8N_BASE_URL + (${exprStr}) }}`;
+}
 
 const UUIDS = {};
 
@@ -182,13 +226,14 @@ const MCP_TOOLS = [
       nodeName: "List events",
       parameters: {
         method: "GET",
-        url:
-          "https://{{SUPABASE_URL}}/rest/v1/workflow_events" +
-          "?select=id,kind,ref_id,user_id,state,attempts,max_attempts,next_attempt_at,started_at,finished_at,last_error,created_at" +
-          "&order=next_attempt_at.asc&limit={{ $json.limit || 50 }}" +
-          "{{ $json.state ? '&state=eq.' + $json.state : '' }}" +
-          "{{ $json.kind ? '&kind=eq.' + $json.kind : '' }}" +
-          "{{ $json.user_id ? '&user_id=eq.' + $json.user_id : '' }}",
+        url: sb(
+          "'/rest/v1/workflow_events'" +
+            "+ '?select=id,kind,ref_id,user_id,state,attempts,max_attempts,next_attempt_at,started_at,finished_at,last_error,created_at'" +
+            "+ '&order=next_attempt_at.asc&limit=' + ($json.limit || 50)" +
+            "+ ($json.state ? '&state=eq.' + $json.state : '')" +
+            "+ ($json.kind ? '&kind=eq.' + $json.kind : '')" +
+            "+ ($json.user_id ? '&user_id=eq.' + $json.user_id : '')"
+        ),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -215,7 +260,7 @@ const MCP_TOOLS = [
       nodeName: "Get event",
       parameters: {
         method: "GET",
-        url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event_id }}&select=*`,
+        url: sb("'/rest/v1/workflow_events?id=eq.' + $json.event_id + '&select=*'"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -242,7 +287,7 @@ const MCP_TOOLS = [
       nodeName: "Force dispatch",
       parameters: {
         method: "POST",
-        url: `https://{{SITE_URL}}/api/workflow-orchestrator/dispatch`,
+        url: api("'/api/workflow-orchestrator/dispatch'"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -276,9 +321,10 @@ const MCP_TOOLS = [
       nodeName: "Reset attempts",
       parameters: {
         method: "PATCH",
-        url:
-          `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event_id }}` +
-          `{{ $json.reset_attempts !== false ? '' : '&state=eq.failed' }}`,
+        url: sb(
+          "'/rest/v1/workflow_events?id=eq.' + $json.event_id" +
+            "+ ($json.reset_attempts !== false ? '' : '&state=eq.failed')"
+        ),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -311,7 +357,7 @@ const MCP_TOOLS = [
       nodeName: "Cancel",
       parameters: {
         method: "PATCH",
-        url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event_id }}`,
+        url: sb("'/rest/v1/workflow_events?id=eq.' + $json.event_id"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -348,12 +394,13 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "List schedules",
       parameters: {
         method: "GET",
-        url:
-          "https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks" +
-          "?select=id,user_id,status,cron,next_run_at,data,created_at,updated_at" +
-          "&order=updated_at.desc" +
-          "{{ $json.user_id ? '&user_id=eq.' + $json.user_id : '' }}" +
-          "{{ $json.status ? '&status=eq.' + $json.status : '' }}",
+        url: sb(
+          "'/rest/v1/scheduled_tasks'" +
+            "+ '?select=id,user_id,status,cron,next_run_at,data,created_at,updated_at'" +
+            "+ '&order=updated_at.desc'" +
+            "+ ($json.user_id ? '&user_id=eq.' + $json.user_id : '')" +
+            "+ ($json.status ? '&status=eq.' + $json.status : '')"
+        ),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -391,7 +438,7 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "Insert",
       parameters: {
         method: "POST",
-        url: `https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks`,
+        url: sb("'/rest/v1/scheduled_tasks'"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -424,7 +471,7 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "Pause",
       parameters: {
         method: "PATCH",
-        url: `https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks?id=eq.{{ $json.schedule_id }}`,
+        url: sb("'/rest/v1/scheduled_tasks?id=eq.' + $json.schedule_id"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -450,7 +497,7 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "Resume",
       parameters: {
         method: "PATCH",
-        url: `https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks?id=eq.{{ $json.schedule_id }}`,
+        url: sb("'/rest/v1/scheduled_tasks?id=eq.' + $json.schedule_id"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -476,7 +523,7 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "Delete",
       parameters: {
         method: "DELETE",
-        url: `https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks?id=eq.{{ $json.schedule_id }}`,
+        url: sb("'/rest/v1/scheduled_tasks?id=eq.' + $json.schedule_id"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -505,7 +552,7 @@ const SCHEDULE_MCP_TOOLS = [
       nodeName: "Fetch event",
       parameters: {
         method: "GET",
-        url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event_id }}&select=*`,
+        url: sb("'/rest/v1/workflow_events?id=eq.' + $json.event_id + '&select=*'"),
         sendHeaders: true,
         headerParameters: {
           parameters: [
@@ -595,8 +642,7 @@ const AUTOMATION_WORKFLOWS = [
           typeVersion: 4.2,
           parameters: {
             method: "PATCH",
-            url:
-              `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.event.id }}`,
+            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.event.id"),
             sendHeaders: true,
             headerParameters: {
               parameters: [
@@ -658,7 +704,7 @@ const AUTOMATION_WORKFLOWS = [
           typeVersion: 4.2,
           parameters: {
             method: "PATCH",
-            url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.id }}`,
+            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
             sendHeaders: true,
             headerParameters: {
               parameters: [
@@ -702,7 +748,7 @@ const AUTOMATION_WORKFLOWS = [
           typeVersion: 4.2,
           parameters: {
             method: "PATCH",
-            url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.id }}`,
+            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
             sendHeaders: true,
             headerParameters: {
               parameters: [
@@ -773,7 +819,7 @@ const AUTOMATION_WORKFLOWS = [
         typeVersion: 4.2,
         parameters: {
           method: "PATCH",
-          url: `https://{{SUPABASE_URL}}/rest/v1/workflow_events?id=eq.{{ $json.id }}`,
+          url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
           sendHeaders: true,
           headerParameters: {
             parameters: [
@@ -829,10 +875,11 @@ const AUTOMATION_WORKFLOWS = [
         typeVersion: 4.2,
         parameters: {
           method: "GET",
-          url:
-            "https://{{SUPABASE_URL}}/rest/v1/workflow_events" +
-            "?select=id,user_id,kind,state&kind=eq.schedule.changed" +
-            "&created_at=gte.{{ $now.minus({days: 1 }).toISO() }}",
+          url: sb(
+            "'/rest/v1/workflow_events'" +
+              "+ '?select=id,user_id,kind,state&kind=eq.schedule.changed'" +
+              "+ '&created_at=gte.' + $now.minus({days: 1}).toISO()"
+          ),
           sendHeaders: true,
           headerParameters: {
             parameters: [

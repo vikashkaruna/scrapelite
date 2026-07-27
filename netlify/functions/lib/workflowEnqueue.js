@@ -5,13 +5,19 @@
 // payment-webhook.js, etc.). The pipeline:
 //
 //   producer (e.g. scheduled-runner)
-//     → enqueue({kind, ref_id, user_id, payload, channels})
+//     → enqueue({kind, ref_id, user_id, payload, channels, _ctx})
 //     → row in public.workflow_events with state='pending'
 //     → netlify/functions/workflow-orchestrator.js polls every 5 min
 //     → POSTs the event to the n8n webhook for that kind
 //     → n8n workflow fans out per-channel and updates state
 //
-// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §3 and §5
+// `_ctx` is the deployment context: { env, branch, site_url, supabase_url }.
+// It is stashed INSIDE payload._ctx (not as a separate column) so the row
+// is self-contained — a retried event still carries the context it was
+// enqueued from. The orchestrator denormalizes it to the top level of
+// the dispatch body so n8n can read `$json._ctx.*` directly.
+//
+// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §3, §5, §11
 //
 // API shape matches the rest of the Netlify Functions (REST, no SDK).
 // The `client` arg is the same shape as the `sb()` helper in
@@ -51,6 +57,13 @@ export function genId(prefix = "wfe") {
 
 // Build an event row (no I/O). Validates kind + channels. Returns the
 // row that should be POSTed to /rest/v1/workflow_events.
+//
+// `_ctx` is the deployment context (object). When provided, it is merged
+// into the row's payload under the `_ctx` key. The orchestrator surfaces
+// it at the top of the dispatch body so n8n can read `$json._ctx.*`.
+// Storing it inside payload (instead of as a separate column) keeps the
+// schema unchanged, makes it survive retries, and means a fresh SELECT
+// already returns it without a JOIN.
 export function buildEvent({
   kind,
   refId = null,
@@ -60,6 +73,7 @@ export function buildEvent({
   maxAttempts = MAX_ATTEMPTS_DEFAULT,
   nextAttemptAt = null,
   id = null,
+  _ctx = null,
 } = {}) {
   if (!kind || typeof kind !== "string") {
     throw new Error("workflowEnqueue.buildEvent: kind is required");
@@ -81,13 +95,23 @@ export function buildEvent({
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
     throw new Error("workflowEnqueue.buildEvent: maxAttempts must be 1..20");
   }
+  if (_ctx !== null && _ctx !== undefined && (typeof _ctx !== "object" || Array.isArray(_ctx))) {
+    throw new Error("workflowEnqueue.buildEvent: _ctx must be a plain object");
+  }
   const now = new Date().toISOString();
+  // Merge _ctx into payload under a private key. Existing payload._ctx
+  // (if any) is overwritten by the explicit _ctx argument, but other
+  // payload keys are preserved.
+  const finalPayload = { ...(payload || {}) };
+  if (_ctx && typeof _ctx === "object") {
+    finalPayload._ctx = { ..._ctx };
+  }
   return {
     id: id || genId("wfe"),
     kind,
     ref_id: refId,
     user_id: userId,
-    payload: payload || {},
+    payload: finalPayload,
     channels: channels || [],
     state: STATE.PENDING,
     attempts: 0,
@@ -158,3 +182,43 @@ export function nextAttemptAt(attempts, from = new Date()) {
 }
 
 export { KIND_WHITELIST };
+
+// ── Deployment-context capture ─────────────────────────────────────────
+// Builds the `_ctx` object that flows with every event into n8n.
+// Read from Netlify-provided env vars (which Netlify sets per
+// context: production / staging / branch-deploy-X / local). n8n
+// reads `$json._ctx.*` to know which DatIQ environment the event
+// came from — see generate-n8n-workflows.mjs for the URL pattern.
+//
+// Pass the result of buildCtx() as the `_ctx` argument to enqueue():
+//
+//   await enqueue(client, {
+//     kind: "schedule.changed",
+//     payload: { ... },
+//     _ctx: buildCtx(),
+//   });
+//
+// Netlify's auto-set vars:
+//   - URL              always set, e.g. "https://datiq.app"
+//   - DEPLOY_PRIME_URL set on branch deploys/preview
+//   - CONTEXT          "production" | "staging" | "deploy-preview" | "branch-deploy" | "dev"
+//   - BRANCH           git branch name (set when CONTEXT is branch-deploy/deploy-preview)
+//   - COMMIT_REF       git SHA
+export function buildCtx(env = process.env, overrides = {}) {
+  const context = env.CONTEXT || "unknown";
+  const branch = env.BRANCH || null;
+  const siteUrl = env.URL || env.SITE_URL || env.DEPLOY_PRIME_URL || null;
+  const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL || null;
+  const ctx = {
+    env: context,
+    branch,
+    site_url: siteUrl,
+    supabase_url: supabaseUrl,
+    commit_ref: env.COMMIT_REF || null,
+  };
+  // Allow callers to override (e.g. for tests) without losing auto-detected fields.
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v !== undefined) ctx[k] = v;
+  }
+  return ctx;
+}

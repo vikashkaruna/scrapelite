@@ -29,7 +29,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://{{SITE_URL}}/api/workflow-orchestrator/dispatch",
+        "url": "={{ 'https://' + $json._ctx.site_url + ('/api/workflow-orchestrator/dispatch') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

@@ -253,7 +253,7 @@ The `workflow-orchestrator` Netlify Function polls this table every 5 minutes (s
 
 ## 5. New Supabase tables
 
-Run as a new idempotent migration `scripts/migrations/0002_workflow_events.sql`. Three tables, all RLS-locked, all service-key readable/writable.
+Run as a new idempotent migration `supabase/migrations/0018_workflow_events.sql` (numbered past the upstream branch's `0012_billing_identity.sql`–`0017_billing_lifecycle.sql` to avoid collision). Three tables, all RLS-locked, all service-key readable/writable.
 
 ### `public.workflow_events`
 The queue. See §3 for shape. Indexes on `(state, next_attempt_at)` for the orchestrator's poll query, and on `(ref_id)` so you can look up "all events for schedule X".
@@ -393,7 +393,7 @@ Each phase is a separate commit (or PR) on the `workflow-implementation-and-opti
 - **Exit criterion:** you read this and say "go"
 
 ### Phase 1 — Schema + orchestrator function (no n8n yet)
-- `scripts/migrations/0002_workflow_events.sql` — three tables
+- `supabase/migrations/0018_workflow_events.sql` — three tables
 - `netlify/functions/workflow-orchestrator.js` — poll + claim + post to a stub URL
 - `netlify/functions/lib/workflowEnqueue.js` — `enqueueEvent()` helper, used by everything below
 - 20+ vitest tests for the orchestrator
@@ -441,6 +441,119 @@ Each phase is a separate commit (or PR) on the `workflow-implementation-and-opti
 - Update `CLAUDE.md` "Outstanding tasks" — close `TODO(SCHEDULE_ALERT_WEBHOOK)`, add new "Automation pipeline" section
 - Update `public/help/13-automations.html` (or equivalent) with the new flow
 - PR to main, you approve, merge
+
+---
+
+## 9.5 Per-environment configuration (the `_ctx` pattern)
+
+The workflows in `n8n/workflows/*.json` are environment-agnostic. The same set of 17 JSONs runs in production, staging, and every branch deploy — no per-context re-import, no per-context re-deploy of n8n. This is achieved by carrying the deployment context in the event payload itself rather than baking it into the workflow JSONs.
+
+### The data flow
+
+```
+Netlify function (e.g. scheduled-runner.js)
+   │
+   │  reads process.env.CONTEXT, URL, SUPABASE_URL, BRANCH, COMMIT_REF
+   │  (all auto-set by Netlify per deploy context)
+   │
+   ▼
+buildCtx()  ──→  { env, branch, site_url, supabase_url, commit_ref }
+   │
+   │  passed as _ctx to enqueue()
+   │
+   ▼
+row.payload._ctx  (persisted with the event — survives retries)
+   │
+   │  orchestrator reads row.payload._ctx, denormalizes to top level
+   │
+   ▼
+HTTP POST body to n8n
+{
+  "id": "wfe_…",
+  "kind": "schedule.changed",
+  "payload": { … },
+  "_ctx": { "env": "production", "site_url": "https://datiq.app", … }
+}
+   │
+   ▼
+n8n reads $json._ctx.* in URL/header expressions
+   "url":  "={{ 'https://' + $json._ctx.supabase_url + '/rest/v1/…' }}"
+   "value": "Bearer {{ $credentials['datiq-supabase-service'].value }}"
+```
+
+### What lives where
+
+| Variable | Source | Used by | Rationale |
+|---|---|---|---|
+| `SITE_URL` / `URL` | Netlify auto-set per context | `_ctx.site_url` (webhook workflows) or `$env.SITE_URL` (schedule workflows) | Same env var per context; n8n reads it from the event for webhook-triggered flows, from `$env` for schedule triggers (no body). |
+| `SUPABASE_URL` / `VITE_SUPABASE_URL` | Netlify per context | `_ctx.supabase_url` | Per-context Supabase project (or scratch project on branch deploys). |
+| `CONTEXT` | Netlify auto-set | `_ctx.env` | Lets n8n branch logic: "if production, also post to #prod-alerts; else #dev-alerts". |
+| `BRANCH` | Netlify auto-set (branch deploys only) | `_ctx.branch` | Audit / debugging. |
+| `COMMIT_REF` | Netlify auto-set | `_ctx.commit_ref` | Audit / debugging. |
+| `N8N_BASE_URL` | n8n's own `.env` | `$env.N8N_BASE_URL` (workflows that POST back to n8n) | Same n8n instance URL across all DatIQ contexts — not per-context. |
+| `DATIQ_N8N_API_KEY` | n8n's own `.env` | n8n credential | Shared secret between orchestrator and n8n. |
+| `datiq-supabase-service` | n8n credential store | n8n's HTTP nodes | The Supabase service key. n8n has its own credential store; secrets never flow through the event payload. |
+
+### What the producer (Netlify function) does
+
+```js
+import { enqueue, buildCtx } from "./lib/workflowEnqueue.js";
+
+await enqueue(client, {
+  kind: "schedule.changed",
+  refId: schedule.id,
+  userId: schedule.userId,
+  payload: { /* event data */ },
+  _ctx: buildCtx(),   // ← that's the only new thing
+  channels: [...],
+});
+```
+
+`buildCtx()` reads from `process.env` and returns:
+
+```js
+{
+  env:        "production" | "staging" | "branch-deploy" | "deploy-preview" | "dev",
+  branch:     "main" | "staging" | "<branch-name>" | null,
+  site_url:   "https://datiq.app" | "https://staging--datiqapp.netlify.app" | …,
+  supabase_url: "<project-ref>.supabase.co",
+  commit_ref: "<git-sha>" | null,
+}
+```
+
+The `buildCtx()` helper is in `netlify/functions/lib/workflowEnqueue.js:buildCtx` and is fully unit-tested with 5 assertions.
+
+### What the orchestrator does
+
+`buildDispatchBody(row)` (in `netlify/functions/lib/workflowOrchestrator.js`) destructures `row.payload._ctx` and re-attaches it at the top level of the body posted to n8n. n8n then sees `_ctx` as a regular JSON field it can reference with `$json._ctx.*`. The `_ctx` is no longer nested under `payload` in the body — the denormalization is done at the orchestrator boundary so every n8n workflow can use the same flat `$json._ctx.*` syntax.
+
+### What the generator does
+
+`scripts/generate-n8n-workflows.mjs` has three helpers — `sb(pathExpr)`, `api(pathExpr)`, `n8nWebhook(pathExpr)` — that emit n8n expressions in the canonical form:
+
+```js
+"url": "={{ 'https://' + $json._ctx.supabase_url + '/rest/v1/workflow_events' }}"
+"url": "={{ 'https://' + $json._ctx.site_url + '/api/workflow-orchestrator/dispatch' }}"
+"url": "={{ $env.N8N_BASE_URL + '/webhook/datiq/schedule-changed' }}"
+```
+
+These three helpers cover every host reference in the 17 generated JSONs. The hand-written `00-datiq-smoke-test.json` (schedule trigger, no body) uses `$env.SITE_URL` for its `Ping orchestrator` call.
+
+### What the test enforces
+
+`netlify/__tests__/n8n-workflow-json.test.js` has three new per-workflow assertions:
+
+1. **No raw `{{SUPABASE_URL}}` / `{{SITE_URL}}` / `{{WEBHOOK_URL}}` / `{{DATIQ_N8N_API_KEY}}` / `{{N8N_ENCRYPTION_KEY}}` placeholders** — those are pre-refactor artifacts and the test fails if any reappear.
+2. **If the workflow references `/rest/v1/`, it must use `$json._ctx.supabase_url`** — prevents accidentally hard-coding a Supabase host.
+3. **If the workflow references a DatIQ `/api/` URL, it must use either `$json._ctx.site_url` (webhook) or `$env.SITE_URL` (schedule)** — same for the DatIQ host.
+
+These three rules together are a regression guard: any future workflow that hard-codes a host will fail the test, and the fix is a one-line change to use the right helper.
+
+### Why a per-event `_ctx` and not a per-n8n-instance config
+
+A single n8n instance serves every DatIQ environment. If `_ctx` were stored in n8n's `.env`, the instance would need to be redeployed (or have a runtime reload) every time a branch deploy fires — and the same `SITE_URL` couldn't be production for one event and staging for another in the same minute. Per-event `_ctx` lets one n8n process serve all environments correctly because each event carries the context it was enqueued from.
+
+The same applies to per-Supabase-project credentials. If a branch deploy uses a scratch Supabase project, the orchestrator could (in a future enhancement) read `_ctx.supabase_credential` and pick the right n8n credential by name — same pattern, just one more field. v2 only uses the single `datiq-supabase-service` credential because all current envs share a Supabase project.
 
 ---
 

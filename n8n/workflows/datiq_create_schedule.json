@@ -63,7 +63,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/scheduled_tasks') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

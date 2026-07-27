@@ -44,7 +44,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://{{SUPABASE_URL}}/rest/v1/workflow_events?select=id,kind,ref_id,user_id,state,attempts,max_attempts,next_attempt_at,started_at,finished_at,last_error,created_at&order=next_attempt_at.asc&limit={{ $json.limit || 50 }}{{ $json.state ? '&state=eq.' + $json.state : '' }}{{ $json.kind ? '&kind=eq.' + $json.kind : '' }}{{ $json.user_id ? '&user_id=eq.' + $json.user_id : '' }}",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events'+ '?select=id,kind,ref_id,user_id,state,attempts,max_attempts,next_attempt_at,started_at,finished_at,last_error,created_at'+ '&order=next_attempt_at.asc&limit=' + ($json.limit || 50)+ ($json.state ? '&state=eq.' + $json.state : '')+ ($json.kind ? '&kind=eq.' + $json.kind : '')+ ($json.user_id ? '&user_id=eq.' + $json.user_id : '')) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

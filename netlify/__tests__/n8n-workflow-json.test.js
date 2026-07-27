@@ -142,6 +142,68 @@ describe("n8n/workflows/*.json — required shape", () => {
         expect(incoming.has(n.name), `node "${n.name}" (${n.type}) has no incoming connection`).toBe(true);
       }
     });
+
+    // Per v2 plan §11: workflows are environment-agnostic. The only host placeholders
+    // permitted are `$json._ctx.*` (per-event deployment context, set by the
+    // orchestrator) and `$env.N8N_BASE_URL` (this n8n instance's own URL). Any
+    // raw `{{SUPABASE_URL}}` / `{{SITE_URL}}` / `{{WEBHOOK_URL}}` string is a
+    // pre-refactor artifact and must NOT be in the imported JSON — those would
+    // be sent to n8n verbatim and break the URL parse.
+    it(`${rel} has no raw {{...}} host placeholders (use $json._ctx.* or $env.* instead)`, () => {
+      const w = loadWorkflow(file);
+      const text = w.raw;
+      const forbidden = [
+        "{{SUPABASE_URL}}",
+        "{{SITE_URL}}",
+        "{{WEBHOOK_URL}}",
+        "{{DATIQ_N8N_API_KEY}}",
+        "{{N8N_ENCRYPTION_KEY}}",
+      ];
+      for (const needle of forbidden) {
+        expect(
+          text.includes(needle),
+          `workflow ${rel} still contains the raw placeholder "${needle}". ` +
+            "Replace with $json._ctx.* (per-event) or $env.* (n8n env) — see generate-n8n-workflows.mjs."
+        ).toBe(false);
+      }
+    });
+
+    // If the workflow talks to Supabase REST, the host must be read from
+    // $json._ctx.supabase_url (i.e. an expression), not a literal string.
+    it(`${rel} uses $json._ctx.supabase_url for any Supabase REST URL`, () => {
+      const w = loadWorkflow(file);
+      const text = w.raw;
+      const hitsSupabase = /\/rest\/v1\//.test(text);
+      if (!hitsSupabase) return; // not every workflow talks to Supabase
+      expect(
+        /\$json\._ctx\.supabase_url/.test(text),
+        `${rel} references /rest/v1/ but does not use $json._ctx.supabase_url for the host. ` +
+          "A static 'https://abc.supabase.co/...' or hard-coded 'https://{{SUPABASE_URL}}/...' is a refactor regression."
+      ).toBe(true);
+      // And there must be no literal 'https://...supabase.co' host baked in
+      expect(
+        /https:\/\/[a-z0-9-]+\.supabase\.co/.test(text),
+        `${rel} contains a literal Supabase host. Use $json._ctx.supabase_url instead.`
+      ).toBe(false);
+    });
+
+    // Same for the DatIQ API (SITE_URL replacement). Two patterns accepted:
+    //   - $json._ctx.site_url — for webhook-triggered workflows that get _ctx in the body
+    //   - $env.SITE_URL      — for schedule-triggered workflows (no body, no _ctx)
+    // What is NOT accepted: a literal "https://datiq.app/..." or "https://{{SITE_URL}}/..." host.
+    it(`${rel} uses $json._ctx.site_url or $env.SITE_URL for any DatIQ /api URL`, () => {
+      const w = loadWorkflow(file);
+      const text = w.raw;
+      const hitsApi = /datiq\.app\/api|\/api\//.test(text);
+      if (!hitsApi) return;
+      const ok =
+        /\$json\._ctx\.site_url/.test(text) || /\$env\.SITE_URL/.test(text);
+      expect(
+        ok,
+        `${rel} references a DatIQ /api URL but does not use $json._ctx.site_url (webhook) or $env.SITE_URL (schedule). ` +
+          "A literal 'https://datiq.app/...' is a refactor regression — set SITE_URL in n8n's .env or pass _ctx in the event payload."
+      ).toBe(true);
+    });
   }
 });
 

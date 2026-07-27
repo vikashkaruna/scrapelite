@@ -33,7 +33,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://{{SUPABASE_URL}}/rest/v1/scheduled_tasks?select=id,user_id,status,cron,next_run_at,data,created_at,updated_at&order=updated_at.desc{{ $json.user_id ? '&user_id=eq.' + $json.user_id : '' }}{{ $json.status ? '&status=eq.' + $json.status : '' }}",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/scheduled_tasks'+ '?select=id,user_id,status,cron,next_run_at,data,created_at,updated_at'+ '&order=updated_at.desc'+ ($json.user_id ? '&user_id=eq.' + $json.user_id : '')+ ($json.status ? '&status=eq.' + $json.status : '')) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

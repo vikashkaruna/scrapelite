@@ -1,9 +1,12 @@
 # n8n Secrets Management
 
-> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4.4
+> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4.4, §9.5
 > **Audience:** You (Vikash). Documented for reproducibility.
 
 The n8n deployment has three categories of secrets, each with different rotation rules.
+
+> **How per-environment config works (see WORKFLOW-IMPLEMENTATION-PLAN.md §9.5 for the full design):**
+> The Supabase URL, the DatIQ site URL, and the git branch are NOT in this file. They are per-event and flow through `$json._ctx.*` — the orchestrator reads them from `process.env` at enqueue time, puts them in the event payload as `_ctx`, and n8n reads them back from `$json._ctx.*` in URL/header expressions. The only host-shaped env vars on the n8n host are the ones n8n itself needs: `N8N_BASE_URL` (its own URL) and `SITE_URL` (DatIQ site, used by the schedule-triggered smoke test only).
 
 ---
 

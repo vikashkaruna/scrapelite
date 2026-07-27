@@ -1,12 +1,14 @@
 # Session handoff — 2026-07-27 · v2 Workflow pipeline (n8n + MCP server)
 
-> **State at close (post-second-rebase):** Branch `workflow-implementation-and-optimization` is **9 commits ahead of `staging`** (which already includes the invoicing + lifecycle release, the migrations-executed release, and the 5 Netlify/CI fixes that landed in staging after the prod-db branch was merged). All 7 phases of the v2 plan shipped on top of that base. 1436 unit + 727 contract tests pass (1 pre-existing failure on the upstream branch, unrelated to this work).
+> **State at close (post-`_ctx` refactor):** Branch `workflow-implementation-and-optimization` is **9 commits ahead of `staging`**. All 7 phases of the v2 plan shipped on top of that base, plus the per-environment `_ctx` refactor (see "Per-environment configuration" below). 1436 unit + 786 contract tests pass (1 pre-existing failure on the upstream branch, unrelated to this work).
 >
 > **NOT yet merged to main.** Razorpay payment workflow (plan §④) deferred to V2 per your call on 2026-07-26. Everything else is ready to deploy.
 >
 > **Status of production:** unchanged from the 2026-07-26 handoff. The CI gate is green, datiq.app is live on the v1.0 build. The v2 plan does NOT touch production until you run the operator checklist (see "How to deploy" below).
 >
 > **Migration note:** my v2 `0012_workflow_events.sql` was renumbered to `0018_workflow_events.sql` to avoid colliding with the upstream branch's `0012_billing_identity.sql` (and 0013–0017). All references updated.
+>
+> **Per-environment configuration (`_ctx` pattern):** the 17 n8n workflow JSONs are environment-agnostic. They no longer contain `{{SUPABASE_URL}}` / `{{SITE_URL}}` / `{{WEBHOOK_URL}}` placeholders. Every URL is an n8n expression that reads from the per-event `$json._ctx.*` (set by the orchestrator at dispatch time from `process.env` Netlify auto-set vars: `URL`, `SUPABASE_URL`, `CONTEXT`, `BRANCH`, `COMMIT_REF`) or from `$env.*` (per-instance, set in n8n's `.env`). The same set of 17 JSONs works in production, staging, and every branch deploy without re-importing. See WORKFLOW-IMPLEMENTATION-PLAN.md §9.5 for the full design.
 >
 > **Rebase chain:** was originally based on `claude/prod-db-migration-commands-8ea1bc`, then re-rebased onto `staging` (which includes the prod-db branch as a merge plus 5 Netlify/CI fixes). No new conflicts in the second rebase — the staging additions are all in non-overlapping files (netlify.toml, .github/workflows, package.json smoke:staging line, CLAUDE.md).
 

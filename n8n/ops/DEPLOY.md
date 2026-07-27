@@ -72,8 +72,17 @@ nano n8n/.env
 Fill in:
 - `N8N_ENCRYPTION_KEY` — `openssl rand -hex 32`
 - `DATIQ_N8N_API_KEY` — `openssl rand -hex 32`
-- `WEBHOOK_URL` — your public URL
+- `WEBHOOK_URL` and `N8N_BASE_URL` — your public URL (kept in sync)
+- `SITE_URL` — `https://datiq.app` (used by the schedule-triggered smoke test)
 - `GENERIC_TIMEZONE` — `Asia/Kolkata`
+
+The Supabase URL, the DatIQ site URL, and the git branch are NOT in
+this file — they are per-event and flow through `$json._ctx.*` (the
+orchestrator reads them from `process.env` and puts them in the
+event payload). The only host-shaped env vars on the n8n host are
+the ones n8n itself needs (its own URL and, for the smoke test, the
+DatIQ site). See `n8n/ops/SECRETS.md` and `n8n/.env.example` for the
+full per-variable list.
 
 Lock down the file:
 ```bash

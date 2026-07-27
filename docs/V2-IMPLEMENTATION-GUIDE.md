@@ -279,25 +279,29 @@ For each of the 17 JSON files:
 2. Select the JSON file
 3. Click "Import"
 
-### 6.4 Set placeholders in the URLs
+### 6.4 No placeholder editing needed (the `_ctx` pattern)
 
-The generator emits `{{SUPABASE_URL}}`, `{{SITE_URL}}`, and `{{WEBHOOK_URL}}` as placeholders. After import, do a project-wide find-and-replace in the n8n UI:
+The generator no longer emits `{{SUPABASE_URL}}`, `{{SITE_URL}}`, or `{{WEBHOOK_URL}}` placeholders. Every URL/host in the generated workflow JSONs is an n8n expression that reads from the per-event `_ctx` field (set by the orchestrator at dispatch time) or from n8n's own `$env` (per-instance, set in `n8n/.env`).
 
-- For each imported workflow, open it
-- Find every `{{SUPABASE_URL}}` and replace with your Supabase URL (e.g. `abc.supabase.co`)
-- Find every `{{SITE_URL}}` and replace with `datiq.app` (without `https://` because the URL is `https://{{SITE_URL}}/...`)
-- Find every `{{WEBHOOK_URL}}` and replace with `n8n-k8q6.srv1738397.hstgr.cloud`
+So the import step is:
 
-A faster way: edit the JSONs locally with `sed`, then re-import:
+1. Import all 17 JSONs as in §6.3 — no find-and-replace needed
+2. Set `N8N_BASE_URL` and `SITE_URL` in n8n's `.env` (one-time, see `n8n/ops/DEPLOY.md`)
+3. Bind the credentials (§6.5) and activate
 
-```bash
-cd n8n/workflows
-sed -i '' 's|{{SUPABASE_URL}}|abc.supabase.co|g' *.json
-sed -i '' 's|{{SITE_URL}}|datiq.app|g' *.json
-sed -i '' 's|{{WEBHOOK_URL}}|n8n-k8q6.srv1738397.hstgr.cloud|g' *.json
-# then re-import
-npx n8n import:workflow --input=n8n/workflows/ --separate
-```
+The same set of workflow JSONs runs unchanged in production, staging, and every branch deploy. The DatIQ orchestrator reads `process.env.URL`, `SUPABASE_URL`, `CONTEXT`, `BRANCH`, `COMMIT_REF` (all Netlify-auto-set per context) at enqueue time, builds `_ctx`, and carries it in the event payload. n8n reads `_ctx` from `$json` per event.
+
+**Quick map of which n8n expressions read from where:**
+
+| Expression | Reads from | Used by |
+|---|---|---|
+| `$json._ctx.supabase_url` | event payload (`_ctx`) | webhook-triggered workflows talking to Supabase |
+| `$json._ctx.site_url` | event payload (`_ctx`) | webhook-triggered workflows talking to DatIQ API |
+| `$env.N8N_BASE_URL` | n8n's `.env` | workflows that POST back to n8n's own webhook endpoints |
+| `$env.SITE_URL` | n8n's `.env` | schedule-triggered workflows (no body, no `_ctx`) — the smoke test only |
+| `$credentials['datiq-supabase-service']` | n8n credential store | Supabase service key (Authorization header) |
+
+See `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §9.5 for the full design and rationale.
 
 ### 6.5 Bind credentials + activate
 
@@ -684,12 +688,13 @@ docker compose down && docker compose up -d
 
 V2 is "done for production" when ALL of the following are true:
 
-- [ ] Supabase migration 0012 applied to production
+- [ ] Supabase migration 0018 applied to production (`workflow_events` / `workflow_runs` / `workflow_subscriptions`)
 - [ ] 3 Netlify env vars set in production context (`N8N_BASE_URL`, `N8N_WEBHOOK_SECRET`, `WORKFLOW_ORCHESTRATOR_TOKEN`)
 - [ ] n8n instance has `N8N_ENCRYPTION_KEY` set and is restarted
+- [ ] n8n `.env` has `N8N_BASE_URL` and `SITE_URL` set (per-instance, not per-DatIQ-env)
 - [ ] 4 credentials created in n8n (`datiq-resend`, `datiq-slack-monitoring`, `datiq-supabase-service`, `datiq-orchestrator`)
 - [ ] 17 workflow JSONs imported into n8n, credentials bound, all activated
-- [ ] 3 placeholders replaced (`{{SUPABASE_URL}}`, `{{SITE_URL}}`, `{{WEBHOOK_URL}}`)
+- [ ] No placeholder editing needed — workflows are environment-agnostic; the orchestrator passes `_ctx` per event
 - [ ] Smoke test workflow runs successfully (Executions tab shows green)
 - [ ] End-to-end manual test (§7.1) passes: schedule → change → queue → orchestrator → n8n → Slack + email → done
 - [ ] MCP tools callable from Claude Desktop / Claude Code / mavis

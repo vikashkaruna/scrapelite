@@ -9,6 +9,7 @@ import {
   requeueStuck,
   claimPending,
   dispatchOne,
+  buildDispatchBody,
   markDone,
   markFailed,
   markFailedOrRetry,
@@ -308,6 +309,51 @@ describe("markDone / markFailed / markFailedOrRetry", () => {
   });
 });
 
+describe("buildDispatchBody", () => {
+  it("denormalizes row.payload._ctx to top-level _ctx in the body", () => {
+    const row = {
+      id: "wfe_a",
+      kind: "schedule.changed",
+      payload: {
+        url: "https://example.com",
+        _ctx: { env: "production", site_url: "https://datiq.app", supabase_url: "abc.supabase.co" },
+      },
+      state: "processing",
+    };
+    const body = buildDispatchBody(row);
+    expect(body.id).toBe("wfe_a");
+    expect(body.kind).toBe("schedule.changed");
+    expect(body._ctx).toEqual({
+      env: "production",
+      site_url: "https://datiq.app",
+      supabase_url: "abc.supabase.co",
+    });
+    // _ctx must NOT also live under payload anymore — the body is what n8n sees
+    expect("_ctx" in body.payload).toBe(false);
+    expect(body.payload.url).toBe("https://example.com");
+  });
+
+  it("substitutes an empty _ctx object when row.payload has no _ctx", () => {
+    const row = { id: "wfe_b", kind: "op.alert", payload: { x: 1 }, state: "processing" };
+    const body = buildDispatchBody(row);
+    expect(body._ctx).toEqual({});
+    expect(body.payload).toEqual({ x: 1 });
+  });
+
+  it("substitutes an empty _ctx object when row.payload is null/undefined", () => {
+    const row = { id: "wfe_c", kind: "op.alert", payload: null, state: "processing" };
+    const body = buildDispatchBody(row);
+    expect(body._ctx).toEqual({});
+    expect(body.payload).toEqual({});
+  });
+
+  it("ignores a non-object _ctx inside payload (defence against poisoned rows)", () => {
+    const row = { id: "wfe_d", kind: "op.alert", payload: { _ctx: "not-an-object" }, state: "processing" };
+    const body = buildDispatchBody(row);
+    expect(body._ctx).toEqual({});
+  });
+});
+
 describe("dispatchOne", () => {
   it("POSTs the event to the n8n webhook for its kind, signs the body, marks done on 2xx", async () => {
     let runPosted = false;
@@ -340,13 +386,32 @@ describe("dispatchOne", () => {
         },
       },
     ]);
-    const row = { id: "wfe_a", kind: "schedule.changed", state: "processing", attempts: 1, max_attempts: 5, payload: {}, channels: [] };
+    const row = {
+      id: "wfe_a",
+      kind: "schedule.changed",
+      state: "processing",
+      attempts: 1,
+      max_attempts: 5,
+      payload: {
+        _ctx: { env: "production", site_url: "https://datiq.app", supabase_url: "abc.supabase.co" },
+      },
+      channels: [],
+    };
     const fetchImpl = vi.fn(async (url, init) => {
       // Verify the signature header is present
       expect(init.headers["X-DatIQ-Signature"]).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
       expect(init.headers["X-DatIQ-Event-Id"]).toBe("wfe_a");
       expect(init.headers["X-DatIQ-Event-Kind"]).toBe("schedule.changed");
       expect(url).toBe(env.n8nBase + KIND_TO_N8N_WEBHOOK["schedule.changed"]);
+      // Verify the dispatch body carries _ctx at the top level
+      const sent = JSON.parse(init.body);
+      expect(sent._ctx).toEqual({
+        env: "production",
+        site_url: "https://datiq.app",
+        supabase_url: "abc.supabase.co",
+      });
+      // And that _ctx is no longer nested inside payload
+      expect("_ctx" in sent.payload).toBe(false);
       return new Response("{}", { status: 200 });
     });
     const r = await dispatchOne(env, baseClient, row, { fetchImpl });

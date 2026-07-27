@@ -24,7 +24,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://{{SUPABASE_URL}}/rest/v1/workflow_events?select=id,user_id,kind,state&kind=eq.schedule.changed&created_at=gte.{{ $now.minus({days: 1 }).toISO() }}",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events'+ '?select=id,user_id,kind,state&kind=eq.schedule.changed'+ '&created_at=gte.' + $now.minus({days: 1}).toISO()) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
