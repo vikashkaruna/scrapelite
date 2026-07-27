@@ -1,10 +1,12 @@
 # Session handoff — 2026-07-27 · v2 Workflow pipeline (n8n + MCP server)
 
-> **State at close:** Branch `workflow-implementation-and-optimization` is **4 commits ahead of `main`**. All 7 phases of the v2 plan shipped. 1619 tests passing (was 1082 — +537 new). Zero regressions on the existing 1005 unit tests.
+> **State at close (post-rebase):** Branch `workflow-implementation-and-optimization` is **8 commits ahead of `claude/prod-db-migration-commands-8ea1bc`** (the invoicing + lifecycle branch; not yet merged to `main`). All 7 phases of the v2 plan shipped on top of that base. 1436 unit + 727 contract tests pass (1 pre-existing failure on the upstream branch, unrelated to this work).
 >
 > **NOT yet merged to main.** Razorpay payment workflow (plan §④) deferred to V2 per your call on 2026-07-26. Everything else is ready to deploy.
 >
 > **Status of production:** unchanged from the 2026-07-26 handoff. The CI gate is green, datiq.app is live on the v1.0 build. The v2 plan does NOT touch production until you run the operator checklist (see "How to deploy" below).
+>
+> **Migration note:** my v2 `0012_workflow_events.sql` was renumbered to `0018_workflow_events.sql` to avoid colliding with the upstream branch's `0012_billing_identity.sql` (and 0013–0017). All references updated.
 
 ---
 
@@ -24,7 +26,7 @@ The previous direct-Resend/Slack/webhook delivery is replaced by an enqueue → 
 
 | File | Status | What it does |
 |---|---|---|
-| `supabase/migrations/0012_workflow_events.sql` | NEW, idempotent | 3 tables: `workflow_events` (queue), `workflow_runs` (per-attempt log), `workflow_subscriptions` (per-user channels). Run via `npm run migrate:prod` or paste in SQL Editor. |
+| `supabase/migrations/0018_workflow_events.sql` | NEW, idempotent | 3 tables: `workflow_events` (queue), `workflow_runs` (per-attempt log), `workflow_subscriptions` (per-user channels). Run via `npm run migrate:prod` or paste in SQL Editor. |
 | `netlify/functions/lib/workflowEnqueue.js` | NEW | `enqueue()` + backoff schedule (1m, 5m, 30m, 2h, 12h). Used by every producer. |
 | `netlify/functions/lib/workflowOrchestrator.js` | NEW | Pure logic: poll + claim + dispatch + state transitions. |
 | `netlify/functions/lib/n8nSignature.js` | NEW | HMAC-SHA256 + 5-min replay window + constant-time compare. |
@@ -85,7 +87,7 @@ This is the **only** thing that needs human action. Everything else is code. Fro
    PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.XXX.supabase.co:5432/postgres" \
      npm run migrate:prod
    ```
-   Or paste `supabase/migrations/0012_workflow_events.sql` in the Supabase SQL Editor.
+   Or paste `supabase/migrations/0018_workflow_events.sql` in the Supabase SQL Editor.
 
 2. **Set 3 new Netlify env vars per context:**
    - `N8N_BASE_URL` = `https://n8n-k8q6.srv1738397.hstgr.cloud`

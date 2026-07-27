@@ -47,7 +47,7 @@ If all 10 are green, proceed to section 2.
 
 ### 2.1 Migration file
 
-`supabase/migrations/0012_workflow_events.sql` — idempotent, safe to re-run.
+`supabase/migrations/0018_workflow_events.sql` — idempotent, safe to re-run.
 
 ### 2.2 Apply via the Node runner (preferred — works on any machine, no psql required)
 
@@ -65,13 +65,13 @@ The runner discovers every `00*.sql` in `supabase/migrations/`, prints them in o
 [prod-migrate] applied supabase/migrations/0001_core_tables_and_billing.sql
 [prod-migrate] applied supabase/migrations/0002_pricing_and_coupons.sql
 ...
-[prod-migrate] applied supabase/migrations/0012_workflow_events.sql
+[prod-migrate] applied supabase/migrations/0018_workflow_events.sql
 [prod-migrate] ✓ done. applied=11, skipped=0, total=11
 ```
 
 ### 2.3 Apply via the Supabase SQL Editor (alternative)
 
-If you'd rather paste, open the dashboard → SQL Editor → New query → paste the contents of `0012_workflow_events.sql` → Run. It's idempotent so re-running is safe.
+If you'd rather paste, open the dashboard → SQL Editor → New query → paste the contents of `0018_workflow_events.sql` → Run. It's idempotent so re-running is safe.
 
 ### 2.4 Verify
 

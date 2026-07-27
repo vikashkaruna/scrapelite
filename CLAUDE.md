@@ -83,7 +83,7 @@ The manual "Run now" on /schedules is client-side and only toasts the change; au
 
 | Component | What it does |
 |---|---|
-| `supabase/migrations/0012_workflow_events.sql` | 3 new tables: `workflow_events` (queue), `workflow_runs` (per-attempt log), `workflow_subscriptions` (per-user channel prefs). All RLS-locked; service-key only. |
+| `supabase/migrations/0018_workflow_events.sql` | 3 new tables: `workflow_events` (queue), `workflow_runs` (per-attempt log), `workflow_subscriptions` (per-user channel prefs). All RLS-locked; service-key only. |
 | `netlify/functions/lib/workflowEnqueue.js` | Build + enqueue. Backoff schedule (1m, 5m, 30m, 2h, 12h). Kind whitelist. |
 | `netlify/functions/lib/workflowOrchestrator.js` | Poll + claim (optimistic concurrency) + dispatch + state transitions. All pure, testable. |
 | `netlify/functions/lib/n8nSignature.js` | HMAC-SHA256 + 5-min replay window + constant-time compare. |
@@ -101,7 +101,7 @@ The manual "Run now" on /schedules is client-side and only toasts the change; au
 1. **Apply the Supabase migration:**
    ```bash
    PROD_SUPABASE_DB_URL=... npm run migrate:prod
-   # (or paste supabase/migrations/0012_workflow_events.sql in the SQL editor)
+   # (or paste supabase/migrations/0018_workflow_events.sql in the SQL editor)
    ```
 2. **Set the new Netlify env vars per context (see `NETLIFY-ENVIRONMENTS.md`):**
    - `N8N_BASE_URL` = `https://n8n-k8q6.srv1738397.hstgr.cloud`
