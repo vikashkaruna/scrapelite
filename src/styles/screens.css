@@ -7294,3 +7294,56 @@
   .automation-detail-grid { grid-template-columns: 1fr; }
   .automation-table th:nth-child(4), .automation-table td:nth-child(4) { display: none; }
 }
+
+/* ── Webhook setup modal (F-44) ──────────────────────────────────────── */
+.ws-modal { max-width: 480px; }
+.ws-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  font-size: .76em; font-weight: 700; letter-spacing: .02em;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.ws-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3);
+  display: inline-block;
+}
+.ws-status-on { color: #047857; background: color-mix(in srgb, #10b981 12%, transparent); border-color: color-mix(in srgb, #10b981 30%, transparent); }
+.ws-status-on .ws-status-dot { background: #10b981; }
+.ws-status-platform { color: #1e40af; background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+.ws-status-platform .ws-status-dot { background: var(--accent); }
+.ws-status-off { color: var(--text-3); }
+.ws-form { display: flex; flex-direction: column; gap: 10px; }
+.ws-label { font-size: .8em; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.ws-input-row { display: flex; gap: 8px; }
+.ws-input-row .ws-input { flex: 1; }
+.ws-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+.ws-input-row button { white-space: nowrap; }
+.ws-clear-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; border: 0; color: var(--text-3);
+  font-size: .8em; cursor: pointer; padding: 2px 0;
+  align-self: flex-start;
+}
+.ws-clear-btn:hover { color: var(--danger); }
+.ws-test-result {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 10px; border-radius: 8px;
+  font-size: .85em; font-weight: 600;
+}
+.ws-test-result.ok { color: #047857; background: color-mix(in srgb, #10b981 12%, transparent); }
+.ws-test-result.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.ws-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 4px; flex-wrap: wrap;
+}
+.ws-docs-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--accent); text-decoration: none;
+  font-size: .85em; font-weight: 600;
+}
+.ws-docs-link:hover { text-decoration: underline; }
