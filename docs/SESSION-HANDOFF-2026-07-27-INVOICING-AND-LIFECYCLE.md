@@ -118,14 +118,44 @@ Existing vars reused: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY
 
 ## 6. ⚠️ Deployment runbook — READ BEFORE APPLYING ANYTHING
 
+> Full operational detail — every command, the staged-apply path, the
+> verification queries and the known failure modes — is in
+> **[`docs/DB-MIGRATION-RUNBOOK.md`](DB-MIGRATION-RUNBOOK.md)**. This section is
+> the summary and the reasoning.
+
 ### 6.1 The SQL has never been executed
 
 There is no Postgres or Docker in this worktree. Migrations `0012`–`0017` have only been checked for `$$` balance and structure. **Apply them to a scratch Supabase project first** and confirm the objects in §4 exist.
 
+Use the **Direct** connection string (port 5432, not the pooler), and URL-encode any special character in the password:
+
 ```bash
-PROD_SUPABASE_DB_URL=... npm run migrate:prod -- --dry-run
-PROD_SUPABASE_DB_URL=... npm run migrate:prod
+PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.XXXX.supabase.co:5432/postgres" npm run migrate:prod -- --list
 ```
+
+```bash
+PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.XXXX.supabase.co:5432/postgres" npm run migrate:prod -- --dry-run
+```
+
+```bash
+PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.XXXX.supabase.co:5432/postgres" npm run migrate:prod
+```
+
+`--list` makes no connection. `--dry-run` connects, prints `current_database` /
+host / version, aborts if the target is not a Supabase `postgres` database, and
+applies nothing. The real run puts each file in its own transaction and stops at
+the first failure without attempting the rest.
+
+Verification after applying (`0001`–`0017` in full): **26 tables, 9 functions,
+2 triggers, 0 RLS-disabled tables.** Queries in the runbook §6.
+
+**No SQL step creates the database functions separately** — all 9 functions and
+both triggers come from the migrations themselves (`redeem_coupon` from `0012`'s
+predecessor `0002`; `plan_rank` / `merge_entitlement_from_subscriptions` /
+`claim_billing_session` from `0012`; `fy_of` / `next_invoice_no` /
+`issue_invoice` / `invoices_immutable` from `0016`). `billing-lifecycle` and
+`billing-purge` are *Netlify* scheduled functions and register on deploy, not
+via SQL.
 
 ### 6.2 Migration order is load-bearing
 
@@ -133,9 +163,30 @@ PROD_SUPABASE_DB_URL=... npm run migrate:prod
 
 1. Apply **`0012`** (nullable columns, link table, `entitlements`). Zero behaviour change.
 2. **Ship the dual-write release and let it run for at least one release cycle.** New rows then carry `user_id` from creation.
-3. Apply **`0013`** (backfill). Note the orphan count it reports — those are genuine guest purchases.
+3. Apply **`0013`** (backfill). Note the orphan count — see the caveat below.
 4. Apply **`0014`** (RLS flip). **After this, guest/unclaimed payment history stops showing in-app.** That is the intended end state, but know it before you flip it.
 5. Apply **`0015`**, **`0016`**, **`0017`**.
+
+⚠️ **`npm run migrate:prod` cannot do this staging.** It has no stop-at-N flag —
+a bare run applies `0001` → `0017` in one pass, `0014` included. That is fine on
+a scratch project and wrong on a database with real users. The runbook §4 has a
+`node -e` one-liner that applies a named subset with the same
+transaction-per-file semantics; use it for the staged path.
+
+⚠️ **`0013`'s orphan count never reaches your terminal.** It reports via
+`raise notice`, and the runner attaches no notice listener. Query it explicitly
+in the window after `0013` and before `0014`:
+
+```sql
+select (select count(*) from public.subscriptions  where user_id is null) as orphan_subs,
+       (select count(*) from public.payment_events where user_id is null) as orphan_events;
+```
+
+This requires `0012` — `user_id` is added by `0012_billing_identity.sql:19-21`.
+On a pre-`0012` database it fails with `ERROR: 42703: column "user_id" does not
+exist`, which is the signal that `0012` has not been applied there, not a bad
+query. Runbook §6.0 has a probe that reports exactly which migrations a given
+database already has (there is no `schema_migrations` table to consult).
 
 ### 6.3 Arm the purge last, and slowly
 

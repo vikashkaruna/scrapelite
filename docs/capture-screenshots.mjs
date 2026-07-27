@@ -21,6 +21,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+
+// The onboarding tour auto-starts on a fresh profile and its full-screen
+// backdrop swallows every click, so without this the first click below
+// (theme-toggle) retries until it times out and no screenshot is written.
+// Mark the tour completed BEFORE any navigation — see shouldAutoStart() in
+// src/lib/onboardingTour.js, which only checks completedAt/skippedAt.
+await ctx.addInitScript(() => {
+  try {
+    localStorage.setItem(
+      "datiq.onboardingTour.v1",
+      JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
+    );
+  } catch { /* first-party storage unavailable — tour will show, shots may fail */ }
+});
+
 const page = await ctx.newPage();
 const shot = async (name) => { await page.screenshot({ path: join(OUT, name) }); console.log("  ✓", name); };
 
@@ -90,6 +105,18 @@ try {
   await page.waitForURL("**/preview", { timeout: 30000 });
   await sleep(1200);
   await shot("09-domain-map.png");
+
+  // ── Account: the invoices & receipts card ──────────────────────────────────
+  // Scroll it into view first — it sits well below the fold, and a top-of-page
+  // crop shows plan/usage instead of the billing documents this shot is for.
+  await go("/account");
+  await sleep(900);
+  const invCard = page.getByText(/invoices\s*&\s*receipts/i).first();
+  if (await invCard.count()) {
+    await invCard.scrollIntoViewIfNeeded();
+    await sleep(500);
+  }
+  await shot("10-account-billing.png");
 
   console.log("All screenshots saved to docs/assets/screenshots/");
 } catch (e) {
