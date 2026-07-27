@@ -31,7 +31,7 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | `main` @ `f56306d` and `staging` @ `0b207cf` — **staging is now 7 commits AHEAD of main** (the invoicing release, merged 2026-07-27). Also live: `claude/prod-db-migration-commands-8ea1bc` (the release branch, tree-identical to staging) and `claude/datiq-invoicing-model-e16ea3` (its 4-commit ancestor). Branch from `staging` to build on the release, from `main` for anything that must ship independently of it. |
+| **Branches** | `main` @ `f56306d` and `staging` @ `ac82be0` — **staging is now 7 commits AHEAD of main** (the invoicing release + 5 Netlify/CI fixes). Also live: `claude/prod-db-migration-commands-8ea1bc` (the original release branch, 1 commit behind staging) and `claude/datiq-invoicing-model-e16ea3` (its 4-commit ancestor). Plus `workflow-implementation-and-optimization` @ `d94c2e3` (9 commits ahead of staging — the v2 n8n + MCP pipeline, NOT yet merged to staging or main). Branch from `staging` to build on the release, from `main` for anything that must ship independently of it. |
 | **Latest commit** | Run `git log --oneline -5` — the last drop was three CI fixes (`0676ed1`, `372c29a`, `af4dc5c`) merged via PRs #16 and #17 |
 | **Verify the schema locally** | `npm run test:db` — applies all 17 migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy. ~5s, no Docker, no network, no credentials. Run it after ANY migration change. |
 

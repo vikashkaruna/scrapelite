@@ -1,12 +1,14 @@
 # Session handoff — 2026-07-27 · v2 Workflow pipeline (n8n + MCP server)
 
-> **State at close (post-rebase):** Branch `workflow-implementation-and-optimization` is **8 commits ahead of `claude/prod-db-migration-commands-8ea1bc`** (the invoicing + lifecycle branch; not yet merged to `main`). All 7 phases of the v2 plan shipped on top of that base. 1436 unit + 727 contract tests pass (1 pre-existing failure on the upstream branch, unrelated to this work).
+> **State at close (post-second-rebase):** Branch `workflow-implementation-and-optimization` is **9 commits ahead of `staging`** (which already includes the invoicing + lifecycle release, the migrations-executed release, and the 5 Netlify/CI fixes that landed in staging after the prod-db branch was merged). All 7 phases of the v2 plan shipped on top of that base. 1436 unit + 727 contract tests pass (1 pre-existing failure on the upstream branch, unrelated to this work).
 >
 > **NOT yet merged to main.** Razorpay payment workflow (plan §④) deferred to V2 per your call on 2026-07-26. Everything else is ready to deploy.
 >
 > **Status of production:** unchanged from the 2026-07-26 handoff. The CI gate is green, datiq.app is live on the v1.0 build. The v2 plan does NOT touch production until you run the operator checklist (see "How to deploy" below).
 >
 > **Migration note:** my v2 `0012_workflow_events.sql` was renumbered to `0018_workflow_events.sql` to avoid colliding with the upstream branch's `0012_billing_identity.sql` (and 0013–0017). All references updated.
+>
+> **Rebase chain:** was originally based on `claude/prod-db-migration-commands-8ea1bc`, then re-rebased onto `staging` (which includes the prod-db branch as a merge plus 5 Netlify/CI fixes). No new conflicts in the second rebase — the staging additions are all in non-overlapping files (netlify.toml, .github/workflows, package.json smoke:staging line, CLAUDE.md).
 
 ---
 
