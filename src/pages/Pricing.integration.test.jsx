@@ -132,3 +132,55 @@ describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
     expect(annualBtn.className).toMatch(/on|active/);
   });
 });
+
+// Regression guard: the currency dropdown used to render UNDERNEATH the
+// plan cards because both `.currency-picker` and `.plans-grid` were
+// direct children of `.container`, both inherited `z-index: 1`, and
+// document order placed the plans grid on top. The fix is to give
+// `.currency-picker` its own stacking context with a z-index high
+// enough to win. If this test ever fails, the pricing page dropdown
+// is overlapping the plan cards again — see screenshot 2026-07-28.
+describe("I-39 — Pricing: currency dropdown stacks above plan cards", () => {
+  it(".currency-picker has a higher z-index than .plans-grid (CSS rule, source of truth)", () => {
+    // The actual stacking is decided by the cascade, but the easiest
+    // regression guard is to read the CSS source and verify the
+    // declared z-indexes. A future contributor who tries to "simplify"
+    // the .currency-picker block will see this test fail and know why.
+    const { readFileSync } = require("node:fs");
+    const { resolve } = require("node:path");
+    const css = readFileSync(resolve(__dirname, "../styles/screens.css"), "utf8");
+
+    // Pull the z-index declared in the .currency-picker block.
+    const pickerMatch = css.match(/\.currency-picker\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(pickerMatch, ".currency-picker must declare a z-index").not.toBeNull();
+    const pickerZ = Number(pickerMatch[1]);
+
+    // Pull the z-index declared in the .plans-grid block (if any).
+    // If absent, the picker just needs to be > 1, since
+    // .container > * forces z-index: 1 on .plans-grid.
+    const gridMatch = css.match(/\.plans-grid\s*\{[^}]*z-index:\s*(\d+)/);
+    const gridZ = gridMatch ? Number(gridMatch[1]) : 1;
+
+    // The picker must also beat the container's "1" baseline (line 6).
+    expect(
+      pickerZ,
+      `.currency-picker z-index (${pickerZ}) must exceed .plans-grid z-index (${gridZ}); ` +
+        "otherwise the plan cards paint on top of the dropdown (see 2026-07-28 bug)."
+    ).toBeGreaterThan(gridZ);
+  });
+
+  it("opening the currency dropdown renders an options list with both INR and USD", async () => {
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    // The picker is a button; click it to open the dropdown.
+    const btn = document.querySelector(".currency-picker > .currency-btn");
+    expect(btn, "currency button should be in the DOM").not.toBeNull();
+    await act(async () => { btn.click(); });
+    // After opening, the dropdown menu must be present.
+    const dropdown = document.querySelector(".currency-dropdown");
+    expect(dropdown, "dropdown should be in the DOM after click").not.toBeNull();
+    // And it must list both currencies.
+    const codes = Array.from(dropdown.querySelectorAll(".co-code")).map((n) => n.textContent.trim());
+    expect(codes).toEqual(expect.arrayContaining(["INR", "USD"]));
+  });
+});
