@@ -150,7 +150,10 @@ export async function sendInvoiceEmail(invoice, { kind = "issued" } = {}) {
         to: [to],
         reply_to: REPLY_TO,
         subject: `${model.title} ${model.invoiceNo} — DatIQ`,
-        html: invoiceEmailHtml(model, { downloadUrl: `${siteUrl}/account/invoices/${invoice.id}` }),
+        // Links to /account, where the invoice list lives. There is deliberately
+        // no /account/invoices/:id route — the list and viewer are a section +
+        // modal on the Account page — so linking there would 404 the customer.
+        html: invoiceEmailHtml(model, { downloadUrl: `${siteUrl}/account` }),
         text: invoiceEmailText(model),
         attachments: [{ filename: invoiceFilename(invoice.invoice_no), content: bytes.toString("base64") }],
         tags: [{ name: "stream", value: "billing" }],
