@@ -102,7 +102,7 @@ decisions and manual acts that must be *acknowledged* first.
 
 | # | Item |
 |---|---|
-| 2.1 | `npm run smoke:staging` green against the deployed staging site — the gate's own definition of green for production. Never push over a red smoke. |
+| 2.1 | ✅ **Done.** Staging Gate run `30238457217` for `0b207cf` is green on all four jobs (Deployed & Smoke Tested 12/12, after confirming Netlify converged on the exact SHA); `npm run smoke:staging` re-run locally is 10/10 against `staging--datiqapp.netlify.app`. ⚠️ **But see §4.9 — `staging.datiq.app` serves PRODUCTION**, and `smoke:staging` used to point there, so any earlier "staging is green" from that command proved nothing. |
 | 2.2 | **Netlify production must be manually unlocked**, then `approved` commented on the approval issue. Two deliberate human acts. Do **not** work around a lock error with `--prod-if-unlocked` — while locked that makes a DRAFT deploy and the smoke job then passes against *old* production, claiming a release that never shipped. |
 | 2.3 | Drive **one real Razorpay test-mode payment end to end** and confirm: one invoice row, one number, one email with a `%PDF-` attachment, and `taxable + tax === total`. The DB layer is proven (§0); the provider→invoice→email path is not. |
 
@@ -130,6 +130,7 @@ decisions and manual acts that must be *acknowledged* first.
 | 4.6 | **`reengagement.js:182` selects `user_email` from `scheduled_tasks`, which has no such column** — the query 400s, the error is swallowed, so that cron is a **silent no-op in production**. | **Verified against the executed schema**, not taken from the handoff: `scheduled_tasks` is exactly `created_at, cron, data, id, next_run_at, status, system_pause_reason, system_paused, updated_at, user_id`. `user_email` does exist — but on `reengagement_log` (0011) and in 0017 — never on `scheduled_tasks`. Pre-existing, out of scope here; the new billing crons key on `user_id` and avoid the pattern. |
 | 4.7 | Still unbuilt from the invoicing scope: `/admin/billing` UI (API + 34 tests exist, no consumer), billing-details capture UI, proration wired into checkout, `PlanChangeWarning` not mounted, scheduled-downgrade UI, e2e specs for suspended/invoice-download. | Feature gaps, not correctness risks. Full list in the session handoff. |
 | 4.8 | The Stripe branch writes no invoice draft — only Razorpay does. | Must be added when Stripe is re-enabled (it is deferred to v2.0). |
+| 4.9 | **`staging.datiq.app` is aliased to the PRODUCTION deploy, and `npm run smoke:staging` pointed at it.** Found while verifying this release actually deployed. | The script has been fixed to `${STAGING_URL:-https://staging--datiqapp.netlify.app}` (what CI already used), so the hazard is closed in-repo. **The DNS/alias itself is still wrong and is an open infrastructure task.** Evidence: `staging.datiq.app` and `datiq.app` return the identical homepage MD5 `ef6c88c6d52e` while the staging deploy is `a62346cc14b1`, and `staging.datiq.app` lacks all four release artifacts. This is the same silent-pass shape as the `--prod-if-unlocked` trap in §2.2: the command reports green while testing the wrong deploy. Until the alias is repointed, treat `staging.datiq.app` as production. |
 
 ## 5. Branch consistency
 
