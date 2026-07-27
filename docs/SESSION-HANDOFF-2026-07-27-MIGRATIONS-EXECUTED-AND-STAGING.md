@@ -218,11 +218,33 @@ from source by design (the gallery is populated at runtime from Supabase
    - `domain_aliases = []`
    - zone: `datiq.app`, `www.datiq.app`, wildcard `*.datiq.app`
 
-   Netlify now reports the staging deploy's own URL as `https://staging.datiq.app`
-   and production deploy URLs are clean again. At the time of writing the hostname
-   still answered NODATA authoritatively while the wildcard answered for other names
-   — Netlify had not finished claiming/provisioning that specific name. The config is
-   correct; this settles itself.
+   Netlify now reports the staging deploy's own URL as `https://staging.datiq.app`,
+   production deploy URLs are clean again, and the certificate has been re-issued as
+   a proper wildcard (`SAN: *.datiq.app, datiq.app`, replacing the alias-era
+   `datiq.app, staging.datiq.app, www.datiq.app`). So TLS is ready.
+
+   ### ⚠️ STILL OPEN: `staging.datiq.app` does not resolve
+
+   **This did not resolve itself, and a fresh branch deploy did not fix it** — tested
+   after the `ac82be0` deploy completed. Current symptom:
+
+   - `dig @dns1.p01.nsone.net staging.datiq.app` → **NODATA** (authoritative, so not
+     a caching artifact)
+   - `https://staging.datiq.app/` → `http=000`
+   - but the wildcard **does** answer for other names: `foo-test-27070.datiq.app`
+     resolves to the Netlify edge
+
+   A wildcard `*.datiq.app` NETLIFY record exists and works, yet this one specific
+   name returns nothing. That points to Netlify holding a **pending claim** on
+   `staging.datiq.app` that shadows the wildcard rather than resolving.
+
+   **Next action (Netlify UI):** re-add `staging.datiq.app` as the branch subdomain
+   for `staging` (Domain management → branch subdomains). If the UI errors — it did
+   once already, Request ID `01KYHE6WPK5Q8SP7DPQW3TA7NJ`, on an object that no longer
+   existed — that Request ID is what Netlify support needs.
+
+   This is **not** blocking: the release is fully verified on
+   `staging--datiqapp.netlify.app`, and the CI gate already targets that host.
 
    **Two things were wrong in-repo, both now fixed:**
    1. `package.json`'s `smoke:staging` targeted that hostname, so it was
