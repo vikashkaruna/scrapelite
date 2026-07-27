@@ -107,6 +107,30 @@ subset applier, the state probe and verification SQL are in
 merge commit). `git diff claude/prod-db-migration-commands-8ea1bc staging` is
 **empty** — the merge introduced nothing beyond what was verified.
 
+### Netlify configuration — audited and corrected 2026-07-27
+
+Read with `netlify api getSite --data '{"site_id":"0ac65a7e-bd3f-4cde-a8d3-66c23899c473"}'`.
+
+| Setting | Value | Note |
+|---|---|---|
+| `custom_domain` | `datiq.app` | ✅ |
+| `domain_aliases` | `[]` | ✅ the `staging.datiq.app` alias was the root of the misroute |
+| `branch_deploy_custom_domain` | `datiq.app` | ✅ a **base** domain — Netlify serves `<branch>.<base>` |
+| `published_deploy.locked` | `true` | ✅ **keep it** — this is what stops a push to `main` bypassing the phase gate |
+| `force_ssl` | `true` | ✅ |
+| `allowed_branches` | `['main','staging']` | ✅ |
+| DNS zone | `datiq.app`, `www.datiq.app`, `*.datiq.app` | ✅ on Netlify DNS (`nsone.net`) |
+| Functions on staging | 23, incl. all 5 new billing ones | ✅ `admin-billing`, `billing-lifecycle`, `billing-purge`, `invoice-email`, `invoice-pdf` |
+| `PURGE_ENABLED` | **unset** | ✅ was briefly `1` in all three contexts — keep unset |
+| `SUPPLIER_GSTIN` | **unset** | ✅ documents stay Payment Receipts until CA review |
+| `SUPPLIER_STATE` | **unset** | ⚠️ set to `Maharashtra` (not `Mahareshatra, India`) **before** setting GSTIN |
+| Env vars | 49 total | `BILLING_EMAIL_FROM`, `RESEND_API_KEY`, `SUPABASE_URL`/`SERVICE_KEY` all present ✅ |
+
+Two pre-existing items carried forward: `ADMIN_PIN_HASH` is a single value shared
+across contexts (should be per-context), and `SUPABASE_ACCESS_TOKEN` is present in
+Netlify env — a Supabase *management* token is broader than the service key the
+functions actually need, so it is worth reviewing whether it belongs there.
+
 ### Gate at merge (run on the staging merge commit, not just the branch)
 
 unit **1436** · contract **496** (+14 skipped) · integration **205** · system **7** ·
@@ -127,39 +151,78 @@ from source by design (the gallery is populated at runtime from Supabase
    converged on `0b207cfcc7e24d6934b766cc23ac61b16f27615e` before smoking, and
    `npm run smoke:staging` re-run locally is 10/10.
 
-   ### ⚠️ `staging.datiq.app` SERVES PRODUCTION — never smoke-test it, never set `STAGING_URL` to it
+   ### 🔴 None of the four cron functions was ever scheduled — fixed, verify in production
+
+   The biggest defect found this session, and it had been live since R19.
+   `scheduled-runner`, `reengagement`, `billing-lifecycle` and `billing-purge` were
+   all deploying as **ordinary HTTP functions**. So the hourly change-detection
+   runner had never run, and `billing-lifecycle` — the entire subscription
+   lifecycle and dunning engine this release ships — would never have fired at all.
+
+   **Cause:** each declares `export const config = { schedule: … }` beside
+   `export const handler`. That export is honoured **only for v2 functions**
+   (`export default`). All of ours are v1, and `@netlify/functions` is not a
+   dependency, so the v1 `schedule()` wrapper is not in use either. `netlify.toml`
+   declared no schedules, so nothing registered them.
+
+   **Three independent confirmations** on the staging deploy: Netlify's
+   `searchSiteFunctions` API reported `schedule: null` for every function;
+   `GET /.netlify/functions/reengagement` returned **200 and ran the handler**
+   ("Re-engagement complete. 0 email(s) sent."); deployed functions report
+   `runtimeAPIVersion: 1`.
+
+   **Fixed** in `netlify.toml` via `[functions."<name>"] schedule = …` for all four
+   — the v1-compatible path — plus a note in each source file so the ignored
+   `config` export is never trusted again. This also closed an exposure: as a plain
+   function, **`billing-purge`, the only destructive job in the system, was a
+   publicly reachable HTTP endpoint.**
+
+   ⚠️ **Verification is only possible in production.** Netlify runs scheduled
+   functions for the **production deploy only**, so a 200 on a branch deploy
+   neither proves nor disproves registration. Once this reaches `main`:
+
+   ```bash
+   netlify api searchSiteFunctions --data '{"site_id":"0ac65a7e-bd3f-4cde-a8d3-66c23899c473"}'
+   # expect a non-null "schedule" for all four
+   curl -s -o /dev/null -w '%{http_code}\n' https://datiq.app/.netlify/functions/reengagement
+   # expect 404 — registered scheduled functions are not HTTP-invocable
+   ```
+
+   Until that is confirmed, **treat the lifecycle/dunning system as not running.**
+
+   ### `staging.datiq.app` — fixed in Netlify after two wrong turns
 
    Found and fixed this session, and it is worse than the old note suggested.
 
-   ### ⚠️ DNS IS NOT THE CAUSE — do not "fix" the CNAME again
+   The hostname was a plain **domain alias on the production site**, so it served
+   the site's *published* (production) deploy — bundle `index-BFw7HNTs.js`,
+   identical to `datiq.app`, versus the staging deploy's `index-ngjyYV0n.js`;
+   homepage MD5 `ef6c88c6d52e` vs `a62346cc14b1`; all four release artifacts absent.
+   That **supersedes the 2026-07-25 "not provisioned / no cert" note** — TLS worked,
+   which is exactly why it failed *silently* instead of erroring.
 
-   The CNAME was already repointed to `staging--datiqapp.netlify.app` (confirmed
-   across system / 1.1.1.1 / 8.8.8.8 **and the authoritative NS**
-   `athena.dns-parking.com`) and **the content did not change at all.** DNS is now
-   correct and the hostname still serves production.
+   **Two fixes were tried and did not work. Do not repeat either.**
 
-   The reason: `staging--datiqapp.netlify.app` and `datiqapp.netlify.app` resolve to
-   the **same Netlify edge IPs** (`52.74.6.109`, `13.215.239.219`). Netlify selects
-   the deploy from the **`Host` header**, not from the IP or the CNAME target. Since
-   `staging.datiq.app` is registered as a **domain alias on the site**, that Host
-   maps to the site's *published* (production) deploy. So no DNS change can fix this
-   — it must be fixed in Netlify's domain configuration.
+   1. **Repointing DNS.** The CNAME was changed to `staging--datiqapp.netlify.app`
+      and **nothing changed** — that host and `datiqapp.netlify.app` resolve to the
+      *same* Netlify edge IPs (`52.74.6.109`, `13.215.239.219`), and Netlify picks
+      the deploy from the **`Host` header**, not the IP or the CNAME target.
+   2. **`branch_deploy_custom_domain = staging.datiq.app`.** That field is a **base**
+      domain — Netlify serves `<branch>.<base>`. Proven: `staging.staging.datiq.app`
+      served the staging build and `main.staging.datiq.app` the main build, while the
+      bare name resolved to nothing. It also polluted production deploy URLs
+      (`…6a65b51f….staging.datiq.app`).
 
-   **Proven, not inferred:**
-   - Build identity (per-build bundle hash, the strongest signal):
-     `staging.datiq.app` → `/assets/index-BFw7HNTs.js`;
-     `datiq.app` → the **same** `index-BFw7HNTs.js`;
-     `staging--datiqapp.netlify.app` → `index-ngjyYV0n.js`.
-   - Content: homepage MD5 identical to `datiq.app` (`ef6c88c6d52e`); the real
-     staging deploy is `a62346cc14b1`. All four release artifacts (new screenshot,
-     `llms.txt` billing line, help invoices section, pruned orphan page) are present
-     on the branch deploy and **absent** on `staging.datiq.app`.
-   - TLS: cert is `CN=datiq.app`, SAN `datiq.app, staging.datiq.app, www.datiq.app`
-     — one production certificate covering it, i.e. the alias relationship is intact.
+   **The correct configuration, now applied:**
+   - `branch_deploy_custom_domain = datiq.app` (so branch `staging` → `staging.datiq.app`)
+   - `domain_aliases = []`
+   - zone: `datiq.app`, `www.datiq.app`, wildcard `*.datiq.app`
 
-   This **supersedes the 2026-07-25 "not provisioned / no cert" note** — TLS works
-   now, which is exactly why this is worse than the old outage: it fails silently
-   instead of erroring.
+   Netlify now reports the staging deploy's own URL as `https://staging.datiq.app`
+   and production deploy URLs are clean again. At the time of writing the hostname
+   still answered NODATA authoritatively while the wildcard answered for other names
+   — Netlify had not finished claiming/provisioning that specific name. The config is
+   correct; this settles itself.
 
    **Two things were wrong in-repo, both now fixed:**
    1. `package.json`'s `smoke:staging` targeted that hostname, so it was
@@ -172,16 +235,17 @@ from source by design (the gallery is populated at runtime from Supabase
       phase-gate's staging smoke test production — while that green is what gates a
       production release.** The advice is removed and replaced with the reasoning.
 
-   **Open infra task — Netlify UI only, DNS is already correct.** On site
-   `datiqapp` → **Domain management**:
-   1. **Remove** `staging.datiq.app` as a domain alias on the site.
-   2. **Re-add it as a branch subdomain bound to the `staging` branch** (branch
-      deploys must be enabled for `staging`).
+   **Verify by build identity, never by a 200** — a 200 is exactly what made the
+   original misroute look healthy:
 
-   Then verify by build identity, not by a 200: `staging.datiq.app` must serve
-   `/assets/index-ngjyYV0n.js` (the staging build), **not** `index-BFw7HNTs.js` (the
-   production build). Until it does, verify staging only at
-   `staging--datiqapp.netlify.app` and leave `STAGING_URL` unset.
+   ```bash
+   curl -s https://staging.datiq.app/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js'
+   ```
+
+   Anything other than the current staging bundle (and specifically
+   `index-BFw7HNTs.js`, the production one) means it is still wrong. Until it returns
+   the staging bundle, verify staging at `staging--datiqapp.netlify.app` and leave
+   the `STAGING_URL` repo variable unset.
 2. **Apply `0012`–`0017` to a scratch Supabase project** per the runbook. This is
    the last unverified surface (§1.2).
 3. **Decide the migration staging before touching a DB with real users.**
