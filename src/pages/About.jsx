@@ -167,21 +167,21 @@ export default function About() {
               <Icon name="user" size={32} strokeWidth={1.5} />
             </div>
             <div className="about-founder-info">
-              <div className="about-founder-name">Vikash Karuna</div>
-              <div className="about-founder-role">Founder, DatIQ</div>
+              <div className="about-founder-name">Axiom Minds Private Limited</div>
+              <div className="about-founder-role">Founder, https://axiomminds.ai - DatIQ</div>
               <p className="about-founder-bio">
-                Vikash built DatIQ after realizing the pain of manually copying data from websites into spreadsheets — a
+                DatIQ has been built after realizing the pain of manually copying data from websites into spreadsheets — a
                 workflow he kept seeing across sales, research, and marketing teams. DatIQ is his answer: a
                 zero-code platform that turns any URL into structured, actionable intelligence in seconds.
               </p>
               <a
-                href="https://linkedin.com/in/vikashkaruna"
+                href="https://www.linkedin.com/company/axiom-minds/about/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="about-founder-linkedin"
               >
                 <Icon name="linkedin" size={15} />
-                linkedin.com/in/vikashkaruna
+                linkedin.com/company/axiom-minds/
               </a>
             </div>
           </div>
