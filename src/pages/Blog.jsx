@@ -43,6 +43,63 @@ Start with any URL. No sign-up required.
 
 const POSTS = [
   {
+    slug: "invoices-receipts-and-what-happens-when-a-plan-lapses",
+    tag: "Release",
+    title: "Every Payment Now Has a Document: Invoices, Receipts, and a Kinder Way to Lapse",
+    excerpt:
+      "Your finance team asks for the invoice. You dig through your inbox, find a payment confirmation that isn't an invoice, and email support. That round trip is now gone: every DatIQ payment issues a numbered, itemized document, emails it to you as a PDF, and keeps it in your Account — even after you cancel.",
+    date: "July 27, 2026",
+    readTime: "5 min read",
+    coverIcon: "receipt",
+    fullContent: `
+![The Invoices & receipts card on the DatIQ Account screen.](/help/assets/screenshots/10-account-billing.png)
+
+Nobody buys a data tool because of its invoices. But everybody eventually needs one — for a reimbursement, a quarterly close, a tax filing, or the simple question "what exactly did we pay for in March?"
+
+Until now, DatIQ answered that question with a payment confirmation email. That is not an invoice, and if you have ever forwarded one to a finance team, you know precisely how that conversation goes.
+
+This release fixes it properly.
+
+## What you get
+
+**A real document for every payment.** The moment a payment completes, DatIQ issues its own numbered, itemized document and lists it under **Invoices & receipts** on your Account screen. Where we are registered for tax in your region, it is a full tax invoice with the tax split shown; elsewhere it is a payment receipt that says plainly that it is not a tax invoice. Either way, the numbers reconcile exactly to what you were charged — line by line.
+
+**It arrives without you asking.** A PDF copy is emailed to you automatically on payment. You do not have to log in, find the screen, and download it to have a copy on file.
+
+**Re-send it whenever.** Lost the email? Open the document and have it emailed again, or download the PDF. Re-sends always go to the address on your account — never to an address typed into a page — so a billing document cannot be redirected by someone who happens to have a link.
+
+**Documents don't change under you.** An issued document is never edited or renumbered. If something genuinely needs correcting, we issue a separate credit note against it. Your records and ours stay identical, which is the entire point of a numbered series.
+
+**They outlive the subscription.** Cancel, downgrade, or let a plan lapse — your billing history stays available to you. The one thing worse than not having an invoice is losing access to it exactly when the auditor asks.
+
+## Who this is for
+
+**Founders and finance leads.** Month-end stops involving a support ticket. Every charge has a document with a number you can reference.
+
+**Agencies re-billing clients.** Itemized lines and a stable numbering series mean you can attach DatIQ costs to a client invoice without re-typing anything.
+
+**Anyone claiming expenses.** The PDF is already in your inbox before you think to look for it.
+
+## And when a plan lapses
+
+The other half of this release is what happens when a paid plan ends without renewing — because "silently stops working" is not an acceptable answer either.
+
+Instead, the account moves through clearly-signposted stages. First **suspended**, with an in-app banner that explains exactly what state you are in. Your saved data is intact throughout, and renewing restores full access immediately. If it stays unrenewed, it moves to **deactivated**. You are emailed at each stage, and again before anything is removed — so a lapse is never a surprise you discover by finding your work missing.
+
+Scheduled monitoring behaves sensibly through all of it: your schedules **pause** while the plan is lapsed and **resume on their own** when you renew. You do not rebuild them. And a schedule you deliberately paused yourself stays paused — renewing does not quietly switch your monitors back on.
+
+## The theme here is boring on purpose
+
+None of this makes extraction faster. It makes DatIQ safe to put on a company card: predictable documents, a paper trail that survives cancellation, and a lapse path that warns you instead of deleting your work.
+
+## Where to find it
+
+Open **Account → Invoices & receipts**. Full detail in the [Plans, usage & billing](/help/11-plans-usage-and-billing.html) help guide. If a document ever looks wrong, tell us at **hello@datiq.app** — a correction is a credit note, and we would rather issue one than have your books disagree with ours.
+
+Every payment, one document, permanently yours.
+`,
+  },
+  {
     slug: "monitor-any-page-for-changes",
     tag: "Release",
     title: "Set It and Know: Monitor Any Web Page for Changes with DatIQ Schedules",

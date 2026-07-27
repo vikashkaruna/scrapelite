@@ -11,6 +11,7 @@
 // per-call budget) and `messages` are honored.
 
 import { runChain, keyPresence } from "./lib/aiProviders.js";
+import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
 
 function respond(statusCode, body) {
   return {
@@ -51,6 +52,16 @@ export const handler = async (event) => {
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return respond(400, { error: "messages array is required" });
+  }
+
+  // Subscription gate — AI enrichment is a paid capability and must stop for a
+  // lapsed subscriber. Signed-in users only; guests are unaffected. Fails OPEN
+  // on infrastructure error (see lib/requireEntitlement.js).
+  try {
+    const { check } = await requireCapability(event, "ai");
+    if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
+  } catch (err) {
+    console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
   }
 
   // No provider has a key → behave like the old "not configured" path (503) so

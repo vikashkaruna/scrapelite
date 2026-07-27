@@ -25,6 +25,7 @@
 //     using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 import { createClient } from "@supabase/supabase-js";
+import { denyResponse, requireCapability } from "./lib/requireEntitlement.js";
 
 const TABLE = "scheduled_tasks";
 
@@ -40,6 +41,21 @@ function respond(statusCode, body) {
     headers: { "Content-Type": "application/json", ...CORS },
     body: JSON.stringify(body),
   };
+}
+
+/**
+ * Strip platform-owned fields out of the client-supplied schedule blob before
+ * it is stored in the `data` jsonb column.
+ *
+ * The column REVOKE in 0015 protects the real `system_paused` COLUMN, but the
+ * whole client object is also persisted as jsonb, and the runner and UI read
+ * fields out of that blob — so a client could otherwise plant a lookalike
+ * `system_paused: false` inside `data` and confuse anything reading it there.
+ */
+function sanitizeSchedule(schedule) {
+  const { system_paused, systemPaused, system_pause_reason, systemPauseReason, user_id, userId, ...safe } =
+    schedule || {};
+  return safe;
 }
 
 function getSupabaseForUser(authHeader) {
@@ -97,13 +113,28 @@ export const handler = async (event) => {
       catch { return respond(400, { error: "Invalid JSON body" }); }
       if (!schedule.id) return respond(400, { error: "schedule.id required" });
 
+      // Creating or resuming a schedule requires the capability. A lapsed
+      // subscriber must not be able to re-arm automation by calling the API
+      // directly; scheduled_monitoring is also plan-gated (Pro and above).
+      const { check } = await requireCapability(event, "schedules");
+      if (!check.allowed) return denyResponse(check, CORS);
+
+      // EXPLICIT ALLOWLIST — do not go back to spreading the client object.
+      //
+      // This used to be `data: schedule` with `status: schedule.status`, i.e.
+      // the browser dictated every column. Two consequences: a client could
+      // write privileged fields, and once the lifecycle can system-pause a
+      // lapsed user's schedules, the very next client upsert would silently
+      // un-pause them. `system_paused` is additionally protected by a
+      // column-level REVOKE in 0015_scheduler_hardening.sql — that is the part
+      // an attacker cannot route around by calling PostgREST directly.
       const row = {
         id: schedule.id,
         user_id: userId,
-        status: schedule.status || "active",
-        cron: schedule.cron || "",
+        status: schedule.status === "paused" ? "paused" : "active",
+        cron: String(schedule.cron || ""),
         next_run_at: schedule.nextRunAt || null,
-        data: schedule,
+        data: sanitizeSchedule(schedule),
         updated_at: new Date().toISOString(),
       };
 

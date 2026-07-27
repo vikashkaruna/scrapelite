@@ -13,6 +13,7 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - Pricing extraction: structured pricing tiers from any pricing page
 - Content generation: SEO outlines, competitive briefs, email drafts from saved pages
 - CSV and PDF export of all data
+- Billing records: every payment issues a numbered, itemized invoice or receipt, emailed as a PDF and available to view, download, or re-send from the Account screen
 
 ## Pricing (as of 2026)
 - Free: 10 extractions/month + 25-trial credit, no credit card

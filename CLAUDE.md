@@ -2,7 +2,11 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-26 — `main` and `staging` in sync with origin, still only two branches. THE WHOLE PIPELINE IS GREEN AND PRODUCTION SHIPPED: the full Phase-Gate ran end to end on `5201cd4` at 06:43Z (all gates → approval → deploy → production smoke → re-lock), closing the ~7-day gap where `datiq.app` was frozen on `527a8ee` from 2026-07-19. Staging Gate's `Deployed & Smoke Tested` is 12/12, up from a long-red 11/12. The blocker had been that Netlify production deploys are LOCKED — that is what "Stop auto publishing" does, and it is the protection that stops pushes to `main` bypassing the gate — and a lock blocks EVERY publish path including `netlify deploy --prod`, so every approved release since 2026-07-19 died at that one step. RELEASING PRODUCTION NOW TAKES TWO HUMAN ACTS, by design: (a) unlock production in the Netlify UI, then (b) comment `approved` on the approval issue. The workflow deliberately does NOT unlock for you; `deploy-production` only verifies the unlock and fails fast with instructions, and `relock-production` re-locks at the end so every release needs a fresh unlock. DO NOT "fix" a lock error with `--prod-if-unlocked`: while locked that makes a DRAFT deploy, the smoke job then tests old production and passes, and the run claims a release that never shipped. Admin PINs: `ADMIN123` is dead on staging and previews ✅, but all three non-production contexts still SHARE one `ADMIN_PIN_HASH` — separating them is the top open item. Session detail: `docs/SESSION-HANDOFF-2026-07-26-CI-GATE-UNBLOCK.md`.**
+> **Last updated: 2026-07-27 (late) — INVOICING + SUBSCRIPTION LIFECYCLE IS NOW EXECUTED AND GREEN, STILL ON A BRANCH, STILL NOT MERGED, AND STILL NOT APPLIED TO ANY REAL SUPABASE PROJECT.** Branch `claude/prod-db-migration-commands-8ea1bc` (same 4 invoicing commits as `claude/datiq-invoicing-model-e16ea3`, plus the release-readiness work below). **The headline change since the earlier entry: migrations 0001–0017 have now actually been RUN — all 17 apply cleanly, and all 9 database functions, both triggers and the RLS ownership policies are exercised by 89 assertions via `npm run test:db`** ([scripts/db-verify.mjs](scripts/db-verify.mjs), in-process WASM Postgres, no Docker/psql/network). Zero defects were found in the migrations themselves. That closes the single biggest open risk in the previous entry, but it is **not** the same as applying to a real Supabase project — PGlite has no GoTrue, no PostgREST and no Supabase roles (they are shimmed), so the manual scratch-project apply is still required before production. Full command reference: [docs/DB-MIGRATION-RUNBOOK.md](docs/DB-MIGRATION-RUNBOOK.md). Pre-merge issue register: [docs/RELEASE-READINESS-2026-07-27-INVOICING.md](docs/RELEASE-READINESS-2026-07-27-INVOICING.md).
+>
+> Prior (same day, before execution): Branch `claude/datiq-invoicing-model-e16ea3`, 4 commits off `main` @ `f56306d`, 69 files, +10,326/−166. DatIQ previously had no invoicing model at all and no notion of a subscription ending; it now issues a numbered, itemized, GST-capable document per payment, emails it, exposes view/download/resend in Account, and runs active → suspended (30d) → deactivated (60d more) → purge at day 90, with automation pausing and resuming with the subscription. Tests: unit 1005→**1436**, contract 382→**496**, integration 180→**205**; build clean; readiness 5 pass/2 warn/0 fail. **THREE THINGS TO KNOW BEFORE TOUCHING IT: (1) ~~migrations 0012–0017 have NEVER been executed~~ — SUPERSEDED: they now execute cleanly under `npm run test:db`, but that is WASM Postgres with shimmed Supabase roles, so a scratch-project apply is still required before production; (2) migration ORDER IS LOAD-BEARING — 0012 (neutral) → ship dual-write for one release → 0013 backfill → 0014 RLS flip, and after 0014 guest/unclaimed payment history stops showing in-app by design; (3) the purge ships DISARMED (`PURGE_ENABLED` unset) and cannot delete anyone who has not received the `delete_d90` notice.** Entitlements are now server-authoritative and keyed to `auth.users.id`; the old `anon full access` RLS on `subscriptions`/`payment_events` (world-readable, world-writable) is replaced in 0014. Security fixes en route: `verify-payment.js` trusted `planId` from the request body and echoed it back unchecked (a free-upgrade path once the server grants access), and `schedules.js` let the client dictate `status`. Still pending: the `/admin/billing` React page (API + 34 tests exist, no UI), billing-details capture UI, proration wired into checkout, e2e specs. Session detail: `docs/SESSION-HANDOFF-2026-07-27-INVOICING-AND-LIFECYCLE.md`.
+>
+> Prior: 2026-07-26 — `main` and `staging` in sync with origin, still only two branches. THE WHOLE PIPELINE IS GREEN AND PRODUCTION SHIPPED: the full Phase-Gate ran end to end on `5201cd4` at 06:43Z (all gates → approval → deploy → production smoke → re-lock), closing the ~7-day gap where `datiq.app` was frozen on `527a8ee` from 2026-07-19. Staging Gate's `Deployed & Smoke Tested` is 12/12, up from a long-red 11/12. The blocker had been that Netlify production deploys are LOCKED — that is what "Stop auto publishing" does, and it is the protection that stops pushes to `main` bypassing the gate — and a lock blocks EVERY publish path including `netlify deploy --prod`, so every approved release since 2026-07-19 died at that one step. RELEASING PRODUCTION NOW TAKES TWO HUMAN ACTS, by design: (a) unlock production in the Netlify UI, then (b) comment `approved` on the approval issue. The workflow deliberately does NOT unlock for you; `deploy-production` only verifies the unlock and fails fast with instructions, and `relock-production` re-locks at the end so every release needs a fresh unlock. DO NOT "fix" a lock error with `--prod-if-unlocked`: while locked that makes a DRAFT deploy, the smoke job then tests old production and passes, and the run claims a release that never shipped. Admin PINs: `ADMIN123` is dead on staging and previews ✅, but all three non-production contexts still SHARE one `ADMIN_PIN_HASH` — separating them is the top open item. Session detail: `docs/SESSION-HANDOFF-2026-07-26-CI-GATE-UNBLOCK.md`.**
 >
 > Prior: 2026-07-25 (late) — `main` and `staging` at the same commit. Six already-merged branches deleted locally and on origin (SHAs in that handoff if one ever needs restoring). `Test Suites` went from a 25-minute timeout to 10m51s after the e2e smoke was corrected to run chromium only (it had been silently running all three browsers — 294 tests instead of 98). `staging.datiq.app` is NOT provisioned (CNAME points at the wrong site slug, and no cert covers it), so the gate smoke-tests `staging--datiqapp.netlify.app` via the `STAGING_URL` repo variable. Session detail: `docs/SESSION-HANDOFF-2026-07-25-BRANCH-CLEANUP-AND-GATE.md`.
 >
@@ -29,6 +33,7 @@
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Branches** | **Only `main` and `staging` exist** — both at the same commit, in sync with origin. Every other branch was deleted 2026-07-25 after confirming each was fully merged into `staging`. Branch from `main` for new work. |
 | **Latest commit** | Run `git log --oneline -5` — the last drop was three CI fixes (`0676ed1`, `372c29a`, `af4dc5c`) merged via PRs #16 and #17 |
+| **Verify the schema locally** | `npm run test:db` — applies all 17 migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy. ~5s, no Docker, no network, no credentials. Run it after ANY migration change. |
 
 ---
 
@@ -352,6 +357,44 @@ netlify/
     └── lib/scrapeProviders.js        ★ R14a: 4-provider scraping chain — Firecrawl/Spider/Jina/Direct
                                       SCRAPE_PROVIDERS registry; runScrapeChain(); runMapChain(); scrapeProviderStatus()
 
+### Invoicing & lifecycle files (branch `claude/datiq-invoicing-model-e16ea3`)
+
+```
+src/lib/
+├── entitlementModel.js       PURE. can() + computeLifecycle(). Imported by React AND netlify/.
+│                             The single authorization contract — read this first.
+├── entitlementClient.js      60s cache of the entitlement row. UX ONLY, never authorization.
+├── billingRepo.js            claimBillingSession(), fetchEntitlement/Invoices/InvoiceLines
+├── chargeMath.js             PURE. computeChargeMinor() — the money contract. Read this second.
+├── prorationMath.js          PURE. prorate() + describePlanChange() (loss list from plan limits)
+├── billingNotices.js         PURE. pickDueNotice() + noticeCopy() — the dunning schedule
+├── invoiceModel.js           PURE. buildInvoiceDoc() — drives PDF, email AND on-screen view
+├── invoicePdf.js             renderInvoicePdf(); toPdfSafe(); runs in browser AND Node
+└── pricingMath.js            now a thin ADAPTER over chargeMath (displayed == charged)
+
+src/components/
+├── SuspendedBanner.jsx       non-dismissible lapsed-subscription notice (mounted in Shell)
+├── InvoiceModal.jsx          view one invoice -> download / email
+└── PlanChangeWarning.jsx     downgrade loss list; warns, NEVER blocks (NOT YET MOUNTED)
+
+netlify/functions/
+├── invoice-pdf.js            GET /api/invoice-pdf?id= — auth.uid() only; 404 not 403
+├── invoice-email.js          POST /api/invoice-email — id only; recipient from the session
+├── billing-lifecycle.js      @daily — transitions, dunning, pause/resume. Deletes NOTHING.
+├── billing-purge.js          @daily — THE ONLY DESTRUCTIVE JOB. 5 interlocks; ships disarmed.
+├── admin-billing.js          suspend/reactivate/comp/offline_payment/resend/refund (NO UI YET)
+└── lib/
+    ├── requireEntitlement.js server guard; fails OPEN on infra, CLOSED on status
+    ├── invoiceConfig.js      SUPPLIER_GSTIN switch -> Tax Invoice vs Payment Receipt
+    ├── invoiceDraft.js       the price snapshot written at order creation
+    ├── invoiceService.js     finalizeInvoice() — idempotent across verify + webhook
+    └── invoiceEmail.js       Resend WITH attachment (first use in this codebase)
+
+supabase/migrations/          0012 identity · 0013 backfill · 0014 RLS · 0015 scheduler
+                              0016 invoices+numbering · 0017 lifecycle. ORDER MATTERS.
+scripts/build-run-all.mjs     regenerates run-all.sql (npm run build:sql)
+```
+
 public/
 ├── favicon.svg
 ├── runtime-config.js                 window.__DATIQ_RUNTIME__ override (no rebuild needed)
@@ -444,6 +487,19 @@ ThemeProvider
 | Contact emails | **Exactly two customer-facing inboxes.** `hello@datiq.app` — product support, bug reports, feature requests, billing, anything general. `admin@datiq.app` — enterprise/agency, legal & terms, privacy & DPDP (incl. the DPDP grievance officer). `support@` / `legal@` / `privacy@` are retired; the readiness audit fails the build if they reappear. Source of truth: `src/lib/contactRouting.js`. |
 | Contact form delivery | `/contact` → `apiClient.sendContactEmail` → **POST `/api/contact-email`** ([netlify/functions/contact-email.js](netlify/functions/contact-email.js)) → **Resend**, the same provider used for welcome / re-engagement / schedule-alert mail. **Routing is server-authoritative**: the browser sends an enquiry *type*, never a recipient, and the function resolves the destination from `src/lib/contactRouting.js` — so the endpoint can't be used as an open relay and exactly ONE inbox receives each message (no duplicate delivery). `RESEND_API_KEY` stays server-side. Honeypot (`botcheck`) returns 200 and drops. On failure the UI shows a pre-filled `mailto:` fallback. The CRM webhook ([contactWebhook.js](src/lib/contactWebhook.js)) and subscriber capture fire in parallel and can never fail or delay a submission. Orchestrated in [contactService.js](src/lib/contactService.js). |
 | Email sender rule | **One env var per sender — no fallback chains between them.** Three senders, split by who reads the mail: `CONTACT_EMAIL_FROM` → **`hello@datiq.app`** for outbound human mail (welcome, re-engagement); `ALERT_EMAIL_FROM` → **`alerts@datiq.app`** for machine-generated schedule alerts; `FORM_EMAIL_FROM` → **`noreply@datiq.app`** for the inbound /contact form. Each function reads exactly one and never falls back to another, so repointing one sender can't silently move the others — in particular, setting the outbound sender to `hello@` must never make the inbound form mail `hello@` from `hello@`. Regression tests in `netlify/__tests__/{contact-email,welcome-email}.test.js` assert the isolation in both directions. Every outbound address is one a human can reply to; only the inbound form uses `noreply@`, because the submitter's address is unverified and `reply_to` carries them instead. |
+| Entitlements | **Server-authoritative.** One pure `can()` in `src/lib/entitlementModel.js`, imported by BOTH React and the Netlify functions so they can never disagree. `plan_id` (what they bought) and `status` (lifecycle) are SEPARATE axes — never model suspension as a pseudo-plan, because `getEffectivePlanById` falls back to Free for unknown ids and would GRANT access instead of denying. Use `getPlanByIdStrict` for anything that gates. |
+| Entitlement failure mode | **Fail OPEN on infrastructure, CLOSED only on an explicitly-read non-active status.** A Supabase blip must never take extraction down. Same asymmetry as `reserveCoupon` in `pricingSource.js`. Do not "harden" it. |
+| Money | `src/lib/chargeMath.js` is the single implementation; `pricingMath.computeCharge` is an adapter over it, so displayed == charged. `totalMinor` keeps the ORIGINAL one-step rounding; `tax = total − taxable` is DERIVED, never independently rounded. A legacy-parity table gates any change. |
+| Invoice immutability | An issued invoice is immutable at the DB level (BEFORE UPDATE trigger). Only `status`, `refunded_minor`, `pdf_path`, `pdf_sha256`, and `user_id` NULL→set may change. Corrections are CREDIT NOTES (series `DTQC`), never edits. |
+| Invoice numbering | A row-locked COUNTER TABLE, never a Postgres sequence — sequences are non-transactional and gap on rollback, and gaps in a GST series are what auditors ask about. FY boundary is **1 April IST**, not UTC. |
+| Invoice idempotency | A partial unique index on `(provider, provider_payment_id)` + `issue_invoice` catching `unique_violation`. Do NOT copy the read-then-write dedup in `payment-webhook.js:49-59` — it races. Only `created:true` may render a PDF or send mail. |
+| Invoice ownership | Downloads gate on `auth.uid()` ONLY, never `session_id` (client-writable localStorage). Return **404, not 403**, for another user's invoice so ids cannot be enumerated. |
+| PDF text | jsPDF's helvetica is WinAnsi; a character outside it corrupts the whole text run's METRICS, not just the glyph. Every string routes through `toPdfSafe()`. Amounts are ASCII `INR 1,23,456.00`, never `₹`. |
+| Scheduler pausing | `status` = the USER's intent (active/paused); `system_paused` = the PLATFORM's, protected by a column-level REVOKE the client cannot write. Resume is scoped by `system_pause_reason`, so a schedule the user paused stays paused. |
+| Dunning idempotency | `billing_notice_log` keys on `user_id` (emails change) and `window_key` anchors on the CYCLE, never on today. `reengagement.js` anchors on today and would email an inactive user daily forever. Claim the log row BEFORE sending. |
+| Purge | `billing-purge.js` is the ONLY destructive job. Five interlocks, any one of which stops it; ships disarmed. It can never delete anyone whose `last_notice_kind` is not `delete_d90`. Invoices/payment_events/account always survive. |
+| Admin billing | Every mutation in `admin-billing.js` requires a `reason` and writes `billing_audit_log`. `reason` is NOT NULL in the schema and validated in the handler — a blank reason is a rejected request, not an empty log entry. |
+| run-all.sql | **GENERATED.** `npm run build:sql` (`--check` in CI). Never hand-edit — it silently drifted from the numbered migrations before. |
 | Naming | App brand is "DatIQ" everywhere in UI. Live site is `https://datiq.app` (Netlify project renamed to `datiqapp`; old `scrapelite.netlify.app` host now 404s). |
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
 | Pricing billing | Default billing period on /pricing is `"annual"` (20% off). Toggle to monthly available. |
@@ -485,6 +541,7 @@ ThemeProvider
 | `datiq.batchMap` | batchRunsService.js — map of `{ extractionId: batchRunId }` for Dashboard tagging |
 | `datiq.batchDraft` | Batch.jsx — persisted textarea content; survives refresh + back-navigation; cleared on "New batch" |
 | `datiq.guestTrial` | guestTrialService.js — guest trial counts `{ count, batchCount, sid }`. **NEVER cleared on login or logout** — intentional bypass-prevention. |
+| `datiq.entitlement` | entitlementClient.js — cached server entitlement row (60s TTL). **UX ONLY, never authorization** — every mutating endpoint re-resolves server-side with the service key. Cleared on sign-in, sign-out and after payment. |
 | `datiq.globalSettings` | globalSettingsService.js — cached guest limit settings from server (5-min TTL). Falls back to DEFAULTS when uncached or fetch fails. |
 
 ---
@@ -752,6 +809,32 @@ ALERT_EMAIL_FROM=              # OUTBOUND, machine    → "DatIQ Alerts <alerts@
 FORM_EMAIL_FROM=               # INBOUND              → "DatIQ Contact <noreply@datiq.app>"
                                #   contact-email.js. Recipients are resolved server-side
                                #   from contactRouting.js, never from env.
+BILLING_EMAIL_FROM=            # OUTBOUND, billing    → "DatIQ Billing <billing@datiq.app>"
+                               #   invoiceEmail.js + billing-lifecycle.js. SEND-ONLY:
+                               #   reply_to is hello@datiq.app, so this is NOT a third
+                               #   customer inbox and the two-inbox policy still holds.
+
+# ── Invoicing / lifecycle (branch claude/datiq-invoicing-model-e16ea3) ────────
+# All optional; every one defaults safely. Unset means "Payment Receipts, no purge".
+#
+# SUPPLIER_GSTIN is THE switch: set → "Tax Invoice" (SAC 998314, place of supply,
+# CGST/SGST vs IGST split). Unset → "Payment Receipt" that states it is NOT a tax
+# invoice and emits no tax fields anywhere. Safe to ship before registration.
+# ⚠️ Note before setting it: checkout ALREADY adds 18% labelled GST to every INR
+# charge (create-checkout.js). If no registration sits behind that, review it.
+SUPPLIER_GSTIN=                # e.g. 29ABCDE1234F1Z5 — leave unset until registered
+SUPPLIER_LEGAL_NAME=           # snapshotted onto every document at issue time
+SUPPLIER_TRADE_NAME=
+SUPPLIER_ADDRESS=
+SUPPLIER_STATE=                # decides intra- vs inter-state supply
+SUPPLIER_COUNTRY=              # default "India"
+SUPPLIER_EMAIL=                # default hello@datiq.app
+SUPPLIER_PAN=
+
+# ── Purge cron (THE ONLY DESTRUCTIVE JOB — ships disarmed) ──
+PURGE_ENABLED=                 # must be exactly "1" to arm. Default OFF.
+PURGE_DRY_RUN=                 # "1" → report what WOULD be deleted, delete nothing
+PURGE_MAX_USERS_PER_RUN=       # default 50; caps the blast radius of any bug
 ```
 
 > **Admin PIN is verified server-side** by `netlify/functions/admin-auth.js` — the secret
@@ -945,6 +1028,63 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 
 ## Outstanding tasks
 
+### Invoicing & subscription lifecycle (2026-07-27 — ON A BRANCH, NOT MERGED)
+
+Branch `claude/datiq-invoicing-model-e16ea3`, 4 commits. Full detail:
+`docs/SESSION-HANDOFF-2026-07-27-INVOICING-AND-LIFECYCLE.md`.
+
+**Before anything else — the SQL has never run.** Migrations `0012`–`0017` were
+only checked for structure; there is no local Postgres. Apply to a scratch
+Supabase project and confirm the new objects exist.
+**Commands, staged-apply path, verification queries and failure modes:
+[`docs/DB-MIGRATION-RUNBOOK.md`](docs/DB-MIGRATION-RUNBOOK.md).**
+
+- [ ] **Apply + verify migrations 0012–0017** on a scratch project. `npm run migrate:prod -- --dry-run` first
+      (it connects, prints `current_database`, and aborts on the wrong target without writing).
+      Full apply = **26 tables / 9 functions / 2 triggers**; all 9 DB functions come from the
+      migrations themselves — there is no separate "create functions" step.
+- [ ] **Respect the ordering** — it is load-bearing and documented in `0012`'s header:
+      `0012` (additive, neutral) → ship the dual-write release for one cycle →
+      `0013` backfill (note the orphan count) → `0014` RLS flip → `0015`–`0017`.
+      ⚠️ After `0014`, guest/unclaimed payment history stops showing in-app. Intended, but know it.
+      ⚠️ **`npm run migrate:prod` has no stop-at-N flag** — a bare run applies `0001`→`0017` in one
+      pass, `0014` included. Fine on a scratch project, wrong on a database with real users; use the
+      subset one-liner in the runbook §4 for the staged path.
+      ⚠️ `0013`'s orphan count is emitted via `raise notice` and is **swallowed** by the runner —
+      query it directly (runbook §6.2), and only after `0012` has added `user_id`.
+      There is no `schema_migrations` table; runbook §6.0 probes which migrations a DB already has.
+- [ ] **Drive one real Razorpay test-mode payment end to end.** Confirm: one invoice row,
+      one number, one email with a `%PDF-` attachment, and `taxable + tax === total`.
+- [ ] **Build the `/admin/billing` React page.** `netlify/functions/admin-billing.js` and its
+      34 contract tests are done; **no UI consumes them yet.** Goes in the standalone `AdminLayout` shell.
+- [ ] **Build the billing-details capture UI** (Account card + optional `PaymentConfirmModal` expander).
+      `buyer_snapshot` / `placeOfSupply` are plumbed end to end and accepted by `create-checkout`,
+      but nothing collects them — so invoices carry email + name only and place of supply
+      defaults to intra-state.
+- [ ] **Wire proration into the upgrade path.** `src/lib/prorationMath.js` is complete and tested,
+      and `chargeMath` applies `prorationCreditMinor`, but nothing yet COMPUTES it at upgrade
+      time from the prior invoice's `taxable_minor`.
+- [ ] **Mount `PlanChangeWarning`** in `Pricing.jsx`'s plan-select flow (component + CSS exist, tested via `describePlanChange`).
+- [ ] **Scheduled-downgrade UI** — `scheduled_plan_id`/`scheduled_at` are honoured by the cron; nothing sets or cancels one.
+- [ ] **Arm the purge, slowly.** Leave `PURGE_ENABLED` unset until `billing-lifecycle` has run
+      cleanly for a full cycle, then `PURGE_DRY_RUN=1`, read the logs, and only then arm it.
+- [ ] **CA review one rendered invoice** before setting `SUPPLIER_GSTIN`.
+- [ ] **Stripe branch writes no invoice draft** — only Razorpay does. Must be added when Stripe is re-enabled.
+- [ ] e2e specs: `e2e/journeys/billing-suspended.spec.js`, `invoice-download.spec.js` (planned, not written).
+- [ ] `usage_records` / `usage_alerts` keep `anon full access` — a privacy leak, NOT an entitlement
+      escalation. Locking them breaks guest usage sync; move guest writes behind a function first.
+- [ ] ⚠️ **`reengagement.js:182` selects a `user_email` column that `0004_scheduler.sql` never creates.**
+      The query 400s and the error is swallowed, so **that cron is a silent no-op in production**,
+      whatever the older handoffs claim. Documented, not fixed. The new billing crons deliberately
+      avoid the pattern.
+
+**Known semantic gap:** v1.0 uses one-time Razorpay Orders, so there is **no auto-renewal**.
+A "scheduled downgrade" cannot silently charge the cheaper plan — it records intent for the
+next purchase, and the account lapses to `suspended` in the same sweep. Razorpay
+Subscriptions / UPI Autopay remains the highest-value follow-up; the webhook handlers for
+`subscription.charged` / `.cancelled` already exist and are unused.
+
+
 ### Pre-cutover: Production isolation (2026-07-19, MERGED to main)
 
 Two pre-cutover migration plans + 3 production-isolation fixes merged to main in one drop. All work on `fix/migrate-prod-fresh-db` branch (now merged + deleted). See `docs/SESSION-HANDOFF-2026-07-19.md` for the full session log.
@@ -961,11 +1101,11 @@ Two pre-cutover migration plans + 3 production-isolation fixes merged to main in
 | `5ca1345` | `chore(netlify):` add `[context.production|staging|deploy-preview.environment]` blocks to `netlify.toml` (placeholders only; real values go in Netlify UI); add `env.*` to `.gitignore`; add `TODO(SCHEDULE_ALERT_WEBHOOK)` in `scheduled-runner.js` |
 
 **New env var support:**
-- `scripts/migrate-prod.mjs` — Node-based migration runner. `npm run migrate:prod -- --list` to discover; `--dry-run` to test connection; auto-discovers `00*.sql` in lexical order. Each file in its own transaction. Idempotent (every migration uses `IF NOT EXISTS` / `OR REPLACE`).
+- `scripts/migrate-prod.mjs` — Node-based migration runner. `npm run migrate:prod -- --list` to discover; `--dry-run` to test connection; auto-discovers `00*.sql` in lexical order. Each file in its own transaction. Idempotent (every migration uses `IF NOT EXISTS` / `OR REPLACE`). Needs the **Direct** connection string (port 5432, not the pooler) with special characters in the password URL-encoded. Its only flags are `--list` / `--dry-run` / `--include=` — **there is no stop-at-N**, so it always applies every numbered file. Full operational runbook: [`docs/DB-MIGRATION-RUNBOOK.md`](docs/DB-MIGRATION-RUNBOOK.md).
 
 **Next steps (per `NETLIFY-ENVIRONMENTS.md` §17, 20-step sequencing):**
 
-- [ ] **Phase 1 — Supabase:** create `datiq-prod` project in `ap-south-1`. Get direct connection string. Run `PROD_SUPABASE_DB_URL=... npm run migrate:prod`. Verify schema (16 tables), RLS (`rowsecurity = t`), and empty data (`SELECT COUNT(*)` should be 0 on all user-data tables).
+- [ ] **Phase 1 — Supabase:** create `datiq-prod` project in `ap-south-1`. Get the **Direct** connection string (port 5432). Run `PROD_SUPABASE_DB_URL=... npm run migrate:prod`. Verify schema (**26 tables / 9 functions / 2 triggers** with `0012`–`0017` applied; was 16 tables when only `0001`–`0011` existed), RLS (`rowsecurity = t` on every table), and empty data (`SELECT COUNT(*)` should be 0 on all user-data tables). Queries: [`docs/DB-MIGRATION-RUNBOOK.md`](docs/DB-MIGRATION-RUNBOOK.md) §6.
 - [ ] **Phase 2 — Netlify:** set env vars per context (production/staging/deploy-preview) using the table in `NETLIFY-ENVIRONMENTS.md` §5.2. The toml has placeholders; the UI has the real values. Add `staging.datiq.app` custom subdomain (Cloudflare users: DNS-only / grey cloud, NOT orange). Wire to `staging` branch. Turn OFF Netlify's "Auto publishing" for production.
 - [ ] **Phase 3 — Razorpay:** register **test** webhook for `https://staging.datiq.app/api/payment-webhook?provider=razorpay`; register **live** webhook for `https://datiq.app/api/payment-webhook?provider=razorpay` (after prod goes live). Different secrets per env.
 - [ ] **Phase 4 — GitHub:** create `production` environment (Settings → Environments → New → production) with yourself as required reviewer, restrict to `main` branch. Create `staging` env (no reviewers). Add repo secrets: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `SLACK_WEBHOOK_URL` (optional). Add `production` env secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_RAZORPAY_KEY_ID`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_WEBHOOK_URL`, `PRODUCTION_ADMIN_PIN`. Add `staging` env secret: `STAGING_ADMIN_PIN`. Add branch protection on `main`: require PR + 1 approval + `test` + `smoke-staging` checks; do not allow bypassing.

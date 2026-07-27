@@ -120,6 +120,12 @@ const FEATURE_GROUPS = [
       "Coupons (% off or bonus extractions) with server-enforced maxUses + one-per-user",
       "Payment-confirm modal with itemized GST breakdown",
       "Task-aware paywall copy (recommends the right plan for the current task)",
+      "Numbered, itemized invoice or receipt issued for every completed payment",
+      "Invoice PDF emailed automatically on payment, with view / download / re-send in Account",
+      "Issued documents are permanent records — corrections are separate credit notes, never edits",
+      "Billing documents stay available after a plan is cancelled or lapses",
+      "Lapsed-plan stages are signposted in-app and by email, and renewing restores access",
+      "Scheduled monitoring pauses while a plan is lapsed and resumes on renewal",
     ],
   },
   {
@@ -211,7 +217,7 @@ export default function Changelog() {
     setMeta({
       title: `${VERSION} — What's in DatIQ`,
       description:
-        `Every feature available in DatIQ ${VERSION}, grouped by capability: extraction, batch, schedules, dashboard, auth, billing, admin, and power-user tools.`,
+        `Every feature available in DatIQ ${VERSION}, grouped by capability: extraction, batch, schedules, dashboard, auth, billing, and power-user tools.`,
       url: typeof window !== "undefined" ? `${window.location.origin}/changelog` : "/changelog",
     });
   }, []);
