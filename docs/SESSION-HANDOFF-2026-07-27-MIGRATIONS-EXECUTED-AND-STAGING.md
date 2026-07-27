@@ -131,20 +131,35 @@ from source by design (the gallery is populated at runtime from Supabase
 
    Found and fixed this session, and it is worse than the old note suggested.
 
+   ### ⚠️ DNS IS NOT THE CAUSE — do not "fix" the CNAME again
+
+   The CNAME was already repointed to `staging--datiqapp.netlify.app` (confirmed
+   across system / 1.1.1.1 / 8.8.8.8 **and the authoritative NS**
+   `athena.dns-parking.com`) and **the content did not change at all.** DNS is now
+   correct and the hostname still serves production.
+
+   The reason: `staging--datiqapp.netlify.app` and `datiqapp.netlify.app` resolve to
+   the **same Netlify edge IPs** (`52.74.6.109`, `13.215.239.219`). Netlify selects
+   the deploy from the **`Host` header**, not from the IP or the CNAME target. Since
+   `staging.datiq.app` is registered as a **domain alias on the site**, that Host
+   maps to the site's *published* (production) deploy. So no DNS change can fix this
+   — it must be fixed in Netlify's domain configuration.
+
    **Proven, not inferred:**
-   - DNS: `staging.datiq.app` → `CNAME datiqapp.netlify.app` — the **production
-     site** host, not `staging--datiqapp.netlify.app` (the branch deploy).
-   - TLS: cert is `CN=datiq.app`, SAN `datiq.app, staging.datiq.app, www.datiq.app`
-     — one production certificate covering it.
+   - Build identity (per-build bundle hash, the strongest signal):
+     `staging.datiq.app` → `/assets/index-BFw7HNTs.js`;
+     `datiq.app` → the **same** `index-BFw7HNTs.js`;
+     `staging--datiqapp.netlify.app` → `index-ngjyYV0n.js`.
    - Content: homepage MD5 identical to `datiq.app` (`ef6c88c6d52e`); the real
      staging deploy is `a62346cc14b1`. All four release artifacts (new screenshot,
      `llms.txt` billing line, help invoices section, pruned orphan page) are present
      on the branch deploy and **absent** on `staging.datiq.app`.
+   - TLS: cert is `CN=datiq.app`, SAN `datiq.app, staging.datiq.app, www.datiq.app`
+     — one production certificate covering it, i.e. the alias relationship is intact.
 
-   It was added as a plain **domain alias on the production site**, and an alias
-   always serves the *published* deploy. This **supersedes the 2026-07-25 "not
-   provisioned / no cert" note** — TLS works now, which is exactly why this is worse
-   than the old outage: it fails silently instead of erroring.
+   This **supersedes the 2026-07-25 "not provisioned / no cert" note** — TLS works
+   now, which is exactly why this is worse than the old outage: it fails silently
+   instead of erroring.
 
    **Two things were wrong in-repo, both now fixed:**
    1. `package.json`'s `smoke:staging` targeted that hostname, so it was
@@ -157,10 +172,16 @@ from source by design (the gallery is populated at runtime from Supabase
       phase-gate's staging smoke test production — while that green is what gates a
       production release.** The advice is removed and replaced with the reasoning.
 
-   **Open infra task (needs the Netlify UI):** a vanity staging hostname requires a
-   Netlify **branch-deploy domain** bound to the `staging` branch, not a domain
-   alias. Until that exists and is confirmed to serve the branch deploy, verify
-   staging only at `staging--datiqapp.netlify.app`.
+   **Open infra task — Netlify UI only, DNS is already correct.** On site
+   `datiqapp` → **Domain management**:
+   1. **Remove** `staging.datiq.app` as a domain alias on the site.
+   2. **Re-add it as a branch subdomain bound to the `staging` branch** (branch
+      deploys must be enabled for `staging`).
+
+   Then verify by build identity, not by a 200: `staging.datiq.app` must serve
+   `/assets/index-ngjyYV0n.js` (the staging build), **not** `index-BFw7HNTs.js` (the
+   production build). Until it does, verify staging only at
+   `staging--datiqapp.netlify.app` and leave `STAGING_URL` unset.
 2. **Apply `0012`–`0017` to a scratch Supabase project** per the runbook. This is
    the last unverified surface (§1.2).
 3. **Decide the migration staging before touching a DB with real users.**
