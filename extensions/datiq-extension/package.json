@@ -1,0 +1,10 @@
+{
+  "name": "datiq-extension",
+  "version": "1.0.0",
+  "description": "Right-click any page and extract it with DatIQ. Browser extension for Chrome / Edge / Firefox / Brave.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node ../../scripts/build-extension.mjs"
+  }
+}

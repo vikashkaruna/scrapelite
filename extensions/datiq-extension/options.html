@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DatIQ Extension — Options</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: 480px; }
+    h2 { font-size: 16px; margin: 14px 0 6px; }
+    .panel { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    pre {
+      background: rgba(124, 58, 237, 0.08);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <header class="hdr">
+    <img src="icons/icon-32.png" alt="DatIQ" />
+    <h1>DatIQ Extension — Options</h1>
+  </header>
+
+  <div class="panel">
+    <h2>How to use</h2>
+    <ol style="margin: 0 0 8px 18px; padding: 0;">
+      <li>Sign in to <a href="https://datiq.app" target="_blank" rel="noreferrer">datiq.app</a> on a Business or Enterprise plan.</li>
+      <li>Go to <strong>Account → API keys</strong> and create a new key.</li>
+      <li>Click the DatIQ icon in your browser toolbar, paste the key, click <em>Save &amp; connect</em>.</li>
+      <li>Right-click any page → <em>Extract this page with DatIQ</em>.</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <h2>Send extractions anywhere</h2>
+    <p>Once extracted, your page lands in the DatIQ dashboard. From there it can be sent to:</p>
+    <ul style="margin: 0 0 8px 18px; padding: 0;">
+      <li>HubSpot (contacts &amp; companies)</li>
+      <li>Notion (database rows)</li>
+      <li>Airtable (records)</li>
+      <li>Slack (channel notifications)</li>
+      <li>Zapier (5,000+ apps)</li>
+    </ul>
+    <p class="muted small">See <a href="https://datiq.app/docs/integrations" target="_blank" rel="noreferrer">docs/integrations</a> for setup steps.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Troubleshooting</h2>
+    <p>If right-click doesn't show the DatIQ option:</p>
+    <ul style="margin: 0 0 8px 18px; padding: 0;">
+      <li>Reload the page after installing the extension.</li>
+      <li>Check the extension is enabled at <code>chrome://extensions/</code>.</li>
+      <li>Open the service worker console (also on the extensions page) for errors.</li>
+    </ul>
+  </div>
+</body>
+</html>

@@ -55,6 +55,23 @@
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js,netlify.toml,NETLIFY-ENVIRONMENTS.md,docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md,docs/SESSION-HANDOFF-2026-07-19.md"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
+# Public REST API (v1) is routed to a single function that dispatches on the
+# `splat` query param. The more specific /api/v1/* rule MUST come first so it
+# wins over the catch-all /api/* rule below.
+[[redirects]]
+  from = "/api/v1/*"
+  to = "/.netlify/functions/api-v1?splat=:splat"
+  status = 200
+  force = true
+
+# Integrations (HubSpot, Zapier, Notion, Airtable, Slack) — the splat is
+# forwarded as a query param so the function can dispatch on the sub-path.
+[[redirects]]
+  from = "/api/integrations/*"
+  to = "/.netlify/functions/integrations-router?splat=:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
