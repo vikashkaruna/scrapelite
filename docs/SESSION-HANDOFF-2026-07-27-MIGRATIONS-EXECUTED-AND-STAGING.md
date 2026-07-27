@@ -127,27 +127,40 @@ from source by design (the gallery is populated at runtime from Supabase
    converged on `0b207cfcc7e24d6934b766cc23ac61b16f27615e` before smoking, and
    `npm run smoke:staging` re-run locally is 10/10.
 
-   ### ⚠️ `staging.datiq.app` SERVES PRODUCTION — do not smoke-test it
+   ### ⚠️ `staging.datiq.app` SERVES PRODUCTION — never smoke-test it, never set `STAGING_URL` to it
 
-   Found and fixed this session. The hostname is **not** unprovisioned as the
-   2026-07-25 note said (it resolves and serves fine) — it is **pointed at the
-   production deploy**, which is worse, because it fails silently instead of erroring.
+   Found and fixed this session, and it is worse than the old note suggested.
 
-   Evidence: homepage MD5 of `staging.datiq.app` and `datiq.app` are **identical**
-   (`ef6c88c6d52e`), while the real staging deploy hashes `a62346cc14b1`. On all four
-   release probes — the new screenshot, the `llms.txt` billing line, the help
-   invoices section, and the pruned orphan page — `staging.datiq.app` matches
-   production and lacks the release.
+   **Proven, not inferred:**
+   - DNS: `staging.datiq.app` → `CNAME datiqapp.netlify.app` — the **production
+     site** host, not `staging--datiqapp.netlify.app` (the branch deploy).
+   - TLS: cert is `CN=datiq.app`, SAN `datiq.app, staging.datiq.app, www.datiq.app`
+     — one production certificate covering it.
+   - Content: homepage MD5 identical to `datiq.app` (`ef6c88c6d52e`); the real
+     staging deploy is `a62346cc14b1`. All four release artifacts (new screenshot,
+     `llms.txt` billing line, help invoices section, pruned orphan page) are present
+     on the branch deploy and **absent** on `staging.datiq.app`.
 
-   `package.json`'s `smoke:staging` pointed at that hostname, so **it was
-   smoke-testing production while reporting on staging** — a green result proving
-   nothing about the release. Now fixed to
-   `${STAGING_URL:-https://staging--datiqapp.netlify.app}`, matching what CI uses.
+   It was added as a plain **domain alias on the production site**, and an alias
+   always serves the *published* deploy. This **supersedes the 2026-07-25 "not
+   provisioned / no cert" note** — TLS works now, which is exactly why this is worse
+   than the old outage: it fails silently instead of erroring.
 
-   **The staging deploy lives only at `staging--datiqapp.netlify.app`.** Verify
-   release content there. Fixing the DNS/alias so `staging.datiq.app` points at the
-   staging branch deploy is an open infrastructure task — until then, treat that
-   hostname as production.
+   **Two things were wrong in-repo, both now fixed:**
+   1. `package.json`'s `smoke:staging` targeted that hostname, so it was
+      **smoke-testing production while reporting on staging**. Now
+      `${STAGING_URL:-https://staging--datiqapp.netlify.app}`, matching CI. Verified
+      10/10 against the real staging deploy.
+   2. `staging-gate.yml` and `phase-gate.yml` both advised "once `staging.datiq.app`
+      is a domain alias and its cert issues, set `STAGING_URL` to it". **That
+      condition has now been met, so following that advice would make the
+      phase-gate's staging smoke test production — while that green is what gates a
+      production release.** The advice is removed and replaced with the reasoning.
+
+   **Open infra task (needs the Netlify UI):** a vanity staging hostname requires a
+   Netlify **branch-deploy domain** bound to the `staging` branch, not a domain
+   alias. Until that exists and is confirmed to serve the branch deploy, verify
+   staging only at `staging--datiqapp.netlify.app`.
 2. **Apply `0012`–`0017` to a scratch Supabase project** per the runbook. This is
    the last unverified surface (§1.2).
 3. **Decide the migration staging before touching a DB with real users.**
