@@ -102,10 +102,13 @@ function Tree({ path, children }) {
 }
 
 describe("F-11 — About page", () => {
-  it("renders the founder block (Vikash Karuna)", async () => {
+  it("renders the founder block (Axiom Minds Private Limited)", async () => {
+    // The /about founder block was rebranded from 'Vikash Karuna' to
+    // 'Axiom Minds Private Limited' on staging (commit 58d9b47,
+    // 2026-07-27). The block now shows the company as the founder.
     const { container } = render(<Tree path="/about"><About /></Tree>);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText("Vikash Karuna")).toBeInTheDocument();
+    expect(screen.getByText("Axiom Minds Private Limited")).toBeInTheDocument();
     const role = container.querySelector(".about-founder-role");
     expect(role).not.toBeNull();
     expect(role.textContent).toMatch(/Founder/);
