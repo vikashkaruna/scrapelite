@@ -45,6 +45,13 @@
 [functions."billing-purge"]
   schedule = "@daily"
 
+# Samples every service/host/database probe and stores one health_samples row
+# per component, which is what makes the uptime and latency figures on
+# /admin/health real rather than "up right now". Also emails on a critical
+# state CHANGE — disarmed unless OPS_ALERT_EMAIL is set.
+[functions."health-monitor"]
+  schedule = "@hourly"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

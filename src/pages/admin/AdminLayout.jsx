@@ -14,6 +14,8 @@ const NAV = [
   { to: "/admin/coupons",  label: "Coupons",  icon: "bookmark" },
   { to: "/admin/users",    label: "Users",    icon: "users" },
   { to: "/admin/ai",       label: "AI",       icon: "sparkles" },
+  { to: "/admin/monitoring", label: "Automation", icon: "activity" },
+  { to: "/admin/health",     label: "Health",     icon: "server" },
   { to: "/admin/general",  label: "General",  icon: "settings" },
 ];
 

@@ -31,6 +31,8 @@
 // netlify.toml is authoritative.
 export const config = { schedule: "@daily" };
 
+import { withJobRun } from "./lib/jobControl.js";
+
 const STALE_HOURS = 48;
 const DEFAULT_MAX = 50;
 
@@ -158,7 +160,7 @@ export function lifecycleIsFresh(lastSuccessIso, now = new Date(), staleHours = 
   return now.getTime() - t < staleHours * 3600_000;
 }
 
-export const handler = async () => {
+const run = async () => {
   // Interlock 1 — armed only by explicit configuration.
   if (process.env.PURGE_ENABLED !== "1") {
     return { statusCode: 200, body: "skipped (PURGE_ENABLED is not 1)" };
@@ -227,5 +229,17 @@ export const handler = async () => {
   console.log(`[billing-purge] ${summary}`);
   return { statusCode: 200, body: summary };
 };
+
+// Wrapped for /admin/monitoring — see jobControl.js.
+//
+// The operator kill switch is INTERLOCK SIX, not a replacement for the five
+// already in `run`. It fails open (a Supabase outage lets the job run), which is
+// safe precisely because interlock 1 — PURGE_ENABLED — is read from the process
+// environment and cannot fail open at all.
+//
+// This job is also marked `manualRunAllowed: false` in monitoringModel.js, so
+// admin-monitoring refuses to trigger it by hand. Its schedule is the only path
+// that reaches it.
+export const handler = withJobRun("billing-purge", run);
 
 export const _internal = { sb, lifecycleIsFresh, PURGE_TABLES, STALE_HOURS };

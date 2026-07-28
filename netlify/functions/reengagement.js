@@ -36,6 +36,8 @@
 // netlify.toml is authoritative.
 export const config = { schedule: "@daily" };
 
+import { withJobRun } from "./lib/jobControl.js";
+
 // Daily schedule-ran digest fires only at this UTC hour. Default 21:00 UTC
 // = ~5pm ET / 2:30am IST. Operators can override via env.
 const DAILY_DIGEST_HOUR_UTC = parseInt(process.env.DAILY_DIGEST_HOUR_UTC || "21", 10) || 21;
@@ -258,7 +260,7 @@ export function buildDailyDigest(rows, now = new Date()) {
   return { runCount: runs, changeCount: changes, errorCount: errors };
 }
 
-export const handler = async () => {
+const run = async () => {
   const db = sb();
   if (!db) {
     return { statusCode: 200, body: "skipped (no supabase service key)" };
@@ -374,6 +376,15 @@ export const handler = async () => {
 
   return { statusCode: 200, body: `Re-engagement complete. ${sent} email(s) sent. (${byEmail.size} user(s) checked.)` };
 };
+
+// Wrapped for /admin/monitoring — see jobControl.js.
+//
+// ⚠️ A green run row here does NOT mean mail was sent. This handler selects a
+// `user_email` column that 0004_scheduler.sql never creates; the query 400s and
+// the error is swallowed, so the job reports success while doing nothing. The
+// defect is carried as an explicit `caveat` on this job in monitoringModel.js so
+// the dashboard shows it next to the status rather than quietly contradicting it.
+export const handler = withJobRun("reengagement", run);
 
 // ISO week number (1-53) — used for the weekly digest dedup window.
 function getISOWeek(d) {

@@ -1,0 +1,542 @@
+// AdminMonitoring.jsx — automation & workflow monitoring.
+//
+// Two tables, one question each:
+//   • Platform jobs — are the crons running, when did they last succeed, when
+//     do they run next, and can I stop one right now?
+//   • User schedules — whose monitoring workflows are active, paused, or
+//     paused by the platform, and can I intervene on one?
+//
+// Every control opens a reason prompt before it fires. That is not ceremony:
+// the server rejects a blank reason and the database has a CHECK constraint
+// behind it, so a dialog that skipped the reason would just produce a 400.
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getMonitoringSnapshot, setJobEnabled, runJobNow, pauseSchedule, resumeSchedule,
+} from "../../lib/monitoringService.js";
+import {
+  jobStateMeta, scheduleStateMeta, formatRelative, formatDuration,
+  SCHEDULE_STATE, JOB_STATE,
+} from "../../lib/monitoringModel.js";
+import { describeCron } from "../../lib/schedulerService.js";
+import { useToast } from "../../components/Toast.jsx";
+import Icon from "../../components/Icon.jsx";
+import Button from "../../components/Button.jsx";
+
+const REFRESH_MS = 30_000;
+
+function StatePill({ meta, title }) {
+  return (
+    <span className={`ops-pill ops-pill-${meta.tone}`} title={title || undefined}>
+      {meta.icon && <Icon name={meta.icon} size={12} />}
+      {meta.label}
+    </span>
+  );
+}
+
+function SummaryTile({ icon, label, value, tone = "muted" }) {
+  return (
+    <div className={`ops-tile ops-tile-${tone}`}>
+      <div className="ops-tile-icon"><Icon name={icon} size={16} /></div>
+      <div className="ops-tile-body">
+        <div className="ops-tile-value">{value}</div>
+        <div className="ops-tile-label">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reason prompt. Modal rather than an inline field because these actions stop
+ * billing, dunning and other people's automation — a single mis-click should
+ * not be enough.
+ */
+function ReasonDialog({ open, action, onConfirm, onCancel, busy }) {
+  const [reason, setReason] = useState("");
+  useEffect(() => { if (open) setReason(""); }, [open, action?.key]);
+  if (!open || !action) return null;
+
+  const disabled = busy || !reason.trim();
+  return (
+    <div className="ops-modal-overlay" role="dialog" aria-modal="true" aria-label={action.title}>
+      <div className="ops-modal card card-pad">
+        <h3 className="ops-modal-title">{action.title}</h3>
+        <p className="ops-modal-desc">{action.description}</p>
+        {action.warning && (
+          <div className="admin-ai-notice warn ops-modal-warn">
+            <Icon name="alert-triangle" size={15} /><span>{action.warning}</span>
+          </div>
+        )}
+        <label className="ops-modal-label" htmlFor="ops-reason">
+          Reason <span className="ops-required">(required)</span>
+        </label>
+        <textarea
+          id="ops-reason"
+          className="ops-modal-input"
+          rows={3}
+          value={reason}
+          autoFocus
+          placeholder="Why are you doing this? Written to the audit log."
+          onChange={(e) => setReason(e.target.value)}
+        />
+        <p className="ops-modal-hint">
+          Recorded in <code>ops_audit_log</code> with your admin identity and the time.
+        </p>
+        <div className="ops-modal-actions">
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button
+            variant={action.danger ? "danger" : "primary"}
+            onClick={() => onConfirm(reason.trim())}
+            disabled={disabled}
+          >
+            {busy ? "Working…" : action.confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RunHistory({ runs }) {
+  if (!runs?.length) return <p className="ops-runs-empty">No runs recorded yet.</p>;
+  return (
+    <table className="ops-runs-table">
+      <thead>
+        <tr><th>Started</th><th>Status</th><th>Trigger</th><th>Duration</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {runs.map((r) => (
+          <tr key={r.id}>
+            <td title={r.started_at}>{formatRelative(r.started_at)}</td>
+            <td><span className={`ops-run-status ops-run-${r.status}`}>{r.status}</span></td>
+            <td>{r.trigger}</td>
+            <td>{r.duration_ms == null ? "—" : formatDuration(r.duration_ms)}</td>
+            <td className="ops-run-detail">
+              {r.error
+                ? <span className="ops-run-error">{r.error}</span>
+                : <code>{JSON.stringify(r.detail || {})}</code>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function JobRow({ job, expanded, onToggle, onStart, onStop, onRun }) {
+  const meta = jobStateMeta(job.state);
+  return (
+    <>
+      <tr className={"ops-job-row" + (job.state === JOB_STATE.FAILING || job.state === JOB_STATE.STUCK ? " ops-row-alert" : "")}>
+        <td>
+          <button className="ops-expand" onClick={onToggle} aria-expanded={expanded}
+            aria-label={expanded ? `Collapse ${job.label}` : `Expand ${job.label}`}>
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />
+          </button>
+        </td>
+        <td>
+          <div className="ops-job-name">
+            {job.label}
+            {job.destructive && <span className="ops-tag ops-tag-danger" title="Destructive job">Destructive</span>}
+            {job.critical && !job.destructive && <span className="ops-tag">Critical</span>}
+          </div>
+          <div className="ops-job-id"><code>{job.id}</code></div>
+        </td>
+        <td><StatePill meta={meta} title={job.reason} /></td>
+        <td title={job.lastSuccessAt || ""}>{formatRelative(job.lastSuccessAt)}</td>
+        <td title={job.nextRunAt || ""}>
+          {job.enabled ? formatRelative(job.nextRunAt) : <span className="ops-muted">—</span>}
+        </td>
+        <td><code className="ops-cron">{job.schedule}</code></td>
+        <td className="ops-actions-cell">
+          {job.enabled ? (
+            <button className="ops-icon-btn" title="Stop this job" onClick={onStop}>
+              <Icon name="pause" size={14} />
+            </button>
+          ) : (
+            <button className="ops-icon-btn ops-icon-start" title="Start this job" onClick={onStart}>
+              <Icon name="play-circle" size={14} />
+            </button>
+          )}
+          <button
+            className="ops-icon-btn"
+            title={job.manualRunAllowed
+              ? "Run now"
+              : "This job is destructive — its schedule is the only way to trigger it"}
+            onClick={onRun}
+            disabled={!job.manualRunAllowed}
+          >
+            <Icon name="zap" size={14} />
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="ops-job-detail-row">
+          <td colSpan={7}>
+            <div className="ops-job-detail">
+              <p className="ops-job-desc">{job.description}</p>
+              <p className="ops-job-reason"><strong>Status:</strong> {job.reason}</p>
+              {job.caveat && (
+                <div className="admin-ai-notice warn">
+                  <Icon name="alert-triangle" size={15} /><span>{job.caveat}</span>
+                </div>
+              )}
+              {!job.enabled && job.control?.reason && (
+                <p className="ops-job-reason">
+                  <strong>Stopped:</strong> {job.control.reason}
+                  {job.control.changedBy ? ` — by ${job.control.changedBy}` : ""}
+                  {job.control.changedAt ? ` (${formatRelative(job.control.changedAt)})` : ""}
+                  {job.control.source === "env" && " · set via OPS_JOBS_DISABLED, not changeable from here"}
+                </p>
+              )}
+              <p className="ops-job-reason">
+                <strong>Cron:</strong> <code>{job.cron}</code> (UTC) · declared in <code>netlify.toml</code>
+              </p>
+              <h4 className="ops-runs-title">Recent runs</h4>
+              <RunHistory runs={job.runs} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function ScheduleRow({ s, onPause, onResume }) {
+  const meta = scheduleStateMeta(s.state);
+  return (
+    <tr>
+      <td>
+        <div className="ops-job-name">{s.label}</div>
+        <div className="ops-job-id">
+          <code>{s.id}</code>{s.userId ? ` · user ${String(s.userId).slice(0, 8)}` : ""}
+        </div>
+      </td>
+      <td className="ops-target" title={typeof s.target === "string" ? s.target : ""}>
+        {Array.isArray(s.target) ? `${s.target.length} URLs` : (s.target || "—")}
+      </td>
+      <td><StatePill meta={meta} title={s.systemPauseReason || ""} /></td>
+      <td title={s.lastRunAt || ""}>{formatRelative(s.lastRunAt)}</td>
+      <td title={s.nextRunAt || ""}>
+        {s.nextRunAt ? formatRelative(s.nextRunAt) : <span className="ops-muted">—</span>}
+      </td>
+      <td><span className="ops-cron-desc" title={s.cron}>{describeCron(s.cron)}</span></td>
+      <td className="ops-actions-cell">
+        {s.systemPaused ? (
+          <button className="ops-icon-btn ops-icon-start" title="Release the system pause" onClick={onResume}>
+            <Icon name="play-circle" size={14} />
+          </button>
+        ) : (
+          <button className="ops-icon-btn" title="System-pause this schedule" onClick={onPause}>
+            <Icon name="pause" size={14} />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+export default function AdminMonitoring() {
+  const showToast = useToast();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState({});
+  const [pending, setPending] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [scheduleFilter, setScheduleFilter] = useState("all");
+  // Guards against a slow in-flight refresh overwriting state after unmount.
+  const alive = useRef(true);
+
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
+    try {
+      const snapshot = await getMonitoringSnapshot();
+      if (!alive.current) return;
+      setData(snapshot);
+      setError("");
+    } catch (e) {
+      if (!alive.current) return;
+      setError(e.message || "Failed to load monitoring data.");
+    } finally {
+      if (alive.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    alive.current = true;
+    load();
+    return () => { alive.current = false; };
+  }, [load]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => load({ quiet: true }), REFRESH_MS);
+    return () => clearInterval(id);
+  }, [autoRefresh, load]);
+
+  async function confirmAction(reason) {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      const res = await pending.run(reason);
+      showToast(res.message || "Done.");
+      await load({ quiet: true });
+      setPending(null);
+    } catch (e) {
+      showToast(e.message || "Action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading && !data) {
+    return (
+      <div className="admin-section">
+        <div className="admin-ai-loading">
+          <Icon name="loader" size={18} className="spin" /> Loading automation status…
+        </div>
+      </div>
+    );
+  }
+
+  const jobs = data?.jobs || [];
+  const js = data?.jobSummary || {};
+  const ss = data?.scheduleSummary || {};
+  const schedules = (data?.schedules || []).filter((s) =>
+    scheduleFilter === "all" ? true
+      : scheduleFilter === "attention"
+        ? s.state === SCHEDULE_STATE.SYSTEM_PAUSED || s.lastStatus === "error"
+        : s.state === scheduleFilter);
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <div>
+          <h2 className="admin-section-title">Automation Monitoring</h2>
+          <p className="admin-section-sub">
+            Platform crons and user monitoring schedules — execution status, last and next run,
+            and start/stop control. Refreshed {autoRefresh ? "every 30s" : "manually"}.
+            {data?.generatedAt && <> Last updated {formatRelative(data.generatedAt)}.</>}
+          </p>
+        </div>
+        <div className="ops-head-actions">
+          <label className="ops-auto-toggle">
+            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+            Auto-refresh
+          </label>
+          <Button variant="ghost" size="sm" icon="refresh" onClick={() => load()}>Refresh</Button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-circle" size={15} /><span>{error}</span>
+        </div>
+      )}
+
+      {data && !data.historyAvailable && (
+        <div className="admin-ai-notice warn">
+          <Icon name="alert-triangle" size={15} />
+          <span>
+            No run history: <code>SUPABASE_URL</code> + <code>SUPABASE_SERVICE_KEY</code> are not set,
+            so every job reads &quot;never run&quot;. That reflects missing configuration here, not a
+            stopped platform.
+          </span>
+        </div>
+      )}
+
+      {/* ── Summary ─────────────────────────────────────────────────────── */}
+      <div className="ops-tiles">
+        <SummaryTile icon="check-circle" label="Jobs healthy" value={js.healthy ?? 0} tone="ok" />
+        <SummaryTile icon="alert-octagon" label="Failing / stuck" value={(js.failing ?? 0) + (js.stuck ?? 0)}
+          tone={(js.failing || js.stuck) ? "danger" : "muted"} />
+        <SummaryTile icon="alert-triangle" label="Stale" value={js.stale ?? 0}
+          tone={js.stale ? "warn" : "muted"} />
+        <SummaryTile icon="pause" label="Stopped" value={js.disabled ?? 0} />
+        <SummaryTile icon="calendar-clock" label="Active schedules" value={ss.active ?? 0} tone="ok" />
+        <SummaryTile icon="alert-triangle" label="System paused" value={ss.systemPaused ?? 0}
+          tone={ss.systemPaused ? "warn" : "muted"} />
+      </div>
+
+      {/* ── Platform jobs ───────────────────────────────────────────────── */}
+      <div className="admin-general-group card card-pad">
+        <div className="admin-general-group-head">
+          <Icon name="activity" size={18} />
+          <div>
+            <h3 className="admin-general-group-title">Platform jobs</h3>
+            <p className="admin-general-group-desc">
+              Scheduled functions declared in <code>netlify.toml</code>. Stopping a job here writes an
+              operator kill switch that the job checks before it does any work — it does not
+              unschedule the cron, so the job still fires and records a skipped run.
+            </p>
+          </div>
+        </div>
+
+        <div className="ops-table-wrap">
+          <table className="ops-table">
+            <thead>
+              <tr>
+                <th aria-label="Expand" />
+                <th>Job</th><th>Status</th><th>Last success</th><th>Next run</th>
+                <th>Schedule</th><th>Control</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  expanded={!!expanded[job.id]}
+                  onToggle={() => setExpanded((e) => ({ ...e, [job.id]: !e[job.id] }))}
+                  onStop={() => setPending({
+                    key: `stop-${job.id}`,
+                    title: `Stop ${job.label}?`,
+                    description: `${job.id} will stop doing work from its next scheduled fire. It will still run and record a skipped run, so you can see it is stopped rather than broken.`,
+                    warning: job.critical
+                      ? "This job is critical. billing-purge refuses to delete anything unless billing-lifecycle has succeeded recently, so stopping the lifecycle also disarms the purge."
+                      : "",
+                    confirmLabel: "Stop job",
+                    danger: true,
+                    run: (reason) => setJobEnabled(job.id, false, reason),
+                  })}
+                  onStart={() => setPending({
+                    key: `start-${job.id}`,
+                    title: `Start ${job.label}?`,
+                    description: `${job.id} will resume work on its next scheduled fire.`,
+                    confirmLabel: "Start job",
+                    run: (reason) => setJobEnabled(job.id, true, reason),
+                  })}
+                  onRun={() => setPending({
+                    key: `run-${job.id}`,
+                    title: `Run ${job.label} now?`,
+                    description: `Executes ${job.id} immediately, outside its schedule. The run is tagged 'manual' in the history.`,
+                    confirmLabel: "Run now",
+                    run: (reason) => runJobNow(job.id, reason),
+                  })}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── User schedules ──────────────────────────────────────────────── */}
+      <div className="admin-general-group card card-pad">
+        <div className="admin-general-group-head">
+          <Icon name="calendar-clock" size={18} />
+          <div>
+            <h3 className="admin-general-group-title">User monitoring schedules</h3>
+            <p className="admin-general-group-desc">
+              Recurring extraction workflows across all users ({ss.total ?? 0} total). A system pause
+              applied here is tagged <code>admin_paused</code>, so the billing lifecycle will not
+              release it — and it never overrides a pause the user set themselves.
+            </p>
+          </div>
+        </div>
+
+        <div className="ops-filters">
+          {[
+            ["all", `All (${ss.total ?? 0})`],
+            ["attention", `Needs attention (${(ss.systemPaused ?? 0) + (ss.failing ?? 0)})`],
+            [SCHEDULE_STATE.ACTIVE, `Active (${ss.active ?? 0})`],
+            [SCHEDULE_STATE.PAUSED, `User paused (${ss.paused ?? 0})`],
+            [SCHEDULE_STATE.SYSTEM_PAUSED, `System paused (${ss.systemPaused ?? 0})`],
+            [SCHEDULE_STATE.EXPIRED, `Expired (${ss.expired ?? 0})`],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className={"ops-filter" + (scheduleFilter === key ? " active" : "")}
+              onClick={() => setScheduleFilter(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {schedules.length === 0 ? (
+          <p className="ops-runs-empty">
+            {(ss.total ?? 0) === 0
+              ? "No user schedules exist yet."
+              : "No schedules match this filter."}
+          </p>
+        ) : (
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>Schedule</th><th>Target</th><th>Status</th>
+                  <th>Last run</th><th>Next run</th><th>Cadence</th><th>Control</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedules.map((s) => (
+                  <ScheduleRow
+                    key={s.id}
+                    s={s}
+                    onPause={() => setPending({
+                      key: `pause-${s.id}`,
+                      title: `Pause "${s.label}"?`,
+                      description: "Stops this user's schedule from running. Their own pause state is untouched, so releasing this later will not restart something they paused themselves.",
+                      confirmLabel: "Pause schedule",
+                      danger: true,
+                      run: (reason) => pauseSchedule(s.id, reason),
+                    })}
+                    onResume={() => setPending({
+                      key: `resume-${s.id}`,
+                      title: `Resume "${s.label}"?`,
+                      description: "Releases the system pause. If the user also paused it, it stays paused.",
+                      confirmLabel: "Resume schedule",
+                      run: (reason) => resumeSchedule(s.id, reason),
+                    })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Audit trail ─────────────────────────────────────────────────── */}
+      {!!data?.audit?.length && (
+        <div className="admin-general-group card card-pad">
+          <div className="admin-general-group-head">
+            <Icon name="history" size={18} />
+            <div>
+              <h3 className="admin-general-group-title">Recent operator actions</h3>
+              <p className="admin-general-group-desc">
+                From <code>ops_audit_log</code>. Never pruned — this is the record of who
+                stopped what, and why.
+              </p>
+            </div>
+          </div>
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead>
+              <tbody>
+                {data.audit.map((a) => (
+                  <tr key={a.id}>
+                    <td title={a.created_at}>{formatRelative(a.created_at)}</td>
+                    <td>{a.actor}</td>
+                    <td><code>{a.action}</code></td>
+                    <td><code>{a.target || "—"}</code></td>
+                    <td className="ops-audit-reason">{a.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <ReasonDialog
+        open={!!pending}
+        action={pending}
+        busy={busy}
+        onConfirm={confirmAction}
+        onCancel={() => setPending(null)}
+      />
+    </div>
+  );
+}
