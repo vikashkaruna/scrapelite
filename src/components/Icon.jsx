@@ -3,6 +3,7 @@
 // icons by name (e.g. <Icon name="bookmark" />), matching the original mockup.
 
 import {
+  Receipt,
   Link,
   ArrowLeft,
   ArrowRight,
@@ -157,6 +158,7 @@ const MAP = {
   moon: Moon,
   plus: Plus,
   "chevron-right": ChevronRight,
+  receipt: Receipt,
   "chevron-left": ChevronLeft,
   "chevron-down": ChevronDown,
   globe: Globe,

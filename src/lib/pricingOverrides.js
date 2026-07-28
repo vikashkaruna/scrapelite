@@ -56,8 +56,27 @@ export function getEffectivePlans() {
   });
 }
 
+/**
+ * Lenient lookup — an unknown id resolves to the FREE plan.
+ *
+ * Safe for display (a pricing card must render something), but NEVER use this
+ * to decide a capability: a corrupted, renamed or attacker-supplied plan id
+ * would silently be GRANTED the Free tier instead of being refused. Use
+ * getPlanByIdStrict for anything that gates access.
+ */
 export function getEffectivePlanById(planId) {
   return getEffectivePlans().find((p) => p.id === planId) ?? DEFAULT_BY_ID.free;
+}
+
+/**
+ * Strict lookup — returns null for an unknown id instead of falling back.
+ *
+ * This is the authorization-safe counterpart to getEffectivePlanById.
+ * entitlementModel.can() performs the same strict resolution against its own
+ * plan map and denies with code "UNKNOWN_PLAN".
+ */
+export function getPlanByIdStrict(planId) {
+  return getEffectivePlans().find((p) => p.id === planId) ?? null;
 }
 
 export function getEffectivePlanMap() {

@@ -12,6 +12,39 @@
 # Netlify's function-name rule (`^[a-zA-Z0-9_-]+$`) and the build fails.
 # Tests for Netlify Functions belong in netlify/__tests__/.
 
+# ── Scheduled functions (cron) ────────────────────────────────────────────────
+# THESE DECLARATIONS ARE LOAD-BEARING. Every cron below also carries an
+# `export const config = { schedule: ... }` in its source, and that export is
+# IGNORED here: it is only honoured for v2 functions (`export default`), while
+# all of ours are v1 (`export const handler`) and `@netlify/functions` is not a
+# dependency, so the `schedule()` wrapper is not in use either.
+#
+# Verified 2026-07-27 on the staging deploy, before these blocks existed:
+#   * Netlify's own API reported `schedule: null` for every function;
+#   * GET /.netlify/functions/reengagement returned 200 and RAN the handler
+#     ("Re-engagement complete. 0 email(s) sent."), whereas a registered
+#     scheduled function is not HTTP-invocable.
+# i.e. none of these were on a cron at all — scheduled-runner had never run
+# hourly since R19, and billing-lifecycle would never have run at all.
+#
+# Declaring the schedule here also makes Netlify BLOCK public HTTP access to
+# these endpoints, which matters most for billing-purge: as a plain function it
+# is a publicly reachable destructive endpoint.
+#
+# If you remove a block here, that function silently stops being a cron. There
+# is no build error and no runtime error — it just never fires again.
+[functions."scheduled-runner"]
+  schedule = "@hourly"
+
+[functions."reengagement"]
+  schedule = "@daily"
+
+[functions."billing-lifecycle"]
+  schedule = "@daily"
+
+[functions."billing-purge"]
+  schedule = "@daily"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

@@ -213,9 +213,14 @@ jobs:
           fi
 
       - name: Smoke test staging
-        # staging.datiq.app is not provisioned (no cert covers it — see the note
-        # in staging-gate.yml). Default to the branch-deploy host; override with
-        # the STAGING_URL repo variable once the vanity domain is live.
+        # Use the branch-deploy host. ⚠️ Do NOT set STAGING_URL to
+        # staging.datiq.app: verified 2026-07-27, that hostname is a plain domain
+        # ALIAS on the production site (covered by the production cert), so it
+        # serves the PUBLISHED production deploy and is byte-identical to
+        # datiq.app. Repointing its DNS does NOT help — that was tried and the
+        # content did not change, because Netlify routes by Host header. Smoking
+        # it would pass while proving nothing about staging — and here that green
+        # is what gates a production release. Full reasoning in staging-gate.yml.
         run: node scripts/smoke-prod.mjs "${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}"
         env:
           # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have

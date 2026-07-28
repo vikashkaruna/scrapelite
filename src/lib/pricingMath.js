@@ -6,12 +6,25 @@
 // INR prices are BASE (pre-GST). 18% GST is added at checkout for INR only.
 // USD has no GST.
 
-export const GST_RATE = 0.18;
+//
+// The arithmetic itself now lives in chargeMath.js, which is the SAME module
+// create-checkout.js uses to compute the real charge. This file is a thin
+// adapter that keeps the display vocabulary ({gross, discount, base, gst,
+// total}) the UI already destructures — PaymentConfirmModal.jsx:30 among
+// others — while guaranteeing the number shown is the number charged.
+import {
+  GST_RATE as RATE,
+  computeChargeMinor,
+  discountFraction,
+  grossMajor,
+  toMajor,
+} from "./chargeMath.js";
+
+export const GST_RATE = RATE;
 
 // Clamp a percent (0–100) to a fraction (0–1).
 function discFrac(discountPercent) {
-  const p = Math.max(0, Math.min(100, Number(discountPercent) || 0));
-  return p / 100;
+  return discountFraction(discountPercent);
 }
 
 // Returns { gross, discount, base, gst, total, totalMinor } for a plan/bundle.
@@ -27,25 +40,23 @@ function discFrac(discountPercent) {
 // For INR, totalMinor is computed as round(gross * (1-disc) * 1.18 * 100) in ONE step to
 // match the server and avoid rounding drift.
 export function computeCharge(plan, billingPeriod, currency, discountPercent = 0) {
-  const isINR   = currency === "INR";
-  const annual  = billingPeriod === "annual";
-  const frac    = discFrac(discountPercent);
+  // Bundles are priced as a single "once" unit and only carry price_usd/price_inr.
+  const period = billingPeriod === "annual" ? "annual" : billingPeriod === "once" ? "once" : "monthly";
+  const gross = grossMajor({ prices: plan, billingPeriod: period, currency });
+  const c = computeChargeMinor({
+    gross,
+    discountFrac: discFrac(discountPercent),
+    currency,
+  });
 
-  if (isINR) {
-    const baseMonthly = annual ? (plan.price_inr_annual || 0) : (plan.price_inr || 0);
-    const gross       = annual ? baseMonthly * 12 : baseMonthly;
-    const base        = Math.round(gross * (1 - frac) * 100) / 100;
-    const totalMinor  = Math.round(gross * (1 - frac) * (1 + GST_RATE) * 100);
-    const total       = totalMinor / 100;
-    const gst         = Math.round((total - base) * 100) / 100;
-    return { gross, discount: Math.round((gross - base) * 100) / 100, base, gst, total, totalMinor };
-  }
-
-  // USD (no GST). Bundles ("once") fall here with price_usd only.
-  const baseMonthly = annual ? (plan.price_usd_annual ?? plan.price_usd ?? 0) : (plan.price_usd ?? 0);
-  const gross       = annual ? baseMonthly * 12 : baseMonthly;
-  const base        = Math.round(gross * (1 - frac) * 100) / 100;
-  return { gross, discount: Math.round((gross - base) * 100) / 100, base, gst: 0, total: base, totalMinor: Math.round(base * 100) };
+  return {
+    gross,
+    discount: toMajor(c.discountMinor),
+    base: toMajor(c.taxableMinor),
+    gst: toMajor(c.taxMinor),
+    total: toMajor(c.totalMinor),
+    totalMinor: c.totalMinor,
+  };
 }
 
 // Per-month figure (incl. GST for INR) for annual-plan display.

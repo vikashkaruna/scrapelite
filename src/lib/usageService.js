@@ -1,6 +1,7 @@
 // usageService.js — V5 usage metering. Tracks extractions + enrichments per month
 // in localStorage. BillingProvider syncs to Supabase via usageRepo.js.
 import { getEffectivePlanById, getEffectivePlanMap } from "./pricingOverrides.js";
+import { activeEntitlement, can } from "./entitlementModel.js";
 
 const USAGE_KEY = "datiq.usage";
 const SUB_KEY   = "datiq.subscription";
@@ -89,105 +90,48 @@ export function incrementContentGenerations(count = 1) {
   return { ...u };
 }
 
-// ── Limit checks — always return { allowed, remaining } for consistency ────────
-export function canExtract(planId, bonusExtractions = 0) {
-  const planMap = getEffectivePlanMap();
-  const plan = planMap[planId] ?? planMap.free;
-  const { extractions } = readUsage();
-  const limit = plan.limits.extractions === Infinity
-    ? Infinity
-    : plan.limits.extractions + bonusExtractions;
+// ── Limit checks ──────────────────────────────────────────────────────────────
+// These are now thin PLAN-ONLY adapters over entitlementModel.can(), which is
+// the single implementation of every capability rule and is shared with the
+// Netlify functions. They deliberately pass a synthetic always-active
+// entitlement: this layer answers "does the PLAN allow it", not "is the account
+// in good standing". Lifecycle (suspended / deactivated) is applied one level
+// up, in BillingProvider, where the real entitlement row is available.
+//
+// Signatures and return shapes are unchanged so the ~28 existing call sites in
+// Preview / Dashboard / Batch / ExtractionProvider keep working untouched —
+// including canExport/canEmailExport returning a bare boolean.
+function planCtx(extra) {
+  return { planMap: getEffectivePlanMap(), usage: readUsage(), ...extra };
+}
 
-  if (limit === Infinity) return { allowed: true, remaining: Infinity };
-  if (extractions >= limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `You've used all ${limit} extraction${limit === 1 ? "" : "s"} this month. Upgrade or purchase a top-up bundle.`,
-    };
-  }
-  return { allowed: true, remaining: limit - extractions };
+export function canExtract(planId, bonusExtractions = 0) {
+  return can(activeEntitlement(planId), "extract", planCtx({ bonus: bonusExtractions }));
 }
 
 export function canEnrich(planId, url) {
-  const planMap = getEffectivePlanMap();
-  const plan = planMap[planId] ?? planMap.free;
-  if (plan.limits.enrichments_per_extraction === Infinity) {
-    return { allowed: true, remaining: Infinity };
-  }
-  const used  = readUsage().enrichments?.[url] ?? 0;
-  const limit = plan.limits.enrichments_per_extraction;
-  if (used >= limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `Your ${plan.name} plan allows ${limit} enrichment${limit === 1 ? "" : "s"} per extraction. Upgrade to unlock more.`,
-    };
-  }
-  return { allowed: true, remaining: limit - used };
+  return can(activeEntitlement(planId), "enrich", planCtx({ url }));
 }
 
 export function canExport(planId, format) {
-  const planMap = getEffectivePlanMap();
-  return (planMap[planId] ?? planMap.free).limits.exports.includes(format);
+  return can(activeEntitlement(planId), `export.${format}`, planCtx()).allowed;
 }
 
 export function canEmailExport(planId) {
-  const planMap = getEffectivePlanMap();
-  return (planMap[planId] ?? planMap.free).limits.email_export;
+  return can(activeEntitlement(planId), "export.email", planCtx()).allowed;
 }
 
-// Check if the plan supports batch mode and whether N URLs fit within the batch limit.
-// bonusBatchUrls is from top-up "Batch Pack" bundles.
+// Does the plan support batch mode, and do N URLs fit the per-batch cap?
+// bonusBatchUrls comes from top-up "Batch Pack" bundles.
 export function canBatch(planId, urlCount = 1, bonusBatchUrls = 0) {
-  const planMap = getEffectivePlanMap();
-  const plan = planMap[planId] ?? planMap.free;
-  const planLimit = plan.limits.batch_max_urls || 0;
-  const effectiveLimit = planLimit + (bonusBatchUrls || 0);
-
-  if (effectiveLimit === 0) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: "Batch mode is not available on your current plan. Upgrade to unlock batch extraction.",
-    };
-  }
-  if (urlCount > effectiveLimit) {
-    const nextPlanHint = planId === "free"
-      ? "Upgrade to Select (10 URLs), Pro (25 URLs), Business (200 URLs), or Agency (500 URLs)."
-      : planId === "select"
-        ? "Upgrade to Pro (25 URLs), Business (200 URLs), or Agency (500 URLs) for more."
-        : planId === "pro"
-          ? "Upgrade to Business (200 URLs) or Agency (500 URLs) for larger batches."
-          : `Your plan supports up to ${effectiveLimit} URLs per batch. Reduce your list or upgrade.`;
-    return {
-      allowed: false,
-      remaining: effectiveLimit,
-      reason: `You've reached your batch limit of ${effectiveLimit} URL${effectiveLimit === 1 ? "" : "s"}. ${nextPlanHint}`,
-    };
-  }
-  return { allowed: true, remaining: effectiveLimit - urlCount };
+  return can(activeEntitlement(planId), "batch", planCtx({ urlCount, bonusBatchUrls }));
 }
 
-// Check if the account has enough monthly extraction quota to run a batch of N URLs.
+// Does the account have enough monthly extraction quota to run a batch of N URLs?
 export function canExtractBatch(planId, urlCount, bonusExtractions = 0) {
-  const planMap = getEffectivePlanMap();
-  const plan = planMap[planId] ?? planMap.free;
-  const { extractions } = readUsage();
-  const limit =
-    plan.limits.extractions === Infinity
-      ? Infinity
-      : plan.limits.extractions + bonusExtractions;
-
-  if (limit === Infinity) return { allowed: true, remaining: Infinity };
-
-  const remaining = limit - extractions;
-  if (remaining < urlCount) {
-    return {
-      allowed: false,
-      remaining: Math.max(0, remaining),
-      reason: `You need ${urlCount} extraction${urlCount > 1 ? "s" : ""} but only have ${Math.max(0, remaining)} remaining this month. Upgrade or purchase a top-up bundle.`,
-    };
-  }
-  return { allowed: true, remaining: remaining };
+  return can(
+    activeEntitlement(planId),
+    "extract.batch",
+    planCtx({ urlCount, bonus: bonusExtractions }),
+  );
 }

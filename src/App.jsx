@@ -59,6 +59,7 @@ import PublicReport from "./pages/PublicReport.jsx";
 import Gallery from "./pages/Gallery.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
+import SuspendedBanner from "./components/SuspendedBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
 import ReferralBanner from "./components/ReferralBanner.jsx";
@@ -185,6 +186,7 @@ function Shell() {
       <TopBar />
       <GuestTrialBanner />
       <ReferralBanner />
+      <SuspendedBanner />
       <UsageUpsellBanner />
       <main id="main-content">
         <Routes>

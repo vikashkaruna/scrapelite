@@ -129,17 +129,42 @@ jobs:
     needs: [test-suites, vulnerabilities, open-defects]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Where staging actually is. The vanity host staging.datiq.app is NOT
-    # provisioned: its DNS CNAMEs to `staging--datiq.netlify.app` (site slug
-    # `datiq`, which 404s) rather than `staging--datiqapp.netlify.app` (slug
-    # `datiqapp`, this site — the rename is noted in CLAUDE.md), and because no
-    # site claims the hostname Netlify serves its default `*.netlify.app`
-    # wildcard for it. That cert cannot cover a .datiq.app name, so every probe
-    # died on ERR_TLS_CERT_ALTNAME_INVALID while the deploy itself was green.
+    # Where staging actually is: the branch-deploy host. Do NOT point this at
+    # staging.datiq.app.
     #
-    # Default to the branch-deploy host, which is real, healthy and has a valid
-    # cert. Once staging.datiq.app is added as a domain alias on `datiqapp` and
-    # its cert issues, set the repo variable STAGING_URL to it — no code change.
+    # History. This used to fail on TLS: staging.datiq.app CNAMEd to
+    # `staging--datiq.netlify.app` (site slug `datiq`, which 404s) rather than
+    # `staging--datiqapp.netlify.app` (slug `datiqapp`, this site), no site
+    # claimed the hostname, and Netlify served its `*.netlify.app` wildcard —
+    # a cert that cannot cover a .datiq.app name, so probes died on
+    # ERR_TLS_CERT_ALTNAME_INVALID while the deploy itself was green.
+    #
+    # ⚠️ It has since been "fixed" in the WORST possible way, verified
+    # 2026-07-27: staging.datiq.app is covered by the production cert
+    # (CN=datiq.app, SAN includes staging.datiq.app) because it was added as a
+    # plain DOMAIN ALIAS on the production site — so it serves the site's
+    # PUBLISHED (production) deploy, not the staging branch deploy. Proof by
+    # build identity: staging.datiq.app and datiq.app both serve
+    # /assets/index-BFw7HNTs.js while the branch deploy serves index-ngjyYV0n.js.
+    #
+    # ⚠️ DNS IS NOT THE CAUSE AND CANNOT FIX IT. The CNAME has already been
+    # repointed to staging--datiqapp.netlify.app (confirmed on the authoritative
+    # NS) and the served content did not change. Both that host and
+    # datiqapp.netlify.app resolve to the SAME Netlify edge IPs; Netlify chooses
+    # the deploy from the Host header, not the IP or the CNAME target. The fix is
+    # in Netlify Domain management: remove staging.datiq.app as a domain alias,
+    # then re-add it as a BRANCH SUBDOMAIN bound to the `staging` branch.
+    #
+    # So the old advice that used to live here — "once staging.datiq.app is a
+    # domain alias and its cert issues, set STAGING_URL to it" — is a TRAP.
+    # Following it now would make this job, and the phase-gate's staging smoke,
+    # test PRODUCTION while reporting on staging: green, and meaningless. Same
+    # silent-pass shape as `netlify deploy --prod-if-unlocked` while locked.
+    #
+    # A plain domain alias always serves the published deploy. To give staging a
+    # vanity hostname you need a Netlify BRANCH-DEPLOY domain (branch subdomain)
+    # bound to the `staging` branch — not an alias. Only after that is confirmed
+    # to serve the branch deploy should STAGING_URL be set to it.
     env:
       STAGING_URL: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
     environment:

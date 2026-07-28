@@ -227,3 +227,67 @@ describe("schedules — method handling", () => {
     expect(r.statusCode).toBe(405);
   });
 });
+
+describe("schedules POST — platform-owned fields are not client-writable", () => {
+  // Regression for the original `data: schedule` / `status: schedule.status`
+  // upsert, which let the browser dictate every column. Once the billing
+  // lifecycle can system-pause a lapsed subscriber's schedules, a client that
+  // could write these fields would silently un-pause itself on the next sync.
+  beforeEach(() => {
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon";
+  });
+
+  async function postSchedule(extra) {
+    userClient();
+    supabaseMock._chain.single.mockResolvedValueOnce({
+      data: { id: "sch_x", data: { id: "sch_x" } },
+      error: null,
+    });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid.jwt" },
+      body: JSON.stringify({ id: "sch_x", cron: "0 9 * * *", ...extra }),
+    });
+    expect(r.statusCode).toBe(200);
+    return supabaseMock._chain.upsert.mock.calls[0][0];
+  }
+
+  it("drops a client-supplied system_paused from the upserted columns", async () => {
+    const row = await postSchedule({ system_paused: false });
+    expect(row).not.toHaveProperty("system_paused");
+  });
+
+  it("drops system_paused from the stored data blob too", async () => {
+    // The whole client object is persisted as jsonb, so a lookalike field
+    // planted in `data` would confuse anything reading state from there.
+    const row = await postSchedule({ system_paused: false, systemPaused: false });
+    expect(row.data).not.toHaveProperty("system_paused");
+    expect(row.data).not.toHaveProperty("systemPaused");
+  });
+
+  it("drops a client-supplied system_pause_reason", async () => {
+    const row = await postSchedule({ system_pause_reason: null });
+    expect(row).not.toHaveProperty("system_pause_reason");
+    expect(row.data).not.toHaveProperty("system_pause_reason");
+  });
+
+  it("ignores a client-supplied user_id and always uses the verified JWT subject", async () => {
+    const row = await postSchedule({ user_id: "someone-else" });
+    expect(row.user_id).toBe("user-1");
+    expect(row.data).not.toHaveProperty("user_id");
+  });
+
+  it("normalises status to exactly 'active' or 'paused'", async () => {
+    expect((await postSchedule({ status: "paused" })).status).toBe("paused");
+    vi.clearAllMocks();
+    resetChainDefaults();
+    expect((await postSchedule({ status: "totally-bogus" })).status).toBe("active");
+  });
+
+  it("coerces cron to a string rather than storing an arbitrary object", async () => {
+    const row = await postSchedule({ cron: { evil: true } });
+    expect(typeof row.cron).toBe("string");
+  });
+});

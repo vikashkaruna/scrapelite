@@ -11,6 +11,8 @@ import {
   loadPricing, resolveCouponInfo, globalFraction, reserveCoupon,
   ALLOWED_PLANS, ALLOWED_BUNDLES, GST_RATE,
 } from "./lib/pricingSource.js";
+import { computeChargeMinor, grossMajor } from "../../src/lib/chargeMath.js";
+import { buildDraft, buildInvoiceLines, saveInvoiceDraft } from "./lib/invoiceDraft.js";
 
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
 
@@ -36,6 +38,11 @@ export const handler = async (event) => {
     provider, planId, priceId, currency, amount,
     billingPeriod, couponCode, sessionId, email,
     successUrl, cancelUrl,
+    // Buyer's own declared billing state. Determines CGST+SGST vs IGST on the
+    // invoice. Client-supplied because it IS the customer's own address — it is
+    // recorded on the document, never used to authorize anything. Absent, the
+    // supply defaults to intra-state (B2C = supplier's location).
+    placeOfSupply, buyer,
   } = body;
   // `discountPercent` (body.discountPercent) is intentionally NOT read — the server
   // resolves the discount itself from `couponCode` + global sale via loadPricing() below.
@@ -160,26 +167,32 @@ export const handler = async (event) => {
     // SERVER-AUTHORITATIVE: the client `amount` is intentionally ignored. We recompute
     // everything from the price tables so the charged amount cannot be tampered with.
     // INR amounts include 18% GST (computed in one step to avoid rounding drift).
-    let finalAmount;
-    if (isBundle) {
-      const prices   = pricing.bundles[planId];
-      const baseUnit = isINR ? prices.inr : prices.usd;
-      const base     = baseUnit * qty * (1 - disc);
-      finalAmount    = isINR
-        ? Math.round(base * (1 + GST_RATE) * 100)  // INR bundle incl. GST
-        : Math.round(base * 100);                  // USD bundle, no GST
-    } else if (isINR) {
-      const p           = pricing.plans[planId];
-      const baseMonthly = annual ? (p.inr_annual || 0) : (p.inr || 0);
-      const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
-      finalAmount       = Math.round(base * (1 + GST_RATE) * 100); // incl. 18% GST
-    } else {
-      // USD via Razorpay is defensive only (USD normally routes to Stripe). No GST.
-      const p           = pricing.plans[planId];
-      const baseMonthly = annual ? (p.usd_annual || 0) : (p.usd || 0);
-      const base        = (annual ? baseMonthly * 12 : baseMonthly) * (1 - disc);
-      finalAmount       = Math.round(base * 100);
-    }
+    //
+    // The arithmetic now lives in lib/chargeMath.js so the FULL decomposition
+    // (gross / discount / taxable / CGST / SGST / IGST / total) is available to
+    // snapshot on the invoice draft below — previously only the grand total
+    // survived and an invoice cannot be issued from a single number.
+    // computeChargeMinor preserves the original one-step rounding exactly; see
+    // the legacy-parity table in src/lib/chargeMath.test.js.
+    const priceRow = isBundle ? pricing.bundles[planId] : pricing.plans[planId];
+    const period   = isBundle ? "once" : billingPeriod;
+    const gross    = grossMajor({
+      prices: priceRow,
+      billingPeriod: period,
+      currency: rzpCurrency,
+      qty: isBundle ? qty : 1,
+    });
+
+    const charge = computeChargeMinor({
+      gross,
+      qty: isBundle ? qty : 1,
+      discountFrac: disc,
+      currency: rzpCurrency,
+      supplierState: process.env.SUPPLIER_STATE || "",
+      placeOfSupply: placeOfSupply || "",
+      couponCode: disc > 0 ? couponCode : null,
+    });
+    const finalAmount = charge.totalMinor;
 
     // Razorpay minimums: ₹1 (100 paise) for INR, $0.50 (50 cents) for USD
     const minAmount = rzpCurrency === "INR" ? 100 : 50;
@@ -209,6 +222,64 @@ export const handler = async (event) => {
           source:        "datiq_web",
         },
       });
+      // Snapshot everything the invoice will need, keyed by the order id.
+      // Prices are runtime-mutable, so this is the only record that can
+      // reproduce this charge later. Written AFTER the order exists so we have
+      // its id, and BEFORE we answer the client so a draft can never be missing
+      // for an order the browser already knows about.
+      const draft = buildDraft({
+        orderId: order.id,
+        provider: "razorpay",
+        charge,
+        planId,
+        kind: isBundle ? "bundle" : "plan",
+        billingPeriod: period,
+        sessionId: sessionId || null,
+        email: email || null,
+        priceSnapshot: priceRow,
+        buyerSnapshot: buyer || null,
+        lines: buildInvoiceLines({ charge, planId, isBundle, period }),
+      });
+
+      // Invariant: the invoice we will issue must state exactly the amount we
+      // asked the gateway to charge. Both derive from `charge` today, so this
+      // can only fire if someone later recomputes one path and not the other —
+      // which is precisely the bug worth catching, because its symptom in
+      // production is an invoice that disagrees with the customer's card
+      // statement. (The gateway's own echo is verified separately, in
+      // verify-payment.js, against the live order before capture.)
+      if (draft.total_minor !== finalAmount) {
+        console.error(
+          `[create-checkout] draft/charge divergence on ${order.id}: draft=${draft.total_minor} charged=${finalAmount}`,
+        );
+        return {
+          statusCode: 500, headers,
+          body: JSON.stringify({
+            error: "Payment could not be started safely. Please try again.",
+            code: "AMOUNT_MISMATCH",
+          }),
+        };
+      }
+
+      // Fail OPEN if the snapshot cannot be written.
+      //
+      // The tempting rule is "never take money we can't invoice" — but that
+      // makes Supabase a hard dependency of revenue, when checkout deliberately
+      // works without it today (loadPricing falls back to static tables and
+      // never throws). A missing draft is RECOVERABLE: finalizeInvoice
+      // reconstructs from the Razorpay order plus the price table and flags the
+      // invoice `reconstructed = true` for review. A refused checkout is not
+      // recoverable — it is simply a lost sale during a database blip.
+      //
+      // Same asymmetry as lib/requireEntitlement.js: degrade on infrastructure,
+      // never on correctness. Log loudly so the reconstruction is noticed.
+      const draftOk = await saveInvoiceDraft(draft);
+      if (!draftOk) {
+        console.error(
+          `[create-checkout] invoice draft NOT persisted for order ${order.id} (${planId}, ${charge.totalMinor} ${charge.currency}) — invoice will be reconstructed`,
+        );
+      }
+
       return {
         statusCode: 200, headers,
         body: JSON.stringify({ orderId: order.id, amount: order.amount, currency: order.currency, receipt: order.receipt }),

@@ -11,6 +11,8 @@
 //           subscription.cancelled, subscription.charged
 
 import { createHmac, timingSafeEqual } from "crypto";
+import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
+import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
 
 // ── Lightweight Supabase REST client (no SDK required in Functions) ───────────
 function getDb() {
@@ -243,6 +245,34 @@ export const handler = async (event) => {
                 status:            "completed",
               });
             }
+          }
+
+          // ── Invoice: the SECOND of two convergent paths ────────────────────
+          // verify-payment.js runs this same call synchronously when the user's
+          // browser stays open. Whichever arrives first issues the invoice; the
+          // other gets created:false and does nothing. This path matters most
+          // when it is the ONLY one that runs — the customer paid and closed
+          // the tab — which is exactly when a missing invoice would go unnoticed.
+          //
+          // Idempotency is a unique index plus issue_invoice catching
+          // unique_violation, NOT the read-then-write in insertPaymentEvent
+          // above (which has a real race window). A provider retry of this
+          // webhook is therefore safe.
+          try {
+            const { invoice, created } = await finalizeInvoice({
+              orderId: pmtEntity?.order_id,
+              paymentId: payId,
+              provider: "razorpay",
+              order: { id: pmtEntity?.order_id, amount, currency: cur, notes: pmtEntity?.notes || {} },
+            });
+            if (invoice) {
+              await activateFromInvoice(invoice);
+              if (created) await sendInvoiceEmail(invoice);
+            }
+          } catch (e) {
+            // Never fail the webhook over invoicing — Razorpay would retry the
+            // whole event, and the payment itself is already recorded.
+            console.error("[webhook/razorpay] invoice issue failed:", e?.message);
           }
           break;
         }

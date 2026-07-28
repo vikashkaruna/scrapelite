@@ -14,8 +14,14 @@
 // Netlify auto-registers any function that exports `config.schedule`.
 
 import { runScrapeChain } from "./lib/scrapeProviders.js";
+import { computeLifecycle } from "../../src/lib/entitlementModel.js";
+import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 
+// NOTE: this `config` export does NOT register the cron — it is only honoured
+// for v2 functions (`export default`), and this is a v1 handler. The real
+// schedule lives in netlify.toml under [functions."scheduled-runner"]. Keep both in sync;
+// netlify.toml is authoritative.
 export const config = { schedule: "@hourly" };
 
 // Cap batch schedules so one run can't fan out unbounded.
@@ -85,9 +91,42 @@ function sb() {
   };
   return {
     async listActive() {
-      const res = await fetch(`${base}/scheduled_tasks?status=eq.active&select=id,data`, { headers });
+      // Two additions to the original `status=eq.active&select=id,data`:
+      //
+      //  • system_paused=is.false — the billing lifecycle pauses a lapsed
+      //    subscriber's automation through a column the client cannot write
+      //    (column REVOKE in 0015). `status` remains the USER's own intent, so
+      //    a schedule they paused themselves stays paused independently.
+      //
+      //  • user_id in the projection — the runner previously had no idea who
+      //    owned a schedule, so it could not tell whether that owner was still
+      //    entitled to run one. It executed everything, forever, for free.
+      const res = await fetch(
+        `${base}/scheduled_tasks?status=eq.active&system_paused=is.false&select=id,user_id,data`,
+        { headers },
+      );
       if (!res.ok) throw new Error(`list ${res.status}`);
       return res.json();
+    },
+
+    /**
+     * Entitlements for a set of owners, in ONE request.
+     *
+     * Per-schedule lookups would put an unbounded number of round-trips inside
+     * the hourly budget; this is a single `in.(...)` filter, read once per run.
+     */
+    async entitlementsFor(userIds) {
+      const ids = [...new Set(userIds.filter(Boolean))];
+      if (!ids.length) return {};
+      const list = ids.map((i) => `"${i}"`).join(",");
+      const res = await fetch(
+        `${base}/entitlements?user_id=in.(${encodeURIComponent(list)})` +
+          `&select=user_id,plan_id,status,source,period_end,comp_until`,
+        { headers },
+      );
+      if (!res.ok) return {};
+      const rows = (await res.json()) || [];
+      return Object.fromEntries(rows.map((r) => [r.user_id, r]));
     },
     async patch(id, fields) {
       const res = await fetch(`${base}/scheduled_tasks?id=eq.${encodeURIComponent(id)}`, {
@@ -274,13 +313,47 @@ export const handler = async () => {
 
   const now = new Date();
   let scanned = 0, ran = 0, changed = 0, failed = 0;
+  let skippedLapsed = 0, skippedPlan = 0, skippedOrphan = 0;
 
   try {
     const rows = await db.listActive();
+
+    // Resolve every owner's entitlement up front (one query for the whole run).
+    const entMap = await db.entitlementsFor(rows.map((r) => r.user_id));
+
     for (const row of rows) {
       const schedule = { ...(row.data || {}), id: row.id };
       if (!schedule.cron || !schedule.target) continue;
       scanned++;
+
+      // ── Entitlement gate (requirement 9) ────────────────────────────────
+      // A lapsed subscriber's automation must not keep running. The same pure
+      // computeLifecycle the UI and the API use decides this, so a stalled
+      // billing cron cannot leave automation running indefinitely — the runner
+      // re-derives the status from the dates itself.
+      //
+      // FAIL OPEN ON UNKNOWN, CLOSED ONLY ON A KNOWN NON-ACTIVE STATUS — the
+      // same asymmetry as lib/requireEntitlement.js. A missing entitlement row,
+      // or a row with no owner at all, means we could not DETERMINE the
+      // entitlement; that is not evidence of a lapse, and silently stopping
+      // someone's monitoring on a maybe is far worse than running it. Only an
+      // explicit lapsed/deactivated status, or a plan that genuinely has no
+      // scheduled monitoring, stops a run.
+      const ent = row.user_id ? entMap[row.user_id] : null;
+      if (ent) {
+        if (computeLifecycle(ent, now).status !== "active") {
+          skippedLapsed++;
+          continue;
+        }
+        if ((PLAN_BY_ID[ent.plan_id]?.limits?.scheduled_monitoring ?? 0) === 0) {
+          skippedPlan++;
+          continue;
+        }
+      } else if (!row.user_id) {
+        // Counted, not skipped: these should not exist (schedules.js always
+        // stamps the JWT subject) so a non-zero figure here is worth noticing.
+        skippedOrphan++;
+      }
       // Skip schedules past their end date ("run until").
       if (schedule.expiresAt && new Date(schedule.expiresAt) < now) continue;
       if (!cronMatchesHour(schedule.cron, now)) continue;
@@ -307,7 +380,11 @@ export const handler = async () => {
     return { statusCode: 500, body: err.message };
   }
 
-  const summary = `scanned ${scanned}, ran ${ran}, changed ${changed}, failed ${failed}`;
+  // Skips are reported explicitly rather than silently: "ran 0" with no
+  // explanation is indistinguishable from a broken runner.
+  const summary =
+    `scanned ${scanned}, ran ${ran}, changed ${changed}, failed ${failed}, ` +
+    `skipped ${skippedLapsed} lapsed / ${skippedPlan} plan; ${skippedOrphan} unowned`;
   console.log("[DatIQ] scheduled-runner:", summary);
   return { statusCode: 200, body: summary };
 };

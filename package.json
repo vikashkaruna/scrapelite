@@ -13,6 +13,7 @@
     "test:contract": "vitest run netlify",
     "test:integration": "vitest run 'integration.test'",
     "test:system": "vitest run 'src/__tests__/system'",
+    "test:db": "node scripts/db-verify.mjs",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --project=chromium e2e/smoke.spec.js e2e/smoke/",
@@ -24,10 +25,11 @@
     "test:security": "node scripts/security-check.mjs",
     "smoke": "node scripts/smoke-prod.mjs",
     "smoke:prod": "node scripts/smoke-prod.mjs https://datiq.app",
-    "smoke:staging": "node scripts/smoke-prod.mjs https://staging.datiq.app",
+    "smoke:staging": "node scripts/smoke-prod.mjs ${STAGING_URL:-https://staging--datiqapp.netlify.app}",
     "readiness": "node .claude/skills/production-readiness/scripts/audit.mjs",
-    "test:all": "npm run readiness && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run build && npm run test:e2e:smoke && npm run test:security",
-    "migrate:prod": "node scripts/migrate-prod.mjs"
+    "test:all": "npm run readiness && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:system && npm run test:db && npm run build && npm run test:e2e:smoke && npm run test:security",
+    "migrate:prod": "node scripts/migrate-prod.mjs",
+    "build:sql": "node scripts/build-run-all.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -40,6 +42,7 @@
     "stripe": "^17.7.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
