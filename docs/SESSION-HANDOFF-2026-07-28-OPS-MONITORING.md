@@ -68,14 +68,20 @@ Three things had to exist for the dashboard not to be theatre:
 
 | Suite | Before | After |
 |---|---|---|
-| Unit | 1436 | **1559** (+123, 1 pre-existing failure — see below) |
+| Unit | 1436 | **1559** (+123) — all green |
 | Contract | 496 | **666** passed + 14 skipped |
-| Integration | 205 | **257** (+52) |
+| Integration | 205 | **259** (+54, incl. 2 from the staging merge) |
 | System | 7 | 7 |
 | DB (`test:db`) | 89 assertions | **101** |
-| E2E smoke | 98 | **110** (+12, 1 pre-existing failure) |
+| E2E smoke | 98 | **110** (+12) |
 | Build | clean | clean |
-| Readiness | — | **6 pass / 1 warn / 0 fail** |
+| Readiness | — | **5 pass / 2 warn / 0 fail** |
+
+Both readiness warns are non-blocking and neither belongs to this feature:
+gallery/persona coverage is unprovable from source (pre-existing), and the
+screenshot warn is triggered by the **customer-facing** changes merged from
+`staging` — the About rebrand and the pricing dropdown fix. Admin pages are
+internal and must never reach `public/help/` screenshots.
 
 ### Bugs the tests caught in my own code, and the fixes
 
@@ -88,13 +94,23 @@ Three things had to exist for the dashboard not to be theatre:
    result, so the handler returned 503 for both. Split via `configured`, giving
    503 vs 502 — different problems, different places to look.
 
-### ⚠️ One pre-existing failure, not from this branch
+### The About.jsx failure — resolved by syncing, not by a fix
 
-`src/pages/About.jsx` carries an **uncommitted** rename of the founder block from
-"Vikash Karuna" to "Axiom Minds Private Limited" without the matching test
-update. It fails `src/pages/static-pages.test.jsx` and `e2e/smoke/about.spec.js`.
-It was in the worktree before this session and was deliberately left alone —
-whether the source or the tests are correct is not this branch's call.
+Mid-session the suite showed two failures in `src/pages/static-pages.test.jsx`
+and `e2e/smoke/about.spec.js`, from an uncommitted founder-block rebrand sitting
+in the worktree. That looked like an unfixed upstream bug. It was not.
+
+`origin/staging` already carried **both** halves of that work — the source change
+(`58d9b47`) *and* the matching test update — and this branch was simply three
+commits behind. The uncommitted copy in the worktree was a **stale earlier
+draft** of the same edit: it had a typo ("DatIQ has been build") and a shorter
+LinkedIn URL, both already corrected upstream.
+
+Resolution: the stale draft was discarded and `origin/staging` merged in
+(`10938f2`). Both tests pass. Nothing needed fixing — the branch needed syncing.
+
+The lesson for next time: before filing a failure as "pre-existing upstream
+breakage", check whether the branch is behind the remote.
 
 ---
 
