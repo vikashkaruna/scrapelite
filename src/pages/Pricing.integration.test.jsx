@@ -134,39 +134,53 @@ describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
 });
 
 // Regression guard: the currency dropdown used to render UNDERNEATH the
-// plan cards because both `.currency-picker` and `.plans-grid` were
-// direct children of `.container`, both inherited `z-index: 1`, and
-// document order placed the plans grid on top. The fix is to give
-// `.currency-picker` its own stacking context with a z-index high
-// enough to win. If this test ever fails, the pricing page dropdown
-// is overlapping the plan cards again — see screenshot 2026-07-28.
+// plan cards. Both `.pricing-hero` and `.plans-grid` are direct children
+// of `.container`, both inherit `position: relative; z-index: 1` from
+// `.container > *`, and `.plans-grid` comes later in document order so
+// it painted on top of the absolutely-positioned `.currency-dropdown`.
+//
+// Bumping the z-index on `.currency-picker` or `.currency-dropdown`
+// does NOT fix this — z-indexes only compare within the same stacking
+// context, and the picker's stacking context is capped by the hero's
+// z=1. The fix is to give `.pricing-hero` a z-index higher than 1 so
+// it wins against the `.plans-grid` sibling. See the comment block
+// above `.pricing-hero` in screens.css for the full explanation.
+// If this test ever fails, the pricing page dropdown is overlapping
+// the plan cards again — see screenshot 2026-07-28.
 describe("I-39 — Pricing: currency dropdown stacks above plan cards", () => {
-  it(".currency-picker has a higher z-index than .plans-grid (CSS rule, source of truth)", () => {
-    // The actual stacking is decided by the cascade, but the easiest
-    // regression guard is to read the CSS source and verify the
-    // declared z-indexes. A future contributor who tries to "simplify"
-    // the .currency-picker block will see this test fail and know why.
+  it(".pricing-hero has a higher z-index than .plans-grid (CSS rule, source of truth)", () => {
+    // Read the CSS source and verify the declared z-indexes. A future
+    // contributor who tries to "simplify" the .pricing-hero block will
+    // see this test fail and know why.
     const { readFileSync } = require("node:fs");
     const { resolve } = require("node:path");
     const css = readFileSync(resolve(__dirname, "../styles/screens.css"), "utf8");
 
-    // Pull the z-index declared in the .currency-picker block.
-    const pickerMatch = css.match(/\.currency-picker\s*\{[^}]*z-index:\s*(\d+)/);
-    expect(pickerMatch, ".currency-picker must declare a z-index").not.toBeNull();
-    const pickerZ = Number(pickerMatch[1]);
+    // Pull the z-index declared in the .pricing-hero block.
+    const heroMatch = css.match(/\.pricing-hero\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(heroMatch, ".pricing-hero must declare a z-index").not.toBeNull();
+    const heroZ = Number(heroMatch[1]);
 
     // Pull the z-index declared in the .plans-grid block (if any).
-    // If absent, the picker just needs to be > 1, since
-    // .container > * forces z-index: 1 on .plans-grid.
+    // If absent, fall back to the .container > * baseline of 1.
     const gridMatch = css.match(/\.plans-grid\s*\{[^}]*z-index:\s*(\d+)/);
     const gridZ = gridMatch ? Number(gridMatch[1]) : 1;
 
-    // The picker must also beat the container's "1" baseline (line 6).
+    // The hero must win against the plans-grid sibling — otherwise the
+    // plans grid paints on top of the dropdown (see 2026-07-28 bug).
     expect(
-      pickerZ,
-      `.currency-picker z-index (${pickerZ}) must exceed .plans-grid z-index (${gridZ}); ` +
+      heroZ,
+      `.pricing-hero z-index (${heroZ}) must exceed .plans-grid z-index (${gridZ}); ` +
         "otherwise the plan cards paint on top of the dropdown (see 2026-07-28 bug)."
     ).toBeGreaterThan(gridZ);
+
+    // And it must stay below the modal layer so future modals still
+    // cover the page (modals are >=1000 in this codebase).
+    expect(
+      heroZ,
+      `.pricing-hero z-index (${heroZ}) must stay below the modal layer (1000); ` +
+        "otherwise modals/dialogs would render behind the hero."
+    ).toBeLessThan(1000);
   });
 
   it("opening the currency dropdown renders an options list with both INR and USD", async () => {
