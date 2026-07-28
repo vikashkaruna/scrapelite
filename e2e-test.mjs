@@ -344,8 +344,8 @@ async function run() {
   console.log("\n📄 ABOUT PAGE (/about)");
   await goto(page, "/about");
   await ss(page, "16-about");
-  const founderEl = page.locator("text=Vikash Karuna");
-  log("About: founder block shows 'Vikash Karuna'", await founderEl.isVisible().catch(() => false));
+  const founderEl = page.locator("text=Axiom Minds Private Limited");
+  log("About: founder block shows 'Axiom Minds Private Limited'", await founderEl.isVisible().catch(() => false));
   const aboutText = await page.locator(".about-hero p, .about-page p").first().textContent().catch(() => "");
   log("About: hero text doesn't say 'powered by DatIQ'", !aboutText.includes("powered by DatIQ"), aboutText.slice(0, 80));
 

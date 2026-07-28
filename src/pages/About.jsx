@@ -163,7 +163,7 @@ export default function About() {
           </div>
           <h2>Built by someone who felt the need</h2>
           <div className="about-founder">
-            <div className="about-founder-avatar" role="img" aria-label="Vikash Karuna">
+            <div className="about-founder-avatar" role="img" aria-label="Axiom Minds Private Limited">
               <Icon name="user" size={32} strokeWidth={1.5} />
             </div>
             <div className="about-founder-info">
@@ -171,7 +171,7 @@ export default function About() {
               <div className="about-founder-role">Founder, https://axiomminds.ai - DatIQ</div>
               <p className="about-founder-bio">
                 DatIQ has been built after realizing the pain of manually copying data from websites into spreadsheets — a
-                workflow he kept seeing across sales, research, and marketing teams. DatIQ is his answer: a
+                workflow teams kept encountering across sales, research, and marketing. DatIQ is the answer: a
                 zero-code platform that turns any URL into structured, actionable intelligence in seconds.
               </p>
               <a

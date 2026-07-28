@@ -40,7 +40,7 @@ test("Dashboard search filter persists across back/forward navigation", async ({
 
   // Navigate to a different route, then back.
   await page.goto("/about");
-  await expect(page.getByText(/Vikash Karuna/)).toBeVisible();
+  await expect(page.getByText(/Axiom Minds Private Limited/)).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/dashboard\?q=alpha$/);
 
