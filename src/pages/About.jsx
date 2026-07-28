@@ -155,33 +155,33 @@ export default function About() {
           </div>
         </div>
 
-        {/* Founder block */}
+        {/* Company block */}
         <div className="about-section fade">
           <div className="about-section-label">
-            <Icon name="user" size={14} />
-            Founder
+            <Icon name="building" size={14} />
+            Company
           </div>
-          <h2>Built by someone who felt the need</h2>
+          <h2>Built by a team that felt the need</h2>
           <div className="about-founder">
-            <div className="about-founder-avatar" role="img" aria-label="Vikash Karuna">
-              <Icon name="user" size={32} strokeWidth={1.5} />
+            <div className="about-founder-avatar" role="img" aria-label="Axiom Minds Private Limited">
+              <Icon name="building" size={32} strokeWidth={1.5} />
             </div>
             <div className="about-founder-info">
-              <div className="about-founder-name">Vikash Karuna</div>
-              <div className="about-founder-role">Founder, DatIQ</div>
+              <div className="about-founder-name">Axiom Minds Private Limited</div>
+              <div className="about-founder-role">Company behind DatIQ</div>
               <p className="about-founder-bio">
-                Vikash built DatIQ after realizing the pain of manually copying data from websites into spreadsheets — a
-                workflow he kept seeing across sales, research, and marketing teams. DatIQ is his answer: a
-                zero-code platform that turns any URL into structured, actionable intelligence in seconds.
+                Axiom Minds Private Limited built DatIQ after realizing the pain of manually copying data from websites into
+                spreadsheets — a workflow teams kept encountering across sales, research, and marketing. DatIQ is our
+                answer: a zero-code platform that turns any URL into structured, actionable intelligence in seconds.
               </p>
               <a
-                href="https://linkedin.com/in/vikashkaruna"
+                href="https://github.com/vikashkaruna/scrapelite"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="about-founder-linkedin"
               >
-                <Icon name="linkedin" size={15} />
-                linkedin.com/in/vikashkaruna
+                <Icon name="github" size={15} />
+                github.com/vikashkaruna/scrapelite
               </a>
             </div>
           </div>

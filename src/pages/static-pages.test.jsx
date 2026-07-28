@@ -102,13 +102,13 @@ function Tree({ path, children }) {
 }
 
 describe("F-11 — About page", () => {
-  it("renders the founder block (Vikash Karuna)", async () => {
+  it("renders the company block (Axiom Minds Private Limited)", async () => {
     const { container } = render(<Tree path="/about"><About /></Tree>);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText("Vikash Karuna")).toBeInTheDocument();
+    expect(screen.getByText("Axiom Minds Private Limited")).toBeInTheDocument();
     const role = container.querySelector(".about-founder-role");
     expect(role).not.toBeNull();
-    expect(role.textContent).toMatch(/Founder/);
+    expect(role.textContent).toMatch(/DatIQ/);
   });
 
   it("does NOT contain the 'powered by DatIQ' copy bug (R4)", async () => {
