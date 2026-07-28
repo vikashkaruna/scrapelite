@@ -2094,7 +2094,23 @@
 }
 .pricing-rates-note { font-size: .8em; color: var(--text-3); font-weight: 500; }
 
-/* Currency picker */
+/* Currency picker
+   ─────────────────────────────────────────────────────────────────
+   The dropdown menu (`.currency-dropdown`) is positioned absolutely
+   below the button, so it visually overlaps the plan cards. The plans
+   grid is a LATER sibling of `.pricing-hero` inside `.container`, and
+   both children inherit `z-index: 1` from the `.container > *` rule
+   further up. CSS ties between same-z-index siblings break by document
+   order — so the plans grid sits ON TOP of the dropdown.
+
+   Fix: give the picker its own stacking context with a high z-index
+   so the dropdown always wins. The wrapper needs the explicit
+   `position: relative` (it already has it via inline style) AND a
+   `z-index` (it doesn't, so the parent's z-index wins). We set it
+   to 200 — above the plans grid (1) and below the modal layer
+   (1200) used by dialogs and the contact form.
+   */
+.currency-picker { position: relative; z-index: 200; }
 .currency-btn {
   display: inline-flex; align-items: center; gap: 7px;
   font-family: inherit; font-size: .9em; font-weight: 650; color: var(--text);
