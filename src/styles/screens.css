@@ -2080,7 +2080,21 @@
 
 /* ── Pricing page ───────────────────────────────────────────────── */
 .pricing-page { padding-top: 48px; padding-bottom: 80px; }
-.pricing-hero { text-align: center; margin-bottom: 52px; }
+/* The currency dropdown is absolutely positioned inside .pricing-hero and
+   visually overlaps .plans-grid below. Both `.pricing-hero` and
+   `.plans-grid` are direct children of `.container`, so they both inherit
+   `position: relative; z-index: 1` from `.container > *` (line 6). At a
+   tied z-index, document order wins — `.plans-grid` comes after, so it
+   paints on top of the dropdown.
+
+   No amount of z-index inside `.pricing-hero` (e.g. on `.currency-picker`
+   or `.currency-dropdown`) can escape that cap, because z-indexes only
+   compare within the same stacking context. The fix is to give
+   `.pricing-hero` a higher z-index than the `.plans-grid` sibling, so
+   the hero (and everything inside it) renders above the plan cards.
+   z=5 beats the .container > * baseline (1) with headroom, stays well
+   below the modal layer (>=1000) and the TopBar (39). */
+.pricing-hero { text-align: center; margin-bottom: 52px; z-index: 5; }
 .pricing-title {
   margin: 14px 0 10px; font-size: clamp(28px, 5vw, 48px);
   font-weight: 850; letter-spacing: -.03em; line-height: 1.1;
@@ -2103,12 +2117,12 @@
    further up. CSS ties between same-z-index siblings break by document
    order — so the plans grid sits ON TOP of the dropdown.
 
-   Fix: give the picker its own stacking context with a high z-index
-   so the dropdown always wins. The wrapper needs the explicit
-   `position: relative` (it already has it via inline style) AND a
-   `z-index` (it doesn't, so the parent's z-index wins). We set it
-   to 200 — above the plans grid (1) and below the modal layer
-   (1200) used by dialogs and the contact form.
+   The real fix is on `.pricing-hero` (z-index: 5 above). The picker
+   z-index below is defensive belt-and-braces: if the hero's z-index
+   ever regresses, this still keeps the dropdown above the plans grid
+   in any future DOM where the picker and plans grid become siblings.
+   Set to 200 — well above the plans grid (1) and below the modal
+   layer (1200) used by dialogs and the contact form.
    */
 .currency-picker { position: relative; z-index: 200; }
 .currency-btn {
