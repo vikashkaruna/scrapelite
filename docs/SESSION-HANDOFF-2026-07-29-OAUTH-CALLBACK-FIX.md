@@ -1,119 +1,148 @@
 # DatIQ — OAuth callback URL cleanup + Supabase project-mismatch fix
 
-**Date:** 2026-07-29
+**Date:** 2026-07-29 (initial), 2026-07-29 updated with scanner fix
 **Branch:** `staging`
-**Status:** Code shipped; **operator action required** for the deeper Supabase project-mismatch on staging (see §3).
+**Status:** Code shipped (2 commits, both on staging). **Operator action required** for production deploy (see §3).
 
 ---
 
-## 1. The bug
+## 1. The bugs
 
-After clicking "Continue with Google" (or Microsoft / GitHub) on `datiq.app` or
-`staging.datiq.app`, the OAuth flow completed but:
+Two distinct bugs presented as the same symptom ("user can't log in"):
 
-1. The browser URL kept the session tokens in the fragment —
-   `https://datiq.app/#access_token=eyJ…&refresh_token=…&provider_token=…&…`
-   — instead of returning to a clean `https://datiq.app`.
-2. On staging, the user was NOT signed in even though the OAuth flow
-   completed. Same on production in some scenarios.
+### Bug A — OAuth callback URL doesn't get cleaned
 
-The Supabase auth-js v2 client (v2.45.4) is supposed to strip the auth
-fragment on its own inside `_initialize()` (see `node_modules/@supabase/
-auth-js/dist/module/GoTrueClient.js:3193`), but it only does that if the
-project the tokens were issued by matches the project the client was
-configured with. When they don't match, the auto-init bails silently,
-the hash sticks, the user sees a token-bearing URL, and no session is
-established.
+After Google/Microsoft/GitHub sign-in the browser lands on
+`datiq.app/#access_token=eyJ…&refresh_token=…&provider_token=…&…` and
+the hash never gets cleaned. Even when the OAuth flow succeeds, the
+user is left staring at a token-bearing URL in their address bar.
 
-The URL fragment the user pasted is the implicit-grant shape:
+The Supabase auth-js v2 client (v2.45.4) is supposed to strip the
+auth fragment on its own inside `_initialize()` (GoTrueClient.js:3193),
+but it only does that if the project the tokens were issued by
+matches the project the client is configured with. When they don't
+match, the auto-init bails silently, the hash sticks, and no session
+is established.
 
-```
-#access_token=eyJhbGciOiJFUzI1NiIs…
-&refresh_token=eebf5nyczpki
-&provider_token=ya29.a0ARGnu0YVmmJV7glUQxP9FDtplxfC7gEKIgq2sKncQjC5C-_y270nqvenkAwF7b…
-&expires_in=3600
-&expires_at=1785352273
-&token_type=bearer
-```
+### Bug B (the real production killer) — Netlify secret scanner strips the anon key
 
-The JWT in the access_token has issuer `https://sikkfxysjhirmtwkumpt.
-supabase.co/auth/v1` — i.e. the Supabase project at ref
-`sikkfxysjhirmtwkumpt` (the original "DatIQ-prod" project, see
-`supabase/.temp/linked-project.json`).
+The production bundle shipped
+`VITE_SUPABASE_ANON_KEY:\`****************uqwM\`` — the actual anon
+key was being **redacted by the Netlify secret scanner's "smart
+detection"** because a Supabase anon key looks like a JWT.
+
+Result: the `supabase` client was created with an invalid key, OAuth
+callbacks couldn't validate the session, and the user appeared
+unlogged in production. Staging was unaffected because the scanner
+flagged the prod value (which contains a different last-4 fingerprint
+than staging) and not the staging value.
+
+Same false-positive class applied to the n8n webhook URL.
+
+### How I confirmed Bug B was the real issue
+
+I diffed the production and staging bundles side by side:
+
+| Bundle | `VITE_SUPABASE_URL` | `VITE_SUPABASE_ANON_KEY` |
+|---|---|---|
+| `datiq.app` (production) | `https://sikkfxysjhirmtwkumpt.supabase.co` | `****************uqwM` ← **stripped** |
+| `staging.datiq.app` | `https://aubwooslkkrprdxuiyvj.supabase.co` | `eyJhbGciOiJIUzI1NiIs…` ← full |
+
+The URL was correct in both bundles. The anon key was redacted only
+in production. The fingerprint `uqwM` matches the last 4 chars of the
+prod anon key in `scripts/env/production.env` — that's the Netlify
+scanner's redaction pattern (`****************<last4>`).
 
 ---
 
 ## 2. What this PR fixes (code)
 
-Three small, defensive changes in `staging`:
+Two commits, both on `staging`:
 
-### 2.1 `src/lib/supabaseClient.js` — force PKCE flow
+### 2.1 Commit `13a1a07` — PKCE + URL cleanup
 
-The Supabase auth-js v2 default `flowType` is `'implicit'`, which is what
-puts the tokens in the URL hash. We now pass `flowType: 'pkce'` explicitly,
-which makes the Supabase server return a short-lived `?code=…` in the
-**query string** instead, and the client exchanges the code locally. No
-tokens in the URL bar. The Supabase client always cleans the `?code=`
-parameter after the exchange (GoTrueClient.js:3152) — so the URL ends
-up clean.
+**`src/lib/supabaseClient.js`** — force PKCE flow. The Supabase
+auth-js v2 default `flowType` is `'implicit'`, which puts the tokens
+in the URL hash. We now pass `flowType: 'pkce'` explicitly, so the
+Supabase server returns a short-lived `?code=…` in the query string
+and the client exchanges the code locally. The Supabase client always
+cleans the `?code=` parameter after the exchange (GoTrueClient.js:3152)
+— so the URL ends up clean even if §3's project-mismatch fix isn't
+applied yet.
 
-PKCE is the recommended Supabase flow since 2023 and is supported by all
-the OAuth providers we use (Google, Microsoft, GitHub).
+**`src/components/AuthProvider.jsx`** — defensive URL cleanup on
+mount. Detects any auth-shaped hash or query (`#access_token=`,
+`#refresh_token=`, `?code=`, `#error=`, `#type=recovery`), strips it
+via `window.history.replaceState`, and (for success-shaped callbacks
+that produced no session) surfaces a clear error in the auth modal.
+The existing `#error=` path is preserved unchanged.
 
-We also pass `detectSessionInUrl: true` and `persistSession: true`
-explicitly for clarity (both were already defaults).
+**Tests** — 4 new cases in `AuthProvider.integration.test.jsx` and
+an updated `supabaseClient.test.js` U-71.
 
-### 2.2 `src/components/AuthProvider.jsx` — defensive URL cleanup
+### 2.2 Commit `b347bf9` — Stop the scanner from stripping the anon key
 
-Even with PKCE forced, the user may have bookmarked or shared a legacy
-implicit-grant URL (`/#access_token=…`), or the Supabase server may
-still send the implicit shape in some edge cases. To handle that
-gracefully, the AuthProvider now:
+**`netlify.toml`** — add `SECRETS_SCAN_OMIT_KEYS` listing
+`VITE_SUPABASE_ANON_KEY` and `VITE_WEBHOOK_URL`. This is the primary
+fix. Per Netlify's docs the scanner leaves env-var values alone when
+their name is on this list. The anon key is the documented
+*publishable* key (RLS protects data, not the key itself).
 
-- Detects any auth-shaped hash or query on mount
-  (`#access_token=`, `#refresh_token=`, `#error=`, `?code=`,
-  `#type=recovery`).
-- Strips it from the URL **immediately** via
-  `window.history.replaceState` — the Supabase client has already
-  snapshotted `window.location` for its own auto-init by the time we
-  do this, so the session-detection still works.
-- If the URL had a **success**-shaped auth fragment (access_token /
-  code) but `getSession()` returns null, the AuthProvider now surfaces
-  a clear error in the auth modal:
-  > Sign-in completed but we couldn't start your session. This usually
-  > means the site is pointing at a different sign-in service than the
-  > one that handled the OAuth callback. Please try again, or use email
-  > + password.
-- For the **error**-shaped case (`#error=access_denied&error_description=…`),
-  we keep the existing behaviour (specific error message, no override).
-  The new success-shape fallback deliberately does NOT trigger for
-  error-shape URLs — the error message is more specific and the user
-  already knows what happened.
+**`public/runtime-config.js` + `src/lib/config.js`** — defense in
+depth. `public/runtime-config.js` is already in
+`SECRETS_SCAN_OMIT_PATHS`, so the scanner never touches it. We add
+the Supabase URL and anon key (one per project, env-aware via
+`location.hostname`) as a runtime fallback. `config.js` detects the
+scanner's redaction pattern (`****************<last4>`) and prefers
+the runtime value when the build-time value matches it. This lets a
+stripped build still log users in **without waiting for a redeploy
+with the new toml config** — critical for getting prod back online
+fast.
 
-### 2.3 Tests
+**`scripts/netlify-toml.test.mjs`** — guard tests for netlify.toml
+so the scanner config and the no-`[context.*.environment]`
+invariant are enforced by the test suite, not just by code review.
+We lost hours to a previous regression of the same shape; this
+prevents the next one.
 
-- `src/components/AuthProvider.integration.test.jsx` — 4 new tests:
-  - `#access_token=…` (implicit) → hash cleaned, error surfaced when
-    no session
-  - `#access_token=…` + a resolved session → no error, user signed in
-  - `?code=…` (PKCE) → query cleaned, error surfaced when no session
-  - `?code=…` + a resolved session → no error, user signed in
-- `src/lib/supabaseClient.test.js` — updated U-71 to assert the
-  `flowType: 'pkce'` config is passed to `createClient`.
-
-All 1794 unit + integration tests in the main workspace still pass
-(143 test files, 0 failures). The build is clean (`npm run build`,
-~900 ms). The pre-existing `netlify/__tests__/invoice-pdf.test.js`
-"503s when Supabase is not configured" failure is unrelated — it
-fails on `main` and `staging` alike and is documented in CLAUDE.md.
+**`src/lib/config.test.js`** — 4 new cases for the redaction
+detection and the runtime-config fallback.
 
 ---
 
-## 3. The deeper issue — **operator action required**
+## 3. Deployment — **operator action required**
 
-The code changes above fix the **UX** of the OAuth flow. They do NOT fix
-the underlying "user remains unlogged" issue, because that is a
-**Supabase project-mismatch** problem:
+The two commits on `staging` are good. To get them into production:
+
+1. **Open a PR from `staging` → `main`.** Standard flow — phase-gate
+   workflow will run `test` + `smoke-staging`, then wait for your
+   manual approval before deploying to production.
+2. **After the production deploy lands**, the anon key will be
+   unstripped in the bundle and OAuth will work. Verify with:
+   ```bash
+   curl -s https://datiq.app/assets/usageRepo-*.js \
+     | grep -oE "VITE_SUPABASE_ANON_KEY:\`[^\`]+\`"
+   # Should now print the full eyJ… key, not the redacted stars.
+   ```
+3. **If you need a faster fix on production** (without waiting for
+   the PR/phase-gate), the runtime-config.js fallback in
+   `b347bf9` means a hot-patch to `public/runtime-config.js`
+   alone (no rebuild) is enough to restore login — but the
+   netlify.toml fix should still land to prevent the redaction
+   from recurring on every future prod build.
+
+The Supabase project-mismatch issue (different Supabase project for
+prod vs staging, with the OAuth callback going to prod's
+`api.datiq.app`) is a **separate** problem and may still need a
+dashboard fix on the staging Supabase project. See §4.
+
+---
+
+## 4. The Supabase project-mismatch — still pending
+
+The code changes above fix the **scanner-stripping** and the **URL
+cleanup**. They do NOT fix the deeper "staging can't validate
+sessions" issue, which is a **Supabase project-mismatch** problem:
 
 | Surface | What it points to |
 |---|---|
@@ -166,34 +195,43 @@ proxy, so the same project mismatch would affect all three providers.
 
 ---
 
-## 4. Verification
+## 5. Verification
 
 After the deploy:
 
 1. **Build:** `npm run build` — clean.
-2. **Tests:** `npx vitest run --root . --exclude '.claude/**' src` —
-   143 files, 1794 tests, 0 failures.
-3. **URL cleanup (after deploy):** Click "Continue with Google" on
+2. **Tests:** `npx vitest run --root . --exclude '.claude/**'` —
+   185 files, 2513 tests, 1 pre-existing failure
+   (`netlify/__tests__/invoice-pdf.test.js` "503s when Supabase is
+   not configured" — unrelated, fails on `main` and `staging`
+   alike).
+3. **Anon key in production bundle:**
+   ```bash
+   curl -s https://datiq.app/assets/usageRepo-*.js \
+     | grep -oE "VITE_SUPABASE_ANON_KEY:\`[^\`]+\`"
+   ```
+   Should print the full `eyJ…` key, not `****************uqwM`.
+4. **URL cleanup:** Click "Continue with Google" on
    `staging.datiq.app`, complete the OAuth, watch the address bar.
-   - With PKCE: URL ends up as `https://staging.datiq.app/` (or the
-     post-auth route) with no hash and no query.
-   - With legacy implicit: URL is cleaned to `https://staging.datiq.app/`.
-4. **"Unlogged" diagnostic:** If the operator fix in §3 isn't done
-   yet, you'll see the new error message in the auth modal:
-   > Sign-in completed but we couldn't start your session…
-   That's the signal that §3's project-mismatch fix is still needed.
+   URL ends up as `https://staging.datiq.app/` (or the post-auth
+   route) with no hash and no query.
 5. **Microsoft / GitHub:** Same flow, same code path, same
-   behaviour. Once §3 is fixed, all three providers work.
+   behaviour.
 
 ---
 
-## 5. Files changed
+## 6. Files changed
 
 ```
-modified:   src/components/AuthProvider.jsx
-modified:   src/components/AuthProvider.integration.test.jsx
-modified:   src/lib/supabaseClient.js
-modified:   src/lib/supabaseClient.test.js
+modified:   netlify.toml                                 (commit b347bf9)
+modified:   public/runtime-config.js                     (commit b347bf9)
+modified:   src/lib/config.js                            (commit b347bf9)
+modified:   src/lib/config.test.js                       (commit b347bf9)
+new file:   scripts/netlify-toml.test.mjs                (commit b347bf9)
+modified:   src/components/AuthProvider.jsx              (commit 13a1a07)
+modified:   src/components/AuthProvider.integration.test.jsx  (commit 13a1a07)
+modified:   src/lib/supabaseClient.js                    (commit 13a1a07)
+modified:   src/lib/supabaseClient.test.js               (commit 13a1a07)
 new file:   docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md  (this file)
 ```
 
