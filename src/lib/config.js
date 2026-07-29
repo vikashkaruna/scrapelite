@@ -21,8 +21,36 @@ function endpoint(runtimeValue, envValue) {
   return ensureAbsolute(String(runtimeValue || "").trim() || envValue || "");
 }
 
-export const SUPABASE_URL = env.VITE_SUPABASE_URL || "";
-export const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY || "";
+// The Netlify secret scanner's "smart detection" replaces JWT-shaped
+// values with `****************<last4>` even when those values are
+// supposed to be public (the Supabase anon key is the documented
+// publishable key). Detect that redaction and prefer the runtime-config
+// value (which the scanner never touches) so a stripped build still works.
+// The check is purely structural — no real key ever matches the pattern.
+function looksStrippedByNetlify(value) {
+  if (typeof value !== "string") return false;
+  // 16+ stars + 2-6 word chars = Netlify redaction fingerprint. Real anon
+  // keys start with `eyJ` (base64 of `{"alg"...`), webhook URLs start with
+  // `http`. A real value will never be a run of 16+ stars.
+  return /^\*{16,}[A-Za-z0-9]{2,6}$/.test(value);
+}
+
+// Supabase project. Runtime config wins when the build-time value is the
+// scanner's redaction pattern (defense in depth — the primary fix is in
+// netlify.toml `SECRETS_SCAN_OMIT_KEYS`).
+const _runtimeSupabaseUrl = String(runtime.supabaseUrl || "").trim();
+const _envSupabaseUrl = String(env.VITE_SUPABASE_URL || "").trim();
+export const SUPABASE_URL =
+  (_envSupabaseUrl && !looksStrippedByNetlify(_envSupabaseUrl) ? _envSupabaseUrl : "") ||
+  _runtimeSupabaseUrl ||
+  "";
+
+const _runtimeSupabaseAnon = String(runtime.supabaseAnonKey || "").trim();
+const _envSupabaseAnon = String(env.VITE_SUPABASE_ANON_KEY || "").trim();
+export const SUPABASE_ANON_KEY =
+  (_envSupabaseAnon && !looksStrippedByNetlify(_envSupabaseAnon) ? _envSupabaseAnon : "") ||
+  _runtimeSupabaseAnon ||
+  "";
 export const FIRECRAWL_API_KEY = env.VITE_FIRECRAWL_API_KEY || "";
 // AI_API_KEY intentionally NOT exported from the browser bundle.
 // The key lives server-side in the Netlify Function (AI_API_KEY env var, no VITE_ prefix).

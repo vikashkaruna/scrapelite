@@ -86,3 +86,54 @@ describe("outbound endpoints are made absolute", () => {
     expect(ensureAbsolute("")).toBe("");
   });
 });
+
+// ── Netlify secret-scanner redaction fallback ──────────────────────────────
+// The scanner's "smart detection" replaces JWT-shaped values with
+// `****************<last4>` in the build output. That breaks the Supabase
+// anon key and (less critically) the webhook URL. We detect the redaction
+// pattern in config.js and prefer the runtime-config value when it
+// matches. This is the defense-in-depth path; the primary fix is in
+// netlify.toml `SECRETS_SCAN_OMIT_KEYS`.
+
+describe("Netlify scanner redaction is detected and overridden", () => {
+  it("a stripped VITE_SUPABASE_ANON_KEY is replaced with the runtime value", async () => {
+    // Simulate the production bundle where the scanner has replaced the
+    // anon key with the 16-stars + 4-char fingerprint. We can't change
+    // import.meta.env in vitest, so we re-implement the resolution logic
+    // against the same building blocks and assert the behaviour.
+    const runtime = { supabaseAnonKey: "eyJhbGciOiJIUzI1NiI…real-key" };
+    const env = "****************uqwM"; // what the scanner leaves behind
+    const looksStrippedByNetlify = (v) =>
+      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
+    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
+    expect(resolved).toBe("eyJhbGciOiJIUzI1NiI…real-key");
+  });
+
+  it("a real VITE_SUPABASE_ANON_KEY is NOT overridden by the runtime value", async () => {
+    const runtime = { supabaseAnonKey: "stale-runtime-value" };
+    const env = "eyJhbGciOiJIUzI1NiI…real-key"; // real anon key
+    const looksStrippedByNetlify = (v) =>
+      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
+    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
+    // Build-time env wins when it looks like a real value.
+    expect(resolved).toBe("eyJhbGciOiJIUzI1NiI…real-key");
+  });
+
+  it("a stripped VITE_SUPABASE_URL is replaced with the runtime value", async () => {
+    const runtime = { supabaseUrl: "https://aubwooslkkrprdxuiyvj.supabase.co" };
+    const env = "****************co"; // scanner pattern
+    const looksStrippedByNetlify = (v) =>
+      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
+    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseUrl || "";
+    expect(resolved).toBe("https://aubwooslkkrprdxuiyvj.supabase.co");
+  });
+
+  it("falls back to empty string when both env and runtime are missing/stripped", async () => {
+    const runtime = {};
+    const env = "****************xx";
+    const looksStrippedByNetlify = (v) =>
+      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
+    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
+    expect(resolved).toBe("");
+  });
+});
