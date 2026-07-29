@@ -47,6 +47,12 @@ describe("admin-general-config GET (C-26)", () => {
       guest_trial_reprompt_interval: 2,
       guest_single_hard_limit: 10,
       guest_batch_hard_limit: 5,
+      contact_sla_general_label:    "General support",
+      contact_sla_general_time:     "Within 48 h",
+      contact_sla_billing_label:    "Billing issues",
+      contact_sla_billing_time:     "Within 24 h",
+      contact_sla_enterprise_label: "Enterprise enquiries",
+      contact_sla_enterprise_time:  "Within 24 h",
     });
     expect(body.persisted).toBe(false);
   });
@@ -71,7 +77,71 @@ describe("admin-general-config GET (C-26)", () => {
     // Non-overridden fields use DEFAULTS
     expect(body.settings.guest_trial_reprompt_interval).toBe(2);
     expect(body.settings.guest_single_hard_limit).toBe(10);
+    // SLA fields use DEFAULTS when not present in the saved row
+    expect(body.settings.contact_sla_general_time).toBe("Within 48 h");
+    expect(body.settings.contact_sla_billing_time).toBe("Within 24 h");
+    expect(body.settings.contact_sla_enterprise_label).toBe("Enterprise enquiries");
     expect(body.persisted).toBe(true);
+  });
+
+  it("persists sanitized SLA string fields", async () => {
+    process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    let captured = null;
+    fetchMock
+      .mockResolvedValueOnce(new Response("[]", { status: 200 }))
+      .mockImplementationOnce(async (_url, init) => {
+        captured = JSON.parse(init.body);
+        return new Response("", { status: 200 });
+      });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify({
+        settings: {
+          contact_sla_general_label: "Help & support",
+          contact_sla_general_time:  "Within 24 h",
+          contact_sla_billing_label: "Billing & refunds",
+          contact_sla_billing_time:  "Within 8 h",
+          contact_sla_enterprise_label: "Enterprise / agency",
+          contact_sla_enterprise_time:  "Within 2 h",
+        },
+      }),
+    });
+    expect(captured.value.contact_sla_general_label).toBe("Help & support");
+    expect(captured.value.contact_sla_general_time).toBe("Within 24 h");
+    expect(captured.value.contact_sla_billing_label).toBe("Billing & refunds");
+    expect(captured.value.contact_sla_billing_time).toBe("Within 8 h");
+    expect(captured.value.contact_sla_enterprise_label).toBe("Enterprise / agency");
+    expect(captured.value.contact_sla_enterprise_time).toBe("Within 2 h");
+  });
+
+  it("strips control characters and caps length on SLA strings", async () => {
+    process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    let captured = null;
+    fetchMock
+      .mockResolvedValueOnce(new Response("[]", { status: 200 }))
+      .mockImplementationOnce(async (_url, init) => {
+        captured = JSON.parse(init.body);
+        return new Response("", { status: 200 });
+      });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify({
+        settings: {
+          // 60+1 chars, plus a control char that must be stripped.
+          contact_sla_general_label: "X".repeat(80) + "\u0001",
+        },
+      }),
+    });
+    expect(captured.value.contact_sla_general_label.length).toBe(60);
+    expect(captured.value.contact_sla_general_label).not.toContain("\u0001");
   });
 });
 

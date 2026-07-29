@@ -17,6 +17,8 @@ import { runScrapeChain } from "./lib/scrapeProviders.js";
 import { computeLifecycle } from "../../src/lib/entitlementModel.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
+import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
+import { withJobRun } from "./lib/jobControl.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -49,34 +51,13 @@ function visibleText(html) {
     .slice(0, 20000);
 }
 
-// ── Minimal cron field matcher (supports *, a, a-b, a,b, */n) ─────────────────
-function matchField(field, value) {
-  if (field === "*" || field === "?") return true;
-  return field.split(",").some((part) => {
-    const step = part.includes("/") ? parseInt(part.split("/")[1], 10) : 1;
-    const range = part.split("/")[0];
-    if (range === "*") return value % step === 0;
-    if (range.includes("-")) {
-      const [lo, hi] = range.split("-").map(Number);
-      return value >= lo && value <= hi && (value - lo) % step === 0;
-    }
-    return Number(range) === value;
-  });
-}
-
-// Does this 5-field cron match the given UTC date (to the hour)?
-function cronMatchesHour(cron, date) {
-  const parts = String(cron).trim().split(/\s+/);
-  if (parts.length !== 5) return false;
-  const [min, hour, dom, mon, dow] = parts;
-  // The runner fires hourly; treat the minute field as "this hour" (ignore exact minute).
-  return (
-    matchField(hour, date.getUTCHours()) &&
-    matchField(dom, date.getUTCDate()) &&
-    matchField(mon, date.getUTCMonth() + 1) &&
-    matchField(dow, date.getUTCDay())
-  );
-}
+// ── Cron matching ────────────────────────────────────────────────────────────
+// Deliberately NOT a local copy. `cronMatchesHour` used to be duplicated here,
+// and /admin/monitoring shows a "next run" for every schedule — two independent
+// implementations of the same cron grammar would eventually disagree, and the
+// dashboard would confidently predict a run that never came. One implementation,
+// in src/lib/monitoringModel.js, imported by both. The minute field is ignored
+// there for the same reason it was ignored here: this function fires hourly.
 
 // ── Supabase REST helpers (service key; no SDK to keep the bundle small) ──────
 function sb() {
@@ -304,7 +285,7 @@ async function runSchedule(db, schedule) {
   return next.lastStatus;
 }
 
-export const handler = async () => {
+const run = async () => {
   const db = sb();
   if (!db) {
     console.log("[DatIQ] scheduled-runner: Supabase service key not configured — skipping.");
@@ -388,3 +369,8 @@ export const handler = async () => {
   console.log("[DatIQ] scheduled-runner:", summary);
   return { statusCode: 200, body: summary };
 };
+
+// Wrapped so /admin/monitoring can see and stop this job. withJobRun opens a
+// job_runs row, closes it with the outcome, and returns early without running
+// `run` when an operator has stopped the job. It fails OPEN — see jobControl.js.
+export const handler = withJobRun("scheduled-runner", run);
