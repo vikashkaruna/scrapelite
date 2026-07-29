@@ -61,6 +61,20 @@
   # still watches all real source code.
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js,netlify.toml,NETLIFY-ENVIRONMENTS.md,docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md,docs/SESSION-HANDOFF-2026-07-19.md"
 
+  # `SECRETS_SCAN_OMIT_KEYS` is a comma-separated list of env-var NAMES
+  # that the secret scanner should NOT touch. The Supabase anon key is
+  # the public/publishable key (designed to ship in the browser bundle)
+  # but the scanner's "smart detection" treats it as a JWT-shaped secret
+  # and replaces the value with `****************<last4>`, which silently
+  # breaks OAuth login in production. Same story for the n8n webhook URL,
+  # which the scanner flags because it contains the word "webhook" with
+  # what looks like a token-shaped path segment. Both values are NOT
+  # secrets — the anon key is documented as publishable by Supabase, and
+  # the webhook URL is a public n8n endpoint. If the scanner's heuristics
+  # ever start flagging another public VITE_ value, add it here.
+  # See docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_WEBHOOK_URL"
+
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
 [[redirects]]
   from = "/api/*"
