@@ -76,6 +76,29 @@
   to = "/index.html"
   status = 200
 
+# ── SEO: hide /admin/* from every crawler ─────────────────────────────────────
+# Belt-and-braces alongside robots.txt and the in-page <meta name="robots">
+# tag (set by AdminLayout.jsx via src/lib/seoMeta.js). This header fires for
+# any request to /admin or any /admin/* subpath, so a crawler that ignores
+# robots.txt still gets told to drop the page from the index. The
+# Cache-Control prevents an intermediate cache from serving a previously
+# cached "index, follow" copy to a different crawler.
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, unavailable_after: 31 Dec 2099 23:59:59 GMT"
+    Cache-Control = "no-store, no-cache, must-revalidate, private"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/admin"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, unavailable_after: 31 Dec 2099 23:59:59 GMT"
+    Cache-Control = "no-store, no-cache, must-revalidate, private"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║ Environment variables                                                    ║
 # ║                                                                          ║

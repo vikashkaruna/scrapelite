@@ -11,6 +11,38 @@
     <meta name="keywords" content="web extraction, web scraping, no-code scraper, extract emails from website, find company contacts, competitor pricing tracker, website structure analyzer, AI enrichment, data extraction tool, web data, lead generation, DatIQ" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <link rel="canonical" href="https://datiq.app/" />
+
+    <!-- SEO: /admin/* is operator-only. The in-page AdminLayout rewrites
+         the robots meta + OG tags to noindex on the client. The
+         server-rendered shell below is a defense-in-depth fallback for
+         crawlers that don't execute JS. -->
+    <script>
+      (function () {
+        try {
+          if (typeof window === "undefined" || !window.location) return;
+          if (window.location.pathname.indexOf("/admin") === 0) {
+            var setMeta = function (attr, key, content) {
+              var sel = "meta[" + attr + '="' + key + '"]';
+              var el = document.head.querySelector(sel);
+              if (!el) {
+                el = document.createElement("meta");
+                el.setAttribute(attr, key);
+                document.head.appendChild(el);
+              }
+              el.setAttribute("content", content);
+            };
+            setMeta("name", "robots", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+            setMeta("property", "og:title", "DatIQ");
+            setMeta("property", "og:description", "Restricted area.");
+            setMeta("property", "og:url", "");
+            setMeta("name", "description", "Restricted area.");
+            var link = document.head.querySelector('link[rel="canonical"]');
+            if (link) link.remove();
+            document.title = "DatIQ";
+          }
+        } catch (e) { /* no-op */ }
+      })();
+    </script>
     <meta name="theme-color" content="#6366f1" />
     <meta name="author" content="DatIQ" />
 
