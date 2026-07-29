@@ -19,6 +19,7 @@
 // disables the button and the server rejects the call, independently.
 
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
+import { supabaseDisplayName } from "./lib/healthProbes.js";
 import {
   jobEnabledMap, writeJobEnabled, listRecentRuns, _resetOpsCacheForTests,
 } from "./lib/jobControl.js";
@@ -58,6 +59,38 @@ const RUNNABLE = {
 // distinct value here means a subscription reactivation will NOT silently
 // un-pause something an operator stopped on purpose (and vice versa).
 const ADMIN_PAUSE_REASON = "admin_paused";
+
+// Per-job platform classification. Drives the "Platform / Build" column on
+// the Platform jobs table and the Platform filter on the audit log. Two
+// categories today — Netlify (the function's own runtime) and DB & Identity
+// (the Supabase data layer the job primarily mutates). Add a new value here
+// when a job lands that does not fit either bucket, then teach the UI to
+// render it.
+const JOB_PLATFORM = {
+  "scheduled-runner": "netlify",
+  "reengagement":     "netlify",
+  "billing-lifecycle":"db",
+  "billing-purge":    "db",
+  "health-monitor":   "db",
+};
+
+function jobPlatform(jobId) {
+  return JOB_PLATFORM[jobId] || "netlify";
+}
+
+// Short human label for the runtime context this function is currently
+// answering from. Same shape as admin-health.js's netlifyDisplayName() so
+// the two operator pages describe the same environment in the same words.
+function netlifyRuntimeLabel() {
+  const context = process.env.CONTEXT || "";
+  const branch  = process.env.BRANCH  || "";
+  const site    = process.env.SITE_NAME || "";
+  if (context === "production") return site ? `${site} · production` : "production";
+  if (context === "branch-deploy") return site ? `${site} · ${branch || "branch"}` : branch || "branch deploy";
+  if (context === "deploy-preview") return site ? `${site} · preview · ${branch}` : `preview · ${branch}`;
+  if (context === "dev") return "local dev";
+  return site || context || "unknown";
+}
 
 function db() {
   const url = process.env.SUPABASE_URL || "";
@@ -231,6 +264,13 @@ async function buildSnapshot() {
       manualRunAllowed: canRunManually(job.id),
       enabled: control.enabled,
       control,
+      // Where the job primarily runs. "netlify" = a Netlify scheduled
+      // function (the cron lives in netlify.toml and fires from this
+      // function's runtime context). "db" = the job's primary side-effect
+      // is on the Supabase data layer (billing transitions, destructive
+      // purge, health-samples time series). The UI uses this to colour
+      // the row and to drive the new audit-log "Platform" filter.
+      platform: jobPlatform(job.id),
       ...status,
       // Capped: the dashboard shows a short history inline and nothing needs
       // 200 rows per job in one payload.
@@ -274,6 +314,14 @@ async function buildSnapshot() {
     scheduleSummary: summarizeSchedules(schedules),
     audit,
     envFlags,
+    // Operator-facing "where am I" context. Same shape as admin-health so
+    // the two pages describe the same environment in the same words, and
+    // the schedule section header can show the same chip that the health
+    // page already shows.
+    dataSource: {
+      netlify:  netlifyRuntimeLabel(),
+      supabase: supabaseDisplayName(),
+    },
     // The dashboard renders very differently with no history: without Supabase
     // every job reads "never run", which is true but would otherwise look like
     // a five-alarm fire rather than an unconfigured environment.

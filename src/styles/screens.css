@@ -7374,6 +7374,19 @@
   border: 1px solid var(--border);
   vertical-align: middle;
 }
+.ops-platform-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: .75em; font-weight: 600; line-height: 1;
+  border: 1px solid var(--border);
+  background: var(--surface-2, rgba(0,0,0,0.04));
+  color: var(--text-2, var(--text-1));
+  white-space: nowrap;
+}
+.ops-platform-tag svg { flex-shrink: 0; }
+.ops-platform-netlify { background: rgba(99, 102, 241, .08); border-color: rgba(99, 102, 241, .3); color: #4f46e5; }
+.ops-platform-db      { background: rgba(20, 184, 166, .08); border-color: rgba(20, 184, 166, .3); color: #0d9488; }
+.ops-platform-runtime { color: var(--text-3, var(--text-2)); font-weight: 500; }
 .ops-filter {
   padding: 5px 12px; border-radius: var(--r-pill); font-size: .8em; font-weight: 600;
   border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer;

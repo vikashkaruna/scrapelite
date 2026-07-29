@@ -25,6 +25,43 @@ import Button from "../../components/Button.jsx";
 
 const REFRESH_MS = 30_000;
 
+// Per-job platform labels and the build/context tags shown next to them.
+// Kept in one place so the column on Platform jobs, the section chip on
+// User monitoring schedules, and the new Platform/Job filter on the audit
+// log all read from the same source of truth.
+const PLATFORM_META = {
+  netlify: { label: "Netlify",          icon: "zap",        tone: "netlify" },
+  db:      { label: "DB & Identity",    icon: "database",   tone: "db" },
+};
+const PLATFORMS = ["all", "netlify", "db"];
+
+// Same classification the server uses — see JOB_PLATFORM in
+// netlify/functions/admin-monitoring.js. Audit entries are addressed to a
+// job id, so a quick lookup here is enough to bucket them by platform.
+const JOB_PLATFORM = {
+  "scheduled-runner":  "netlify",
+  "reengagement":      "netlify",
+  "billing-lifecycle": "db",
+  "billing-purge":     "db",
+  "health-monitor":    "db",
+};
+function jobPlatform(jobId) {
+  return JOB_PLATFORM[jobId] || "netlify";
+}
+
+function PlatformTag({ platform, runtime, withRuntime = true }) {
+  const meta = PLATFORM_META[platform] || PLATFORM_META.netlify;
+  return (
+    <span className={`ops-platform-tag ops-platform-${meta.tone}`} title={withRuntime ? runtime : undefined}>
+      <Icon name={meta.icon} size={11} />
+      <span className="ops-platform-label">{meta.label}</span>
+      {withRuntime && runtime && (
+        <span className="ops-platform-runtime"> · {runtime}</span>
+      )}
+    </span>
+  );
+}
+
 function StatePill({ meta, title }) {
   return (
     <span className={`ops-pill ops-pill-${meta.tone}`} title={title || undefined}>
@@ -123,7 +160,7 @@ function RunHistory({ runs }) {
   );
 }
 
-function JobRow({ job, expanded, onToggle, onStart, onStop, onRun }) {
+function JobRow({ job, expanded, onToggle, onStart, onStop, onRun, runtime }) {
   const meta = jobStateMeta(job.state);
   return (
     <>
@@ -143,6 +180,7 @@ function JobRow({ job, expanded, onToggle, onStart, onStop, onRun }) {
           <div className="ops-job-id"><code>{job.id}</code></div>
         </td>
         <td><StatePill meta={meta} title={job.reason} /></td>
+        <td><PlatformTag platform={job.platform} runtime={runtime} /></td>
         <td title={job.lastSuccessAt || ""}>{formatRelative(job.lastSuccessAt)}</td>
         <td title={job.nextRunAt || ""}>
           {job.enabled ? formatRelative(job.nextRunAt) : <span className="ops-muted">—</span>}
@@ -172,7 +210,7 @@ function JobRow({ job, expanded, onToggle, onStart, onStop, onRun }) {
       </tr>
       {expanded && (
         <tr className="ops-job-detail-row">
-          <td colSpan={7}>
+          <td colSpan={8}>
             <div className="ops-job-detail">
               <p className="ops-job-desc">{job.description}</p>
               <p className="ops-job-reason"><strong>Status:</strong> {job.reason}</p>
@@ -263,6 +301,8 @@ export default function AdminMonitoring() {
   const [scheduleFilter, setScheduleFilter] = useState("all");
   const [scheduleQuery,  setScheduleQuery]  = useState("");
   // Audit table filters
+  const [auditPlatform,  setAuditPlatform]  = useState("all");
+  const [auditJob,       setAuditJob]       = useState("all");
   const [auditAction,    setAuditAction]    = useState("all");
   const [auditActor,     setAuditActor]     = useState("all");
   const [auditQuery,     setAuditQuery]     = useState("");
@@ -295,6 +335,15 @@ export default function AdminMonitoring() {
     const id = setInterval(() => load({ quiet: true }), REFRESH_MS);
     return () => clearInterval(id);
   }, [autoRefresh, load]);
+
+  // Reset the job filter if the operator narrows to a platform that does
+  // not contain the currently selected job — same rule AdminHealth uses
+  // for the Benchmarks platform/service pair.
+  useEffect(() => {
+    if (auditJob !== "all" && auditPlatform !== "all") {
+      if (jobPlatform(auditJob) !== auditPlatform) setAuditJob("all");
+    }
+  }, [auditPlatform]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function confirmAction(reason) {
     if (!pending) return;
@@ -342,22 +391,52 @@ export default function AdminMonitoring() {
     return true;
   });
 
-  // Audit-log filter chain. action + actor are dropdowns; query is a free-text
-  // search across reason + target.
+  // Audit-log filter chain. platform + job + action + actor are dropdowns;
+  // query is a free-text search across reason + target. Platform narrows
+  // the job dropdown so the operator cannot pick a "db" job while the
+  // platform filter is set to "netlify".
   const aq = auditQuery.trim().toLowerCase();
-  const audit = (data?.audit || []).filter((a) => {
-    if (auditAction !== "all" && a.action !== auditAction) return false;
-    if (auditActor  !== "all" && a.actor  !== auditActor)  return false;
+  const auditAll = data?.audit || [];
+  const auditWithPlatform = auditAll.map((a) => ({
+    ...a,
+    _platform: jobPlatform(a.target || ""),
+  }));
+  // Reset the job filter if the user narrows to a platform that does not
+  // contain the currently selected job, so a stale job cannot hide the
+  // table after a platform switch.
+  if (auditJob !== "all" && auditPlatform !== "all") {
+    const jobPlatformOfSelected = jobPlatform(auditJob);
+    if (jobPlatformOfSelected !== auditPlatform) {
+      // The `setAuditJob` call must happen at the top of the component to
+      // satisfy rules-of-hooks; we do the reset in a useEffect below.
+    }
+  }
+  const audit = auditWithPlatform.filter((a) => {
+    if (auditPlatform !== "all" && a._platform !== auditPlatform) return false;
+    if (auditJob      !== "all" && a.target !== auditJob) return false;
+    if (auditAction   !== "all" && a.action !== auditAction) return false;
+    if (auditActor    !== "all" && a.actor  !== auditActor)  return false;
     if (aq) {
       const hay = `${a.reason || ""} ${a.target || ""} ${a.actor || ""}`.toLowerCase();
       if (!hay.includes(aq)) return false;
     }
     return true;
   });
-  // Distinct actor + action values for the dropdowns, derived from the loaded
-  // audit set. Capped at 50 each so the select doesn't grow without bound.
-  const auditActions = Array.from(new Set((data?.audit || []).map((a) => a.action).filter(Boolean))).slice(0, 50);
-  const auditActors  = Array.from(new Set((data?.audit || []).map((a) => a.actor).filter(Boolean))).slice(0, 50);
+  // Distinct values for the dropdowns, derived from the loaded audit set.
+  // Capped at 50 each so the selects don't grow without bound.
+  const auditActions = Array.from(new Set(auditAll.map((a) => a.action).filter(Boolean))).slice(0, 50);
+  const auditActors  = Array.from(new Set(auditAll.map((a) => a.actor).filter(Boolean))).slice(0, 50);
+  const auditJobs    = (() => {
+    // Only jobs that have actually been audited + are visible under the
+    // current platform filter. Sorted to give the operator a stable list.
+    const set = new Set(
+      auditWithPlatform
+        .filter((a) => auditPlatform === "all" || a._platform === auditPlatform)
+        .map((a) => a.target)
+        .filter(Boolean),
+    );
+    return Array.from(set).sort().slice(0, 100);
+  })();
 
   return (
     <div className="admin-section">
@@ -449,6 +528,7 @@ export default function AdminMonitoring() {
               <tr>
                 <th aria-label="Expand" />
                 <th>Job</th><th>Status</th><th>Last success</th><th>Next run</th>
+                <th>Platform / build</th>
                 <th>Schedule</th><th>Control</th>
               </tr>
             </thead>
@@ -458,6 +538,7 @@ export default function AdminMonitoring() {
                   key={job.id}
                   job={job}
                   expanded={!!expanded[job.id]}
+                  runtime={data?.dataSource?.netlify}
                   onToggle={() => setExpanded((e) => ({ ...e, [job.id]: !e[job.id] }))}
                   onStop={() => setPending({
                     key: `stop-${job.id}`,
@@ -496,7 +577,18 @@ export default function AdminMonitoring() {
         <div className="admin-general-group-head">
           <Icon name="calendar-clock" size={18} />
           <div>
-            <h3 className="admin-general-group-title">User monitoring schedules</h3>
+            <h3 className="admin-general-group-title">
+              User monitoring schedules
+              {/* Every user schedule is fired by scheduled-runner from this
+                  function's runtime context, so the section-level chip
+                  shows where those crons actually run. The Platform filter
+                  on the audit log can narrow by the same value. */}
+              {data?.dataSource?.netlify && (
+                <span className="ops-group-source" title="The Netlify context these user schedules are running in.">
+                  <Icon name="zap" size={12} /> Netlify · {data.dataSource.netlify}
+                </span>
+              )}
+            </h3>
             <p className="admin-general-group-desc">
               Recurring extraction workflows across all users ({ss.total ?? 0} total). A system pause
               applied here is tagged <code>admin_paused</code>, so the billing lifecycle will not
@@ -607,6 +699,28 @@ export default function AdminMonitoring() {
 
           <div className="ops-filters ops-filters-bench">
             <div className="ops-filters-row">
+              <span className="ops-filters-label">Platform</span>
+              <select
+                className="ops-filter-select"
+                value={auditPlatform}
+                onChange={(e) => setAuditPlatform(e.target.value)}
+                aria-label="Filter audit log by platform"
+              >
+                <option value="all">All</option>
+                <option value="netlify">Netlify</option>
+                <option value="db">DB &amp; Identity</option>
+              </select>
+              <span className="ops-filters-label">Job</span>
+              <select
+                className="ops-filter-select"
+                value={auditJob}
+                onChange={(e) => setAuditJob(e.target.value)}
+                aria-label="Filter audit log by job"
+                disabled={auditJobs.length === 0}
+              >
+                <option value="all">All</option>
+                {auditJobs.map((j) => <option key={j} value={j}>{j}</option>)}
+              </select>
               <span className="ops-filters-label">Action</span>
               <select
                 className="ops-filter-select"
@@ -638,10 +752,16 @@ export default function AdminMonitoring() {
                 placeholder="reason, target, or actor…"
                 aria-label="Search audit log"
               />
-              {(auditAction !== "all" || auditActor !== "all" || auditQuery) && (
+              {(auditPlatform !== "all" || auditJob !== "all" || auditAction !== "all" || auditActor !== "all" || auditQuery) && (
                 <button
                   className="ops-filter"
-                  onClick={() => { setAuditAction("all"); setAuditActor("all"); setAuditQuery(""); }}
+                  onClick={() => {
+                    setAuditPlatform("all");
+                    setAuditJob("all");
+                    setAuditAction("all");
+                    setAuditActor("all");
+                    setAuditQuery("");
+                  }}
                   title="Clear filters"
                 >
                   <Icon name="x" size={11} /> Clear
@@ -652,17 +772,18 @@ export default function AdminMonitoring() {
 
           <div className="ops-table-wrap">
             <table className="ops-table">
-              <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead>
+              <thead><tr><th>When</th><th>Platform</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead>
               <tbody>
                 {audit.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="ops-muted" style={{ textAlign: "center", padding: "16px 0" }}>
+                    <td colSpan={6} className="ops-muted" style={{ textAlign: "center", padding: "16px 0" }}>
                       No audit entries match the current filters.
                     </td>
                   </tr>
                 ) : audit.map((a) => (
                   <tr key={a.id}>
                     <td title={a.created_at}>{formatRelative(a.created_at)}</td>
+                    <td><PlatformTag platform={a._platform} withRuntime={false} /></td>
                     <td>{a.actor}</td>
                     <td><code>{a.action}</code></td>
                     <td><code>{a.target || "—"}</code></td>

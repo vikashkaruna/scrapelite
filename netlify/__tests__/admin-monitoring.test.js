@@ -120,6 +120,33 @@ describe("admin-monitoring GET (AM-02)", () => {
     expect(lifecycle.nextRunAt).toBeTruthy();
   });
 
+  it("tags every job with its platform (Netlify vs DB & Identity)", async () => {
+    wireReads({ runs: [run("billing-lifecycle", "success", 30)] });
+    const b = body(await handler(authed()));
+    const byId = Object.fromEntries(b.jobs.map((j) => [j.id, j.platform]));
+    expect(byId["scheduled-runner"]).toBe("netlify");
+    expect(byId["reengagement"]).toBe("netlify");
+    expect(byId["billing-lifecycle"]).toBe("db");
+    expect(byId["billing-purge"]).toBe("db");
+    expect(byId["health-monitor"]).toBe("db");
+  });
+
+  it("emits a dataSource block describing the Netlify + Supabase context", async () => {
+    process.env.CONTEXT = "branch-deploy";
+    process.env.BRANCH  = "monitoring-services-in-admin-module";
+    process.env.SITE_NAME = "datiqapp";
+    process.env.SUPABASE_URL = "https://abcdefghijkl.supabase.co";
+    wireReads({ runs: [] });
+    const b = body(await handler(authed()));
+    expect(b.dataSource).toBeTruthy();
+    // Netlify label includes the branch so an operator can confirm which
+    // deploy is answering them.
+    expect(b.dataSource.netlify).toMatch(/monitoring-services-in-admin-module/);
+    // Supabase label is a masked form of the project ref (first 4 + last 2),
+    // not the full ref, so the response does not leak the project id.
+    expect(b.dataSource.supabase).toMatch(/^project\s+·\s+abcd…kl$/);
+  });
+
   it("reports a job with no history as never-run", async () => {
     wireReads({ runs: [] });
     const b = body(await handler(authed()));

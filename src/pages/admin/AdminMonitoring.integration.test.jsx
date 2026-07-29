@@ -358,6 +358,112 @@ describe("I-50 — AdminMonitoring: audit trail", () => {
     await screen.findByText("Billing lifecycle & dunning");
     expect(screen.queryByText("Recent operator actions")).not.toBeInTheDocument();
   });
+
+  it("filters the audit log by Platform (Netlify vs DB & Identity)", async () => {
+    svc.getMonitoringSnapshot.mockResolvedValue(snapshot({
+      audit: [
+        { id: 1, actor: "admin", action: "job_disable", target: "scheduled-runner", reason: "netlify reason", created_at: iso(30) },
+        { id: 2, actor: "admin", action: "job_disable", target: "billing-lifecycle", reason: "db reason", created_at: iso(25) },
+        { id: 3, actor: "admin", action: "job_disable", target: "billing-purge",     reason: "purge reason",  created_at: iso(20) },
+      ],
+    }));
+    renderPage();
+    await screen.findByText("netlify reason");
+    const platformSelect = screen.getByLabelText(/filter audit log by platform/i);
+    fireEvent.change(platformSelect, { target: { value: "netlify" } });
+    await waitFor(() => {
+      expect(screen.queryByText("db reason")).not.toBeInTheDocument();
+      expect(screen.queryByText("purge reason")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("netlify reason")).toBeInTheDocument();
+  });
+
+  it("narrows the Job dropdown to the selected platform", async () => {
+    svc.getMonitoringSnapshot.mockResolvedValue(snapshot({
+      audit: [
+        { id: 1, actor: "admin", action: "job_disable", target: "scheduled-runner", reason: "netlify reason", created_at: iso(30) },
+        { id: 2, actor: "admin", action: "job_disable", target: "billing-lifecycle", reason: "db reason", created_at: iso(25) },
+      ],
+    }));
+    renderPage();
+    await screen.findByText("netlify reason");
+    const platformSelect = screen.getByLabelText(/filter audit log by platform/i);
+    fireEvent.change(platformSelect, { target: { value: "netlify" } });
+    // The job select should only offer netlify jobs.
+    const jobSelect = screen.getByLabelText(/filter audit log by job/i);
+    const options = Array.from(jobSelect.querySelectorAll("option")).map((o) => o.value);
+    expect(options).toContain("scheduled-runner");
+    expect(options).not.toContain("billing-lifecycle");
+  });
+
+  it("resets the Job filter when the platform changes to one that excludes it", async () => {
+    svc.getMonitoringSnapshot.mockResolvedValue(snapshot({
+      audit: [
+        { id: 1, actor: "admin", action: "job_disable", target: "scheduled-runner", reason: "netlify reason", created_at: iso(30) },
+        { id: 2, actor: "admin", action: "job_disable", target: "billing-lifecycle", reason: "db reason", created_at: iso(25) },
+      ],
+    }));
+    renderPage();
+    await screen.findByText("netlify reason");
+    // Pick a DB job first.
+    const jobSelect = screen.getByLabelText(/filter audit log by job/i);
+    fireEvent.change(jobSelect, { target: { value: "billing-lifecycle" } });
+    await waitFor(() => {
+      expect(screen.queryByText("netlify reason")).not.toBeInTheDocument();
+    });
+    // Now switch platform to netlify — billing-lifecycle is not a netlify job,
+    // so the job filter must auto-reset to "all" and the netlify row must
+    // become visible again.
+    const platformSelect = screen.getByLabelText(/filter audit log by platform/i);
+    fireEvent.change(platformSelect, { target: { value: "netlify" } });
+    await waitFor(() => {
+      expect(screen.getByText("netlify reason")).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/filter audit log by job/i).value).toBe("all");
+  });
+});
+
+describe("I-50 — AdminMonitoring: platform / build chips", () => {
+  it("shows the runtime context next to each platform job", async () => {
+    svc.getMonitoringSnapshot.mockResolvedValue(snapshot({
+      dataSource: { netlify: "datiqapp · monitoring-services-in-admin-module", supabase: "project · abc…12" },
+      jobs: [
+        job({ id: "scheduled-runner",  platform: "netlify" }),
+        job({ id: "billing-lifecycle", platform: "db" }),
+        job({ id: "billing-purge",     platform: "db" }),
+      ],
+    }));
+    renderPage();
+    // The chip is split across text + the <span class="ops-platform-runtime">
+    // so use the title attribute (set on the wrapping span) as the match.
+    await waitFor(() => {
+      expect(screen.getAllByTitle("datiqapp · monitoring-services-in-admin-module").length).toBeGreaterThan(0);
+    });
+    // Each row has a Platform tag with the right label.
+    expect(screen.getAllByText("Netlify").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("DB & Identity").length).toBeGreaterThan(0);
+  });
+
+  it("shows the runtime chip in the User monitoring schedules section header", async () => {
+    svc.getMonitoringSnapshot.mockResolvedValue(snapshot({
+      dataSource: { netlify: "datiqapp · monitoring-services-in-admin-module", supabase: "project · abc…12" },
+      schedules: [{
+        id: "sch-1", user_id: "u1", cron: "0 * * * *", status: "active",
+        system_paused: false, system_pause_reason: null,
+        next_run_at: new Date(Date.now() + 3600_000).toISOString(),
+        target: "https://example.com",
+        last_run_at: null, last_status: "ok",
+        state: "active", ageMs: 0,
+        user: { email: "alice@example.com", createdAt: "" },
+      }],
+    }));
+    renderPage();
+    // The section header shows the same runtime label that the platform
+    // jobs table uses — proving user schedules run in the same context.
+    await waitFor(() => {
+      expect(screen.getByTitle(/monitoring-services-in-admin-module/)).toBeInTheDocument();
+    });
+  });
 });
 
 // ── Auto-refresh ─────────────────────────────────────────────────────────────
