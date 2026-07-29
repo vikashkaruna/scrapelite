@@ -62,8 +62,8 @@ grant usage on schema public to anon, authenticated;
 // What the migrations claim to create. A mismatch here means a migration was
 // added or renamed without updating this file — deliberately a hard failure.
 const EXPECT = {
-  tables: 26,
-  functions: 9,
+  tables: 29,
+  functions: 10,
   triggers: 2,
   tablesWithoutRls: 0,
 };
@@ -384,6 +384,65 @@ group("0015 scheduler hardening — column privileges");
         and column_name=$1 and grantee in ('anon','authenticated')`, [col]);
     eq(`no anon/authenticated write grant on ${col}`, g.length, 0);
   }
+}
+
+// ── 0018 ops monitoring ──────────────────────────────────────────────────────
+group("0018 ops monitoring — constraints");
+{
+  // job_runs / health_samples enum-style CHECKs.
+  const badJobStatus = await throws(
+    `insert into public.job_runs (job, status) values ('x','exploded')`);
+  const badTrigger = await throws(
+    `insert into public.job_runs (job, trigger) values ('x','cosmic-ray')`);
+  const badHealth = await throws(
+    `insert into public.health_samples (component, status) values ('db','on fire')`);
+  check("job_runs rejects an unknown status", !!badJobStatus, badJobStatus || "insert succeeded");
+  check("job_runs rejects an unknown trigger", !!badTrigger, badTrigger || "insert succeeded");
+  check("health_samples rejects an unknown status", !!badHealth, badHealth || "insert succeeded");
+
+  // The whole point of the reason CHECK: NOT NULL alone would let '' through.
+  const blank = await throws(
+    `insert into public.ops_audit_log (actor, action, reason) values ('a','job_disable','')`);
+  const spaces = await throws(
+    `insert into public.ops_audit_log (actor, action, reason) values ('a','job_disable','   ')`);
+  check("ops_audit_log rejects an empty reason", !!blank, blank || "insert succeeded");
+  check("ops_audit_log rejects a whitespace-only reason", !!spaces, spaces || "insert succeeded");
+  const ok = await one(
+    `insert into public.ops_audit_log (actor, action, target, reason)
+     values ('admin','job_disable','billing-purge','paused during the data migration')
+     returning id`);
+  check("ops_audit_log accepts a real reason", !!ok?.id);
+}
+
+group("0018 prune_ops_history()");
+{
+  // Two finished runs (one old, one fresh), one old run still 'running', and
+  // two health samples straddling the cutoff.
+  await q(`insert into public.job_runs (job, status, started_at, finished_at)
+           values ('reengagement','success', now() - interval '90 days', now() - interval '90 days')`);
+  await q(`insert into public.job_runs (job, status, started_at, finished_at)
+           values ('reengagement','error',   now() - interval '1 day',   now() - interval '1 day')`);
+  await q(`insert into public.job_runs (job, status, started_at)
+           values ('billing-lifecycle','running', now() - interval '90 days')`);
+  await q(`insert into public.health_samples (component, status, observed_at)
+           values ('supabase-db','ok', now() - interval '90 days')`);
+  await q(`insert into public.health_samples (component, status, observed_at)
+           values ('supabase-db','ok', now())`);
+
+  const removed = (await one(`select public.prune_ops_history(30) n`)).n;
+  eq("prunes exactly the rows past the window", removed, 2);
+
+  const stranded = (await one(
+    `select count(*)::int n from public.job_runs where status='running'`)).n;
+  eq("a stranded 'running' row survives retention", stranded, 1);
+  const kept = (await one(
+    `select count(*)::int n from public.job_runs where status='error'`)).n;
+  eq("a recent finished run survives", kept, 1);
+  const samples = (await one(`select count(*)::int n from public.health_samples`)).n;
+  eq("only the out-of-window sample was removed", samples, 1);
+
+  const bad = await throws(`select public.prune_ops_history(0)`);
+  check("prune_ops_history refuses a zero window", !!bad, bad || "call succeeded");
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

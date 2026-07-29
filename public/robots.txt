@@ -1,3 +1,13 @@
+# DatIQ robots.txt
+#
+# /admin* is the operator console. It is PIN-gated, never linked from any
+# public page, never listed in the sitemap, never surfaced in structured
+# data. The Disallow lines below block it for every known crawler — the
+# public-facing allow list is the source of truth for what gets indexed.
+# Belt-and-braces: the /admin* route also serves X-Robots-Tag: noindex and
+# a <meta name="robots" content="noindex,..."> tag so a crawler that
+# ignores this file still won't index the page.
+
 User-agent: *
 Allow: /
 Allow: /about
@@ -8,9 +18,12 @@ Allow: /vs/
 Allow: /privacy
 Allow: /terms
 Allow: /help/
+Allow: /gallery
+Allow: /changelog
+Allow: /integrations
 Disallow: /api/
 Disallow: /admin
-Disallow: /.netlify/
+Disallow: /admin/
 
 User-agent: GPTBot
 Allow: /
@@ -26,5 +39,25 @@ Allow: /
 
 User-agent: PerplexityBot
 Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+# A second wildcard block, scoped to /admin/*, applied to EVERY user-agent
+# (the named bots above only see the public allow list and never reach this
+# block, so this is purely a backstop for crawlers that don't match any
+# named user-agent line above).
+User-agent: *
+Disallow: /admin
+Disallow: /admin/
 
 Sitemap: https://datiq.app/sitemap.xml
