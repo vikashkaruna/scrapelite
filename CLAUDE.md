@@ -658,14 +658,18 @@ v2.0 — see [`docs/RECURRING-BILLING-DEFERRAL.md`](docs/RECURRING-BILLING-DEFER
 
 - `AuthProvider` manages Supabase session, exposes: `user`, `openAuth(mode)`, `closeAuth`, `showAuthModal`, `authMode`, `authError`
 - `openAuth('signin')` opens modal on Sign in tab; `openAuth('signup')` opens on Create account tab
-- On mount: detects `window.location.hash` with `error=` → sets `authError`, opens modal, cleans URL
+- On mount: detects any auth-shaped hash/query (`#access_token=`, `#refresh_token=`, `?code=`, `#error=`, `#type=recovery`) and strips it from the URL immediately, so users never see a token-bearing URL in their address bar
+- On mount: if the URL had a success-shaped auth fragment but `getSession()` returns null (project-mismatch — see `docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md`), the auth modal opens with a diagnostic error
+- On mount: if the URL had `#error=access_denied&error_description=…`, the specific error is surfaced in the auth modal
 - `signUpWithEmail` passes `emailRedirectTo: window.location.origin` (prevents localhost:3000 redirect)
 - `apiClient.setAuthToken(token)` called on sign-in to include `Authorization` header on API requests
+- Supabase client is created with `flowType: 'pkce'` so OAuth callbacks return `?code=…` in the query string instead of tokens in the URL hash
 
 ### OAuth — requires Supabase dashboard setup
 1. Authentication → URL Configuration → Site URL + redirect URLs
 2. Providers → Enable Google / Microsoft (Azure) / GitHub
-3. Callback URL: `https://[project].supabase.co/auth/v1/callback`
+3. Callback URL: `https://[project].supabase.co/auth/v1/callback` (or a custom auth domain if one is set up)
+4. **Production uses `api.datiq.app` as a custom auth domain for the prod Supabase project.** If you add a second env (staging) on a different Supabase project, give the staging project its own custom auth domain (e.g. `api-staging.datiq.app`) — otherwise the JWT issued by the prod project's auth server won't validate against the staging client, and OAuth silently fails. See `docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md` §3.
 
 ---
 

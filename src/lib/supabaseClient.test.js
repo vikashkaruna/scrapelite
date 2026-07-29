@@ -37,7 +37,7 @@ describe("supabaseClient (U-70)", () => {
 });
 
 describe("supabaseClient (U-71)", () => {
-  it("createClient is called with the right URL and key when env is set", async () => {
+  it("createClient is called with the right URL, key, and PKCE auth options when env is set", async () => {
     vi.resetModules();
     process.env.VITE_SUPABASE_URL = "https://abc.supabase.co";
     process.env.VITE_SUPABASE_ANON_KEY = "anon-key-xyz";
@@ -49,6 +49,14 @@ describe("supabaseClient (U-71)", () => {
 
     const mod = await import("./supabaseClient.js");
     expect(mod.isSupabaseEnabled).toBe(true);
-    expect(createClientMock).toHaveBeenCalledWith("https://abc.supabase.co", "anon-key-xyz");
+    // PKCE flow: tokens are exchanged via ?code=... query param instead of
+    // landing in the URL hash. See GoTrueClient._initialize for the contract.
+    expect(createClientMock).toHaveBeenCalledWith(
+      "https://abc.supabase.co",
+      "anon-key-xyz",
+      expect.objectContaining({
+        auth: expect.objectContaining({ flowType: "pkce" }),
+      })
+    );
   });
 });
