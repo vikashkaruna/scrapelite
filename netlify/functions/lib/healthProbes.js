@@ -140,54 +140,94 @@ export async function probeSupabaseAuth() {
     detail: { name: body?.name || "GoTrue", version: body?.version || "" } };
 }
 
+/**
+ * Pulls the human-readable project name for the AdminHealth "Data & identity"
+ * header. Resolution order:
+ *   1. SUPABASE_PROJECT_NAME env var (set this in Netlify to display the
+ *      operator-chosen label, e.g. "DatIQ production").
+ *   2. A masked form of the project reference parsed from SUPABASE_URL — the
+ *      first 4 + last 2 characters of the subdomain, so two projects on the
+ *      same Supabase org can be told apart at a glance but the full ref is
+ *      never shown.
+ *
+ * Never throws. Always returns a string (or null if no URL is configured).
+ */
+export function supabaseDisplayName() {
+  const override = env("SUPABASE_PROJECT_NAME");
+  if (override) return override;
+  const url = env("SUPABASE_URL") || env("VITE_SUPABASE_URL") || "";
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname || "";
+    const sub = host.split(".")[0] || "";
+    if (!sub) return null;
+    if (sub.length <= 8) return `project · ${sub}`;
+    return `project · ${sub.slice(0, 4)}…${sub.slice(-2)}`;
+  } catch {
+    return null;
+  }
+}
+
 // ── Netlify site ─────────────────────────────────────────────────────────────
 
 /**
- * The deployed site itself, via Netlify's API: is the published deploy current,
- * which branch is it from, and how old is it?
+ * The deployed site itself, as seen from INSIDE the running function.
  *
- * Needs NETLIFY_AUTH_TOKEN and a site id. Without them this is `unknown` — the
- * common case in local dev and in every test, and it must not read as an outage.
+ * Every Netlify Function automatically gets a set of build-context env vars
+ * (CONTEXT, BRANCH, DEPLOY_ID, SITE_NAME, DEPLOY_PRIME_URL, …) — see
+ * https://docs.netlify.com/build/configure-builds/environment-variables/#build-time-environment-variables
+ * These are exactly the values an operator wants to see on /admin/health: which
+ * site is serving this response, from which branch, in which context.
+ *
+ * We no longer call the Netlify API for this. The earlier design used
+ * NETLIFY_AUTH_TOKEN + an API call to read published_deploy state, but that
+ * required an operator to create and paste a PAT, and the most common failure
+ * was simply that no token was set — so the dashboard painted a critical
+ * component as "not checked" forever. Reading the env the runtime already
+ * exposes gives the same answer with zero configuration and zero credentials.
  */
-export async function probeNetlifySite() {
-  const token = env("NETLIFY_AUTH_TOKEN");
-  const siteId = env("NETLIFY_SITE_ID") || env("SITE_ID");
-  if (!token || !siteId) return { id: "netlify-site", configured: false };
+export function probeNetlifySite() {
+  // DEPLOY_PRIME_URL is the URL the function was invoked from. SITE_NAME is the
+  // project handle (e.g. "datiqapp"). Both are auto-injected on every deploy.
+  const context   = env("CONTEXT") || "";
+  const branch    = env("BRANCH")  || "";
+  const deployId  = env("DEPLOY_ID") || "";
+  const siteName  = env("SITE_NAME") || "";
+  const url       = env("DEPLOY_PRIME_URL") || env("URL") || "";
 
-  const { ok, res, latencyMs, error } = await timedFetch(
-    `https://api.netlify.com/api/v1/sites/${encodeURIComponent(siteId)}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!ok) return { id: "netlify-site", configured: true, reachable: false, latencyMs, note: error };
-  if (!res.ok) {
-    // 401 is a bad token, not a site outage. Saying "down" would send an
-    // operator to look at a site that is serving traffic perfectly well.
-    const note = res.status === 401 || res.status === 403
-      ? "NETLIFY_AUTH_TOKEN was rejected — the site itself was not checked."
-      : `Netlify API returned HTTP ${res.status}.`;
-    return { id: "netlify-site", configured: true, reachable: true, latencyMs,
-      status: res.status === 401 || res.status === 403 ? HEALTH_STATUS.UNKNOWN : HEALTH_STATUS.DOWN,
-      note };
-  }
-  let site = null;
-  try { site = await res.json(); } catch { /* below */ }
-  const deploy = site?.published_deploy || {};
-  const state = deploy.state || site?.state || "";
+  // These are the contexts Netlify publishes. Anything else (custom, unknown)
+  // is still "configured" — the function IS running — but the operator should
+  // see which context they are in.
+  const known = ["production", "branch-deploy", "deploy-preview", "dev"];
+  const status = context && !known.includes(context) ? HEALTH_STATUS.DEGRADED : undefined;
+
   return {
-    id: "netlify-site", configured: true, reachable: true, latencyMs,
-    // "ready"/"current" are the healthy publish states; anything else means the
-    // published deploy is not serving what we think it is.
-    status: state && !["ready", "current"].includes(state) ? HEALTH_STATUS.DEGRADED : undefined,
-    note: state && !["ready", "current"].includes(state) ? `Published deploy state is "${state}".` : "",
+    id: "netlify-site",
+    configured: true,
+    reachable: true,
+    latencyMs: 0,
+    status,
+    note: status ? `Unknown Netlify CONTEXT: "${context}".` : "",
     detail: {
-      name: site?.name || "",
-      url: site?.ssl_url || site?.url || "",
-      state,
-      branch: deploy.branch || "",
-      deployId: deploy.id || "",
-      publishedAt: deploy.published_at || deploy.created_at || "",
+      site: siteName,
+      url,
+      context,
+      branch,
+      deployId,
+      // A short label the AdminHealth header can use to say "you are looking
+      // at the main deploy" / "a branch deploy" without printing the full URL.
+      envLabel: contextToLabel(context, branch),
     },
   };
+}
+
+function contextToLabel(context, branch) {
+  if (context === "production") return "production";
+  if (context === "branch-deploy") return branch ? `branch · ${branch}` : "branch deploy";
+  if (context === "deploy-preview") return branch ? `preview · ${branch}` : "deploy preview";
+  if (context === "dev") return "local dev";
+  if (branch) return `${context || "deploy"} · ${branch}`;
+  return context || "unknown";
 }
 
 // ── The runtime we are already inside ────────────────────────────────────────

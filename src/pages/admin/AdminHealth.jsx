@@ -24,6 +24,15 @@ const WINDOWS = [
   { hours: 720, label: "30d" },
 ];
 
+// All-groups vs single-group selector for the Benchmarks table. "all" is the
+// default; the rest match HEALTH_GROUPS.id values (platform, database, services).
+const PLATFORM_FILTERS = [
+  { id: "all",      label: "All" },
+  { id: "platform", label: "Hosting & edge" },
+  { id: "database", label: "Data & identity" },
+  { id: "services", label: "External services" },
+];
+
 const OVERALL_COPY = {
   [HEALTH_STATUS.OK]: "All monitored systems are operational.",
   [HEALTH_STATUS.DEGRADED]: "Something is slow or partially unavailable.",
@@ -112,6 +121,11 @@ export default function AdminHealth() {
   const [error, setError] = useState("");
   const [windowHours, setWindowHours] = useState(24);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  // Benchmarks-table filters. `platformFilter` is the outer "all / platform /
+  // database / services" chooser; `serviceFilter` narrows within the chosen
+  // platform. "all" inside a platform means every service in that platform.
+  const [platformFilter, setPlatformFilter] = useState("all");
+  const [serviceFilter, setServiceFilter]     = useState("all");
   const alive = useRef(true);
 
   const load = useCallback(async ({ quiet = false, record = false } = {}) => {
@@ -141,6 +155,14 @@ export default function AdminHealth() {
     return () => clearInterval(id);
   }, [autoRefresh, load]);
 
+  // Whenever the user changes the platform filter, reset the service filter
+  // back to "all" so a stale service from a different platform cannot survive
+  // the switch and silently hide the table. Kept above the loading early-return
+  // so the hook order is stable across renders (rules of hooks).
+  useEffect(() => {
+    setServiceFilter("all");
+  }, [platformFilter]);
+
   if (loading && !data) {
     return (
       <div className="admin-section">
@@ -156,6 +178,26 @@ export default function AdminHealth() {
   const uptime = data?.uptime || {};
   const overallMeta = healthStatusMeta(data?.overall);
   const windowLabel = WINDOWS.find((w) => w.hours === windowHours)?.label || `${windowHours}h`;
+
+  // The Benchmarks table rows: optionally narrowed by platform + service. The
+  // service list is derived from the components of the currently selected
+  // platform so the dropdown cannot offer values that would produce an empty
+  // table.
+  const platformComponents = platformFilter === "all"
+    ? components
+    : components.filter((c) => c.group === platformFilter);
+  const serviceOptions = platformFilter === "all"
+    ? components
+    : components.filter((c) => c.group === platformFilter);
+  const benchmarkRows = serviceFilter === "all"
+    ? platformComponents
+    : platformComponents.filter((c) => c.id === serviceFilter);
+
+  // The "Data & identity" group header shows the database being probed —
+  // operator-chosen name (SUPABASE_PROJECT_NAME) when set, else a masked form
+  // of the project ref. Falls back to the static label when the probe is
+  // unconfigured (no Supabase URL set).
+  const databaseName = data?.dataSource?.supabase || "no database configured";
 
   return (
     <div className="admin-section">
@@ -224,15 +266,28 @@ export default function AdminHealth() {
       {HEALTH_GROUPS.map((group) => {
         const inGroup = components.filter((c) => c.group === group.id);
         if (!inGroup.length) return null;
+        // The Data & identity group shows which database is being probed so an
+        // operator can verify they are looking at the right project without
+        // ever exposing the project reference.
+        const subtitle = group.id === "database"
+          ? (data?.dataSource?.supabase
+              ? `Probing ${data.dataSource.supabase} · ${inGroup.filter((c) => c.status === HEALTH_STATUS.OK).length} of ${inGroup.length} operational.`
+              : "No database configured — set SUPABASE_URL to probe.")
+          : `${inGroup.filter((c) => c.status === HEALTH_STATUS.OK).length} of ${inGroup.length} operational.`;
         return (
           <div className="admin-general-group card card-pad" key={group.id}>
             <div className="admin-general-group-head">
               <Icon name={group.icon} size={18} />
               <div>
-                <h3 className="admin-general-group-title">{group.label}</h3>
-                <p className="admin-general-group-desc">
-                  {inGroup.filter((c) => c.status === HEALTH_STATUS.OK).length} of {inGroup.length} operational.
-                </p>
+                <h3 className="admin-general-group-title">
+                  {group.label}
+                  {group.id === "database" && data?.dataSource?.supabase && (
+                    <span className="ops-group-source" title="The database these probes are pointing at. Configure with SUPABASE_PROJECT_NAME in Netlify.">
+                      <Icon name="database" size={12} /> {data.dataSource.supabase}
+                    </span>
+                  )}
+                </h3>
+                <p className="admin-general-group-desc">{subtitle}</p>
               </div>
             </div>
             <div className="ops-health-grid">
@@ -258,16 +313,44 @@ export default function AdminHealth() {
           </div>
         </div>
 
-        <div className="ops-filters">
-          {WINDOWS.map((w) => (
-            <button
-              key={w.hours}
-              className={"ops-filter" + (windowHours === w.hours ? " active" : "")}
-              onClick={() => setWindowHours(w.hours)}
-            >
-              {w.label}
-            </button>
-          ))}
+        <div className="ops-filters ops-filters-bench">
+          <div className="ops-filters-row">
+            <span className="ops-filters-label">Window</span>
+            {WINDOWS.map((w) => (
+              <button
+                key={w.hours}
+                className={"ops-filter" + (windowHours === w.hours ? " active" : "")}
+                onClick={() => setWindowHours(w.hours)}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+          <div className="ops-filters-row">
+            <span className="ops-filters-label">Platform</span>
+            {PLATFORM_FILTERS.map((p) => (
+              <button
+                key={p.id}
+                className={"ops-filter" + (platformFilter === p.id ? " active" : "")}
+                onClick={() => setPlatformFilter(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+            {platformFilter !== "all" && (
+              <select
+                className="ops-filter-select"
+                value={serviceFilter}
+                onChange={(e) => setServiceFilter(e.target.value)}
+                aria-label="Filter benchmarks by service"
+              >
+                <option value="all">All services</option>
+                {serviceOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         {!data?.historyAvailable ? (
@@ -297,7 +380,13 @@ export default function AdminHealth() {
               </tr>
             </thead>
             <tbody>
-              {components.map((c) => {
+              {benchmarkRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="ops-muted" style={{ textAlign: "center", padding: "16px 0" }}>
+                    No components match the current Platform/Service filter.
+                  </td>
+                </tr>
+              ) : benchmarkRows.map((c) => {
                 const u = uptime[c.id];
                 return (
                   <tr key={c.id}>

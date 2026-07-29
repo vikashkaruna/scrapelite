@@ -204,12 +204,26 @@ function JobRow({ job, expanded, onToggle, onStart, onStop, onRun }) {
 
 function ScheduleRow({ s, onPause, onResume }) {
   const meta = scheduleStateMeta(s.state);
+  const userEmail = s.user?.email || "";
+  const userIdShort = s.userId ? String(s.userId).slice(0, 8) : "";
   return (
     <tr>
       <td>
         <div className="ops-job-name">{s.label}</div>
         <div className="ops-job-id">
-          <code>{s.id}</code>{s.userId ? ` · user ${String(s.userId).slice(0, 8)}` : ""}
+          <code>{s.id}</code>
+        </div>
+        <div className="ops-schedule-user" title={userEmail || s.userId || ""}>
+          {userEmail ? (
+            <>
+              <Icon name="user" size={11} /> <span>{userEmail}</span>
+              <span className="ops-muted ops-uid"> · {userIdShort}</span>
+            </>
+          ) : s.userId ? (
+            <span className="ops-muted"><Icon name="user" size={11} /> user {userIdShort}</span>
+          ) : (
+            <span className="ops-muted"><Icon name="user" size={11} /> no owner</span>
+          )}
         </div>
       </td>
       <td className="ops-target" title={typeof s.target === "string" ? s.target : ""}>
@@ -245,7 +259,13 @@ export default function AdminMonitoring() {
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  // Schedules table filters
   const [scheduleFilter, setScheduleFilter] = useState("all");
+  const [scheduleQuery,  setScheduleQuery]  = useState("");
+  // Audit table filters
+  const [auditAction,    setAuditAction]    = useState("all");
+  const [auditActor,     setAuditActor]     = useState("all");
+  const [auditQuery,     setAuditQuery]     = useState("");
   // Guards against a slow in-flight refresh overwriting state after unmount.
   const alive = useRef(true);
 
@@ -304,11 +324,40 @@ export default function AdminMonitoring() {
   const jobs = data?.jobs || [];
   const js = data?.jobSummary || {};
   const ss = data?.scheduleSummary || {};
-  const schedules = (data?.schedules || []).filter((s) =>
-    scheduleFilter === "all" ? true
-      : scheduleFilter === "attention"
-        ? s.state === SCHEDULE_STATE.SYSTEM_PAUSED || s.lastStatus === "error"
-        : s.state === scheduleFilter);
+  // Schedule filter chain: status preset (top buttons) → free-text query
+  // (matches label, user email, userId). Empty query means "no text filter".
+  const q = scheduleQuery.trim().toLowerCase();
+  const schedules = (data?.schedules || []).filter((s) => {
+    if (scheduleFilter === "all") {
+      // pass
+    } else if (scheduleFilter === "attention") {
+      if (!(s.state === SCHEDULE_STATE.SYSTEM_PAUSED || s.lastStatus === "error")) return false;
+    } else if (s.state !== scheduleFilter) {
+      return false;
+    }
+    if (q) {
+      const hay = `${s.label || ""} ${s.user?.email || ""} ${s.userId || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Audit-log filter chain. action + actor are dropdowns; query is a free-text
+  // search across reason + target.
+  const aq = auditQuery.trim().toLowerCase();
+  const audit = (data?.audit || []).filter((a) => {
+    if (auditAction !== "all" && a.action !== auditAction) return false;
+    if (auditActor  !== "all" && a.actor  !== auditActor)  return false;
+    if (aq) {
+      const hay = `${a.reason || ""} ${a.target || ""} ${a.actor || ""}`.toLowerCase();
+      if (!hay.includes(aq)) return false;
+    }
+    return true;
+  });
+  // Distinct actor + action values for the dropdowns, derived from the loaded
+  // audit set. Capped at 50 each so the select doesn't grow without bound.
+  const auditActions = Array.from(new Set((data?.audit || []).map((a) => a.action).filter(Boolean))).slice(0, 50);
+  const auditActors  = Array.from(new Set((data?.audit || []).map((a) => a.actor).filter(Boolean))).slice(0, 50);
 
   return (
     <div className="admin-section">
@@ -374,6 +423,26 @@ export default function AdminMonitoring() {
           </div>
         </div>
 
+        {data && data.envFlags && data.envFlags.purgeEnabled === false &&
+          (data.jobs || []).some((j) => j.id === "billing-purge") && (
+          <div className="admin-ai-notice">
+            <Icon name="shield" size={15} />
+            <span>
+              <strong>Data purge (day 90) is intentionally disarmed.</strong>{" "}
+              It is the only destructive job on the platform and ships off by design:
+              <code> PURGE_ENABLED</code> is not set to <code>&quot;1&quot;</code> in the environment, so
+              every scheduled run returns <code>skipped (PURGE_ENABLED is not 1)</code> and
+              no customer data is touched. To arm it, set <code>PURGE_ENABLED=1</code> in
+              the Netlify environment (after the five independent interlocks in the
+              source have been reviewed end-to-end — see{" "}
+              <code>netlify/functions/billing-purge.js</code>).
+              {data.envFlags.purgeDryRun && (
+                <> <code>PURGE_DRY_RUN=1</code> is also set, so a future arming will report what would be deleted without actually deleting.</>
+              )}
+            </span>
+          </div>
+        )}
+
         <div className="ops-table-wrap">
           <table className="ops-table">
             <thead>
@@ -436,23 +505,45 @@ export default function AdminMonitoring() {
           </div>
         </div>
 
-        <div className="ops-filters">
-          {[
-            ["all", `All (${ss.total ?? 0})`],
-            ["attention", `Needs attention (${(ss.systemPaused ?? 0) + (ss.failing ?? 0)})`],
-            [SCHEDULE_STATE.ACTIVE, `Active (${ss.active ?? 0})`],
-            [SCHEDULE_STATE.PAUSED, `User paused (${ss.paused ?? 0})`],
-            [SCHEDULE_STATE.SYSTEM_PAUSED, `System paused (${ss.systemPaused ?? 0})`],
-            [SCHEDULE_STATE.EXPIRED, `Expired (${ss.expired ?? 0})`],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              className={"ops-filter" + (scheduleFilter === key ? " active" : "")}
-              onClick={() => setScheduleFilter(key)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="ops-filters ops-filters-bench">
+          <div className="ops-filters-row">
+            {[
+              ["all", `All (${ss.total ?? 0})`],
+              ["attention", `Needs attention (${(ss.systemPaused ?? 0) + (ss.failing ?? 0)})`],
+              [SCHEDULE_STATE.ACTIVE, `Active (${ss.active ?? 0})`],
+              [SCHEDULE_STATE.PAUSED, `User paused (${ss.paused ?? 0})`],
+              [SCHEDULE_STATE.SYSTEM_PAUSED, `System paused (${ss.systemPaused ?? 0})`],
+              [SCHEDULE_STATE.EXPIRED, `Expired (${ss.expired ?? 0})`],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={"ops-filter" + (scheduleFilter === key ? " active" : "")}
+                onClick={() => setScheduleFilter(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="ops-filters-row">
+            <span className="ops-filters-label">Search</span>
+            <input
+              className="ops-filter-input"
+              type="search"
+              value={scheduleQuery}
+              onChange={(e) => setScheduleQuery(e.target.value)}
+              placeholder="label, user email or id…"
+              aria-label="Search user monitoring schedules"
+            />
+            {scheduleQuery && (
+              <button
+                className="ops-filter"
+                onClick={() => setScheduleQuery("")}
+                title="Clear search"
+              >
+                <Icon name="x" size={11} /> Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {schedules.length === 0 ? (
@@ -507,15 +598,69 @@ export default function AdminMonitoring() {
               <h3 className="admin-general-group-title">Recent operator actions</h3>
               <p className="admin-general-group-desc">
                 From <code>ops_audit_log</code>. Never pruned — this is the record of who
-                stopped what, and why.
+                stopped what, and why. {audit.length !== (data.audit?.length ?? 0)
+                  ? `Showing ${audit.length} of ${data.audit.length}.`
+                  : ""}
               </p>
             </div>
           </div>
+
+          <div className="ops-filters ops-filters-bench">
+            <div className="ops-filters-row">
+              <span className="ops-filters-label">Action</span>
+              <select
+                className="ops-filter-select"
+                value={auditAction}
+                onChange={(e) => setAuditAction(e.target.value)}
+                aria-label="Filter audit log by action"
+              >
+                <option value="all">All</option>
+                {auditActions.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <span className="ops-filters-label">Actor</span>
+              <select
+                className="ops-filter-select"
+                value={auditActor}
+                onChange={(e) => setAuditActor(e.target.value)}
+                aria-label="Filter audit log by actor"
+              >
+                <option value="all">All</option>
+                {auditActors.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="ops-filters-row">
+              <span className="ops-filters-label">Search</span>
+              <input
+                className="ops-filter-input"
+                type="search"
+                value={auditQuery}
+                onChange={(e) => setAuditQuery(e.target.value)}
+                placeholder="reason, target, or actor…"
+                aria-label="Search audit log"
+              />
+              {(auditAction !== "all" || auditActor !== "all" || auditQuery) && (
+                <button
+                  className="ops-filter"
+                  onClick={() => { setAuditAction("all"); setAuditActor("all"); setAuditQuery(""); }}
+                  title="Clear filters"
+                >
+                  <Icon name="x" size={11} /> Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead>
               <tbody>
-                {data.audit.map((a) => (
+                {audit.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="ops-muted" style={{ textAlign: "center", padding: "16px 0" }}>
+                      No audit entries match the current filters.
+                    </td>
+                  </tr>
+                ) : audit.map((a) => (
                   <tr key={a.id}>
                     <td title={a.created_at}>{formatRelative(a.created_at)}</td>
                     <td>{a.actor}</td>

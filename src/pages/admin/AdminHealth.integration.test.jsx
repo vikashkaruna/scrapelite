@@ -186,15 +186,18 @@ describe("I-51 — AdminHealth: components", () => {
       summary: { total: 3, ok: 3, degraded: 0, down: 0, unknown: 0, overall: "ok" },
     }));
     renderPage();
-    expect(await screen.findByText("Hosting & edge")).toBeInTheDocument();
-    expect(screen.getByText("Data & identity")).toBeInTheDocument();
-    expect(screen.getByText("External services")).toBeInTheDocument();
+    // The group titles are <h3>s; the new Benchmarks filter buttons also
+    // carry these words, so we scope to the heading role to avoid the
+    // multiple-match error.
+    expect(await screen.findByRole("heading", { name: "Hosting & edge" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Data & identity" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "External services" })).toBeInTheDocument();
   });
 
   it("omits a group with no components rather than rendering an empty box", async () => {
     renderPage();
-    await screen.findByText("Data & identity");
-    expect(screen.queryByText("Hosting & edge")).not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Data & identity" });
+    expect(screen.queryByRole("heading", { name: "Hosting & edge" })).not.toBeInTheDocument();
   });
 
   it("marks critical components", async () => {

@@ -27,10 +27,12 @@ export const HEALTH_COMPONENTS = [
     label: "Netlify site",
     group: "platform",
     critical: true,
-    description: "The deployed site: published deploy state, branch and build recency.",
-    // Netlify's own API. Needs NETLIFY_AUTH_TOKEN + a site id, and reports
-    // `unknown` (not `down`) without them.
-    requires: ["NETLIFY_AUTH_TOKEN"],
+    description: "The deployed site: which context, branch and deploy is answering. Read from the function's own runtime env (CONTEXT, BRANCH, DEPLOY_ID, SITE_NAME) — no token required.",
+    // Previously required NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID, but the same
+    // information is available from the build env every function gets. Keeping
+    // `requires` empty here is deliberate: the probe is "always configured"
+    // when the function is running at all, which it must be to answer.
+    requires: [],
   },
   {
     id: "netlify-platform",

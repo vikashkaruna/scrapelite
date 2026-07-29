@@ -79,6 +79,36 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = 6000) {
   }
 }
 
+/**
+ * Best-effort user directory lookup. We hit auth.users with the service key —
+ * a real table read rather than `auth.admin.getUserById` in a loop, because
+ * the loop is N HTTP round-trips and the dashboard asks for 200 schedules at
+ * a time. Returns a Map<userId, { email, createdAt }>. On ANY failure returns
+ * an empty map; the UI shows the raw userId and never pretends to know more.
+ */
+async function loadUserEmails(ids) {
+  const out = new Map();
+  if (!ids?.length) return out;
+  const d = db();
+  if (!d) return out;
+  // Cap to keep the URL under sensible limits. 200 ids → ~7.2 KB.
+  const slice = ids.slice(0, 200);
+  const filter = slice.map((id) => `"${id}"`).join(",");
+  try {
+    const url = `${d.base}/auth.users?select=id,email,created_at&id=in.(${filter})&limit=${slice.length}`;
+    const res = await fetchWithTimeout(url, { headers: d.headers });
+    if (!res.ok) return out;
+    const rows = await res.json().catch(() => []);
+    for (const r of rows) {
+      if (r?.id) out.set(r.id, {
+        email: r.email || "",
+        createdAt: r.created_at || "",
+      });
+    }
+  } catch { /* empty map — UI shows the userId */ }
+  return out;
+}
+
 async function loadSchedules(limit = 200) {
   const d = db();
   if (!d) return [];
@@ -210,14 +240,40 @@ async function buildSnapshot() {
 
   const schedules = scheduleRows.map((r) => deriveScheduleStatus(r, now));
 
+  // Operational toggles the dashboard needs to explain why a job is in the
+  // state it is. All are advisory, do not gate any control, and never include
+  // the value of any secret.
+  const envFlags = {
+    purgeEnabled: process.env.PURGE_ENABLED === "1",
+    purgeDryRun:  process.env.PURGE_DRY_RUN === "1",
+    opsJobsDisabled: String(process.env.OPS_JOBS_DISABLED || "")
+      .split(",").map((s) => s.trim()).filter(Boolean),
+  };
+
+  // Per-user schedules enriched with the owning account's email + signup date.
+  // We only fetch this when there's a service key, since auth.users is gated
+  // to the service role. On the failure path the schedules still come back
+  // with `userId` only — the UI must show that.
+  const userEmails = await loadUserEmails(
+    Array.from(new Set(schedules.map((s) => s.userId).filter(Boolean))),
+  );
+
   return {
     ok: true,
     generatedAt: now.toISOString(),
     jobs,
     jobSummary: summarizeJobs(jobs),
-    schedules,
+    schedules: schedules.map((s) => ({
+      ...s,
+      // Attach the user directory if we have it. The server is the only place
+      // that can read auth.users with the service key; the client never sees
+      // a service key. If the lookup failed, userId is still in the response
+      // and the UI shows it.
+      user: s.userId ? (userEmails.get(s.userId) || { email: "", createdAt: "" }) : null,
+    })),
     scheduleSummary: summarizeSchedules(schedules),
     audit,
+    envFlags,
     // The dashboard renders very differently with no history: without Supabase
     // every job reads "never run", which is true but would otherwise look like
     // a five-alarm fire rather than an unconfigured environment.

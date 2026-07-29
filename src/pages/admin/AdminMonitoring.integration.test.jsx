@@ -348,7 +348,9 @@ describe("I-50 — AdminMonitoring: audit trail", () => {
     }));
     renderPage();
     expect(await screen.findByText("paused during the data migration")).toBeInTheDocument();
-    expect(screen.getByText("job_disable")).toBeInTheDocument();
+    // The audit action now also appears in the new Action filter dropdown;
+    // scope to the table cell.
+    expect(screen.getByRole("cell", { name: "job_disable" })).toBeInTheDocument();
   });
 
   it("hides the audit section when there is nothing to show", async () => {

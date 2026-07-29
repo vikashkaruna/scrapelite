@@ -13,7 +13,7 @@
 // endpoint cannot disagree about what "degraded" means.
 
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
-import { runAllProbes } from "./lib/healthProbes.js";
+import { runAllProbes, supabaseDisplayName } from "./lib/healthProbes.js";
 import {
   classifyProbe, summarizeHealth, uptimeByComponent,
   HEALTH_COMPONENTS, HEALTH_GROUPS, HEALTH_STATUS,
@@ -133,8 +133,28 @@ export const handler = async (event = {}) => {
     samplesInWindow: samples.length,
     recorded,
     groups: HEALTH_GROUPS,
+    // Human-readable label for the database the function is pointing at.
+    // Operator-chosen name (SUPABASE_PROJECT_NAME) when set, otherwise a
+    // masked form of the project ref so we never print the full UUID-like
+    // string. Null if no Supabase is configured at all.
+    dataSource: {
+      supabase: supabaseDisplayName(),
+      netlify: netlifyDisplayName(),
+    },
     demo: auth.demo === true,
   });
 };
+
+/** Short label for which Netlify surface the response came from. */
+function netlifyDisplayName() {
+  const context = process.env.CONTEXT || "";
+  const branch  = process.env.BRANCH  || "";
+  const site    = process.env.SITE_NAME || "";
+  if (context === "production") return site ? `${site} · production` : "production";
+  if (context === "branch-deploy") return site ? `${site} · ${branch || "branch"}` : branch || "branch deploy";
+  if (context === "deploy-preview") return site ? `${site} · preview · ${branch}` : `preview · ${branch}`;
+  if (context === "dev") return "local dev";
+  return site || context || null;
+}
 
 export const _internal = { recordSamples, loadSamples, HEALTH_COMPONENTS, HEALTH_STATUS };

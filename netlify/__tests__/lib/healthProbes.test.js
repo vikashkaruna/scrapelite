@@ -14,7 +14,9 @@ const ENV_KEYS = [
   "NETLIFY_AUTH_TOKEN", "NETLIFY_SITE_ID", "SITE_ID", "RESEND_API_KEY",
   "GEMINI_API_KEY", "AI_API_KEY", "OPENAI_API_KEY",
   "FIRECRAWL_API_KEY", "VITE_FIRECRAWL_API_KEY", "SPIDER_API_KEY", "JINA_API_KEY",
-  "CONTEXT", "SITE_NAME", "BRANCH", "DEPLOY_ID", "AWS_REGION",
+  "CONTEXT", "SITE_NAME", "BRANCH", "DEPLOY_ID", "DEPLOY_PRIME_URL", "AWS_REGION",
+  "PURGE_ENABLED", "PURGE_DRY_RUN", "OPS_JOBS_DISABLED",
+  "SUPABASE_PROJECT_NAME",
 ];
 
 beforeEach(async () => {
@@ -175,62 +177,51 @@ describe("probeSupabaseAuth (P-03)", () => {
 
 // ── Netlify site ─────────────────────────────────────────────────────────────
 
-describe("probeNetlifySite (P-04)", () => {
-  it("is unconfigured without a token", async () => {
-    process.env.NETLIFY_SITE_ID = "site-1";
-    expect((await probes.probeNetlifySite()).configured).toBe(false);
-  });
-
-  it("is unconfigured without a site id", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "tok";
-    expect((await probes.probeNetlifySite()).configured).toBe(false);
-  });
-
-  it("reports the published deploy", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "tok";
-    process.env.NETLIFY_SITE_ID = "site-1";
-    fetchMock.mockResolvedValue(json({
-      name: "datiqapp", ssl_url: "https://datiq.app", state: "current",
-      published_deploy: { state: "ready", branch: "main", id: "dep_1", published_at: "2026-07-27T09:00:00Z" },
-    }));
+// The probe no longer hits the Netlify API: every function gets CONTEXT,
+// BRANCH, DEPLOY_ID, SITE_NAME, DEPLOY_PRIME_URL from the runtime, which is
+// exactly the operator-facing "where am I" info /admin/health used to need a
+// PAT to read. So configured is true whenever the probe is reached, and the
+// detail is purely a reflection of the runtime env.
+describe("probeNetlifySite (P-04) — runtime-env probe", () => {
+  it("is configured and reports the runtime env when CONTEXT is production", async () => {
+    process.env.CONTEXT   = "production";
+    process.env.BRANCH    = "main";
+    process.env.SITE_NAME = "datiqapp";
+    process.env.DEPLOY_ID = "dep_abc";
     const r = await probes.probeNetlifySite();
-    expect(r.status).toBeUndefined(); // healthy → classified by latency
-    expect(r.detail).toMatchObject({ branch: "main", deployId: "dep_1", state: "ready" });
+    expect(r.configured).toBe(true);
+    expect(r.status).toBeUndefined();
+    expect(r.detail).toMatchObject({
+      site: "datiqapp", branch: "main", context: "production", deployId: "dep_abc",
+    });
+    expect(r.detail.envLabel).toBe("production");
   });
 
-  it("is degraded when the published deploy is not in a serving state", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "tok";
-    process.env.NETLIFY_SITE_ID = "site-1";
-    fetchMock.mockResolvedValue(json({ published_deploy: { state: "error", branch: "main" } }));
+  it("is configured and reports the runtime env when CONTEXT is branch-deploy", async () => {
+    process.env.CONTEXT   = "branch-deploy";
+    process.env.BRANCH    = "monitoring-services-in-admin-module";
+    process.env.SITE_NAME = "datiqapp";
+    const r = await probes.probeNetlifySite();
+    expect(r.configured).toBe(true);
+    expect(r.status).toBeUndefined();
+    expect(r.detail.context).toBe("branch-deploy");
+    expect(r.detail.branch).toBe("monitoring-services-in-admin-module");
+    expect(r.detail.envLabel).toBe("branch · monitoring-services-in-admin-module");
+  });
+
+  it("is degraded when CONTEXT is something Netlify does not normally publish", async () => {
+    process.env.CONTEXT = "weird-thing";
     const r = await probes.probeNetlifySite();
     expect(r.status).toBe("degraded");
-    expect(r.note).toMatch(/error/);
+    expect(r.note).toMatch(/weird-thing/);
   });
 
-  // A rejected token means we learned nothing about the site. Saying "down"
-  // would send someone to investigate a site that is serving fine.
-  it("reports unknown — not down — when the token is rejected", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "bad";
-    process.env.NETLIFY_SITE_ID = "site-1";
-    fetchMock.mockResolvedValue(new Response("", { status: 401 }));
-    const r = await probes.probeNetlifySite();
-    expect(r.status).toBe("unknown");
-    expect(r.note).toMatch(/NETLIFY_AUTH_TOKEN/);
-  });
-
-  it("is down on a genuine API failure", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "tok";
-    process.env.NETLIFY_SITE_ID = "site-1";
-    fetchMock.mockResolvedValue(new Response("", { status: 500 }));
-    expect((await probes.probeNetlifySite()).status).toBe("down");
-  });
-
-  it("accepts SITE_ID as well as NETLIFY_SITE_ID", async () => {
-    process.env.NETLIFY_AUTH_TOKEN = "tok";
-    process.env.SITE_ID = "site-2";
-    fetchMock.mockResolvedValue(json({ published_deploy: { state: "ready" } }));
+  it("does NOT call the Netlify API", async () => {
+    process.env.CONTEXT = "production";
     await probes.probeNetlifySite();
-    expect(String(fetchMock.mock.calls[0][0])).toContain("site-2");
+    // No outbound HTTP — the probe is purely env-driven. fetchMock is set up
+    // per-test and would record any call made.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
