@@ -30,10 +30,10 @@ export default function Contact() {
   const [errorMsg, setErrorMsg] = useState("");
   const [fallbackMailto, setFallbackMailto] = useState("");
 
-  // The three response-time rows in the sidebar come from admin-editable
+  // The three response-time rows in the sidebar come from operator-editable
   // settings (cached client-side). We render the synchronous cache value
   // immediately so the first paint is never empty, then refresh in the
-  // background. Admins changing these in /admin/general see the update after
+  // background. Operators changing these values see the update after
   // a 5-min cache TTL or a hard refresh — no special "save + reload" dance.
   const [sla, setSla] = useState(() => {
     const s = getSettings();
