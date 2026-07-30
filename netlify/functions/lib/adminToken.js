@@ -12,11 +12,15 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const sha256Hex = (s) => createHash("sha256").update(String(s)).digest("hex");
 
-function adminSecret() {
-  if (process.env.ADMIN_TOKEN_SECRET) return process.env.ADMIN_TOKEN_SECRET;
-  if (process.env.ADMIN_PIN_HASH) return process.env.ADMIN_PIN_HASH;
-  if (process.env.ADMIN_PIN) return sha256Hex(process.env.ADMIN_PIN);
+function adminSecret(env = process.env) {
+  if (env.ADMIN_TOKEN_SECRET) return env.ADMIN_TOKEN_SECRET;
+  if (env.ADMIN_PIN_HASH) return env.ADMIN_PIN_HASH;
+  if (env.ADMIN_PIN) return sha256Hex(env.ADMIN_PIN);
   return null; // demo mode
+}
+
+export function isDemoAdminAllowed(env = process.env) {
+  return env.DATIQ_ALLOW_DEMO_ADMIN === "1" || env.CONTEXT === "dev" || env.NETLIFY_DEV === "true";
 }
 
 function safeEqual(a, b) {
@@ -39,7 +43,7 @@ export function verifyAdminToken(token) {
   if (!token) return { ok: false, reason: "Missing admin token." };
 
   const secret = adminSecret();
-  if (!secret) return { ok: true, demo: true }; // demo mode — nothing to verify against
+  if (!secret) return isDemoAdminAllowed() ? { ok: true, demo: true } : { ok: false, reason: "Admin authentication is not configured." };
 
   const [payload, sig] = String(token).split(".");
   if (!payload || !sig) return { ok: false, reason: "Malformed token." };

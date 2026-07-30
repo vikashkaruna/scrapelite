@@ -27,6 +27,8 @@
 // the only safe default is to permit; the caller is responsible for any
 // site they scrape.
 
+import { fetchPublicUrl } from "./publicUrl.js";
+
 const ROBOTS_TTL_MS = 60 * 60 * 1000; // 1 hour
 const ROBOTS_TIMEOUT_MS = 5_000;
 const DEFAULT_CRAWL_DELAY_MS = 1000; // fallback when robots.txt has no Crawl-delay
@@ -152,7 +154,7 @@ export async function loadRobots(origin, ua = "DatIQBot/1.0", options = {}) {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), options.timeoutMs || ROBOTS_TIMEOUT_MS);
-    const res = await fetch(robotsUrl, { signal: ctrl.signal });
+    const res = await fetchPublicUrl(robotsUrl, { signal: ctrl.signal });
     clearTimeout(t);
     if (!res.ok) {
       // 404 / 5xx → no robots.txt → no rules

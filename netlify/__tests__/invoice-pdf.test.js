@@ -152,6 +152,8 @@ describe("configuration", () => {
   it("503s when Supabase is not configured", async () => {
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_ANON_KEY;
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
     vi.resetModules();
     const mod = await import("../functions/invoice-pdf.js");
     const r = await mod.handler(get());

@@ -18,12 +18,14 @@ beforeEach(() => {
   delete process.env.ADMIN_TOKEN_SECRET;
   delete process.env.ADMIN_PIN_HASH;
   delete process.env.ADMIN_PIN;
+  process.env.CONTEXT = "dev";
 });
 
 afterEach(() => {
   delete process.env.ADMIN_TOKEN_SECRET;
   delete process.env.ADMIN_PIN_HASH;
   delete process.env.ADMIN_PIN;
+  delete process.env.CONTEXT;
 });
 
 describe("verifyAdminToken — demo mode (no secret)", () => {

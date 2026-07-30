@@ -28,14 +28,29 @@ export const handler = async (event) => {
     return { statusCode: 200, body: "skipped (no Resend key)" };
   }
 
-  let body;
-  try { body = JSON.parse(event.body || "{}"); } catch { return { statusCode: 400, body: "invalid JSON" }; }
-  const { userId, email, name, planLabel } = body;
-  if (!userId || !email) return { statusCode: 400, body: "userId and email required" };
+  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
+  const token = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1]?.trim();
+  if (!token) return { statusCode: 401, body: "authentication required" };
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  let verifiedUser;
+  try {
+    const { data, error } = await sb.auth.getUser(token);
+    if (error || !data?.user) return { statusCode: 401, body: "invalid authentication" };
+    verifiedUser = data.user;
+  } catch {
+    return { statusCode: 401, body: "invalid authentication" };
+  }
+
+  let body;
+  try { body = JSON.parse(event.body || "{}"); } catch { return { statusCode: 400, body: "invalid JSON" }; }
+  const userId = verifiedUser.id;
+  const email = verifiedUser.email;
+  const name = verifiedUser.user_metadata?.name || verifiedUser.user_metadata?.full_name || "";
+  const planLabel = typeof body?.planLabel === "string" ? body.planLabel.slice(0, 80) : "Free";
 
   // Idempotency: read the user metadata first.
   let user;
