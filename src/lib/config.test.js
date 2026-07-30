@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EMAIL_API_URL,
-  FIRECRAWL_API_KEY,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
   WEBHOOK_URL,

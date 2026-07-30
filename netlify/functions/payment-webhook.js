@@ -14,6 +14,11 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
 
+function unsignedWebhooksAllowed() {
+  return process.env.DATIQ_ALLOW_UNSIGNED_WEBHOOKS === "1" &&
+    (process.env.CONTEXT === "dev" || process.env.NODE_ENV === "test");
+}
+
 // ── Lightweight Supabase REST client (no SDK required in Functions) ───────────
 function getDb() {
   const url = process.env.SUPABASE_URL;
@@ -92,9 +97,10 @@ export const handler = async (event) => {
           event.headers["stripe-signature"] || "",
           webhookSecret
         );
-      } else {
-        console.warn("[webhook/stripe] STRIPE_WEBHOOK_SECRET not set — skipping signature check.");
+      } else if (unsignedWebhooksAllowed()) {
         stripeEvent = JSON.parse(event.body);
+      } else {
+        return { statusCode: 503, headers, body: JSON.stringify({ error: "Stripe webhook verification is not configured." }) };
       }
     } catch (e) {
       console.error("[webhook/stripe] Signature error:", e.message);
@@ -196,8 +202,8 @@ export const handler = async (event) => {
         console.warn("[webhook/razorpay] Invalid HMAC signature — rejecting.");
         return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid webhook signature." }) };
       }
-    } else {
-      console.warn("[webhook/razorpay] RAZORPAY_WEBHOOK_SECRET not set — skipping signature check.");
+    } else if (!unsignedWebhooksAllowed()) {
+      return { statusCode: 503, headers, body: JSON.stringify({ error: "Razorpay webhook verification is not configured." }) };
     }
 
     let payload;

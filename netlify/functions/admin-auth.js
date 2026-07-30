@@ -14,6 +14,7 @@
 // PIN disables demo mode. Choose a long, random PIN — strength is set at hash time.
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { isDemoAdminAllowed } from "./lib/adminToken.js";
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
 const DEMO_PIN = "ADMIN123";
@@ -55,6 +56,9 @@ export const handler = async (event) => {
   const envHash = process.env.ADMIN_PIN_HASH;
   const envPin  = process.env.ADMIN_PIN;
   const demo    = !envHash && !envPin;
+  if (demo && !isDemoAdminAllowed()) {
+    return { statusCode: 503, headers, body: JSON.stringify({ ok: false, code: "NOT_CONFIGURED", error: "Admin authentication is not configured." }) };
+  }
 
   const expectedHash = demo ? sha256Hex(DEMO_PIN) : (envHash || sha256Hex(envPin));
   const ok = safeEqualHex(sha256Hex(pin), expectedHash);

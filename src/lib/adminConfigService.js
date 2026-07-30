@@ -11,7 +11,9 @@ function adminToken() {
 
 /** Fetch current effective config + per-provider key presence. */
 export async function getAiConfig() {
-  const res = await fetch(ENDPOINT, { headers: { "Content-Type": "application/json" } });
+  const res = await fetch(ENDPOINT, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+  });
   if (!res.ok) throw new Error(`Failed to load AI config (${res.status})`);
   return res.json(); // { ok, config, keyPresence, providers, persisted }
 }
@@ -114,4 +116,3 @@ export async function inviteUserByEmail(form) {
   if (!res.ok) throw Object.assign(new Error(data.error || `Invite failed (${res.status})`), { status: res.status, localOnly: data.localOnly });
   return data;
 }
-
