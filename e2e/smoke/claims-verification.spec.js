@@ -12,30 +12,33 @@ test.beforeEach(async ({ page }) => {
 
 // ── Pricing claims ────────────────────────────────────────────────────────────
 
-test("CLAIM: /pricing shows all 4 paid tiers (Select/Pro/Business/Agency)", async ({ page }) => {
+test("CLAIM: /pricing shows all 5 paid tiers (Go/Select/Pro/Business/Agency)", async ({ page }) => {
   await page.goto("/pricing");
-  for (const tier of [/Select/i, /Pro/i, /Business/i, /Agency/i]) {
+  for (const tier of [/Go/i, /Select/i, /Pro/i, /Business/i, /Agency/i]) {
     await expect(page.getByText(tier).first()).toBeVisible();
   }
 });
 
-test("CLAIM: Annual billing is the default toggle on /pricing", async ({ page }) => {
+test("CLAIM: Monthly billing is the default toggle on /pricing", async ({ page }) => {
   await page.goto("/pricing");
-  // Annual toggle is the active one by default
-  const annualBtn = page.getByRole("button", { name: /Annual billing/i });
-  await expect(annualBtn).toBeVisible();
+  // Monthly toggle is the active one by default
+  const monthlyBtn = page.getByRole("button", { name: /Monthly billing/i });
+  await expect(monthlyBtn).toBeVisible();
   // Active state via aria-pressed (toggle now exposes it explicitly)
-  await expect(annualBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
 });
 
-test("CLAIM: Select plan starts at $19/month (monthly billing)", async ({ page }) => {
+test("CLAIM: Select plan starts at $14.40/month (monthly billing)", async ({ page }) => {
   await page.goto("/pricing");
   // Switch to monthly if it's not already
   const monthlyBtn = page.getByRole("button", { name: /Monthly billing/i });
   if (await monthlyBtn.isVisible()) await monthlyBtn.click();
   await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
-  // Look for the $19 price in the Select card
-  await expect(page.getByText(/\$19/).first()).toBeVisible();
+  // Look for the $14.40 price in the Select card specifically (not just any
+  // "$14" substring elsewhere on the page — the topup bundles have their own
+  // unrelated prices, so scope to the plan card).
+  const selectCard = page.locator(".plan-card").filter({ hasText: "Select" });
+  await expect(selectCard.getByText("$14.40")).toBeVisible();
 });
 
 // ── Batch claims ──────────────────────────────────────────────────────────────
