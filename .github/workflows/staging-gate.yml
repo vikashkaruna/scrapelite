@@ -14,8 +14,13 @@
 #                                        (unless labeled gate-bypass with a TODO)
 #   Staging Gate: Deployed & Smoke Tested
 #                                      → after push to staging, waits for the
-#                                        Netlify branch deploy and smoke-tests
-#                                        https://staging.datiq.app
+#                                        Netlify branch deploy to converge,
+#                                        confirms its function manifest via
+#                                        the Netlify API, and smoke-tests a
+#                                        LOCAL `vite preview` of the identical
+#                                        build artifact — see the job below
+#                                        for why it no longer probes the live
+#                                        branch-deploy URL over the network.
 #
 # The three named checks above are exactly what branch protection should
 # require on `staging` (and at minimum "Staging Gate: Test Suites" on `main`).
@@ -120,8 +125,10 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # 4. DEPLOY VERIFIED — push-to-staging only. Netlify auto-deploys the
-  #    staging branch to staging.datiq.app; this waits for that deploy
-  #    to converge on the pushed commit and smoke-tests it.
+  #    staging branch to the branch-deploy host; this waits for that
+  #    deploy to converge on the pushed commit, confirms its Functions
+  #    manifest via the Netlify API, then smoke-tests a LOCAL `vite
+  #    preview` of the identical build artifact.
   # ─────────────────────────────────────────────────────────────────
   deploy-verified:
     name: "Staging Gate: Deployed & Smoke Tested"
@@ -165,6 +172,36 @@ jobs:
     # vanity hostname you need a Netlify BRANCH-DEPLOY domain (branch subdomain)
     # bound to the `staging` branch — not an alias. Only after that is confirmed
     # to serve the branch deploy should STAGING_URL be set to it.
+    #
+    # ⚠️ 2026-08-02: STAGING_URL IS NO LONGER PUBLICLY REACHABLE, ON PURPOSE.
+    # The site's `sso_login` visitor-access control is enabled with
+    # `sso_login_context: "non_production"` — a deliberate security decision
+    # to require a Netlify team login on every branch-deploy and deploy-preview
+    # URL. That's a real OAuth/SSO gate (Netlify calls it "Visitor access
+    # control"), not the classic site password, so there is no Basic-Auth or
+    # bypass-token a script can send — an anonymous `curl`/`fetch` gets a 401
+    # and Netlify's own login-redirect HTML no matter what path it requests,
+    # including plain static files. Hitting STAGING_URL from this job would
+    # therefore ALWAYS fail, telling you nothing about the deploy itself.
+    #
+    # This job verifies the SAME commit's deploy two other ways instead:
+    #   1. "Wait for Netlify staging deploy to converge" — as before, PLUS a
+    #      check that the deploy's Functions manifest (returned by the same
+    #      Netlify API call, no network access to the gated host required)
+    #      contains every function this app depends on. Catches "functions
+    #      failed to bundle" without needing to reach the gated URL.
+    #   2. "Local smoke test" — builds this exact commit and runs
+    #      `vite preview` locally, then points scripts/smoke-prod.mjs at that
+    #      LOCAL server instead of the network. It is the identical artifact
+    #      Netlify would publish (same `npm run build`, same `dist/`), so the
+    #      SPA-routing / marketing-asset / help-site probes are just as
+    #      meaningful as they were against the live host. `SMOKE_SKIP_API=1`
+    #      because a bare static preview has no Netlify Functions runtime
+    #      behind it — function correctness is covered separately by (1) here
+    #      and by the contract-test suite (`npm run test:contract`) in the
+    #      Test Suites job, which exercises the actual function handlers.
+    # If SSO protection is ever turned off for non-production, the live-host
+    # probe can be restored — see git history on this file for the prior form.
     env:
       STAGING_URL: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
     environment:
@@ -178,10 +215,10 @@ jobs:
           cache: "npm"
       - run: npm ci
 
-      - name: Wait for Netlify staging deploy to converge
+      - name: Wait for Netlify staging deploy to converge (+ verify Functions manifest)
         run: |
           set -euo pipefail
-          echo "Waiting for $STAGING_URL to converge on $GITHUB_SHA..."
+          echo "Waiting for the staging branch deploy to converge on $GITHUB_SHA..."
 
           # A single imperfect poll must not kill the whole wait. The Netlify
           # API can answer with something that is not an array of deploy
@@ -196,6 +233,12 @@ jobs:
           #   * `|| true`       — a failed poll is non-fatal; we retry
           #   * `if type=="array"` — a non-array body can no longer crash jq
           # We poll to a real timeout instead of dying on the first bad answer.
+          #
+          # Functions this app cannot run without — same list `npm run
+          # readiness` and the contract-test suite guard the source of. Keep
+          # in sync if a new critical function is added.
+          EXPECTED_FUNCTIONS="extract extractions ai admin-auth admin-monitoring admin-health billing-lifecycle billing-purge scheduled-runner health-monitor payment-webhook create-checkout verify-payment"
+
           for i in $(seq 1 30); do
             RESP=$(curl -fsS \
               -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
@@ -214,6 +257,19 @@ jobs:
             echo "  attempt $i/30: latest_staging=$LATEST_SHA state=$STATE"
             if [ "$LATEST_SHA" = "$GITHUB_SHA" ] && [ "$STATE" = "ready" ]; then
               echo "  ✓ staging deploy is live on $GITHUB_SHA"
+
+              FUNCS=$(printf '%s' "$RESP" | jq -r '
+                ([.[] | select(type == "object" and .branch == "staging")] | .[0].available_functions // [])
+                | map(.n) | .[]')
+              MISSING=""
+              for f in $EXPECTED_FUNCTIONS; do
+                echo "$FUNCS" | grep -qx "$f" || MISSING="$MISSING $f"
+              done
+              if [ -n "$MISSING" ]; then
+                echo "  ✗ deploy manifest is missing expected function(s):$MISSING"
+                exit 1
+              fi
+              echo "  ✓ all expected functions are present in the deploy manifest"
               exit 0
             fi
             if [ "$STATE" = "error" ]; then
@@ -225,12 +281,33 @@ jobs:
           echo "✗ staging did not converge in 5 minutes"
           exit 1
 
-      - name: Smoke test staging
-        run: node scripts/smoke-prod.mjs "$STAGING_URL"
+      - name: Build (identical to what Netlify publishes for this commit)
+        run: npm run build
+
+      - name: Local smoke test (vite preview of the built artifact)
+        # STAGING_URL itself cannot be probed anonymously — see the job-level
+        # comment above. This exercises the same build output against a local
+        # static server instead, so a broken SPA route, a missing marketing/SEO
+        # asset, or a missing help page still fails the gate.
+        run: |
+          set -euo pipefail
+          npx vite preview --port 4319 --strictPort &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+
+          echo "Waiting for local preview server on :4319..."
+          for i in $(seq 1 30); do
+            if curl -fsS "http://localhost:4319/" >/dev/null 2>&1; then
+              echo "  ✓ preview server is up"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "✗ local preview server never came up"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
         env:
-          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
-          # no working IPv6 route, so `fetch` fails with an opaque
-          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
-          # Forcing IPv4 removes that whole class of phantom gate failure.
           NODE_OPTIONS: --dns-result-order=ipv4first
-          SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
