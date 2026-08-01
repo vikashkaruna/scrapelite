@@ -166,8 +166,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # full history for the ancestor check
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
 
-      - name: Verify staging deploy is live and contained in main
+      - name: Verify staging deploy is live, contained in main, and its Functions manifest is complete
         run: |
           set -e
           echo "Checking ready staging deploys against $GITHUB_SHA..."
@@ -204,31 +209,74 @@ jobs:
             fi
           done
 
-          if [ -n "$MATCH" ]; then
-            echo "  ✓ matched staging deploy $MATCH: $REL"
-          else
+          if [ -z "$MATCH" ]; then
             echo "✗ none of the ready staging deploys share history with $GITHUB_SHA."
             echo "  Release to staging (and let it pass the Staging Gate) before releasing main."
             exit 1
           fi
+          echo "  ✓ matched staging deploy $MATCH: $REL"
 
-      - name: Smoke test staging
-        # Use the branch-deploy host. ⚠️ Do NOT set STAGING_URL to
-        # staging.datiq.app: verified 2026-07-27, that hostname is a plain domain
-        # ALIAS on the production site (covered by the production cert), so it
-        # serves the PUBLISHED production deploy and is byte-identical to
-        # datiq.app. Repointing its DNS does NOT help — that was tried and the
-        # content did not change, because Netlify routes by Host header. Smoking
-        # it would pass while proving nothing about staging — and here that green
-        # is what gates a production release. Full reasoning in staging-gate.yml.
-        run: node scripts/smoke-prod.mjs "${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}"
+          # Same Functions-manifest check as staging-gate.yml, run against the
+          # MATCHED deploy's own manifest (not necessarily the newest deploy —
+          # see the "either direction" note above). No network access to the
+          # gated staging host required; see the note on "Local smoke test"
+          # below for why this job no longer probes it directly.
+          EXPECTED_FUNCTIONS="extract extractions ai admin-auth admin-monitoring admin-health billing-lifecycle billing-purge scheduled-runner health-monitor payment-webhook create-checkout verify-payment"
+          FUNCS=$(printf '%s' "$RESP" | jq -r --arg sha "$MATCH" '
+            [.[] | select(.branch == "staging" and .commit_ref == $sha)]
+            | .[0].available_functions // [] | map(.n) | .[]')
+          MISSING=""
+          for f in $EXPECTED_FUNCTIONS; do
+            echo "$FUNCS" | grep -qx "$f" || MISSING="$MISSING $f"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "✗ matched staging deploy is missing expected function(s):$MISSING"
+            exit 1
+          fi
+          echo "  ✓ all expected functions are present in the deploy manifest"
+
+      - name: Build (this commit, matching what staging already released)
+        run: npm run build
+
+      - name: Local smoke test (vite preview of the built artifact)
+        # ⚠️ 2026-08-02: the staging branch-deploy host is no longer publicly
+        # reachable — Netlify's `sso_login` visitor-access control was enabled
+        # for non-production contexts as a deliberate security decision (kept
+        # ON; do not "fix" this by turning it off). It's a real SSO/OAuth gate,
+        # not the classic site password, so there is no Basic-Auth or bypass
+        # token an anonymous `curl`/`fetch` can present — every path, including
+        # plain static files, answers 401 with Netlify's own login-redirect
+        # HTML. Full reasoning: staging-gate.yml, job `deploy-verified`.
+        #
+        # This step verifies the SAME commit two other ways instead: the
+        # Functions-manifest check above (via the Netlify API, not the gated
+        # host), and this local `vite preview` of the identical build output
+        # for the SPA-routing / marketing-asset / help-site probes.
+        # `SMOKE_SKIP_API=1` because a bare static preview has no Netlify
+        # Functions runtime behind it — that's covered by the manifest check
+        # and by the contract-test suite in the Test Suites job.
+        run: |
+          set -euo pipefail
+          npx vite preview --port 4319 --strictPort &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+
+          echo "Waiting for local preview server on :4319..."
+          for i in $(seq 1 30); do
+            if curl -fsS "http://localhost:4319/" >/dev/null 2>&1; then
+              echo "  ✓ preview server is up"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "✗ local preview server never came up"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
         env:
-          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
-          # no working IPv6 route, so `fetch` fails with an opaque
-          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
-          # Forcing IPv4 removes that whole class of phantom gate failure.
           NODE_OPTIONS: --dns-result-order=ipv4first
-          SMOKE_ADMIN_PIN: ${{ secrets.STAGING_ADMIN_PIN }}
 
   # ─────────────────────────────────────────────────────────────────
   # 5. MANUAL APPROVAL — free-plan replacement for the Pro-only

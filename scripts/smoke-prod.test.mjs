@@ -285,6 +285,19 @@ describe("runSmoke — happy path", () => {
     const adminCall = calls.find((c) => c.url === "/.netlify/functions/admin-auth");
     expect(adminCall.method).toBe("POST");
   });
+
+  it("skipApi omits the /api/stats probe entirely (static-server mode)", async () => {
+    const { fetcher, calls } = makeFetcher();
+    const result = await runSmoke("http://localhost:4173", {
+      fetcher,
+      skipApi: true,
+      logger: quiet,
+    });
+    expect(result.failed).toBe(0);
+    expect(result.passed).toBe(9);
+    const probed = calls.map((c) => c.url);
+    expect(probed).not.toContain("/api/stats");
+  });
 });
 
 describe("runSmoke — failure paths", () => {
