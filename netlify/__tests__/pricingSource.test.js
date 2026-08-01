@@ -34,7 +34,7 @@ describe("loadPricing — static defaults (C-35)", () => {
   it("returns static tables when Supabase is unconfigured", async () => {
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro).toEqual({ usd: 29, usd_annual: 23, inr: 2899, inr_annual: 1499 });
+    expect(p.plans.pro).toEqual({ usd: 20.4, usd_annual: 17, inr: 1799, inr_annual: 1499 });
     expect(p.bundles["batch-pack"]).toEqual({ usd: 9, inr: 749 });
     expect(p.coupons.LAUNCH20).toMatchObject({ value: 20, planId: null, active: true });
     expect(p.global).toEqual({ percent: 0, active: false, expiresAt: null });
@@ -48,7 +48,7 @@ describe("loadPricing — static defaults (C-35)", () => {
     fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro.usd).toBe(29); // static
+    expect(p.plans.pro.usd).toBe(20.4); // static
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -58,7 +58,7 @@ describe("loadPricing — static defaults (C-35)", () => {
     fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro.usd).toBe(29);
+    expect(p.plans.pro.usd).toBe(20.4);
   });
 });
 
@@ -78,8 +78,8 @@ describe("loadPricing — operator overrides (C-35)", () => {
     const p = await loadPricing();
     // operator override on usd only — other fields stay
     expect(p.plans.pro.usd).toBe(49);
-    expect(p.plans.pro.usd_annual).toBe(23);
-    expect(p.plans.pro.inr).toBe(2899);
+    expect(p.plans.pro.usd_annual).toBe(17);
+    expect(p.plans.pro.inr).toBe(1799);
   });
 
   it("operator can add a new coupon", async () => {
@@ -197,6 +197,7 @@ describe("ALLOWED_PLANS / ALLOWED_BUNDLES", () => {
   it("are the canonical plan / bundle id sets", () => {
     expect(ALLOWED_PLANS.has("pro")).toBe(true);
     expect(ALLOWED_PLANS.has("free")).toBe(true);
+    expect(ALLOWED_PLANS.has("go")).toBe(true);
     expect(ALLOWED_PLANS.has("unknown")).toBe(false);
     expect(ALLOWED_BUNDLES.has("batch-pack")).toBe(true);
     expect(ALLOWED_BUNDLES.has("extractions-bundle")).toBe(true);

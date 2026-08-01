@@ -243,16 +243,17 @@ group("plan_rank()");
 {
   const r = await one(`select public.plan_rank('agency') a, public.plan_rank('business') b,
     public.plan_rank('pro') p, public.plan_rank('developer') d, public.plan_rank('select') s,
-    public.plan_rank('free') f, public.plan_rank(null) n, public.plan_rank('suspended') x,
-    public.plan_rank('AGENCY') u`);
-  eq("agency=5", r.a, 5);
-  eq("business=4", r.b, 4);
-  eq("pro=developer=3", [r.p, r.d], [3, 3]);
-  eq("select=2", r.s, 2);
+    public.plan_rank('go') g, public.plan_rank('free') f, public.plan_rank(null) n,
+    public.plan_rank('suspended') x, public.plan_rank('AGENCY') u`);
+  eq("agency=6", r.a, 6);
+  eq("business=5", r.b, 5);
+  eq("pro=developer=4", [r.p, r.d], [4, 4]);
+  eq("select=3", r.s, 3);
+  eq("go=2", r.g, 2);
   eq("free=1", r.f, 1);
   eq("null ranks as free", r.n, 1);
   eq("unknown plan ranks 0 so it never wins a merge", r.x, 0);
-  eq("case-insensitive", r.u, 5);
+  eq("case-insensitive", r.u, 6);
 }
 
 // ── merge_entitlement_from_subscriptions: never downgrade ────────────────────

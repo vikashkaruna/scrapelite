@@ -1,8 +1,8 @@
 // src/pages/Pricing.integration.test.jsx
 // I-39 — Pricing page integration.
 //
-//   - Annual billing is the default (toggle starts on Annual)
-//   - All 7 plan cards render (Free / Select / Pro / Business / Agency / Developer / Enterprise)
+//   - Monthly billing is the default (toggle starts on Monthly)
+//   - All 8 plan cards render (Free / Go / Select / Pro / Business / Agency / Developer / Enterprise)
 //   - Developer card has a "Coming soon" badge
 //   - Enterprise card has a "Contact sales" mailto
 //   - INR currency shows ₹-prefix prices
@@ -98,12 +98,12 @@ function Tree() {
   );
 }
 
-describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
-  it("renders all 7 plan cards (Free/Select/Pro/Business/Agency/Developer/Enterprise)", async () => {
+describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
+  it("renders all 8 plan cards (Free/Go/Select/Pro/Business/Agency/Developer/Enterprise)", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
     // Each plan name appears at least once in the page.
-    for (const name of ["Free", "Select", "Pro", "Business", "Agency", "Developer", "Enterprise"]) {
+    for (const name of ["Free", "Go", "Select", "Pro", "Business", "Agency", "Developer", "Enterprise"]) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
   });
@@ -123,13 +123,26 @@ describe("I-39 — Pricing: 7 plan cards + annual default + INR", () => {
     expect(mailto.getAttribute("href")).toMatch(/mailto:hello@datiq\.app/);
   });
 
-  it("Annual billing is the default toggle state", async () => {
+  it("Monthly billing is the default toggle state", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // The toggle has two options (Monthly, Annual). Annual should be active.
+    // The toggle has two options (Monthly, Annual). Monthly should be active
+    // by default so users aren't defaulted into an annual commitment.
+    const monthlyBtn = screen.getByRole("button", { name: /monthly/i });
+    expect(monthlyBtn).toBeInTheDocument();
+    expect(monthlyBtn.className).toMatch(/active/);
     const annualBtn = screen.getByRole("button", { name: /annual/i });
-    expect(annualBtn).toBeInTheDocument();
-    expect(annualBtn.className).toMatch(/on|active/);
+    expect(annualBtn.className).not.toMatch(/active/);
+  });
+
+  it("switching to Annual shows the struck-through original total and a Save line", async () => {
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    const annualBtn = screen.getByRole("button", { name: /annual/i });
+    await act(async () => { annualBtn.click(); });
+    expect(annualBtn.className).toMatch(/active/);
+    expect(screen.getAllByText(/^Save /).length).toBeGreaterThan(0);
+    expect(document.querySelector(".price-original")).not.toBeNull();
   });
 });
 
