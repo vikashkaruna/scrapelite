@@ -11,7 +11,7 @@ import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
 const PLAN_COLORS = {
-  free: "#94a3b8", select: "#60a5fa", pro: "#818cf8",
+  free: "#94a3b8", go: "#38bdf8", select: "#60a5fa", pro: "#818cf8",
   business: "#a78bfa", agency: "#f472b6",
 };
 const SOURCE_ICONS = {
@@ -217,6 +217,7 @@ function InviteModal({ onClose, onSave, saving }) {
             <label>Starting plan</label>
             <select value={form.planId} onChange={(e) => setForm((f) => ({ ...f, planId: e.target.value }))}>
               <option value="free">Free</option>
+              <option value="go">Go</option>
               <option value="select">Select</option>
               <option value="pro">Pro</option>
               <option value="business">Business</option>
@@ -414,6 +415,7 @@ export default function AdminUsers() {
         <select className="admin-plan-filter" value={planFilter} onChange={(e) => setPlan(e.target.value)}>
           <option value="all">All plans</option>
           <option value="free">Free</option>
+          <option value="go">Go</option>
           <option value="select">Select</option>
           <option value="pro">Pro</option>
           <option value="business">Business</option>

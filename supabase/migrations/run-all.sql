@@ -792,11 +792,12 @@ revoke insert, update, delete on public.entitlements from authenticated, anon;
 create or replace function public.plan_rank(p_plan text)
 returns integer language sql immutable as $$
   select case lower(coalesce(p_plan, 'free'))
-    when 'agency'    then 5
-    when 'business'  then 4
-    when 'developer' then 3
-    when 'pro'       then 3
-    when 'select'    then 2
+    when 'agency'    then 6
+    when 'business'  then 5
+    when 'developer' then 4
+    when 'pro'       then 4
+    when 'select'    then 3
+    when 'go'        then 2
     when 'free'      then 1
     else 0                              -- unknown plan ranks LOWEST, never wins a merge
   end;

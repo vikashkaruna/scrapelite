@@ -128,7 +128,7 @@ export default function ScheduleEditor({ draft, existing, onSaved, onCancel }) {
       onSaved?.(schedule);
     } catch (err) {
       console.error("[DatIQ] Schedule save failed:", err);
-      showToast("Couldn't save the schedule. Please try again.");
+      showToast(err?.message || "Couldn't save the schedule. Please try again.");
     }
   };
 

@@ -42,10 +42,10 @@ describe("canExtract (U-18)", () => {
     expect(canExtract("free").remaining).toBe(0);
   });
 
-  it("Select plan: starts with 100 remaining", () => {
-    expect(canExtract("select").remaining).toBe(100);
+  it("Select plan: starts with 500 remaining", () => {
+    expect(canExtract("select").remaining).toBe(500);
     incrementExtractions(50);
-    expect(canExtract("select").remaining).toBe(50);
+    expect(canExtract("select").remaining).toBe(450);
   });
 
   it("bonusExtractions extends the limit (top-up bundle)", () => {
@@ -136,10 +136,10 @@ describe("canBatch (U-23)", () => {
     expect(r.reason).toMatch(/batch limit|Upgrade/i);
   });
 
-  it("Select plan: 10 URLs with bonus=50 allows (10 + 50 = 60)", () => {
+  it("Select plan: 10 URLs with bonus=50 allows (50 + 50 - 10 = 90 remaining)", () => {
     const r = canBatch("select", 10, 50);
     expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(50);
+    expect(r.remaining).toBe(90);
   });
 
   it("Agency plan: 500 URLs allows (limit 500)", () => {
@@ -170,11 +170,11 @@ describe("canExtractBatch (U-24)", () => {
     expect(r.remaining).toBe(4);
   });
 
-  it("Select plan: enough quota allows (100 - 50 = 50 remaining)", () => {
+  it("Select plan: enough quota allows (500 - 50 used = 450 remaining)", () => {
     incrementExtractions(50);
     const r = canExtractBatch("select", 50, 0);
     expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(50);
+    expect(r.remaining).toBe(450);
   });
 });
 

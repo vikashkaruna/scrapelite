@@ -2218,6 +2218,13 @@
 .plan-price { display: flex; align-items: baseline; gap: 3px; }
 .price-amount { font-size: 2.2em; font-weight: 850; letter-spacing: -.04em; }
 .price-period { font-size: .88em; color: var(--text-3); font-weight: 550; }
+.plan-price-annual { display: flex; flex-direction: column; gap: 3px; }
+.plan-price-annual-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.price-original {
+  font-size: .9em; font-weight: 600; color: var(--text-3);
+  text-decoration: line-through; text-decoration-thickness: 1.5px;
+}
+.price-save { font-size: .84em; font-weight: 700; color: var(--success, #22c55e); }
 .plan-features { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
 .pf-item {
   display: flex; align-items: center; gap: 9px;
@@ -3497,19 +3504,13 @@
   background: var(--accent); color: var(--accent-contrast);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
-.billing-save-badge {
-  display: inline-block; font-size: .7em; font-weight: 700;
-  background: #15803d; color: #fff; padding: 2px 7px;
-  border-radius: var(--r-pill); letter-spacing: .03em; line-height: 1.4;
-}
-.billing-toggle-btn.active .billing-save-badge {
-  /* Dark overlay keeps white text at WCAG AA on the active accent bg
-     (rgba(255,255,255,.22) would push contrast under 4.5:1). */
-  background: rgba(0,0,0,.30); color: #fff;
-}
 .pricing-hero-controls {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
   margin-top: 20px;
+}
+.billing-savings-note {
+  text-align: center; margin: 10px 0 0; font-size: .88em; font-weight: 700;
+  color: var(--success, #22c55e);
 }
 .pricing-hero-actions {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;

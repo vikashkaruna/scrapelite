@@ -89,7 +89,8 @@ describe("plan ranking", () => {
     expect(planRank("agency")).toBeGreaterThan(planRank("business"));
     expect(planRank("business")).toBeGreaterThan(planRank("pro"));
     expect(planRank("pro")).toBeGreaterThan(planRank("select"));
-    expect(planRank("select")).toBeGreaterThan(planRank("free"));
+    expect(planRank("select")).toBeGreaterThan(planRank("go"));
+    expect(planRank("go")).toBeGreaterThan(planRank("free"));
   });
 
   it("ranks an unknown plan lowest so it never wins a merge", () => {
@@ -109,8 +110,8 @@ describe("describePlanChange", () => {
   it("lists concrete losses on a downgrade", () => {
     const d = describePlanChange(PLAN_BY_ID.business, PLAN_BY_ID.select);
     expect(d.direction).toBe("downgrade");
-    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from 1,000 to 100/);
-    expect(d.losses.join(" | ")).toMatch(/URLs per batch drops from 200 to 10/);
+    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from 10,000 to 500/);
+    expect(d.losses.join(" | ")).toMatch(/URLs per batch drops from 250 to 50/);
     expect(d.losses.join(" | ")).toMatch(/JSON export/);
     expect(d.losses.join(" | ")).toMatch(/API access/);
   });
@@ -130,7 +131,7 @@ describe("describePlanChange", () => {
 
   it("describes a drop from unlimited in words rather than as a number", () => {
     const d = describePlanChange(PLAN_BY_ID.agency, PLAN_BY_ID.pro);
-    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from unlimited to 250/);
+    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from unlimited to 1,000/);
   });
 
   it("reports no change between a plan and itself", () => {

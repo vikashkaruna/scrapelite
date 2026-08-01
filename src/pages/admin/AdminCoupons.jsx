@@ -147,6 +147,7 @@ export default function AdminCoupons() {
                 <select value={form.planId} onChange={(e) => handleField("planId", e.target.value)}>
                   <option value="">All plans</option>
                   <option value="free">Free</option>
+                  <option value="go">Go</option>
                   <option value="select">Select</option>
                   <option value="pro">Pro</option>
                   <option value="business">Business</option>
