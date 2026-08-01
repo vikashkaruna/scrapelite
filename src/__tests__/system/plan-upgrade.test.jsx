@@ -50,6 +50,15 @@ vi.mock("../../lib/globalSettingsService.js", () => ({
   }),
 }));
 
+// Mirrors the private monthKey() format in usageService.js ("YYYY-MM") — the
+// seeded row must match whatever the real wall clock resolves to when the
+// test runs, not a fixed month string (regression: a hardcoded "2026-07" key
+// silently stopped matching the moment the calendar rolled into August).
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -57,9 +66,9 @@ beforeEach(() => {
   authMocks.onAuthStateChange.mockReturnValue(() => {});
   // Seed the monthly usage counter BEFORE render so the BillingProvider's
   // useState initializer reads the seeded value.
-  const raw = { "2026-07": { month: "2026-07", extractions: 7, enrichments: {}, batchRuns: 0, contentGenerations: 0 } };
+  const mk = currentMonthKey();
+  const raw = { [mk]: { month: mk, extractions: 7, enrichments: {}, batchRuns: 0, contentGenerations: 0 } };
   localStorage.setItem("datiq.usage", JSON.stringify(raw));
-  // Also fix the month key in case the test runs in a different month.
   window.history.replaceState(null, "", window.location.pathname);
 });
 

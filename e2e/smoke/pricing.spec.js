@@ -1,7 +1,7 @@
 // e2e/smoke/pricing.spec.js
-// K-05 — Pricing renders 7 plan cards (Free / Select / Pro / Business / Agency
-// / Developer / Enterprise), annual is the default toggle, Enterprise has
-// the dashed-border card, Developer has a "Coming soon" badge.
+// K-05 — Pricing renders 8 plan cards (Free / Go / Select / Pro / Business /
+// Agency / Developer / Enterprise), monthly is the default toggle, Enterprise
+// has the dashed-border card, Developer has a "Coming soon" badge.
 
 import { expect, test } from "playwright/test";
 import { installOfflineMocks } from "../support.js";
@@ -10,20 +10,20 @@ test.beforeEach(async ({ page }) => {
   await installOfflineMocks(page);
 });
 
-test("pricing renders all 7 plan cards", async ({ page }) => {
+test("pricing renders all 8 plan cards", async ({ page }) => {
   await page.goto("/pricing");
   const cards = page.locator(".plan-card");
-  await expect(cards).toHaveCount(7);
-  for (const name of ["Free", "Select", "Pro", "Business", "Agency", "Developer", "Enterprise"]) {
+  await expect(cards).toHaveCount(8);
+  for (const name of ["Free", "Go", "Select", "Pro", "Business", "Agency", "Developer", "Enterprise"]) {
     await expect(page.getByText(name).first()).toBeVisible();
   }
 });
 
-test("Annual is the default billing toggle", async ({ page }) => {
+test("Monthly is the default billing toggle", async ({ page }) => {
   await page.goto("/pricing");
   // The billing toggle has the .active class on whichever is selected.
   const activeBtn = page.locator(".billing-toggle-btn.active");
-  await expect(activeBtn).toContainText(/Annual/i);
+  await expect(activeBtn).toContainText(/Monthly/i);
 });
 
 test("Enterprise plan card has a dashed border (.enterprise-card)", async ({ page }) => {
