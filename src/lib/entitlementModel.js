@@ -274,12 +274,14 @@ export function can(ent, capability, ctx = {}) {
       if (urlCount > effective) {
         const hint =
           planId === "free"
-            ? "Upgrade to Select (10 URLs), Pro (25 URLs), Business (200 URLs), or Agency (500 URLs)."
-            : planId === "select"
-              ? "Upgrade to Pro (25 URLs), Business (200 URLs), or Agency (500 URLs) for more."
-              : planId === "pro"
-                ? "Upgrade to Business (200 URLs) or Agency (500 URLs) for larger batches."
-                : `Your plan supports up to ${effective} URLs per batch. Reduce your list or upgrade.`;
+            ? "Upgrade to Go (20 URLs), Select (50 URLs), Pro (100 URLs), Business (250 URLs), or Agency (500 URLs)."
+            : planId === "go"
+              ? "Upgrade to Select (50 URLs), Pro (100 URLs), Business (250 URLs), or Agency (500 URLs) for more."
+              : planId === "select"
+                ? "Upgrade to Pro (100 URLs), Business (250 URLs), or Agency (500 URLs) for more."
+                : planId === "pro"
+                  ? "Upgrade to Business (250 URLs) or Agency (500 URLs) for larger batches."
+                  : `Your plan supports up to ${effective} URLs per batch. Reduce your list or upgrade.`;
         return deny(
           "PLAN_LIMIT",
           `You've reached your batch limit of ${effective} URL${effective === 1 ? "" : "s"}. ${hint}`,

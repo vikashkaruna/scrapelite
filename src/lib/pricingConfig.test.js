@@ -75,15 +75,27 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
     expect(Array.isArray(ENTERPRISE_PLAN.features)).toBe(true);
   });
 
-  it("PLANS contains the 6 priced plans (Free / Select / Pro / Business / Agency / Developer); Enterprise is rendered separately via ENTERPRISE_PLAN", () => {
-    // Enterprise is its own object (ENTERPRISE_PLAN) — the "7th plan"
-    // in the spec is Enterprise + 6 PLANS = 7 total, but Enterprise is
+  it("PLANS contains the 7 priced plans (Free / Go / Select / Pro / Business / Agency / Developer); Enterprise is rendered separately via ENTERPRISE_PLAN", () => {
+    // Enterprise is its own object (ENTERPRISE_PLAN) — the "8th plan"
+    // in the spec is Enterprise + 7 PLANS = 8 total, but Enterprise is
     // excluded from PLANS because it has no published price.
-    expect(PLANS.length).toBe(6);
+    expect(PLANS.length).toBe(7);
     const ids = PLANS.map((p) => p.id);
     expect(ids).toEqual(
-      expect.arrayContaining(["free", "select", "pro", "business", "agency", "developer"]),
+      expect.arrayContaining(["free", "go", "select", "pro", "business", "agency", "developer"]),
     );
+  });
+
+  it("Go sits strictly below Select in extractions and batch size (U-12 GO tier)", () => {
+    const go = PLAN_BY_ID.go;
+    const select = PLAN_BY_ID.select;
+    expect(go.limits.extractions).toBeLessThan(select.limits.extractions);
+    expect(go.limits.batch_max_urls).toBeLessThan(select.limits.batch_max_urls);
+    // Everything else about Go mirrors Select's original feature set.
+    expect(go.limits.exports).toEqual(select.limits.exports);
+    expect(go.limits.email_export).toBe(select.limits.email_export);
+    expect(go.limits.scheduled_monitoring).toBe(select.limits.scheduled_monitoring);
+    expect(go.limits.api_access).toBe(select.limits.api_access);
   });
 });
 

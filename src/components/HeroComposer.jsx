@@ -176,6 +176,9 @@ export default function HeroComposer({
         await saveSchedule(schedule);
         showToast(`Scheduled · ${presetByKey(presetKey).label}`, "calendar-clock");
         navigate("/schedules", { state: { highlightId: schedule.id } });
+      } catch (err) {
+        console.error("[DatIQ] Schedule save failed:", err);
+        showToast(err?.message || "Couldn't save the schedule. Please try again.");
       } finally {
         setBusy(false);
       }

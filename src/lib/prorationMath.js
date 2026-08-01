@@ -16,7 +16,7 @@
 // reduction discovered afterwards would require a credit note instead.
 
 /** Plan ranking, for deciding upgrade vs downgrade. Mirrors plan_rank() in SQL. */
-const RANK = { agency: 5, business: 4, developer: 3, pro: 3, select: 2, free: 1 };
+const RANK = { agency: 6, business: 5, developer: 4, pro: 4, select: 3, go: 2, free: 1 };
 
 export function planRank(planId) {
   return RANK[String(planId || "free").toLowerCase()] ?? 0;
