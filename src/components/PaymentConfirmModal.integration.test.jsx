@@ -27,27 +27,43 @@ function renderModal(overrides = {}) {
   return render(<PaymentConfirmModal {...baseProps} {...overrides} />);
 }
 
-describe("I-19 — PaymentConfirmModal: INR price breakdown", () => {
-  it("INR currency: base + GST 18% + total are all rendered", () => {
+describe("I-19 — PaymentConfirmModal: price breakdown", () => {
+  it("INR currency: subtotal + GST 18% + total charged are all rendered", () => {
     renderModal();
     expect(screen.getByText(/subtotal/i)).toBeInTheDocument();
     expect(screen.getByText(/GST \(18%\)/i)).toBeInTheDocument();
     expect(screen.getByText(/total charged/i)).toBeInTheDocument();
   });
 
-  it("USD currency: shows the total but NO GST line", () => {
+  it("USD currency: subtotal + total charged are rendered, NO GST line", () => {
     renderModal({ currency: "USD" });
-    // The "Total charged" row in USD only shows when there's a discount applied.
-    // We use a seeded coupon (LAUNCH20 = 20% off) to force the row.
-    render(
-      <PaymentConfirmModal
-        {...baseProps}
-        currency="USD"
-        appliedCouponCode="LAUNCH20"
-      />,
-    );
+    expect(screen.getByText(/subtotal/i)).toBeInTheDocument();
     expect(screen.getByText(/total charged/i)).toBeInTheDocument();
     expect(screen.queryByText(/GST \(18%\)/i)).toBeNull();
+  });
+
+  it("always renders the in-modal Monthly/Annual billing-period toggle", () => {
+    renderModal({ currency: "USD" });
+    expect(screen.getByRole("group", { name: /billing period/i })).toBeInTheDocument();
+    // Both buttons should be present.
+    const annualBtn = screen.getByRole("button", { name: /^Annual$/i });
+    const monthlyBtn = screen.getByRole("button", { name: /^Monthly$/i });
+    expect(annualBtn).toBeInTheDocument();
+    expect(monthlyBtn).toBeInTheDocument();
+  });
+
+  it("clicking the in-modal Annual/Monthly toggle re-computes the price live", () => {
+    renderModal({ currency: "USD", billingPeriod: "monthly" });
+    // The toggle should be reflected in the breakdown row label. Look for the
+    // "Pro — Monthly" pattern (not the bare "Monthly" button text).
+    expect(screen.getByText(/Pro — Monthly/)).toBeInTheDocument();
+    // Switch to annual and the row label should change.
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /^Annual$/i }));
+    });
+    expect(screen.getByText(/Pro — Annual \(12 months\)/)).toBeInTheDocument();
+    // And the per-month note should now be present.
+    expect(screen.getByText(/\/mo\b/)).toBeInTheDocument();
   });
 });
 

@@ -108,10 +108,17 @@ describe("convertPrice (U-10)", () => {
 });
 
 describe("formatPrice (U-11)", () => {
-  it("USD renders $X for whole numbers; $X.XX for fractional", () => {
+  it("USD renders $X for whole numbers; $X.X for one-decimal fractional", () => {
+    // Whole dollars stay bare: $19 not $19.0
     expect(formatPrice(19, "USD")).toBe("$19");
-    expect(formatPrice(19.5, "USD")).toBe("$19.50");
     expect(formatPrice(0, "USD")).toBe("$0");
+    // Single-decimal fractional: $19.5 not $19.50
+    expect(formatPrice(19.5, "USD")).toBe("$19.5");
+    expect(formatPrice(4.8, "USD")).toBe("$4.8");
+    // Rounds at 1 decimal: 19.55 → 19.6
+    expect(formatPrice(19.55, "USD")).toBe("$19.6");
+    // Two-decimal value gets truncated to one (no rounding up unless needed)
+    expect(formatPrice(19.04, "USD")).toBe("$19");
   });
 
   it("INR renders ₹X,XXX (rounded; en-IN thousands separator)", () => {

@@ -69,7 +69,8 @@ function resolvePrice(plan, billingPeriod, currency, rates) {
 // Average "annual vs monthly" discount across paid, purchasable plans, for the
 // given currency — drives the "Save X% when you pay annually" banner. Computed
 // from the live (possibly admin-overridden) plan list rather than hardcoded, so
-// it can never drift from what the cards actually charge.
+// it can never drift from what the cards actually charge. Rounded to 1 decimal
+// place so prices like "16.7%" don't lose the meaningful sub-percent signal.
 function annualSavingsPercent(plans, currency) {
   const fracs = plans
     .filter((p) => p.price_usd > 0 && !p.comingSoon)
@@ -81,7 +82,7 @@ function annualSavingsPercent(plans, currency) {
     })
     .filter((f) => f != null && f > 0);
   if (!fracs.length) return 20;
-  return Math.round((fracs.reduce((a, b) => a + b, 0) / fracs.length) * 100);
+  return Math.round((fracs.reduce((a, b) => a + b, 0) / fracs.length) * 1000) / 10;
 }
 
 function BillingToggle({ value, onChange }) {
@@ -115,20 +116,30 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
   const isLoading = loading === plan.id;
   const isSoon    = plan.comingSoon;
   const isAnnual  = billingPeriod === "annual";
+  const isBestValue = plan.badge === "Best Value";
 
   // Per-month rate for the selected period (used for the button/monthly view),
   // and the regular (undiscounted-by-billing-period) monthly rate — the "list"
   // rate the strikethrough compares against when annual is selected.
   const periodRate  = applyGlobalDiscount(resolvePrice(plan, billingPeriod, currency, rates));
   const monthlyRate = applyGlobalDiscount(resolvePrice(plan, "monthly", currency, rates));
-  const chargedTotal  = isAnnual ? Math.round(periodRate * 12) : null;
-  const originalTotal = isAnnual ? Math.round(monthlyRate * 12) : null;
-  const savings = isAnnual ? Math.max(0, originalTotal - chargedTotal) : 0;
+  // Annual view: derive the charged annual total from the (already discounted)
+  // annual per-month rate, and the "list" annual total from the un-discounted
+  // monthly rate × 12. Both are the per-year numbers, displayed alongside their
+  // /yr (per-year) and /mo (per-month) counterparts.
+  const chargedAnnualTotal  = isAnnual ? Math.round(periodRate * 12) : null;
+  const originalAnnualTotal = isAnnual ? Math.round(monthlyRate * 12) : null;
+  const annualSavings       = isAnnual ? Math.max(0, originalAnnualTotal - chargedAnnualTotal) : 0;
+  // Savings % vs. paying the monthly rate for 12 months (the "list" annual total).
+  const annualSavingsPct = isAnnual && originalAnnualTotal > 0
+    ? Math.round((annualSavings / originalAnnualTotal) * 1000) / 10
+    : 0;
 
   return (
     <div className={
       "plan-card" +
       (plan.highlight ? " plan-highlight" : "") +
+      (isBestValue ? " plan-best-value" : "") +
       (isSoon ? " plan-coming-soon" : "") +
       (isCurrent ? " plan-current" : "") +
       (isLoading ? " plan-selecting" : "")
@@ -149,15 +160,24 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
           <><span className="price-amount">Free</span><span className="price-period"> forever</span></>
         ) : isAnnual ? (
           <div className="plan-price-annual">
-            <div className="plan-price-annual-row">
-              <span className="price-amount">{formatPrice(chargedTotal, currency)}</span>
+            <div className="plan-price-annual-row plan-price-annual-row--top">
+              <span className="price-amount">{formatPrice(chargedAnnualTotal, currency)}</span>
               <span className="price-period"> / yr</span>
-              {savings > 0 && (
-                <span className="price-original">{formatPrice(originalTotal, currency)}</span>
+              {annualSavings > 0 && (
+                <span className="price-original">{formatPrice(originalAnnualTotal, currency)}</span>
               )}
             </div>
-            {savings > 0 && (
-              <div className="price-save">Save {formatPrice(savings, currency)}</div>
+            <div className="plan-price-annual-row plan-price-annual-row--monthly">
+              <span className="price-amount-sub">{formatPrice(periodRate, currency)}</span>
+              <span className="price-period-sub"> / mo</span>
+              {annualSavings > 0 && (
+                <span className="price-original price-original--monthly">{formatPrice(monthlyRate, currency)}</span>
+              )}
+            </div>
+            {annualSavings > 0 && (
+              <div className="price-save">
+                Save {formatPrice(annualSavings, currency)} ({annualSavingsPct}%)
+              </div>
             )}
           </div>
         ) : (

@@ -2175,6 +2175,29 @@
   box-shadow: 0 0 0 1px var(--accent), var(--shadow-accent) !important;
 }
 
+/* "Best Value" plans (e.g. Agency) get an amber/emerald accent border so the
+   reader can see at a glance that this is the recommended upgrade tier.
+   Distinct from `.plan-highlight` (indigo, used for the most-popular card)
+   so a tier can be the popular pick without being the best-value pick. */
+.plan-best-value {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 1px #f59e0b, 0 6px 22px -8px rgba(245, 158, 11, .45) !important;
+  background: color-mix(in srgb, #fef3c7 22%, var(--surface)) !important;
+}
+.plan-best-value .plan-badge {
+  background: #f59e0b !important;
+  color: #fff !important;
+  border-color: #f59e0b !important;
+}
+[data-theme="dark"] .plan-best-value {
+  border-color: #f59e0b !important;
+  background: color-mix(in srgb, #f59e0b 14%, var(--surface)) !important;
+}
+[data-theme="dark"] .plan-best-value .plan-badge {
+  background: #f59e0b !important;
+  color: #1f1300 !important;
+}
+
 /* Current plan state */
 .plan-card.plan-current {
   border-color: #22c55e !important;
@@ -2218,13 +2241,25 @@
 .plan-price { display: flex; align-items: baseline; gap: 3px; }
 .price-amount { font-size: 2.2em; font-weight: 850; letter-spacing: -.04em; }
 .price-period { font-size: .88em; color: var(--text-3); font-weight: 550; }
-.plan-price-annual { display: flex; flex-direction: column; gap: 3px; }
+.plan-price-annual { display: flex; flex-direction: column; gap: 4px; }
 .plan-price-annual-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* Top row: /yr — the prominent "you pay" annual figure. Slightly smaller than
+   the monthly view's 2.2em so the per-month row beneath it also fits. */
+.plan-price-annual-row--top .price-amount { font-size: 1.85em; }
+.plan-price-annual-row--top .price-period { font-size: .82em; }
+/* Bottom row: /mo — secondary, with a smaller sub-amount that mirrors the
+   top-row's structure so the strikethrough on the right lines up visually. */
+.price-amount-sub { font-size: 1.05em; font-weight: 700; letter-spacing: -.02em; color: var(--text); }
+.price-period-sub { font-size: .8em; color: var(--text-3); font-weight: 550; }
 .price-original {
   font-size: .9em; font-weight: 600; color: var(--text-3);
   text-decoration: line-through; text-decoration-thickness: 1.5px;
 }
-.price-save { font-size: .84em; font-weight: 700; color: var(--success, #22c55e); }
+.price-original--monthly { font-size: .85em; }
+.price-save {
+  font-size: .82em; font-weight: 700; color: var(--success, #22c55e);
+  margin-top: 2px; display: inline-flex; align-items: center; gap: 4px;
+}
 .plan-features { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
 .pf-item {
   display: flex; align-items: center; gap: 9px;
@@ -4520,6 +4555,18 @@
 .pcm-discount-row { color: #059669; font-weight: 600; }
 .pcm-discount-row span:first-child { display: inline-flex; align-items: center; gap: 5px; }
 
+/* Billing-period toggle (Monthly/Annual) inside the modal — reuses the
+   shared .billing-toggle-wrap / .billing-toggle-btn classes, just sized down
+   so it doesn't crowd the rest of the dialog. */
+.pcm-period-toggle {
+  margin-bottom: 12px;
+  padding: 2px;
+}
+.pcm-period-toggle .billing-toggle-btn {
+  padding: 5px 14px;
+  font-size: .82em;
+}
+
 .pcm-coupon { margin-bottom: 16px; }
 .pcm-coupon-form { display: flex; gap: 8px; }
 .pcm-coupon-input {
@@ -6810,6 +6857,19 @@
 .cl-ph-banner > div { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.3; }
 .cl-ph-banner strong { font-weight: 700; }
 .cl-ph-banner span { color: var(--text-2); font-size: .8rem; }
+.cl-update-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: var(--r-md);
+  padding: 12px 16px; margin-top: 16px;
+  font-size: .9rem; line-height: 1.5; color: var(--text-2);
+  text-align: left;
+}
+.cl-update-banner > svg { color: var(--accent); margin-top: 2px; flex-shrink: 0; }
+.cl-update-banner strong { color: var(--text); font-weight: 700; }
+.cl-update-banner > div { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.cl-update-banner > div > strong { font-size: .78em; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
 .cl-ph-link   { color: var(--accent); text-decoration: none; font-weight: 600; }
 .cl-ph-link:hover { text-decoration: underline; }
 .cl-toc       { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 24px; }
@@ -7500,3 +7560,74 @@
   .ops-job-detail { padding-left: 18px; }
   .ops-overall-counts { gap: 9px; }
 }
+
+/* ── White-label PDF template uploader (Account page) ────────────── */
+.wlp-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.wlp-block--locked {
+  background: var(--surface-2);
+}
+.wlp-locked-row {
+  display: flex; align-items: flex-start; gap: 12px; color: var(--text-2);
+}
+.wlp-locked-row strong { display: block; color: var(--text); margin-bottom: 3px; }
+.wlp-locked-row p { margin: 0; font-size: .88em; color: var(--text-3); }
+.wlp-head {
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.wlp-head > svg { color: var(--accent); margin-top: 2px; flex-shrink: 0; }
+.wlp-title { margin: 0 0 2px; font-size: 1.05em; font-weight: 700; letter-spacing: -.01em; }
+.wlp-sub { margin: 0; font-size: .86em; color: var(--text-3); line-height: 1.5; }
+.wlp-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.wlp-upload-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: var(--r-md);
+  background: var(--accent); color: var(--accent-contrast);
+  font-size: .88em; font-weight: 700; cursor: pointer;
+  transition: filter .15s, transform .15s;
+}
+.wlp-upload-btn:hover { filter: brightness(1.05); }
+.wlp-upload-btn.is-busy { opacity: .7; cursor: progress; }
+.wlp-clear-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text-2);
+  border: 1px solid var(--border);
+  font-size: .88em; font-weight: 600; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.wlp-clear-btn:hover { color: #b91c1c; border-color: #b91c1c; }
+.wlp-msg {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .82em; padding: 6px 10px; border-radius: var(--r-sm);
+}
+.wlp-msg--err { background: rgba(220, 38, 38, .08); color: #b91c1c; }
+.wlp-msg--ok  { background: rgba(5, 150, 105, .08); color: #047857; }
+.wlp-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.wlp-current-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wlp-current-info > svg { color: var(--accent); flex-shrink: 0; }
+.wlp-current-name {
+  font-size: .9em; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wlp-current-meta { font-size: .78em; color: var(--text-3); }
+.wlp-preview-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .8em; font-weight: 600; color: var(--accent);
+  text-decoration: none; flex-shrink: 0;
+}
+.wlp-preview-link:hover { text-decoration: underline; }
+.wlp-help {
+  border-top: 1px dashed var(--border); padding-top: 10px;
+  font-size: .82em; color: var(--text-3);
+}
+.wlp-help summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
+.wlp-help ul { margin: 8px 0 0; padding-left: 18px; }
+.wlp-help li { margin: 4px 0; line-height: 1.5; }

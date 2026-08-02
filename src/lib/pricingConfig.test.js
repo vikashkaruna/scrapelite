@@ -97,6 +97,49 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
     expect(go.limits.scheduled_monitoring).toBe(select.limits.scheduled_monitoring);
     expect(go.limits.api_access).toBe(select.limits.api_access);
   });
+
+  it("Developer plan is marked 'coming soon' with a 'Coming H3 2026' badge", () => {
+    const dev = PLAN_BY_ID.developer;
+    expect(dev.comingSoon).toBe(true);
+    expect(dev.badge).toBe("Coming H3 2026");
+  });
+
+  it("Agency is the only 'Best Value' plan (the trigger for the amber border highlight)", () => {
+    const bestValues = PLANS.filter((p) => p.badge === "Best Value");
+    expect(bestValues.map((p) => p.id)).toEqual(["agency"]);
+  });
+
+  // 2026-08-02: Business now ships with white-label PDF and priority support
+  // (previously Agency-only). This regression test pins the new parity so a
+  // future refactor that quietly flips either flag back to false will fail
+  // loudly in CI rather than surprise billing-support.
+  it("Business ships with both white_label_pdf and priority_support (2026-08-02 parity)", () => {
+    const biz = PLAN_BY_ID.business;
+    expect(biz.limits.white_label_pdf, "Business must ship with white-label PDF").toBe(true);
+    expect(biz.limits.priority_support, "Business must ship with priority support").toBe(true);
+  });
+
+  it("Agency still has both flags (parity with Business is additive, not subtractive)", () => {
+    const agy = PLAN_BY_ID.agency;
+    expect(agy.limits.white_label_pdf).toBe(true);
+    expect(agy.limits.priority_support).toBe(true);
+  });
+
+  it("Free / Go / Select / Pro still do NOT ship with either flag", () => {
+    for (const id of ["free", "go", "select", "pro"]) {
+      expect(PLAN_BY_ID[id].limits.white_label_pdf, `${id} should not have white-label PDF`).toBe(false);
+      expect(PLAN_BY_ID[id].limits.priority_support, `${id} should not have priority support`).toBe(false);
+    }
+  });
+});
+
+describe("workspace-addon (U-12: Extra Workspace inherits plan features)", () => {
+  it("workspace-addon declares feature-parity flags so the entitlement model can honour them", () => {
+    const ws = TOPUP_BUNDLES.find((b) => b.id === "workspace-addon");
+    expect(ws).toBeDefined();
+    expect(ws.inheritsParentPlanFeatures).toBe(true);
+    expect(ws.cappedByParentTeamSeats).toBe(true);
+  });
 });
 
 describe("TOPUP_BUNDLES (U-14)", () => {

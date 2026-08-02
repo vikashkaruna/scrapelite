@@ -34,11 +34,12 @@ test("CLAIM: Select plan starts at $14.40/month (monthly billing)", async ({ pag
   const monthlyBtn = page.getByRole("button", { name: /Monthly billing/i });
   if (await monthlyBtn.isVisible()) await monthlyBtn.click();
   await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
-  // Look for the $14.40 price in the Select card specifically (not just any
-  // "$14" substring elsewhere on the page — the topup bundles have their own
-  // unrelated prices, so scope to the plan card).
+  // Look for the $14.4 price in the Select card specifically. The page
+  // formats fractional USD to 1 decimal (so $14.40 displays as "$14.4" —
+  // same number, less visual noise). Scope to the plan card so we don't
+  // pick up the topup bundle prices.
   const selectCard = page.locator(".plan-card").filter({ hasText: "Select" });
-  await expect(selectCard.getByText("$14.40")).toBeVisible();
+  await expect(selectCard.getByText("$14.4")).toBeVisible();
 });
 
 // ── Batch claims ──────────────────────────────────────────────────────────────

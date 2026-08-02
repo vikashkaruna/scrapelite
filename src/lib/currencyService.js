@@ -60,7 +60,10 @@ export function formatPrice(amount, currency) {
   const meta = { USD: "$", INR: "₹" };
   const sym = meta[currency] ?? (currency + " ");
   if (currency === "INR") return sym + Math.round(amount).toLocaleString("en-IN");
-  return sym + (amount % 1 === 0 ? amount : amount.toFixed(2));
+  // Round to 1 decimal place: $4.8 instead of $4.80, $106.8 instead of $106.80.
+  // Whole dollars are shown without a trailing .0 (e.g. $15, not $15.0).
+  const rounded = Math.round(amount * 10) / 10;
+  return sym + (rounded % 1 === 0 ? rounded : rounded.toFixed(1));
 }
 
 export function getDefaultRates() { return DEFAULT_RATES; }
