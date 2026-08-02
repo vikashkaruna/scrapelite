@@ -12,6 +12,7 @@ import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
+import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
 import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl, recordPublicShare, recordPublicUnshare } from "../lib/shareService.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
@@ -321,7 +322,18 @@ export default function Preview() {
     if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher."); return; }
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
-      extractionsToPdf([data]);
+      // White-label PDF: Business & Agency users can upload a branded template
+      // in /account. If one is set, paint it as the background of every page
+      // of the generated PDF. Falls back to a plain PDF if the template
+      // read fails for any reason — we never want a bad template to break a
+      // routine export.
+      let template = null;
+      try {
+        const { readTemplate } = await import("../lib/whiteLabelTemplate.js");
+        const tplRes = await readTemplate({ userId: resolveTemplateUserId() });
+        if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
+      } catch { /* swallow — plain PDF is fine */ }
+      extractionsToPdf([data], { template });
       showToast("Exported to PDF", "file");
     } catch (err) {
       if (/dynamically imported/i.test(err?.message || "")) {

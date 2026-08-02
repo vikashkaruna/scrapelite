@@ -19,9 +19,14 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - Free: 10 extractions/month + 25-trial credit, no credit card
 - Select: $19/month (or ₹999/mo annual) — 100 extractions + PDF export
 - Pro: $29/month (or ₹1,499/mo annual) — 250 extractions + scheduled monitoring + Google Sheets
-- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce
-- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF
-- Developer: $49/month (coming H2 2026) — 10K row credits, API-first
+- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce + white-label PDF + priority support
+- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF + priority support
+- Developer: $49/month (coming H3 2026) — 10K row credits, API-first
+
+## Plan-level features
+- White-label PDF (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background.
+- Priority support (Business + Agency): contact-form submissions are routed through a faster SLA.
+- Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
 - Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
 - 20% discount on all annual plans
 

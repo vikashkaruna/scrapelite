@@ -1,6 +1,13 @@
 // pdfExport.js — render one or more saved extractions to a downloadable PDF.
 // Includes everything CSV does (meta, AI summary, headings, links, domain map,
 // and every Quick-Enrichment capability), laid out as a readable report.
+//
+// White-label support (Business + Agency, 2026-08-02):
+// If a template PDF is supplied via the optional `template` arg, we paint its
+// first page as the background of every generated page so the user's brand
+// shows through. Body text is rendered ON TOP at full opacity — the template
+// becomes a watermark, not a cover sheet. New pages (added mid-document by
+// `addPage()`) automatically pick up the same background.
 
 import { jsPDF } from "jspdf";
 import { hostOf, pathOf, fmtDate, flattenJson } from "./utils.js";
@@ -8,7 +15,43 @@ import { hostOf, pathOf, fmtDate, flattenJson } from "./utils.js";
 const MARGIN = 48; // pt
 const LINE = 14; // base line height
 
-export function extractionsToPdf(items) {
+// Cache the template background so we don't re-encode the bytes once per page.
+// Keyed by the bytes' identity hash so two distinct templates don't collide.
+const _bgCache = new Map();
+
+/** Paint `templateBytes` (a Uint8Array of the user's PDF template) as the
+ *  background of the current page. Called from addPage() so every new page
+ *  gets the same treatment. Falls back to a no-op on any jsPDF error so a
+ *  corrupt template never breaks the entire export. */
+function paintTemplateBackground(doc, templateBytes) {
+  if (!templateBytes || !templateBytes.length) return;
+  try {
+    const id = templateBytes.length + "_" + templateBytes[0] + "_" + templateBytes[templateBytes.length - 1];
+    let bg = _bgCache.get(id);
+    if (!bg) {
+      // jsPDF's addImage accepts a base64 data URL or a binary string. We
+      // convert the Uint8Array to a binary string for the cheapest path.
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < templateBytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, templateBytes.subarray(i, i + chunk));
+      }
+      bg = "data:application/pdf;base64," + btoa(bin);
+      _bgCache.set(id, bg);
+    }
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    // PDF templates render in their own coordinate system; using the page
+    // dimensions of the *target* doc would distort. addImage with explicit
+    // width/height stretches the template to fill the page — exactly what
+    // a branded background should do.
+    doc.addImage(bg, "PDF", 0, 0, pageW, pageH);
+  } catch {
+    // Swallow — a bad template must never break a routine export.
+  }
+}
+
+export function extractionsToPdf(items, { template = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -16,10 +59,16 @@ export function extractionsToPdf(items) {
   const contentW = pageW - MARGIN * 2;
   let y = MARGIN;
 
+  // Paint the template on the first page before any body text lands, so
+  // every page (including the one we add at idx > 0 below) carries the
+  // same brand background.
+  if (template) paintTemplateBackground(doc, template);
+
   // Move down by `h`, adding a page if we'd run off the bottom.
   const advance = (h) => {
     if (y + h > pageH - MARGIN) {
       doc.addPage();
+      if (template) paintTemplateBackground(doc, template);
       y = MARGIN;
     }
   };
@@ -58,6 +107,7 @@ export function extractionsToPdf(items) {
   list.forEach((e, idx) => {
     if (idx > 0) {
       doc.addPage();
+      if (template) paintTemplateBackground(doc, template);
       y = MARGIN;
     }
 

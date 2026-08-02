@@ -19,6 +19,7 @@
 import { Link } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { getEffectivePlans } from "../lib/pricingOverrides.js";
+import { applyGlobalDiscount } from "../lib/pricingOverrides.js";
 
 function fmtNum(n) {
   if (n === Infinity) return "Unlimited";
@@ -34,6 +35,20 @@ function fmtExportList(arr) {
 
 function fmtBool(b) {
   return b ? "✓" : "—";
+}
+
+// Format a price for the matrix header — per-year figure (one decimal place
+// for fractional dollars, no decimals for whole dollars). Pulls the right
+// annual price for the selected currency, after the global discount.
+function fmtMatrixPrice(plan, currency) {
+  if (plan.id === "free") return "0";
+  const annual = currency === "INR" ? plan.price_inr_annual : plan.price_usd_annual;
+  const base   = currency === "INR" ? plan.price_inr        : plan.price_usd;
+  const raw    = annual ?? base ?? 0;
+  const withDiscount = applyGlobalDiscount(raw);
+  // Round to 1 decimal place, drop trailing .0.
+  const rounded = Math.round(withDiscount * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 const FEATURE_ROWS = [
@@ -99,7 +114,7 @@ export default function PricingMatrix({ currentPlanId = null, onSelectPlan, curr
                   <div className="pm-plan-name">{p.name}</div>
                   <div className="pm-plan-price">
                     {currency === "INR" ? "₹" : "$"}
-                    {p.id === "free" ? "0" : (p[`price_${currency.toLowerCase()}_annual`] ?? p.price_usd_annual ?? p.price_usd)}
+                    {fmtMatrixPrice(p, currency)}
                     <span className="pm-plan-period">/mo</span>
                   </div>
                   {p.id === currentPlanId && (

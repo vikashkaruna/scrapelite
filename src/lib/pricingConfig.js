@@ -188,8 +188,12 @@ export const PLANS = [
       team_seats: 3,
       extra_seat_usd: 9,
       api_access: true,
-      white_label_pdf: false,
-      priority_support: false,
+      // Business now ships with the white-label PDF + priority support that
+      // were previously Agency-only (2026-08-02). Both flags are surfaced in
+      // the PricingMatrix, the entitlement model, and the white-label template
+      // storage layer so the feature parity is real, not just a label.
+      white_label_pdf: true,
+      priority_support: true,
       workspaces: 1,
       batch_max_urls: 250,
     },
@@ -203,7 +207,8 @@ export const PLANS = [
       { label: "5 scheduled monitors",             included: true },
       { label: "API access",                       included: true },
       { label: "3 seats + HubSpot / Salesforce",   included: true },
-      { label: "White-label PDF",                  included: false },
+      { label: "White-label PDF",                  included: true },
+      { label: "Priority support",                 included: true },
     ],
   },
   {
@@ -255,7 +260,7 @@ export const PLANS = [
     price_inr_annual: 2499,
     period: "month",
     tagline: "API-first, 10K row credits",
-    badge: "Coming H2 2026",
+    badge: "Coming H3 2026",
     highlight: false,
     comingSoon: true,
     limits: {
@@ -347,8 +352,18 @@ export const TOPUP_BUNDLES = [
     icon: "briefcase",
     price_usd: 19,
     price_inr: 1499,
-    description: "Add an additional client workspace for team collaboration.",
+    // An extra workspace gets the same features as the user's current plan
+    // (extractions, exports, enrichments, API access, white-label PDF, etc.)
+    // but is bounded by the parent plan's team_seats cap. So on Business
+    // (3 seats), each extra workspace can invite at most 3 members. This
+    // is intentional: workspace add-ons scale capacity, not headcount.
+    description: "Adds a fully-featured client workspace — same plan features as your current tier, capped at your plan's team-seats limit (e.g. 3 seats on Business).",
     unit: "/ month",
     stackable: true,
+    // Feature-parity with the parent plan is enforced by the entitlement
+    // model (entitlementModel.js — see `workspaceAddonFeaturesForPlan`).
+    // The add-on itself does NOT carry plan features; it inherits them.
+    inheritsParentPlanFeatures: true,
+    cappedByParentTeamSeats: true,
   },
 ];

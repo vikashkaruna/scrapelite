@@ -5,10 +5,14 @@ import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
 import { getAlertConfig, saveAlertConfig } from "../lib/alertService.js";
 import { useBilling } from "../components/BillingProvider.jsx";
+import { useAuth } from "../components/AuthProvider.jsx";
+import { allows } from "../lib/entitlementModel.js";
+import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import InvoiceModal from "../components/InvoiceModal.jsx";
+import WhiteLabelTemplateUploader from "../components/WhiteLabelTemplateUploader.jsx";
 import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
 
@@ -231,9 +235,21 @@ export default function Account() {
     subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
     paymentHistory, dbSubscription, hasPayment,
   } = useBilling();
+  const { user } = useAuth();
 
   const plan     = getEffectivePlanById(planId);
   const allPlans = getEffectivePlans();
+  const planMap  = Object.fromEntries(allPlans.map((p) => [p.id, p]));
+
+  // The white-label PDF uploader is only available to plans with
+  // `limits.white_label_pdf === true` (Business 2026-08-02 and Agency).
+  // We resolve the entitlement via the shared model so the cap stays
+  // consistent with the rest of the app.
+  const canWhiteLabel = allows(
+    { plan_id: planId, status: "active", source: "payment", period_end: null },
+    "white_label_pdf",
+    { planMap },
+  );
 
   const [couponInput, setCouponInput] = useState("");
   const [applying, setApplying]       = useState(false);
@@ -424,6 +440,12 @@ export default function Account() {
 
           {/* Right column */}
           <div className="account-aside">
+            {/* White-label PDF template (Business + Agency, 2026-08-02) */}
+            <WhiteLabelTemplateUploader
+              userId={resolveTemplateUserId({ user })}
+              canManage={canWhiteLabel}
+            />
+
             {/* Coupon */}
             <div className="card card-pad">
               <div className="card-section-title"><Icon name="bookmark" size={15} />Coupon / promo code</div>
