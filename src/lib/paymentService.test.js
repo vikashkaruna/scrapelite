@@ -4,6 +4,7 @@ import {
   clearPendingPayment,
   confirmStripeSession,
   initiateCheckout,
+  loadRazorpay,
   preloadRazorpay,
   readPendingPayment,
   savePendingPayment,
@@ -95,53 +96,95 @@ describe("PAYMENT_STAGE constants (U-60)", () => {
   });
 });
 
-// U-63..U-65 — Razorpay SDK loader hardening (rebrand-datiq-and-fix-checkout-bugs).
-// The previous loader had three production failure modes: no timeout (hung modal
-// forever), no dedupe (two <script> tags on a fast double-click), and no
-// pre-load (the user paid the CDN cost at the moment of click). preloadRazorpay
-// + the deduped / timeout-guarded loadRazorpay fix all three. These tests
-// exercise the contract without touching the real CDN — they just verify the
-// pre-load kicks the load and that the error message is actionable.
-describe("Razorpay SDK loader (U-63..U-65)", () => {
+// U-63..U-66 — Razorpay SDK loader (v4: same-origin proxy + CDN fallback).
+// The previous loaders all relied on the browser loading
+// checkout.razorpay.com directly, which fails in real production environments
+// (ad blockers, corporate firewalls, CSP, Netlify edge). v4 routes the SDK
+// through /.netlify/functions/razorpay-sdk (same-origin, immutable 24h cache)
+// and falls back to the direct CDN if the proxy 404s or 502s. These tests
+// verify the contract: pre-load, dedup, fallback chain, fast path.
+describe("Razorpay SDK loader (U-63..U-66)", () => {
   beforeEach(() => {
-    // Reset the loader's internal state between tests by clearing any cached
-    // script tags from previous runs.
-    document.querySelectorAll('script[src*="checkout.razorpay.com"]').forEach((n) => n.remove());
+    // Reset the loader's state between tests by clearing any cached tags.
+    document.querySelectorAll("script[data-rzp-state]").forEach((n) => n.remove());
+    document.querySelectorAll('script[src*="razorpay-sdk"],script[src*="checkout.razorpay.com"]')
+      .forEach((n) => n.remove());
     delete window.Razorpay;
   });
 
-  it("preloadRazorpay() does not throw on a synthetic script error (swallows the error, surfaces it on the real call)", async () => {
-    // Stub document.createElement so the appended <script> immediately fires
-    // its 'error' event — the preloader is supposed to catch that quietly.
+  it("preloadRazorpay() does not throw when every source fails (fire-and-forget, error swallowed)", async () => {
+    // Stub createElement so every appended <script> immediately errors.
     const origCreate = document.createElement.bind(document);
     const ceSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
       const el = origCreate(tag);
-      if (tag === "script" && (el.src === "" || el.src.includes("razorpay"))) {
-        // Defer error dispatch so addEventListener("error", …) is wired first.
+      if (tag === "script") {
         queueMicrotask(() => el.dispatchEvent(new Event("error")));
       }
       return el;
     });
     try {
-      // preloadRazorpay is fire-and-forget; it must not throw, and any
-      // error from the in-flight load must be swallowed (the real call
-      // surfaces it later).
+      // preloadRazorpay is fire-and-forget — must not throw, must swallow.
       expect(() => preloadRazorpay()).not.toThrow();
-      // Let microtasks + the queued error event drain.
       await new Promise((r) => setTimeout(r, 10));
     } finally {
       ceSpy.mockRestore();
     }
   });
 
-  it("preloadRazorpay() does not append a <script> when window.Razorpay is already loaded (fast path)", async () => {
-    window.Razorpay = function () {}; // pretend the SDK is already present
+  it("loadRazorpay() does not append a <script> when window.Razorpay is already loaded (fast path)", async () => {
+    window.Razorpay = function () {}; // SDK already present
     const appendSpy = vi.spyOn(document.head, "appendChild");
     try {
-      await preloadRazorpay();
+      // Re-import fresh to clear module-level rzpLoaded state
+      vi.resetModules();
+      const { loadRazorpay: freshLoad } = await import("./paymentService.js");
+      await freshLoad();
       expect(appendSpy).not.toHaveBeenCalled();
     } finally {
       appendSpy.mockRestore();
+      delete window.Razorpay;
+    }
+  });
+
+  it("loadRazorpay() falls back to the CDN when the local proxy source errors", async () => {
+    // Capture which scripts get appended in order
+    const appended = [];
+    const origAppend = document.head.appendChild.bind(document.head);
+    const appendSpy = vi.spyOn(document.head, "appendChild").mockImplementation((node) => {
+      appended.push(node.src || node.tagName);
+      return origAppend(node);
+    });
+    // First script (proxy) errors; second script (CDN) loads successfully and
+    // sets window.Razorpay (simulating the real SDK body executing).
+    let callCount = 0;
+    const origCreate = document.createElement.bind(document);
+    const ceSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = origCreate(tag);
+      if (tag === "script") {
+        const idx = callCount++;
+        queueMicrotask(() => {
+          if (idx === 0) {
+            el.dispatchEvent(new Event("error"));
+          } else {
+            window.Razorpay = function () {};
+            el.dispatchEvent(new Event("load"));
+          }
+        });
+      }
+      return el;
+    });
+    try {
+      // Reset module state so the loader tries fresh
+      vi.resetModules();
+      const { loadRazorpay: freshLoad } = await import("./paymentService.js");
+      await freshLoad();
+      // Proxy tried first, then CDN
+      expect(appended[0]).toMatch(/razorpay-sdk/);
+      expect(appended[1]).toMatch(/checkout\.razorpay\.com/);
+      expect(window.Razorpay).toBeDefined();
+    } finally {
+      appendSpy.mockRestore();
+      ceSpy.mockRestore();
       delete window.Razorpay;
     }
   });
