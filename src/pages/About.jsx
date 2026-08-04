@@ -34,6 +34,48 @@ const HOW_IT_WORKS = [
   { step: "04", title: "Decide and act", desc: "Export to CSV, share via PDF, trigger a webhook, or build on top of the API — your data, your workflow." },
 ];
 
+// DatIQ's product is organised as a stack of named pillars. Pillar 0 is the
+// proven foundation that ships today; higher pillars build on top of it.
+// Each pillar is intentionally short — the point is to communicate that
+// Pillar 0 is real (not a roadmap promise) and that the rest is layered.
+const PILLARS = [
+  {
+    id: "p0",
+    label: "Pillar 0",
+    title: "Web Intelligence (Core)",
+    status: "live",
+    desc: "The proven single, batch, and scheduled URL-extraction engine that the whole platform is built on. Headings, links, contacts, pricing, custom fields, AI summaries, CSV/PDF export, domain mapping — every DatIQ capability you use today runs on Pillar 0.",
+  },
+  {
+    id: "p1",
+    label: "Pillar 1",
+    title: "Enrichment & Insight",
+    status: "live",
+    desc: "AI summaries, lead scoring, contact enrichment, social-link discovery, company-mission extraction, and content generation (SEO outlines, competitor briefs, social posts) — all running on the structured data Pillar 0 returns.",
+  },
+  {
+    id: "p2",
+    label: "Pillar 2",
+    title: "Distribution & Workflow",
+    status: "live",
+    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot, Salesforce). The intelligence leaves the app on your terms.",
+  },
+  {
+    id: "p3",
+    label: "Pillar 3",
+    title: "Workspace & Collaboration",
+    status: "roadmap",
+    desc: "Shared workspaces, role-based access, audit trails, and team-level usage controls — for agencies, research teams, and revenue ops running DatIQ at scale.",
+  },
+  {
+    id: "p4",
+    label: "Pillar 4",
+    title: "Intelligence Mesh (API & Integrations)",
+    status: "roadmap",
+    desc: "A first-class REST + webhook API, native integrations (Zapier, Make, n8n, HubSpot, Salesforce, Notion, Airtable), and an SDK so DatIQ's intelligence can be embedded anywhere.",
+  },
+];
+
 export default function About() {
   const navigate = useNavigate();
   const personas = Object.values(PERSONA_BY_ID);
@@ -49,11 +91,12 @@ export default function About() {
             Data + IQ — Intelligence Quotient for the Web
           </div>
           <h1>
-            Turn any URL into<br />
-            <span style={{ color: "var(--accent)" }}>structured intelligence</span>
+            The Unified<br />
+            <span style={{ color: "var(--accent)" }}>Web Intelligence Platform</span>
           </h1>
           <p className="about-hero-sub">
-            DatIQ is a zero-code web extraction and enrichment platform.
+            DatIQ is the unified web intelligence platform — built on <strong>Pillar 0 (Web Intelligence Core)</strong>,
+            the proven single, batch, and scheduled URL-extraction engine that the rest of the product is layered on.
             We believe intelligence should be accessible to everyone — researchers, marketers, sales teams,
             developers — without writing a single line of code.
           </p>
@@ -67,13 +110,50 @@ export default function About() {
           </div>
         </div>
 
+        {/* Pillars — communicates that Pillar 0 is the proven foundation and
+            higher pillars are layered on top. Visually mirrors the
+            home/capabilities grid for a consistent mental model. */}
+        <div className="about-section">
+          <div className="about-section-label">
+            <Icon name="layers" size={14} />
+            The product, organised
+          </div>
+          <h2>Built on a named foundation. Pillar 0 ships today.</h2>
+          <p style={{ marginTop: -4, marginBottom: 18 }}>
+            DatIQ is structured as a stack of pillars. <strong>Pillar 0 — Web Intelligence (Core)</strong> is the
+            single, batch, and scheduled URL-extraction engine that every other capability in the product is
+            built on. It's the proven foundation; the rest of the platform is what you can do once you have it.
+          </p>
+          <div className="about-pillars">
+            {PILLARS.map((p) => (
+              <div
+                key={p.id}
+                className={
+                  "about-pillar" +
+                  (p.status === "live" ? " about-pillar-live" : " about-pillar-roadmap") +
+                  (p.id === "p0" ? " about-pillar-p0" : "")
+                }
+              >
+                <div className="about-pillar-head">
+                  <span className="about-pillar-label">{p.label}</span>
+                  <span className={"about-pillar-status about-pillar-status-" + p.status}>
+                    {p.status === "live" ? "Live" : "Roadmap"}
+                  </span>
+                </div>
+                <div className="about-pillar-title">{p.title}</div>
+                <p className="about-pillar-desc">{p.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Mission */}
         <div className="about-section fade">
           <div className="about-section-label">
             <Icon name="target" size={14} />
             Our Mission
           </div>
-          <h2>Intelligence from every URL</h2>
+          <h2>Intelligence from Web</h2>
           <p>
             The web holds an enormous amount of structured knowledge — company pages, pricing tables, contact directories,
             product documentation, research articles — yet extracting that knowledge has traditionally required writing scrapers,
@@ -158,16 +238,38 @@ export default function About() {
         {/* Founder block */}
         <div className="about-section fade">
           <div className="about-section-label">
-            <Icon name="user" size={14} />
-            Founder
+            <Icon name="building" size={14} />
+            The company
           </div>
           <h2>Built by someone who felt the need</h2>
           <div className="about-founder">
-            <div className="about-founder-avatar" role="img" aria-label="Axiom Minds Private Limited">
-              <Icon name="user" size={32} strokeWidth={1.5} />
+            <div className="about-founder-avatar about-founder-company" role="img" aria-label="Axiom Minds Private Limited logo">
+              <img
+                src="/axiom-minds-logo.png"
+                alt="Axiom Minds Private Limited"
+                width={64}
+                height={64}
+                loading="lazy"
+              />
             </div>
             <div className="about-founder-info">
-              <div className="about-founder-name">Axiom Minds Private Limited</div>
+              {/* Company name with the Axiom Minds logo anchored to the LEFT of the
+                  name (per Vikash's spec) — the seal sits inline so it's
+                  unmistakably attached to the corporate identity, not a generic
+                  "founder avatar". The icon next to the company name also
+                  reinforces the brand. */}
+              <div className="about-founder-company-row">
+                <img
+                  src="/axiom-minds-logo.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={28}
+                  height={28}
+                  loading="lazy"
+                  className="about-founder-company-mark"
+                />
+                <div className="about-founder-name">Axiom Minds Private Limited</div>
+              </div>
               <div className="about-founder-role">Founder, https://axiomminds.ai - DatIQ</div>
               <p className="about-founder-bio">
                 DatIQ has been built after realizing the pain of manually copying data from websites into spreadsheets — a

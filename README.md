@@ -1,6 +1,6 @@
-# DatIQ
+# DatIQ — The Unified Web Intelligence Platform
 
-> **Data + IQ.** Extract any webpage into structured data, enrich it with AI, and export everything — with zero code and zero configuration.
+> **Data + IQ.** DatIQ is the unified web intelligence platform. Its foundation, **Pillar 0 (Web Intelligence Core)**, is the proven single, batch, and scheduled URL-extraction engine that the rest of the product is layered on. **Intelligence from Web.**
 
 DatIQ turns a URL into a clean, machine-readable record: headings, links, an AI summary, and up to five one-click enrichments (contacts, social links, company mission, pricing, leadership). Everything works out of the box in demo mode; connecting real API keys switches each service on independently.
 

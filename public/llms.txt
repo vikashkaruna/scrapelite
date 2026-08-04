@@ -1,5 +1,6 @@
-# DatIQ — Intelligence from Every URL
-> DatIQ is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+# DatIQ: The Unified Web Intelligence Platform
+> DatIQ: The Unified Web Intelligence Platform — built on Pillar 0 (Web Intelligence Core), the proven single, batch, and scheduled URL-extraction engine the whole platform is built on. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+> Tagline: Intelligence from Web.
 
 ## What DatIQ Does
 DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.
