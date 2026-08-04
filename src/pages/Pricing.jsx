@@ -9,6 +9,7 @@ import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig
 import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
+import { preloadRazorpay } from "../lib/paymentService.js";
 import Icon from "../components/Icon.jsx";
 import PricingMatrix from "../components/PricingMatrix.jsx";
 import Button from "../components/Button.jsx";
@@ -298,6 +299,11 @@ export default function Pricing() {
   const discount = getGlobalDiscount();
 
   useEffect(() => { setLocalError(""); setPaymentError?.(""); }, [currency]);
+
+  // Pre-warm the Razorpay SDK as soon as /pricing mounts so the user doesn't
+  // pay the CDN round-trip cost at the moment they click "Proceed to payment".
+  // Fire-and-forget: errors are surfaced later, on the actual load attempt.
+  useEffect(() => { preloadRazorpay(); }, []);
 
   const handleSelect = async (planId) => {
     if (planId === "free") {
