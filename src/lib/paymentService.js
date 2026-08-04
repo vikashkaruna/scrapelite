@@ -36,6 +36,34 @@ export const PAYMENT_STAGE_LABELS = {
 export function savePendingPayment(data) {
   try { localStorage.setItem(PENDING_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); } catch {}
 }
+
+// ── Debug helper exposed on window for diagnosing checkout issues ─────────────
+// Operators can run this from the browser console when payment fails:
+//   window.__datiqDiagnoseRazorpay__()
+// It reports whether the SDK is loaded, which source served it, and whether
+// the local proxy + CDN are reachable from the current network.
+if (typeof window !== "undefined") {
+  window.__datiqDiagnoseRazorpay__ = async function diagnoseRazorpay() {
+    const rzp = !!window.Razorpay;
+    const tags = Array.from(document.querySelectorAll("script[data-rzp-state]")).map((t) => ({
+      src: t.src,
+      state: t.dataset.rzpState,
+    }));
+    const probe = async (url) => {
+      try {
+        const r = await fetch(url, { method: "GET" });
+        return r.ok ? `reachable (${r.status})` : `status-${r.status}`;
+      } catch (e) {
+        return `blocked: ${e?.message || e}`;
+      }
+    };
+    const proxy = await probe("/.netlify/functions/razorpay-sdk");
+    const cdn   = await probe("https://checkout.razorpay.com/v1/checkout.js");
+    const out = { rzpLoaded: rzp, scriptTags: tags, proxy, cdn };
+    console.info("[DatIQ diagnose] Razorpay:", out);
+    return out;
+  };
+}
 export function readPendingPayment() {
   try {
     const d = JSON.parse(localStorage.getItem(PENDING_KEY));
@@ -48,19 +76,146 @@ export function clearPendingPayment() {
   try { localStorage.removeItem(PENDING_KEY); } catch {}
 }
 
-// ── Razorpay SDK loader (CDN, lazy) ──────────────────────────────────────────
+// ── Razorpay SDK loader (lazy, with same-origin proxy fallback chain) ───────
+//
+// History of the bugs this has fixed:
+//   v1: no timeout, no dedupe, no pre-load. Users waited 30s+ on "Setting up
+//       payment…" or saw the modal fail with no recourse.
+//   v2: added preloadRazorpay() + 10s timeout + concurrent-call dedup, but
+//       the pre-load left a failed <script> in the DOM that the real call
+//       then attached fresh listeners to — hanging forever.
+//   v3: tracked script lifecycle in a dataset state so "Try again" actually
+//       retried. But the script STILL failed to load in a real production
+//       environment (verified on the Netlify branch deploy) — ad blockers,
+//       privacy extensions, corporate firewalls, strict CSP, and some
+//       Netlify edge configurations all treat checkout.razorpay.com as
+//       suspicious, and the user has no way past that.
+//
+//   v4 (this version): route the SDK through a SAME-ORIGIN Netlify Function
+//       (netlify/functions/razorpay-sdk.js) that proxies checkout.razorpay.com
+//       with an immutable 24h cache. The browser sees a same-origin script
+//       load, which is the unblocked case for every extension and every
+//       network policy. If the proxy 404s (local dev without `netlify dev`)
+//       or returns 502, the loader falls back to the direct CDN URL.
+//
+// Source priority (first success wins):
+//   1. /.netlify/functions/razorpay-sdk   (same-origin, immutable cache)
+//   2. https://checkout.razorpay.com/v1/checkout.js  (direct CDN)
+//   3. Surface a final error to the user
 let rzpLoaded = false;
-async function loadRazorpay() {
-  if (rzpLoaded || window.Razorpay) { rzpLoaded = true; return; }
+let rzpLoadingPromise = null;
+const RZP_LOAD_TIMEOUT_MS = 10000;
+const RZP_SOURCES = [
+  "/.netlify/functions/razorpay-sdk",
+  "https://checkout.razorpay.com/v1/checkout.js",
+];
+
+function makeRzpLoadError(detail) {
+  return new Error(
+    "Unable to load the payment portal. " +
+    "If you are using an ad blocker or privacy extension, please allow " +
+    "scripts from datiq.app and try again. " +
+    "If the issue persists, contact hello@datiq.app." +
+    (detail ? ` (${detail})` : "")
+  );
+}
+
+function makeRzpTimeoutError(src) {
+  return new Error(
+    `The payment portal took too long to load (${src}). ` +
+    "Please check your connection and try again."
+  );
+}
+
+export function preloadRazorpay() {
+  // Fire-and-forget. Called from Pricing.jsx on mount so the SDK is warm by
+  // the time the user clicks "Proceed to payment". Errors are swallowed here —
+  // the real load happens again in loadRazorpay() which surfaces a clean error.
+  loadRazorpay().catch(() => { /* pre-warm only; surface the error on the real call */ });
+}
+
+// Load a single <script src="src"> with a timeout. Resolves on the script's
+// `load` event; rejects on `error` or timeout. Marks the element with
+// data-rzp-state so a subsequent retry can recognise a dead element.
+function loadScriptFrom(src) {
   return new Promise((resolve, reject) => {
-    const s    = document.createElement("script");
-    s.src      = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload   = () => { rzpLoaded = true; resolve(); };
-    s.onerror  = () => reject(new Error(
-      "Unable to load the payment portal. Please check your internet connection and disable any ad blockers, then try again."
-    ));
+    // Clean up any prior attempt at THIS exact src (failed or pending) so
+    // a retry always starts from a clean slate. We don't touch other srcs —
+    // the proxy and CDN are independent.
+    document.querySelectorAll(`script[src="${src}"]`).forEach((n) => n.remove());
+
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.defer = true;
+    s.dataset.rzpState = "pending";
+
+    let settled = false;
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      s.dataset.rzpState = "loaded";
+      resolve();
+    };
+    const settleReject = (err) => {
+      if (settled) return;
+      settled = true;
+      s.dataset.rzpState = "error";
+      reject(err);
+    };
+
+    s.addEventListener("load", settleResolve);
+    s.addEventListener("error", () => {
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] Razorpay SDK failed to load:", { src, event: "error" });
+      }
+      settleReject(new Error(`script src=${src} failed to load`));
+    });
+
+    const timer = setTimeout(() => {
+      settleReject(makeRzpTimeoutError(src));
+    }, RZP_LOAD_TIMEOUT_MS);
+    s.addEventListener("load",  () => clearTimeout(timer), { once: true });
+    s.addEventListener("error", () => clearTimeout(timer), { once: true });
+
     document.head.appendChild(s);
   });
+}
+
+export async function loadRazorpay() {
+  // Fast path — already loaded
+  if (rzpLoaded || window.Razorpay) { rzpLoaded = true; return; }
+  // Dedup concurrent calls — if a load is already in flight, wait on it
+  if (rzpLoadingPromise) return rzpLoadingPromise;
+
+  // Clean up any previously-failed elements we don't recognise (HMR-safe)
+  document.querySelectorAll('script[data-rzp-state="error"],script[data-rzp-state="timeout"]')
+    .forEach((n) => n.remove());
+
+  rzpLoadingPromise = (async () => {
+    let lastError = null;
+    for (const src of RZP_SOURCES) {
+      try {
+        await loadScriptFrom(src);
+        rzpLoaded = true;
+        return;
+      } catch (e) {
+        lastError = e;
+        if (typeof console !== "undefined") {
+          console.info("[DatIQ] Razorpay source failed, trying next:", { src, error: e.message });
+        }
+        // Continue to next source
+      }
+    }
+    // All sources failed — surface the LAST error wrapped in our user-facing message
+    throw makeRzpLoadError(lastError?.message);
+  })();
+
+  try {
+    await rzpLoadingPromise;
+  } finally {
+    rzpLoadingPromise = null;
+  }
 }
 
 // ── fetch with timeout + retries ────────────────────────────────────────────

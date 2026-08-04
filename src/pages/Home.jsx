@@ -267,8 +267,12 @@ export default function Home() {
   }, []);
 
   // ── Copy for hero section ─────────────────────────────────────────────
+  // Primary tagline is "Intelligence from the Web." — sleek, single-statement,
+  // futuristic. The functional subtext (what to paste, what to expect) sits
+  // underneath so first-time visitors know what to do without us having to
+  // squeeze the positioning into the H1.
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
-  const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
+  const headline = persona ? persona.tagline : "Intelligence from the Web.";
   const subtext  = persona
     ? persona.subtitle
     : "Paste any URL to pull a page's headings, links and an instant AI summary — then go further: extract any field in plain English, map an entire domain, or surface leadership contacts & emails.";
@@ -325,9 +329,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              Extract &amp; enrich<br />
-              web data in{" "}
-              <span style={{ color: "var(--accent)" }}>seconds.</span>
+              Intelligence from the <span style={{ color: "var(--accent)" }}>Web.</span>
             </>
           )}
         </h1>
@@ -533,6 +535,55 @@ export default function Home() {
             </div>
           )}
 
+        </div>
+
+        {/* ── Pillars intro (DatIQ rebrand) ─────────────────────────────── */}
+        {/* Establishes Pillar 0 (Web Intelligence Core) as the foundation
+            that the rest of the platform is built on, with the higher pillars
+            shown as compact badges. Sits above the capability grid so the
+            mental model is in place by the time the user sees the cards. */}
+        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080 }}>
+          <div className="home-pillars-banner">
+            <div className="hp-banner-head">
+              <span className="hp-banner-eyebrow">
+                <Icon name="layers" size={12} />
+                DatIQ architecture
+              </span>
+              <h3 className="hp-banner-title">
+                Everything runs on <span className="hp-p0-tag">Pillar 0</span> — Web Intelligence (Core)
+              </h3>
+              <p className="hp-banner-sub">
+                The proven single, batch, and scheduled URL-extraction engine is the foundation. Every
+                capability below is layered on top of it.
+              </p>
+            </div>
+            <div className="hp-pillar-row">
+              <div className="hp-pillar hp-pillar-p0">
+                <span className="hp-pillar-label">P0</span>
+                <div className="hp-pillar-text">
+                  <div className="hp-pillar-name">Web Intelligence (Core)</div>
+                  <div className="hp-pillar-desc">Single · Batch · Scheduled URL extraction</div>
+                </div>
+                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
+              </div>
+              <div className="hp-pillar">
+                <span className="hp-pillar-label">P1</span>
+                <div className="hp-pillar-text">
+                  <div className="hp-pillar-name">Enrichment &amp; Insight</div>
+                  <div className="hp-pillar-desc">AI summaries, leads, content briefs</div>
+                </div>
+                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
+              </div>
+              <div className="hp-pillar">
+                <span className="hp-pillar-label">P2</span>
+                <div className="hp-pillar-text">
+                  <div className="hp-pillar-name">Distribution &amp; Workflow</div>
+                  <div className="hp-pillar-desc">Export, schedule, webhook, CRM sync</div>
+                </div>
+                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}

@@ -12,7 +12,9 @@ test("home shows the H1, brand text, tagline, and footer", async ({ page }) => {
   await page.goto("/");
   // Brand mark + name in TopBar.
   await expect(page.getByText("DatIQ").first()).toBeVisible();
-  // Tagline (R1: "Intelligence from every URL") — scope to the brand.
+  // Brand tagline (R1: "Intelligence from Web" — rebrand-datiq-and-fix-checkout-bugs).
+  // Scope to the brand element so persona/headline copy elsewhere on the page
+  // doesn't accidentally satisfy this.
   await expect(page.locator(".brand-tagline").first()).toBeVisible();
   // H1 — varies by persona, so match a stable substring.
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -36,6 +38,23 @@ test("home renders 8 feature cards (clickable)", async ({ page }) => {
   await page.goto("/");
   const cards = page.locator(".feature-cell");
   await expect(cards).toHaveCount(8);
+});
+
+test("home shows the Pillar 0 (Web Intelligence Core) banner", async ({ page }) => {
+  // R1 rebrand: the URL-extraction engine is formally named Pillar 0 — Web
+  // Intelligence (Core) and is presented as the proven foundation the rest
+  // of the platform is built on. This contract pins the banner so a future
+  // refactor that drops the architecture callout is caught at the gate.
+  await page.goto("/");
+  const banner = page.locator(".home-pillars-banner");
+  await expect(banner).toBeVisible();
+  // Eyebrow + headline + the three pillar rows (P0/P1/P2).
+  await expect(banner).toContainText(/Pillar 0/i);
+  await expect(banner).toContainText(/Web Intelligence \(Core\)/i);
+  await expect(banner.locator(".hp-pillar")).toHaveCount(3);
+  // Pillar 0 specifically has the highlighted styling — pinned by class so
+  // a refactor that swaps the row order is caught.
+  await expect(banner.locator(".hp-pillar-p0")).toBeVisible();
 });
 
 test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", async ({ page }) => {

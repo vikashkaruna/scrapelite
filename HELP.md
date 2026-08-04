@@ -1,6 +1,6 @@
 # DatIQ Help
 
-> This file covers everything a user needs to get value from DatIQ, followed by a separate API & developer reference for integrators and engineers.
+> **DatIQ — The Unified Web Intelligence Platform.** This file covers everything a user needs to get value from DatIQ, followed by a separate API & developer reference for integrators and engineers. DatIQ is organised as a stack of named pillars — **Pillar 0 (Web Intelligence Core)** is the proven single, batch, and scheduled URL-extraction engine the rest of the platform is built on.
 
 ---
 
