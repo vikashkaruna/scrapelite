@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 test("the core SPA routes are served without configured integrations", async ({ page }) => {
   const home = await page.goto("/");
   expect(home?.ok()).toBeTruthy();
-  await expect(page.getByRole("heading", { name: /Extract & enrich/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Intelligence from the Web/i })).toBeVisible();
 
   const dashboard = await page.goto("/dashboard");
   expect(dashboard?.ok()).toBeTruthy();
@@ -19,5 +19,5 @@ test("the core SPA routes are served without configured integrations", async ({ 
   const preview = await page.goto("/preview");
   expect(preview?.ok()).toBeTruthy();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: /Extract & enrich/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Intelligence from the Web/i })).toBeVisible();
 });

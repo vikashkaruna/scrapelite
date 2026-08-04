@@ -18,6 +18,6 @@ test("/preview with no saved extraction renders the home composer", async ({ pag
   // The composer is the only place a deep-link back to / lands.
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: /Extract & enrich/i }),
+    page.getByRole("heading", { name: /Intelligence from the Web/i }),
   ).toBeVisible({ timeout: 10_000 });
 });
