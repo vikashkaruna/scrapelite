@@ -15,7 +15,10 @@ test.beforeEach(async ({ page }) => {
 test("/preview with no saved extraction renders the home composer", async ({ page }) => {
   const response = await page.goto("/preview");
   expect(response?.ok()).toBeTruthy();
-  // The composer is the only place a deep-link back to / lands.
+  // The composer is the only place a deep-link back to / lands. After the
+  // rebrand, the home H1 is "Intelligence from the Web." — pinning the
+  // copy here too so a regression in the Home.jsx hero breaks the gate
+  // for both the direct and the deep-link entry path.
   await expect(page).toHaveURL(/\/$/);
   await expect(
     page.getByRole("heading", { name: /Intelligence from the Web/i }),
