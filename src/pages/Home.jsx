@@ -267,8 +267,12 @@ export default function Home() {
   }, []);
 
   // ── Copy for hero section ─────────────────────────────────────────────
+  // Primary tagline is "Intelligence from the Web." — sleek, single-statement,
+  // futuristic. The functional subtext (what to paste, what to expect) sits
+  // underneath so first-time visitors know what to do without us having to
+  // squeeze the positioning into the H1.
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
-  const headline = persona ? persona.tagline : "Extract & enrich web data in seconds.";
+  const headline = persona ? persona.tagline : "Intelligence from the Web.";
   const subtext  = persona
     ? persona.subtitle
     : "Paste any URL to pull a page's headings, links and an instant AI summary — then go further: extract any field in plain English, map an entire domain, or surface leadership contacts & emails.";
@@ -325,9 +329,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              Extract &amp; enrich<br />
-              web data in{" "}
-              <span style={{ color: "var(--accent)" }}>seconds.</span>
+              Intelligence from the <span style={{ color: "var(--accent)" }}>Web.</span>
             </>
           )}
         </h1>

@@ -91,14 +91,10 @@ export default function About() {
             Data + IQ — Intelligence Quotient for the Web
           </div>
           <h1>
-            The Unified<br />
-            <span style={{ color: "var(--accent)" }}>Web Intelligence Platform</span>
+            Intelligence from the <span style={{ color: "var(--accent)" }}>Web.</span>
           </h1>
           <p className="about-hero-sub">
-            DatIQ is the unified web intelligence platform — built on <strong>Pillar 0 (Web Intelligence Core)</strong>,
-            the proven single, batch, and scheduled URL-extraction engine that the rest of the product is layered on.
-            We believe intelligence should be accessible to everyone — researchers, marketers, sales teams,
-            developers — without writing a single line of code.
+            DatIQ — the unified web intelligence platform.
           </p>
           <div className="about-hero-actions">
             <Button variant="primary" icon="rocket" onClick={() => navigate("/")}>
