@@ -36,6 +36,30 @@ export const PAYMENT_STAGE_LABELS = {
 export function savePendingPayment(data) {
   try { localStorage.setItem(PENDING_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); } catch {}
 }
+
+// ── Debug helper exposed on window for diagnosing checkout issues ─────────────
+// Operators can run this from the browser console when payment fails:
+//   window.__datiqDiagnoseRazorpay__()
+// It reports whether the SDK is loaded, whether the script tag is in the DOM,
+// and whether the CDN is reachable from the current network — the three things
+// that explain every "Unable to load the payment portal" error we've ever seen.
+if (typeof window !== "undefined") {
+  window.__datiqDiagnoseRazorpay__ = async function diagnoseRazorpay() {
+    const rzp = !!window.Razorpay;
+    const tag = document.querySelector('script[src*="checkout.razorpay.com"]');
+    const state = tag?.dataset?.rzpState || (tag ? "loaded-no-marker" : "no-tag");
+    let cdn = "unknown";
+    try {
+      const resp = await fetch("https://checkout.razorpay.com/v1/checkout.js", { method: "HEAD", mode: "no-cors" });
+      cdn = resp.ok || resp.type === "opaque" ? "reachable" : `status-${resp.status}`;
+    } catch (e) {
+      cdn = `blocked: ${e?.message || e}`;
+    }
+    const out = { rzpLoaded: rzp, scriptTagState: state, cdnReachable: cdn };
+    console.info("[DatIQ diagnose] Razorpay:", out);
+    return out;
+  };
+}
 export function readPendingPayment() {
   try {
     const d = JSON.parse(localStorage.getItem(PENDING_KEY));
@@ -49,32 +73,44 @@ export function clearPendingPayment() {
 }
 
 // ── Razorpay SDK loader (CDN, lazy) ──────────────────────────────────────────
-// Three failure modes the previous version got wrong:
-//   1. No timeout — if the network is slow or the script hangs, the modal sits on
-//      "Setting up your payment…" forever and the user has no recourse.
-//   2. No dedupe — if a user clicks "Get Pro" twice in quick succession, two
-//      <script> elements are appended, the second one racing the first.
-//   3. No pre-load — the user has to wait for the script to download AT THE
-//      moment they click "Proceed to payment" in the confirm modal. On a slow
-//      connection that's an extra 2-5s of "Preparing…" before the modal opens.
+// History of failures this loader has had to fix:
+//   v1: no timeout, no dedupe, no pre-load. Users waited 30s+ on "Setting up
+//       payment…" or saw the modal fail with no recourse.
+//   v2: added preloadRazorpay() + 10s timeout + concurrent-call dedup. But it
+//       had a second bug — if the PRE-load failed (ad blocker, network), the
+//       failed <script> element was left in the DOM. The next call to
+//       loadRazorpay() would find it, attach new listeners, and hang forever
+//       (no timeout in the "reuse" branch) because the element had already
+//       fired its `error` event.
 //
-// Fix:
-//   • Export preloadRazorpay() so Pricing.jsx can kick off the load the moment
-//     the user lands on /pricing (script is ready by the time they confirm).
-//   • Dedup concurrent loadRazorpay() calls — return the in-flight promise.
-//   • Skip creating a new <script> if one with the same src is already in DOM.
-//   • Add a 10s timeout that rejects with an actionable error.
-//   • Make the error message honest about ad blockers (the most common cause).
+//   v3 (this version) tracks the script element + its terminal state in a
+//       dataset attribute. On a retry:
+//         • if the element is still pending  → reuse + attach listeners + timeout
+//         • if the element errored/timed out → remove it and create a fresh one
+//         • if window.Razorpay exists         → fast-path return
+//       This means "Try again" actually retries, and the pre-load can't poison
+//       the real call.
 let rzpLoaded = false;
 let rzpLoadingPromise = null;
+let rzpScriptElement = null;
 const RZP_LOAD_TIMEOUT_MS = 10000;
+const RZP_SCRIPT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 
-function makeRzpLoadError() {
+function makeRzpLoadError(detail) {
   return new Error(
     "Unable to load the payment portal. " +
     "This is usually caused by an ad blocker or a privacy extension blocking " +
     "checkout.razorpay.com — please allow it for datiq.app and try again. " +
-    "If the issue persists, contact hello@datiq.app."
+    "If the issue persists, contact hello@datiq.app." +
+    (detail ? ` (${detail})` : "")
+  );
+}
+
+function makeRzpTimeoutError() {
+  return new Error(
+    "The payment portal took too long to load. " +
+    "Please check your connection, allow checkout.razorpay.com in any " +
+    "ad blocker, then try again."
   );
 }
 
@@ -91,44 +127,75 @@ async function loadRazorpay() {
   // Dedup concurrent calls — if a load is already in flight, wait on it
   if (rzpLoadingPromise) return rzpLoadingPromise;
 
+  // If a previous attempt left a terminal-state script in the DOM, remove it
+  // before we try again. Without this, attaching fresh listeners to a dead
+  // element hangs the promise forever.
+  if (rzpScriptElement && rzpScriptElement.dataset.rzpState &&
+      rzpScriptElement.dataset.rzpState !== "pending") {
+    rzpScriptElement.remove();
+    rzpScriptElement = null;
+  }
+  // Also clean up any stale script tags from earlier failed attempts that we
+  // didn't track (e.g. before a hot-reload replaced this module).
+  document.querySelectorAll('script[src*="checkout.razorpay.com"][data-rzp-state="error"],script[src*="checkout.razorpay.com"][data-rzp-state="timeout"]')
+    .forEach((n) => n.remove());
+
   rzpLoadingPromise = new Promise((resolve, reject) => {
     let settled = false;
-    const settleResolve = () => { if (!settled) { settled = true; rzpLoaded = true; resolve(); } };
-    const settleReject  = (err) => { if (!settled) { settled = true; reject(err); } };
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      rzpLoaded = true;
+      resolve();
+    };
+    const settleReject = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
 
-    // Reuse an existing <script> element if one is already in the DOM
-    const existing = document.querySelector('script[src*="checkout.razorpay.com"]');
-    if (existing) {
-      // If the existing script has already executed, window.Razorpay is set
-      // (handled by the fast path above). Otherwise attach listeners.
-      existing.addEventListener("load", settleResolve);
-      existing.addEventListener("error", () => settleReject(makeRzpLoadError()));
-      return;
-    }
-
-    const s    = document.createElement("script");
-    s.src     = "https://checkout.razorpay.com/v1/checkout.js";
-    s.async   = true;
-    s.defer   = true;
+    // Create a fresh <script>. We do NOT reuse a pending element from outside
+    // this module — it might be in a state we can't reason about after an
+    // HMR reload. Creating a new one costs nothing because the browser caches
+    // by URL, and it gives us a clean listener set every time.
+    const s = document.createElement("script");
+    s.src = RZP_SCRIPT_SRC;
+    s.async = true;
+    s.defer = true;
     s.crossOrigin = "anonymous";
-    s.addEventListener("load",  settleResolve);
-    s.addEventListener("error", () => settleReject(makeRzpLoadError()));
+    s.dataset.rzpState = "pending";
+
+    const onLoad = () => {
+      s.dataset.rzpState = "loaded";
+      settleResolve();
+    };
+    const onError = (evt) => {
+      s.dataset.rzpState = "error";
+      // Most "error" events from a script tag mean the request was blocked
+      // (ad blocker, firewall, DNS, CSP). The browser gives us almost no
+      // detail in the event itself — log what we have so the dev console
+      // shows the URL and the failure mode.
+      const detail = `script src=${RZP_SCRIPT_SRC} failed to load`;
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] Razorpay SDK failed to load:", { src: RZP_SCRIPT_SRC, event: evt?.type || "error" });
+      }
+      settleReject(makeRzpLoadError(detail));
+    };
+
+    s.addEventListener("load", onLoad);
+    s.addEventListener("error", onError);
 
     // Timeout guard — catches slow networks / partial loads where the script
     // is appended but neither load nor error fires within a reasonable window.
-    const timer = setTimeout(
-      () => settleReject(new Error(
-        "The payment portal took too long to load. " +
-        "Please check your connection, allow checkout.razorpay.com in any " +
-        "ad blocker, then try again."
-      )),
-      RZP_LOAD_TIMEOUT_MS,
-    );
-    // Clear the timer on either successful outcome
-    const clearTimer = () => clearTimeout(timer);
-    s.addEventListener("load",  clearTimer, { once: true });
-    s.addEventListener("error", clearTimer, { once: true });
+    // This also covers CSP silent-blocks and DNS hangs.
+    const timer = setTimeout(() => {
+      s.dataset.rzpState = "timeout";
+      settleReject(makeRzpTimeoutError());
+    }, RZP_LOAD_TIMEOUT_MS);
+    s.addEventListener("load",  () => clearTimeout(timer), { once: true });
+    s.addEventListener("error", () => clearTimeout(timer), { once: true });
 
+    rzpScriptElement = s;
     document.head.appendChild(s);
   });
 
