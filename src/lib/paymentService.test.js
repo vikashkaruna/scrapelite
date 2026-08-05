@@ -96,13 +96,16 @@ describe("PAYMENT_STAGE constants (U-60)", () => {
   });
 });
 
-// U-63..U-66 — Razorpay SDK loader (v4: same-origin proxy + CDN fallback).
-// The previous loaders all relied on the browser loading
-// checkout.razorpay.com directly, which fails in real production environments
-// (ad blockers, corporate firewalls, CSP, Netlify edge). v4 routes the SDK
-// through /.netlify/functions/razorpay-sdk (same-origin, immutable 24h cache)
-// and falls back to the direct CDN if the proxy 404s or 502s. These tests
-// verify the contract: pre-load, dedup, fallback chain, fast path.
+// U-63..U-66 — Razorpay SDK loader (v5: direct CDN, no proxy).
+// v4 routed the SDK through /.netlify/functions/razorpay-sdk to bypass ad
+// blockers and CSP, but Razorpay's SDK does its own integrity check via
+// document.currentScript.src and refuses to initialise when the script is
+// served from any non-Razorpay origin (the SDK throws "Invalid script
+// source" and blocks payment). v5 reverts to loading the official Razorpay
+// CDN directly; the new CSP (script-src includes https://checkout.razorpay.com)
+// keeps the browser happy. The error path is now a single source — CDN fails
+// almost always means an ad blocker / content blocker, so the error message
+// is rewritten to name that explicitly.
 describe("Razorpay SDK loader (U-63..U-66)", () => {
   beforeEach(() => {
     // Reset the loader's state between tests by clearing any cached tags.
@@ -112,7 +115,7 @@ describe("Razorpay SDK loader (U-63..U-66)", () => {
     delete window.Razorpay;
   });
 
-  it("preloadRazorpay() does not throw when every source fails (fire-and-forget, error swallowed)", async () => {
+  it("preloadRazorpay() does not throw when the CDN source fails (fire-and-forget, error swallowed)", async () => {
     // Stub createElement so every appended <script> immediately errors.
     const origCreate = document.createElement.bind(document);
     const ceSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
@@ -146,7 +149,7 @@ describe("Razorpay SDK loader (U-63..U-66)", () => {
     }
   });
 
-  it("loadRazorpay() falls back to the CDN when the local proxy source errors", async () => {
+  it("loadRazorpay() loads from the official Razorpay CDN and exposes window.Razorpay", async () => {
     // Capture which scripts get appended in order
     const appended = [];
     const origAppend = document.head.appendChild.bind(document.head);
@@ -154,21 +157,15 @@ describe("Razorpay SDK loader (U-63..U-66)", () => {
       appended.push(node.src || node.tagName);
       return origAppend(node);
     });
-    // First script (proxy) errors; second script (CDN) loads successfully and
-    // sets window.Razorpay (simulating the real SDK body executing).
-    let callCount = 0;
+    // Single-source load: the appended <script> loads successfully and sets
+    // window.Razorpay (simulating the real SDK body executing).
     const origCreate = document.createElement.bind(document);
     const ceSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
       const el = origCreate(tag);
       if (tag === "script") {
-        const idx = callCount++;
         queueMicrotask(() => {
-          if (idx === 0) {
-            el.dispatchEvent(new Event("error"));
-          } else {
-            window.Razorpay = function () {};
-            el.dispatchEvent(new Event("load"));
-          }
+          window.Razorpay = function () {};
+          el.dispatchEvent(new Event("load"));
         });
       }
       return el;
@@ -178,14 +175,35 @@ describe("Razorpay SDK loader (U-63..U-66)", () => {
       vi.resetModules();
       const { loadRazorpay: freshLoad } = await import("./paymentService.js");
       await freshLoad();
-      // Proxy tried first, then CDN
-      expect(appended[0]).toMatch(/razorpay-sdk/);
-      expect(appended[1]).toMatch(/checkout\.razorpay\.com/);
+      // Only the CDN source is tried (no proxy fallback in v5 — the proxy
+      // breaks Razorpay's integrity check, see comment block above)
+      expect(appended).toHaveLength(1);
+      expect(appended[0]).toMatch(/checkout\.razorpay\.com\/v1\/checkout\.js/);
       expect(window.Razorpay).toBeDefined();
     } finally {
       appendSpy.mockRestore();
       ceSpy.mockRestore();
       delete window.Razorpay;
+    }
+  });
+
+  it("loadRazorpay() surfaces a clear error when the CDN source fails (ad blocker / firewall / CSP)", async () => {
+    // Every appended <script> immediately errors (simulates an ad blocker or
+    // a strict CSP blocking the Razorpay CDN).
+    const origCreate = document.createElement.bind(document);
+    const ceSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = origCreate(tag);
+      if (tag === "script") {
+        queueMicrotask(() => el.dispatchEvent(new Event("error")));
+      }
+      return el;
+    });
+    try {
+      vi.resetModules();
+      const { loadRazorpay: freshLoad } = await import("./paymentService.js");
+      await expect(freshLoad()).rejects.toThrow(/checkout\.razorpay\.com/);
+    } finally {
+      ceSpy.mockRestore();
     }
   });
 });

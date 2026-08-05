@@ -76,7 +76,7 @@ export function clearPendingPayment() {
   try { localStorage.removeItem(PENDING_KEY); } catch {}
 }
 
-// ── Razorpay SDK loader (lazy, with same-origin proxy fallback chain) ───────
+// ── Razorpay SDK loader (lazy, from the official Razorpay CDN) ───────────────
 //
 // History of the bugs this has fixed:
 //   v1: no timeout, no dedupe, no pre-load. Users waited 30s+ on "Setting up
@@ -90,31 +90,42 @@ export function clearPendingPayment() {
 //       privacy extensions, corporate firewalls, strict CSP, and some
 //       Netlify edge configurations all treat checkout.razorpay.com as
 //       suspicious, and the user has no way past that.
-//
-//   v4 (this version): route the SDK through a SAME-ORIGIN Netlify Function
+//   v4: route the SDK through a SAME-ORIGIN Netlify Function
 //       (netlify/functions/razorpay-sdk.js) that proxies checkout.razorpay.com
 //       with an immutable 24h cache. The browser sees a same-origin script
 //       load, which is the unblocked case for every extension and every
 //       network policy. If the proxy 404s (local dev without `netlify dev`)
 //       or returns 502, the loader falls back to the direct CDN URL.
+//   v5 (this version): revert the source priority. Razorpay's SDK does its
+//       own integrity check via document.currentScript.src — when the script
+//       is served from any non-Razorpay origin (same-origin proxy included),
+//       the SDK throws "Invalid script source" and refuses to initialise.
+//       So the same-origin proxy that solved the ad-blocker problem actively
+//       breaks the SDK today. The fix is the opposite of v4: load from the
+//       official Razorpay CDN, and rely on the CSP `script-src` whitelisting
+//       added in 017bfbe (script-src includes https://checkout.razorpay.com)
+//       to keep the browser happy. The proxy function is still deployed
+//       (kept for cache-warm diagnostics) but no longer referenced here.
 //
 // Source priority (first success wins):
-//   1. /.netlify/functions/razorpay-sdk   (same-origin, immutable cache)
-//   2. https://checkout.razorpay.com/v1/checkout.js  (direct CDN)
-//   3. Surface a final error to the user
+//   1. https://checkout.razorpay.com/v1/checkout.js  (Razorpay's official
+//                                                       CDN — required for the
+//                                                       SDK's own integrity check)
+//   2. Surface a final error to the user (likely an ad blocker, content
+//      blocker, or strict firewall blocking checkout.razorpay.com)
 let rzpLoaded = false;
 let rzpLoadingPromise = null;
 const RZP_LOAD_TIMEOUT_MS = 10000;
 const RZP_SOURCES = [
-  "/.netlify/functions/razorpay-sdk",
   "https://checkout.razorpay.com/v1/checkout.js",
 ];
 
 function makeRzpLoadError(detail) {
   return new Error(
     "Unable to load the payment portal. " +
-    "If you are using an ad blocker or privacy extension, please allow " +
-    "scripts from datiq.app and try again. " +
+    "This is almost always caused by an ad blocker, content blocker, or " +
+    "strict firewall blocking checkout.razorpay.com — please allow scripts " +
+    "from checkout.razorpay.com and try again. " +
     "If the issue persists, contact hello@datiq.app." +
     (detail ? ` (${detail})` : "")
   );
