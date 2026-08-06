@@ -40,7 +40,9 @@ test("home renders 8 feature cards (clickable)", async ({ page }) => {
   await expect(cards).toHaveCount(8);
 });
 
-test("home shows the Pillar 0 (Web Intelligence Core) banner", async ({ page }) => {
+// TODO: DatIQ architecture (Pillar 0/1/2) banner hidden on Home 2026-08-06 —
+// re-enable this test when the banner is re-enabled (src/pages/Home.jsx).
+test.skip("home shows the Pillar 0 (Web Intelligence Core) banner", async ({ page }) => {
   // R1 rebrand: the URL-extraction engine is formally named Pillar 0 — Web
   // Intelligence (Core) and is presented as the proven foundation the rest
   // of the platform is built on. This contract pins the banner so a future

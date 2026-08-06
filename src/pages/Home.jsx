@@ -537,12 +537,10 @@ export default function Home() {
 
         </div>
 
-        {/* ── Pillars intro (DatIQ rebrand) ─────────────────────────────── */}
-        {/* Establishes Pillar 0 (Web Intelligence Core) as the foundation
-            that the rest of the platform is built on, with the higher pillars
-            shown as compact badges. Sits above the capability grid so the
-            mental model is in place by the time the user sees the cards. */}
-        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080 }}>
+        {/* TODO: DatIQ architecture (Pillar 0/1/2) banner hidden on 2026-08-06 —
+            re-enable later. Kept in the DOM (display:none), not unmounted, so
+            re-enabling is just removing the display:none below. */}
+        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080, display: "none" }}>
           <div className="home-pillars-banner">
             <div className="hp-banner-head">
               <span className="hp-banner-eyebrow">

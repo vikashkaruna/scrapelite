@@ -29,7 +29,7 @@ function getCurrentMonth() {
 
 export default function ReferralBanner() {
   const showToast = useToast();
-  const { usage, plan } = useBilling();
+  const { usage, plan, subscription } = useBilling();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [copied, setCopied] = useState(false);
@@ -60,7 +60,7 @@ export default function ReferralBanner() {
   const limit = plan?.limits?.extractions;
   const used = usage?.extractions ?? 0;
   if (!limit || limit === Infinity) return null;
-  const total = limit + (plan?.bonusExtractions || 0);
+  const total = limit + (subscription?.bonusExtractions ?? 0);
   const pct = total > 0 ? Math.floor((used / total) * 100) : 0;
   const isOver = used >= total;
   if (pct < 90 && !isOver) return null;

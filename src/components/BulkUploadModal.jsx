@@ -66,13 +66,13 @@ export default function BulkUploadModal({ open, onClose, onUrls }) {
 
   return (
     <div
-      className="modal-overlay"
+      className="bum-overlay"
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
-      <div className="modal-card bum-card">
+      <div className="bum-card">
         {/* Header */}
-        <div className="modal-header">
-          <div className="modal-title">
+        <div className="bum-header">
+          <div className="bum-title">
             <Icon name="layers-2" size={18} />
             Bulk URL Import
           </div>
@@ -158,7 +158,7 @@ export default function BulkUploadModal({ open, onClose, onUrls }) {
         )}
 
         {/* Footer */}
-        <div className="modal-footer">
+        <div className="bum-footer">
           <Button variant="ghost" onClick={handleClose}>Cancel</Button>
           <Button
             variant="primary"
