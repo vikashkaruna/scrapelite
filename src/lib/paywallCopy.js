@@ -117,8 +117,11 @@ export function buildPaywallCopy({ route, usage = {}, currentPlan, ctx, currency
     default: {
       // Single-URL extraction cap, the most common case
       const over = (usage.extractions || 0) >= (cp.limits?.extractions || Infinity);
+      const capLabel = cp.limits?.extractions || 10;
       title = over
-        ? `You've used all ${cp.limits?.extractions || 10} free extractions`
+        ? cp.id === "free"
+          ? `You've used all ${capLabel} free extractions`
+          : `You've used all ${capLabel} extractions this month`
         : `You're close to your monthly limit`;
       body = `${plan.name} gives you ${plan.limits?.extractions?.toLocaleString() || "more"} extractions/mo, JSON export, and CSV import — for ${annualStr}/mo, billed annually.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;
