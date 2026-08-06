@@ -538,9 +538,9 @@ export default function Home() {
         </div>
 
         {/* TODO: DatIQ architecture (Pillar 0/1/2) banner hidden on 2026-08-06 —
-            re-enable later. Section markup preserved below, just not rendered. */}
-        {false && (
-        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080 }}>
+            re-enable later. Kept in the DOM (display:none), not unmounted, so
+            re-enabling is just removing the display:none below. */}
+        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080, display: "none" }}>
           <div className="home-pillars-banner">
             <div className="hp-banner-head">
               <span className="hp-banner-eyebrow">
@@ -583,7 +583,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-        )}
 
         {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}
         <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 1080 }}>
