@@ -5112,9 +5112,47 @@
 .feature-cell-selected .feature-ico { background: var(--accent-soft); color: var(--accent-on-dark); }
 
 /* ── Bulk Upload Modal (BulkUploadModal.jsx) ──────────────────────────────── */
+.bum-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
 .bum-card {
+  position: relative;
   width: 100%;
   max-width: 520px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  overflow: hidden;
+}
+.bum-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.bum-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05em;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.bum-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
 }
 .bum-tabs {
   display: flex;
