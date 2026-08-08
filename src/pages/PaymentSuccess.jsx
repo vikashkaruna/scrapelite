@@ -7,6 +7,7 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { confirmStripeSession, clearPendingPayment } from "../lib/paymentService.js";
 import { logPaymentEvent } from "../lib/paymentRepo.js";
 import { getEffectivePlanById } from "../lib/pricingOverrides.js";
+import { useSeo } from "../hooks/useSeo.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 
@@ -14,6 +15,13 @@ import Button from "../components/Button.jsx";
 const REDIRECT_DELAY_MS = 5000;
 
 export default function PaymentSuccess() {
+  useSeo({
+    title: "Payment successful — welcome to DatIQ | DatIQ.app",
+    description:
+      "Welcome to DatIQ — your payment was successful and your plan is now active. Start extracting structured data from any URL. DatIQ.app is the zero-code web data extraction platform.",
+    canonical: "https://datiq.app/payment/success",
+    robots: "noindex, nofollow",
+  });
   const [params]   = useSearchParams();
   const navigate   = useNavigate();
   const { upgradePlan, confirmPayment } = useBilling();

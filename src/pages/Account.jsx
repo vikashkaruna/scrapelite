@@ -15,6 +15,7 @@ import InvoiceModal from "../components/InvoiceModal.jsx";
 import WhiteLabelTemplateUploader from "../components/WhiteLabelTemplateUploader.jsx";
 import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 function UsageMeter({ label, used, limit, icon }) {
   const isUnlimited = limit === Infinity || limit == null;
@@ -228,6 +229,12 @@ function PaymentHistorySection({ history, dbSubscription }) {
 }
 
 export default function Account() {
+  useSeo({
+    title: "DatIQ Account — plan, billing, invoices, API keys | DatIQ.app",
+    description:
+      "DatIQ Account — manage your plan, billing, invoices, API keys, white-label template, and integrations. DatIQ.app is the zero-code web data extraction platform for individuals and teams.",
+    canonical: "https://datiq.app/account",
+  });
   const navigate = useNavigate();
   const {
     plan: ctxPlan, planId, usage, bonus, currency, rates,

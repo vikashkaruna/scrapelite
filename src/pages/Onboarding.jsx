@@ -10,6 +10,7 @@ import Button from "../components/Button.jsx";
 import { PERSONAS } from "../lib/personaConfig.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { RECIPE_PACKS, getPackByKey } from "../lib/extractionTemplates.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 const SIGN_IN_PERSONAS = PERSONAS;
 
@@ -196,6 +197,12 @@ function StepTwo({ persona, onComplete }) {
 }
 
 export default function Onboarding() {
+  useSeo({
+    title: "Welcome to DatIQ — pick a persona to get started | DatIQ.app",
+    description:
+      "Welcome to DatIQ — pick a persona (Sales, SEO, CI, Research, Recruiter, Founder) to personalize your experience. DatIQ.app is the zero-code web data extraction platform for marketers and researchers.",
+    canonical: "https://datiq.app/onboarding",
+  });
   const navigate = useNavigate();
   const { personaId, selectPersona, completeOnboarding } = usePersona();
   const [step, setStep] = useState(1);
