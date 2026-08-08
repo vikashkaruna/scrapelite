@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Generation with DatIQ — extract contacts from any company URL</title>
+<meta name="description" content="Turn any company website into a qualified prospect. Extract leadership contacts, emails, mission, and an AI brief in 30 seconds. No code, no setup, free to start.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/use-cases/lead-generation">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Lead Generation with DatIQ — extract contacts from any company URL">
+<meta property="og:description" content="Turn any company website into a qualified prospect. Extract leadership contacts, emails, mission, and an AI brief in 30 seconds.">
+<meta property="og:url" content="https://datiq.app/use-cases/lead-generation">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Lead Generation with DatIQ — extract contacts from any company URL">
+<meta name="twitter:description" content="Turn any company website into a qualified prospect. Extract leadership contacts, emails, mission, and an AI brief in 30 seconds.">
+<meta name="twitter:image" content="https://datiq.app/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://datiq.app/"},
+    {"@type": "ListItem", "position": 2, "name": "Use cases", "item": "https://datiq.app/use-cases"},
+    {"@type": "ListItem", "position": 3, "name": "Lead Generation", "item": "https://datiq.app/use-cases/lead-generation"}
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Lead Generation with DatIQ",
+  "description": "Turn any company website into a qualified prospect. Extract leadership contacts, emails, mission, and an AI brief in 30 seconds.",
+  "datePublished": "2026-08-08",
+  "dateModified": "2026-08-09",
+  "author": {"@type": "Organization", "name": "DatIQ"},
+  "publisher": {"@type": "Organization", "name": "DatIQ", "logo": {"@type": "ImageObject", "url": "https://datiq.app/favicon.svg"}}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I extract a lead from a company website?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Paste the company URL into DatIQ, enable the 'Contacts & emails' toggle (or use the Quick Enrichment button on the preview), and the AI returns leadership names, titles, email addresses, and social profiles in seconds. Export the result as CSV or push directly to HubSpot or Salesforce on Business and Agency plans."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can DatIQ find personal emails for individual prospects?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DatIQ surfaces the contact information a company publishes publicly — leadership team pages, board pages, 'press contact' sections, and similar. We do not generate or guess personal emails; everything returned is what is on the public page. For personal email finding beyond published contacts, pair DatIQ with a dedicated email-finding tool like Hunter or Apollo."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How many leads can I extract per month?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The Free plan includes 10 extractions per month and a 25-trial credit. Select ($19/mo) is 100, Pro ($29/mo) is 250, Business ($79/mo) is 1,000, and Agency ($299/mo) is unlimited. You can also batch-process up to hundreds of URLs in a single run on Pro and above."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I push leads directly into HubSpot or Salesforce?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Business and Agency plans include native HubSpot and Salesforce sync. One click on the Dashboard and the extracted contacts + company details are pushed to your CRM with the right field mapping. Pro plan supports Google Sheets export, which can be used as a staging layer."
+      }
+    }
+  ]
+}
+</script>
+<style>
+  .uc-hero { text-align: center; padding: 64px 0 32px; }
+  .uc-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
+  .uc-hero h1 .accent { color: var(--accent, #6366f1); }
+  .uc-hero p.lead { color: var(--text-2); font-size: 1.1rem; max-width: 720px; margin: 0 auto 24px; line-height: 1.6; }
+  .uc-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
+  .uc-cta:hover { opacity: 0.9; }
+  .uc-cta-secondary { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border, #d1d5db); color: var(--text-1, #111827); padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; margin-left: 8px; }
+  .uc-section { padding: 32px 0; }
+  .uc-section h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 16px; }
+  .uc-section p { color: var(--text-2, #4b5563); line-height: 1.7; }
+  .uc-bullets { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+  .uc-bullet { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-bullet h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-bullet p { font-size: 0.9rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; counter-reset: step; }
+  .uc-step { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-step .step-num { font-size: 0.8rem; font-weight: 800; color: var(--accent, #6366f1); margin-bottom: 4px; }
+  .uc-step h3 { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-step p { font-size: 0.875rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-sample { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 24px; margin: 16px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; color: var(--text-1, #111827); overflow-x: auto; }
+  .uc-sample pre { margin: 0; white-space: pre-wrap; }
+  .uc-related { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+  .uc-related a { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 16px; font-size: 0.9rem; color: var(--accent, #6366f1); text-decoration: none; font-weight: 600; }
+  .uc-faq details { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 16px 20px; margin: 8px 0; }
+  .uc-faq summary { font-weight: 600; cursor: pointer; }
+  .uc-faq p { margin: 12px 0 0; color: var(--text-2, #4b5563); }
+  .uc-tip { background: color-mix(in srgb, var(--accent, #6366f1) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 30%, transparent); border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 0.95rem; color: var(--text-1, #111827); }
+  .uc-tip strong { color: var(--accent, #6366f1); }
+  .uc-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .container { max-width: 920px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/use-cases">All use cases</a>
+    <a class="nav-link" href="/pricing">Pricing</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="uc-hero">
+    <div class="kicker">DatIQ · Use case · Lead Generation</div>
+    <h1>Turn any company URL into a <span class="accent">qualified prospect</span></h1>
+    <p class="lead">DatIQ extracts leadership names, titles, contact emails, social profiles, and an AI-written company brief from any public-facing business page. Paste a URL, get a prospect in 30 seconds — no code, no setup, free to start.</p>
+    <a class="uc-cta" href="/">Try it free — paste a URL</a>
+    <a class="uc-cta-secondary" href="/pricing">See pricing</a>
+    <p class="uc-updated">Last updated: 2026-08-09</p>
+  </section>
+
+  <section class="uc-section">
+    <h2>Why DatIQ for lead generation</h2>
+    <p>Traditional lead gen stacks bolt enrichment onto scraped data, charge per seat per month, and take weeks to set up. DatIQ inlines enrichment into the extraction itself, returns structured JSON in seconds, and costs a fraction of the price.</p>
+    <div class="uc-bullets">
+      <div class="uc-bullet">
+        <h3>30-second prospect</h3>
+        <p>Paste any company URL. The AI summary, leadership list, contact emails, and social profiles are returned in one view — ready to push to your CRM.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Plain-English custom fields</h3>
+        <p>Need "every board member with title and LinkedIn"? Type it. The custom extraction prompt tells the AI exactly what to return, and you get structured JSON.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Batch by URL list</h3>
+        <p>Drop in 50 or 500 company URLs. DatIQ extracts each one, surfaces per-row status, and exports a single CSV. Free and Select plans run one at a time; Pro and above batch.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>CRM push, not CSV shuffle</h3>
+        <p>Business and Agency plans include native HubSpot and Salesforce sync. One click, contacts and companies land in the right objects with field mapping.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Collections and tags</h3>
+        <p>Group prospects by segment ("Series B SaaS — Q3 2026"), tag them, and re-run the same enrichment whenever leadership changes.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Compliance by default</h3>
+        <p>DatIQ surfaces only what companies publish publicly. We do not generate or guess personal emails. GDPR, DPDP, and SOC 2 alignment documented in the admin panel.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Step-by-step: qualify a prospect in 4 steps</h2>
+    <div class="uc-steps">
+      <div class="uc-step">
+        <div class="step-num">Step 1</div>
+        <h3>Paste the company URL</h3>
+        <p>Open DatIQ, drop the prospect's homepage or about page into the composer. Render JavaScript is on by default, so React/Next.js sites work without setup.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 2</div>
+        <h3>Toggle Contacts &amp; emails</h3>
+        <p>Or hit the Quick Enrichment button on the preview. The AI auto-populates a leadership-contact prompt and surfaces names, titles, emails, and socials.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 3</div>
+        <h3>Review the AI brief</h3>
+        <p>DatIQ returns a 2-3 sentence company summary, the leadership list, a mission statement, and any custom fields you asked for. Verify in 10 seconds.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 4</div>
+        <h3>Save + export or push</h3>
+        <p>Save the extraction. Export as CSV, open in Google Sheets, or push directly to HubSpot / Salesforce. The record is now a searchable, reusable prospect.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>What the output looks like</h2>
+    <p>Pasting a company URL with the contacts toggle on returns structured data like this:</p>
+    <div class="uc-sample"><pre>{
+  "url": "https://stripe.com/about",
+  "summary": "Stripe is a financial infrastructure platform for businesses. Accept payments, send payouts, and manage businesses online with integrated fraud prevention, billing, and tax tools.",
+  "contacts": [
+    {"name": "Patrick Collison", "title": "Co-founder & CEO", "email": null, "linkedin": "https://linkedin.com/in/patrickcollison"},
+    {"name": "John Collison", "title": "Co-founder & President", "email": null, "linkedin": "https://linkedin.com/in/johncollison"},
+    {"name": "David Singleton", "title": "Chief Technology Officer", "email": null, "linkedin": "https://linkedin.com/in/davidsingleton"}
+  ],
+  "mission": "Increase the GDP of the internet.",
+  "social": {"twitter": "@stripe", "linkedin": "company/stripe"},
+  "custom": {
+    "headquarters": "San Francisco, CA + South San Francisco",
+    "founded": "2010",
+    "employees": "8,000+"
+  }
+}</pre></div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Tips from the field</h2>
+    <div class="uc-tip"><strong>Tip 1.</strong> For best results, paste the <em>/about</em> or <em>/team</em> page directly — most companies put their leadership list there. If the homepage shows it (a hero carousel, for example), the home URL works fine.</div>
+    <div class="uc-tip"><strong>Tip 2.</strong> Use the custom extraction prompt: <em>"Find every executive listed on this page, with title, and any contact email. If no email, return LinkedIn URL."</em> This works better than the default contacts prompt for sparse pages.</div>
+    <div class="uc-tip"><strong>Tip 3.</strong> If a company uses a press contact email (<em>press@company.com</em>) for the leadership section, DatIQ returns that — you can still capture it in your CRM and let sales route appropriately.</div>
+    <div class="uc-tip"><strong>Tip 4.</strong> Set up a recurring schedule (Pro+) to monitor a prospect's leadership page. When titles change (a new CMO, a departed VP), you get an email and the dashboard updates.</div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Common questions</h2>
+    <div class="uc-faq">
+      <details>
+        <summary>How do I extract a lead from a company website?</summary>
+        <p>Paste the URL into DatIQ, enable the "Contacts & emails" toggle (or use Quick Enrichment on the preview), and the AI returns leadership names, titles, emails, and social profiles. Export as CSV or push to HubSpot / Salesforce.</p>
+      </details>
+      <details>
+        <summary>Can DatIQ find personal emails for individual prospects?</summary>
+        <p>DatIQ surfaces only what a company publishes publicly. For personal email finding beyond published contacts, pair DatIQ with a dedicated tool like Hunter or Apollo.</p>
+      </details>
+      <details>
+        <summary>How many leads can I extract per month?</summary>
+        <p>Free: 10/month + 25-trial. Select: 100. Pro: 250 (batches available). Business: 1,000. Agency: unlimited. Annual plans get 20% off.</p>
+      </details>
+      <details>
+        <summary>Can I push leads directly into HubSpot or Salesforce?</summary>
+        <p>Yes — Business and Agency plans include native HubSpot and Salesforce sync. Pro supports Google Sheets as a staging layer.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Related use cases</h2>
+    <div class="uc-related">
+      <a href="/use-cases/competitor-research">Competitor Research</a>
+      <a href="/use-cases/market-research">Market Research</a>
+      <a href="/use-cases/seo-audit">SEO Audit</a>
+      <a href="/for-sales">For sales teams</a>
+      <a href="/extract-contacts">Extract contacts from any page</a>
+    </div>
+  </section>
+
+  <section class="uc-section" style="text-align:center; padding: 48px 0;">
+    <h2>Ready to qualify a prospect?</h2>
+    <p>Paste any company URL and see DatIQ extract a leadership list in 30 seconds.</p>
+    <a class="uc-cta" href="/">Start extracting free →</a>
+    <a class="uc-cta-secondary" href="/contact">Talk to sales</a>
+  </section>
+</div>
+</main>
+
+<footer style="border-top:1px solid var(--border,#e5e7eb);padding:24px 0;text-align:center;font-size:0.85rem;color:var(--text-3,#9ca3af);margin-top:32px;">
+  © 2026 DatIQ · <a href="/" style="color:inherit">datiq.app</a> · <a href="/privacy" style="color:inherit">Privacy</a> · <a href="/terms" style="color:inherit">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>
