@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DatIQ for SEO teams — extract headings, links, and content structure | DatIQ.app</title>
+<meta name="description" content="DatIQ for SEO: extract H1–H6, internal/external links, meta tags, schema, and OG data from any URL. Build content briefs in minutes, not days.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/for-seo">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DatIQ for SEO teams — extract headings, links, and content structure">
+<meta property="og:description" content="DatIQ for SEO: extract H1–H6, internal/external links, meta tags, schema, and OG data from any URL.">
+<meta property="og:url" content="https://datiq.app/for-seo">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/favicon.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DatIQ for SEO teams — extract headings, links, and content structure">
+<meta name="twitter:description" content="DatIQ for SEO: extract H1–H6, internal/external links, meta tags, schema, and OG data from any URL.">
+<style>
+  .pr-hero { text-align: center; padding: 64px 0 32px; }
+  .pr-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
+  .pr-hero p { color: var(--text-2); font-size: 1.1rem; max-width: 720px; margin: 0 auto 24px; line-height: 1.6; }
+  .pr-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
+  .pr-cta:hover { opacity: 0.9; }
+  .pr-section { padding: 24px 0; }
+  .pr-section h2 { font-size: 1.4rem; font-weight: 700; margin: 0 0 16px; }
+  .pr-bullets { display: flex; flex-direction: column; gap: 10px; }
+  .pr-bullet { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 14px 18px; display: flex; gap: 10px; align-items: flex-start; }
+  .pr-bullet::before { content: "✓"; color: var(--accent, #6366f1); font-weight: 700; flex-shrink: 0; }
+  .pr-keywords { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pr-keyword { background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 20px; padding: 6px 14px; font-size: 0.85rem; color: var(--text-2, #4b5563); }
+  .pr-foot { font-size: 0.85rem; color: var(--text-3, #9ca3af); margin-top: 32px; }
+  .pr-foot a { color: var(--accent, #6366f1); }
+  .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/for-sales">For sales</a>
+    <a class="nav-link" href="/for-ci">For CI</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="pr-hero">
+    <div class="kicker">DatIQ · For SEO teams</div>
+    <h1>DatIQ for SEO teams</h1>
+    <p>Audit any site's heading structure, link profile, and content gaps — no setup, no crawler config, no monthly bill. Build content briefs in minutes, not days.</p>
+    <a class="pr-cta" href="/?url=https%3A%2F%2Fwww.anthropic.com&intent=summary">Try a competitor SEO audit</a>
+  </section>
+
+  <section class="pr-section">
+    <h2>What you can do</h2>
+    <div class="pr-bullets">
+      <div class="pr-bullet">Pull every H1–H6 in document order, with the anchor text of every link</div>
+      <div class="pr-bullet">Discover internal link gaps and orphan-page candidates</div>
+      <div class="pr-bullet">Generate content briefs from competitor articles in one click</div>
+      <div class="pr-bullet">Compare two URLs side-by-side (the Battle-card generator)</div>
+    </div>
+  </section>
+
+  <section class="pr-section">
+    <h2>Related</h2>
+    <div class="pr-keywords">
+      <span class="pr-keyword">seo audit</span>
+      <span class="pr-keyword">content brief</span>
+      <span class="pr-keyword">competitor analysis</span>
+      <span class="pr-keyword">heading structure</span>
+      <span class="pr-keyword">link profile</span>
+    </div>
+  </section>
+
+  <p class="pr-foot">
+    <a href="/">← Back to DatIQ</a> · <a href="/changelog">Changelog</a> · <a href="/pricing">Pricing</a>
+  </p>
+</div>
+</main>
+
+<footer class="site-footer" style="text-align: center; padding: 24px; font-size: 0.85rem; color: var(--text-3, #9ca3af); border-top: 1px solid var(--border, #e5e7eb); margin-top: 24px;">
+  © 2026 DatIQ · <a href="/">datiq.app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

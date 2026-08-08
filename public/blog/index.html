@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DatIQ Blog — guides on web data extraction, AI summarization, scraping | DatIQ.app</title>
+<meta name="description" content="The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, custom extraction, and more. DatIQ.app is the no-code web intelligence platform.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/blog">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="DatIQ Blog — guides on web data extraction, AI summarization, scraping | DatIQ.app">
+<meta property="og:description" content="The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, and more.">
+<meta property="og:url" content="https://datiq.app/blog">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/favicon.svg">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DatIQ Blog — guides on web data extraction, AI summarization, scraping">
+<meta name="twitter:description" content="The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, and more.">
+<meta name="twitter:image" content="https://datiq.app/favicon.svg">
+<meta name="twitter:site" content="@datiq_app">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  "name": "DatIQ Blog",
+  "description": "Product updates, use-case guides, and deep dives on no-code web data extraction from the DatIQ team.",
+  "url": "https://datiq.app/blog",
+  "publisher": { "@type": "Organization", "name": "DatIQ", "logo": "https://datiq.app/favicon.svg" },
+  "blogPost": [
+    { "@type": "BlogPosting", "headline": "Introducing DatIQ: From URL to Intelligence in Seconds", "datePublished": "2026-06-09", "url": "https://datiq.app/blog#introducing-datiq", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Every Payment Now Has a Document: Invoices, Receipts, and a Kinder Way to Lapse", "datePublished": "2026-07-27", "url": "https://datiq.app/blog#invoices-receipts", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Set It and Know: Monitor Any Web Page for Changes with DatIQ Schedules", "datePublished": "2026-07-22", "url": "https://datiq.app/blog#monitor-any-page", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "How to Extract Competitor Pricing in 60 Seconds", "datePublished": "2026-06-05", "url": "https://datiq.app/blog#extract-competitor-pricing", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Lead Research at Scale: Surface Contacts from Any Domain", "datePublished": "2026-05-28", "url": "https://datiq.app/blog#lead-research-at-scale", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Domain Mapping: Discover Every URL on a Site", "datePublished": "2026-05-20", "url": "https://datiq.app/blog#domain-mapping", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Custom Extraction: Ask for Any Field in Plain English", "datePublished": "2026-05-12", "url": "https://datiq.app/blog#custom-extraction", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Persona-Adaptive Workflows: DatIQ Learns Your Role", "datePublished": "2026-05-03", "url": "https://datiq.app/blog#persona-adaptive", "author": { "@type": "Organization", "name": "DatIQ" } },
+    { "@type": "BlogPosting", "headline": "Zero-Code Enrichment Pipeline: From URL to CRM in 5 Steps", "datePublished": "2026-04-22", "url": "https://datiq.app/blog#enrichment-pipeline", "author": { "@type": "Organization", "name": "DatIQ" } }
+  ]
+}
+</script>
+<style>
+  .bg-hero { text-align: center; padding: 64px 0 24px; }
+  .bg-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 12px; }
+  .bg-hero p { color: var(--text-2); font-size: 1.05rem; max-width: 600px; margin: 0 auto 24px; }
+  .bg-featured { background: linear-gradient(135deg, color-mix(in srgb, var(--accent, #6366f1) 8%, transparent), transparent); border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 20%, transparent); border-radius: 12px; padding: 32px; margin: 24px 0; }
+  .bg-featured .tag { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent, #6366f1); background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent); padding: 4px 10px; border-radius: 20px; margin-bottom: 12px; }
+  .bg-featured h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 12px; }
+  .bg-featured p { color: var(--text-2, #4b5563); line-height: 1.7; margin: 0 0 12px; }
+  .bg-featured .meta { font-size: 0.8rem; color: var(--text-3, #9ca3af); }
+  .bg-list { display: flex; flex-direction: column; gap: 12px; margin: 24px 0; }
+  .bg-list details { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 0; }
+  .bg-list details[open] { box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+  .bg-list summary { padding: 18px 20px; cursor: pointer; list-style: none; }
+  .bg-list summary::-webkit-details-marker { display: none; }
+  .bg-list summary::before { content: "→"; color: var(--accent, #6366f1); font-weight: 700; display: inline-block; width: 16px; }
+  .bg-list details[open] summary::before { content: "↓"; }
+  .bg-list summary h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 4px; color: var(--text-1, #111827); }
+  .bg-list summary p.excerpt { font-size: 0.9rem; color: var(--text-2, #4b5563); margin: 0 0 6px; }
+  .bg-list summary .meta { font-size: 0.75rem; color: var(--text-3, #9ca3af); }
+  .bg-list .tag { display: inline-block; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent, #6366f1); background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent); padding: 2px 8px; border-radius: 20px; margin-right: 6px; }
+  .bg-list .body { padding: 0 20px 20px 36px; color: var(--text-2, #4b5563); line-height: 1.7; }
+  .bg-list .body h4 { font-size: 1rem; font-weight: 700; color: var(--text-1, #111827); margin: 16px 0 8px; }
+  .bg-list .body ul { padding-left: 22px; }
+  .bg-list .body code { background: var(--surface-2, #f3f4f6); padding: 1px 6px; border-radius: 3px; font-size: 0.875em; }
+  .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/what-is-datiq">What is DatIQ</a>
+    <a class="nav-link" href="/changelog">Changelog</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="bg-hero">
+    <div class="kicker">DatIQ · Blog</div>
+    <h1>Notes from the team</h1>
+    <p>Product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, and more. DatIQ.app is the no-code web intelligence platform.</p>
+  </section>
+
+  <article class="bg-featured" id="introducing-datiq">
+    <span class="tag">Featured · Product</span>
+    <h2>Introducing DatIQ: From URL to Intelligence in Seconds</h2>
+    <p class="meta">June 9, 2026 · 5 min read</p>
+    <p>We built DatIQ because extracting structured data from the web shouldn't require a PhD in scraping. Today we're sharing the story behind the product, the personas it was designed for, and where we're taking it next.</p>
+    <details>
+      <summary style="cursor: pointer; color: var(--accent, #6366f1); font-weight: 600;">Read the full post →</summary>
+      <div class="bg-list" style="margin-top: 12px;">
+        <p>DatIQ started with a frustration shared by nearly every person doing research, sales, or marketing: copying data from websites into spreadsheets — one cell at a time.</p>
+        <p>Whether it was scouting competitor pricing, building a lead list, auditing a competitor's content strategy, or just understanding what a company does before a call — the work was always manual, tedious, and error-prone.</p>
+        <h4>The idea</h4>
+        <p>The premise was simple: if a human can read a web page and extract structured information from it, an AI system should be able to do the same — instantly, for any URL, without writing a line of code.</p>
+        <p>DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.</p>
+        <h4>What we shipped in V1.0</h4>
+        <ul>
+          <li><strong>Custom extraction</strong> — describe any field in plain English and the AI locates and structures it</li>
+          <li><strong>Domain mapping</strong> — crawl an entire site and return every indexed URL</li>
+          <li><strong>Lead enrichment</strong> — surface leadership contacts and emails from any company page</li>
+          <li><strong>Persona-adaptive workflows</strong> — the app adapts its examples, quick actions, and AI prompts based on your role</li>
+          <li><strong>CSV, PDF, and email export</strong> — get your data into whatever workflow you use next</li>
+        </ul>
+        <h4>What's coming</h4>
+        <p>We're building toward API access for developers, scheduled monitoring for change tracking, and HubSpot / Salesforce native export. Start with any URL — no sign-up required.</p>
+      </div>
+    </details>
+  </article>
+
+  <section class="bg-list">
+
+    <details id="invoices-receipts">
+      <summary>
+        <span class="tag">Release</span>
+        <h3>Every Payment Now Has a Document: Invoices, Receipts, and a Kinder Way to Lapse</h3>
+        <p class="excerpt">Your finance team asks for the invoice. You dig through your inbox, find a payment confirmation that isn't an invoice, and email support. That round trip is now gone: every DatIQ payment issues a numbered, itemized document, emails it to you as a PDF, and keeps it in your Account — even after you cancel.</p>
+        <p class="meta">July 27, 2026 · 5 min read</p>
+      </summary>
+      <div class="body">
+        <p>Nobody buys a data tool because of its invoices. But everybody eventually needs one — for a reimbursement, a quarterly close, a tax filing, or the simple question "what exactly did we pay for in March?"</p>
+        <p>Until now, DatIQ answered that question with a payment confirmation email. That is not an invoice, and if you have ever forwarded one to a finance team, you know precisely how that conversation goes.</p>
+        <p>This release fixes it properly.</p>
+        <h4>What you get</h4>
+        <p><strong>A real document for every payment.</strong> The moment a payment completes, DatIQ issues its own numbered, itemized document and lists it under Invoices &amp; receipts on your Account screen. Where we are registered for tax in your region, it is a full tax invoice with the tax split shown; elsewhere it is a payment receipt that says plainly that it is not a tax invoice. Either way, the numbers reconcile exactly to what you were charged — line by line.</p>
+        <p><strong>It arrives without you asking.</strong> A PDF copy is emailed to you automatically on payment.</p>
+        <p><strong>Re-send it whenever.</strong> Lost the email? Open the document and have it emailed again, or download the PDF. Re-sends always go to the address on your account — never to an address typed into a page.</p>
+        <p><strong>Documents don't change under you.</strong> An issued document is never edited or renumbered. If something genuinely needs correcting, we issue a separate credit note against it.</p>
+        <p><strong>They outlive the subscription.</strong> Cancel, downgrade, or let a plan lapse — your billing history stays available to you.</p>
+        <h4>And when a plan lapses</h4>
+        <p>Instead, the account moves through clearly-signposted stages. First <strong>suspended</strong>, with an in-app banner that explains exactly what state you are in. Your saved data is intact throughout, and renewing restores full access immediately. If it stays unrenewed, it moves to <strong>deactivated</strong>. You are emailed at each stage, and again before anything is removed.</p>
+      </div>
+    </details>
+
+    <details id="monitor-any-page">
+      <summary>
+        <span class="tag">Release</span>
+        <h3>Set It and Know: Monitor Any Web Page for Changes with DatIQ Schedules</h3>
+        <p class="excerpt">Your competitor drops their price at 2am. A target account posts a new job that signals budget. A supplier quietly edits their terms. You shouldn't have to refresh a tab to catch it — DatIQ Schedules watches the page for you and emails you the moment it changes.</p>
+        <p class="meta">July 22, 2026 · 4 min read</p>
+      </summary>
+      <div class="body">
+        <p>If your job depends on what a web page says today versus last week, you already know the tax: the manual re-check. Open the pricing page. Compare it to the screenshot you took. Open the careers page. Scan for the role that wasn't there Monday. It's the kind of work that's too important to skip and too dull to do reliably — so it gets skipped, and you find out late.</p>
+        <p>DatIQ Schedules exists to end that ritual. Point it at a page, pick a cadence, and DatIQ re-extracts on your schedule, fingerprints the result, and tells you <strong>only when something actually changed</strong>.</p>
+        <h4>Who this is for</h4>
+        <p><strong>Competitive intelligence &amp; revenue teams.</strong> Watch a competitor's pricing, plans, and positioning.</p>
+        <p><strong>Sales &amp; recruiting.</strong> Monitor target-account careers pages and leadership pages.</p>
+        <p><strong>SEO &amp; content.</strong> Track a rival's key landing pages and title tags for the edits that hint at a strategy shift.</p>
+        <h4>How it works</h4>
+        <p>You don't need a scraper, a cron server, or a single line of code.</p>
+        <ul>
+          <li><strong>Pick a target and a cadence.</strong> Hourly, daily, weekly, or a custom builder. Add a "run until" date to time-box a launch you're watching.</li>
+          <li><strong>DatIQ does the runs.</strong> Each run re-extracts the page, fingerprints the content, and diffs it against the last known state.</li>
+          <li><strong>You hear about it only when it matters.</strong> On a real change, DatIQ emails you a diff preview — and posts the same event to Slack if you've wired a webhook. No change, no noise.</li>
+        </ul>
+        <h4>From "I should check that" to "I'll know"</h4>
+        <p>The quiet win here isn't automation for its own sake — it's confidence. You stop carrying a mental list of pages you're supposed to babysit. You set the monitor once, and the next move surfaces itself.</p>
+      </div>
+    </details>
+
+    <details id="extract-competitor-pricing">
+      <summary>
+        <span class="tag">Guide</span>
+        <h3>How to Extract Competitor Pricing in 60 Seconds</h3>
+        <p class="excerpt">Stop manually checking competitor sites. DatIQ's pricing extraction pulls structured tier data from any pricing page in one click.</p>
+        <p class="meta">June 5, 2026 · 3 min read</p>
+      </summary>
+      <div class="body">
+        <p>Tracking competitor pricing used to mean bookmarking a dozen pricing pages and checking them manually every week. With DatIQ, you can pull structured pricing tiers from any page in under 60 seconds.</p>
+        <h4>How it works</h4>
+        <ol>
+          <li>Paste the competitor's pricing URL into DatIQ</li>
+          <li>Enable <strong>Custom extraction</strong> and type: "Extract all pricing tiers, prices, and included features"</li>
+          <li>Click Extract — DatIQ sends the page to the AI, which locates and structures every plan</li>
+        </ol>
+        <p>The result is a clean JSON object with plan names, prices, billing periods, and feature lists. Export to CSV and paste straight into your competitive analysis spreadsheet.</p>
+        <h4>Tips</h4>
+        <ul>
+          <li>Works on any pricing page — SaaS, e-commerce, marketplaces, even PDF-style pricing tables embedded in HTML</li>
+          <li>Use <strong>domain mapping</strong> to discover whether a site has a separate /pricing/enterprise page</li>
+          <li>Save multiple extractions to Dashboard and use the CSV export to track pricing over time</li>
+        </ul>
+      </div>
+    </details>
+
+    <details id="lead-research-at-scale">
+      <summary>
+        <span class="tag">Use Case</span>
+        <h3>Lead Research at Scale: Surface Contacts from Any Domain</h3>
+        <p class="excerpt">Sales teams use DatIQ to pull leadership contacts and emails from hundreds of target company sites — without a single API key.</p>
+        <p class="meta">May 28, 2026 · 4 min read</p>
+      </summary>
+      <div class="body">
+        <p>Building a targeted lead list traditionally means buying a data subscription, waiting for a CSV export, and manually de-duplicating stale data. DatIQ flips this: start with the domains you already care about and extract contacts directly from source.</p>
+        <h4>The contacts &amp; emails mode</h4>
+        <p>Enable <strong>Contacts &amp; emails</strong> in DatIQ's extraction options and paste any company URL. DatIQ will:</p>
+        <ol>
+          <li>Scrape the page (and linked /about, /team, /leadership pages)</li>
+          <li>Pass the content to the AI with a leadership extraction prompt</li>
+          <li>Return a structured list of names, titles, and emails</li>
+        </ol>
+        <p>No API key required. No account on the target site.</p>
+        <h4>What you get</h4>
+        <ul>
+          <li>Senior leadership names and titles (CEO, CTO, VP Sales, etc.)</li>
+          <li>Email addresses surfaced from the page (where publicly listed)</li>
+          <li>LinkedIn profile links when available in the page content</li>
+        </ul>
+        <h4>Scaling it up</h4>
+        <p>Use DatIQ's domain mapping to first discover all pages on a company's site, then run targeted contact extraction on /about and /team pages specifically. Export to CSV and you have a clean, verified lead list in minutes.</p>
+      </div>
+    </details>
+
+    <details id="domain-mapping">
+      <summary>
+        <span class="tag">Deep Dive</span>
+        <h3>Domain Mapping: Discover Every URL on a Site</h3>
+        <p class="excerpt">The domain map feature crawls an entire site and returns a structured list of every indexed page. Here's how to use it for SEO and competitor research.</p>
+        <p class="meta">May 20, 2026 · 6 min read</p>
+      </summary>
+      <div class="body">
+        <p>Most web extraction tools work on individual URLs. DatIQ's <strong>Map entire domain</strong> mode is different: it discovers every indexed URL on a site in a single operation, giving you a complete map of what exists before you decide what to extract.</p>
+        <h4>How domain mapping works</h4>
+        <p>Enable the <strong>Map entire domain</strong> toggle and paste any root domain (e.g. <code>https://example.com</code>). DatIQ calls Firecrawl's /map endpoint, which:</p>
+        <ol>
+          <li>Follows internal links from the starting URL</li>
+          <li>Returns a deduplicated list of every discoverable page</li>
+          <li>Groups results by path pattern (blog posts, product pages, docs, etc.)</li>
+        </ol>
+        <h4>SEO applications</h4>
+        <ul>
+          <li>Audit a competitor's full content inventory — how many blog posts, product pages, case studies?</li>
+          <li>Identify which pages are indexed vs. blocked by robots.txt</li>
+          <li>Find pages that don't appear in their sitemap</li>
+        </ul>
+        <h4>Competitive research applications</h4>
+        <ul>
+          <li>Map a competitor's entire product catalogue</li>
+          <li>Find hidden pricing pages, case study PDFs, or documentation sections</li>
+          <li>Track when new product pages appear (with scheduled monitoring)</li>
+        </ul>
+      </div>
+    </details>
+
+    <details id="custom-extraction">
+      <summary>
+        <span class="tag">Tutorial</span>
+        <h3>Custom Extraction: Ask for Any Field in Plain English</h3>
+        <p class="excerpt">With DatIQ's custom extraction mode you describe what you want — 'find the product SKUs' — and the AI locates and structures it. No XPath required.</p>
+        <p class="meta">May 12, 2026 · 4 min read</p>
+      </summary>
+      <div class="body">
+        <p>XPath selectors. CSS selectors. Regex. The tools for targeted web scraping have always assumed the user knows the page's structure before they start. DatIQ's custom extraction mode takes a different approach: just describe what you want.</p>
+        <h4>How it works</h4>
+        <p>Enable <strong>Custom extraction</strong> in DatIQ and type a plain-English description of the data you want:</p>
+        <ul>
+          <li>"Extract the product name, price, and customer rating"</li>
+          <li>"Find all job titles and locations listed on this page"</li>
+          <li>"Pull the pricing tiers, monthly prices, and feature lists"</li>
+          <li>"List all partner logos and their linked URLs"</li>
+        </ul>
+        <p>DatIQ passes this description to Claude AI along with the page's scraped content. The model identifies the matching data and returns it as a structured JSON object.</p>
+        <h4>Quick actions</h4>
+        <p>If you're not sure how to phrase your request, use DatIQ's built-in <strong>Quick actions</strong> chips:</p>
+        <ul>
+          <li>Extract contacts &amp; leadership</li>
+          <li>Find pricing tiers</li>
+          <li>Pull product features</li>
+          <li>Identify technical stack</li>
+        </ul>
+      </div>
+    </details>
+
+    <details id="persona-adaptive">
+      <summary>
+        <span class="tag">Product</span>
+        <h3>Persona-Adaptive Workflows: DatIQ Learns Your Role</h3>
+        <p class="excerpt">When you tell DatIQ you're a researcher vs. a sales rep, the entire app adapts — different examples, quick actions, and AI prompts out of the box.</p>
+        <p class="meta">May 3, 2026 · 3 min read</p>
+      </summary>
+      <div class="body">
+        <p>A research analyst and a sales rep have nothing in common when it comes to what they want from a web extraction tool. The analyst wants structured data, full-text summaries, and tags they can re-discover. The rep wants a list of names and emails they can call today.</p>
+        <p>DatIQ asks which persona you are on first run and adapts the entire interface around the answer: different example chips, different quick actions, different default AI prompts, different suggested share destinations.</p>
+        <h4>The personas</h4>
+        <ul>
+          <li><strong>Sales / SDR / BDR</strong> — focus on contacts, company research, lead lists</li>
+          <li><strong>SEO / Content</strong> — focus on heading structure, link profiles, content gaps</li>
+          <li><strong>Competitive intelligence</strong> — focus on pricing, positioning, monitoring</li>
+          <li><strong>Market research</strong> — focus on aggregation, structured exports, comparison</li>
+          <li><strong>Recruiter</strong> — focus on team pages, job posts, candidate sources</li>
+          <li><strong>Founder</strong> — focus on company overviews, fast iteration</li>
+        </ul>
+        <p>You can switch personas any time from <a href="/account">Account → Persona</a> without losing your saved data.</p>
+      </div>
+    </details>
+
+    <details id="enrichment-pipeline">
+      <summary>
+        <span class="tag">Use Case</span>
+        <h3>Zero-Code Enrichment Pipeline: From URL to CRM in 5 Steps</h3>
+        <p class="excerpt">Combine single-URL extraction, Quick Enrichment, scheduled monitoring, CSV export, and HubSpot push into a no-code pipeline that runs itself.</p>
+        <p class="meta">April 22, 2026 · 5 min read</p>
+      </summary>
+      <div class="body">
+        <p>Sales teams spend hours every week on lead research that DatIQ can do in five minutes. Here's a no-code pipeline that takes a list of target company URLs and turns it into a CRM-ready list of named leads with verified contact info.</p>
+        <h4>The pipeline</h4>
+        <ol>
+          <li><strong>Map the domain</strong> — for each target URL, enable <strong>Map entire domain</strong> to discover /about, /team, /leadership</li>
+          <li><strong>Targeted extraction</strong> — run a single-URL extraction on the /about page with <strong>Contacts &amp; emails</strong> enabled</li>
+          <li><strong>Quick Enrichment</strong> — click <strong>Find Contact Info</strong> and <strong>Leadership &amp; Board</strong> to add emails and titles</li>
+          <li><strong>Export to CSV</strong> — open the extraction in Dashboard and export with all enrichments included</li>
+          <li><strong>Push to HubSpot</strong> — on Business and Agency plans, use the HubSpot integration to create contacts and companies automatically</li>
+        </ol>
+        <h4>From one-off to a stream</h4>
+        <p>Replace step 1 with a DatIQ Schedule to monitor a competitor's team page for new hires. The moment a new VP Sales appears, the contact is in your CRM.</p>
+      </div>
+    </details>
+
+  </section>
+
+  <section style="text-align: center; padding: 48px 0;">
+    <h2>Try DatIQ</h2>
+    <p>10 free extractions every month. No credit card.</p>
+    <a class="pr-cta" href="/" style="display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem;">Open DatIQ →</a>
+  </section>
+</div>
+</main>
+
+<footer class="site-footer" style="text-align: center; padding: 24px; font-size: 0.85rem; color: var(--text-3, #9ca3af); border-top: 1px solid var(--border, #e5e7eb); margin-top: 24px;">
+  © 2026 DatIQ · <a href="/">datiq.app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

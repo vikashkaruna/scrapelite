@@ -13,6 +13,7 @@ import { useBilling } from "../components/BillingProvider.jsx";
 import { listExtractions } from "../lib/extractionsRepo.js";
 import { listBatchRuns } from "../lib/batchRunsService.js";
 import { listSchedules, cadenceLabel } from "../lib/schedulerService.js";
+import { useSeo } from "../hooks/useSeo.js";
 import WatchlistCard from "../components/WatchlistCard.jsx";
 
 function timeAgo(iso) {
@@ -40,6 +41,12 @@ function QuickLink({ to, icon, title, desc }) {
 }
 
 export default function Workspace() {
+  useSeo({
+    title: "DatIQ Workspace — your team and usage at a glance | DatIQ.app",
+    description:
+      "DatIQ Workspace — your team's shared extractions, usage, and seats at a glance. DatIQ.app is the zero-code web data extraction platform for agencies and multi-seat teams.",
+    canonical: "https://datiq.app/workspace",
+  });
   const { user, userName } = useAuth();
   const { personaId } = usePersona();
   // Usage + plan come from the shared BillingProvider context (DB-hydrated,

@@ -2,11 +2,19 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { clearPendingPayment } from "../lib/paymentService.js";
 import { getEffectivePlanById } from "../lib/pricingOverrides.js";
+import { useSeo } from "../hooks/useSeo.js";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useEffect } from "react";
 
 export default function PaymentCancel() {
+  useSeo({
+    title: "Payment cancelled — no charge was made | DatIQ.app",
+    description:
+      "DatIQ payment cancelled — no charge was made. Your existing plan and extractions are unchanged. DatIQ.app is the zero-code web data extraction platform for marketers and researchers.",
+    canonical: "https://datiq.app/payment/cancel",
+    robots: "noindex, nofollow",
+  });
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const planId   = params.get("plan");
