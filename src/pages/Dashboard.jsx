@@ -23,6 +23,7 @@ import { sendExtractionsEmail } from "../lib/emailService.js";
 import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
+import { useSeo } from "../hooks/useSeo.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
@@ -521,6 +522,12 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCs
 }
 
 export default function Dashboard() {
+  useSeo({
+    title: "DatIQ Dashboard — your saved extractions | DatIQ.app",
+    description:
+      "DatIQ Dashboard — your saved extractions, search and filter, batch runs, collection grouping, CSV and PDF export, and integrations. DatIQ.app is the zero-code web data extraction platform.",
+    canonical: "https://datiq.app/dashboard",
+  });
   const navigate = useNavigate();
   const showToast = useToast();
   const showError = useErrorModal();

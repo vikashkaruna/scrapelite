@@ -22,6 +22,7 @@ import FeedbackWidget from "../components/FeedbackWidget.jsx";
 import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 function HeadingRow({ h }) {
   const level = Math.max(1, parseInt(String(h.tag).replace(/\D/g, ""), 10) || 1);
@@ -118,6 +119,12 @@ function DomainMapCard({ urls, base }) {
 }
 
 export default function Preview() {
+  useSeo({
+    title: "DatIQ Preview — review your extraction | DatIQ.app",
+    description:
+      "DatIQ Preview — review your extracted data, run Quick Enrichment, save to Dashboard, and export to CSV or PDF. DatIQ.app is the zero-code web data extraction platform for marketers and researchers.",
+    canonical: "https://datiq.app/preview",
+  });
   const navigate = useNavigate();
   const showToast = useToast();
   const { current, enrich } = useExtraction();

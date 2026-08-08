@@ -24,6 +24,7 @@ import { hostOf, snippet } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { saveBatchRun, recordBatchItems, makeBatchLabel } from "../lib/batchRunsService.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 const ABSOLUTE_MAX_URLS = 500;
 const MIN_URLS = 2;
@@ -254,6 +255,12 @@ function BatchGateBanner({ onUpgrade, planId, planLimit }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Batch() {
+  useSeo({
+    title: "DatIQ Batch — extract from many URLs at once | DatIQ.app",
+    description:
+      "DatIQ Batch — paste up to hundreds of URLs and extract structured data from every page in one run. DatIQ.app is the zero-code web data extraction platform for sales, SEO, and research teams.",
+    canonical: "https://datiq.app/batch",
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const showToast = useToast();

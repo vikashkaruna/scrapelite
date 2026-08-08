@@ -23,6 +23,7 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { useSeo } from "../hooks/useSeo.js";
 import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
@@ -77,6 +78,12 @@ function GuideTip({ tip, onDismiss }) {
 }
 
 export default function Home() {
+  useSeo({
+    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from Web",
+    description:
+      "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
+    canonical: "https://datiq.app/",
+  });
   const { personaId, userName, resetOnboarding } = usePersona();
   const billing = useBilling();
   const showToast = useToast();
