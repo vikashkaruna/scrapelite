@@ -57,9 +57,9 @@ layered on top of it.
 | Pillar | Name | What it is |
 |---|---|---|
 | **P0** | **Web Intelligence (Core)** | The single, batch, and scheduled URL-extraction engine — proven, ships today. |
-| P1 | Enrichment &amp; Insight | AI summaries, contact enrichment, content generation (SEO briefs, competitor briefs). |
-| P2 | Distribution &amp; Workflow | CSV / PDF / Google Sheets export, scheduling, webhook push, CRM sync. |
-| P3 | Workspace &amp; Collaboration | *(roadmap)* shared workspaces, role-based access, team controls. |
+| P1 | Enrichment & Insight | AI summaries, contact enrichment, content generation (SEO briefs, competitor briefs). |
+| P2 | Distribution & Workflow | CSV / PDF / Google Sheets export, scheduling, webhook push, CRM sync. |
+| P3 | Workspace & Collaboration | *(roadmap)* shared workspaces, role-based access, team controls. |
 | P4 | Intelligence Mesh (API) | *(roadmap)* REST + webhook API and native integrations. |
 
 > Pillar 0 is what runs the moment you click **Extract** on the Home screen, the moment you submit
@@ -284,7 +284,7 @@ supported, with monthly and annual billing (annual saves you money).
 ![DatIQ pricing page](assets/screenshots/08-pricing.png)
 
 - **Free** — a monthly allowance of extractions, full core features, and a one-time bonus credit when you sign up.
-- **Paid plans** (Select, Pro, Business, Agency) — higher allowances, larger batches, more workspaces, and additional capabilities such as API access on Business and above.
+- **Paid plans** (Go, Select, Pro, Business, Agency) — higher allowances, larger batches, more workspaces, and additional capabilities such as API access on Business and above.
 - **Top-up bundles** — add extra batch capacity to your current plan without changing tiers.
 - **Enterprise** — custom volume and terms; contact sales.
 
