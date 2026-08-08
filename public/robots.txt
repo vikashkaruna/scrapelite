@@ -52,13 +52,23 @@ Allow: /
 User-agent: anthropic-ai
 Allow: /
 
-User-agent: Bytespider
-Disallow: /
-
-User-agent: Google-Extended
-Disallow: /
-
 User-agent: Claude-User
+Allow: /
+
+# Google-Extended controls whether content can be used for Gemini training
+# and grounding. It is INDEPENDENT of Googlebot (which controls Google Search
+# indexing — that one is still allowed). We want DatIQ to be citable by
+# Gemini, so we explicitly allow Google-Extended. If you ever want to opt
+# out of Gemini grounding, change this to `Disallow: /` here AND update the
+# `Organization.disambiguatingDescription` in index.html.
+User-agent: Google-Extended
+Allow: /
+
+# Bytespider is ByteDance's crawler. Allowing improves discovery on TikTok
+# / Douyin search surfaces, which are a meaningful traffic source for some
+# of our international personas. Flip back to `Disallow: /` if the crawler
+# starts ignoring rate limits.
+User-agent: Bytespider
 Allow: /
 
 # A second wildcard block, scoped to /admin/*, applied to EVERY user-agent
