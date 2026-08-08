@@ -34,7 +34,13 @@ Allow: /use-cases/
 Allow: /vs/
 Allow: /help/
 
+User-agent: OAI-SearchBot
+Allow: /
+
 User-agent: ClaudeBot
+Allow: /
+
+User-agent: Googlebot
 Allow: /
 
 User-agent: PerplexityBot
@@ -51,6 +57,9 @@ Disallow: /
 
 User-agent: Google-Extended
 Disallow: /
+
+User-agent: Claude-User
+Allow: /
 
 # A second wildcard block, scoped to /admin/*, applied to EVERY user-agent
 # (the named bots above only see the public allow list and never reach this
