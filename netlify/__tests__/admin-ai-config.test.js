@@ -24,6 +24,7 @@ beforeEach(() => {
   delete process.env.GEMINI_API_KEY;
   delete process.env.AI_API_KEY;
   delete process.env.OPENAI_API_KEY;
+  process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
   vi.resetModules();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -44,7 +45,7 @@ describe("admin-ai-config GET (C-25)", () => {
     process.env.GEMINI_API_KEY = "gem-secret";
     process.env.AI_API_KEY = "ant-secret";
     const h = await loadHandler();
-    const r = await h({ httpMethod: "GET" });
+    const r = await h({ httpMethod: "GET", headers: { authorization: `Bearer ${makeAdminToken()}` } });
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.body);
     expect(body.ok).toBe(true);
@@ -62,9 +63,15 @@ describe("admin-ai-config GET (C-25)", () => {
 
   it("persisted:false when Supabase is unconfigured", async () => {
     const h = await loadHandler();
-    const r = await h({ httpMethod: "GET" });
+    const r = await h({ httpMethod: "GET", headers: { authorization: `Bearer ${makeAdminToken()}` } });
     const body = JSON.parse(r.body);
     expect(body.persisted).toBe(false);
+  });
+
+  it("no auth token → 401", async () => {
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "GET", headers: {} });
+    expect(r.statusCode).toBe(401);
   });
 });
 

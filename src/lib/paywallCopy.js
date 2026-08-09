@@ -38,14 +38,17 @@ export function pickRecommendedPlan(ctx = {}) {
   let planId = "pro"; // default: Pro unlocks 1,000 extractions/mo, JSON export, CSV import
   if (ctx.kind === "batch") {
     const urls = ctx.urls || 0;
-    if (urls > 10) planId = "business";   // Business = up to 200 URLs/run
-    else if (urls > 5) planId = "select"; // Select = up to 10 URLs/run
+    if (urls > 250) planId = "agency";      // Agency = up to 500 URLs/run
+    else if (urls > 100) planId = "business"; // Business = up to 250 URLs/run
+    else if (urls > 50) planId = "pro";     // Pro = up to 100 URLs/run
+    else if (urls > 20) planId = "select";  // Select = up to 50 URLs/run
+    else if (urls > 5) planId = "go";       // Go = up to 20 URLs/run
   } else if (ctx.kind === "export") {
     if (ctx.format === "json") planId = "pro";      // JSON export = Pro+
-    else if (ctx.format === "pdf" || ctx.format === "markdown") planId = "select"; // PDF/MD = Select+
+    else if (ctx.format === "pdf" || ctx.format === "markdown") planId = "go"; // PDF/MD = Go+
     else planId = "pro";
   } else if (ctx.kind === "schedule") {
-    planId = "select"; // Scheduled monitoring first appears on Select
+    planId = "pro"; // Scheduled monitoring first appears on Pro (Go/Select are both 0)
   } else if (ctx.kind === "api") {
     planId = "business"; // API access = Business+
   }
@@ -114,8 +117,11 @@ export function buildPaywallCopy({ route, usage = {}, currentPlan, ctx, currency
     default: {
       // Single-URL extraction cap, the most common case
       const over = (usage.extractions || 0) >= (cp.limits?.extractions || Infinity);
+      const capLabel = cp.limits?.extractions || 10;
       title = over
-        ? `You've used all ${cp.limits?.extractions || 10} free extractions`
+        ? cp.id === "free"
+          ? `You've used all ${capLabel} free extractions`
+          : `You've used all ${capLabel} extractions this month`
         : `You're close to your monthly limit`;
       body = `${plan.name} gives you ${plan.limits?.extractions?.toLocaleString() || "more"} extractions/mo, JSON export, and CSV import — for ${annualStr}/mo, billed annually.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;

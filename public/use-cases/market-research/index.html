@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Research with DatIQ — map your market landscape at machine speed</title>
+<meta name="description" content="Aggregate pricing, missions, leadership, and product data from hundreds of company sites. Domain mapping for full coverage. Batch extraction. Scheduled quarterly sweeps. Export to JSON, CSV, or your data warehouse.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/use-cases/market-research">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Market Research with DatIQ — map your market landscape at machine speed">
+<meta property="og:description" content="Aggregate pricing, missions, leadership, and product data from hundreds of company sites. Domain mapping + batch extraction + scheduled sweeps.">
+<meta property="og:url" content="https://datiq.app/use-cases/market-research">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Market Research with DatIQ — map your market landscape at machine speed">
+<meta name="twitter:description" content="Aggregate pricing, missions, leadership, and product data from hundreds of company sites. Domain mapping + batch extraction + scheduled sweeps.">
+<meta name="twitter:image" content="https://datiq.app/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://datiq.app/"},
+    {"@type": "ListItem", "position": 2, "name": "Use cases", "item": "https://datiq.app/use-cases"},
+    {"@type": "ListItem", "position": 3, "name": "Market Research", "item": "https://datiq.app/use-cases/market-research"}
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Market Research with DatIQ",
+  "description": "Map your market landscape at machine speed — aggregate pricing, missions, leadership, and product data from hundreds of company sites.",
+  "datePublished": "2026-08-08",
+  "dateModified": "2026-08-09",
+  "author": {"@type": "Organization", "name": "DatIQ"},
+  "publisher": {"@type": "Organization", "name": "DatIQ", "logo": {"@type": "ImageObject", "url": "https://datiq.app/favicon.svg"}}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I do market research with DatIQ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Build a list of 50-500 company URLs in your space. Use the Batch feature (Pro and above) to extract each one with a custom prompt: 'Extract company name, mission, pricing tiers, leadership team, and any custom field relevant to [your market].' DatIQ returns structured JSON for each, and exports a single CSV. Use the Explain content format to generate a market overview from the aggregated data."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I aggregate reviews from G2, Capterra, or App Store?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Paste the G2 or Capterra product page URL into DatIQ. The default extraction returns every review summary, rating, reviewer title, and date on the page. For deep extraction (hundreds of reviews), use the custom prompt: 'For every review on this page, extract: reviewer name, title, company, star rating, review date, and the full review text.'"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can DatIQ pull data into a spreadsheet or data warehouse?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. CSV export works on every plan. Google Sheets export is on Pro and above. The /api/extract endpoint returns JSON, which can be piped into Snowflake, BigQuery, or any warehouse via a scheduled Netlify Function. Business and Agency plans include webhook delivery on every extraction."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How often should I re-run a market sweep?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Quarterly is the default cadence for most teams — pricing pages change, leadership turns over, and product positioning shifts. Set up a Schedule on each company's homepage or pricing page with monthly cadence to catch material changes between sweeps. Pro and above plans support scheduled extraction."
+      }
+    }
+  ]
+}
+</script>
+<style>
+  .uc-hero { text-align: center; padding: 64px 0 32px; }
+  .uc-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
+  .uc-hero h1 .accent { color: var(--accent, #6366f1); }
+  .uc-hero p.lead { color: var(--text-2); font-size: 1.1rem; max-width: 720px; margin: 0 auto 24px; line-height: 1.6; }
+  .uc-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
+  .uc-cta:hover { opacity: 0.9; }
+  .uc-cta-secondary { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border, #d1d5db); color: var(--text-1, #111827); padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; margin-left: 8px; }
+  .uc-section { padding: 32px 0; }
+  .uc-section h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 16px; }
+  .uc-section p { color: var(--text-2, #4b5563); line-height: 1.7; }
+  .uc-bullets { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+  .uc-bullet { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-bullet h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-bullet p { font-size: 0.9rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
+  .uc-step { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-step .step-num { font-size: 0.8rem; font-weight: 800; color: var(--accent, #6366f1); margin-bottom: 4px; }
+  .uc-step h3 { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-step p { font-size: 0.875rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-sample { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 24px; margin: 16px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; color: var(--text-1, #111827); overflow-x: auto; }
+  .uc-sample pre { margin: 0; white-space: pre-wrap; }
+  .uc-related { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+  .uc-related a { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 16px; font-size: 0.9rem; color: var(--accent, #6366f1); text-decoration: none; font-weight: 600; }
+  .uc-faq details { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 16px 20px; margin: 8px 0; }
+  .uc-faq summary { font-weight: 600; cursor: pointer; }
+  .uc-faq p { margin: 12px 0 0; color: var(--text-2, #4b5563); }
+  .uc-tip { background: color-mix(in srgb, var(--accent, #6366f1) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 30%, transparent); border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 0.95rem; color: var(--text-1, #111827); }
+  .uc-tip strong { color: var(--accent, #6366f1); }
+  .uc-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .container { max-width: 920px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/use-cases">All use cases</a>
+    <a class="nav-link" href="/pricing">Pricing</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="uc-hero">
+    <div class="kicker">DatIQ · Use case · Market Research</div>
+    <h1>Map your market landscape at <span class="accent">machine speed</span></h1>
+    <p class="lead">Aggregate pricing, missions, leadership, and product data from 50 to 500 company sites in one batch run. Domain mapping for full coverage. Scheduled quarterly sweeps. Export to JSON, CSV, or your data warehouse.</p>
+    <a class="uc-cta" href="/">Try it free</a>
+    <a class="uc-cta-secondary" href="/extract-pricing">Extract pricing from any page</a>
+    <p class="uc-updated">Last updated: 2026-08-09</p>
+  </section>
+
+  <section class="uc-section">
+    <h2>Why DatIQ for market research</h2>
+    <p>Market research has always been an exercise in patience — analyst time, manual lookups, stale spreadsheets. DatIQ turns the data-collection step into a 20-minute batch job, leaving the actual analysis (the part that needs a human) for the analyst.</p>
+    <div class="uc-bullets">
+      <div class="uc-bullet">
+        <h3>Domain mapping for full coverage</h3>
+        <p>Toggle "Map entire domain" on any company URL. DatIQ returns every crawlable URL on the site — the full market surface area for that company.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Batch up to 500 URLs</h3>
+        <p>Drop a CSV of company URLs into the Batch composer. DatIQ extracts each one, with per-row status (success / fail / retry) and a single CSV export. Pro and above plans.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Custom schema for your market</h3>
+        <p>Use the custom extraction prompt to capture the fields your market cares about — e.g. "For every SaaS company, extract pricing model, deployment type, target customer size, and primary GTM motion."</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Scheduled quarterly sweeps</h3>
+        <p>Set up a Schedule (Pro+) on a curated list of company URLs. Re-run quarterly to catch pricing changes, leadership moves, and product launches between sweeps.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Aggregate review sentiment</h3>
+        <p>Paste a G2 or Capterra product page. DatIQ extracts every review summary, rating, and date. For hundreds of reviews, use a custom prompt to capture the full text.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>JSON to your warehouse</h3>
+        <p>The /api/extract endpoint returns structured JSON. Wire it to Snowflake / BigQuery via a scheduled Netlify Function and you have a continuously-updated market dataset.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Step-by-step: a quarterly market sweep in 4 steps</h2>
+    <div class="uc-steps">
+      <div class="uc-step">
+        <div class="step-num">Step 1</div>
+        <h3>Build the URL list</h3>
+        <p>Curate 50-500 company URLs in your market. Source: your CRM, a previous sweep, or a market map you maintain. Drop the list into the Batch composer.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 2</div>
+        <h3>Write a custom prompt</h3>
+        <p>Tell DatIQ what to extract. Example: <em>"Extract company name, mission, pricing tiers, leadership team, primary product, target customer."</em> One prompt for the whole batch.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 3</div>
+        <h3>Run the batch</h3>
+        <p>DatIQ processes the batch in the background. Each row gets a status, a per-URL extraction, and a unified CSV export when done. Estimated time: ~30 seconds per URL.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 4</div>
+        <h3>Schedule the next sweep</h3>
+        <p>Save the batch as a template and add a Schedule (Pro+). Quarterly is the default — DatIQ emails you when the next run is done, with a CSV of changes since last time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>What the output looks like</h2>
+    <p>A single batch run with a custom prompt returns one row per company:</p>
+    <div class="uc-sample"><pre>[
+  {
+    "url": "https://stripe.com",
+    "company": "Stripe",
+    "mission": "Increase the GDP of the internet.",
+    "pricing_model": "Pay-as-you-go (transactional) + flat-rate plans",
+    "leadership": ["Patrick Collison (CEO)", "John Collison (President)"],
+    "primary_product": "Payment processing API + financial infrastructure",
+    "target_customer": "SMB to enterprise (developers + finance teams)",
+    "headquarters": "South San Francisco, CA",
+    "founded": 2010
+  },
+  {
+    "url": "https://adyen.com",
+    "company": "Adyen",
+    "mission": "Make payments easier for everyone.",
+    "pricing_model": "Interchange-plus (enterprise-only)",
+    "leadership": ["Pieter van der Does (CEO)", "Ingo Uytdehaage (CFO)"],
+    "primary_product": "Unified global payment platform",
+    "target_customer": "Enterprise (mid-market to Fortune 500)",
+    "headquarters": "Amsterdam, Netherlands",
+    "founded": 2006
+  }
+]</pre></div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Tips from the field</h2>
+    <div class="uc-tip"><strong>Tip 1.</strong> Start with 20 URLs, validate the extraction schema, then scale to 200. The shape of the output (column names, value types) is fixed by your custom prompt — get it right before scaling.</div>
+    <div class="uc-tip"><strong>Tip 2.</strong> For review aggregation, paste the G2 product page directly. DatIQ's default extraction captures the first 10-20 reviews on the page; for the full set, use a custom prompt with explicit "every review on the page".</div>
+    <div class="uc-tip"><strong>Tip 3.</strong> Schedule a quarterly sweep with a "diff" alert. The email only fires when something changed since last quarter — pricing, leadership, or a new product page. Less noise than a full re-extraction.</div>
+    <div class="uc-tip"><strong>Tip 4.</strong> For very large markets (1,000+ companies), split the batch into vertical slices (Fintech, SaaS, E-commerce) and run each separately. Easier to track failures and to re-run just the slice that needs a refresh.</div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Common questions</h2>
+    <div class="uc-faq">
+      <details>
+        <summary>How do I do market research with DatIQ?</summary>
+        <p>Build a list of 50-500 company URLs, use the Batch feature with a custom extraction prompt, and DatIQ returns structured JSON for each. Export as CSV or pipe via the API to your data warehouse.</p>
+      </details>
+      <details>
+        <summary>How do I aggregate reviews from G2, Capterra, or App Store?</summary>
+        <p>Paste the product page URL. Default extraction captures the first 10-20 reviews. For the full set, use a custom prompt with explicit "every review on the page".</p>
+      </details>
+      <details>
+        <summary>Can DatIQ pull data into a spreadsheet or data warehouse?</summary>
+        <p>Yes — CSV (every plan), Google Sheets (Pro+), and /api/extract JSON which can be piped to Snowflake / BigQuery via a scheduled Netlify Function. Webhook delivery on Business and Agency.</p>
+      </details>
+      <details>
+        <summary>How often should I re-run a market sweep?</summary>
+        <p>Quarterly is the default. Set up a Schedule on each company's homepage or pricing page with monthly cadence to catch material changes between sweeps.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Related use cases</h2>
+    <div class="uc-related">
+      <a href="/use-cases/competitor-research">Competitor Research</a>
+      <a href="/use-cases/lead-generation">Lead Generation</a>
+      <a href="/use-cases/seo-audit">SEO Audit</a>
+      <a href="/extract-pricing">Extract pricing from any page</a>
+      <a href="/extract-contacts">Extract contacts from any page</a>
+    </div>
+  </section>
+
+  <section class="uc-section" style="text-align:center; padding: 48px 0;">
+    <h2>Ready to map your market?</h2>
+    <p>Paste a company URL and see the structured extraction in 10 seconds.</p>
+    <a class="uc-cta" href="/">Start extracting free →</a>
+    <a class="uc-cta-secondary" href="/contact">Talk to sales</a>
+  </section>
+</div>
+</main>
+
+<footer style="border-top:1px solid var(--border,#e5e7eb);padding:24px 0;text-align:center;font-size:0.85rem;color:var(--text-3,#9ca3af);margin-top:32px;">
+  © 2026 DatIQ · <a href="/" style="color:inherit">datiq.app</a> · <a href="/privacy" style="color:inherit">Privacy</a> · <a href="/terms" style="color:inherit">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

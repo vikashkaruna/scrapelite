@@ -13,6 +13,7 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useBilling } from "../components/BillingProvider.jsx";
+import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
@@ -22,6 +23,7 @@ import { sendExtractionsEmail } from "../lib/emailService.js";
 import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
 import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
+import { useSeo } from "../hooks/useSeo.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 
 // Merge an item's stored enrichments (Supabase column + local cache, newest per
@@ -520,6 +522,12 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCs
 }
 
 export default function Dashboard() {
+  useSeo({
+    title: "DatIQ Dashboard — your saved extractions | DatIQ.app",
+    description:
+      "DatIQ Dashboard — your saved extractions, search and filter, batch runs, collection grouping, CSV and PDF export, and integrations. DatIQ.app is the zero-code web data extraction platform.",
+    canonical: "https://datiq.app/dashboard",
+  });
   const navigate = useNavigate();
   const showToast = useToast();
   const showError = useErrorModal();
@@ -791,7 +799,17 @@ export default function Dashboard() {
     if (!targets.length) return;
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
-      extractionsToPdf(targets);
+      // White-label PDF (Business + Agency): paint the user's uploaded
+      // template as the page background, when one is set. We never let a
+      // bad template fail the whole export — if the read throws, we
+      // silently fall back to a plain PDF.
+      let template = null;
+      try {
+        const { readTemplate } = await import("../lib/whiteLabelTemplate.js");
+        const tplRes = await readTemplate({ userId: resolveTemplateUserId() });
+        if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
+      } catch { /* plain PDF is fine */ }
+      extractionsToPdf(targets, { template });
       analytics.exported({ format: "pdf", count: targets.length, source: "dashboard" });
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {

@@ -34,7 +34,7 @@ describe("getEffectivePlanById (U-15)", () => {
   it("returns the base plan when no override is present", () => {
     const p = getEffectivePlanById("pro");
     expect(p.id).toBe("pro");
-    expect(p.price_usd).toBe(29);
+    expect(p.price_usd).toBe(20.4);
   });
 
   it("returns the override fields when set", () => {
@@ -104,8 +104,8 @@ describe("Global discount (U-17)", () => {
 });
 
 describe("getEffectivePlans / getEffectivePlanMap", () => {
-  it("returns the same plan count as PLANS (6 priced plans; Enterprise is its own object)", () => {
-    expect(getEffectivePlans().length).toBe(6);
+  it("returns the same plan count as PLANS (7 priced plans; Enterprise is its own object)", () => {
+    expect(getEffectivePlans().length).toBe(7);
   });
 
   it("getEffectivePlanMap keys by id", () => {

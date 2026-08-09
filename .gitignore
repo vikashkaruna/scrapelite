@@ -52,7 +52,18 @@ playwright/.cache/
 # Netlify dev artifacts (Deno runtime used by some plugins)
 deno.lock
 
-# Operator-only scripts and docs (never committed)
+# Operator-only scripts and docs (never committed; force-added on Integration branch)
 HASHED-PIN/
 ai-powered-growth-stack-playbook.md
 step.sh
+
+# Workspace noise — not part of the codebase
+DatIQ\ Price\ Range.numbers
+dist-extension/
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

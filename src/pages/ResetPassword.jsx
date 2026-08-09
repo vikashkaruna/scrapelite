@@ -18,8 +18,16 @@ import Button from "../components/Button.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { updatePassword, authEnabled } from "../lib/authService.js";
 import { classifyAuthError } from "../lib/authErrors.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 export default function ResetPassword() {
+  useSeo({
+    title: "Reset your DatIQ password | DatIQ.app",
+    description:
+      "Reset your DatIQ password — enter your email and we'll send a recovery link. DatIQ.app is the zero-code web data extraction platform with no-code web data extraction for marketers.",
+    canonical: "https://datiq.app/reset-password",
+    robots: "noindex, nofollow",
+  });
   const navigate = useNavigate();
   const { user, openAuth } = useAuth();
 

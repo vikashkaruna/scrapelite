@@ -1,3 +1,13 @@
+# DatIQ robots.txt
+#
+# /admin* is the operator console. It is PIN-gated, never linked from any
+# public page, never listed in the sitemap, never surfaced in structured
+# data. The Disallow lines below block it for every known crawler — the
+# public-facing allow list is the source of truth for what gets indexed.
+# Belt-and-braces: the /admin* route also serves X-Robots-Tag: noindex and
+# a <meta name="robots" content="noindex,..."> tag so a crawler that
+# ignores this file still won't index the page.
+
 User-agent: *
 Allow: /
 Allow: /about
@@ -8,9 +18,12 @@ Allow: /vs/
 Allow: /privacy
 Allow: /terms
 Allow: /help/
+Allow: /gallery
+Allow: /changelog
+Allow: /integrations
 Disallow: /api/
 Disallow: /admin
-Disallow: /.netlify/
+Disallow: /admin/
 
 User-agent: GPTBot
 Allow: /
@@ -21,10 +34,49 @@ Allow: /use-cases/
 Allow: /vs/
 Allow: /help/
 
+User-agent: OAI-SearchBot
+Allow: /
+
 User-agent: ClaudeBot
+Allow: /
+
+User-agent: Googlebot
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+# Google-Extended controls whether content can be used for Gemini training
+# and grounding. It is INDEPENDENT of Googlebot (which controls Google Search
+# indexing — that one is still allowed). We want DatIQ to be citable by
+# Gemini, so we explicitly allow Google-Extended. If you ever want to opt
+# out of Gemini grounding, change this to `Disallow: /` here AND update the
+# `Organization.disambiguatingDescription` in index.html.
+User-agent: Google-Extended
+Allow: /
+
+# Bytespider is ByteDance's crawler. Allowing improves discovery on TikTok
+# / Douyin search surfaces, which are a meaningful traffic source for some
+# of our international personas. Flip back to `Disallow: /` if the crawler
+# starts ignoring rate limits.
+User-agent: Bytespider
+Allow: /
+
+# A second wildcard block, scoped to /admin/*, applied to EVERY user-agent
+# (the named bots above only see the public allow list and never reach this
+# block, so this is purely a backstop for crawlers that don't match any
+# named user-agent line above).
+User-agent: *
+Disallow: /admin
+Disallow: /admin/
 
 Sitemap: https://datiq.app/sitemap.xml

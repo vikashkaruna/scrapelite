@@ -38,6 +38,8 @@ import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import AdminAI from "./pages/admin/AdminAI.jsx";
 import AdminGeneral from "./pages/admin/AdminGeneral.jsx";
 import AdminAutomation from "./pages/admin/AdminAutomation.jsx";
+import AdminMonitoring from "./pages/admin/AdminMonitoring.jsx";
+import AdminHealth from "./pages/admin/AdminHealth.jsx";
 import About from "./pages/About.jsx";
 import Blog from "./pages/Blog.jsx";
 import Contact from "./pages/Contact.jsx";
@@ -176,6 +178,8 @@ function Shell() {
           <Route path="ai"        element={<AdminAI />} />
           <Route path="general"   element={<AdminGeneral />} />
           <Route path="automation" element={<AdminAutomation />} />
+          <Route path="monitoring" element={<AdminMonitoring />} />
+          <Route path="health"     element={<AdminHealth />} />
         </Route>
       </Routes>
     );

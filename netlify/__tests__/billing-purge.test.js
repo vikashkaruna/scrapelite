@@ -69,18 +69,31 @@ async function run() {
   return mod.handler();
 }
 
+// Requests the handler is allowed to make while disarmed: the jobControl
+// wrapper reads the operator kill switch and writes a job_runs row around every
+// invocation. Neither touches user data, and the run log is the whole point of
+// /admin/monitoring — a purge that skips must still be visible as having run.
+const OPS_BOOKKEEPING = /\/(app_config|job_runs)\b/;
+const dataRequests = () =>
+  fetchMock.mock.calls.filter(([u]) => !OPS_BOOKKEEPING.test(String(u)));
+
 describe("interlock 1 — disabled by default", () => {
+  // These assert "made no request that could touch user data", which is the
+  // property that matters. They used to assert `not.toHaveBeenCalled()` — a
+  // proxy for the same thing that stopped holding once run logging was added.
   it("does nothing at all unless PURGE_ENABLED is exactly 1", async () => {
     delete process.env.PURGE_ENABLED;
     const r = await run();
     expect(r.body).toMatch(/PURGE_ENABLED/);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dataRequests()).toEqual([]);
+    expect(deletes()).toEqual([]);
   });
 
   it("is not armed by a truthy-looking value", async () => {
     process.env.PURGE_ENABLED = "true";
     await run();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dataRequests()).toEqual([]);
+    expect(deletes()).toEqual([]);
   });
 });
 

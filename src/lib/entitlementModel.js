@@ -31,6 +31,15 @@ export const CAPS = Object.freeze([
   "schedules",
   "integrations",
   "webhooks",
+  // New in 2026-08-02: Business and Agency both ship with white-label PDF +
+  // priority support. These caps are how the rest of the app finds out
+  // (PDF export, template uploader, support contact routing, badge rendering).
+  "white_label_pdf",
+  "priority_support",
+  // Workspace add-on capabilities. An extra workspace inherits the parent
+  // plan's feature set; the seat cap is enforced at invite time, not here.
+  "workspace.extra",
+  "workspace.team_seats",
 ]);
 
 export const STATUS = Object.freeze({
@@ -274,12 +283,14 @@ export function can(ent, capability, ctx = {}) {
       if (urlCount > effective) {
         const hint =
           planId === "free"
-            ? "Upgrade to Select (10 URLs), Pro (25 URLs), Business (200 URLs), or Agency (500 URLs)."
-            : planId === "select"
-              ? "Upgrade to Pro (25 URLs), Business (200 URLs), or Agency (500 URLs) for more."
-              : planId === "pro"
-                ? "Upgrade to Business (200 URLs) or Agency (500 URLs) for larger batches."
-                : `Your plan supports up to ${effective} URLs per batch. Reduce your list or upgrade.`;
+            ? "Upgrade to Go (20 URLs), Select (50 URLs), Pro (100 URLs), Business (250 URLs), or Agency (500 URLs)."
+            : planId === "go"
+              ? "Upgrade to Select (50 URLs), Pro (100 URLs), Business (250 URLs), or Agency (500 URLs) for more."
+              : planId === "select"
+                ? "Upgrade to Pro (100 URLs), Business (250 URLs), or Agency (500 URLs) for more."
+                : planId === "pro"
+                  ? "Upgrade to Business (250 URLs) or Agency (500 URLs) for larger batches."
+                  : `Your plan supports up to ${effective} URLs per batch. Reduce your list or upgrade.`;
         return deny(
           "PLAN_LIMIT",
           `You've reached your batch limit of ${effective} URL${effective === 1 ? "" : "s"}. ${hint}`,
@@ -327,6 +338,69 @@ export function can(ent, capability, ctx = {}) {
             "pro",
           );
 
+    // White-label PDF: Business (2026-08-02) and Agency. The flag is what
+    // unlocks the template uploader in /account and the background-merge
+    // in extractionsToPdf / invoicePdf. Free / Go / Select / Pro get
+    // a clean deny with an upgrade hint that points at the right tier.
+    case "white_label_pdf":
+      return L.white_label_pdf
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "White-label PDF is available on the Business plan and above. Upgrade to add your own template to exported PDFs.",
+            0,
+            "business",
+          );
+
+    // Priority support: Business + Agency. Used by the contact form's
+    // SLA copy (see contactRouting.js) and the support badge in the
+    // account page. Free / Go / Select / Pro can still file tickets,
+    // but they are routed through the general SLA.
+    case "priority_support":
+      return L.priority_support
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Priority support is included on the Business plan and above. Upgrade for a faster response SLA.",
+            0,
+            "business",
+          );
+
+    // Workspace add-on: only meaningful when the user has actually
+    // purchased extra workspaces. The cap is consulted when the user
+    // tries to INVITE a member into an extra workspace — invite
+    // success then requires workspace.team_seats to be > 0 for that
+    // workspace (the parent plan's team_seats is the actual cap, but
+    // we mirror it here so the gating flow is symmetric).
+    case "workspace.extra":
+      // The entitlement row does not currently track per-workspace
+      // counts; the workspace count is read from the add-on bundle
+      // stack. The caller passes ctx.workspacesPurchased; we accept
+      // any positive number as proof the user has the add-on.
+      return (ctx.workspacesPurchased || 0) > 0
+        ? ok(ctx.workspacesPurchased)
+        : deny(
+            "NOT_IN_PLAN",
+            "Add an Extra Workspace from the pricing page to enable additional client workspaces.",
+            0,
+            null,
+          );
+
+    case "workspace.team_seats": {
+      // The cap is the PARENT plan's team_seats. If the user is on
+      // Business, that's 3; on Agency it's 5; etc. Extra workspaces
+      // never expand this — they inherit it.
+      const cap = L.team_seats || 0;
+      return cap > 0
+        ? ok(cap - (ctx.seatsUsed || 0))
+        : deny(
+            "NOT_IN_PLAN",
+            "Your plan does not include team seats. Upgrade to invite members into your workspace.",
+            0,
+            "select",
+          );
+    }
+
     // Not plan-gated today; listed so suspension still blocks them and so the
     // capability names exist before PR3 wires the UI.
     case "ai":
@@ -342,6 +416,44 @@ export function can(ent, capability, ctx = {}) {
 /** Convenience for callers that only need a boolean (kept for the bare-boolean gates). */
 export function allows(ent, capability, ctx) {
   return can(ent, capability, ctx).allowed;
+}
+
+/**
+ * Compute the EFFECTIVE limits for a workspace — the user's parent-plan limits
+ * intersected with the parent plan's team_seats cap. The extra-workspace
+ * add-on (pricingConfig.js → TOPUP_BUNDLES "workspace-addon") inherits
+ * features but never headcount, so the seat ceiling stays the same.
+ *
+ * Returns null when the user has no team seats in their plan (e.g. Free)
+ * or hasn't purchased any extra workspaces — the caller should hide the
+ * "create extra workspace" affordance in that case.
+ *
+ * @param {object} ent                entitlements row
+ * @param {object} planMap            id → plan (with .limits)
+ * @param {number} workspacesPurchased number of extra workspaces the user owns
+ * @returns {null | { teamSeats:number, exports:string[], batchMaxUrls:number,
+ *   scheduledMonitoring:number, emailExport:boolean, apiAccess:boolean,
+ *   whiteLabelPdf:boolean, prioritySupport:boolean, sourcePlanId:string }}
+ */
+export function workspaceAddonFeaturesForPlan(ent, planMap, workspacesPurchased = 0) {
+  if (!workspacesPurchased || workspacesPurchased < 1) return null;
+  const plan = planMap?.[ent?.plan_id || "free"];
+  if (!plan?.limits) return null;
+  const L = plan.limits;
+  // Free / never-paid plans have no team seats; extra workspaces would be
+  // empty rooms, so we refuse to model them.
+  if (!L.team_seats || L.team_seats < 1) return null;
+  return {
+    sourcePlanId: plan.id,
+    teamSeats: L.team_seats,
+    exports: Array.isArray(L.exports) ? L.exports.slice() : [],
+    batchMaxUrls: L.batch_max_urls || 0,
+    scheduledMonitoring: L.scheduled_monitoring || 0,
+    emailExport: !!L.email_export,
+    apiAccess: !!L.api_access,
+    whiteLabelPdf: !!L.white_label_pdf,
+    prioritySupport: !!L.priority_support,
+  };
 }
 
 /** A synthetic always-active entitlement, for callers that only know a plan id. */

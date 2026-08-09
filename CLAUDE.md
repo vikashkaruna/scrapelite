@@ -2,7 +2,11 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-27 (late) — INVOICING + SUBSCRIPTION LIFECYCLE IS EXECUTED, GREEN, AND MERGED TO `staging` (`origin/staging` = `0b207cf`). `main` IS UNTOUCHED AT `f56306d` — PRODUCTION IS A SEPARATE, DELIBERATELY-GATED DECISION. STILL NOT APPLIED TO ANY REAL SUPABASE PROJECT.** Merged from `claude/prod-db-migration-commands-8ea1bc` (same 4 invoicing commits as `claude/datiq-invoicing-model-e16ea3`, plus the release-readiness work below); `git diff` between that branch and `staging` is empty. Next session starts at [docs/SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md](docs/SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md). **Two traps before production: (a) Netlify production is LOCKED by design — releasing needs a manual UI unlock plus an `approved` comment, and never "fix" a lock error with `--prod-if-unlocked` (that makes a DRAFT deploy, the smoke job then passes against OLD production, and the run claims a release that never shipped); (b) **`staging.datiq.app` was serving PRODUCTION — now FIXED in Netlify, but ALWAYS verify it by BUNDLE HASH, never by a 200.** It had been added as a plain DOMAIN ALIAS on the production site, and an alias always serves the site's PUBLISHED deploy — so it returned `index-BFw7HNTs.js` (identical to `datiq.app`) instead of the staging build, and lacked every artifact of the release that had just deployed. TLS worked, which is why it failed SILENTLY. **Two wrong fixes were tried first — DO NOT repeat either:** (i) repointing the CNAME to `staging--datiqapp.netlify.app` changed NOTHING, because that host and `datiqapp.netlify.app` share the same edge IPs and Netlify routes by **`Host` header**, not by IP or CNAME target; (ii) `branch_deploy_custom_domain = staging.datiq.app` is wrong because that field is a **BASE** domain — Netlify serves `<branch>.<base>`, which produced `staging.staging.datiq.app` (proven: it served the staging build, while `main.staging.datiq.app` served main). **Correct config, applied: `branch_deploy_custom_domain = datiq.app`, `domain_aliases = []`, zone = `datiq.app` + `www.datiq.app` + wildcard `*.datiq.app`.** Two in-repo bugs also fixed: `smoke:staging` pointed at that hostname (now `${STAGING_URL:-https://staging--datiqapp.netlify.app}`), and both workflows advised setting `STAGING_URL` to it once aliased — a condition later met, which would have made the phase-gate smoke PRODUCTION while gating a production release. Verify with `curl -s https://staging.datiq.app/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js'`. **(c) 🔴 NONE OF THE FOUR CRON FUNCTIONS WAS EVER SCHEDULED — fixed 2026-07-27, still UNVERIFIED in production.** `scheduled-runner` had NOT run hourly since R19, and `billing-lifecycle` (the entire lifecycle + dunning engine) would never have fired at all. Cause: each declares `export const config = { schedule: … }` beside `export const handler`, and that export is honoured **only for v2 functions** (`export default`) — ours are v1, and `@netlify/functions` is not a dependency so the v1 `schedule()` wrapper is not in use either; `netlify.toml` declared no schedules. Confirmed three ways: `searchSiteFunctions` reported `schedule: null` for EVERY function, `GET /.netlify/functions/reengagement` returned **200 and RAN the handler**, and deploys report `runtimeAPIVersion: 1`. Fixed by declaring all four schedules in `netlify.toml`. This also closed an exposure: **`billing-purge`, the only destructive job in the system, was a publicly reachable HTTP endpoint.** ⚠️ Netlify runs scheduled functions for the PRODUCTION deploy ONLY, so this can only be verified after it reaches `main` — expect a non-null `schedule` from `searchSiteFunctions` and a **404** on `/.netlify/functions/reengagement`. Until then treat the lifecycle/dunning system as NOT RUNNING. **The headline change since the earlier entry: migrations 0001–0017 have now actually been RUN — all 17 apply cleanly, and all 9 database functions, both triggers and the RLS ownership policies are exercised by 89 assertions via `npm run test:db`** ([scripts/db-verify.mjs](scripts/db-verify.mjs), in-process WASM Postgres, no Docker/psql/network). Zero defects were found in the migrations themselves. That closes the single biggest open risk in the previous entry, but it is **not** the same as applying to a real Supabase project — PGlite has no GoTrue, no PostgREST and no Supabase roles (they are shimmed), so the manual scratch-project apply is still required before production. Full command reference: [docs/DB-MIGRATION-RUNBOOK.md](docs/DB-MIGRATION-RUNBOOK.md). Pre-merge issue register: [docs/RELEASE-READINESS-2026-07-27-INVOICING.md](docs/RELEASE-READINESS-2026-07-27-INVOICING.md).
+> **Last updated: 2026-08-08 — STAGING REBUILD + FULL RETEST, ALL GREEN. NO APPLICATION CODE CHANGED.** Requested as a health check before further work lands: clean `npm ci` → `npm run build` → the full suite, all on `staging` (merge commit `1da3203`). Results: unit **1621/1621**, contract **677 passed + 14 skipped**, integration **276/276**, system **7/7**, db migrations **18 applied / 102 assertions**, e2e smoke **114 passed + 1 skipped** (the 1 skip is the deliberately CSS-hidden Pillar-0 banner, expected), security check clean, build clean. Readiness audit went **4 pass/3 warn/0 fail → 5 pass/2 warn/0 fail** after two doc-only fixes it flagged: (1) the **`Go` plan** (`src/lib/pricingConfig.js`, $4.80/mo·$4/mo annual — not yet reflected in this file's own pricing table below, a separate pre-existing staleness not fixed this session) was missing from the public help billing page — added to `docs/DatIQ-User-Guide.md` §11 and regenerated via `node docs/build-help.mjs`; (2) regenerating surfaced a **pre-existing double-escaping bug** — the pillars table in `docs/DatIQ-User-Guide.md` §1 had `&amp;` pre-escaped in the markdown source, which the generator escapes *again* into literal `&amp;amp;` in shipped HTML; fixed by using plain `&` (the generator's job is to escape it once). Remaining warns are pre-existing and not blockers: stale `public/help` screenshots (regenerate with `node docs/capture-screenshots.mjs` next time a customer-facing visual ships) and gallery/persona coverage (not provable from source, runtime-populated). Also ran `/design-sync` — a **re-sync** (not first-time) of the "DatIQ Design System" project (`https://claude.ai/design/p/2d66b0d6-ac59-4bb2-b9ce-835afc3d8329`): all 50 components' `sourceKeys` matched the prior anchor exactly (0 changed/new/removed — this session's edits never touched `src/components/*`), so nothing needed re-authoring; only the compiled bundle+CSS were re-uploaded (real `src/` changes landed on staging since the last sync even though no *synced component's own file* did). `npm audit` still shows 4 pre-existing transitive vulnerabilities (dompurify, nanoid, react-router) — not fixed, since `react-router-dom` is version-locked per the architecture rules below and bumping it is a deliberate future call, not a rebuild fix. Session detail: [docs/SESSION-HANDOFF-2026-08-08-STAGING-REBUILD-RETEST.md](docs/SESSION-HANDOFF-2026-08-08-STAGING-REBUILD-RETEST.md).
+>
+> Prior: **2026-07-28 — OPS MONITORING ADDED ON BRANCH `monitoring-services-in-admin-module` (branched off `claude/monitoring-services-admin-module-ec6757`, NOT MERGED).** Two new admin pages answer three questions the platform previously could not: *did the cron run*, *is the infrastructure up and how fast*, and *who stopped that job and why*. **`/admin/monitoring`** shows all five platform crons and every user schedule — status, last success, next run, run history — with start/stop, run-now and pause/resume, each behind a mandatory written reason. **`/admin/health`** probes Netlify (site + platform status), Supabase (database, GoTrue, platform status), the functions runtime, Resend, Razorpay and the AI/scrape fallback chains, with per-component latency budgets and uptime. New migration **`0018_ops_monitoring.sql`** (`job_runs`, `health_samples`, `ops_audit_log`, `prune_ops_history()`) takes the schema to **29 tables / 10 functions**; `npm run test:db` is now **101 assertions** (was 89). A fifth cron, **`health-monitor` `@hourly`**, is declared in `netlify.toml` and makes uptime real rather than "up right now". **FOUR THINGS TO KNOW BEFORE TOUCHING IT: (1) the kill switch FAILS OPEN** — a Supabase blip means jobs RUN, deliberately, because failing closed would silently stop billing and dunning with no error anywhere, which is the R19 bug reintroduced as a feature; use `OPS_JOBS_DISABLED` for a stop that cannot fail open. **(2) "not checked" is never "down"** — an unconfigured probe reports `unknown`, and `unknown` is excluded from the overall verdict AND from uptime, in both directions; `computeUptime` returns `null` so the UI says "no data", never "0%". **(3) `billing-purge` cannot be run by hand** — refused by the model, by the handler (403), and by simply not being importable from `admin-monitoring.js`. **(4) `health-monitor` alerting SHIPS DISARMED** (`OPS_ALERT_EMAIL` unset) and only fires on a *state change* of a *critical* component, so a component that stays down produces one email, not one an hour. The known `reengagement` defect (a `user_email` column that does not exist, so the job is a silent no-op) is carried as an explicit `caveat` rendered next to its green status rather than hidden. Tests added: unit +140 (1436→1559), contract +125 (496→666 incl. skips), integration +52 (205→257), e2e +12; build clean; readiness 6 pass / 1 warn / 0 fail. Operator runbook: [docs/OPS-MONITORING-RUNBOOK.md](docs/OPS-MONITORING-RUNBOOK.md). **Branch is synced with `origin/staging` (merged `10938f2`) and pushed.** The whole suite is green: unit **1559**, contract **666** (+14 skipped), integration **259**, system 7, db 101 assertions, e2e smoke 110, build clean, readiness 5 pass / 2 warn / 0 fail. ⚠️ The remaining readiness warn — *"UI source changed after the newest screenshot"* — comes from the customer-facing changes merged in from `staging` (the About founder-block rebrand `58d9b47` and the pricing currency-dropdown z-index fix `2833cff`), **not** from the admin pages, which must never be screenshotted into `public/help/`. Regenerate with `node docs/capture-screenshots.mjs` when shipping those staging changes.
+>
+> Prior: **2026-07-27 (late) — INVOICING + SUBSCRIPTION LIFECYCLE IS EXECUTED, GREEN, AND MERGED TO `staging` (`origin/staging` = `0b207cf`). `main` IS UNTOUCHED AT `f56306d` — PRODUCTION IS A SEPARATE, DELIBERATELY-GATED DECISION. STILL NOT APPLIED TO ANY REAL SUPABASE PROJECT.** Merged from `claude/prod-db-migration-commands-8ea1bc` (same 4 invoicing commits as `claude/datiq-invoicing-model-e16ea3`, plus the release-readiness work below); `git diff` between that branch and `staging` is empty. Next session starts at [docs/SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md](docs/SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md). **Two traps before production: (a) Netlify production is LOCKED by design — releasing needs a manual UI unlock plus an `approved` comment, and never "fix" a lock error with `--prod-if-unlocked` (that makes a DRAFT deploy, the smoke job then passes against OLD production, and the run claims a release that never shipped); (b) **`staging.datiq.app` was serving PRODUCTION — now FIXED in Netlify, but ALWAYS verify it by BUNDLE HASH, never by a 200.** It had been added as a plain DOMAIN ALIAS on the production site, and an alias always serves the site's PUBLISHED deploy — so it returned `index-BFw7HNTs.js` (identical to `datiq.app`) instead of the staging build, and lacked every artifact of the release that had just deployed. TLS worked, which is why it failed SILENTLY. **Two wrong fixes were tried first — DO NOT repeat either:** (i) repointing the CNAME to `staging--datiqapp.netlify.app` changed NOTHING, because that host and `datiqapp.netlify.app` share the same edge IPs and Netlify routes by **`Host` header**, not by IP or CNAME target; (ii) `branch_deploy_custom_domain = staging.datiq.app` is wrong because that field is a **BASE** domain — Netlify serves `<branch>.<base>`, which produced `staging.staging.datiq.app` (proven: it served the staging build, while `main.staging.datiq.app` served main). **Correct config, applied: `branch_deploy_custom_domain = datiq.app`, `domain_aliases = []`, zone = `datiq.app` + `www.datiq.app` + wildcard `*.datiq.app`.** Two in-repo bugs also fixed: `smoke:staging` pointed at that hostname (now `${STAGING_URL:-https://staging--datiqapp.netlify.app}`), and both workflows advised setting `STAGING_URL` to it once aliased — a condition later met, which would have made the phase-gate smoke PRODUCTION while gating a production release. Verify with `curl -s https://staging.datiq.app/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js'`. **(c) 🔴 NONE OF THE FOUR CRON FUNCTIONS WAS EVER SCHEDULED — fixed 2026-07-27, still UNVERIFIED in production.** `scheduled-runner` had NOT run hourly since R19, and `billing-lifecycle` (the entire lifecycle + dunning engine) would never have fired at all. Cause: each declares `export const config = { schedule: … }` beside `export const handler`, and that export is honoured **only for v2 functions** (`export default`) — ours are v1, and `@netlify/functions` is not a dependency so the v1 `schedule()` wrapper is not in use either; `netlify.toml` declared no schedules. Confirmed three ways: `searchSiteFunctions` reported `schedule: null` for EVERY function, `GET /.netlify/functions/reengagement` returned **200 and RAN the handler**, and deploys report `runtimeAPIVersion: 1`. Fixed by declaring all four schedules in `netlify.toml`. This also closed an exposure: **`billing-purge`, the only destructive job in the system, was a publicly reachable HTTP endpoint.** ⚠️ Netlify runs scheduled functions for the PRODUCTION deploy ONLY, so this can only be verified after it reaches `main` — expect a non-null `schedule` from `searchSiteFunctions` and a **404** on `/.netlify/functions/reengagement`. Until then treat the lifecycle/dunning system as NOT RUNNING. **The headline change since the earlier entry: migrations 0001–0017 have now actually been RUN — all 17 apply cleanly, and all 9 database functions, both triggers and the RLS ownership policies are exercised by 89 assertions via `npm run test:db`** ([scripts/db-verify.mjs](scripts/db-verify.mjs), in-process WASM Postgres, no Docker/psql/network). Zero defects were found in the migrations themselves. That closes the single biggest open risk in the previous entry, but it is **not** the same as applying to a real Supabase project — PGlite has no GoTrue, no PostgREST and no Supabase roles (they are shimmed), so the manual scratch-project apply is still required before production. Full command reference: [docs/DB-MIGRATION-RUNBOOK.md](docs/DB-MIGRATION-RUNBOOK.md). Pre-merge issue register: [docs/RELEASE-READINESS-2026-07-27-INVOICING.md](docs/RELEASE-READINESS-2026-07-27-INVOICING.md).
 >
 > Prior (same day, before execution): Branch `claude/datiq-invoicing-model-e16ea3`, 4 commits off `main` @ `f56306d`, 69 files, +10,326/−166. DatIQ previously had no invoicing model at all and no notion of a subscription ending; it now issues a numbered, itemized, GST-capable document per payment, emails it, exposes view/download/resend in Account, and runs active → suspended (30d) → deactivated (60d more) → purge at day 90, with automation pausing and resuming with the subscription. Tests: unit 1005→**1436**, contract 382→**496**, integration 180→**205**; build clean; readiness 5 pass/2 warn/0 fail. **THREE THINGS TO KNOW BEFORE TOUCHING IT: (1) ~~migrations 0012–0017 have NEVER been executed~~ — SUPERSEDED: they now execute cleanly under `npm run test:db`, but that is WASM Postgres with shimmed Supabase roles, so a scratch-project apply is still required before production; (2) migration ORDER IS LOAD-BEARING — 0012 (neutral) → ship dual-write for one release → 0013 backfill → 0014 RLS flip, and after 0014 guest/unclaimed payment history stops showing in-app by design; (3) the purge ships DISARMED (`PURGE_ENABLED` unset) and cannot delete anyone who has not received the `delete_d90` notice.** Entitlements are now server-authoritative and keyed to `auth.users.id`; the old `anon full access` RLS on `subscriptions`/`payment_events` (world-readable, world-writable) is replaced in 0014. Security fixes en route: `verify-payment.js` trusted `planId` from the request body and echoed it back unchecked (a free-upgrade path once the server grants access), and `schedules.js` let the client dictate `status`. Still pending: the `/admin/billing` React page (API + 34 tests exist, no UI), billing-details capture UI, proration wired into checkout, e2e specs. Session detail: `docs/SESSION-HANDOFF-2026-07-27-INVOICING-AND-LIFECYCLE.md`.
 >
@@ -202,6 +206,8 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 | `/admin/coupons` | Coupon CRUD | Admin |
 | `/admin/users` | User management | Admin |
 | `/admin/ai` | AI provider chain editor (model, order, enable toggles, max tokens) | Admin |
+| `/admin/monitoring` | **Automation monitoring** — platform crons + every user schedule: status, last success, next run, run history, start/stop, run-now, pause/resume. Every mutation needs a written reason. | Admin |
+| `/admin/health` | **Service health** — Netlify site + platform, Supabase DB/auth/platform, functions runtime, Resend, Razorpay, AI + scrape chains. Latency benchmarks and uptime. | Admin |
 | `/admin/general` | Global application settings (guest limits, reprompt interval) | Admin |
 | `/help/index.html` | Static help site (R20: overview + 15 user-guide sections + `developers.html` API ref; generated, plain `<a>` — bypasses SPA router) | Public |
 
@@ -378,6 +384,39 @@ src/
                                       Calls getGeneralConfig/saveGeneralConfig (adminConfigService.js)
                                       updateCachedSettings() after save so changes take effect immediately
 
+### Ops monitoring files (branch `monitoring-services-in-admin-module`)
+
+```
+src/lib/
+├── monitoringModel.js        PURE. AUTOMATION_JOBS registry + cron matcher + next-run +
+│                             deriveJobStatus/deriveScheduleStatus. Imported by React AND
+│                             netlify/ — scheduled-runner.js imports cronMatchesHour from
+│                             here rather than keeping its own copy, so the "next run" the
+│                             dashboard predicts is computed by the code that actually fires.
+├── healthModel.js            PURE. HEALTH_COMPONENTS + classifyProbe + overallHealth +
+│                             computeUptime. Owns the ok/degraded/down/UNKNOWN distinction.
+└── monitoringService.js      Client wrapper. Surfaces the server's own refusal message.
+
+src/pages/admin/
+├── AdminMonitoring.jsx       Automation dashboard. Reason dialog on every mutation;
+│                             "Run now" disabled for the destructive job.
+└── AdminHealth.jsx           Health dashboard. Grouped cards + benchmarks table.
+
+netlify/functions/
+├── admin-monitoring.js       GET snapshot; POST set_job_enabled | run_job |
+│                             pause_schedule | resume_schedule. Reason mandatory.
+│                             billing-purge is absent from RUNNABLE — never importable.
+├── admin-health.js           GET probes → classify → uptime. ?record=1 stores samples.
+├── health-monitor.js         @hourly sampler + transition-only alerting. Ships disarmed.
+└── lib/
+    ├── jobControl.js         Kill switch (FAILS OPEN) + job_runs logging + withJobRun.
+    └── healthProbes.js       The probes. Bounded, read-only, free, never throw.
+
+supabase/migrations/0018_ops_monitoring.sql
+                              job_runs · health_samples · ops_audit_log · prune_ops_history()
+docs/OPS-MONITORING-RUNBOOK.md   Operator runbook — INTERNAL, never summarised into help/.
+```
+
 netlify/
 └── functions/
     ├── ai.js                         ★ POST /api/ai — MULTI-PROVIDER proxy w/ ordered fallback
@@ -537,7 +576,7 @@ ThemeProvider
 | Admin | `/admin` is standalone (no TopBar/Footer). **PIN verified server-side** via `netlify/functions/admin-auth.js` (env `ADMIN_PIN_HASH`); demo PIN `ADMIN123` only when no PIN env is set or the function is unreachable (`npm run dev`). `adminLogin()` is async → token in `scrapelite.adminAuth` (+ exp); 5-attempt → 60s lockout (`datiq.adminLock`). Sidebar is collapsible — toggle (chevron) + pin button. State in `datiq.adminSidebarCollapsed` / `datiq.adminSidebarPinned`. |
 | Payment secrets | `STRIPE_SECRET_KEY`, `RAZORPAY_KEY_SECRET`, `*_WEBHOOK_SECRET` — Netlify env ONLY. Never VITE_ prefix. |
 | Netlify Functions | ESM (`export const handler`), in `netlify/functions/`. `stripe`/`razorpay` dynamic-imported only. |
-| Scheduled functions | **`netlify.toml` is the ONLY thing that registers a cron. It is authoritative.** `export const config = { schedule }` inside a function is **IGNORED** for our functions — it is a v2 (`export default`) feature, and every function here is v1 (`export const handler`) with `@netlify/functions` not installed, so the v1 `schedule()` wrapper is not in play either. All four crons (`scheduled-runner` `@hourly`, `reengagement` `@daily`, `billing-lifecycle` `@daily`, `billing-purge` `@daily`) are declared under `[functions."<name>"] schedule = …`. Deleting a block there silently un-schedules that function — **no build error, no runtime error, it just never fires again**, which is exactly how all four sat unscheduled from R19 until 2026-07-27. A declared schedule also makes Netlify BLOCK public HTTP access, which is the only thing keeping `billing-purge` off the open internet. Netlify runs scheduled functions for the **production deploy only**, so a branch deploy returning 200 on a cron endpoint proves nothing — verify on `main`. |
+| Scheduled functions | **`netlify.toml` is the ONLY thing that registers a cron. It is authoritative.** `export const config = { schedule }` inside a function is **IGNORED** for our functions — it is a v2 (`export default`) feature, and every function here is v1 (`export const handler`) with `@netlify/functions` not installed, so the v1 `schedule()` wrapper is not in play either. All **five** crons (`scheduled-runner` `@hourly`, `reengagement` `@daily`, `billing-lifecycle` `@daily`, `billing-purge` `@daily`, `health-monitor` `@hourly`) are declared under `[functions."<name>"] schedule = …`. **`AUTOMATION_JOBS` in `src/lib/monitoringModel.js` is the EXPECTATION, netlify.toml is the REALITY** — adding a job to the registry does not schedule it, and adding it to netlify.toml without registering it means it runs unmonitored. Deleting a block there silently un-schedules that function — **no build error, no runtime error, it just never fires again**, which is exactly how all four sat unscheduled from R19 until 2026-07-27. A declared schedule also makes Netlify BLOCK public HTTP access, which is the only thing keeping `billing-purge` off the open internet. Netlify runs scheduled functions for the **production deploy only**, so a branch deploy returning 200 on a cron endpoint proves nothing — verify on `main`. |
 | localStorage keys | All use `datiq.*` prefix (except `scrapelite.*` internal keys — NOT rebranded to avoid breaking sessions) |
 | Help site | `/help/index.html` linked from TopBar as plain `<a>` (not React Router) — bypasses SPA router |
 | Contact emails | **Exactly two customer-facing inboxes.** `hello@datiq.app` — product support, bug reports, feature requests, billing, anything general. `admin@datiq.app` — enterprise/agency, legal & terms, privacy & DPDP (incl. the DPDP grievance officer). `support@` / `legal@` / `privacy@` are retired; the readiness audit fails the build if they reappear. Source of truth: `src/lib/contactRouting.js`. |
@@ -556,6 +595,11 @@ ThemeProvider
 | Dunning idempotency | `billing_notice_log` keys on `user_id` (emails change) and `window_key` anchors on the CYCLE, never on today. `reengagement.js` anchors on today and would email an inactive user daily forever. Claim the log row BEFORE sending. |
 | Purge | `billing-purge.js` is the ONLY destructive job. Five interlocks, any one of which stops it; ships disarmed. It can never delete anyone whose `last_notice_kind` is not `delete_d90`. Invoices/payment_events/account always survive. |
 | Admin billing | Every mutation in `admin-billing.js` requires a `reason` and writes `billing_audit_log`. `reason` is NOT NULL in the schema and validated in the handler — a blank reason is a rejected request, not an empty log entry. |
+| Ops kill switch | **`isJobEnabled()` FAILS OPEN.** A Supabase blip, a malformed config row or a timeout all mean the job RUNS. Same asymmetry as `requireEntitlement.js`. **Do not "harden" it:** failing closed means an outage silently stops billing, dunning and every user's monitoring with no error anywhere — that is the R19 bug (four unscheduled crons, no signal) reintroduced as a feature. The switch is always an ADDITIONAL interlock, never the only one. For a stop that cannot fail open, use `OPS_JOBS_DISABLED` (read from `process.env`). |
+| Ops monitoring truthfulness | **"Not checked" is never "down", in either direction.** `configured:false` → `unknown`, and `unknown` is excluded from the overall verdict AND from uptime. An hour with no sample is an hour with no evidence, so `computeUptime` returns `null` and the UI says "no data", never "0%". A dashboard that invents outages from missing config, or hides them behind a skipped probe, gets muted — and then nothing is monitored. |
+| Ops mutations | Every mutation in `admin-monitoring.js` requires a `reason`, enforced at **three** layers: the dialog's confirm button, the handler, and a `CHECK (length(btrim(reason)) > 0)` on `ops_audit_log`. `ops_audit_log` is the one ops table that is **never pruned** — it records who stopped the billing cron, and a retention job that erases that is what an audit trail exists to prevent. |
+| Manual cron runs | `billing-purge` **cannot** be triggered by hand. Enforced twice, independently: `manualRunAllowed:false` in `monitoringModel.js` disables the button, and the handler returns 403. It is also absent from `admin-monitoring.js`'s `RUNNABLE` map, so the module is never imported and cannot be invoked by a typo. Every other control there is reversible; deletion is not, so its schedule stays its only trigger path. |
+| Monitoring must not break the job | `withJobRun` swallows every failure of its own bookkeeping — an unwritable `job_runs` row, an unreachable `app_config` — and still runs the handler. It records an error then **re-throws** it, so Netlify's own logs and retry behaviour still see the failure; the run log adds a view of failures, it does not become the only one. |
 | run-all.sql | **GENERATED.** `npm run build:sql` (`--check` in CI). Never hand-edit — it silently drifted from the numbered migrations before. |
 | Naming | App brand is "DatIQ" everywhere in UI. Live site is `https://datiq.app` (Netlify project renamed to `datiqapp`; old `scrapelite.netlify.app` host now 404s). |
 | Currencies | USD and INR only (EUR/GBP/SGD/AED removed in R4). INR → Razorpay; USD → Stripe. |
@@ -672,14 +716,18 @@ v2.0 — see [`docs/RECURRING-BILLING-DEFERRAL.md`](docs/RECURRING-BILLING-DEFER
 
 - `AuthProvider` manages Supabase session, exposes: `user`, `openAuth(mode)`, `closeAuth`, `showAuthModal`, `authMode`, `authError`
 - `openAuth('signin')` opens modal on Sign in tab; `openAuth('signup')` opens on Create account tab
-- On mount: detects `window.location.hash` with `error=` → sets `authError`, opens modal, cleans URL
+- On mount: detects any auth-shaped hash/query (`#access_token=`, `#refresh_token=`, `?code=`, `#error=`, `#type=recovery`) and strips it from the URL immediately, so users never see a token-bearing URL in their address bar
+- On mount: if the URL had a success-shaped auth fragment but `getSession()` returns null (project-mismatch — see `docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md`), the auth modal opens with a diagnostic error
+- On mount: if the URL had `#error=access_denied&error_description=…`, the specific error is surfaced in the auth modal
 - `signUpWithEmail` passes `emailRedirectTo: window.location.origin` (prevents localhost:3000 redirect)
 - `apiClient.setAuthToken(token)` called on sign-in to include `Authorization` header on API requests
+- Supabase client is created with `flowType: 'pkce'` so OAuth callbacks return `?code=…` in the query string instead of tokens in the URL hash
 
 ### OAuth — requires Supabase dashboard setup
 1. Authentication → URL Configuration → Site URL + redirect URLs
 2. Providers → Enable Google / Microsoft (Azure) / GitHub
-3. Callback URL: `https://[project].supabase.co/auth/v1/callback`
+3. Callback URL: `https://[project].supabase.co/auth/v1/callback` (or a custom auth domain if one is set up)
+4. **Production uses `api.datiq.app` as a custom auth domain for the prod Supabase project.** If you add a second env (staging) on a different Supabase project, give the staging project its own custom auth domain (e.g. `api-staging.datiq.app`) — otherwise the JWT issued by the prod project's auth server won't validate against the staging client, and OAuth silently fails. See `docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md` §3.
 
 ---
 
@@ -892,6 +940,21 @@ SUPPLIER_PAN=
 PURGE_ENABLED=                 # must be exactly "1" to arm. Default OFF.
 PURGE_DRY_RUN=                 # "1" → report what WOULD be deleted, delete nothing
 PURGE_MAX_USERS_PER_RUN=       # default 50; caps the blast radius of any bug
+
+# ── Ops monitoring (/admin/monitoring + /admin/health) ───────────────────────
+# All optional; every one defaults safely. Full runbook: docs/OPS-MONITORING-RUNBOOK.md
+OPS_ALERT_EMAIL=               # health-monitor alert recipients (comma-separated).
+                               # UNSET = NO ALERT MAIL EVER. Sampling still runs.
+                               # Ships disarmed on purpose — arm it only after
+                               # watching the dashboard for a full cycle.
+OPS_JOBS_DISABLED=             # comma-separated job ids to stop, e.g. "billing-purge".
+                               # BREAK-GLASS: read from process.env, so unlike the
+                               # database kill switch it CANNOT fail open. Jobs stopped
+                               # this way show source:"env" and cannot be restarted
+                               # from the admin UI.
+NETLIFY_AUTH_TOKEN=            # enables the netlify-site probe (published deploy state,
+NETLIFY_SITE_ID=               # branch, age). Unset → the probe reports `unknown`,
+                               # NOT `down` — see the truthfulness rule above.
 ```
 
 > **Admin PIN is verified server-side** by `netlify/functions/admin-auth.js` — the secret
@@ -1084,6 +1147,37 @@ To trigger manually: Netlify dashboard → Deploys → Trigger deploy
 ---
 
 ## Outstanding tasks
+
+### Ops monitoring (2026-07-28 — ON BRANCH `monitoring-services-in-admin-module`, NOT MERGED)
+
+Two admin pages, five crons now observable and stoppable, one new migration.
+Full operator detail: [`docs/OPS-MONITORING-RUNBOOK.md`](docs/OPS-MONITORING-RUNBOOK.md).
+
+- [ ] **Apply migration `0018_ops_monitoring.sql`.** Adds `job_runs`,
+      `health_samples`, `ops_audit_log` and `prune_ops_history()`. After it the
+      schema is **29 tables / 10 functions** (was 26/9). `npm run test:db` proves
+      it applies and that the constraints bite — 101 assertions, up from 89.
+- [ ] **Verify `health-monitor` is actually scheduled — on `main` only.** Netlify
+      runs scheduled functions for the production deploy ONLY. Expect a non-null
+      `schedule` from `searchSiteFunctions` and a **404** on
+      `/.netlify/functions/health-monitor`. A **200 means it is not scheduled**,
+      exactly as it was for all four crons from R19 until 2026-07-27.
+- [ ] **Leave `OPS_ALERT_EMAIL` unset for the first cycle.** Sampling is safe
+      immediately; alerting is opt-in. Watch `/admin/health` for a day, confirm
+      the readings are trustworthy, then arm it. Alerting on readings you do not
+      yet trust is how a dashboard gets ignored.
+- [ ] **Set `NETLIFY_AUTH_TOKEN` + `NETLIFY_SITE_ID`** to light up the
+      `netlify-site` probe (published deploy state / branch / age). Until then it
+      correctly reads `unknown` rather than `down`.
+- [ ] **Schedule `prune_ops_history(30)`.** Nothing calls it yet. `job_runs` and
+      `health_samples` grow at roughly 150k rows/year — small, but unbounded.
+      `ops_audit_log` is deliberately excluded and must stay excluded.
+- [ ] **Fix `reengagement`'s `user_email` query** (see the entry below). Until
+      then the dashboard carries it as an explicit `caveat` next to a green
+      status, because a run row that says "success" while nothing was sent is
+      worse than no monitoring at all.
+- [ ] Consider a Slack/webhook channel for `health-monitor` transitions —
+      `slackFormatter.js` already exists and is used by `scheduled-runner`.
 
 ### Invoicing & subscription lifecycle (2026-07-27 — ON A BRANCH, NOT MERGED)
 
@@ -1583,6 +1677,23 @@ npm run dev   # http://localhost:5173
 - `/admin/general` → "Reset to defaults" → fields reset to 3 / 2 / 10 / 5
 - `/admin/general` → "Reload" button → re-fetches from server and updates form
 - `/admin/general` → without Supabase configured: shows warning banner; fields still load with defaults; changes are not persisted server-side
+- Admin sidebar → shows "Automation" and "Health" between AI and General
+- `/admin/monitoring` → five platform jobs listed with status pill, last success, next run, cron
+- `/admin/monitoring` → expand any job → description, cron, and its recent runs (or "No runs recorded yet.")
+- `/admin/monitoring` → "Data purge (day 90)" carries a red **Destructive** tag and its ⚡ Run-now button is **disabled**; hovering explains why
+- `/admin/monitoring` → click ⏸ on any job → reason dialog opens; **confirm stays disabled until a non-blank reason is typed**; Cancel changes nothing
+- `/admin/monitoring` → stopping `billing-lifecycle` warns that it also disarms the purge
+- `/admin/monitoring` → a stopped job reads **Stopped** (not Stale) and shows no next run
+- `/admin/monitoring` → user schedules filter by All / Needs attention / Active / User paused / System paused / Expired
+- `/admin/monitoring` → pausing a user schedule says the user's own pause state is untouched
+- `/admin/monitoring` → without Supabase: every job reads "never run" AND a banner says this reflects missing configuration, not a stopped platform
+- `/admin/health` → headline is green with "All monitored systems are operational"; counts read N operational / N degraded / N down / N not checked
+- `/admin/health` → an unconfigured service (e.g. Razorpay with no key) renders a **dashed** card labelled **"Not checked"** — never "Down" — names the missing env var, and does **not** turn the headline red
+- `/admin/health` → components grouped under Hosting & edge / Data & identity / External services; empty groups are omitted
+- `/admin/health` → latency badge tooltip shows that component's own budget (e.g. "fast ≤ 150ms, slow ≥ 800ms" for the database)
+- `/admin/health` → Benchmarks table: uptime window switches 1h / 24h / 7d / 30d
+- `/admin/health` → with no samples: uptime reads **"no data"**, never "0%"
+- `/admin/health` → "Probe & record" stores a sample and toasts; "Probe now" does not write
 - `/admin/pricing` → USD Pricing section: $-prefix inputs for monthly + annual prices; INR Pricing section: ₹-prefix inputs + GST hint below each (e.g. "≈ ₹1,180 incl. GST")
 - `/admin/pricing` → collapsed plan card header shows both $X/mo and ₹Y/mo when INR price is set
 - `/admin/revenue` → shows live KPI cards (MRR, ARR, total/paying/free/new users, coupon usage) — NOT dummy data

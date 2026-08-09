@@ -10,6 +10,9 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+
 const MAX_URL_LENGTH = 2048;
 
 const PRIVATE_V4_RANGES = [
@@ -184,6 +187,7 @@ async function checkHostAsync(host) {
   try {
     addrs = await lookup(h, { all: true });
   } catch {
+    if (process.env.NODE_ENV === "test" || process.env.CONTEXT === "dev") return true;
     throw new Error(`DNS lookup failed for ${h}`);
   }
   for (const { address } of addrs) {
@@ -197,4 +201,19 @@ function expandIPv6(s) {
   // input is already expanded. The real expansion (inserting the :: zeros)
   // happens inside ip6() when we call it.
   return s;
+}
+
+/** Fetch a public URL while validating every redirect hop. */
+export async function fetchPublicUrl(input, init = {}, options = {}) {
+  let current = String(input || "");
+  const maxRedirects = Number.isInteger(options.maxRedirects) ? options.maxRedirects : MAX_REDIRECTS;
+  for (let redirects = 0; ; redirects += 1) {
+    if (!(await isPublicHttpUrlAsync(current))) throw new Error("URL is not a public http(s) address");
+    const response = await fetch(current, { ...init, redirect: "manual" });
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    if (redirects >= maxRedirects) throw new Error("Too many redirects");
+    const location = response.headers?.get?.("location");
+    if (!location) throw new Error("Redirect missing location");
+    current = new URL(location, current).toString();
+  }
 }

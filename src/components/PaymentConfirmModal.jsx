@@ -50,6 +50,7 @@ export default function PaymentConfirmModal({
   onCancel,
 }) {
   const [selectedId, setSelectedId]   = useState(planId);
+  const [period, setPeriod]           = useState(billingPeriod); // local toggle so prices update live
   const [couponInput, setCouponInput] = useState("");
   const [couponErr, setCouponErr]     = useState("");
   // Local mirror of the applied coupon so the breakdown updates instantly on apply/remove.
@@ -70,7 +71,7 @@ export default function PaymentConfirmModal({
   const effectivePct = Math.max(couponPct, globalPct);
   const discountSrc  = couponPct >= globalPct && couponPct > 0 ? "coupon" : globalPct > 0 ? "global" : null;
 
-  const { gross, discount, baseTotal, gst, total } = computePricing(plan, billingPeriod, currency, effectivePct);
+  const { gross, discount, baseTotal, gst, total } = computePricing(plan, period, currency, effectivePct);
 
   // Higher plans relative to the currently selected plan (up to 2)
   const upgradePlans = allPlans
@@ -100,7 +101,7 @@ export default function PaymentConfirmModal({
     setCouponErr("");
   };
 
-  const periodLabel = billingPeriod === "annual" ? "Annual (12 months)" : "Monthly";
+  const periodLabel = period === "annual" ? "Annual (12 months)" : "Monthly";
   const confirmLabel = isDemo
     ? `Confirm — activate ${plan.name} (Demo)`
     : `Proceed to payment — ${fmt(total, currency)}`;
@@ -137,6 +138,29 @@ export default function PaymentConfirmModal({
 
         <div className="pcm-breakdown">
           <div className="pcm-breakdown-title">Price breakdown</div>
+
+          {/* In-modal billing period toggle — the prices below update live as
+              the user switches between Annual and Monthly, without having to
+              close the modal and re-click "Get X" on /pricing. */}
+          <div className="billing-toggle-wrap pcm-period-toggle" role="group" aria-label="Billing period">
+            <button
+              type="button"
+              className={"billing-toggle-btn" + (period === "monthly" ? " active" : "")}
+              onClick={() => setPeriod("monthly")}
+              aria-pressed={period === "monthly"}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              className={"billing-toggle-btn" + (period === "annual" ? " active" : "")}
+              onClick={() => setPeriod("annual")}
+              aria-pressed={period === "annual"}
+            >
+              Annual
+            </button>
+          </div>
+
           <div className="pcm-row">
             <span>{plan.name} — {periodLabel}</span>
             <span>{fmt(gross, currency)}</span>
@@ -150,35 +174,23 @@ export default function PaymentConfirmModal({
               <span>− {fmt(discount, currency)}</span>
             </div>
           )}
-          {isINR ? (
-            <>
-              <div className="pcm-breakdown-divider" />
-              <div className="pcm-row">
-                <span>Subtotal</span>
-                <span>{fmt(baseTotal, currency)}</span>
-              </div>
-              <div className="pcm-row pcm-gst-row">
-                <span>GST (18%)</span>
-                <span>+ {fmt(gst, currency)}</span>
-              </div>
-              <div className="pcm-breakdown-divider" />
-              <div className="pcm-row pcm-total-row">
-                <span>Total charged</span>
-                <span>{fmt(total, currency)}</span>
-              </div>
-            </>
-          ) : (
-            effectivePct > 0 && (
-              <>
-                <div className="pcm-breakdown-divider" />
-                <div className="pcm-row pcm-total-row">
-                  <span>Total charged</span>
-                  <span>{fmt(total, currency)}</span>
-                </div>
-              </>
-            )
+          <div className="pcm-breakdown-divider" />
+          <div className="pcm-row">
+            <span>Subtotal</span>
+            <span>{fmt(baseTotal, currency)}</span>
+          </div>
+          {isINR && (
+            <div className="pcm-row pcm-gst-row">
+              <span>GST (18%)</span>
+              <span>+ {fmt(gst, currency)}</span>
+            </div>
           )}
-          {billingPeriod === "annual" && (
+          <div className="pcm-breakdown-divider" />
+          <div className="pcm-row pcm-total-row">
+            <span>Total charged</span>
+            <span>{fmt(total, currency)}</span>
+          </div>
+          {period === "annual" && (
             <div className="pcm-per-month-note">
               {fmt(perMonthIncl(plan, currency), currency)}/mo
               {isINR ? " incl. GST" : ""}
@@ -237,7 +249,7 @@ export default function PaymentConfirmModal({
             <div className="pcm-upgrade-title">Or step up to a higher plan</div>
             {upgradePlans.map((up) => {
               const upPct = Math.max(couponPercentFor(activeCoupon, up.id), globalPct);
-              const { total: upTotal } = computePricing(up, billingPeriod, currency, upPct);
+              const { total: upTotal } = computePricing(up, period, currency, upPct);
               return (
                 <button
                   key={up.id}
@@ -250,7 +262,7 @@ export default function PaymentConfirmModal({
                   </div>
                   <div className="pcm-up-price">
                     {fmt(upTotal, currency)}
-                    <span>/{billingPeriod === "annual" ? "yr" : "mo"}{isINR ? " incl. GST" : ""}</span>
+                    <span>/{period === "annual" ? "yr" : "mo"}{isINR ? " incl. GST" : ""}</span>
                   </div>
                 </button>
               );

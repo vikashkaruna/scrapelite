@@ -143,11 +143,15 @@ import {
   Ban,
   Columns3,
   TrendingDown,
+  // Workflows (workflow-implementation-and-optimization branch)
   RotateCcw,
   Timer,
   Activity,
   RefreshCw,
   MousePointerClick,
+  // Ops monitoring (staging branch)
+  Server,
+  Gauge,
 } from "lucide-react";
 
 const MAP = {
@@ -310,6 +314,10 @@ const MAP = {
   "columns-3": Columns3,
   // FA3 paywall
   "trending-down": TrendingDown,
+  // Ops monitoring (/admin/monitoring + /admin/health)
+  activity: Activity,
+  server: Server,
+  gauge: Gauge,
 };
 
 

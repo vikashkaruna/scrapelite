@@ -5,6 +5,8 @@
 // GET /api/og-preview?url=https://example.com
 // Response: { url, hostname, favicon, title, description }
 
+import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
+
 const FETCH_TIMEOUT_MS = 5000;
 const HEAD_BYTES = 15000;
 
@@ -75,6 +77,12 @@ export const handler = async (event) => {
     return respond(400, { error: "invalid url" });
   }
 
+  try {
+    if (!(await isPublicHttpUrlAsync(rawUrl))) return respond(400, { error: "URL is not a public http(s) address" });
+  } catch {
+    return respond(400, { error: "invalid public URL" });
+  }
+
   const { hostname } = parsed;
   const favicon = `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
   const empty = { url: rawUrl, hostname, favicon, title: null, description: null };
@@ -83,13 +91,12 @@ export const handler = async (event) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const res = await fetch(rawUrl, {
+    const res = await fetchPublicUrl(rawUrl, {
       signal: controller.signal,
       headers: {
         "User-Agent": "DatIQ/2.0 Preview (+https://datiq.app)",
         Accept: "text/html,application/xhtml+xml",
       },
-      redirect: "follow",
     });
     clearTimeout(timer);
 

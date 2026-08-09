@@ -14,6 +14,7 @@ import {
   can,
   computeLifecycle,
   isLifecycleManaged,
+  workspaceAddonFeaturesForPlan,
 } from "./entitlementModel.js";
 
 const planMap = PLAN_BY_ID;
@@ -262,5 +263,123 @@ describe("robustness", () => {
   it("tolerates a malformed period_end instead of throwing", () => {
     const bad = { plan_id: "pro", status: "active", source: "payment", period_end: "not-a-date" };
     expect(can(bad, "extract", ctx()).allowed).toBe(true); // not lifecycle-managed
+  });
+});
+
+// White-label PDF + priority support + workspace add-on (2026-08-02)
+//
+// Business and Agency now both ship with white_label_pdf and priority_support.
+// Free / Go / Select / Pro get a clean deny with an upgrade hint pointing at
+// the right tier. The matrix below is the safety net for that contract — if
+// any of these start returning `allowed: true` for the wrong plan, a billing
+// regression has shipped and we want a loud test failure.
+describe("white_label_pdf cap (Business + Agency only)", () => {
+  it("Free / Go / Select / Pro are denied with an upgrade hint", () => {
+    for (const planId of ["free", "go", "select", "pro"]) {
+      const r = can(activeEntitlement(planId), "white_label_pdf", ctx());
+      expect(r.allowed, `expected ${planId} to be denied`).toBe(false);
+      expect(r.code).toBe("NOT_IN_PLAN");
+      expect(r.upgradeTo).toBe("business");
+    }
+  });
+
+  it("Business and Agency are allowed (post 2026-08-02 release)", () => {
+    expect(can(activeEntitlement("business"), "white_label_pdf", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("agency"),   "white_label_pdf", ctx()).allowed).toBe(true);
+  });
+});
+
+describe("priority_support cap (Business + Agency only)", () => {
+  it("Free / Go / Select / Pro are denied with an upgrade hint", () => {
+    for (const planId of ["free", "go", "select", "pro"]) {
+      const r = can(activeEntitlement(planId), "priority_support", ctx());
+      expect(r.allowed, `expected ${planId} to be denied`).toBe(false);
+      expect(r.code).toBe("NOT_IN_PLAN");
+      expect(r.upgradeTo).toBe("business");
+    }
+  });
+
+  it("Business and Agency are allowed", () => {
+    expect(can(activeEntitlement("business"), "priority_support", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("agency"),   "priority_support", ctx()).allowed).toBe(true);
+  });
+});
+
+describe("workspace.extra cap (only when the add-on is actually purchased)", () => {
+  it("denies when workspacesPurchased is 0 or missing", () => {
+    expect(can(activeEntitlement("business"), "workspace.extra", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("business"), "workspace.extra", ctx({ workspacesPurchased: 0 })).allowed).toBe(false);
+  });
+
+  it("allows when workspacesPurchased is at least 1", () => {
+    const r = can(activeEntitlement("business"), "workspace.extra", ctx({ workspacesPurchased: 2 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(2);
+  });
+});
+
+describe("workspace.team_seats cap (bounded by the PARENT plan's team_seats)", () => {
+  it("Business team_seats is 3, Agency is 5", () => {
+    const biz  = can(activeEntitlement("business"), "workspace.team_seats", ctx());
+    const agy  = can(activeEntitlement("agency"),   "workspace.team_seats", ctx());
+    expect(biz.allowed).toBe(true);
+    expect(biz.remaining).toBe(3);
+    expect(agy.allowed).toBe(true);
+    expect(agy.remaining).toBe(5);
+  });
+
+  it("denies when the parent plan has team_seats === 0 (synthetic plan)", () => {
+    // Build a planMap with a single zero-seat plan so the deny path is hit.
+    const zeroPlanMap = {
+      solo: { id: "solo", name: "Solo", limits: { team_seats: 0, exports: [], batch_max_urls: 0, scheduled_monitoring: 0, email_export: false, api_access: false, white_label_pdf: false, priority_support: false } },
+    };
+    const r = can(activeEntitlement("solo"), "workspace.team_seats", { planMap: zeroPlanMap });
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("NOT_IN_PLAN");
+  });
+
+  it("remaining = cap − seatsUsed", () => {
+    const r = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 1 }));
+    expect(r.remaining).toBe(2);
+  });
+});
+
+describe("workspaceAddonFeaturesForPlan — feature parity helper", () => {
+  it("returns null when no extra workspaces are purchased", () => {
+    expect(workspaceAddonFeaturesForPlan(activeEntitlement("business"), planMap, 0)).toBeNull();
+    expect(workspaceAddonFeaturesForPlan(activeEntitlement("business"), planMap)).toBeNull();
+  });
+
+  it("returns null for plans with no team seats (synthetic zero-seat plan)", () => {
+    const zeroPlanMap = {
+      solo: { id: "solo", name: "Solo", limits: { team_seats: 0, exports: [], batch_max_urls: 0, scheduled_monitoring: 0, email_export: false, api_access: false, white_label_pdf: false, priority_support: false } },
+    };
+    expect(workspaceAddonFeaturesForPlan(activeEntitlement("solo"), zeroPlanMap, 1)).toBeNull();
+  });
+
+  it("mirrors the parent plan's features, including white_label_pdf + priority_support (Business + Agency)", () => {
+    const biz = workspaceAddonFeaturesForPlan(activeEntitlement("business"), planMap, 2);
+    expect(biz).toMatchObject({
+      sourcePlanId: "business",
+      teamSeats: 3,
+      whiteLabelPdf: true,
+      prioritySupport: true,
+    });
+
+    const agy = workspaceAddonFeaturesForPlan(activeEntitlement("agency"), planMap, 1);
+    expect(agy).toMatchObject({
+      sourcePlanId: "agency",
+      teamSeats: 5,
+      whiteLabelPdf: true,
+      prioritySupport: true,
+    });
+  });
+
+  it("exposes exports as a NEW array (not a reference to the plan's array)", () => {
+    const r = workspaceAddonFeaturesForPlan(activeEntitlement("business"), planMap, 1);
+    expect(r.exports).toEqual(expect.arrayContaining(["csv", "pdf", "json", "markdown"]));
+    r.exports.push("mutated");
+    // Mutating the result must not leak into the underlying plan object.
+    expect(planMap.business.limits.exports).not.toContain("mutated");
   });
 });

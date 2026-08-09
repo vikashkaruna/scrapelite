@@ -125,5 +125,27 @@ describe("Q4 — Workspace page when signed in", () => {
     });
     expect(screen.getByText(/Free plan/i)).toBeInTheDocument();
   });
+
+  it("lists an active schedule by label and cadence (regression: listSchedules() is async and must be awaited)", async () => {
+    localStorage.setItem("datiq.schedules", JSON.stringify([{
+      id: "sch_test1",
+      type: "track",
+      target: "https://example.com",
+      label: "Track example.com",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      lastRunAt: null,
+      runCount: 0,
+    }]));
+    await act(async () => {
+      renderWorkspace(["/workspace"], true);
+    });
+    expect(screen.queryByText(/No schedules yet\./i)).toBeNull();
+    // Appears twice: once in the Watchlist card (top), once in Active schedules.
+    expect(screen.getAllByText("Track example.com").length).toBeGreaterThan(0);
+    expect(screen.getByText("Daily")).toBeInTheDocument();
+  });
 });
 

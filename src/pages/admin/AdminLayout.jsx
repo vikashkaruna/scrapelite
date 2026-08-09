@@ -5,6 +5,7 @@ import {
   isAdminAuthed, adminLogin, adminLogout,
   getAdminLock, recordAdminFailure, clearAdminFailures, ADMIN_MAX_ATTEMPTS,
 } from "../../lib/adminService.js";
+import { setNoIndex, setPublicDefaultMeta } from "../../lib/seoMeta.js";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
@@ -14,8 +15,12 @@ const NAV = [
   { to: "/admin/coupons",    label: "Coupons",    icon: "bookmark" },
   { to: "/admin/users",      label: "Users",      icon: "users" },
   { to: "/admin/ai",         label: "AI",         icon: "sparkles" },
+  // n8n workflow pipeline observability (workflow-implementation-and-optimization branch)
+  { to: "/admin/automation", label: "Workflows",  icon: "zap" },
+  // Ops monitoring + service health (staging branch)
+  { to: "/admin/monitoring", label: "Monitoring", icon: "activity" },
+  { to: "/admin/health",     label: "Health",     icon: "server" },
   { to: "/admin/general",    label: "General",    icon: "settings" },
-  { to: "/admin/automation", label: "Automation", icon: "zap" },
 ];
 
 const LS_COL = "datiq.adminSidebarCollapsed";
@@ -104,6 +109,19 @@ export default function AdminLayout() {
   useEffect(() => {
     if (authed && pathname === "/admin") navigate("/admin/revenue", { replace: true });
   }, [authed, pathname]);
+
+  // SEO: the /admin section must never be indexed. Apply the noindex signal
+  // on mount (and on every pathname change inside /admin, in case the user
+  // has navigated from a public page that left stale tags in the head),
+  // and restore the public default when the layout unmounts. The
+  // Netlify edge sets X-Robots-Tag too, but the meta tag is the in-page
+  // signal for crawlers that don't read headers (e.g. some social
+  // embedders), and the neutralised OG/title/description close the
+  // snippet-leak path if any crawler ignores both.
+  useEffect(() => {
+    setNoIndex();
+    return () => setPublicDefaultMeta();
+  }, [pathname]);
 
   const toggleCollapse = () => {
     const next = !collapsed;

@@ -22,6 +22,7 @@ import {
 } from "../../src/lib/entitlementModel.js";
 import { pickDueNotice, noticeCopy } from "../../src/lib/billingNotices.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
+import { withJobRun } from "./lib/jobControl.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -257,7 +258,7 @@ export function planTransition(ent, now = new Date()) {
   };
 }
 
-export const handler = async () => {
+const run = async () => {
   const db = sb();
   if (!db) return { statusCode: 200, body: "skipped (no supabase)" };
 
@@ -350,5 +351,16 @@ export const handler = async () => {
   console.log(`[billing-lifecycle] ${summary}`);
   return { statusCode: 200, body: summary };
 };
+
+// Wrapped for /admin/monitoring — see jobControl.js.
+//
+// This is ALSO why stopping this job is dangerous enough to need a written
+// reason: billing-purge refuses to delete anything unless this job has
+// succeeded within STALE_HOURS, so stopping it silently disarms the purge. That
+// is the safe direction to fail, but it is not obvious from this file alone.
+// The `recordRun` call above still writes billing_cron_runs, which is the
+// interlock the purge reads; job_runs is the monitoring view and does not
+// replace it.
+export const handler = withJobRun("billing-lifecycle", run);
 
 export const _internal = { sb, planTransition, sendNotice, fmtDate };

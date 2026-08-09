@@ -9,10 +9,11 @@ import { Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
-import { readSubscription, readUsage } from "../lib/usageService.js";
+import { useBilling } from "../components/BillingProvider.jsx";
 import { listExtractions } from "../lib/extractionsRepo.js";
 import { listBatchRuns } from "../lib/batchRunsService.js";
-import { listSchedules } from "../lib/schedulerService.js";
+import { listSchedules, cadenceLabel } from "../lib/schedulerService.js";
+import { useSeo } from "../hooks/useSeo.js";
 import WatchlistCard from "../components/WatchlistCard.jsx";
 
 function timeAgo(iso) {
@@ -40,10 +41,19 @@ function QuickLink({ to, icon, title, desc }) {
 }
 
 export default function Workspace() {
+  useSeo({
+    title: "DatIQ Workspace — your team and usage at a glance | DatIQ.app",
+    description:
+      "DatIQ Workspace — your team's shared extractions, usage, and seats at a glance. DatIQ.app is the zero-code web data extraction platform for agencies and multi-seat teams.",
+    canonical: "https://datiq.app/workspace",
+  });
   const { user, userName } = useAuth();
   const { personaId } = usePersona();
-  const [usage, setUsage] = useState(() => readUsage());
-  const [subscription, setSubscription] = useState(() => readSubscription());
+  // Usage + plan come from the shared BillingProvider context (DB-hydrated,
+  // reactive) rather than a one-off readUsage()/readSubscription() snapshot —
+  // otherwise this page shows whatever the count was at mount and never
+  // updates again during the session, drifting from Account.jsx.
+  const { usage, plan } = useBilling();
   const [recent, setRecent] = useState([]);
   const [batchRuns, setBatchRuns] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -60,11 +70,9 @@ export default function Workspace() {
         if (!cancel) setBatchRuns(runs.slice(0, 3));
       } catch { /* skip */ }
       try {
-        const sched = listSchedules();
+        const sched = await listSchedules();
         if (!cancel) setSchedules((sched || []).slice(0, 3));
       } catch { /* skip */ }
-      setUsage(readUsage());
-      setSubscription(readSubscription());
     })();
     return () => { cancel = true; };
   }, [user?.id]);
@@ -75,9 +83,7 @@ export default function Workspace() {
     return `Welcome back, ${name}`;
   }, [userName, user]);
 
-  const planName = subscription?.planId
-    ? (subscription.planId === "free" ? "Free" : subscription.planId.charAt(0).toUpperCase() + subscription.planId.slice(1))
-    : "Free";
+  const planName = plan?.name || "Free";
 
   return (
     <div className="page">
@@ -204,9 +210,9 @@ export default function Workspace() {
                 {schedules.map((s) => (
                   <li key={s.id} className="ws-list-item">
                     <div className="ws-list-link as-row">
-                      <span className="ws-list-title">{s.name || s.url}</span>
+                      <span className="ws-list-title">{s.label || s.target}</span>
                       <span className="ws-list-meta">
-                        <span className="ws-list-stat">{s.cadence || s.schedule || "—"}</span>
+                        <span className="ws-list-stat">{cadenceLabel(s) || "—"}</span>
                         <span className="ws-list-time">{timeAgo(s.createdAt || s.updatedAt)}</span>
                       </span>
                     </div>

@@ -14,6 +14,7 @@ import {
   saveSchedule,
   toggleSchedule,
 } from "./schedulerService.js";
+import { apiClient } from "./apiClient.js";
 
 /**
  * U-33..37 — schedulerService is the client-side half of the
@@ -121,6 +122,55 @@ describe("localStorage fallback (U-37)", () => {
 
   it("listSchedules returns [] when no key is set", () => {
     expect(listSchedulesLocal()).toEqual([]);
+  });
+});
+
+describe("saveSchedule — real rejection vs infra fallback", () => {
+  it("a 5xx/network-shaped error still saves locally (infra fallback)", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 503, useLocalStorage: true });
+    const s = buildSchedule({ type: "track", target: "https://example.com/a", cadenceKey: "daily" });
+    await expect(saveSchedule(s)).resolves.toBeTruthy();
+    expect(listSchedulesLocal().some((x) => x.id === s.id)).toBe(true);
+  });
+
+  it("a 502 Bad Gateway (e.g. local dev proxy with no netlify functions running) also falls back to local-only save (regression: this was NOT in the fallback set, so schedule creation failed outright with 'Bad Gateway' in local dev)", async () => {
+    const gatewayErr = new Error("Bad Gateway");
+    gatewayErr.status = 502;
+    apiClient.upsertSchedule.mockRejectedValueOnce(gatewayErr);
+    const s = buildSchedule({ type: "track", target: "https://example.com/gw", cadenceKey: "daily" });
+    await expect(saveSchedule(s)).resolves.toBeTruthy();
+    expect(listSchedulesLocal().some((x) => x.id === s.id)).toBe(true);
+  });
+
+  it("a 504 Gateway Timeout also falls back to local-only save", async () => {
+    const timeoutErr = new Error("Gateway Timeout");
+    timeoutErr.status = 504;
+    apiClient.upsertSchedule.mockRejectedValueOnce(timeoutErr);
+    const s = buildSchedule({ type: "track", target: "https://example.com/gt", cadenceKey: "daily" });
+    await expect(saveSchedule(s)).resolves.toBeTruthy();
+    expect(listSchedulesLocal().some((x) => x.id === s.id)).toBe(true);
+  });
+
+  it("a 402 entitlement denial (e.g. plan doesn't include scheduling) rolls back the optimistic local write and surfaces the real message (regression: previously showed a generic 'couldn't save' error even though the schedule was silently orphaned in localStorage)", async () => {
+    const denyErr = new Error("Scheduled monitoring is not available on your current plan. Upgrade to Pro to schedule recurring runs.");
+    denyErr.status = 402;
+    apiClient.upsertSchedule.mockRejectedValueOnce(denyErr);
+    const s = buildSchedule({ type: "track", target: "https://example.com/b", cadenceKey: "daily" });
+    await expect(saveSchedule(s)).rejects.toThrow(/Scheduled monitoring is not available/);
+    expect(listSchedulesLocal().some((x) => x.id === s.id)).toBe(false);
+  });
+
+  it("a real rejection on an EDIT restores the prior version rather than deleting it", async () => {
+    const s = buildSchedule({ type: "track", target: "https://example.com/c", cadenceKey: "daily" });
+    await saveSchedule(s); // succeeds (default mock resolves null)
+    const edited = applyEdits(s, { cadenceKey: "weekly", cron: "0 9 * * 1" });
+    const denyErr = new Error("Denied.");
+    denyErr.status = 402;
+    apiClient.upsertSchedule.mockRejectedValueOnce(denyErr);
+    await expect(saveSchedule(edited)).rejects.toThrow(/Denied/);
+    const stored = listSchedulesLocal().find((x) => x.id === s.id);
+    expect(stored).toBeTruthy();
+    expect(stored.cadenceKey).toBe("daily"); // NOT "weekly" — edit was rolled back
   });
 });
 

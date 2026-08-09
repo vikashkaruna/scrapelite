@@ -51,9 +51,9 @@ async function getOwnerId() {
 const LS_KEY = "datiq.saved";
 
 // Decide whether an API error warrants a localStorage fallback.
-// Covers: explicit useLocalStorage flag, 401/403/404/500/503, and network failures.
-// 500 is included so unexpected Supabase/function errors fall back gracefully
-// rather than surfacing a hard error to the user.
+// Covers: explicit useLocalStorage flag, 401/403/404/500/502/503/504, and
+// network failures. 500 is included so unexpected Supabase/function errors
+// fall back gracefully rather than surfacing a hard error to the user.
 function shouldFallback(err) {
   return (
     err.useLocalStorage ||
@@ -61,7 +61,9 @@ function shouldFallback(err) {
     err.status === 403 || // insufficient permissions
     err.status === 404 || // API endpoint not found (Netlify Functions not running)
     err.status === 500 || // unexpected server error — degrade gracefully
+    err.status === 502 || // gateway can't reach the function (e.g. netlify dev not running locally)
     err.status === 503 || // Supabase not configured
+    err.status === 504 || // gateway timeout reaching the function
     !err.status // network-level failure
   );
 }
