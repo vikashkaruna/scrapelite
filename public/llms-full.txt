@@ -344,7 +344,10 @@ DatIQ's differentiation: plain-English custom extraction, built-in AI enrichment
 - **Serverless:** Netlify Functions (Node.js)
 - **Payments:** Razorpay (India) + Stripe (international)
 - **PDF export:** jsPDF (lazy-loaded, only on export click)
-- **Test framework:** Vitest + Playwright + jsdom
+- **AI-discovery files:** `/llms.txt` (3.6KB index) and `/llms-full.txt` (17.8KB full content — this file)
+- **Open Graph card:** `/og-card.jpg` (1376×768, used as `og:image` + `twitter:image` on every static surface)
+- **Schema.org:** FAQPage on `/faq`, `/what-is-datiq`, and all 4 use-case detail pages; BreadcrumbList on 11 nested pages; Article on blog posts
+- **Test framework:** Vitest (2,500+ tests) + Playwright (e2e smoke) + jsdom
 
 ---
 
@@ -382,3 +385,42 @@ No credit card required to start. No setup. No API keys. Just paste and go.
 - **Response SLA:** General ≤1 business day; Security disclosure ≤48 hours; Priority (Business+) ≤4 business hours
 
 Full contact page: https://datiq.app/contact
+
+---
+
+## 16. Recent releases (2026)
+
+### 2026-08-09 — AEO/GEO/SEO P1 sweep
+- `og-card.jpg` (1376×768) replaces the favicon pixel in `og:image` and `twitter:image` on 19 surfaces
+- `llms-full.txt` (this file) added — full content reference for AI agents, complementing the shorter `/llms.txt` index
+- `llms.txt` brand-collision disambiguation: explicitly distinguishes DatIQ from "DAT iQ" (IntelliTrans/Trimble freight), "DAT" (parent freight company), and "Data IQ" (generic analytics term)
+- BreadcrumbList JSON-LD added to 11 nested pages
+- 4 new use-case detail pages: `/use-cases/lead-generation`, `/use-cases/competitor-research`, `/use-cases/seo-audit`, `/use-cases/market-research`
+- Public gallery now has 7 curated persona samples
+- `/vs/firecrawl` redesigned to match the `/vs/{apify,phantombuster}` template
+
+### 2026-08-09 — Customer email consolidation
+- `support@datiq.app` → `hello@datiq.app` (product, billing, general)
+- `legal@datiq.app` → `admin@datiq.app` (legal, terms, privacy, DPDP, DMCA)
+- `privacy@datiq.app` → `admin@datiq.app` (privacy + DPDP grievance officer)
+- Channel taxonomy preserved on `/contact` (6 channel cards), but all mailto links now point to the canonical inboxes
+- Production-readiness audit: 5 pass / 2 warn / 0 fail
+
+### 2026-08-08 — AEO/GEO/SEO P0 hardening
+- `robots.txt`: OAI-SearchBot, Googlebot, Claude-User, Google-Extended, Bytespider all explicitly allowed
+- New `/what-is-datiq` page with 8-Q&A FAQPage + Article JSON-LD
+- New `/faq` page with 12-Q&A FAQPage JSON-LD
+- 10 SEO marketing routes converted from SPA-only to static HTML
+- Per-page `useSeo` hook on the React app pages
+- Google-Extended enabled for Gemini citation
+- Bytespider enabled for ByteDance crawler discoverability
+
+### 2026-07 — V1.0 release ("Web Intelligence Core")
+- Single, batch, and scheduled URL extraction
+- AI summary, custom extraction, 5 quick-action enrichments
+- Domain mapping, leadership contacts, custom extraction
+- CSV, PDF, Google Sheets export; webhook push; email share
+- 7 personas: Sales, CI, SEO, Market Research, Recruiter, Founder/VC, Agency
+- DPDP Act 2023 compliant, INR + Razorpay + UPI for India
+
+Full changelog: https://datiq.app/changelog

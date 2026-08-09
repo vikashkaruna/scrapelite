@@ -77,10 +77,38 @@
     <div class="kicker">DatIQ · Changelog</div>
     <h1>Every release, every fix, every feature</h1>
     <p>DatIQ ships improvements weekly. This page tracks what changed, when, and why — for users, not for changelog-spelunkers. DatIQ.app is the no-code web intelligence platform.</p>
-    <p class="ch-updated">Last updated: 2026-08-08</p>
+    <p class="ch-updated">Last updated: 2026-08-09</p>
   </section>
 
   <section class="ch-section">
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-09</h3>
+      <div class="meta">AEO/GEO/SEO P1 sweep + comparison page redesign</div>
+      <p>Completed the AEO/GEO/SEO P1 items from the staging full-ship handoff: AI-crawler-ready social card, brand-collision disambiguation, full-content reference for AI agents, and four new per-use-case detail pages. The /vs/firecrawl page was also redesigned to match the established /vs/{apify,phantombuster} template.</p>
+      <ul>
+        <li>New <code>og-card.jpg</code> (1376×768) — replaces the favicon pixel in <code>og:image</code> and <code>twitter:image</code> across 19 surfaces</li>
+        <li>New <code>llms-full.txt</code> (17.8KB) — full content reference for AI agents, complementing the shorter <code>llms.txt</code> index</li>
+        <li><code>llms.txt</code> brand-collision disambiguation: explicitly distinguishes DatIQ from "DAT iQ" (IntelliTrans/Trimble freight), "DAT" (parent freight company), and "Data IQ" (generic analytics term)</li>
+        <li>BreadcrumbList JSON-LD added to 11 nested pages (all <code>/use-cases/&lt;slug&gt;</code>, all <code>/vs/&lt;slug&gt;</code>)</li>
+        <li>Four new use-case detail pages with Article + BreadcrumbList + FAQPage JSON-LD: <a href="/use-cases/lead-generation">/use-cases/lead-generation</a>, <a href="/use-cases/competitor-research">/use-cases/competitor-research</a>, <a href="/use-cases/seo-audit">/use-cases/seo-audit</a>, <a href="/use-cases/market-research">/use-cases/market-research</a></li>
+        <li>Public <a href="/gallery">gallery</a> now has 7 curated persona samples (one per persona) so AI crawlers see ≥1 sample per persona even before the runtime Supabase public_reports populate</li>
+        <li><a href="/vs/firecrawl">/vs/firecrawl</a> redesigned to match the <a href="/vs/apify">/vs/apify</a> + <a href="/vs/phantombuster">/vs/phantombuster</a> template (topbar, container max-width, verdict-grid, cta-block, footer)</li>
+      </ul>
+    </div>
+
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-09</h3>
+      <div class="meta">Customer email consolidation</div>
+      <p>DatIQ runs exactly two customer-facing inboxes. This release completes the consolidation that began with the production-readiness rollout in July — every public-facing support, security, and legal email address now routes to one of two real inboxes.</p>
+      <ul>
+        <li><code>support@datiq.app</code> → <code>hello@datiq.app</code> (product, billing, general)</li>
+        <li><code>legal@datiq.app</code> → <code>admin@datiq.app</code> (legal, terms, privacy, DPDP, DMCA)</li>
+        <li><code>privacy@datiq.app</code> → <code>admin@datiq.app</code> (privacy + DPDP grievance officer)</li>
+        <li>Channel taxonomy preserved on <a href="/contact">/contact</a> (6 channel cards), but all mailto links now point to the canonical inboxes</li>
+        <li>Production-readiness audit re-run: 5 pass / 2 warn / 0 fail (pre-existing warns: screenshot staleness, gallery coverage)</li>
+      </ul>
+    </div>
+
     <div class="ch-release">
       <h3>V1.0+ — 2026-08-08</h3>
       <div class="meta">AEO/GEO/SEO hardening release</div>
@@ -173,7 +201,7 @@
         <li>Google sign-in, Microsoft sign-in, GitHub sign-in, email + password</li>
         <li>Account deletion (full data removal within 30 days, billing records retained 8 years per Indian law)</li>
         <li>Public Privacy Policy and Terms of Service (Bengaluru arbitration seat)</li>
-        <li>Coordinated vulnerability disclosure at <a href="mailto:security@datiq.app">security@datiq.app</a></li>
+        <li>Coordinated vulnerability disclosure at <a href="mailto:admin@datiq.app">admin@datiq.app</a></li>
       </ul>
     </div>
   </section>

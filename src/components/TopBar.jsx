@@ -28,7 +28,7 @@ function Brand({ onClick }) {
 // labelled block ("Resources"); all other entries are standalone items.
 const EXPLORE_ITEMS = [
   { label: "Plans & Pricing", icon: "tag",    path: "/pricing" },
-  { label: "Use Cases",       icon: "target", path: "/use-cases/usecase.html", external: true },
+  { label: "Use Cases",       icon: "target", path: "/use-cases", external: true },
   {
     group: "Resources",
     items: [
