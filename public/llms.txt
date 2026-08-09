@@ -2,6 +2,14 @@
 > DatIQ: The Unified Web Intelligence Platform — built on Pillar 0 (Web Intelligence Core), the proven single, batch, and scheduled URL-extraction engine the whole platform is built on. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
 > Tagline: Intelligence from Web.
 
+## Disambiguation
+DatIQ (this product) is a no-code web intelligence platform for extracting structured data from any public URL. It is NOT related to:
+- "DAT iQ" / "DATiQ" — a freight rate intelligence product by IntelliTrans / Trimble (North American trucking market)
+- "DAT" (without "iQ") — the parent DAT freight & load-board company
+- "Data IQ" / "DataIQ" — a generic analytics consultancy term, used by multiple unrelated firms
+
+DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
+
 ## What DatIQ Does
 DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.
 

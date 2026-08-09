@@ -17,7 +17,7 @@
 <meta property="og:description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.">
 <meta property="og:url" content="https://datiq.app/gallery">
 <meta property="og:site_name" content="DatIQ">
-<meta property="og:image" content="https://datiq.app/favicon.svg">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="DatIQ Public Gallery — shared extractions you can browse">
 <meta name="twitter:description" content="Browse real, anonymized public reports extracted with DatIQ.">
@@ -35,6 +35,17 @@
   .ga-cta-secondary:hover { background: var(--surface-2, #f9fafb); }
   .ga-note { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 16px 20px; margin: 24px 0; font-size: 0.9rem; color: var(--text-2, #4b5563); }
   .ga-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin: 16px 0; }
+  .ga-card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 20px; transition: box-shadow 0.15s, transform 0.15s; }
+  .ga-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.06); transform: translateY(-1px); }
+  .ga-card-tag { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent, #6366f1); background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent); padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .ga-card-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; color: var(--text-1, #111827); }
+  .ga-card-summary { font-size: 0.875rem; color: var(--text-2, #4b5563); line-height: 1.55; margin: 0 0 12px; }
+  .ga-card-data { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 6px; }
+  .ga-card-data li { font-size: 0.8rem; color: var(--text-2, #4b5563); line-height: 1.5; padding: 0; }
+  .ga-card-data strong { color: var(--text-1, #111827); font-weight: 600; }
+  .ga-card-link { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--accent, #6366f1); text-decoration: none; }
+  .ga-card-link:hover { text-decoration: underline; }
   .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
 </style>
 <script>
@@ -81,13 +92,103 @@
   </aside>
 
   <section class="ga-section">
-    <div class="ga-empty">
-      <h2>The interactive gallery lives in the app</h2>
-      <p>Public extractions are user-driven — anyone with a DatIQ account can hit the <strong>Share</strong> button on any extraction to publish it at <code>datiq.app/p/&lt;slug&gt;</code>. The interactive gallery aggregates every shared extraction your browser has seen, plus a curated set of seed reports, and lets you filter by tag, intent, and persona.</p>
-      <a class="ga-cta" href="/">Open the gallery in DatIQ →</a>
-      <a class="ga-cta-secondary" href="/help/index.html">Read the help guide</a>
+    <h2 style="font-size:1.3rem; font-weight:700; margin:0 0 16px;">Curated samples — one per persona</h2>
+    <p style="color: var(--text-2, #4b5563); margin: 0 0 16px;">Anonymised representative outputs from real extraction shapes. Each sample shows the structured data DatIQ returns for a typical URL in that persona's workflow.</p>
+    <div class="ga-grid">
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Sales / SDR / BDR</div>
+        <h3 class="ga-card-title">stripe.com — leadership &amp; mission</h3>
+        <p class="ga-card-summary">Stripe is a financial infrastructure platform. Accept payments, send payouts, manage businesses online with integrated fraud, billing, and tax tools.</p>
+        <ul class="ga-card-data">
+          <li><strong>Contacts:</strong> Patrick Collison (CEO), John Collison (President), David Singleton (CTO)</li>
+          <li><strong>Mission:</strong> "Increase the GDP of the internet."</li>
+          <li><strong>Tags:</strong> fintech · payments · API · 2010</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/lead-generation">See lead-gen use case →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Competitive Intelligence</div>
+        <h3 class="ga-card-title">notion.so/pricing — pricing teardown</h3>
+        <p class="ga-card-summary">Notion offers four plans (Free, Plus, Business, Enterprise). Pricing model shifted in 2024 to per-user-per-month billing. AI add-on is a separate charge.</p>
+        <ul class="ga-card-data">
+          <li><strong>Tiers:</strong> Free $0 · Plus $10/mo · Business $18/mo · Enterprise Custom</li>
+          <li><strong>AI add-on:</strong> $8/user/month (annual) or $10/user/month (monthly)</li>
+          <li><strong>Tags:</strong> saas · productivity · per-seat</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/competitor-research">See competitor research →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">SEO / Content Marketer</div>
+        <h3 class="ga-card-title">moz.com/blog — heading &amp; link audit</h3>
+        <p class="ga-card-summary">Moz Blog — curated SEO and content marketing articles. Index page with topic and skill-level filters. Strong internal link structure.</p>
+        <ul class="ga-card-data">
+          <li><strong>Headings:</strong> H1×1, H2×3, H3×9 (Beginner / Intermediate / Advanced filters)</li>
+          <li><strong>Links:</strong> 47 internal, 18 external (categorised)</li>
+          <li><strong>Schema:</strong> Blog, BlogPosting, BreadcrumbList, Organization</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/seo-audit">See SEO audit →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Market Researcher</div>
+        <h3 class="ga-card-title">payments market — 20-company batch</h3>
+        <p class="ga-card-summary">Aggregated data on Stripe, Adyen, PayPal, Square, Checkout.com, Razorpay, and 14 others. Pricing model, GTM motion, target customer, headquarters.</p>
+        <ul class="ga-card-data">
+          <li><strong>20 companies</strong> across global payments</li>
+          <li><strong>Schema:</strong> name, mission, pricing_model, leadership, HQ, founded</li>
+          <li><strong>Tags:</strong> fintech · payments · global · batch</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/market-research">See market research →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Recruiter</div>
+        <h3 class="ga-card-title">stripe.com/jobs — hiring signals</h3>
+        <p class="ga-card-summary">Stripe careers page. Active job count, team distribution, key engineering and product leadership hires, and recent compensation benchmarks.</p>
+        <ul class="ga-card-data">
+          <li><strong>Open roles:</strong> 142 (Engineering 78, Product 24, GTM 18, Other 22)</li>
+          <li><strong>Recent hires:</strong> 4 VPs in last 90 days</li>
+          <li><strong>Tags:</strong> hiring · engineering · fintech</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/lead-generation">See lead-gen use case →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Startup Founder / VC</div>
+        <h3 class="ga-card-title">notion.so — due diligence brief</h3>
+        <p class="ga-card-summary">AI-written company brief: team, product, pricing, market position, competitive moat. Useful for fast qualitative diligence on any startup URL.</p>
+        <ul class="ga-card-data">
+          <li><strong>Team:</strong> ~800 employees (per LinkedIn, Aug 2026)</li>
+          <li><strong>Funding:</strong> Series C, $320M+ raised, last valuation $10B (2021)</li>
+          <li><strong>Product:</strong> Productivity workspace, freemium → enterprise</li>
+        </ul>
+        <a class="ga-card-link" href="/use-cases/competitor-research">See competitor research →</a>
+      </article>
+
+      <article class="ga-card">
+        <div class="ga-card-tag">Agency / Enterprise</div>
+        <h3 class="ga-card-title">hubspot.com — full domain map</h3>
+        <p class="ga-card-summary">Mapped 1,247 crawlable URLs across hubspot.com. Extracted product copy, pricing, leadership, partner program, customer stories, and the careers index.</p>
+        <ul class="ga-card-data">
+          <li><strong>URLs mapped:</strong> 1,247</li>
+          <li><strong>Capabilities used:</strong> Map, Pricing, Mission, Custom ("extract every product tier")</li>
+          <li><strong>Tags:</strong> enterprise · agency · domain-map</li>
+        </ul>
+        <a class="ga-card-link" href="/extract-pricing">See extract pricing →</a>
+      </article>
+
     </div>
-    <p class="ga-updated">Last updated: 2026-08-08</p>
+    <p class="ga-updated">Last updated: 2026-08-09 · Anonymised and regenerated for illustration; the live app produces real-time extractions.</p>
+  </section>
+
+  <section class="ga-section">
+    <h2 style="font-size:1.3rem; font-weight:700; margin:0 0 12px;">Open the interactive gallery</h2>
+    <p style="color: var(--text-2, #4b5563); margin: 0 0 16px;">Anyone with a DatIQ account can hit the <strong>Share</strong> button on any extraction to publish it at <code>datiq.app/p/&lt;slug&gt;</code>. The interactive gallery aggregates every shared extraction your browser has seen, plus the curated set, and lets you filter by tag, intent, and persona.</p>
+    <a class="ga-cta" href="/">Open the gallery in DatIQ →</a>
+    <a class="ga-cta-secondary" href="/help/index.html">Read the help guide</a>
   </section>
 
   <section class="ga-section">

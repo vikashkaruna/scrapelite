@@ -17,12 +17,12 @@
 <meta property="og:description" content="The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, and more.">
 <meta property="og:url" content="https://datiq.app/blog">
 <meta property="og:site_name" content="DatIQ">
-<meta property="og:image" content="https://datiq.app/favicon.svg">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="DatIQ Blog — guides on web data extraction, AI summarization, scraping">
 <meta name="twitter:description" content="The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, and more.">
-<meta name="twitter:image" content="https://datiq.app/favicon.svg">
+<meta name="twitter:image" content="https://datiq.app/og-card.jpg">
 <meta name="twitter:site" content="@datiq_app">
 <script type="application/ld+json">
 {
@@ -33,6 +33,7 @@
   "url": "https://datiq.app/blog",
   "publisher": { "@type": "Organization", "name": "DatIQ", "logo": "https://datiq.app/favicon.svg" },
   "blogPost": [
+    { "@type": "BlogPosting", "headline": "DatIQ is Now an AI-Native Product: AEO/GEO/SEO Hardening + Customer Email Consolidation", "datePublished": "2026-08-09", "url": "https://datiq.app/blog#aeo-geo-seo-p1-sweep", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "Introducing DatIQ: From URL to Intelligence in Seconds", "datePublished": "2026-06-09", "url": "https://datiq.app/blog#introducing-datiq", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "Every Payment Now Has a Document: Invoices, Receipts, and a Kinder Way to Lapse", "datePublished": "2026-07-27", "url": "https://datiq.app/blog#invoices-receipts", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "Set It and Know: Monitor Any Web Page for Changes with DatIQ Schedules", "datePublished": "2026-07-22", "url": "https://datiq.app/blog#monitor-any-page", "author": { "@type": "Organization", "name": "DatIQ" } },
@@ -138,6 +139,41 @@
   </article>
 
   <section class="bg-list">
+
+    <details id="aeo-geo-seo-p1-sweep" open>
+      <summary>
+        <span class="tag">Release</span>
+        <h3>DatIQ is Now an AI-Native Product: AEO/GEO/SEO Hardening + Customer Email Consolidation</h3>
+        <p class="excerpt">Two related changes landed on 2026-08-09. First, every AI crawler (OAI-SearchBot, GPTBot, PerplexityBot, Google-Extended, ClaudeBot, Claude-User) can now read DatIQ properly — with a real social card, full llms-full.txt, brand-collision disambiguation, and four new per-use-case detail pages. Second, customer email is now consolidated to two inboxes: hello@ and admin@.</p>
+        <p class="meta">August 9, 2026 · 6 min read</p>
+      </summary>
+      <div class="body">
+        <h4>What this is</h4>
+        <p>Two releases that look unrelated but shipped together. The first is the P1 sweep of the AEO/GEO/SEO plan that the V1.0 ship set up — making DatIQ fully discoverable by AI answer engines, not just classic web search. The second is the final cleanup of the email-inbox split that the production-readiness rollout started in July.</p>
+        <h4>AI-crawler ready</h4>
+        <p>DatIQ used to return an empty body to non-JS crawlers, which made ChatGPT, Perplexity, Claude, and Gemini answer "I don't know" when asked "What is DatIQ?" That ends with this release.</p>
+        <ul>
+          <li><strong>Social card:</strong> <code>og-card.jpg</code> (1376×768) replaces the favicon pixel in <code>og:image</code> and <code>twitter:image</code> on 19 surfaces — what ChatGPT, Perplexity, and other engines actually look at when a DatIQ URL appears in a citation.</li>
+          <li><strong>Full AI-discovery doc:</strong> <a href="/llms-full.txt">/llms-full.txt</a> (17.8KB) is the canonical "everything DatIQ can do" reference for AI agents, complementing the shorter <a href="/llms.txt">/llms.txt</a> index. Both are referenced from <a href="/robots.txt">/robots.txt</a>.</li>
+          <li><strong>Brand collision fixed:</strong> <a href="/llms.txt">/llms.txt</a> now explicitly says DatIQ is not the freight <em>DAT iQ</em> product by IntelliTrans/Trimble. This was the single biggest reason AI engines were returning the wrong result for "DatIQ" — the freight product dominates the same keyword space.</li>
+          <li><strong>Per-use-case detail pages:</strong> New static pages for <a href="/use-cases/lead-generation">Lead Generation</a>, <a href="/use-cases/competitor-research">Competitor Research</a>, <a href="/use-cases/seo-audit">SEO Audit</a>, and <a href="/use-cases/market-research">Market Research</a>. Each has Article + BreadcrumbList + FAQPage JSON-LD so AI engines can quote us on the right question with the right context.</li>
+          <li><strong>Public gallery now has 7 curated samples:</strong> one per persona. AI engines see real extraction shapes from the static page even before the runtime Supabase <code>public_reports</code> table populates.</li>
+          <li><strong>vs/firecrawl redesign:</strong> redesigned to match the <a href="/vs/apify">/vs/apify</a> + <a href="/vs/phantombuster">/vs/phantombuster</a> template (topbar, container max-width, verdict-grid, cta-block, footer) — closing a drift that was making the comparison pages look inconsistent.</li>
+        </ul>
+        <h4>Customer email consolidation</h4>
+        <p>DatIQ runs exactly two customer-facing inboxes. The P0 release in July started this consolidation; the P1 release finishes it.</p>
+        <ul>
+          <li><code>support@datiq.app</code> → <code>hello@datiq.app</code> (product, billing, general — the front door)</li>
+          <li><code>legal@datiq.app</code> → <code>admin@datiq.app</code> (legal, terms, privacy, DPDP, DMCA — the back door)</li>
+          <li><code>privacy@datiq.app</code> → <code>admin@datiq.app</code> (privacy + DPDP grievance officer)</li>
+        </ul>
+        <p>The <a href="/contact">/contact</a> page still shows the 6-channel taxonomy (General, Sales, Support, Billing, Security, Press) because that's useful UX — but every mailto link on it now points to one of the two real inboxes. No more bouncing between support@ and hello@ depending on which page you came from.</p>
+        <h4>Why this matters for AI engines</h4>
+        <p>Three weeks ago, asking ChatGPT "What is DatIQ?" returned the freight DATiQ product (IntelliTrans/Trimble) as the top result, and a confused "I don't know" as the second. The <code>llms.txt</code> disambiguation, the <code>/what-is-datiq</code> canonical answer page (from the V1.0+ release on 2026-08-08), and the FAQPage JSON-LD on it should fix that within one to two crawl cycles. We re-test on every major release.</p>
+        <h4>What you need to do</h4>
+        <p>Nothing — the change is transparent. If you have a saved email rule for <code>support@</code> or <code>legal@</code>, it will start failing; update them to the new addresses. The <a href="/changelog">full changelog</a> has the diff, and the <a href="/llms-full.txt">/llms-full.txt</a> has the canonical reference for AI agents and crawlers.</p>
+      </div>
+    </details>
 
     <details id="invoices-receipts">
       <summary>

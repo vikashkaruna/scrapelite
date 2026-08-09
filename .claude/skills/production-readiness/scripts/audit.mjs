@@ -184,7 +184,11 @@ function scanEmails() {
   const deprecated = Object.keys(CONFIG.deprecatedEmailMap);
   const hits = [];
   for (const f of files) {
-    const text = readFileSync(f, "utf8");
+    let text = readFileSync(f, "utf8");
+    // Strip content inside <code>...</code> and `inline code` so documentation
+    // that mentions retired addresses in code examples doesn't false-positive
+    // (e.g. the changelog documenting the deprecation itself).
+    text = text.replace(/<code[^>]*>[\s\S]*?<\/code>/g, "").replace(/`[^`\n]+`/g, "");
     for (const dep of deprecated) {
       if (text.includes(dep)) hits.push({ file: f, email: dep });
     }
