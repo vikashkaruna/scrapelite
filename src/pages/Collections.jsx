@@ -7,8 +7,15 @@ import FaviconDot from "../components/FaviconDot.jsx";
 import { listExtractions } from "../lib/extractionsRepo.js";
 import { summariseCollections, filterByCollection, normalizeCollectionName } from "../lib/collectionsService.js";
 import { hostOf, pathOf, fmtDate, timeAgo } from "../lib/utils.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 export default function Collections() {
+  useSeo({
+    title: "DatIQ Collections — group your extractions by topic | DatIQ.app",
+    description:
+      "DatIQ Collections — group your extractions by topic, client, or campaign. DatIQ.app is the zero-code web data extraction platform for marketers, researchers, and agencies.",
+    canonical: "https://datiq.app/collections",
+  });
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [active, setActive] = useState(null); // collection name or "__untagged__"

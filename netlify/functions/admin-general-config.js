@@ -25,6 +25,15 @@ const DEFAULTS = {
   guest_trial_reprompt_interval: 2,
   guest_single_hard_limit: 10,
   guest_batch_hard_limit: 5,
+  // Contact-page SLA rows. Strings, not integers — sanitized by stripping
+  // control chars and capping length so a misbehaving admin UI cannot write
+  // an arbitrarily long value or break the contact page layout.
+  contact_sla_general_label:    "General support",
+  contact_sla_general_time:     "Within 48 h",
+  contact_sla_billing_label:    "Billing issues",
+  contact_sla_billing_time:     "Within 24 h",
+  contact_sla_enterprise_label: "Enterprise enquiries",
+  contact_sla_enterprise_time:  "Within 24 h",
 };
 
 function SUPABASE_CONFIGURED() {
@@ -70,6 +79,21 @@ function sanitize(raw) {
   intField("guest_trial_reprompt_interval", 1, 20);
   intField("guest_single_hard_limit", 1, 1000);
   intField("guest_batch_hard_limit", 1, 100);
+  // String fields for the contact-page "Response times" card. We strip control
+  // characters and cap length to keep the /contact page layout intact — the
+  // labels and times are display copy, not free-form notes.
+  const strField = (k, max) => {
+    const v = raw[k];
+    if (typeof v !== "string") return;
+    const cleaned = v.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, max);
+    if (cleaned) out[k] = cleaned;
+  };
+  strField("contact_sla_general_label",    60);
+  strField("contact_sla_general_time",     40);
+  strField("contact_sla_billing_label",    60);
+  strField("contact_sla_billing_time",     40);
+  strField("contact_sla_enterprise_label", 60);
+  strField("contact_sla_enterprise_time",  40);
   return out;
 }
 

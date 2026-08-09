@@ -45,6 +45,13 @@
 [functions."billing-purge"]
   schedule = "@daily"
 
+# Samples every service/host/database probe and stores one health_samples row
+# per component, which is what makes the uptime and latency figures on
+# /admin/health real rather than "up right now". Also emails on a critical
+# state CHANGE — disarmed unless OPS_ALERT_EMAIL is set.
+[functions."health-monitor"]
+  schedule = "@hourly"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env
@@ -53,6 +60,47 @@
   # would otherwise trigger false positives — so we omit them. The scanner
   # still watches all real source code.
   SECRETS_SCAN_OMIT_PATHS = "public/runtime-config.js,dist/runtime-config.js,netlify.toml,NETLIFY-ENVIRONMENTS.md,docs/SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md,docs/SESSION-HANDOFF-2026-07-19.md"
+
+  # `SECRETS_SCAN_OMIT_KEYS` is a comma-separated list of env-var NAMES
+  # that the secret scanner should NOT touch. The Supabase anon key is
+  # the public/publishable key (designed to ship in the browser bundle)
+  # but the scanner's "smart detection" treats it as a JWT-shaped secret
+  # and replaces the value with `****************<last4>`, which silently
+  # breaks OAuth login in production. Same story for the n8n webhook URL,
+  # which the scanner flags because it contains the word "webhook" with
+  # what looks like a token-shaped path segment. Both values are NOT
+  # secrets — the anon key is documented as publishable by Supabase, and
+  # the webhook URL is a public n8n endpoint. If the scanner's heuristics
+  # ever start flagging another public VITE_ value, add it here.
+  # See docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_WEBHOOK_URL"
+
+# Baseline browser protections for every static response.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # CSP — allow Razorpay's checkout surface end-to-end.
+    # - script-src:   + checkout.razorpay.com (direct SDK fallback when the
+    #                   same-origin proxy at /.netlify/functions/razorpay-sdk
+    #                   is unavailable) and cdn.razorpay.com (the risk-
+    #                   detection bundle the SDK fetches after it loads —
+    #                   proxying it would break the SDK's own signed URLs).
+    # - frame-src:    + api.razorpay.com + checkout.razorpay.com — the
+    #                   Razorpay payment UI lives in an iframe posted by the
+    #                   SDK to api.razorpay.com/v1/checkout/public. Without
+    #                   an explicit frame-src it falls back to default-src
+    #                   'self' and the modal is silently blocked, which is
+    #                   the symptom in the user's bug report.
+    # - style-src:    + checkout.razorpay.com — Razorpay's checkout iframe
+    #                   injects a stylesheet from its own origin.
+    # - form-action:  already permits checkout.razorpay.com (left untouched).
+    # - connect-src:  already wildcards https: (covers api.razorpay.com,
+    #                   lumberjack.razorpay.com telemetry, etc.).
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com; form-action 'self' https://checkout.razorpay.com https://js.stripe.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com https://cdn.razorpay.com; connect-src 'self' https: wss:;"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
 # Public REST API (v1) is routed to a single function that dispatches on the
@@ -85,6 +133,29 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# ── SEO: hide /admin/* from every crawler ─────────────────────────────────────
+# Belt-and-braces alongside robots.txt and the in-page <meta name="robots">
+# tag (set by AdminLayout.jsx via src/lib/seoMeta.js). This header fires for
+# any request to /admin or any /admin/* subpath, so a crawler that ignores
+# robots.txt still gets told to drop the page from the index. The
+# Cache-Control prevents an intermediate cache from serving a previously
+# cached "index, follow" copy to a different crawler.
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, unavailable_after: 31 Dec 2099 23:59:59 GMT"
+    Cache-Control = "no-store, no-cache, must-revalidate, private"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/admin"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, unavailable_after: 31 Dec 2099 23:59:59 GMT"
+    Cache-Control = "no-store, no-cache, must-revalidate, private"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║ Environment variables                                                    ║

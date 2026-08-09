@@ -114,9 +114,18 @@ function writeLocal(list) {
 }
 
 // Errors that mean "no backend / not reachable" → degrade to localStorage only.
+// 502/504 are included alongside 500/503 because a proxy/gateway in front of
+// the Netlify Function (including the local dev proxy when `netlify dev`
+// isn't running) reports an unreachable upstream as Bad Gateway / Gateway
+// Timeout, not a 500 — without these, schedule creation fails outright
+// instead of degrading to localStorage the moment functions aren't running.
 function shouldFallback(err) {
   const s = err?.status;
-  return err?.useLocalStorage || s === undefined || s === 401 || s === 403 || s === 404 || s === 500 || s === 503;
+  return (
+    err?.useLocalStorage ||
+    s === undefined || s === 401 || s === 403 || s === 404 ||
+    s === 500 || s === 502 || s === 503 || s === 504
+  );
 }
 
 // ── Public CRUD ───────────────────────────────────────────────────────────────
@@ -194,8 +203,12 @@ export function listSchedulesLocal() {
 }
 
 export async function saveSchedule(schedule) {
-  // localStorage first so the UI updates immediately even if the backend is down.
-  const list = readLocal();
+  // Snapshot before any mutation, so a real (non-infra) rejection can be
+  // rolled back cleanly — a schedule the server refuses to store (e.g. an
+  // entitlement denial) will never actually run via scheduled-runner.js,
+  // so leaving it in localStorage would show as "active" while being dead.
+  const before = readLocal();
+  const list = [...before];
   const idx = list.findIndex((s) => s.id === schedule.id);
   if (idx >= 0) {
     list[idx] = schedule;
@@ -211,6 +224,7 @@ export async function saveSchedule(schedule) {
     }
     list.unshift(schedule);
   }
+  // Optimistic local write so the UI updates immediately even if the backend is down.
   writeLocal(list);
 
   try {
@@ -221,7 +235,12 @@ export async function saveSchedule(schedule) {
       return merged.find((s) => s.id === saved.id) || saved;
     }
   } catch (err) {
-    if (!shouldFallback(err)) throw err;
+    if (shouldFallback(err)) return schedule; // backend unreachable — the local-only save stands
+    // A real rejection (e.g. 402 "scheduled monitoring is not on your plan",
+    // or a validation error) — undo the optimistic write and surface the
+    // server's actual reason (err.message) rather than leaving a phantom entry.
+    writeLocal(before);
+    throw err;
   }
   return schedule;
 }

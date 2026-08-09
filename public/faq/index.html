@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frequently Asked Questions | DatIQ.app</title>
+<meta name="description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl. DatIQ.app is the no-code web intelligence platform.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/faq">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Frequently Asked Questions | DatIQ.app">
+<meta property="og:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl.">
+<meta property="og:url" content="https://datiq.app/faq">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Frequently Asked Questions | DatIQ.app">
+<meta name="twitter:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, and troubleshooting.">
+<meta name="twitter:image" content="https://datiq.app/og-card.jpg">
+<meta name="twitter:site" content="@datiq_app">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is DatIQ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DatIQ is a no-code web intelligence platform that turns any public URL into structured data — headings, links, contacts, pricing, AI summaries, and custom fields — in seconds."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is DatIQ different from Clay, Browse.ai, or Firecrawl?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DatIQ combines plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export in one no-code product. It is significantly cheaper than Clay, simpler than Firecrawl, and more feature-rich than Browse.ai."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does DatIQ cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $19 / month (Select, 100 extractions + PDF export). Pro is $29 / month, Business $79 / month, Agency $299 / month. Annual plans get a 20% discount. INR pricing is available."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to write code to use DatIQ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. DatIQ is zero-code — paste a URL, describe any field you want in plain English, and the AI extracts it. Custom extraction is configurable in the UI without scripting."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What formats can I export?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I schedule recurring extractions?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Scheduled monitoring is included on Pro, Business, and Agency plans. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does DatIQ offer an API?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The Developer plan (H3 2026) is an API-first tier. Business and Agency plans include API access today — POST to /api/extract, /api/ai, and GET /api/stats."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "My extraction came back thin or empty — what should I do?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Some pages block automated access or load their content with heavy JavaScript. Try enabling JavaScript rendering in Advanced options, or try a more specific page (e.g. the pricing page rather than the home page)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "The AI summary looks generic — why?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Summaries reflect what the page actually exposes. Pages with little text, or that hide content behind logins, give the model less to work with. If a page is sparse, try a richer sub-page like /about or /pricing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "A batch URL failed. How do I find out why?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I share an extraction with someone who doesn't have a DatIQ account?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — every extraction has a Share button that creates a public link at datiq.app/p/<short-code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is DatIQ India-first?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Stripe is also available for international customers."
+      }
+    }
+  ]
+}
+</script>
+<style>
+  .faq-hero { text-align: center; padding: 64px 0 32px; }
+  .faq-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 12px; }
+  .faq-hero p { color: var(--text-2); font-size: 1.05rem; max-width: 600px; margin: 0 auto 24px; }
+  .faq-toc { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 16px 20px; margin: 0 0 32px; }
+  .faq-toc h2 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3, #9ca3af); margin: 0 0 8px; }
+  .faq-toc ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .faq-toc a { color: var(--accent, #6366f1); text-decoration: none; font-size: 0.9rem; }
+  .faq-toc a:hover { text-decoration: underline; }
+  .faq-section { padding: 24px 0; }
+  .faq-section h2 { font-size: 1.4rem; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
+  .faq-item { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 0; margin-bottom: 12px; }
+  .faq-item summary { padding: 16px 20px; font-weight: 600; cursor: pointer; color: var(--text-1, #111827); font-size: 1rem; }
+  .faq-item summary::marker { color: var(--accent, #6366f1); }
+  .faq-item details[open] summary { border-bottom: 1px solid var(--border, #e5e7eb); }
+  .faq-item .answer { padding: 16px 20px; color: var(--text-2, #4b5563); line-height: 1.7; margin: 0; }
+  .faq-cta { text-align: center; padding: 48px 0; }
+  .faq-cta a { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
+  .faq-cta a:hover { opacity: 0.9; }
+  .faq-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/pricing">Pricing</a>
+    <a class="nav-link" href="/what-is-datiq">What is DatIQ</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="faq-hero">
+    <div class="kicker">DatIQ · Help center</div>
+    <h1>Frequently Asked Questions</h1>
+    <p>Quick answers about DatIQ — pricing, plans, exports, scheduling, API access, and troubleshooting common extraction issues. DatIQ.app is the no-code web intelligence platform.</p>
+    <p class="faq-updated">Last updated: 2026-08-08</p>
+  </section>
+
+  <nav class="faq-toc" aria-label="On this page">
+    <h2>On this page</h2>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#pricing">Pricing &amp; plans</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+      <li><a href="#account">Account &amp; data</a></li>
+    </ul>
+  </nav>
+
+  <section class="faq-section" id="overview">
+    <h2>Overview</h2>
+
+    <details class="faq-item" id="faq-what-is-datiq">
+      <summary>What is DatIQ?</summary>
+      <p class="answer">DatIQ is a no-code web intelligence platform that turns any public URL into structured data — headings, links, contacts, pricing, AI summaries, and custom fields — in seconds. Free to start, no credit card.</p>
+    </details>
+
+    <details class="faq-item" id="faq-different">
+      <summary>How is DatIQ different from Clay, Browse.ai, or Firecrawl?</summary>
+      <p class="answer">DatIQ combines plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export in one no-code product. It is significantly cheaper than Clay, simpler than Firecrawl, and more feature-rich than Browse.ai.</p>
+    </details>
+
+    <details class="faq-item" id="faq-who">
+      <summary>Who is DatIQ for?</summary>
+      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="/what-is-datiq">What is DatIQ?</a> for the full persona list.</p>
+    </details>
+  </section>
+
+  <section class="faq-section" id="pricing">
+    <h2>Pricing &amp; plans</h2>
+
+    <details class="faq-item" id="faq-cost">
+      <summary>How much does DatIQ cost?</summary>
+      <p class="answer">DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $19 / month (Select, 100 extractions + PDF export). Pro is $29 / month, Business $79 / month, Agency $299 / month. Annual plans get a 20% discount. INR pricing is available. See <a href="/pricing">full pricing</a>.</p>
+    </details>
+
+    <details class="faq-item" id="faq-india">
+      <summary>Is DatIQ India-first?</summary>
+      <p class="answer">Yes. DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Stripe is also available for international customers.</p>
+    </details>
+
+    <details class="faq-item" id="faq-billing">
+      <summary>Where can I see my invoices?</summary>
+      <p class="answer">Open <a href="/account">Account → Invoices</a> to view, download, or re-send any invoice. Every payment issues a numbered, itemized invoice or receipt, emailed as a PDF and available to view, download, or re-send from the Account screen.</p>
+    </details>
+  </section>
+
+  <section class="faq-section" id="features">
+    <h2>Features</h2>
+
+    <details class="faq-item" id="faq-code">
+      <summary>Do I need to write code to use DatIQ?</summary>
+      <p class="answer">No. DatIQ is zero-code — paste a URL, describe any field you want in plain English, and the AI extracts it. Custom extraction is configurable in the UI without scripting.</p>
+    </details>
+
+    <details class="faq-item" id="faq-export">
+      <summary>What formats can I export?</summary>
+      <p class="answer">CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above.</p>
+    </details>
+
+    <details class="faq-item" id="faq-schedule">
+      <summary>Can I schedule recurring extractions?</summary>
+      <p class="answer">Yes. Scheduled monitoring is included on Pro, Business, and Agency plans. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes.</p>
+    </details>
+
+    <details class="faq-item" id="faq-api">
+      <summary>Does DatIQ offer an API?</summary>
+      <p class="answer">Yes. The Developer plan (H3 2026) is an API-first tier. Business and Agency plans include API access today — POST to <code>/api/extract</code>, <code>/api/ai</code>, and GET <code>/api/stats</code>.</p>
+    </details>
+
+    <details class="faq-item" id="faq-share">
+      <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
+      <p class="answer">Yes — every extraction has a Share button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
+    </details>
+  </section>
+
+  <section class="faq-section" id="troubleshooting">
+    <h2>Troubleshooting</h2>
+
+    <details class="faq-item" id="faq-empty">
+      <summary>My extraction came back thin or empty — what should I do?</summary>
+      <p class="answer">Some pages block automated access or load their content with heavy JavaScript. Try enabling JavaScript rendering in <strong>Advanced options</strong>, or try a more specific page (e.g. the pricing page rather than the home page).</p>
+    </details>
+
+    <details class="faq-item" id="faq-generic">
+      <summary>The AI summary looks generic — why?</summary>
+      <p class="answer">Summaries reflect what the page actually exposes. Pages with little text, or that hide content behind logins, give the model less to work with. If a page is sparse, try a richer sub-page like /about or /pricing.</p>
+    </details>
+
+    <details class="faq-item" id="faq-batch-fail">
+      <summary>A batch URL failed. How do I find out why?</summary>
+      <p class="answer">The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed.</p>
+    </details>
+
+    <details class="faq-item" id="faq-app-updated">
+      <summary>"App updated — please refresh."</summary>
+      <p class="answer">DatIQ ships improvements regularly. If you've had a tab open for a while and an export or action shows this message, just refresh the page and try again.</p>
+    </details>
+  </section>
+
+  <section class="faq-section" id="account">
+    <h2>Account &amp; data</h2>
+
+    <details class="faq-item" id="faq-data">
+      <summary>Where is my data stored?</summary>
+      <p class="answer">All extractions and account data are stored in Supabase (Postgres) on encrypted-at-rest infrastructure in the US-East region. DatIQ is DPDP Act 2023 compliant and never trains on your extractions. See the <a href="/privacy">Privacy Policy</a> for the full data handling notice.</p>
+    </details>
+
+    <details class="faq-item" id="faq-delete">
+      <summary>How do I delete my account and data?</summary>
+      <p class="answer">Open <a href="/account">Account → Danger zone → Delete account</a>. Account deletion removes all extractions, schedules, collections, and account data within 30 days. Billing records are retained for the legally required minimum (typically 8 years for Indian tax law).</p>
+    </details>
+  </section>
+
+  <section class="faq-cta">
+    <h2>Still have questions?</h2>
+    <p>Reach out via the <a href="/contact">contact form</a> and we'll get back within one business day.</p>
+    <a href="/">Open DatIQ →</a>
+  </section>
+</div>
+</main>
+
+<footer class="site-footer" style="text-align: center; padding: 24px; font-size: 0.85rem; color: var(--text-3, #9ca3af); border-top: 1px solid var(--border, #e5e7eb); margin-top: 24px;">
+  © 2026 DatIQ · <a href="/">datiq.app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

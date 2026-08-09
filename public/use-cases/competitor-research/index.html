@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Competitor Research with DatIQ — track pricing, messaging, and leadership</title>
+<meta name="description" content="Monitor competitor pricing pages, feature changes, and leadership moves automatically. Get AI-summarised insights on what changed and why it matters. Scheduled monitoring, side-by-side comparison, CSV export.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/use-cases/competitor-research">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Competitor Research with DatIQ — track pricing, messaging, and leadership">
+<meta property="og:description" content="Monitor competitor pricing pages, feature changes, and leadership moves. AI summaries + scheduled monitoring + side-by-side comparison.">
+<meta property="og:url" content="https://datiq.app/use-cases/competitor-research">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Competitor Research with DatIQ — track pricing, messaging, and leadership">
+<meta name="twitter:description" content="Monitor competitor pricing pages, feature changes, and leadership moves. AI summaries + scheduled monitoring + side-by-side comparison.">
+<meta name="twitter:image" content="https://datiq.app/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://datiq.app/"},
+    {"@type": "ListItem", "position": 2, "name": "Use cases", "item": "https://datiq.app/use-cases"},
+    {"@type": "ListItem", "position": 3, "name": "Competitor Research", "item": "https://datiq.app/use-cases/competitor-research"}
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Competitor Research with DatIQ",
+  "description": "Monitor competitor pricing, feature changes, and leadership moves automatically with scheduled monitoring and AI summaries.",
+  "datePublished": "2026-08-08",
+  "dateModified": "2026-08-09",
+  "author": {"@type": "Organization", "name": "DatIQ"},
+  "publisher": {"@type": "Organization", "name": "DatIQ", "logo": {"@type": "ImageObject", "url": "https://datiq.app/favicon.svg"}}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How does DatIQ track competitor pricing changes?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Set up a Schedule (Pro and above) on any competitor's pricing or product page. Choose hourly, daily, weekly, or monthly cadence. DatIQ re-extracts the page on schedule, diffs the pricing tiers against the previous run, and emails you a digest of what changed. The dashboard shows the full change history per URL."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can DatIQ compare two competitors side by side?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The Compare content-generation format takes two URLs and returns a battle card with pricing tiers, key features, target audience, and a strengths/weaknesses table per side. The /vs/battlecard static page generates a shareable battle card on demand."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How many competitors can I track?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "There is no hard cap on the number of URLs you can monitor. The limit is your plan's monthly extraction budget: Select 100, Pro 250, Business 1,000, Agency unlimited. A single recurring schedule re-runs every N hours/days, so a daily check of 10 competitors costs 300 extractions/month — well within Business."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I see when a competitor changes their homepage messaging?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Schedule a DatIQ extraction on the competitor's homepage with a custom prompt: 'Extract the H1, sub-headline, and three primary CTAs.' On every run, DatIQ returns the current text and highlights changes against the previous extraction. Useful for catching repositioning moves before they hit the press."
+      }
+    }
+  ]
+}
+</script>
+<style>
+  .uc-hero { text-align: center; padding: 64px 0 32px; }
+  .uc-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
+  .uc-hero h1 .accent { color: var(--accent, #6366f1); }
+  .uc-hero p.lead { color: var(--text-2); font-size: 1.1rem; max-width: 720px; margin: 0 auto 24px; line-height: 1.6; }
+  .uc-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
+  .uc-cta:hover { opacity: 0.9; }
+  .uc-cta-secondary { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border, #d1d5db); color: var(--text-1, #111827); padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; margin-left: 8px; }
+  .uc-section { padding: 32px 0; }
+  .uc-section h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 16px; }
+  .uc-section p { color: var(--text-2, #4b5563); line-height: 1.7; }
+  .uc-bullets { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+  .uc-bullet { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-bullet h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-bullet p { font-size: 0.9rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
+  .uc-step { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; }
+  .uc-step .step-num { font-size: 0.8rem; font-weight: 800; color: var(--accent, #6366f1); margin-bottom: 4px; }
+  .uc-step h3 { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
+  .uc-step p { font-size: 0.875rem; margin: 0; color: var(--text-2, #4b5563); }
+  .uc-sample { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 24px; margin: 16px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; color: var(--text-1, #111827); overflow-x: auto; }
+  .uc-sample pre { margin: 0; white-space: pre-wrap; }
+  .uc-related { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+  .uc-related a { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 16px; font-size: 0.9rem; color: var(--accent, #6366f1); text-decoration: none; font-weight: 600; }
+  .uc-faq details { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 16px 20px; margin: 8px 0; }
+  .uc-faq summary { font-weight: 600; cursor: pointer; }
+  .uc-faq p { margin: 12px 0 0; color: var(--text-2, #4b5563); }
+  .uc-tip { background: color-mix(in srgb, var(--accent, #6366f1) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 30%, transparent); border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 0.95rem; color: var(--text-1, #111827); }
+  .uc-tip strong { color: var(--accent, #6366f1); }
+  .uc-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .container { max-width: 920px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/use-cases">All use cases</a>
+    <a class="nav-link" href="/pricing">Pricing</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="uc-hero">
+    <div class="kicker">DatIQ · Use case · Competitor Research</div>
+    <h1>Track competitor pricing, messaging, and <span class="accent">leadership</span> — automatically</h1>
+    <p class="lead">Set up a DatIQ schedule on any competitor's pricing, product, or team page. Get AI-summarised change digests in your inbox. Side-by-side battle cards on demand. No more stale spreadsheets.</p>
+    <a class="uc-cta" href="/">Try it free</a>
+    <a class="uc-cta-secondary" href="/vs/browse-ai">See DatIQ vs Browse.ai</a>
+    <p class="uc-updated">Last updated: 2026-08-09</p>
+  </section>
+
+  <section class="uc-section">
+    <h2>Why DatIQ for competitor research</h2>
+    <p>Traditional competitive intelligence is a quarterly project: someone Googles the top 5 competitors, bookmarks their pages, and writes a 30-slide deck. Six weeks later, half the data is already stale. DatIQ turns it into a continuous feed.</p>
+    <div class="uc-bullets">
+      <div class="uc-bullet">
+        <h3>Always-fresh pricing</h3>
+        <p>Schedule an extraction on a competitor's pricing page. DatIQ re-runs it on cadence, diffs the tiers, and emails you only when something changed.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Battle cards on demand</h3>
+        <p>Paste two URLs into the Compare content format — DatIQ returns a battle card with pricing, features, positioning, and a strengths/weaknesses table. Ready to share with sales.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Messaging change alerts</h3>
+        <p>Track a competitor's homepage with a custom prompt: <em>"Extract the H1, sub-headline, and three primary CTAs."</em> DatIQ alerts you when any of them change.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Leadership moves</h3>
+        <p>Schedule the competitor's about/team page with the contacts enrichment. Get an email when a new CMO joins, a VP leaves, or a board seat flips.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Domain map for full coverage</h3>
+        <p>Enable "Map entire domain" to discover every page a competitor has indexed. Then extract the ones that matter for your analysis.</p>
+      </div>
+      <div class="uc-bullet">
+        <h3>Export to your stack</h3>
+        <p>CSV for the spreadsheet warriors. PDF for the deck-builders. HubSpot / Salesforce / Notion / Google Sheets for everyone else.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Step-by-step: monitor a competitor in 4 steps</h2>
+    <div class="uc-steps">
+      <div class="uc-step">
+        <div class="step-num">Step 1</div>
+        <h3>Pick the URLs to watch</h3>
+        <p>Identify 3-10 high-signal pages per competitor: pricing, product, about, blog, careers. Paste each one into DatIQ and save the extraction.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 2</div>
+        <h3>Add a Schedule</h3>
+        <p>Open the Schedule tab on any saved extraction. Pick hourly / daily / weekly / monthly. DatIQ re-runs the extraction on cadence and persists each snapshot.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 3</div>
+        <h3>Set a change alert</h3>
+        <p>Attach an alert email to the schedule. DatIQ diffs each run against the previous and emails a summary only when something changed. No noise.</p>
+      </div>
+      <div class="uc-step">
+        <div class="step-num">Step 4</div>
+        <h3>Build battle cards</h3>
+        <p>When you need a side-by-side, paste two competitor URLs into Compare. DatIQ returns a battle card you can share with sales, product, or execs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>What the output looks like</h2>
+    <p>Pasting a competitor pricing URL with the pricing extraction prompt returns structured data like this:</p>
+    <div class="uc-sample"><pre>{
+  "url": "https://notion.so/pricing",
+  "summary": "Notion offers four plans: Free, Plus, Business, and Enterprise. The pricing model shifted in 2024 to per-user-per-month billing. AI add-on is a separate charge.",
+  "pricing_tiers": [
+    {"name": "Free",      "price": "$0",     "billing": "forever",  "key_features": ["Unlimited blocks for personal use", "7-day page history"]},
+    {"name": "Plus",      "price": "$10/mo", "billing": "per user", "key_features": ["Unlimited blocks for teams", "30-day page history", "Custom websites"]},
+    {"name": "Business",  "price": "$18/mo", "billing": "per user", "key_features": ["SAML SSO", "Private teamspaces", "90-day page history", "AI add-on"]},
+    {"name": "Enterprise","price": "Custom", "billing": "annual",   "key_features": ["Audit log", "SCIM", "Advanced security", "Dedicated CSM"]}
+  ],
+  "ai_addon": "$8/user/month (annual) or $10/user/month (monthly) — separate from base plan",
+  "change_detected": false,
+  "previous_snapshot": "2026-08-01T00:00:00Z"
+}</pre></div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Tips from the field</h2>
+    <div class="uc-tip"><strong>Tip 1.</strong> Don't monitor a competitor's entire site — pick the 3-10 pages that map to your strategic questions (pricing, key feature, leadership, hiring). Less is more for change detection.</div>
+    <div class="uc-tip"><strong>Tip 2.</strong> For pricing pages, use the custom extraction prompt: <em>"Extract every plan with name, price, billing cadence, and a 1-line description of the most important feature on that tier."</em> This is more useful than the default pricing schema for comparison.</div>
+    <div class="uc-tip"><strong>Tip 3.</strong> When the alert email fires, open the DatIQ dashboard. The diff view shows what changed and which field. Read the AI summary — it usually explains "why this change might matter."</div>
+    <div class="uc-tip"><strong>Tip 4.</strong> Run a monthly competitor sweep. Use the domain map to discover new pages on the competitor's site (new product launches, new positioning pages), then add them to your tracking set.</div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Common questions</h2>
+    <div class="uc-faq">
+      <details>
+        <summary>How does DatIQ track competitor pricing changes?</summary>
+        <p>Set up a Schedule (Pro+) on any competitor's pricing or product page. Choose hourly, daily, weekly, or monthly. DatIQ re-extracts the page, diffs the pricing tiers, and emails you when something changed.</p>
+      </details>
+      <details>
+        <summary>Can DatIQ compare two competitors side by side?</summary>
+        <p>Yes — the Compare content format takes two URLs and returns a battle card with pricing, features, target audience, and a strengths/weaknesses table. The /vs/battlecard static page generates a shareable card on demand.</p>
+      </details>
+      <details>
+        <summary>How many competitors can I track?</summary>
+        <p>No hard cap on URLs. The limit is your monthly extraction budget. A daily check of 10 competitors costs 300 extractions/month — well within Business.</p>
+      </details>
+      <details>
+        <summary>Can I see when a competitor changes their homepage messaging?</summary>
+        <p>Yes — schedule the homepage with a custom prompt: "Extract the H1, sub-headline, and three primary CTAs." DatIQ highlights changes against the previous run.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="uc-section">
+    <h2>Related use cases</h2>
+    <div class="uc-related">
+      <a href="/use-cases/lead-generation">Lead Generation</a>
+      <a href="/use-cases/seo-audit">SEO Audit</a>
+      <a href="/use-cases/market-research">Market Research</a>
+      <a href="/for-ci">For competitive intelligence</a>
+      <a href="/extract-pricing">Extract pricing from any page</a>
+    </div>
+  </section>
+
+  <section class="uc-section" style="text-align:center; padding: 48px 0;">
+    <h2>Ready to monitor a competitor?</h2>
+    <p>Paste a competitor URL and set up a change alert in 60 seconds.</p>
+    <a class="uc-cta" href="/">Start extracting free →</a>
+    <a class="uc-cta-secondary" href="/contact">Talk to sales</a>
+  </section>
+</div>
+</main>
+
+<footer style="border-top:1px solid var(--border,#e5e7eb);padding:24px 0;text-align:center;font-size:0.85rem;color:var(--text-3,#9ca3af);margin-top:32px;">
+  © 2026 DatIQ · <a href="/" style="color:inherit">datiq.app</a> · <a href="/privacy" style="color:inherit">Privacy</a> · <a href="/terms" style="color:inherit">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

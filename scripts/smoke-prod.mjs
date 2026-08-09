@@ -14,6 +14,15 @@
 //   SMOKE_ADMIN_PIN    — when set, runs the admin-auth probe with this PIN.
 //                         In CI this is the per-environment secret
 //                         (STAGING_ADMIN_PIN / PRODUCTION_ADMIN_PIN).
+//   SMOKE_SKIP_API     — when "1", skips the /api/stats probe. Set this when
+//                         `baseUrl` is a bare static server (e.g. `vite
+//                         preview`) with no Netlify Functions runtime behind
+//                         it — without a real function, the SPA catch-all
+//                         would answer /api/stats with an HTML 200 and the
+//                         probe would fail on content-type for a reason
+//                         that has nothing to do with the deploy being
+//                         verified. See "static-only verification" in
+//                         .github/workflows/staging-gate.yml.
 //   SMOKE_TIMEOUT_MS   — per-request timeout in ms (default 15000)
 //   SMOKE_RETRIES      — attempts per probe on TRANSPORT failure (default 3).
 //                         HTTP responses are never retried — only requests that
@@ -140,6 +149,7 @@ export async function fetchWithRetry(url, init = {}, opts = {}) {
  */
 export async function runSmoke(baseUrl, opts = {}) {
   const ADMIN_PIN = opts.adminPin ?? "";
+  const SKIP_API = opts.skipApi ?? false;
   const TIMEOUT_MS = opts.timeoutMs ?? 15000;
   const RETRIES = opts.retries ?? 3;
   const BACKOFF_MS = opts.backoffMs ?? 1000;
@@ -244,23 +254,27 @@ export async function runSmoke(baseUrl, opts = {}) {
   });
 
   // 4. API function (200 OR 503 acceptable) ──────────────────────────────
-  await probe("GET /api/stats (200 or 503, JSON)", async () => {
-    const res = await get("/api/stats");
-    if (res.status !== 200 && res.status !== 503) {
-      throw new Error(`HTTP ${res.status} — expected 200 (Supabase configured) or 503 (not configured)`);
-    }
-    // The most valuable content-type assertion of the set: if the function
-    // failed to deploy, the /api/* redirect falls through to the SPA and this
-    // returns the app's HTML at 200 — indistinguishable from success on status.
-    //
-    // Only checked on 200. The catch-all can only forge a 200, so that is the
-    // sole maskable case; a 503 comes from the platform (the function is gone
-    // or crashed) and its content-type is not ours to predict. All we require
-    // there is that something answered.
-    if (res.status === 200) {
-      assertContentType(res, "application/json", "GET /api/stats");
-    }
-  });
+  if (!SKIP_API) {
+    await probe("GET /api/stats (200 or 503, JSON)", async () => {
+      const res = await get("/api/stats");
+      if (res.status !== 200 && res.status !== 503) {
+        throw new Error(`HTTP ${res.status} — expected 200 (Supabase configured) or 503 (not configured)`);
+      }
+      // The most valuable content-type assertion of the set: if the function
+      // failed to deploy, the /api/* redirect falls through to the SPA and this
+      // returns the app's HTML at 200 — indistinguishable from success on status.
+      //
+      // Only checked on 200. The catch-all can only forge a 200, so that is the
+      // sole maskable case; a 503 comes from the platform (the function is gone
+      // or crashed) and its content-type is not ours to predict. All we require
+      // there is that something answered.
+      if (res.status === 200) {
+        assertContentType(res, "application/json", "GET /api/stats");
+      }
+    });
+  } else {
+    log("  (skipping /api/stats — SMOKE_SKIP_API set, no Functions runtime behind this host)\n");
+  }
 
   // 5. Admin (only when SMOKE_ADMIN_PIN is set) ───────────────────────────
   if (ADMIN_PIN) {
@@ -314,6 +328,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 
   const result = await runSmoke(BASE, {
     adminPin: process.env.SMOKE_ADMIN_PIN || "",
+    skipApi: process.env.SMOKE_SKIP_API === "1",
     timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS) || 15000,
     retries: Number(process.env.SMOKE_RETRIES) || 3,
   });

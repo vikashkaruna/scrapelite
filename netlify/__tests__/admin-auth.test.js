@@ -15,6 +15,7 @@ beforeEach(() => {
   delete process.env.ADMIN_PIN_HASH;
   delete process.env.ADMIN_PIN;
   delete process.env.ADMIN_TOKEN_SECRET;
+  process.env.CONTEXT = "dev";
   vi.resetModules();
 });
 
@@ -22,6 +23,7 @@ afterEach(() => {
   delete process.env.ADMIN_PIN_HASH;
   delete process.env.ADMIN_PIN;
   delete process.env.ADMIN_TOKEN_SECRET;
+  delete process.env.CONTEXT;
 });
 
 async function loadHandler() {

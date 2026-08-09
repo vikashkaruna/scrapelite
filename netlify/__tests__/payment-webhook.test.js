@@ -285,7 +285,7 @@ describe("payment-webhook Razorpay — signature", () => {
     expect(r.statusCode).toBe(400);
   });
 
-  it("RAZORPAY_WEBHOOK_SECRET not set → signature check skipped, still 200", async () => {
+  it("RAZORPAY_WEBHOOK_SECRET not set → 503 outside explicit dev/test opt-in", async () => {
     process.env.SUPABASE_URL = "https://x.supabase.co";
     process.env.SUPABASE_SERVICE_KEY = "sk";
     const calls = makeDb();
@@ -296,7 +296,7 @@ describe("payment-webhook Razorpay — signature", () => {
       queryStringParameters: { provider: "razorpay" },
       headers: {},
     });
-    expect(r.statusCode).toBe(200);
+    expect(r.statusCode).toBe(503);
   });
 });
 

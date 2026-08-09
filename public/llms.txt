@@ -1,5 +1,14 @@
-# DatIQ — Intelligence from Every URL
-> DatIQ is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+# DatIQ: The Unified Web Intelligence Platform
+> DatIQ: The Unified Web Intelligence Platform — built on Pillar 0 (Web Intelligence Core), the proven single, batch, and scheduled URL-extraction engine the whole platform is built on. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+> Tagline: Intelligence from Web.
+
+## Disambiguation
+DatIQ (this product) is a no-code web intelligence platform for extracting structured data from any public URL. It is NOT related to:
+- "DAT iQ" / "DATiQ" — a freight rate intelligence product by IntelliTrans / Trimble (North American trucking market)
+- "DAT" (without "iQ") — the parent DAT freight & load-board company
+- "Data IQ" / "DataIQ" — a generic analytics consultancy term, used by multiple unrelated firms
+
+DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
 
 ## What DatIQ Does
 DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.
@@ -19,9 +28,14 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - Free: 10 extractions/month + 25-trial credit, no credit card
 - Select: $19/month (or ₹999/mo annual) — 100 extractions + PDF export
 - Pro: $29/month (or ₹1,499/mo annual) — 250 extractions + scheduled monitoring + Google Sheets
-- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce
-- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF
-- Developer: $49/month (coming H2 2026) — 10K row credits, API-first
+- Business: $79/month (or ₹3,999/mo annual) — 1,000 extractions + API + 3 seats + HubSpot/Salesforce + white-label PDF + priority support
+- Agency: $299/month (or ₹14,999/mo annual) — unlimited + 5 workspaces + white-label PDF + priority support
+- Developer: $49/month (coming H3 2026) — 10K row credits, API-first
+
+## Plan-level features
+- White-label PDF (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background.
+- Priority support (Business + Agency): contact-form submissions are routed through a faster SLA.
+- Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
 - Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
 - 20% discount on all annual plans
 

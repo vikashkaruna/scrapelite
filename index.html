@@ -6,28 +6,59 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- Primary meta -->
-    <title>DatIQ — Extract web data in seconds | Zero-code web extraction &amp; AI enrichment</title>
-    <meta name="description" content="DatIQ turns any public URL into structured data — headings, links, contacts, pricing, and an AI summary — in seconds. No code, no setup, no scrapers. Free to start." />
-    <meta name="keywords" content="web extraction, web scraping, no-code scraper, extract emails from website, find company contacts, competitor pricing tracker, website structure analyzer, AI enrichment, data extraction tool, web data, lead generation, DatIQ" />
+    <title>DatIQ: The Unified Web Intelligence Platform | Intelligence from Web</title>
+    <meta name="description" content="DatIQ is the unified web intelligence platform — extract, enrich and operationalize data from any public URL, batch, or scheduled run. Built on Pillar 0 (Web Intelligence Core). Free to start." />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <link rel="canonical" href="https://datiq.app/" />
+
+    <!-- SEO: /admin/* is operator-only. The in-page AdminLayout rewrites
+         the robots meta + OG tags to noindex on the client. The
+         server-rendered shell below is a defense-in-depth fallback for
+         crawlers that don't execute JS. -->
+    <script>
+      (function () {
+        try {
+          if (typeof window === "undefined" || !window.location) return;
+          if (window.location.pathname.indexOf("/admin") === 0) {
+            var setMeta = function (attr, key, content) {
+              var sel = "meta[" + attr + '="' + key + '"]';
+              var el = document.head.querySelector(sel);
+              if (!el) {
+                el = document.createElement("meta");
+                el.setAttribute(attr, key);
+                document.head.appendChild(el);
+              }
+              el.setAttribute("content", content);
+            };
+            setMeta("name", "robots", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+            setMeta("property", "og:title", "DatIQ");
+            setMeta("property", "og:description", "Restricted area.");
+            setMeta("property", "og:url", "");
+            setMeta("name", "description", "Restricted area.");
+            var link = document.head.querySelector('link[rel="canonical"]');
+            if (link) link.remove();
+            document.title = "DatIQ";
+          }
+        } catch (e) { /* no-op */ }
+      })();
+    </script>
     <meta name="theme-color" content="#6366f1" />
     <meta name="author" content="DatIQ" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="DatIQ — Intelligence from Every URL" />
-    <meta property="og:description" content="Turn any public URL into structured data — headings, links, contacts, pricing, and an AI summary — in seconds. No code required. Free to start." />
+    <meta property="og:title" content="DatIQ: The Unified Web Intelligence Platform" />
+    <meta property="og:description" content="DatIQ — Intelligence from Web. The unified platform for single, batch, and scheduled URL extraction, enrichment, and operationalization. Built on Pillar 0: Web Intelligence (Core)." />
     <meta property="og:url" content="https://datiq.app/" />
     <meta property="og:site_name" content="DatIQ" />
-    <meta property="og:image" content="https://datiq.app/favicon.svg" />
+    <meta property="og:image" content="https://datiq.app/og-card.jpg" />
     <meta property="og:locale" content="en_US" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="DatIQ — Intelligence from Every URL" />
-    <meta name="twitter:description" content="Turn any public URL into structured data — headings, links, contacts, pricing, and an AI summary — in seconds. No code required." />
-    <meta name="twitter:image" content="https://datiq.app/favicon.svg" />
+    <meta name="twitter:title" content="DatIQ: The Unified Web Intelligence Platform" />
+    <meta name="twitter:description" content="DatIQ — Intelligence from Web. Single, batch, and scheduled URL extraction, enrichment, and operationalization, built on Pillar 0: Web Intelligence (Core)." />
+    <meta name="twitter:image" content="https://datiq.app/og-card.jpg" />
     <meta name="twitter:site" content="@datiq_app" />
 
     <!-- JSON-LD: Organization -->
@@ -36,9 +67,11 @@
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "DatIQ",
+      "alternateName": "DatIQ — The Unified Web Intelligence Platform",
       "url": "https://datiq.app",
       "logo": "https://datiq.app/favicon.svg",
-      "description": "DatIQ is a zero-code web extraction and AI enrichment platform. Turn any public URL into structured data — headings, links, contacts, pricing, and an AI summary — in seconds.",
+      "description": "DatIQ is the unified web intelligence platform. Its foundation is Pillar 0 — Web Intelligence (Core) — a proven single, batch, and scheduled URL-extraction engine that the rest of the platform is built upon. From any public URL, get headings, links, contacts, pricing, AI summaries, enrichment, scheduling, and exports.",
+      "slogan": "Intelligence from Web",
       "sameAs": [
         "https://www.linkedin.com/company/datiq",
         "https://twitter.com/datiq_app",
@@ -59,8 +92,9 @@
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "DatIQ",
+      "alternateName": "DatIQ — Intelligence from Web",
       "url": "https://datiq.app",
-      "description": "Zero-code web extraction and AI enrichment platform.",
+      "description": "DatIQ: The Unified Web Intelligence Platform — single, batch, and scheduled URL extraction, enrichment, and operationalization. Built on Pillar 0 (Web Intelligence Core).",
       "potentialAction": {
         "@type": "SearchAction",
         "target": {
@@ -78,12 +112,14 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "DatIQ",
+      "alternateName": "DatIQ — The Unified Web Intelligence Platform",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web",
       "url": "https://datiq.app",
-      "description": "DatIQ extracts structured data from any public website — headings, links, contacts, pricing tables, and AI summaries — with a single URL paste. No code or setup required.",
+      "description": "DatIQ is the unified web intelligence platform. Pillar 0 (Web Intelligence Core) is the proven single, batch, and scheduled URL-extraction engine that the whole platform is built on. From a single URL to an entire domain, DatIQ delivers structured intelligence — headings, links, contacts, pricing, AI summaries — in seconds, with no code required.",
       "featureList": [
-        "Web extraction: headings H1–H6, internal/external links, metadata",
+        "Pillar 0: Web Intelligence (Core) — single, batch, and scheduled URL extraction",
+        "Headings H1–H6, internal/external links, metadata",
         "AI summary: plain-language overview of any page",
         "Custom field extraction in plain English",
         "Contact extraction: emails, LinkedIn, leadership names",

@@ -25,7 +25,7 @@ export default function CreditEstimator({ estimate, compact = false }) {
     <div className={cls} role="status" aria-live="polite">
       <Icon name={icon} size={14} />
       <span className="credit-estimator-text">{estimate.message}</span>
-      {!compact && estimate.tone !== "block" && (
+      {!compact && estimate.tone !== "block" && !estimate.isUnlimited && (
         <span className="credit-estimator-after">
           ({estimate.afterRun} after this run)
         </span>

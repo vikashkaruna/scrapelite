@@ -15,6 +15,8 @@
 // Every scrape adapter returns: { ok, source, html, title, customExtraction }
 // Every map  adapter returns:  { ok, source, mapLinks[] }
 
+import { fetchPublicUrl } from "./publicUrl.js";
+
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
 const SPIDER_BASE    = "https://api.spider.cloud/v1";
 const JINA_BASE      = "https://r.jina.ai";
@@ -150,7 +152,7 @@ async function scrapeJina(url, options, apiKey) {
 async function scrapeDirect(url, _options, _apiKey) {
   const { signal, clear } = abortAfter(TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublicUrl(url, {
       headers: {
         "User-Agent":      "Mozilla/5.0 (compatible; DatIQ/1.0; +https://datiq.app)",
         Accept:            "text/html,application/xhtml+xml,*/*",
@@ -230,7 +232,7 @@ async function mapSpider(url, apiKey) {
 async function mapDirect(url, _apiKey) {
   const { signal, clear } = abortAfter(TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublicUrl(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; DatIQ/1.0; +https://datiq.app)" },
       signal,
     });

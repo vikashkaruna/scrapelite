@@ -24,6 +24,7 @@ import { extractStructure } from "../lib/firecrawlService.js";
 import { saveScheduledExtraction } from "../lib/extractionsRepo.js";
 import { recordScheduledItem } from "../lib/batchRunsService.js";
 import { hostOf, timeAgo, fmtDate } from "../lib/utils.js";
+import { useSeo } from "../hooks/useSeo.js";
 
 const STATUS_META = {
   changed:   { icon: "alert-circle",   label: "Changed",   cls: "sch-status-changed" },
@@ -119,6 +120,12 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
 }
 
 export default function Schedules() {
+  useSeo({
+    title: "DatIQ Schedules — recurring extractions and change monitoring | DatIQ.app",
+    description:
+      "DatIQ Schedules — set up recurring extractions and get notified the moment a page changes. DatIQ.app is the zero-code web data extraction platform for monitoring competitor pricing, job posts, and more.",
+    canonical: "https://datiq.app/schedules",
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const showToast = useToast();

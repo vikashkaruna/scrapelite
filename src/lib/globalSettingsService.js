@@ -10,6 +10,17 @@ export const DEFAULTS = {
   guest_trial_reprompt_interval: 2,
   guest_single_hard_limit: 10,
   guest_batch_hard_limit: 5,
+  // Contact page "Response times" card — three SLA rows editable by admins via
+  // the /admin/general page. Each row is a (label, time) pair rendered in the
+  // contact-page sidebar. Defaults are display copy only — they describe the
+  // team's intended response posture, they are not enforced anywhere, and they
+  // make no commitment to the user beyond the wording shown.
+  contact_sla_general_label:    "General support",
+  contact_sla_general_time:     "Within 48 h",
+  contact_sla_billing_label:    "Billing issues",
+  contact_sla_billing_time:     "Within 24 h",
+  contact_sla_enterprise_label: "Enterprise enquiries",
+  contact_sla_enterprise_time:  "Within 24 h",
 };
 
 function readCached() {

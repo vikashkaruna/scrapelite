@@ -47,6 +47,7 @@ function PlanEditor({ plan, onSave, onReset }) {
     email_export:    plan.limits.email_export,
     api_access:      plan.limits.api_access,
     white_label_pdf: plan.limits.white_label_pdf,
+    priority_support: plan.limits.priority_support,
   });
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -70,6 +71,7 @@ function PlanEditor({ plan, onSave, onReset }) {
         email_export:                  form.email_export,
         api_access:                    form.api_access,
         white_label_pdf:               form.white_label_pdf,
+        priority_support:              form.priority_support,
       },
     });
     setSaved(true);
@@ -206,7 +208,8 @@ function PlanEditor({ plan, onSave, onReset }) {
               { key: "highlight",       label: "Highlight card (recommended)" },
               { key: "email_export",    label: "Email export" },
               { key: "api_access",      label: "API access" },
-              { key: "white_label_pdf", label: "White-label PDF" },
+              { key: "white_label_pdf", label: "White-label PDF (Business + Agency)" },
+              { key: "priority_support", label: "Priority support (Business + Agency)" },
             ].map(({ key, label }) => (
               <label key={key} className="flag-label">
                 <input type="checkbox" checked={!!form[key]}

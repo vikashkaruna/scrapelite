@@ -12,8 +12,13 @@
 
   --r: 14px;
   --r-sm: 9px;
+  --r-md: 10px;
   --r-lg: 22px;
+  --r-xl: 28px;
   --r-pill: 999px;
+
+  /* Not theme-dependent — matches the literal already hardcoded in .btn-danger below. */
+  --danger: #e0556b;
 
   --row-py: 13px;
   --card-pad: 24px;
@@ -44,9 +49,11 @@
   --border: #e6eaf0;
   --border-strong: #d3dae5;
   --text: #11192a;
+  --text-1: var(--text);
   --text-2: #5a6577;
   --text-3: #5d6780;
   --shadow-sm: 0 1px 2px rgba(17,25,42,.05), 0 1px 1px rgba(17,25,42,.04);
+  --shadow-md: var(--shadow);
   --shadow: 0 4px 12px -4px rgba(17,25,42,.10), 0 2px 6px -2px rgba(17,25,42,.06);
   --shadow-lg: 0 24px 50px -16px rgba(17,25,42,.22), 0 8px 20px -8px rgba(17,25,42,.12);
   --shadow-accent: 0 10px 26px -8px color-mix(in srgb, var(--accent) 55%, transparent);
@@ -62,12 +69,14 @@
   --border: #232b3d;
   --border-strong: #303a50;
   --text: #f2f5fa;
+  --text-1: var(--text);
   --text-2: #9aa6bb;
   --text-3: #8b96ad;
   /* In dark mode, --accent-on-soft is too dark to be readable. Override
      with a lighter indigo that passes WCAG AA on dark surfaces. */
   --accent-on-dark: #a5b4fc;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: var(--shadow);
   --shadow: 0 6px 16px -6px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
   --shadow-lg: 0 28px 60px -18px rgba(0,0,0,.7), 0 10px 24px -10px rgba(0,0,0,.5);
   --shadow-accent: 0 12px 30px -8px color-mix(in srgb, var(--accent) 60%, transparent);
@@ -133,10 +142,10 @@ a { color: inherit; text-decoration: none; }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 
 .btn-danger {
-  background: transparent; color: #e0556b;
-  border-color: color-mix(in srgb, #e0556b 32%, transparent);
+  background: transparent; color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
 }
-.btn-danger:hover { background: color-mix(in srgb, #e0556b 12%, transparent); border-color: #e0556b; }
+.btn-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: var(--danger); }
 
 .btn-sm { height: 34px; padding: 0 12px; font-size: .86em; border-radius: var(--r-sm); }
 .btn-sm svg { width: 15px; height: 15px; }
@@ -146,7 +155,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Top bar ───────────────────────────────────────────────────── */
 .topbar {
-  position: sticky; top: 0; z-index: 40;
+  position: sticky; top: 0; z-index: 100;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   backdrop-filter: blur(16px) saturate(160%);

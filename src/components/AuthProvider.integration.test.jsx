@@ -119,4 +119,100 @@ describe("I-14 — AuthProvider", () => {
     });
     expect(apiMocks.setAuthToken).toHaveBeenCalledWith(null);
   });
+
+  // ── OAuth-callback URL cleanup ────────────────────────────────────────────
+  // Bug: after Google sign-in the user lands on datiq.app/#access_token=...
+  // (implicit) or datiq.app/?code=... (PKCE) and the URL never gets cleaned.
+  // The Supabase auth-js client is supposed to clean it, but only when the
+  // project the hash was issued for matches the project the client is
+  // configured with. When they don't, the hash sticks. We strip it ourselves
+  // and surface a friendly error if no session was produced.
+
+  it("mount with #access_token=... (implicit callback) → hash cleaned even if Supabase init fails", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "#access_token=eyJabc&refresh_token=rtok&expires_in=3600&token_type=bearer"
+    );
+    render(
+      <AuthProvider>
+        <Capture />
+      </AuthProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Hash MUST be gone — the user should never see a token-bearing URL
+    // sitting in the address bar.
+    expect(window.location.hash).toBe("");
+    // The Supabase client returned null (project mismatch simulation), so we
+    // surface a helpful error instead of silently leaving the user signed-out.
+    expect(screen.getByTestId("showAuthModal").textContent).toBe("true");
+    expect(screen.getByTestId("authError").textContent).toMatch(
+      /Sign-in completed but we couldn't start your session/
+    );
+  });
+
+  it("mount with #access_token=... AND a resolved session → no error, hash cleaned", async () => {
+    authMocks.getSession.mockResolvedValue({
+      access_token: "eyJabc",
+      user: { id: "u1", email: "a@b.co" },
+    });
+    window.history.replaceState(
+      null,
+      "",
+      "#access_token=eyJabc&refresh_token=rtok"
+    );
+    render(
+      <AuthProvider>
+        <Capture />
+      </AuthProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(window.location.hash).toBe("");
+    expect(screen.getByTestId("user").textContent).toBe("a@b.co");
+    expect(screen.getByTestId("showAuthModal").textContent).toBe("false");
+    expect(screen.getByTestId("authError").textContent).toBe("");
+  });
+
+  it("mount with ?code=... (PKCE callback) → query cleaned, error surfaced if no session", async () => {
+    window.history.replaceState(null, "", "/?code=abc123");
+    render(
+      <AuthProvider>
+        <Capture />
+      </AuthProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+    // No session → user sees the auth modal with the diagnostic error.
+    expect(screen.getByTestId("showAuthModal").textContent).toBe("true");
+    expect(screen.getByTestId("authError").textContent).toMatch(
+      /Sign-in completed but we couldn't start your session/
+    );
+  });
+
+  it("mount with ?code=... AND a resolved session → no error, query cleaned, user signed in", async () => {
+    authMocks.getSession.mockResolvedValue({
+      access_token: "eyJpkce",
+      user: { id: "u2", email: "c@d.co" },
+    });
+    window.history.replaceState(null, "", "/?code=abc123");
+    render(
+      <AuthProvider>
+        <Capture />
+      </AuthProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(window.location.search).toBe("");
+    expect(screen.getByTestId("user").textContent).toBe("c@d.co");
+    expect(screen.getByTestId("showAuthModal").textContent).toBe("false");
+    expect(screen.getByTestId("authError").textContent).toBe("");
+  });
 });

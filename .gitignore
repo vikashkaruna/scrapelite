@@ -52,3 +52,14 @@ playwright/.cache/
 
 # Netlify dev artifacts (Deno runtime used by some plugins)
 deno.lock
+
+# Workspace noise — not part of the codebase
+DatIQ\ Price\ Range.numbers
+dist-extension/
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

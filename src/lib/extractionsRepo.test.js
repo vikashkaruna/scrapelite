@@ -103,6 +103,18 @@ describe("500 + network failure → localStorage fallback (U-58)", () => {
     const row = await saveExtraction({ ...SAMPLE, id: undefined });
     expect(row._saved).toBe(true);
   });
+
+  it("502 Bad Gateway (e.g. local dev proxy with no netlify functions running) → localStorage fallback, no throw", async () => {
+    apiMocks.createExtraction.mockRejectedValue({ status: 502 });
+    const row = await saveExtraction({ ...SAMPLE, id: undefined });
+    expect(row._saved).toBe(true);
+  });
+
+  it("504 Gateway Timeout → localStorage fallback, no throw", async () => {
+    apiMocks.createExtraction.mockRejectedValue({ status: 504 });
+    const row = await saveExtraction({ ...SAMPLE, id: undefined });
+    expect(row._saved).toBe(true);
+  });
 });
 
 describe("saveScheduledExtraction", () => {

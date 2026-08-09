@@ -112,13 +112,13 @@ const FEATURE_GROUPS = [
     icon: "credit-card",
     title: "Plans & payments",
     items: [
-      "7 plan tiers: Free, Select, Pro, Business, Agency, Developer (coming soon), Enterprise",
-      "Annual + monthly billing (20% annual discount, default on /pricing)",
+      "7 plan tiers: Free, Go, Select, Pro, Business, Agency, Developer (coming H3 2026), Enterprise",
+      "Annual + monthly billing (~17% annual discount, computed live from each plan's prices)",
       "USD + INR pricing (INR promotional annual amounts, GST-inclusive)",
       "Razorpay one-time Order payments (INR) — server-authoritative amounts",
-      "Top-up bundles (Batch Pack, Power Pack) with quantity selector",
+      "Top-up bundles (Extractions Bundle, Scheduled Monitor, Extra Workspace) with quantity selector",
       "Coupons (% off or bonus extractions) with server-enforced maxUses + one-per-user",
-      "Payment-confirm modal with itemized GST breakdown",
+      "Payment-confirm modal with itemized GST breakdown + in-modal Monthly/Annual toggle",
       "Task-aware paywall copy (recommends the right plan for the current task)",
       "Numbered, itemized invoice or receipt issued for every completed payment",
       "Invoice PDF emailed automatically on payment, with view / download / re-send in Account",
@@ -126,6 +126,9 @@ const FEATURE_GROUPS = [
       "Billing documents stay available after a plan is cancelled or lapses",
       "Lapsed-plan stages are signposted in-app and by email, and renewing restores access",
       "Scheduled monitoring pauses while a plan is lapsed and resumes on renewal",
+      "White-label PDF (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background",
+      "Priority support (Business + Agency): contact-form submissions route through a faster SLA",
+      "Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit",
     ],
   },
   {
@@ -238,6 +241,24 @@ export default function Changelog() {
             full set of what ships in the {VERSION} build. No historical log; this is the
             starting point. Released {SHIPPED}.
           </p>
+
+          {/* 2026-08 update banner — the V1.0 page is a one-stop snapshot, so
+              we surface post-release deltas here rather than restarting the
+              historical log. When V1.1 ships, replace this banner with a
+              brief "what changed" callout pointing at /changelog/v1.1. */}
+          <div className="cl-update-banner">
+            <Icon name="sparkles" size={16} />
+            <div>
+              <strong>Updated 2026-08</strong>
+              <span>
+                Business now ships with <strong>white-label PDF</strong> and
+                {" "}<strong>priority support</strong> (previously Agency-only).
+                The <strong>Extra Workspace</strong> add-on now inherits your
+                plan's features, capped at the parent plan's team-seats limit.
+                Developer tier retargeted to <strong>H3 2026</strong>.
+              </span>
+            </div>
+          </div>
 
           <div className="cl-ph-banner">
             <Icon name="rocket" size={16} />

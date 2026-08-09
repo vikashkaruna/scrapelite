@@ -13,6 +13,32 @@
 import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
 
+const MAX_MESSAGES = 50;
+const MAX_MESSAGE_CHARS = 20_000;
+const MAX_TOTAL_CHARS = 100_000;
+const MAX_TOKENS = 8192;
+
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0 || messages.length > MAX_MESSAGES) return null;
+  let total = 0;
+  const out = [];
+  for (const message of messages) {
+    if (!message || !["system", "user", "assistant"].includes(message.role)) return null;
+    let content = message.content;
+    if (Array.isArray(content)) {
+      if (content.some((block) => !block || block.type !== "text" || typeof block.text !== "string")) return null;
+      content = content.map((block) => ({ type: "text", text: block.text }));
+      if (content.some((block) => block.text.length > MAX_MESSAGE_CHARS)) return null;
+      total += content.reduce((n, block) => n + block.text.length, 0);
+    } else if (typeof content === "string") {
+      if (content.length > MAX_MESSAGE_CHARS) return null;
+      total += content.length;
+    } else return null;
+    out.push({ role: message.role, content });
+  }
+  return total <= MAX_TOTAL_CHARS ? out : null;
+}
+
 function respond(statusCode, body) {
   return {
     statusCode,
@@ -48,10 +74,14 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { max_tokens, messages } = reqBody;
+  const { max_tokens, messages } = reqBody && typeof reqBody === "object" ? reqBody : {};
 
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+  const safeMessages = normalizeMessages(messages);
+  if (!safeMessages) {
     return respond(400, { error: "messages array is required" });
+  }
+  if (max_tokens != null && (!Number.isInteger(max_tokens) || max_tokens < 1 || max_tokens > MAX_TOKENS)) {
+    return respond(400, { error: `max_tokens must be an integer between 1 and ${MAX_TOKENS}` });
   }
 
   // Subscription gate — AI enrichment is a paid capability and must stop for a
@@ -72,7 +102,7 @@ export const handler = async (event) => {
   }
 
   try {
-    const result = await runChain(messages, max_tokens);
+    const result = await runChain(safeMessages, max_tokens);
     if (!result.ok) {
       return respond(502, { error: result.error, detail: { attempts: result.attempts } });
     }

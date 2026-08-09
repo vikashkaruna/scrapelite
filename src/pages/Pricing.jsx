@@ -9,6 +9,7 @@ import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig
 import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
+import { preloadRazorpay } from "../lib/paymentService.js";
 import Icon from "../components/Icon.jsx";
 import PricingMatrix from "../components/PricingMatrix.jsx";
 import Button from "../components/Button.jsx";
@@ -66,6 +67,25 @@ function resolvePrice(plan, billingPeriod, currency, rates) {
   return plan.price_usd;
 }
 
+// Average "annual vs monthly" discount across paid, purchasable plans, for the
+// given currency — drives the "Save X% when you pay annually" banner. Computed
+// from the live (possibly admin-overridden) plan list rather than hardcoded, so
+// it can never drift from what the cards actually charge. Rounded to 1 decimal
+// place so prices like "16.7%" don't lose the meaningful sub-percent signal.
+function annualSavingsPercent(plans, currency) {
+  const fracs = plans
+    .filter((p) => p.price_usd > 0 && !p.comingSoon)
+    .map((p) => {
+      const monthly = currency === "INR" ? p.price_inr : p.price_usd;
+      const annual  = currency === "INR" ? p.price_inr_annual : p.price_usd_annual;
+      if (!monthly || annual == null) return null;
+      return 1 - annual / monthly;
+    })
+    .filter((f) => f != null && f > 0);
+  if (!fracs.length) return 20;
+  return Math.round((fracs.reduce((a, b) => a + b, 0) / fracs.length) * 1000) / 10;
+}
+
 function BillingToggle({ value, onChange }) {
   return (
     <div className="billing-toggle-wrap" role="group" aria-label="Billing period">
@@ -86,22 +106,41 @@ function BillingToggle({ value, onChange }) {
         aria-label="Annual billing"
       >
         Annual
-        <span className="billing-save-badge" aria-hidden="true">Save 20%</span>
       </button>
     </div>
   );
 }
 
-function PlanCard({ plan, displayPrice, currency, billingPeriod, currentPlanId, onSelect, loading }) {
+function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelect, loading }) {
   const isCurrent = plan.id === currentPlanId;
   const isFree    = plan.price_usd === 0;
   const isLoading = loading === plan.id;
   const isSoon    = plan.comingSoon;
+  const isAnnual  = billingPeriod === "annual";
+  const isBestValue = plan.badge === "Best Value";
+
+  // Per-month rate for the selected period (used for the button/monthly view),
+  // and the regular (undiscounted-by-billing-period) monthly rate — the "list"
+  // rate the strikethrough compares against when annual is selected.
+  const periodRate  = applyGlobalDiscount(resolvePrice(plan, billingPeriod, currency, rates));
+  const monthlyRate = applyGlobalDiscount(resolvePrice(plan, "monthly", currency, rates));
+  // Annual view: derive the charged annual total from the (already discounted)
+  // annual per-month rate, and the "list" annual total from the un-discounted
+  // monthly rate × 12. Both are the per-year numbers, displayed alongside their
+  // /yr (per-year) and /mo (per-month) counterparts.
+  const chargedAnnualTotal  = isAnnual ? Math.round(periodRate * 12) : null;
+  const originalAnnualTotal = isAnnual ? Math.round(monthlyRate * 12) : null;
+  const annualSavings       = isAnnual ? Math.max(0, originalAnnualTotal - chargedAnnualTotal) : 0;
+  // Savings % vs. paying the monthly rate for 12 months (the "list" annual total).
+  const annualSavingsPct = isAnnual && originalAnnualTotal > 0
+    ? Math.round((annualSavings / originalAnnualTotal) * 1000) / 10
+    : 0;
 
   return (
     <div className={
       "plan-card" +
       (plan.highlight ? " plan-highlight" : "") +
+      (isBestValue ? " plan-best-value" : "") +
       (isSoon ? " plan-coming-soon" : "") +
       (isCurrent ? " plan-current" : "") +
       (isLoading ? " plan-selecting" : "")
@@ -120,12 +159,32 @@ function PlanCard({ plan, displayPrice, currency, billingPeriod, currentPlanId, 
       <div className="plan-price">
         {isFree ? (
           <><span className="price-amount">Free</span><span className="price-period"> forever</span></>
-        ) : isSoon ? (
-          <><span className="price-amount">{formatPrice(displayPrice, currency)}</span><span className="price-period"> / mo</span></>
+        ) : isAnnual ? (
+          <div className="plan-price-annual">
+            <div className="plan-price-annual-row plan-price-annual-row--top">
+              <span className="price-amount">{formatPrice(chargedAnnualTotal, currency)}</span>
+              <span className="price-period"> / yr</span>
+              {annualSavings > 0 && (
+                <span className="price-original">{formatPrice(originalAnnualTotal, currency)}</span>
+              )}
+            </div>
+            <div className="plan-price-annual-row plan-price-annual-row--monthly">
+              <span className="price-amount-sub">{formatPrice(periodRate, currency)}</span>
+              <span className="price-period-sub"> / mo</span>
+              {annualSavings > 0 && (
+                <span className="price-original price-original--monthly">{formatPrice(monthlyRate, currency)}</span>
+              )}
+            </div>
+            {annualSavings > 0 && (
+              <div className="price-save">
+                Save {formatPrice(annualSavings, currency)} ({annualSavingsPct}%)
+              </div>
+            )}
+          </div>
         ) : (
           <>
-            <span className="price-amount">{formatPrice(displayPrice, currency)}</span>
-            <span className="price-period"> / mo{billingPeriod === "annual" ? ", billed annually" : ""}</span>
+            <span className="price-amount">{formatPrice(periodRate, currency)}</span>
+            <span className="price-period"> / mo</span>
           </>
         )}
       </div>
@@ -225,7 +284,7 @@ export default function Pricing() {
     paymentProvider, hasPayment, subscription,
   } = useBilling();
 
-  const [billingPeriod, setBillingPeriod]   = useState("annual");
+  const [billingPeriod, setBillingPeriod]   = useState("monthly");
   const [loadingPlan, setLoadingPlan]       = useState(null);
   const [loadingBundle, setLoadingBundle]   = useState(null);
   const [localError, setLocalError]         = useState("");
@@ -240,6 +299,11 @@ export default function Pricing() {
   const discount = getGlobalDiscount();
 
   useEffect(() => { setLocalError(""); setPaymentError?.(""); }, [currency]);
+
+  // Pre-warm the Razorpay SDK as soon as /pricing mounts so the user doesn't
+  // pay the CDN round-trip cost at the moment they click "Proceed to payment".
+  // Fire-and-forget: errors are surfaced later, on the actual load attempt.
+  useEffect(() => { preloadRazorpay(); }, []);
 
   const handleSelect = async (planId) => {
     if (planId === "free") {
@@ -327,6 +391,9 @@ export default function Pricing() {
               {paymentProvider && <ProviderBadge provider={paymentProvider} />}
             </div>
           </div>
+          <p className="billing-savings-note">
+            Save {annualSavingsPercent(plans, currency)}% when you pay annually
+          </p>
 
           {!hasPayment && (
             <div className="payment-demo-notice">
@@ -351,22 +418,18 @@ export default function Pricing() {
         )}
 
         <div className="plans-grid">
-          {plans.map((plan) => {
-            const displayPrice = resolvePrice(plan, billingPeriod, currency, rates);
-            const discountedUsd = applyGlobalDiscount(displayPrice);
-            return (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                displayPrice={discountedUsd}
-                currency={currency}
-                billingPeriod={billingPeriod}
-                currentPlanId={currentPlanId}
-                onSelect={handleSelect}
-                loading={loadingPlan}
-              />
-            );
-          })}
+          {plans.map((plan) => (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              currency={currency}
+              billingPeriod={billingPeriod}
+              rates={rates}
+              currentPlanId={currentPlanId}
+              onSelect={handleSelect}
+              loading={loadingPlan}
+            />
+          ))}
           <EnterpriseCard onContact={handleContactSales} />
         </div>
 
@@ -441,7 +504,7 @@ export default function Pricing() {
             </div>
             <div className="pricing-faq-item">
               <Icon name="info" size={16} />
-              <span>Annual billing locks in the 20% discount for the full year, billed upfront.</span>
+              <span>Annual billing locks in your discount for the full year, billed upfront.</span>
             </div>
           </div>
         </div>

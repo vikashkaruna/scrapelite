@@ -15,7 +15,7 @@
 // malformed URLs are rejected with 400.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
-import { isPublicHttpUrl } from "./lib/publicUrl.js";
+import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { getCached, setCached } from "./lib/resultCacheStore.js";
 import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -58,13 +58,21 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { url, options = {} } = reqBody;
+  const { url, options: rawOptions = {} } = reqBody;
+  const options = rawOptions && typeof rawOptions === "object" && !Array.isArray(rawOptions)
+    ? {
+        renderJs: rawOptions.renderJs === true,
+        mapMode: rawOptions.mapMode === true,
+        noCache: rawOptions.noCache === true,
+        ...(rawOptions.customPrompt == null ? {} : { customPrompt: String(rawOptions.customPrompt).trim().slice(0, 12000) }),
+      }
+    : {};
   if (!url) return respond(400, { error: "url is required" });
 
   // SSRF guard: reject private IPs, non-http(s) schemes, malformed URLs
   // BEFORE we make any outbound provider HTTP call.
   try {
-    if (!isPublicHttpUrl(url)) {
+    if (!(await isPublicHttpUrlAsync(url))) {
       return respond(400, { error: "URL is not a public http(s) address" });
     }
   } catch (err) {
@@ -85,9 +93,8 @@ export const handler = async (event) => {
     console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
   }
 
-  // FD3: robots.txt compliance (skip when explicitly bypassed).
-  const bypassCompliance = options.bypassCompliance === true;
-  if (!bypassCompliance) {
+  // FD3: robots.txt compliance. This is server-enforced; clients cannot bypass it.
+  {
     try {
       const compliance = await checkCompliance(url, {
         permittedHosts: process.env.PERMITTED_HOSTS || "",
@@ -106,7 +113,7 @@ export const handler = async (event) => {
   }
 
   // FD3: per-host rate limiter. Wait for a token before any provider call.
-  if (!bypassCompliance) {
+  {
     try {
       await takeTokenBlocking(url, configFromEnv());
     } catch (err) {

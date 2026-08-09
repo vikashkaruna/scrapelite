@@ -1,0 +1,426 @@
+# DatIQ: The Unified Web Intelligence Platform — Full Content
+> Comprehensive content reference for AI agents and crawlers.
+> For the short discovery index, see /llms.txt.
+> Tagline: Intelligence from Web.
+> Brand: DatIQ (one word; capital I, capital Q).
+
+---
+
+## 1. Disambiguation
+
+DatIQ (this product) is a no-code web intelligence platform for extracting structured data from any public URL. It is NOT related to:
+- "DAT iQ" / "DATiQ" — a freight rate intelligence product by IntelliTrans / Trimble (North American trucking market)
+- "DAT" (without "iQ") — the parent DAT freight & load-board company
+- "Data IQ" / "DataIQ" — a generic analytics consultancy term, used by multiple unrelated firms
+
+DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
+
+---
+
+## 2. What DatIQ Does
+
+DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive:
+
+- **Structured headings** (H1–H6) in document order
+- **Internal and external links**, AI-categorized
+- **AI-generated summary** in plain language
+- **Contact information** (leadership names, email addresses, social profiles) when "Contacts & emails" is enabled
+- **Pricing data** (structured tiers) when extracted
+- **Custom fields** described in plain English — "extract all board members with titles", "find every API endpoint mentioned", etc.
+- **Domain map** — every indexed URL on the site (when "Map entire domain" is enabled)
+- **PDF / CSV export** of all of the above
+
+No code required. Background processing keeps the page responsive. Results persist to your account and are re-loadable on any device.
+
+---
+
+## 3. Core Capabilities (Detailed)
+
+### Web extraction
+- Headings H1 through H6 in document order
+- All internal and external links, with text and aria-label
+- Page metadata: title, description, OpenGraph, Twitter Card
+- JavaScript rendering option (via Firecrawl `waitFor: 3000`) for SPAs
+- Honors `robots.txt` and `noindex` by default
+
+### AI summary
+- Plain-language overview of any page
+- Model: Anthropic Claude (configurable)
+- 2-3 sentence default; longer for rich content
+
+### Custom extraction
+- User describes any field in plain English
+- Examples: "Extract every executive with their title and LinkedIn URL", "Pull all product SKUs and prices", "Find every API endpoint mentioned"
+- Returns structured JSON ready for export
+
+### Domain mapping
+- Discovers every URL on a site that is crawlable
+- Routes to Firecrawl's `/map` endpoint
+- Searchable list view; click any URL to extract
+
+### Contact extraction
+- Surface leadership names, email addresses, social profiles
+- Auto-populates a leadership/board contact prompt
+- One-click Quick Enrichment button on the preview page
+
+### Pricing extraction
+- Structured pricing tiers from any pricing page
+- Captures plan names, prices, billing cadence, key features
+- Excel-ready output
+
+### Content generation
+- SEO Blog Outline — heading structure + meta + key topics
+- Competitor Summary — side-by-side teardown
+- Social Posts — 3-5 LinkedIn / X posts from any extracted page
+- Compare — 2-URL battlecard
+- Explain — plain-English explainer for any page
+
+### Scheduled monitoring
+- Hourly, daily, weekly, or monthly
+- Alert on change (heading, link, content hash, or custom field)
+- Email + in-app notification
+- Pro and above
+
+### Batch processing
+- Multiple URLs in one run
+- Per-URL status (success / fail / retry)
+- CSV bulk export
+- Pro and above
+
+### Export & integrations
+- **CSV** — comprehensive, every enrichment included (deep-flattened JSON paths)
+- **PDF** — jsPDF report, same complete content
+- **Google Sheets** — Open-in-Google-Sheets with one click
+- **HubSpot / Salesforce** — push contacts and companies
+- **Webhooks** — fire-and-forget POST on extraction complete
+- **Email delivery** — send extractions to any address
+- **API** — POST /api/extract, POST /api/ai, GET /api/stats
+- **White-label PDF** (Business + Agency) — upload a single-page PDF template; every export renders on top of it
+
+---
+
+## 4. Pricing (as of 2026)
+
+| Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
+|---|---|---|---|---|
+| Free | $0 | ₹0 | 10 / month + 25-trial credit | No credit card, headings + links + summary, CSV export |
+| Select | $19 | ₹999 | 100 / month | + PDF export, custom extraction |
+| Pro | $29 | ₹1,499 | 250 / month | + Scheduled monitoring, Google Sheets, batch |
+| Business | $79 | ₹3,999 | 1,000 / month | + API, 3 seats, HubSpot + Salesforce, white-label PDF, priority support |
+| Agency | $299 | ₹14,999 | Unlimited | + 5 workspaces, white-label PDF, priority support |
+| Developer | $49 | TBD | 10K row credits | API-first (coming H3 2026) |
+| Enterprise | Custom ≥$1,000 | Custom | Custom | SSO, DPA, SLA, on-prem |
+
+20% discount on all annual plans. INR pricing available. GST invoices on every payment.
+
+### Plan-level features
+- **White-label PDF** (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background.
+- **Priority support** (Business + Agency): contact-form submissions are routed through a faster SLA.
+- **Extra Workspace add-on**: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
+- **Enterprise**: SSO, DPA, SLA, on-prem — contact sales.
+
+### Billing
+- Razorpay + UPI for Indian customers (auto-detected)
+- Stripe for international cards
+- Numbered, itemized invoice or receipt issued on every payment
+- PDF invoice emailed automatically
+- View, download, and re-send every invoice from the Account screen
+- GSTIN captured on every Indian invoice
+
+---
+
+## 5. Target Users (Personas)
+
+DatIQ is designed for seven core personas. Each has a tailored home-screen example, dashboard label, and onboarding flow:
+
+1. **Sales / SDR / BDR** — Turn any company website into a qualified prospect in 30 seconds. Extract contacts, leadership, mission, summary.
+2. **Competitive Intelligence** — Monitor competitor pricing, messaging, leadership changes. Full teardown in 5 minutes.
+3. **SEO / Content Marketer** — Audit any site's H1→H6, link profile, content gaps. No setup required.
+4. **Market Researcher** — Map your entire market landscape at machine speed. Aggregate missions, pricing, leadership.
+5. **Recruiter** — Source leadership, contact info, hiring signals from any company. Build a sourcing database.
+6. **Startup Founder / VC** — 10× faster due diligence. AI brief, team, pricing from any startup URL.
+7. **Agency / Enterprise** — Extract at scale across clients, competitors, and data pipelines. White-label ready.
+
+---
+
+## 6. Use Cases
+
+### Lead Generation
+Extract contact info, company details, and LinkedIn profiles from any public-facing business page. Build prospect lists in minutes.
+- Extract emails, phone numbers, job titles
+- Capture company size, funding, industry
+- Batch-process 100s of company URLs
+- Export to CSV or push to CRM
+- See: /use-cases/lead-generation
+
+### Competitor Research
+Monitor competitor pricing, feature pages, and messaging. Get AI-summarised insights on what changed and why.
+- Track pricing page changes automatically
+- Extract product features & positioning copy
+- Compare multiple competitors side by side
+- Scheduled monitoring with email alerts
+- See: /use-cases/competitor-research
+
+### SEO Audit
+Extract headings, meta tags, structured data, and internal links to identify SEO gaps without expensive tooling.
+- Extract H1–H6, title, meta description
+- Identify missing schema markup
+- Audit anchor text & link structure
+- Batch-audit entire site in one run
+- See: /use-cases/seo-audit
+
+### Market Research
+Aggregate product reviews, news articles, and industry reports into a structured dataset — ready for analysis.
+- Scrape reviews from G2, Capterra, App Store
+- Pull news headlines & publication dates
+- Aggregate pricing across competitors
+- Export structured JSON for analysis
+- See: /use-cases/market-research
+
+### Price Monitoring
+Track product prices across competitors and marketplaces. Alerted when prices change.
+- Monitor competitor prices daily or weekly
+- Track your own product prices on marketplaces
+- Historical price trend export
+- Alert when price drops below threshold
+
+### Content Research
+Extract article structures, FAQs, and key topics from top-ranking pages to inform your content strategy.
+- Extract article outlines & heading structure
+- Identify questions & FAQs on ranking pages
+- Aggregate content gaps across 20+ pages
+- AI-generated content brief from any URL
+
+### Additional use cases
+- **HR & Recruiting** — job postings, candidate profiles, career pages
+- **Real Estate Research** — property listings, rentals, neighbourhood data
+- **E-commerce Catalogue** — product names, descriptions, SKUs, prices
+- **Compliance Monitoring** — ToS, privacy policy, regulatory announcements
+- **News & Media Monitoring** — headlines, press releases, brand mentions
+- **API & Developer Data** — structured JSON for RAG / LLM pipelines
+
+---
+
+## 7. Key Pages (Full URLs)
+
+### Top-level
+- Home / App: https://datiq.app/
+- Pricing: https://datiq.app/pricing
+- About: https://datiq.app/about
+- Blog: https://datiq.app/blog
+- Contact: https://datiq.app/contact
+- What is DatIQ (canonical answer): https://datiq.app/what-is-datiq
+- FAQ: https://datiq.app/faq
+- Use cases hub: https://datiq.app/use-cases
+- Changelog: https://datiq.app/changelog
+- Public gallery: https://datiq.app/gallery
+- DMCA takedown process: https://datiq.app/dmca
+- Help documentation: https://datiq.app/help/index.html
+- Privacy Policy: https://datiq.app/privacy
+- Terms of Service: https://datiq.app/terms
+
+### Persona landing pages
+- For sales teams: https://datiq.app/for-sales
+- For SEO teams: https://datiq.app/for-seo
+- For competitive intelligence: https://datiq.app/for-ci
+
+### Use case detail pages
+- Lead generation: https://datiq.app/use-cases/lead-generation
+- Competitor research: https://datiq.app/use-cases/competitor-research
+- SEO audit: https://datiq.app/use-cases/seo-audit
+- Market research: https://datiq.app/use-cases/market-research
+
+### Programmatic SEO
+- Extract pricing from any page: https://datiq.app/extract-pricing
+- Extract contacts from any page: https://datiq.app/extract-contacts
+- Extract headings from any page: https://datiq.app/extract-headings
+
+### Competitor comparisons
+- DatIQ vs Browse.ai: https://datiq.app/vs/browse-ai
+- DatIQ vs Clay: https://datiq.app/vs/clay
+- DatIQ vs Firecrawl: https://datiq.app/vs/firecrawl
+- DatIQ vs Apify: https://datiq.app/vs/apify.html
+- DatIQ vs PhantomBuster: https://datiq.app/vs/phantombuster.html
+- Battle-card generator (compare 2 competitor URLs): https://datiq.app/vs/battlecard
+
+### Other
+- Integrations directory: https://datiq.app/integrations
+
+---
+
+## 8. FAQ (12 questions and answers)
+
+**Q1. What is DatIQ?**
+DatIQ is a no-code web intelligence platform that turns any public URL into structured data — headings, links, contacts, pricing, AI summaries, and custom fields — in seconds.
+
+**Q2. How is DatIQ different from Clay, Browse.ai, or Firecrawl?**
+DatIQ combines plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export in one no-code product. It is significantly cheaper than Clay, simpler than Firecrawl, and more feature-rich than Browse.ai.
+
+**Q3. How much does DatIQ cost?**
+DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $19 / month (Select, 100 extractions + PDF export). Pro is $29 / month, Business $79 / month, Agency $299 / month. Annual plans get a 20% discount. INR pricing is available.
+
+**Q4. Do I need to write code to use DatIQ?**
+No. DatIQ is zero-code — paste a URL, describe any field you want in plain English, and the AI extracts it. Custom extraction is configurable in the UI without scripting.
+
+**Q5. What formats can I export?**
+CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above.
+
+**Q6. Can I schedule recurring extractions?**
+Yes. Scheduled monitoring is included on Pro, Business, and Agency plans. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes.
+
+**Q7. How does DatIQ handle JavaScript-heavy sites?**
+The "Render JavaScript" option uses Firecrawl's headless browser with a 3-second wait, which works for React, Vue, Angular, and Next.js SPAs.
+
+**Q8. Is my data private?**
+Yes. Extractions are private to your account by default. You can hit "Share" on any extraction to publish a public read-only report at datiq.app/p/<slug>, but the dashboard and saved extractions are account-scoped.
+
+**Q9. Does DatIQ support team workspaces?**
+Yes. Business plans include 3 seats, Agency plans include 5 workspaces. Extra Workspace add-ons are available.
+
+**Q10. Is DatIQ GDPR / DPDP / SOC 2 compliant?**
+DatIQ is India-first and DPDP Act 2023 compliant. SOC 2 Type II is in progress (target Q4 2026). The admin page documents current compliance posture and DPIA templates.
+
+**Q11. What AI model powers DatIQ?**
+DatIQ uses Anthropic Claude for AI enrichment (configurable via env). The default model is optimized for structured extraction tasks. The API is also model-agnostic — you can plug in your own key.
+
+**Q12. How do I cancel my subscription?**
+Open Account → Plan → Cancel. You keep access until the end of the billing period, then the account moves to Free. No email hoops, no retention calls.
+
+---
+
+## 9. API
+
+### Endpoints
+- `POST /api/extract` — extract structured data from a URL
+  - Body: `{ "url": "...", "options": { "renderJs": true, "customPrompt": "..." } }`
+  - Returns: `{ "data": { "headings": [...], "links": [...], "summary": "...", "custom": {...} } }`
+- `POST /api/ai` — AI enrichment on existing structured data
+  - Body: `{ "data": {...}, "prompt": "Extract every executive with title and LinkedIn" }`
+  - Returns: `{ "enrichment": {...} }`
+- `GET /api/stats` — aggregate statistics (count, last extracted, etc.)
+  - Returns: `{ "totalExtractions": ..., "byDomain": {...} }`
+
+### Authentication
+- Bearer token in `Authorization` header
+- Tokens generated from the Account → API page (Business and Agency plans)
+- Rate limits: 60 requests / minute, 10,000 / day (Business); unlimited (Agency)
+
+### Documentation
+Full reference: /help/index.html (DatIQ-Developer-API section)
+
+---
+
+## 10. Competitive Context
+
+DatIQ is a no-code alternative to:
+- **Clay** — 10× cheaper; DatIQ starts at $19/mo vs Clay's $149/mo. DatIQ's enrichment is built into the extraction, not bolted on.
+- **Browse.ai** — More feature-rich (custom extraction, AI enrichment tabs, scheduled monitoring, white-label PDF).
+- **Firecrawl** — Simpler. No API key management, no scraping infrastructure to maintain.
+- **Diffbot** — Much cheaper. Plain-English config vs ontology training.
+- **PhantomBuster** — No proxy rotation costs, no browser quotas.
+
+DatIQ's differentiation: plain-English custom extraction, built-in AI enrichment tabs, background processing, full CSV/PDF export with no setup, India-first (INR + Razorpay + UPI + DPDP), white-label ready.
+
+---
+
+## 11. India-first
+
+- INR pricing on every plan
+- Razorpay + UPI payment support
+- GSTIN captured on every invoice
+- DPDP Act 2023 compliance (DPDP grievance officer named, contact: admin@datiq.app)
+- Governed by Indian law; arbitration seat Bengaluru, India
+
+---
+
+## 12. Technical Stack
+
+- **Frontend:** Vite 5 + React 18 + React Router 6
+- **Styling:** Tailwind CSS + CSS custom-property design tokens
+- **Icons:** lucide-react
+- **Auth + DB:** Supabase (Postgres + auth)
+- **Extraction:** Firecrawl (`/v1/scrape` + `/v1/map`)
+- **AI enrichment:** Anthropic Claude (configurable)
+- **Serverless:** Netlify Functions (Node.js)
+- **Payments:** Razorpay (India) + Stripe (international)
+- **PDF export:** jsPDF (lazy-loaded, only on export click)
+- **AI-discovery files:** `/llms.txt` (3.6KB index) and `/llms-full.txt` (17.8KB full content — this file)
+- **Open Graph card:** `/og-card.jpg` (1376×768, used as `og:image` + `twitter:image` on every static surface)
+- **Schema.org:** FAQPage on `/faq`, `/what-is-datiq`, and all 4 use-case detail pages; BreadcrumbList on 11 nested pages; Article on blog posts
+- **Test framework:** Vitest (2,500+ tests) + Playwright (e2e smoke) + jsdom
+
+---
+
+## 13. Trust and Compliance
+
+- **DPDP Act 2023 compliant** — privacy by design, data minimisation, named grievance officer
+- **GDPR compatible** — right to erasure, data export, consent capture
+- **Indian law governed** — arbitration seat in Bengaluru under the Arbitration and Conciliation Act, 1996
+- **DMCA agent** — admin@datiq.app, 24-hour response SLA on valid takedown notices
+- **Security disclosure** — admin@datiq.app, 48-hour response SLA
+- **Transparency** — public changelog, public roadmap (where applicable), public pricing
+
+---
+
+## 14. How to Get Started
+
+1. Visit https://datiq.app/
+2. Paste any public URL into the composer
+3. Click "Extract" — you get headings, links, and an AI summary in seconds
+4. Try Quick Enrichment — one-click capabilities for contacts, leadership, social, mission, pricing
+5. Save the extraction to your account (free plan: 10 / month)
+6. Export as CSV, PDF, or open in Google Sheets
+7. Optional: sign up for a paid plan to unlock scheduled monitoring, batch, API, and white-label PDF
+
+No credit card required to start. No setup. No API keys. Just paste and go.
+
+---
+
+## 15. Contact
+
+- **General / support / sales / billing / press:** hello@datiq.app
+- **Security disclosure / legal / privacy / DPDP / DMCA:** admin@datiq.app
+- **Address:** DatIQ is operated by Axiom Minds Pvt. Ltd., registered in Bengaluru, India
+- **Office hours:** Monday–Friday, 9:00–18:00 IST
+- **Response SLA:** General ≤1 business day; Security disclosure ≤48 hours; Priority (Business+) ≤4 business hours
+
+Full contact page: https://datiq.app/contact
+
+---
+
+## 16. Recent releases (2026)
+
+### 2026-08-09 — AEO/GEO/SEO P1 sweep
+- `og-card.jpg` (1376×768) replaces the favicon pixel in `og:image` and `twitter:image` on 19 surfaces
+- `llms-full.txt` (this file) added — full content reference for AI agents, complementing the shorter `/llms.txt` index
+- `llms.txt` brand-collision disambiguation: explicitly distinguishes DatIQ from "DAT iQ" (IntelliTrans/Trimble freight), "DAT" (parent freight company), and "Data IQ" (generic analytics term)
+- BreadcrumbList JSON-LD added to 11 nested pages
+- 4 new use-case detail pages: `/use-cases/lead-generation`, `/use-cases/competitor-research`, `/use-cases/seo-audit`, `/use-cases/market-research`
+- Public gallery now has 7 curated persona samples
+- `/vs/firecrawl` redesigned to match the `/vs/{apify,phantombuster}` template
+
+### 2026-08-09 — Customer email consolidation
+- `support@datiq.app` → `hello@datiq.app` (product, billing, general)
+- `legal@datiq.app` → `admin@datiq.app` (legal, terms, privacy, DPDP, DMCA)
+- `privacy@datiq.app` → `admin@datiq.app` (privacy + DPDP grievance officer)
+- Channel taxonomy preserved on `/contact` (6 channel cards), but all mailto links now point to the canonical inboxes
+- Production-readiness audit: 5 pass / 2 warn / 0 fail
+
+### 2026-08-08 — AEO/GEO/SEO P0 hardening
+- `robots.txt`: OAI-SearchBot, Googlebot, Claude-User, Google-Extended, Bytespider all explicitly allowed
+- New `/what-is-datiq` page with 8-Q&A FAQPage + Article JSON-LD
+- New `/faq` page with 12-Q&A FAQPage JSON-LD
+- 10 SEO marketing routes converted from SPA-only to static HTML
+- Per-page `useSeo` hook on the React app pages
+- Google-Extended enabled for Gemini citation
+- Bytespider enabled for ByteDance crawler discoverability
+
+### 2026-07 — V1.0 release ("Web Intelligence Core")
+- Single, batch, and scheduled URL extraction
+- AI summary, custom extraction, 5 quick-action enrichments
+- Domain mapping, leadership contacts, custom extraction
+- CSV, PDF, Google Sheets export; webhook push; email share
+- 7 personas: Sales, CI, SEO, Market Research, Recruiter, Founder/VC, Agency
+- DPDP Act 2023 compliant, INR + Razorpay + UPI for India
+
+Full changelog: https://datiq.app/changelog

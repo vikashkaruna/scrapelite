@@ -6,6 +6,7 @@ vi.mock("@supabase/supabase-js", () => {
   return {
     createClient: vi.fn(() => ({
       auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } }, error: null }),
         admin: {
           getUserById: vi.fn(),
           updateUserById: vi.fn().mockResolvedValue({ user: {} }),
@@ -20,6 +21,7 @@ import { handler } from "../functions/welcome-email.js";
 function makeEvent(overrides = {}) {
   return {
     httpMethod: "POST",
+    headers: { authorization: "Bearer valid-user-token" },
     body: JSON.stringify({
       userId: "u-123",
       email: "test@example.com",
@@ -55,12 +57,12 @@ describe("welcome-email (F49)", () => {
 
   it("rejects bad JSON", async () => {
     const r = await handler({ httpMethod: "POST", body: "not-json" });
-    expect(r.statusCode).toBe(400);
+    expect(r.statusCode).toBe(401);
   });
 
-  it("rejects missing userId / email", async () => {
+  it("rejects missing authentication", async () => {
     const r = await handler({ httpMethod: "POST", body: JSON.stringify({}) });
-    expect(r.statusCode).toBe(400);
+    expect(r.statusCode).toBe(401);
   });
 
   it("skips when Supabase service key is not set", async () => {
@@ -81,6 +83,7 @@ describe("welcome-email (F49)", () => {
     const { createClient } = await import("@supabase/supabase-js");
     createClient.mockReturnValue({
       auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } }, error: null }),
         admin: {
           getUserById: vi.fn().mockResolvedValue({
             data: { user: { id: "u-123", email: "test@example.com", user_metadata: { welcomeEmailSent: true } } },
@@ -101,6 +104,7 @@ describe("welcome-email (F49)", () => {
     const { createClient } = await import("@supabase/supabase-js");
     createClient.mockReturnValue({
       auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: { name: "Test" } } }, error: null }),
         admin: {
           getUserById: vi.fn().mockResolvedValue({
             data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } },
@@ -133,6 +137,7 @@ describe("welcome-email (F49)", () => {
       return import("@supabase/supabase-js").then(({ createClient }) => {
         createClient.mockReturnValue({
           auth: {
+            getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } }, error: null }),
             admin: {
               getUserById: vi.fn().mockResolvedValue({
                 data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } },
@@ -176,6 +181,7 @@ describe("welcome-email (F49)", () => {
     const { createClient } = await import("@supabase/supabase-js");
     createClient.mockReturnValue({
       auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } }, error: null }),
         admin: {
           getUserById: vi.fn().mockResolvedValue({
             data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } },
@@ -195,6 +201,7 @@ describe("welcome-email (F49)", () => {
     const { createClient } = await import("@supabase/supabase-js");
     createClient.mockReturnValue({
       auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "u-123", email: "test@example.com", user_metadata: {} } }, error: null }),
         admin: {
           getUserById: vi.fn().mockResolvedValue({ data: { user: null }, error: { message: "not found" } }),
           updateUserById: vi.fn(),

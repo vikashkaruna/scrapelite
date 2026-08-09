@@ -19,11 +19,12 @@ export const GST_RATE = 0.18; // 18% GST, INR only
 // ── Static price tables (BASE prices; INR is pre-GST) ──────────────────────────
 // planId -> { usd, usd_annual, inr, inr_annual }. Annual figures are PER-MONTH base.
 const STATIC_PLANS = {
-  free:     { usd: 0,   usd_annual: 0,   inr: 0,     inr_annual: 0     },
-  select:   { usd: 19,  usd_annual: 15,  inr: 1899,  inr_annual: 999   },
-  pro:      { usd: 29,  usd_annual: 23,  inr: 2899,  inr_annual: 1499  },
-  business: { usd: 79,  usd_annual: 63,  inr: 7899,  inr_annual: 3999  },
-  agency:   { usd: 299, usd_annual: 239, inr: 29899, inr_annual: 14999 },
+  free:     { usd: 0,     usd_annual: 0,   inr: 0,     inr_annual: 0    },
+  go:       { usd: 4.8,   usd_annual: 4,   inr: 359,   inr_annual: 299  },
+  select:   { usd: 14.4,  usd_annual: 12,  inr: 1199,  inr_annual: 999  },
+  pro:      { usd: 20.4,  usd_annual: 17,  inr: 1799,  inr_annual: 1499 },
+  business: { usd: 44.4,  usd_annual: 37,  inr: 4199,  inr_annual: 3499 },
+  agency:   { usd: 106.8, usd_annual: 89,  inr: 10199, inr_annual: 8499 },
 };
 
 const STATIC_BUNDLES = {

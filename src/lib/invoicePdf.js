@@ -23,6 +23,32 @@ const MUTED = [110, 116, 132];
 const ACCENT = [79, 70, 229]; // --accent, matches the brand
 const HAIRLINE = [225, 227, 233];
 
+// Cache so we don't re-encode the template bytes once per page.
+const _invBgCache = new Map();
+
+/** Paint a white-label template (Uint8Array) on the current page. */
+function paintTemplateBackground(pdf, templateBytes) {
+  if (!templateBytes || !templateBytes.length) return;
+  try {
+    const id = templateBytes.length + "_" + templateBytes[0] + "_" + templateBytes[templateBytes.length - 1];
+    let dataUrl = _invBgCache.get(id);
+    if (!dataUrl) {
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < templateBytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, templateBytes.subarray(i, i + chunk));
+      }
+      dataUrl = "data:application/pdf;base64," + btoa(bin);
+      _invBgCache.set(id, dataUrl);
+    }
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(dataUrl, "PDF", 0, 0, pageW, pageH);
+  } catch {
+    // Swallow — a bad template must never break a routine export.
+  }
+}
+
 /**
  * Make a string safe for jsPDF's built-in helvetica.
  *
@@ -51,10 +77,14 @@ export function toPdfSafe(text) {
 }
 
 /**
- * @param {object} doc  result of buildInvoiceDoc()
+ * @param {object} model  result of buildInvoiceDoc()
+ * @param {object} [opts]
+ * @param {Uint8Array} [opts.template]  white-label PDF template bytes; when
+ *   present, the template's first page is rendered as the background of
+ *   every page in the invoice. Falls back to a no-op on any jsPDF error.
  * @returns {jsPDF}
  */
-export function renderInvoicePdf(model) {
+export function renderInvoicePdf(model, { template = null } = {}) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
@@ -62,9 +92,13 @@ export function renderInvoicePdf(model) {
   const rightX = pageW - MARGIN;
   let y = MARGIN;
 
+  // Paint the white-label template on the first page before any body text.
+  if (template) paintTemplateBackground(pdf, template);
+
   const advance = (h) => {
     if (y + h > pageH - MARGIN) {
       pdf.addPage();
+      if (template) paintTemplateBackground(pdf, template);
       y = MARGIN;
     }
   };
@@ -101,7 +135,7 @@ export function renderInvoicePdf(model) {
   textAt("DatIQ", MARGIN, y + 4, { size: 18, style: "bold", color: ACCENT });
   textAt(model.title, rightX, y + 4, { size: 15, style: "bold", align: "right" });
   y += 22;
-  textAt("Intelligence from every URL", MARGIN, y, { size: 9, color: MUTED });
+  textAt("DatIQ — Intelligence from Web", MARGIN, y, { size: 9, color: MUTED });
   textAt(model.invoiceNo, rightX, y, { size: 10, style: "bold", align: "right" });
   y += 14;
   rule();
@@ -213,13 +247,13 @@ export function invoiceFilename(invoiceNo) {
 }
 
 /** Browser: trigger a download. */
-export function downloadInvoicePdf(invoice, lines) {
+export function downloadInvoicePdf(invoice, lines, opts = {}) {
   const model = buildInvoiceDoc(invoice, lines);
-  renderInvoicePdf(model).save(invoiceFilename(invoice.invoice_no));
+  renderInvoicePdf(model, opts).save(invoiceFilename(invoice.invoice_no));
 }
 
 /** Server: raw bytes for an email attachment. */
-export function invoicePdfBuffer(invoice, lines) {
+export function invoicePdfBuffer(invoice, lines, opts = {}) {
   const model = buildInvoiceDoc(invoice, lines);
-  return renderInvoicePdf(model).output("arraybuffer");
+  return renderInvoicePdf(model, opts).output("arraybuffer");
 }

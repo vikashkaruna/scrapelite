@@ -67,6 +67,8 @@ export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: HEADERS, body: "" };
 
   if (event.httpMethod === "GET") {
+    const auth = verifyAdminToken(bearerFromEvent(event));
+    if (!auth.ok) return respond(401, { ok: false, error: auth.reason || "Unauthorized" });
     const config = await loadAiConfig();
     return respond(200, {
       ok: true,
@@ -74,6 +76,7 @@ export const handler = async (event) => {
       keyPresence: keyPresence(),
       providers: PROVIDER_META,
       persisted: SUPABASE_CONFIGURED(),
+      demo: auth.demo,
     });
   }
 

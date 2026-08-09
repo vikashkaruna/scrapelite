@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DatIQ Changelog — every release, every fix, every feature | DatIQ.app</title>
+<meta name="description" content="The DatIQ changelog: every release, every fix, every feature, shipped. DatIQ.app is the no-code web intelligence platform. Free to start, no credit card.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="canonical" href="https://datiq.app/changelog">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/help/help.css">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DatIQ Changelog — every release, every fix, every feature">
+<meta property="og:description" content="The DatIQ changelog: every release, every fix, every feature, shipped.">
+<meta property="og:url" content="https://datiq.app/changelog">
+<meta property="og:site_name" content="DatIQ">
+<meta property="og:image" content="https://datiq.app/og-card.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DatIQ Changelog — every release, every fix, every feature">
+<meta name="twitter:description" content="The DatIQ changelog: every release, every fix, every feature, shipped.">
+<style>
+  .ch-hero { text-align: center; padding: 64px 0 32px; }
+  .ch-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
+  .ch-hero p { color: var(--text-2); font-size: 1.1rem; max-width: 640px; margin: 0 auto 24px; line-height: 1.6; }
+  .ch-section { padding: 24px 0; }
+  .ch-section h2 { font-size: 1.4rem; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
+  .ch-group { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .ch-group h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; }
+  .ch-group ul { padding-left: 22px; margin: 0; }
+  .ch-group li { font-size: 0.9rem; color: var(--text-2, #4b5563); line-height: 1.6; margin-bottom: 6px; }
+  .ch-release { background: linear-gradient(135deg, color-mix(in srgb, var(--accent, #6366f1) 8%, transparent), transparent); border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 20%, transparent); border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .ch-release h3 { font-size: 1.1rem; font-weight: 800; margin: 0 0 8px; color: var(--accent, #6366f1); }
+  .ch-release .meta { font-size: 0.8rem; color: var(--text-3, #6b7280); margin-bottom: 12px; }
+  .ch-release p { color: var(--text-2, #4b5563); line-height: 1.6; margin: 0 0 12px; }
+  .ch-release ul { padding-left: 22px; margin: 0; }
+  .ch-release li { font-size: 0.9rem; color: var(--text-2, #4b5563); line-height: 1.6; margin-bottom: 6px; }
+  .ch-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
+  .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("datiq.theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/blog">Blog</a>
+    <a class="nav-link" href="/pricing">Pricing</a>
+    <a class="nav-link" href="/">← Launch the app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main-content">
+<div class="container">
+  <section class="ch-hero">
+    <div class="kicker">DatIQ · Changelog</div>
+    <h1>Every release, every fix, every feature</h1>
+    <p>DatIQ ships improvements weekly. This page tracks what changed, when, and why — for users, not for changelog-spelunkers. DatIQ.app is the no-code web intelligence platform.</p>
+    <p class="ch-updated">Last updated: 2026-08-09</p>
+  </section>
+
+  <section class="ch-section">
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-09</h3>
+      <div class="meta">AEO/GEO/SEO P1 sweep + comparison page redesign</div>
+      <p>Completed the AEO/GEO/SEO P1 items from the staging full-ship handoff: AI-crawler-ready social card, brand-collision disambiguation, full-content reference for AI agents, and four new per-use-case detail pages. The /vs/firecrawl page was also redesigned to match the established /vs/{apify,phantombuster} template.</p>
+      <ul>
+        <li>New <code>og-card.jpg</code> (1376×768) — replaces the favicon pixel in <code>og:image</code> and <code>twitter:image</code> across 19 surfaces</li>
+        <li>New <code>llms-full.txt</code> (17.8KB) — full content reference for AI agents, complementing the shorter <code>llms.txt</code> index</li>
+        <li><code>llms.txt</code> brand-collision disambiguation: explicitly distinguishes DatIQ from "DAT iQ" (IntelliTrans/Trimble freight), "DAT" (parent freight company), and "Data IQ" (generic analytics term)</li>
+        <li>BreadcrumbList JSON-LD added to 11 nested pages (all <code>/use-cases/&lt;slug&gt;</code>, all <code>/vs/&lt;slug&gt;</code>)</li>
+        <li>Four new use-case detail pages with Article + BreadcrumbList + FAQPage JSON-LD: <a href="/use-cases/lead-generation">/use-cases/lead-generation</a>, <a href="/use-cases/competitor-research">/use-cases/competitor-research</a>, <a href="/use-cases/seo-audit">/use-cases/seo-audit</a>, <a href="/use-cases/market-research">/use-cases/market-research</a></li>
+        <li>Public <a href="/gallery">gallery</a> now has 7 curated persona samples (one per persona) so AI crawlers see ≥1 sample per persona even before the runtime Supabase public_reports populate</li>
+        <li><a href="/vs/firecrawl">/vs/firecrawl</a> redesigned to match the <a href="/vs/apify">/vs/apify</a> + <a href="/vs/phantombuster">/vs/phantombuster</a> template (topbar, container max-width, verdict-grid, cta-block, footer)</li>
+      </ul>
+    </div>
+
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-09</h3>
+      <div class="meta">Customer email consolidation</div>
+      <p>DatIQ runs exactly two customer-facing inboxes. This release completes the consolidation that began with the production-readiness rollout in July — every public-facing support, security, and legal email address now routes to one of two real inboxes.</p>
+      <ul>
+        <li><code>support@datiq.app</code> → <code>hello@datiq.app</code> (product, billing, general)</li>
+        <li><code>legal@datiq.app</code> → <code>admin@datiq.app</code> (legal, terms, privacy, DPDP, DMCA)</li>
+        <li><code>privacy@datiq.app</code> → <code>admin@datiq.app</code> (privacy + DPDP grievance officer)</li>
+        <li>Channel taxonomy preserved on <a href="/contact">/contact</a> (6 channel cards), but all mailto links now point to the canonical inboxes</li>
+        <li>Production-readiness audit re-run: 5 pass / 2 warn / 0 fail (pre-existing warns: screenshot staleness, gallery coverage)</li>
+      </ul>
+    </div>
+
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-08</h3>
+      <div class="meta">AEO/GEO/SEO hardening release</div>
+      <p>Made the site fully discoverable by AI crawlers (OAI-SearchBot, GPTBot, PerplexityBot, Google-Extended, ClaudeBot, Claude-User) and shipped canonical /what-is-datiq and /faq answer pages with FAQPage and Article JSON-LD. Pre-rendered 10 SEO marketing routes as static HTML so non-JS crawlers see real content.</p>
+      <ul>
+        <li>robots.txt: OAI-SearchBot, Googlebot, Claude-User, Google-Extended, Bytespider all explicitly allowed</li>
+        <li>New /what-is-datiq page with 8-Q&A FAQPage + Article JSON-LD</li>
+        <li>New /faq page with 12-Q&A FAQPage JSON-LD</li>
+        <li>10 SEO marketing routes converted from SPA-only to static HTML</li>
+        <li>Per-page <code>useSeo</code> hook on the React app pages</li>
+        <li>Google-Extended enabled for Gemini citation</li>
+        <li>Bytespider enabled for ByteDance crawler discoverability</li>
+      </ul>
+    </div>
+
+    <div class="ch-release">
+      <h3>V1.0 — 2026-07</h3>
+      <div class="meta">Initial V1.0 release · "Web Intelligence Core"</div>
+      <p>The first stable release. Built on Pillar 0 (Web Intelligence Core) — the proven single, batch, and scheduled URL-extraction engine that the rest of the platform is built on.</p>
+    </div>
+
+    <h2>What's in V1.0</h2>
+
+    <div class="ch-group">
+      <h3>Extraction &amp; enrichment</h3>
+      <ul>
+        <li>Single-URL extraction with headings, links, metadata, and structured content</li>
+        <li>AI summary (provider-agnostic chain: Gemini → Claude → OpenAI)</li>
+        <li>Custom extraction — ask for any field in plain English</li>
+        <li>5 intent chips: AI summary, Find contacts, Scrape pricing, Map site, Custom</li>
+        <li>12 built-in templates (startup pricing pages, leadership contacts, job listings, etc.)</li>
+        <li>Background enrichment tabs on /preview (re-run, persist, multi-capability)</li>
+        <li>Per-field provenance (each value tagged with its source span and confidence)</li>
+        <li>Generate content: SEO blog outline, competitor summary, social posts</li>
+        <li>Multi-provider scrape chain (Firecrawl → Spider.cloud → Jina AI → Direct fetch)</li>
+        <li>Headless / render-JS mode (opt-in advanced option)</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Distribution &amp; workflow</h3>
+      <ul>
+        <li>CSV / PDF / JSON / Markdown export of every extraction</li>
+        <li>White-label PDF template (Business + Agency plans)</li>
+        <li>Public share links at <code>datiq.app/p/&lt;slug&gt;</code> (no sign-in required)</li>
+        <li>Email export with PDF attachment</li>
+        <li>Google Sheets "Open in Sheets" one-click path</li>
+        <li>Webhook push on extraction complete (n8n, Make, Zapier)</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Batch &amp; scheduling</h3>
+      <ul>
+        <li>Batch mode: paste up to hundreds of URLs (plan-dependent cap)</li>
+        <li>Domain mapping: discover every indexed URL on a site</li>
+        <li>Scheduled monitoring: hourly, daily, weekly, or custom cadence (Pro+)</li>
+        <li>Change detection with diff preview emailed to you</li>
+        <li>Scheduled-pause-on-lapse, resume-on-renew billing flow</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Account &amp; billing</h3>
+      <ul>
+        <li>8 plans: Free, Go, Select, Pro, Business, Agency, Developer (H3 2026), Enterprise</li>
+        <li>USD + INR pricing; Razorpay + UPI for India, Stripe for the rest</li>
+        <li>Annual billing (20% off) on every paid plan</li>
+        <li>Numbered, itemized invoices and receipts for every payment (PDF emailed automatically)</li>
+        <li>Re-send or download any past invoice from <a href="/account">Account → Invoices</a></li>
+        <li>Coupon support and referral program (UI on /pricing)</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Personas &amp; onboarding</h3>
+      <ul>
+        <li>6 personas: Sales, SEO, CI, Market research, Recruiter, Founder</li>
+        <li>App adapts its examples, quick actions, and AI prompts to your persona</li>
+        <li>Onboarding tour with persona selection as the first step</li>
+        <li>Command palette (mod+K) for power users</li>
+        <li>Keyboard shortcuts (g d, g b, g s, g p, /, ?) for navigation</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Compliance &amp; data</h3>
+      <ul>
+        <li>DPDP Act 2023 compliant (data stored in Supabase, US-East, encrypted at rest)</li>
+        <li>Google sign-in, Microsoft sign-in, GitHub sign-in, email + password</li>
+        <li>Account deletion (full data removal within 30 days, billing records retained 8 years per Indian law)</li>
+        <li>Public Privacy Policy and Terms of Service (Bengaluru arbitration seat)</li>
+        <li>Coordinated vulnerability disclosure at <a href="mailto:admin@datiq.app">admin@datiq.app</a></li>
+      </ul>
+    </div>
+  </section>
+</div>
+</main>
+
+<footer class="site-footer" style="text-align: center; padding: 24px; font-size: 0.85rem; color: var(--text-3, #9ca3af); border-top: 1px solid var(--border, #e5e7eb); margin-top: 24px;">
+  © 2026 DatIQ · <a href="/">datiq.app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") || "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 // Contact.jsx — /contact — support form and contact details.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -12,6 +12,7 @@ import {
   emailForType,
   normalizeContactType,
 } from "../lib/contactRouting.js";
+import { getSettings, loadSettings } from "../lib/globalSettingsService.js";
 
 export default function Contact() {
   const navigate = useNavigate();
@@ -28,6 +29,32 @@ export default function Contact() {
   const [status,  setStatus]  = useState("idle"); // idle | submitting | sent | error
   const [errorMsg, setErrorMsg] = useState("");
   const [fallbackMailto, setFallbackMailto] = useState("");
+
+  // The three response-time rows in the sidebar come from operator-editable
+  // settings (cached client-side). We render the synchronous cache value
+  // immediately so the first paint is never empty, then refresh in the
+  // background. Operators changing these values see the update after
+  // a 5-min cache TTL or a hard refresh — no special "save + reload" dance.
+  const [sla, setSla] = useState(() => {
+    const s = getSettings();
+    return [
+      { id: "general",    label: s.contact_sla_general_label,    time: s.contact_sla_general_time },
+      { id: "billing",    label: s.contact_sla_billing_label,    time: s.contact_sla_billing_time },
+      { id: "enterprise", label: s.contact_sla_enterprise_label, time: s.contact_sla_enterprise_time },
+    ];
+  });
+  useEffect(() => {
+    let alive = true;
+    loadSettings().then((s) => {
+      if (!alive) return;
+      setSla([
+        { id: "general",    label: s.contact_sla_general_label,    time: s.contact_sla_general_time },
+        { id: "billing",    label: s.contact_sla_billing_label,    time: s.contact_sla_billing_time },
+        { id: "enterprise", label: s.contact_sla_enterprise_label, time: s.contact_sla_enterprise_time },
+      ]);
+    });
+    return () => { alive = false; };
+  }, []);
 
   // Address this enquiry type is routed to — shown live so the user knows who
   // is receiving the message before they send it.
@@ -210,10 +237,16 @@ export default function Contact() {
                 Response times
               </div>
               <ul className="contact-sla-list">
-                <li><span className="contact-sla-type">General support</span><span className="contact-sla-time">Within 24 h</span></li>
-                <li><span className="contact-sla-type">Billing issues</span><span className="contact-sla-time">Within 12 h</span></li>
-                <li><span className="contact-sla-type">Enterprise enquiries</span><span className="contact-sla-time">Within 4 h</span></li>
+                {sla.map((row) => (
+                  <li key={row.id}>
+                    <span className="contact-sla-type">{row.label}</span>
+                    <span className="contact-sla-time">{row.time}</span>
+                  </li>
+                ))}
               </ul>
+              <p className="contact-sla-foot">
+                Indicative response posture. Actual times depend on volume and complexity.
+              </p>
             </div>
 
             <div className="contact-info-card card card-pad" style={{ marginTop: 16 }}>
