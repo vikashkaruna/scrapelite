@@ -7848,3 +7848,136 @@
 .wlp-help summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
 .wlp-help ul { margin: 8px 0 0; padding-left: 18px; }
 .wlp-help li { margin: 4px 0; line-height: 1.5; }
+
+/* ── Integration Connect Modal (Account → Integrations) ───────────────────── */
+.icm-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 20px;
+}
+.icm-modal {
+  position: relative; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 24px 24px 18px; max-width: 480px; width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  max-height: calc(100vh - 40px); overflow-y: auto;
+}
+.icm-head {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+  align-items: start; margin-bottom: 16px;
+}
+.icm-head-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+  flex-shrink: 0;
+}
+.icm-head h3 {
+  margin: 0 0 4px; font-size: 1.1rem; font-weight: 700;
+  letter-spacing: -.01em;
+}
+.icm-desc {
+  margin: 0; font-size: .85em; color: var(--text-3);
+  line-height: 1.5;
+}
+.icm-close {
+  background: transparent; border: 0; color: var(--text-2);
+  cursor: pointer; padding: 6px; border-radius: 6px;
+  align-self: start;
+}
+.icm-close:hover { color: var(--text); background: var(--surface-2); }
+.icm-body {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.icm-error {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; background: rgba(185,28,28,.08);
+  border: 1px solid rgba(185,28,28,.3);
+  color: #b91c1c; border-radius: 8px; font-size: .88em;
+}
+.icm-success {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; background: rgba(4,120,87,.08);
+  border: 1px solid rgba(4,120,87,.3);
+  color: #047857; border-radius: 8px; font-size: .92em;
+}
+.icm-field {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.icm-field label {
+  font-size: .82em; font-weight: 600; color: var(--text-2);
+  letter-spacing: .01em;
+}
+.icm-required { color: #b91c1c; margin-left: 2px; }
+.icm-field input,
+.icm-field select {
+  padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: 7px; background: var(--surface-2);
+  color: var(--text); font-size: .92em;
+  font-family: inherit;
+}
+.icm-field input:focus,
+.icm-field select:focus {
+  outline: 2px solid var(--accent); outline-offset: -1px;
+}
+.icm-field input[type="password"] { letter-spacing: .04em; }
+.icm-help {
+  margin: 0; font-size: .78em; color: var(--text-3); line-height: 1.5;
+}
+.icm-token-box {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.icm-token-box code {
+  flex: 1; font-size: .82em; word-break: break-all;
+  color: var(--text); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.icm-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── Account → Integrations section ───────────────────────────────────────── */
+.int-section {
+  margin-top: 18px;
+}
+.int-section-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 1em; font-weight: 700; margin-bottom: 4px;
+  letter-spacing: -.005em;
+}
+.int-section-sub {
+  margin: 0 0 14px; font-size: .85em; color: var(--text-3);
+  line-height: 1.5;
+}
+.int-list { display: flex; flex-direction: column; gap: 10px; }
+.int-row {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 14px;
+  padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface-2);
+}
+.int-row-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+  flex-shrink: 0;
+}
+.int-row-meta { min-width: 0; }
+.int-row-name { font-weight: 600; font-size: .95em; }
+.int-row-status {
+  font-size: .78em; color: var(--text-3);
+  display: flex; align-items: center; gap: 5px; margin-top: 2px;
+}
+.int-row-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-3);
+}
+.int-row-status.connected .int-row-status-dot { background: #047857; }
+.int-row-status.connected { color: #047857; }
+.int-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+@media (max-width: 560px) {
+  .int-row { grid-template-columns: auto 1fr; }
+  .int-row-actions { grid-column: 1 / -1; }
+}
