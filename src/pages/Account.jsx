@@ -13,9 +13,22 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import InvoiceModal from "../components/InvoiceModal.jsx";
 import WhiteLabelTemplateUploader from "../components/WhiteLabelTemplateUploader.jsx";
+import IntegrationConnectModal from "../components/IntegrationConnectModal.jsx";
+import { useToast } from "../components/Toast.jsx";
 import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
 import { useSeo } from "../hooks/useSeo.js";
+import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
+
+// ── Integrations catalog ─────────────────────────────────────────────────
+// One row per provider; status is fetched from /api/integrations/{slug}/status.
+const INTEGRATION_PROVIDERS = [
+  { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "Push contacts and companies to your HubSpot CRM." },
+  { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "Export extraction pages to a Notion database." },
+  { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Append rows to an Airtable base with field mapping." },
+  { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Get change alerts + new-extraction notifications." },
+  { slug: "zapier",   name: "Zapier",   icon: "share",         desc: "Trigger 5,000+ apps on new extractions, enrichments, and monitoring alerts." },
+];
 
 function UsageMeter({ label, used, limit, icon }) {
   const isUnlimited = limit === Infinity || limit == null;
@@ -265,6 +278,80 @@ export default function Account() {
   const [invoicesLoading, setInvoicesLoad]  = useState(true);
   const [openInvoice, setOpenInvoice]       = useState(null);
 
+  // ── Integrations state ──────────────────────────────────────────────────
+  // Map of provider slug → { connected, account_label, has_token, ... }
+  const [intStatus, setIntStatus] = useState({});
+  const [intStatusLoading, setIntStatusLoading] = useState(false);
+  // Which provider's connect modal is open (null = closed)
+  const [connectProvider, setConnectProvider] = useState(null);
+  // The provider currently being disconnected (for spinner state)
+  const [disconnecting, setDisconnecting] = useState(null);
+
+  const toast = useToast();
+
+  const refreshIntegrations = async () => {
+    setIntStatusLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setIntStatus({});
+        return;
+      }
+      const results = await Promise.all(
+        INTEGRATION_PROVIDERS.map(async (p) => {
+          const r = await fetch(`/api/integrations/${p.slug}/status`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const data = await r.json().catch(() => ({}));
+          return [p.slug, data];
+        }),
+      );
+      setIntStatus(Object.fromEntries(results));
+    } catch (err) {
+      // network error — leave existing state
+    } finally {
+      setIntStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) refreshIntegrations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const handleDisconnect = async (slug) => {
+    if (!confirm(`Disconnect ${slug}? You'll need to reconnect to use it again.`)) return;
+    setDisconnecting(slug);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`/api/integrations/${slug}/connect`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+      });
+      if (!r.ok) {
+        toast("Failed to disconnect. Please try again.", "error");
+      } else {
+        toast(`${slug} disconnected.`, "success");
+        await refreshIntegrations();
+      }
+    } catch (err) {
+      toast(`Network error: ${err?.message}`, "error");
+    } finally {
+      setDisconnecting(null);
+    }
+  };
+
+  // Auto-scroll to the Integrations section if the URL hash is #integrations
+  useEffect(() => {
+    if (window.location.hash === "#integrations") {
+      // Defer to let the section render
+      setTimeout(() => {
+        const el = document.getElementById("integrations");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     fetchInvoices()
@@ -443,6 +530,66 @@ export default function Account() {
 
             {/* Metering alerts */}
             <AlertsSection />
+
+            {/* Integrations */}
+            <div id="integrations" className="card card-pad int-section">
+              <div className="int-section-title">
+                <Icon name="plug" size={15} />
+                Integrations
+              </div>
+              <p className="int-section-sub">
+                Connect DatIQ to your CRM, databases, and notification tools.
+                Each integration is server-side — your credentials are encrypted
+                and never exposed to the browser after the initial setup.
+              </p>
+              <div className="int-list">
+                {INTEGRATION_PROVIDERS.map((p) => {
+                  const status = intStatus[p.slug] || {};
+                  const connected = status.connected === true;
+                  return (
+                    <div key={p.slug} className="int-row">
+                      <div className="int-row-icon">
+                        <Icon name={p.icon} size={18} />
+                      </div>
+                      <div className="int-row-meta">
+                        <div className="int-row-name">{p.name}</div>
+                        <div className={"int-row-status" + (connected ? " connected" : "")}>
+                          <span className="int-row-status-dot" />
+                          {connected
+                            ? `Connected${status.account_label ? ` · ${status.account_label}` : ""}`
+                            : "Not connected"}
+                        </div>
+                      </div>
+                      <div className="int-row-actions">
+                        {connected ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDisconnect(p.slug)}
+                            disabled={disconnecting === p.slug}
+                          >
+                            {disconnecting === p.slug ? "Disconnecting…" : "Disconnect"}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setConnectProvider(p.slug)}
+                          >
+                            Connect
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {!isSupabaseEnabled && (
+                <div className="int-section-sub" style={{ marginTop: 12, color: "var(--text-3)" }}>
+                  <Icon name="info" size={13} /> Sign in to manage integrations.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right column */}
@@ -545,6 +692,14 @@ export default function Account() {
       </div>
       {openInvoice && (
         <InvoiceModal invoice={openInvoice} onClose={() => setOpenInvoice(null)} />
+      )}
+      {connectProvider && (
+        <IntegrationConnectModal
+          open={!!connectProvider}
+          provider={connectProvider}
+          onClose={() => setConnectProvider(null)}
+          onConnected={refreshIntegrations}
+        />
       )}
     </div>
   );
