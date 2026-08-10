@@ -409,8 +409,80 @@ src/styles/screens.css                 (+37 lines, .push-int-* styles)
 
 ---
 
-**Last updated:** 2026-08-10 12:30 IST
-**Session duration:** ~2 days (2026-08-08 to 2026-08-10) + the 12:30 follow-on
-**Commits this session:** 6 (3fc48fc, ce8505d, a6d1454, 5f6124b, 8cbe7f2, c5785dd) — plus the staging-merge commit ec469fb
+**Last updated:** 2026-08-10 13:15 IST
+**Session duration:** ~2 days (2026-08-08 to 2026-08-10) + the 12:30 + 13:15 follow-ons
+**Commits this session:** 7 (3fc48fc, ce8505d, a6d1454, 5f6124b, 8cbe7f2, c5785dd, 49ae0e9) — plus the staging-merge commit ec469fb
 **Branch deploy URL:** `https://integration-with-outside-ecosystem--datiqapp.netlify.app`
-**Next session entry point:** read §1, §2, §6, §13, then the relevant section
+**Next session entry point:** read §1, §2, §6, §13, §14, then the relevant section
+
+---
+
+## 14. Follow-on commit: "Missing provider" fix on Slack connect (49ae0e9)
+
+**Shipped:** 2026-08-10 13:15 IST — user reported that clicking Connect on
+`/account#integrations → Slack` (with a valid `https://hooks.slack.com/...`
+URL pasted) immediately errored with:
+
+> "Missing provider. Use /api/integrations/{hubspot|zapier|notion|airtable|slack}/{...}."
+
+That error string is the router's "splats empty" fallback — so the
+request hit the integrations-router with an empty `splat` query param.
+The modal URL `/api/integrations/slack/connect` is correct, so something
+between the browser and the function was dropping the splat.
+
+### The fix (defensive, two parts)
+
+1. **`netlify.toml` — 5 explicit per-provider redirect rules** added
+   BEFORE the existing `/api/integrations/*` wildcard. Each provider now
+   routes directly to its dedicated function (no router hop, no splat
+   translation). The wildcard is kept as a fallback for any future
+   provider that doesn't get an explicit rule.
+
+   ```toml
+   [[redirects]]
+     from = "/api/integrations/slack/*"
+     to = "/.netlify/functions/integrations-slack?splat=:splat"
+     ...
+   ```
+
+2. **`integrations-router.js` — error message + `console.warn`** now
+   include the received `splat`, the raw `queryStringParameters`, and
+   `event.path`. If the wildcard ever fires "Missing provider" again, the
+   new error string alone tells us what splat was received — no need to
+   dig through Netlify function logs first.
+
+### Files changed
+
+```
+netlify.toml                             | 40 +++++++++++++++++++++++++++++++
+netlify/functions/integrations-router.js | 16 ++++++++++++-
+```
+
+### What it does NOT do
+
+- Does not change the happy path: explicit per-provider rules route to
+  the same dedicated functions that the router would have dispatched to,
+  with the same body shape, auth, and response.
+- Does not delete the wildcard or the router. The router is still useful
+  for future providers that don't get an explicit rule.
+
+### Verification matrix (extra spot-checks for this commit)
+
+- [ ] Hard-reload the branch deploy, sign in, open `/account#integrations`
+- [ ] Click Connect on Slack, paste `https://hooks.slack.com/...`, click
+      Connect Slack — should probe the webhook, store the connection, and
+      show "Connected" in the row
+- [ ] Same flow on HubSpot, Notion, Airtable, Zapier
+- [ ] If any provider still errors with "Missing provider", the new
+      `(splat="...")` suffix in the error string tells us what the
+      function actually received — send that to the next session and we
+      can fix the underlying redirect without re-deriving the bug
+
+### Open question for the next session
+
+Was the wildcard rule actually broken, or was the user's request
+hitting a stale deploy? The explicit rules bypass the wildcard entirely
+so the user's flow is unblocked either way, but the underlying cause
+isn't pinned. If anyone has Netlify function-log access for the
+`integration-with-outside-ecosystem` site, the `console.warn` from
+49ae0e9 will log the empty-splat case if it ever fires again.
