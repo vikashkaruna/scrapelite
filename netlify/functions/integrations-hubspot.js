@@ -88,7 +88,16 @@ export const handler = async (event) => {
 
   // Path: /integrations/hubspot/{status|connect|push}
   // Netlify routing: this function is mounted at /api/integrations/hubspot/*
-  const splat = event.queryStringParameters?.splat || "";
+  // Resolve the sub-path from EITHER the query-string splat OR a path-segment
+  // tail — see the matching fix in integrations-slack.js for the rationale
+  // (the new explicit per-provider redirect rules may pass the sub-path as
+  // either form, and we want both to work).
+  const splatFromQuery = event.queryStringParameters?.splat || "";
+  const fnName = "/.netlify/functions/integrations-hubspot";
+  const tail = (event.path || "").startsWith(fnName)
+    ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+    : "";
+  const splat = splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
   // Authenticate every request

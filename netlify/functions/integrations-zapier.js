@@ -304,7 +304,14 @@ export const handler = async (event) => {
     return { statusCode: 204, headers: CORS, body: "" };
   }
 
-  const splat = event.queryStringParameters?.splat || "";
+  // Resolve the sub-path from EITHER the query-string splat OR a path-segment
+  // tail — see the matching fix in integrations-slack.js for the rationale.
+  const splatFromQuery = event.queryStringParameters?.splat || "";
+  const fnName = "/.netlify/functions/integrations-zapier";
+  const tail = (event.path || "").startsWith(fnName)
+    ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+    : "";
+  const splat = splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
   // Public, no JWT required:
