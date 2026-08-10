@@ -123,19 +123,18 @@ const PROVIDERS = {
     title: "Connect Zapier",
     icon: "share",
     desc: "Generate a DatIQ Zapier token. Paste it into Zapier when installing the DatIQ private app.",
-    fields: [
-      {
-        key: "_regenerate",
-        label: "Action",
-        type: "select",
-        options: [
-          { value: "generate", label: "Generate a new token" },
-          { value: "regenerate", label: "Replace the existing token" },
-        ],
-        required: true,
-        help: "The plaintext token is shown ONCE. Copy it into Zapier immediately. DatIQ stores only the SHA-256 hash.",
-      },
-    ],
+    // Zapier has no client-side fields — the server mints a fresh token
+    // on every successful connect. The old UI had a "Generate vs Replace"
+    // select that mapped to {regenerate:false|true}, but the server only
+    // mints when regenerate:true, so the "Generate a new token" option
+    // (the default!) sent regenerate:false and the server returned 400
+    // "Provide either { token } to store an existing token…". The
+    // token-store path was unreachable from the UI (no input field), so
+    // it was effectively dead code. v1 is "every connect mints a fresh
+    // token"; if you connected before, the old token is invalidated the
+    // moment you mint a new one.
+    fields: [],
+    help: "Click Generate to mint a fresh token. The plaintext is shown ONCE — copy it into Zapier immediately. DatIQ stores only the SHA-256 hash, and any previous token you minted is invalidated the moment a new one is issued.",
   },
 };
 
@@ -178,11 +177,12 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
     setSuccess(null);
     setSubmitting(true);
     try {
-      // For Zapier, "generate" vs "regenerate" maps to { regenerate: true } or { regenerate: false }
+      // Build the request body per-provider. Zapier takes no client-side
+      // input — the server always mints a fresh token (regenerate:true).
+      // Every other provider reads the field values directly.
       let body;
       if (provider === "zapier") {
-        const regen = values._regenerate === "regenerate";
-        body = { regenerate: regen };
+        body = { regenerate: true };
       } else {
         body = {};
         for (const f of config.fields) {
@@ -332,6 +332,14 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
                 {f.help && <p className="icm-help">{f.help}</p>}
               </div>
             ))}
+
+            {/* Provider-level help (used by providers with no fields, e.g.
+                Zapier, where the "form" is just a single confirm button
+                and the explanation belongs at the form level, not next to
+                a missing input). */}
+            {config.fields.length === 0 && config.help && (
+              <p className="icm-help icm-help-standalone">{config.help}</p>
+            )}
 
             <div className="icm-foot">
               <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>

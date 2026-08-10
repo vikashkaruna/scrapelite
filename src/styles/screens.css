@@ -7982,6 +7982,10 @@
 .icm-help {
   margin: 0; font-size: .78em; color: var(--text-3); line-height: 1.5;
 }
+/* Used by providers with no fields (e.g. Zapier) where the entire
+   "form" is just a confirm button. The provider-level explanation
+   sits as a paragraph in the body, slightly larger than a field hint. */
+.icm-help-standalone { font-size: .88em; padding: 4px 0 0; }
 .icm-token-box {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; background: var(--surface-2);
