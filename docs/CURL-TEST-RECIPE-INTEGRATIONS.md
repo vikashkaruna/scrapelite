@@ -115,21 +115,53 @@ Every API request returns 401 until you authenticate.
 
 1. Open DevTools (F12 or Cmd+Opt+I) → **Application** tab.
 2. Under **Cookies** → click `https://integration-with-outside-ecosystem--datiqapp.netlify.app`.
-3. Find the `nf_jwt` cookie. Copy its **Value** (it'll be a long JWT string).
+3. Find the `nf_jwt` cookie. Copy its **Value** (it'll be a long JWT string —
+   typically 250-500 chars, base64url).
 
-**Save it to a shell variable:**
+**Save it to a FILE** (most reliable — survives across terminal tabs and
+shell sessions):
 
 ```bash
-# In your terminal
+# Create a gitignored file with the cookie value
+echo "paste-the-nf_jwt-value-here" > ~/.netlify-sso-cookie
+chmod 600 ~/.netlify-sso-cookie
+```
+
+**Save it to a SHELL VARIABLE** (alternative — only persists in the current
+shell, so use only if you're running every curl below in the same terminal
+tab):
+
+```bash
 export NF_JWT="paste-the-nf_jwt-value-here"
 ```
 
 **Verify it works** (the API should now respond instead of returning 401):
 
 ```bash
+# File-based (recommended)
+COOKIE=$(cat ~/.netlify-sso-cookie)
+curl -sS "https://integration-with-outside-ecosystem--datiqapp.netlify.app/api/integrations/hubspot/status" \
+  -H "Cookie: nf_jwt=$COOKIE" | python3 -m json.tool
+
+# Shell-var based
 curl -sS "https://integration-with-outside-ecosystem--datiqapp.netlify.app/api/integrations/hubspot/status" \
   -H "Cookie: nf_jwt=$NF_JWT" | python3 -m json.tool
+
+# Or use the helper script (auto-injects the cookie from file or env):
+./scripts/curl-with-sso.sh /api/integrations/hubspot/status | python3 -m json.tool
 ```
+
+**About the helper script** (`scripts/curl-with-sso.sh`):
+
+- Reads the cookie from `~/.netlify-sso-cookie` first, then falls back to
+  `$NF_JWT` if the file is missing
+- Validates the cookie shape (JWT = 3 base64url segments separated by `.`)
+  and gives a clear error if it's missing or malformed
+- Defaults to the branch deploy URL; override with
+  `DATICQ_BASE=https://datiq.app ./scripts/curl-with-sso.sh ...` to test
+  against production
+- Every curl example in this doc can be replaced with
+  `./scripts/curl-with-sso.sh <path>` — no `-H "Cookie:..."` needed
 
 Expected:
 ```json
@@ -139,10 +171,24 @@ Expected:
 }
 ```
 
-If you still get 401, the cookie is wrong. Re-export from DevTools.
+**Debugging the "variable not found" / 401-after-export error** (the
+#1 cause of confusion here — see §13 of the session handoff):
 
-> **Tip:** the `nf_jwt` cookie lasts ~24 hours. If your tests start returning
-> 401 again, re-export from the browser.
+- If `echo "$NF_JWT"` prints nothing, the export didn't take. Re-run it
+  in the SAME terminal tab you're running curl in. Variables don't
+  persist across tabs/sessions/SSH connections.
+- If you see `zsh: NF_JWT: parameter not set`, your shell is running
+  with `set -u` (nounset). Either `unsetopt u` for the session, or use
+  the file-based approach above.
+- If `echo "$NF_JWT"` prints the JWT but the request still 401s, the
+  cookie value was copied wrong (missing chars, or trailing whitespace).
+  Re-export from DevTools.
+- If you see the right value but `cat ~/.netlify-sso-cookie` shows a
+  literal `\n` at the end, your shell wrote a newline. Run
+  `printf '%s' "paste-value" > ~/.netlify-sso-cookie` instead of `echo`.
+
+> **Tip:** the `nf_jwt` cookie lasts ~24 hours. If your tests start
+> returning 401 again, re-export from the browser.
 
 ### 2c. (Optional) Get a Supabase user session JWT
 
