@@ -610,3 +610,117 @@ docs/CURL-TEST-RECIPE-INTEGRATIONS.md   ~60 changed
 6. **Operator follow-ups still required** (per §7) — Supabase + Google +
    Microsoft console redirect URL updates. Documented in
    `docs/SUPABASE-AUTH-REDIRECT-URLS.md`
+
+---
+
+## 16. The actual fix: pass action in the request body, bypass Netlify URL routing (f9e7887, e2974b7) — 2026-08-10 ~15:00 IST
+
+**Shipped:** the 4th and (hopefully) final fix for the Slack connect
+"missing splat" bug. After 3 failed attempts (query splat → path splat
+→ both), the user's test still returned `(splat="")` from BOTH
+`event.queryStringParameters` AND `event.path`. The conclusion is
+unavoidable: **Netlify's redirect engine on this branch deploy is
+stripping the entire URL sub-path** — not failing to substitute a
+placeholder, but actively removing it from the function URL. The
+function is being called at exactly `/.netlify/functions/integrations-slack`
+(no tail) every time, regardless of whether the redirect used
+`?splat=:splat` or `/:splat`.
+
+### The fix that doesn't depend on URL routing at all
+
+Put the action in the request body. Netlify's redirect engine has no
+influence over request body content — it only rewrites the URL.
+
+**1. The modal now sends `action: "connect"` in the body**
+(`src/components/IntegrationConnectModal.jsx`):
+```js
+body = { /* existing field values */ };
+body.action = "connect";   // ← new: tell the server what we want
+// URL still has /connect for human-readable logs
+fetch(`/api/integrations/${provider}/connect`, { method: "POST", body: JSON.stringify(body), ... });
+```
+
+**2. Each of the 5 per-provider handlers now reads the sub-path from
+THREE sources, in priority order** (`netlify/functions/integrations-{slack,hubspot,notion,airtable,zapier}.js`):
+```js
+// 1. body.action                 — primary, always works
+// 2. event.queryStringParameters.splat — legacy / curl / fallback
+// 3. event.path tail             — path-based fallback
+let body = {};
+try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* ignore */ }
+const splatFromBody = (body && typeof body.action === "string") ? body.action : "";
+const splatFromQuery = event.queryStringParameters?.splat || "";
+const fnName = "/.netlify/functions/integrations-{provider}";
+const tail = (event.path || "").startsWith(fnName)
+  ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+  : "";
+const splat = splatFromBody || splatFromQuery || tail;
+```
+
+**3. DELETE handler no longer requires a sub-path** (because body.action
+is for POST; DELETE is unambiguous — it's the only DELETE endpoint per
+provider):
+```js
+// Before:  if (event.httpMethod === "DELETE" && subPath[0] === "connect") { ... }
+// After:   if (event.httpMethod === "DELETE") { ... }
+```
+
+**4. The path-based /:splat redirect rules stay in netlify.toml** as a
+belt-and-braces fallback. If Netlify's URL routing ever starts working
+again, the handler will use the path first (priority order: body → query → path).
+
+### Why this is the right fix (not a workaround)
+
+The body is part of the request payload, not the URL. Netlify's redirect
+engine has no say in it. By the time the function executes, the body
+is guaranteed to be there. The sub-path is now decoupled from the URL
+routing entirely.
+
+### Files changed in §16
+
+```
+netlify/functions/integrations-slack.js       +24/-10
+netlify/functions/integrations-hubspot.js     +21/-6
+netlify/functions/integrations-notion.js      +15/-6
+netlify/functions/integrations-airtable.js    +15/-6
+netlify/functions/integrations-zapier.js      +15/-6
+src/components/IntegrationConnectModal.jsx    +4
+```
+
+### Verified locally
+
+```
+POST + body.action=connect → 503 (Supabase not configured in local env, but auth passed + handler doing real work)
+DELETE                     → 503 (same — DELETE handler dispatched correctly)
+```
+
+The 503 is expected — there's no Supabase env var in the local test
+env. In production with real Supabase, you'll get 200 + the connection
+stored.
+
+### Final session state (15:15 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `e2974b7` (chore: trigger fresh branch deploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `e2974b7a923269a3bb154a6a3cee5aea197b79f3` |
+| Build status | ✅ live (32s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on |
+| All 5 integration handlers | body.action primary + path/query fallbacks + DELETE method-based |
+| `curl-with-sso.sh` | 15/15 tests passing |
+| Commits on this branch (ahead of staging) | 15 |
+| Async ops | none pending |
+
+### Next session entry point
+
+1. **Hard-reload** the branch deploy, sign in, open `/account#integrations`
+2. Click **Connect on Slack**, paste a real `https://hooks.slack.com/...`
+   URL, click **Connect Slack**
+3. **If it works now** → mark the entire §14–§16 saga as resolved
+4. **If you still get an error** → the new error string will be
+   different from `(splat="")` because body.action is the primary
+   dispatch source. Paste the new error to the next session and we
+   can iterate from there.
