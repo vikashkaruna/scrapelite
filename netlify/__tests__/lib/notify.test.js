@@ -60,6 +60,73 @@ describe("notify (F-INT-4)", () => {
       const section = payload.blocks.find((b) => b.text?.text?.includes("Summary"));
       expect(section.text.text.length).toBeLessThan(2000);
     });
+
+    // Regression: long news-site titles like "https://www.india.com" blew
+    // past Slack's 150-char header limit and the webhook returned 400.
+    // The dashboard only saw `slack_400` (the body was being discarded),
+    // so the user had no idea what was wrong. See postToSlack below for
+    // the diagnostic half of the fix.
+    it("truncates the header text so it stays under Slack's 150-char cap", () => {
+      // India.com's actual title is in the 120-130 char range; this is
+      // a representative long news-site title.
+      const longTitle =
+        "India.com - Latest India News, Live News, India Breaking News, Trending News, India News Headlines, Top News Today | India.com";
+      const payload = buildSlackNewExtraction({
+        url: "https://www.india.com",
+        page_title: longTitle,
+        ai_summary: "Short summary.",
+      });
+      const header = payload.blocks.find((b) => b.type === "header");
+      expect(header.text.text.length).toBeLessThanOrEqual(150);
+      // The 19-char "✅ New extraction: " prefix + a 120-char (max) title
+      // gives a worst case of 139 + 1 ellipsis = 140. Allow 150 strictly.
+      expect(header.text.text.length).toBeLessThan(150);
+      // Truncation must be visible — an ellipsis, not silent mangling.
+      expect(header.text.text).toMatch(/…$/);
+      // Fallback text is also bounded so a notification preview client
+      // (which renders only the top-level `text` field) doesn't blow up.
+      expect(payload.text.length).toBeLessThanOrEqual(3000);
+    });
+
+    it("preserves short titles verbatim", () => {
+      const payload = buildSlackNewExtraction({
+        url: "https://x.com",
+        page_title: "Acme",
+        ai_summary: "Acme does X",
+      });
+      const header = payload.blocks.find((b) => b.type === "header");
+      expect(header.text.text).toBe("✅ New extraction: Acme");
+      // No ellipsis on a short title.
+      expect(header.text.text.endsWith("…")).toBe(false);
+    });
+
+    it("strips control characters that break Slack's Block Kit parser", () => {
+      const payload = buildSlackNewExtraction({
+        url: "https://x.com",
+        // \u0000 (null) + literal newline in the middle of the title.
+        page_title: "Acme\u0000\nCorp",
+        ai_summary: "Summary with \u0007 bell.",
+      });
+      const header = payload.blocks.find((b) => b.type === "header");
+      expect(header.text.text).not.toMatch(/[\u0000-\u001F]/);
+      // Whitespace is collapsed to a single space — newlines don't survive.
+      expect(header.text.text).toBe("✅ New extraction: Acme Corp");
+    });
+
+    it("escapes < and > inside URLs so the Slack mrkdwn link doesn't close early", () => {
+      const payload = buildSlackNewExtraction({
+        url: "https://x.com/foo?a=<bar>&b=>baz",
+        page_title: "X",
+      });
+      const fields = payload.blocks.find((b) => b.type === "section").fields;
+      const urlField = fields[0].text;
+      // The literal `<` and `>` from the query string must be percent-
+      // escaped, otherwise Slack reads them as link delimiters and the
+      // block becomes invalid.
+      expect(urlField).toContain("%3C");
+      expect(urlField).toContain("%3E");
+      expect(urlField).not.toMatch(/<https[^>]*>[^<]*</);
+    });
   });
 
   describe("notifyExtractionComplete", () => {

@@ -194,6 +194,19 @@ async function handleSend(event, userId) {
     if (r.ok) {
       sent += 1;
     } else {
+      // Log the failing item so the next time this happens we can see the
+      // exact payload in the Netlify function logs. Without this, all we
+      // knew was `slack_400` (Slack's body was being discarded). Now
+      // postToSlack surfaces the real reason, but we still want the
+      // title-length context for the "long title overflows header" class
+      // of bug, which is silent once the truncation is in place.
+      console.warn("[integrations-slack] send failed", {
+        url: item?.url,
+        page_title_len: (item?.page_title || item?.title || "").length,
+        summary_len: (item?.ai_summary || item?.summary || "").length,
+        slackStatus: r.status,
+        slackError: r.error,
+      });
       failedRecords.push({
         url: item?.url || null,
         error: r.error || `slack_${r.status || "unknown"}`,

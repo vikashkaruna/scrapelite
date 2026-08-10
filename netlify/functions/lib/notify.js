@@ -60,28 +60,78 @@ export async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
 
 // ── Slack Block Kit builders for new extractions ───────────────────────────
 
+// Slack Block Kit hard limits — referenced so the truncations and the
+// assertions on them stay in sync.
+const SLACK_HEADER_MAX = 150;        // header.text (plain_text) per Slack docs
+const SLACK_SECTION_MAX = 3000;      // section.text / fields[].text
+const SLACK_FALLBACK_MAX = 3000;     // the top-level "text" field
+const HEADER_PREFIX = "✅ New extraction: ";
+// Reserve enough headroom for the prefix + Slack's emoji-as-multi-char
+// quirk. 120 chars × visible title is comfortably under 150 once the
+// 19-char prefix is added.
+const HEADER_TITLE_MAX = 120;
+const SUMMARY_MAX = 1500;
+
+/**
+ * Strip control chars that break both JSON and Slack's Block Kit parser
+ * (Slack 400s with `invalid_blocks` on \u0000–\u001F except \t\n). Also
+ * collapse internal whitespace so a page title with literal newlines or
+ * runs of spaces doesn't surprise the renderer.
+ */
+function sanitizeForSlack(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Cap a title to fit inside Slack's 150-char header block alongside the
+ * `✅ New extraction: ` prefix. Truncate with an ellipsis so the user
+ * sees something was cut rather than a silently-mangled string.
+ */
+function truncateForHeader(title) {
+  if (title.length <= HEADER_TITLE_MAX) return title;
+  return `${title.slice(0, HEADER_TITLE_MAX - 1).trimEnd()}…`;
+}
+
+/**
+ * Slack mrkdwn link format is `<url|display>`. If the URL itself contains
+ * `>` or `<` the link closes early and Slack rejects the block. The URLs
+ * we store are normally clean, but the `&` and query-string `>` from
+ * redirect trackers have shown up in the past — defense in depth.
+ */
+function safeUrlForMrkdwn(u) {
+  if (!u) return "";
+  return String(u).replace(/[<>]/g, (ch) => (ch === "<" ? "%3C" : "%3E"));
+}
+
 export function buildSlackNewExtraction(extraction) {
   if (!extraction) return null;
-  const title = extraction.page_title || extraction.title || "Untitled";
-  const url = extraction.url;
-  const summary = extraction.ai_summary || extraction.summary || "";
+  const rawTitle = extraction.page_title || extraction.title || "";
+  const cleanTitle = sanitizeForSlack(rawTitle) || "Untitled";
+  const headerTitle = truncateForHeader(cleanTitle);
+  const url = sanitizeForSlack(extraction.url) || "(no url)";
+  const summary = sanitizeForSlack(extraction.ai_summary || extraction.summary || "");
+  const host = sanitizeForSlack(hostOf(url));
   return {
-    text: `DatIQ: new extraction — ${title}`,
+    text: `DatIQ: new extraction — ${cleanTitle}`.slice(0, SLACK_FALLBACK_MAX),
     blocks: [
       {
         type: "header",
-        text: { type: "plain_text", text: `✅ New extraction: ${title}`, emoji: true },
+        text: { type: "plain_text", text: `${HEADER_PREFIX}${headerTitle}`, emoji: true },
       },
       {
         type: "section",
         fields: [
-          { type: "mrkdwn", text: `*URL:*\n<${url}|${url}>` },
-          { type: "mrkdwn", text: `*Host:*\n${hostOf(url)}` },
+          { type: "mrkdwn", text: `*URL:*\n<${safeUrlForMrkdwn(url)}|${safeUrlForMrkdwn(url)}>`.slice(0, SLACK_SECTION_MAX) },
+          { type: "mrkdwn", text: `*Host:*\n${host}`.slice(0, SLACK_SECTION_MAX) },
         ],
       },
       ...(summary ? [{
         type: "section",
-        text: { type: "mrkdwn", text: `*Summary:*\n${summary.slice(0, 1500)}` },
+        text: { type: "mrkdwn", text: `*Summary:*\n${summary.slice(0, SUMMARY_MAX)}`.slice(0, SLACK_SECTION_MAX) },
       }] : []),
       {
         type: "actions",
