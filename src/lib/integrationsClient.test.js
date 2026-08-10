@@ -142,3 +142,80 @@ describe("integrationsClient — getIntegrationStatus", () => {
     expect(s.connection.account_label).toBe("Test");
   });
 });
+
+describe("integrationsClient — Edge Access (Netlify SSO) handling", () => {
+  // The branch deploy is SSO-gated by Netlify Edge Access. An unauth'd
+  // request gets 401 with an HTML body that JS-redirects to
+  // app.netlify.com/edge-access. The old authedFetch used to dump that
+  // HTML into `body.error` verbatim — the user saw a multi-KB HTML
+  // string in the toast. The fix detects the HTML shape and substitutes
+  // a clear "refresh and sign in" message. These tests pin that
+  // behavior so a future refactor can't regress to the raw-HTML toast.
+  const htmlBody =
+    "<!DOCTYPE html><html><body><script>window.location.href = " +
+    "'https://app.netlify.com/edge-access?domain=...&requested_path=...';</script></body></html>";
+
+  it("authedFetch substitutes the HTML 401 with a clear Edge Access message", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: (h) => (h.toLowerCase() === "content-type" ? "text/html; charset=utf-8" : null) },
+      text: async () => htmlBody,
+    });
+    const r = await getIntegrationStatus("slack");
+    expect(r.connected).toBe(false);
+    expect(r.error).toMatch(/Site authentication required/);
+    // The marker field lets callers (e.g. the dashboard toast) react
+    // specifically to the Edge Access case if they want to.
+    expect(r.edgeAccess).toBe(true);
+    // Critically: the raw HTML must NOT appear in the error string.
+    expect(r.error).not.toMatch(/<!DOCTYPE/);
+  });
+
+  it("authedFetch still surfaces a real JSON error from the function (non-Edge-Access path)", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      headers: { get: (h) => (h.toLowerCase() === "content-type" ? "application/json" : null) },
+      text: async () => JSON.stringify({ error: "HubSpot rejected the token (status 401)." }),
+    });
+    const r = await getIntegrationStatus("hubspot");
+    expect(r.connected).toBe(false);
+    expect(r.error).toMatch(/HubSpot rejected the token/);
+    expect(r.edgeAccess).toBeUndefined();
+  });
+
+  it("pushToIntegration substitutes the HTML 401 in the call-level error (not raw HTML)", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: (h) => (h.toLowerCase() === "content-type" ? "text/html; charset=utf-8" : null) },
+      text: async () => htmlBody,
+    });
+    const result = await pushToIntegration("slack", [
+      { id: "e1", url: "https://a.com" },
+      { id: "e2", url: "https://b.com" },
+    ]);
+    // When the WHOLE call fails (network/SSO/upstream 4xx/5xx), the
+    // pushToIntegration wrapper reports a single call-level error —
+    // there's no per-row information to put in failedRecords yet.
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/Site authentication required/);
+    expect(result.errors[0]).toMatch(/Site authentication required/);
+    // The raw HTML must not appear anywhere in the user-facing fields.
+    expect(result.message).not.toMatch(/<!DOCTYPE/);
+    expect(JSON.stringify(result)).not.toMatch(/<!DOCTYPE/);
+  });
+
+  it("every request sets credentials: 'same-origin' (Edge Access cookie must travel)", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({ connected: false, provider: "slack" }),
+    });
+    await getIntegrationStatus("slack");
+    const init = globalThis.fetch.mock.calls[0][1];
+    expect(init.credentials).toBe("same-origin");
+  });
+});

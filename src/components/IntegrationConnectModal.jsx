@@ -209,11 +209,35 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
+        // Same-origin by default, but explicit so the Edge Access
+        // basic-auth cookie is guaranteed to travel with the request
+        // (and so a future bundler change can't strip the default).
+        credentials: "same-origin",
         body: JSON.stringify(body),
       });
-      const data = await res.json().catch(() => ({}));
+      // Edge Access (Netlify's site-wide basic auth, used on branch
+      // deploys) returns 401 with an HTML body that JS-redirects to
+      // app.netlify.com/edge-access. The old code's `res.json().catch(() => ({}))`
+      // swallowed the HTML, surfaced the bare status as "HTTP 401",
+      // and left the user thinking their token was bad. Detect the
+      // HTML shape and surface a clear, actionable message — same
+      // pattern as apiClient.request() (§20).
+      // res.headers.get may be missing in some test mocks; treat that
+      // as "no content-type known" and let the JSON path run.
+      const getHeader = (h) =>
+        typeof res.headers?.get === "function" ? res.headers.get(h) : "";
+      const contentType = getHeader("content-type") || "";
+      const isHtml = contentType.includes("text/html");
+      let data = {};
+      if (!isHtml) {
+        try { data = await res.json(); } catch { /* not JSON */ }
+      }
       if (!res.ok || data.error) {
-        setError(data.error || `HTTP ${res.status}`);
+        if (isHtml) {
+          setError("Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).");
+        } else {
+          setError(data.error || `HTTP ${res.status}`);
+        }
         setSubmitting(false);
         return;
       }

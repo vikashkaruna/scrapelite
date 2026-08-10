@@ -146,4 +146,50 @@ describe("IntegrationConnectModal — Zapier", () => {
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  // Regression: branch deploys are gated by Netlify Edge Access. An
+  // unauth'd fetch returns 401 with an HTML body that JS-redirects to
+  // app.netlify.com/edge-access. The old code's res.json().catch(() => ({}))
+  // turned that into the bare string "HTTP 401" — which made it look
+  // like the user's HubSpot token was bad when in fact it was the
+  // platform blocking them. The fix detects the HTML shape and shows
+  // a clear, actionable message.
+  it("surfaces Edge Access 401 (HTML body) as a 'refresh and sign in' message, not 'HTTP 401'", async () => {
+    const user = userEvent.setup();
+    // Netlify Edge Access shape: 401, text/html, body is the login
+    // redirect JS page. json() throws (caller catches it) and the
+    // modal must NOT fall back to "HTTP 401".
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: (h) => (h.toLowerCase() === "content-type" ? "text/html; charset=utf-8" : null) },
+      text: async () => "<!DOCTYPE html><html>...edge-access redirect...</html>",
+      json: async () => { throw new SyntaxError("Unexpected token <"); },
+    });
+    renderModal();
+    await user.click(screen.getByRole("button", { name: /Connect Zapier/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Site authentication required/i)).toBeInTheDocument();
+    });
+    // Critically: the user must NOT see the bare "HTTP 401" — that's
+    // the whole bug we're fixing.
+    expect(screen.queryByText(/^HTTP 401$/)).not.toBeInTheDocument();
+  });
+
+  it("sets credentials: 'same-origin' so the Edge Access cookie travels with the request", async () => {
+    const user = userEvent.setup();
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      json: async () => ({ ok: true, connected: true, token: "zap_NEW" }),
+    });
+    renderModal();
+    await user.click(screen.getByRole("button", { name: /Connect Zapier/i }));
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const init = globalThis.fetch.mock.calls[0][1];
+    // The same-origin default WOULD include cookies, but explicit is
+    // defensive against future bundler changes.
+    expect(init.credentials).toBe("same-origin");
+  });
 });

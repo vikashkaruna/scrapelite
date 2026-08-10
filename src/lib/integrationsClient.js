@@ -46,23 +46,50 @@ async function authedFetch(path, init = {}) {
       Authorization: `Bearer ${token}`,
       ...(init.headers || {}),
     },
+    // Same-origin by default, but explicit so the Edge Access
+    // basic-auth cookie is guaranteed to travel with the request.
+    credentials: "same-origin",
   });
-  const text = await res.text();
+  // Edge Access (Netlify's site-wide basic auth, used on branch
+  // deploys) returns 401 with an HTML body that JS-redirects to
+  // app.netlify.com/edge-access. If we don't detect that shape, the
+  // old code set `body = { error: <huge HTML string> }` and the
+  // user saw the raw HTML in the toast. Detect it and substitute a
+  // clear message — same pattern as apiClient.request() (§20).
+  // res.headers.get may be missing in some test mocks; treat that
+  // as "no content-type known" and let the JSON path run.
+  const getHeader = (h) =>
+    typeof res.headers?.get === "function" ? res.headers.get(h) : "";
+  const contentType = getHeader("content-type") || "";
+  const isHtml = contentType.includes("text/html");
   let body = {};
-  if (text) {
-    try { body = JSON.parse(text); } catch { body = { error: text }; }
+  let edgeAccess = false;
+  if (isHtml) {
+    body = {
+      error: "Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).",
+    };
+    edgeAccess = true;
+  } else {
+    const text = await res.text();
+    if (text) {
+      try { body = JSON.parse(text); } catch { body = { error: text }; }
+    }
   }
-  return { ok: res.ok, status: res.status, body };
+  return { ok: res.ok, status: res.status, body, edgeAccess };
 }
 
 // Fetch the connection status of a single provider.
 //   Returns one of:
-//     { connected: false }
+//     { connected: false, error?, edgeAccess? }
 //     { connected: true, connection: { has_token, account_label, database_id, ... } }
 export async function getIntegrationStatus(slug) {
   try {
-    const { ok, body } = await authedFetch(`/api/integrations/${slug}/status`);
-    if (!ok) return { connected: false, error: body?.error || `status_${status || "unknown"}` };
+    const { ok, body, edgeAccess } = await authedFetch(`/api/integrations/${slug}/status`);
+    if (!ok) {
+      const r = { connected: false, error: body?.error || `status_unknown` };
+      if (edgeAccess) r.edgeAccess = true;
+      return r;
+    }
     return body;
   } catch (err) {
     if (err?.message === "not_signed_in") return { connected: false, error: "not_signed_in" };
