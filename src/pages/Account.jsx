@@ -14,7 +14,9 @@ import Button from "../components/Button.jsx";
 import InvoiceModal from "../components/InvoiceModal.jsx";
 import WhiteLabelTemplateUploader from "../components/WhiteLabelTemplateUploader.jsx";
 import IntegrationConnectModal from "../components/IntegrationConnectModal.jsx";
+import EditIntegrationModal from "../components/EditIntegrationModal.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { testIntegrationConnection } from "../lib/integrationsClient.js";
 import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
 import { useSeo } from "../hooks/useSeo.js";
@@ -279,13 +281,20 @@ export default function Account() {
   const [openInvoice, setOpenInvoice]       = useState(null);
 
   // ── Integrations state ──────────────────────────────────────────────────
-  // Map of provider slug → { connected, account_label, has_token, ... }
+  // Map of provider slug → full server status object (connected, account_label,
+  // token_hint, base_id, table_id, database_id, field_map, table_name, ...).
+  // The server returns the full shape; the Account UI renders only the
+  // provider-specific subset that's relevant for that row.
   const [intStatus, setIntStatus] = useState({});
   const [intStatusLoading, setIntStatusLoading] = useState(false);
   // Which provider's connect modal is open (null = closed)
   const [connectProvider, setConnectProvider] = useState(null);
+  // Which provider's edit modal is open (null = closed)
+  const [editProvider, setEditProvider] = useState(null);
   // The provider currently being disconnected (for spinner state)
   const [disconnecting, setDisconnecting] = useState(null);
+  // The provider whose connection is currently being tested (for spinner)
+  const [testingProvider, setTestingProvider] = useState(null);
 
   const toast = useToast();
 
@@ -338,6 +347,55 @@ export default function Account() {
       toast(`Network error: ${err?.message}`, "error");
     } finally {
       setDisconnecting(null);
+    }
+  };
+
+  // Test the stored connection. Per-provider feedback is rendered from
+  // the server's response body so the user sees something concrete
+  // (e.g. "HubSpot: connected as Portal 12345", "Airtable: 12 columns
+  // in 'Leads' table", "Slack: welcome message posted").
+  const handleTest = async (slug) => {
+    setTestingProvider(slug);
+    try {
+      const result = await testIntegrationConnection(slug);
+      const name = INTEGRATION_PROVIDERS.find((p) => p.slug === slug)?.name || slug;
+      if (result?.ok) {
+        // Build a human-readable summary from the per-provider result
+        // shape. The server returns provider-specific fields; we extract
+        // the most useful one for the toast. Falling back to "Connection
+        // verified" for providers that don't return extra context.
+        let detail = "Connection verified";
+        if (slug === "hubspot" && result.portalId) {
+          detail = `Connected · portal ${result.portalId}`;
+        } else if (slug === "notion") {
+          const cols = result.columnCount ?? result.properties ? Object.keys(result.properties || {}).length : null;
+          const title = result.title || result.titleColumn || "database";
+          detail = `Schema loaded · "${title}"${cols ? ` · ${cols} column${cols !== 1 ? "s" : ""}` : ""}`;
+        } else if (slug === "airtable") {
+          const tn = result.tableName || "table";
+          const matched = result.matched ?? null;
+          const total = result.fieldCount ?? null;
+          if (matched != null && total != null) {
+            detail = `Table "${tn}" · ${matched}/${total} field${total !== 1 ? "s" : ""} auto-mapped`;
+          } else {
+            detail = `Table "${tn}" · ${total ?? "?"} field${total !== 1 ? "s" : ""}`;
+          }
+        } else if (slug === "slack") {
+          detail = "Welcome message posted to your channel";
+        } else if (slug === "zapier") {
+          // Zapier's /test is for the Zapier private app, not the user
+          // — we re-use /status here to confirm a token is stored.
+          detail = "Token stored and ready";
+        }
+        toast(`${name}: ${detail}.`, "success");
+      } else {
+        const errMsg = result?.error || "Test failed";
+        toast(`${name}: ${errMsg}`, "error");
+      }
+    } catch (err) {
+      toast(`Network error: ${err?.message || "unknown"}`, "error");
+    } finally {
+      setTestingProvider(null);
     }
   };
 
@@ -546,6 +604,7 @@ export default function Account() {
                 {INTEGRATION_PROVIDERS.map((p) => {
                   const status = intStatus[p.slug] || {};
                   const connected = status.connected === true;
+                  const conn = status.connection || {};
                   return (
                     <div key={p.slug} className="int-row">
                       <div className="int-row-icon">
@@ -556,20 +615,154 @@ export default function Account() {
                         <div className={"int-row-status" + (connected ? " connected" : "")}>
                           <span className="int-row-status-dot" />
                           {connected
-                            ? `Connected${status.account_label ? ` · ${status.account_label}` : ""}`
+                            ? `Connected${conn.account_label ? ` · ${conn.account_label}` : ""}`
                             : "Not connected"}
                         </div>
+                        {connected && (
+                          // Per-provider rich status — shows whatever the
+                          // server returned that helps the user confirm
+                          // "yes, this is the right connection". Each
+                          // provider has different fields, so we render
+                          // them inline rather than via a fixed table.
+                          <div className="int-row-detail">
+                            {p.slug === "hubspot" && conn.token_hint && (
+                              <div className="int-row-detail-line">
+                                <span className="int-row-detail-key">Token</span>
+                                <code className="int-row-detail-val">{conn.token_hint}</code>
+                              </div>
+                            )}
+                            {p.slug === "notion" && (
+                              <>
+                                {conn.token_hint && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Token</span>
+                                    <code className="int-row-detail-val">{conn.token_hint}</code>
+                                  </div>
+                                )}
+                                {conn.database_id && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Database</span>
+                                    <code className="int-row-detail-val" title={conn.database_id}>
+                                      {shortenId(conn.database_id, 10)}
+                                    </code>
+                                  </div>
+                                )}
+                                {conn.title_column && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Title column</span>
+                                    <span className="int-row-detail-val">{conn.title_column}</span>
+                                  </div>
+                                )}
+                                {conn.column_count != null && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Columns</span>
+                                    <span className="int-row-detail-val">{conn.column_count}</span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {p.slug === "airtable" && (
+                              <>
+                                {conn.token_hint && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Token</span>
+                                    <code className="int-row-detail-val">{conn.token_hint}</code>
+                                  </div>
+                                )}
+                                {conn.base_id && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Base</span>
+                                    <code className="int-row-detail-val" title={conn.base_id}>
+                                      {shortenId(conn.base_id, 10)}
+                                    </code>
+                                  </div>
+                                )}
+                                {conn.table_id && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Table</span>
+                                    <code className="int-row-detail-val" title={conn.table_id}>
+                                      {shortenId(conn.table_id, 10)}
+                                    </code>
+                                  </div>
+                                )}
+                                {conn.table_meta?.tableName && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Table name</span>
+                                    <span className="int-row-detail-val">{conn.table_meta.tableName}</span>
+                                  </div>
+                                )}
+                                {conn.field_map_summary && (
+                                  <div className="int-row-detail-line int-row-detail-chips">
+                                    <span className="int-row-detail-key">Field map</span>
+                                    <span className="int-row-detail-val">
+                                      {conn.field_map_summary}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {p.slug === "slack" && (
+                              <>
+                                {conn.webhook_hint && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Webhook</span>
+                                    <code className="int-row-detail-val">{conn.webhook_hint}</code>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {p.slug === "zapier" && (
+                              <>
+                                {conn.token_hint && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Token</span>
+                                    <code className="int-row-detail-val">{conn.token_hint}</code>
+                                  </div>
+                                )}
+                                {conn.created_at && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Issued</span>
+                                    <span className="int-row-detail-val">
+                                      {new Date(conn.created_at).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="int-row-actions">
                         {connected ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDisconnect(p.slug)}
-                            disabled={disconnecting === p.slug}
-                          >
-                            {disconnecting === p.slug ? "Disconnecting…" : "Disconnect"}
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleTest(p.slug)}
+                              disabled={testingProvider === p.slug}
+                              loading={testingProvider === p.slug}
+                              title={`Test the ${p.name} connection`}
+                            >
+                              {testingProvider === p.slug ? "Testing…" : "Test"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setEditProvider(p.slug)}
+                              title={`Edit ${p.name} connection`}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDisconnect(p.slug)}
+                              disabled={disconnecting === p.slug}
+                              title={`Disconnect ${p.name}`}
+                            >
+                              {disconnecting === p.slug ? "Disconnecting…" : "Disconnect"}
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             size="sm"
@@ -706,6 +899,24 @@ export default function Account() {
           onConnected={refreshIntegrations}
         />
       )}
+      {editProvider && (
+        <EditIntegrationModal
+          open={!!editProvider}
+          slug={editProvider}
+          status={intStatus[editProvider] || {}}
+          onClose={() => setEditProvider(null)}
+          onSaved={refreshIntegrations}
+        />
+      )}
     </div>
   );
+}
+
+// Truncate long IDs for display (e.g. "appABCDEFGHIJKLMNOP" → "appABCDEF…MNOP")
+// while preserving enough context for the user to confirm "yes, that's
+// mine". The full ID is still in the title= attribute on hover.
+function shortenId(id, head = 8) {
+  if (!id || typeof id !== "string") return "";
+  if (id.length <= head + 5) return id;
+  return `${id.slice(0, head)}…${id.slice(-4)}`;
 }

@@ -8100,3 +8100,82 @@
   .int-row { grid-template-columns: auto 1fr; }
   .int-row-actions { grid-column: 1 / -1; }
 }
+
+/* Rich status detail (2026-08-11) — per-provider key/value lines
+   shown under the "Connected" badge once a connection exists. The
+   server returns token_hint, IDs, field_map, etc.; we render the
+   provider-relevant subset in a small, scannable grid. The chips
+   line (Airtable's field_map_summary) wraps naturally. */
+.int-row-detail {
+  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: .76em;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.int-row-detail-line {
+  display: flex; align-items: baseline; gap: 6px;
+  flex-wrap: wrap;
+}
+.int-row-detail-line.int-row-detail-chips { align-items: center; }
+.int-row-detail-key {
+  color: var(--text-3);
+  font-weight: 600;
+  min-width: 80px;
+  font-size: .92em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.int-row-detail-val {
+  color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .98em;
+}
+.int-row-detail-line:not(.int-row-detail-chips) .int-row-detail-val:not(code) {
+  font-family: inherit;
+  font-size: 1em;
+}
+
+/* EditIntegrationModal — HubSpot token rotation sub-form. Sits below
+   the regular editable fields inside the same modal body so the
+   user can rotate the token without re-opening the connect flow. */
+.eim-token-rotate {
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.eim-token-rotate-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .82em; font-weight: 600;
+  color: var(--text-1);
+}
+.eim-token-hint {
+  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .95em;
+  font-weight: 400;
+}
+.eim-token-rotate-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+}
+.eim-token-rotate-row input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .85em;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  width: 100%;
+  min-width: 0;
+}
+.eim-token-rotate-row input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+@media (max-width: 480px) {
+  .eim-token-rotate-row { grid-template-columns: 1fr; }
+}
