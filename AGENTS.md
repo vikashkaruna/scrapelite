@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-07-17 (Cloud BI + alternate-model quick wins merged; v1.0+ live)**
+> **Last updated: 2026-08-11 (late-night integration fixes + Generate content in-page section shipped on Integration-with-outside-ecosystem; main unchanged)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
@@ -16,11 +16,15 @@
 | **Project** | DatIQ (rebranded from ScrapeLite in R6, 2026-06-09) — zero-code web-extraction + enrichment platform |
 | **Working dir** | `/Users/vikash/Extracta` |
 | **Live site** | https://datiq.app (Netlify project `datiqapp`; site `0ac65a7e-bd3f-4cde-a8d3-66c23899c473`) |
+| **Branch deploy** | https://integration-with-outside-ecosystem--datiqapp.netlify.app (live, all 7 late-night fixes + 6 pre-existing test fixes) |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `main` (Cloud BI Q1–Q11 + alternate Q1/Q3/Q4/Q5/Q11 merged 2026-07-17; PR #14 closed) |
-| **Latest commit** | See `git log --oneline -1` on main |
+| **Current branch** | `Integration-with-outside-ecosystem` (HEAD `0979352`, ahead of `main` by 7 commits; main has 3 unmerged PRs — AEO/GEO/SEO + 2 staging merges) |
+| **Latest commit** | `0979352 fix(test): Account.invoices mock was missing isSupabaseEnabled export` |
+| **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the merge needs to roll back |
+| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md` — start here next session |
+| **Single remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in §4 of the handoff) |
 
 ---
 
