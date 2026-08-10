@@ -42,13 +42,33 @@ fi
 
 # 3. Sanity-check the cookie shape (JWT = 3 base64url segments separated by .)
 DOTS=$(echo "$COOKIE" | tr -cd '.' | wc -c | tr -d ' ')
+LEN=${#COOKIE}
 if [ "$DOTS" -ne 2 ]; then
   echo "✗ Cookie value doesn't look like a JWT (expected 2 dots, got $DOTS)." >&2
-  echo "  Length: ${#COOKIE} chars" >&2
+  echo "  Length: $LEN chars" >&2
   echo "  First 30 chars: ${COOKIE:0:30}..." >&2
   echo "  Last 30 chars: ...${COOKIE: -30}" >&2
   echo "" >&2
-  echo "  Re-export from DevTools → Application → Cookies → nf_jwt." >&2
+  if [ "$DOTS" = "0" ] && [ "$LEN" -lt 50 ]; then
+    echo "  Looks like only the JWT HEADER was copied (~36 chars = {\"typ\":\"JWT\"...})." >&2
+    echo "  The full nf_jwt is 200-500 chars and has 2 dots in it." >&2
+    echo "  In DevTools, double-click the cookie Value cell and select ALL of it," >&2
+    echo "  or right-click → 'Show in Application panel' to see the full string." >&2
+  else
+    echo "  Re-export from DevTools → Application → Cookies → nf_jwt." >&2
+  fi
+  exit 3
+fi
+
+# 3b. Sanity-check length — a real Netlify nf_jwt is 200-500+ chars. Anything
+#     under 100 is almost certainly a truncated copy.
+if [ "$LEN" -lt 100 ]; then
+  echo "✗ Cookie value is suspiciously short ($LEN chars)." >&2
+  echo "  A real Netlify nf_jwt is 200-500 chars. You likely copied only part of it." >&2
+  echo "  First 30 chars: ${COOKIE:0:30}..." >&2
+  echo "" >&2
+  echo "  In DevTools → Application → Cookies → nf_jwt, double-click the Value" >&2
+  echo "  cell to edit it, then Ctrl/Cmd+A to select ALL of it before copying." >&2
   exit 3
 fi
 

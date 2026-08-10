@@ -9,6 +9,12 @@ SCRIPT="$(cd "$(dirname "$0")" && pwd)/curl-with-sso.sh"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
+# A realistic-looking JWT — 3 base64url segments, ~200 chars total, so it
+# passes BOTH the dot check AND the new "200+ chars" length check.
+JWT_FULL="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGVtYWlsLmNvbSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwMDAxLCJpc3MiOiJuZXRsaWZ5Iiwic2l0ZSI6IjBhYzY1YTdlLWJkM2YtNGNkZS1hOGQzLTY2YzIzODk5YzQ3MyJ9.7m9k2FvR8sL0qP4nX6yK3aJ8bH1cV5wT2gD9eE0iY4UABCDEFGHIJKLMNOPQRSTUVWXYZ"
+JWT_50="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature"  # 49 chars (too short for new check)
+JWT_HEADER_ONLY="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9"          # 36 chars (the user's actual bug)
+
 assert_contains() {
   local name="$1" expected="$2" actual="$3"
   if echo "$actual" | grep -qF "$expected"; then
@@ -46,22 +52,23 @@ out=$(NF_JWT="not-a-jwt" HOME="$TMPDIR" "$SCRIPT" /api/test 2>&1 || true)
 assert_contains "  rejects non-JWT cookie" "expected 2 dots" "$out"
 assert_contains "  shows cookie length" "Length: 9 chars" "$out"
 
-# 3. Well-formed cookie from env var → accepted, will fail at network
+# 3. Well-formed cookie from env var → accepted (will fail at network)
 echo
 echo "Test 3: well-formed cookie from env var"
-out=$(NF_JWT="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature" \
+out=$(NF_JWT="$JWT_FULL" \
        HOME="$TMPDIR" \
        DATICQ_BASE="http://127.0.0.1:1" \
        "$SCRIPT" /api/integrations/hubspot/status 2>&1 || true)
 assert_not_contains "  doesn't reject valid JWT shape" "expected 2 dots" "$out"
 assert_not_contains "  doesn't claim 'No nf_jwt cookie set'" "No nf_jwt cookie set" "$out"
+assert_not_contains "  doesn't flag as too short" "suspiciously short" "$out"
 
-# 4. Well-formed cookie from file → accepted (use a fake HOME)
+# 4. Well-formed cookie from file → accepted
 echo
 echo "Test 4: well-formed cookie from file"
 FAKE_HOME="$TMPDIR/home"
 mkdir -p "$FAKE_HOME"
-echo -n "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature" > "$FAKE_HOME/.netlify-sso-cookie"
+echo -n "$JWT_FULL" > "$FAKE_HOME/.netlify-sso-cookie"
 out=$(NF_JWT="" HOME="$FAKE_HOME" \
        DATICQ_BASE="http://127.0.0.1:1" \
        "$SCRIPT" /api/integrations/hubspot/status 2>&1 || true)
@@ -71,17 +78,36 @@ assert_not_contains "  doesn't claim 'No nf_jwt cookie set'" "No nf_jwt cookie s
 # 5. Path must start with /
 echo
 echo "Test 5: missing or invalid path argument"
-out=$(NF_JWT="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature" HOME="$TMPDIR" \
+out=$(NF_JWT="$JWT_FULL" HOME="$TMPDIR" \
        "$SCRIPT" 2>&1 || true)
 assert_contains "  rejects call without path" "No path given" "$out"
 
-# 6. DATICQ_BASE override works (network will fail, but the URL is right)
+# 6. DATICQ_BASE override works
 echo
 echo "Test 6: DATICQ_BASE override"
-out=$(NF_JWT="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature" HOME="$TMPDIR" \
+out=$(NF_JWT="$JWT_FULL" HOME="$TMPDIR" \
        DATICQ_BASE="http://127.0.0.1:1" \
        "$SCRIPT" /api/integrations/notion/status 2>&1 || true)
 assert_not_contains "  accepts DATICQ_BASE override" "expected 2 dots" "$out"
+
+# 7. NEW (2026-08-10): the exact bug the user hit — only the JWT header was
+#    copied (36 chars, 0 dots). Must give a SPECIFIC hint, not just "wrong shape".
+echo
+echo "Test 7: 36-char truncated cookie (only the JWT header) — the actual user bug"
+out=$(NF_JWT="$JWT_HEADER_ONLY" HOME="$TMPDIR" \
+       "$SCRIPT" /api/integrations/hubspot/status 2>&1 || true)
+assert_contains "  catches truncated cookie with the right hint" "JWT HEADER was copied" "$out"
+assert_contains "  shows expected length range" "200-500 chars" "$out"
+
+# 8. NEW: 49-char well-formed-but-too-short cookie (0 dots + length < 100)
+#    is caught by the length check (since it has the right dot count, dot
+#    check passes; length check then fires)
+echo
+echo "Test 8: short-but-shape-correct cookie (49 chars, 2 dots)"
+out=$(NF_JWT="$JWT_50" HOME="$TMPDIR" \
+       "$SCRIPT" /api/integrations/hubspot/status 2>&1 || true)
+assert_contains "  flags suspiciously short cookie" "suspiciously short" "$out"
+assert_contains "  suggests DevTools re-copy" "DevTools" "$out"
 
 echo
 echo "── Results: $PASS passed, $FAIL failed ──"
