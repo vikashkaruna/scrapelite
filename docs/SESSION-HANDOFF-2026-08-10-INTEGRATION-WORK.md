@@ -939,3 +939,215 @@ Unrelated to this fix.
    Then trigger a real save from the app and check the Netlify function
    log for `[API/extractions] notifyExtractionComplete failed:` — that
    warning will be the first concrete data point.
+
+---
+
+## 18. Slack destination in the "Push to" + "Send to" UIs (cb48cf0, 4b97cdc) — 2026-08-10 ~16:25 IST
+
+**Shipped:** Slack is now an explicit, opt-in destination in both
+the Preview page "Push to" dropdown and the Dashboard "Send to a
+destination" modal — alongside HubSpot, Notion, and Airtable.
+
+### What the user reported
+
+> Both Extraction preview page -> Push To, and Dashboard page -> Send
+> to a Destination => do not lists the slack option. If user selected
+> to send extractions to be sent/pushed to Slack it should do so than,
+> if not than it should not.
+
+Two distinct UIs and both were missing Slack entirely. The
+notification fan-out worked (§17) — but the user had no way to push
+on-demand. Slack was treated as a pure event-driven channel in the
+client; the comment in `integrationsClient.js` even said so:
+
+> "Slack is a notification, Zapier is event-driven."
+
+That comment is no longer true. The "Push to Slack" action posts one
+Block Kit summary message per item to the user's per-user webhook —
+the same destination as a notification, just initiated by the user
+clicking a button instead of by the server.
+
+### What was missing
+
+1. **No on-demand `/send` endpoint** — the server only had
+   `/notify` (event-driven, also emits Zapier) and `/test`
+   (single welcome message). No way to push N extractions on demand.
+2. **Slack was excluded from `PUSH_PROVIDERS`** — only 3 entries:
+   hubspot, notion, airtable. The `PushIntegrationMenu` iterated
+   this list, so Slack had no row.
+3. **No Slack tab in the ExportIntegrations modal** — the modal
+   had 3 hard-coded tabs: Sheets, Airtable, Notion.
+
+### The fix (one feature commit, 8 files)
+
+**1. New server endpoint — `POST /api/integrations/slack/send`**
+
+```js
+async function handleSend(event, userId) {
+  const body = await readJsonBody(event);
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (items.length === 0) return respond(400, { error: "items must be a non-empty array" });
+
+  // Single DB hit, then loop the posts. 412 mirrors /test so the
+  // client UI can show the same "set up Slack first" message.
+  const webhookUrl = await resolveSlackWebhook({ userId });
+  if (!webhookUrl) {
+    return respond(412, { error: "Slack is not connected. Set a webhook URL in Account → Integrations." });
+  }
+
+  const failedRecords = [];
+  let sent = 0;
+  for (const item of items) {
+    const payload = buildSlackNewExtraction(item);
+    if (!payload) { failedRecords.push({ url: item?.url || null, error: "invalid_item" }); continue; }
+    const r = await postToSlack(payload, { webhookUrl });
+    if (r.ok) sent += 1;
+    else failedRecords.push({ url: item?.url || null, error: r.error || `slack_${r.status}` });
+  }
+
+  return respond(200, { ok: failedRecords.length === 0, sent, total: items.length, errors: failedRecords.map(r => r.error), failedRecords });
+}
+```
+
+Distinct from `/notify`:
+- No Zapier fan-out — explicit user action, not event-driven
+- Batch by design — one call with N items, not N calls
+
+**2. `resolveSlackWebhook` promoted to a public export**
+
+Was in `_internal` (test-only). Now a top-level export so
+`integrations-slack.js` can import it without going through the
+test-only namespace. Internal callers in `notify.js` unchanged.
+
+**3. `PUSH_PROVIDERS` now has 4 entries**
+
+```js
+export const PUSH_PROVIDERS = [
+  { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",    desc: "Push company + contacts to your CRM" },
+  { slug: "notion",   name: "Notion",   icon: "bookmark",       desc: "Create pages in a database" },
+  { slug: "airtable", name: "Airtable", icon: "layers",         desc: "Add records to a base" },
+  { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Post a summary to your channel" },  // ← new
+];
+```
+
+`PushIntegrationMenu` already iterates this list and shows a
+connected/not-connected badge per row — so adding the entry gives
+Slack a row on both Preview and Dashboard with no other UI work.
+
+**4. `pushToIntegration` gets a `slack` branch**
+
+Returns the same shape as the other providers, with one special
+case: a 412 from the server surfaces as `{ not_connected: true,
+message: "…" }` so the ExportIntegrations modal can render a
+structured error.
+
+**5. ExportIntegrations modal gets a 4th tab**
+
+The "Slack" tab shows:
+- A connected banner with the account label + "Post N messages to
+  Slack" CTA when configured
+- A "Slack isn't connected yet" warning + "Set up a webhook in
+  Account → Integrations" inline link when not configured
+- Per-item failures surfaced as inline error rows
+
+The modal's subtitle copy is updated to include Slack in the list
+of destinations. CSS additions for `.export-int-status`,
+`.export-int-status-ok`, `.export-int-status-warn`,
+`.export-int-link` (generic, reusable for any future
+connection-gated destination).
+
+**6. body.action dispatch works for /send**
+
+`/send` joins /connect, /test, /notify in accepting `body.action:
+"send"` as the primary dispatch source (the §16 fix). The
+`queryStringParameters.splat` and `event.path` tail fallbacks still
+work for compatibility with curl + the original Netlify redirect.
+
+### Tests added (17 new tests, all green)
+
+- `netlify/__tests__/integrations-slack.test.js` (+5):
+  - /send 400 on missing/empty items
+  - /send 412 when Slack is not connected
+  - /send happy path: 1 message per item, ok:true, sent:N
+  - /send per-item failure: 1 sent + 1 failed (other items still post)
+  - /send via body.action when sub-path is empty (Netlify-redirect-safe)
+- `src/components/ExportIntegrations.test.jsx` (+4):
+  - Slack tab "connected" banner with account_label
+  - Slack tab "not connected" banner with setup link
+  - Post N messages to Slack calls `pushToIntegration("slack", items)` and closes on success
+  - Slack 412 surfaces a structured error and keeps the modal open
+- `src/lib/integrationsClient.test.js` (+8, new file):
+  - PUSH_PROVIDERS includes slack alongside the 3 record-store providers
+  - All entries have the shape the menu component expects (slug/name/icon/desc)
+  - pushToIntegration("slack", items) POSTs to the right URL with the right body
+  - 412 surfaces as `{ ok:false, not_connected:true, message }`
+  - Per-item failures surface in `failedRecords`
+  - Empty items list returns `no_items` (no network call)
+  - getIntegrationStatus non-2xx returns `{ connected:false, error }`
+  - getIntegrationStatus 2xx passes through the server payload
+
+### Test count after this commit
+
+| Suite | Files | Tests |
+|---|---|---|
+| `npm run test:contract` (netlify) | 57 passed | 898 passed / 14 skipped |
+| `npm run test:unit` (src + scripts) | 104 passed | 1651 passed |
+| `npm run test:integration` (excluding pre-existing invoice failures) | 40 passed | 270 passed |
+
+The 6 `Account.invoices.integration.test.jsx` failures remain
+pre-existing and unrelated (confirmed on the parent commit).
+
+### Files changed in §18
+
+```
+netlify/functions/integrations-slack.js      +70
+netlify/functions/lib/notify.js              +4
+netlify/__tests__/integrations-slack.test.js +110
+src/lib/integrationsClient.js                +60
+src/lib/integrationsClient.test.js           +150  (new file)
+src/components/ExportIntegrations.jsx        +135
+src/components/ExportIntegrations.test.jsx   +80
+src/styles/screens.css                       +20
+```
+
+### Final session state (16:25 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `4b97cdc` (chore: trigger fresh branch redeploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `4b97cdc…` |
+| Build status | ✅ live (32s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on |
+| "Push to" menu (Preview + Dashboard) | ✅ lists HubSpot, Notion, Airtable, **Slack** |
+| "Send to a destination" modal (Dashboard + Batch) | ✅ tabs: Sheets, Airtable, Notion, **Slack** |
+| Slack on-demand push | ✅ `POST /api/integrations/slack/send` |
+| Slack event-driven push (§17) | ✅ still working |
+| Slack 412 (not connected) | ✅ surfaces as `not_connected:true` for the modal to render |
+| Commits on this branch (ahead of staging) | 18 |
+| Async ops | none pending |
+
+### Next session entry point
+
+1. **Hard-reload** the branch deploy, sign in
+2. **Verify "Push to"**: open Preview or Dashboard → click the
+   "Push" button → confirm Slack appears as a 4th row with a
+   connected/not-connected badge
+3. **Verify "Send to a destination"**: select 1+ rows on Dashboard
+   → click the export dropdown → "Integrations…" → confirm the
+   "Slack" tab is present and shows the right connection state
+4. **End-to-end check**: with Slack connected, push 1 row from
+   each UI → confirm a Block Kit message lands in your Slack
+   channel
+5. **If "Slack isn't connected" shows up when it should be**:
+   open the Account → Integrations tab, reconnect, hard-reload.
+   The status fetch is lazy (only when the Slack tab opens) so a
+   stale connection won't show up until you switch tabs.
+6. **If Slack throws on push**: the server logs
+   `[API/extractions] notifyExtractionComplete failed:` (§17) or
+   the new `/send` path returns a structured failure in
+   `failedRecords` with the upstream Slack error code. The UI
+   surfaces the first 3 in the errors block at the bottom of the
+   modal — paste that into the next session for diagnosis.
