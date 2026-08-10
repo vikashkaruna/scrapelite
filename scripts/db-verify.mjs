@@ -62,8 +62,8 @@ grant usage on schema public to anon, authenticated;
 // What the migrations claim to create. A mismatch here means a migration was
 // added or renamed without updating this file — deliberately a hard failure.
 const EXPECT = {
-  tables: 29,
-  functions: 10,
+  tables: 33,
+  functions: 11,
   triggers: 2,
   tablesWithoutRls: 0,
 };
@@ -107,8 +107,14 @@ if (files.length === 0) {
   console.error("✗ no numbered migrations found in supabase/migrations/");
   process.exit(1);
 }
+// PGlite (WASM Postgres) does not ship the `pgcrypto` extension. The migrations
+// that reference it only need `gen_random_uuid()`, which PGlite provides
+// natively (Postgres 13+). Strip the `create extension` line so the rest of
+// the migration can apply; the real Supabase project keeps the line.
+const PGCRYPTO_LINE = /create\s+extension\s+if\s+not\s+exists\s+["']pgcrypto["']\s*;?/gi;
 for (const f of files) {
-  const sql = readFileSync(join(DIR, f), "utf8");
+  const raw = readFileSync(join(DIR, f), "utf8");
+  const sql = raw.replace(PGCRYPTO_LINE, "-- pgcrypto skipped: PGlite has gen_random_uuid() natively");
   try {
     await db.exec(sql);
     check(`apply ${f}`, true);
