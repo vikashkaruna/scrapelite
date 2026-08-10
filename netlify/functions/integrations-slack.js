@@ -178,5 +178,19 @@ export const handler = async (event) => {
     return handleNotify(event, userId);
   }
 
-  return respond(404, { error: `No such endpoint: /integrations/slack/${subPath.join("/")} (${event.httpMethod})` });
+  // Unknown sub-path. Log full context so the next session can diagnose
+  // from the error string alone if this fires again.
+  console.warn(
+    "[integrations-slack] No such endpoint — splat:",
+    JSON.stringify(splat),
+    "rawQuery:",
+    JSON.stringify(event.queryStringParameters),
+    "path:",
+    event.path,
+    "method:",
+    event.httpMethod
+  );
+  return respond(404, {
+    error: `No such endpoint: /integrations/slack/${subPath.join("/")} (${event.httpMethod}) (splat=${JSON.stringify(splat)})`,
+  });
 };
