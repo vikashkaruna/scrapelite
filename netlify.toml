@@ -114,6 +114,46 @@
 
 # Integrations (HubSpot, Zapier, Notion, Airtable, Slack) — the splat is
 # forwarded as a query param so the function can dispatch on the sub-path.
+#
+# Per-provider explicit rules (BEFORE the wildcard) are a safety net for the
+# "Missing provider" bug fixed in 2026-08-10. The wildcard rule was firing,
+# but in one case it dropped the splat to empty, which made the router
+# return `Missing provider. Use /api/integrations/{...}/{...}`. Routing each
+# provider to its own dedicated function (no router, no splat translation)
+# bypasses the entire dispatch path. If the router path is later needed
+# for new providers, this safety net can be removed one provider at a time.
+[[redirects]]
+  from = "/api/integrations/hubspot/*"
+  to = "/.netlify/functions/integrations-hubspot?splat=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/notion/*"
+  to = "/.netlify/functions/integrations-notion?splat=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/airtable/*"
+  to = "/.netlify/functions/integrations-airtable?splat=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/slack/*"
+  to = "/.netlify/functions/integrations-slack?splat=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/zapier/*"
+  to = "/.netlify/functions/integrations-zapier?splat=:splat"
+  status = 200
+  force = true
+
+# Wildcard fallback (for any future provider that doesn't get an explicit
+# rule above). Routed through the dispatch router.
 [[redirects]]
   from = "/api/integrations/*"
   to = "/.netlify/functions/integrations-router?splat=:splat"

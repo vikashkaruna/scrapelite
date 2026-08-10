@@ -51,11 +51,25 @@ export const handler = async (event) => {
   const segments = splat.split("/").filter(Boolean);
   const provider = segments[0];
   if (!provider) {
+    // Defensive debug context — if this fires it means the redirect rule
+    // `/api/integrations/*` was hit but didn't pass the splat. The 5
+    // explicit per-provider rules in netlify.toml route around the router
+    // for the current providers, so the wildcard should only catch unknown
+    // providers (which would be a 501 not 400). Include the diagnostic
+    // context so future failures are debuggable from the error string alone.
+    console.warn(
+      "[integrations-router] Missing provider — splat:",
+      JSON.stringify(splat),
+      "rawQuery:",
+      JSON.stringify(event.queryStringParameters),
+      "path:",
+      event.path
+    );
     return {
       statusCode: 400,
       headers: { "Content-Type": "application/json", ...CORS },
       body: JSON.stringify({
-        error: "Missing provider. Use /api/integrations/{hubspot|zapier|notion|airtable|slack}/{...}.",
+        error: `Missing provider. Use /api/integrations/{hubspot|zapier|notion|airtable|slack}/{...}. (splat=${JSON.stringify(splat)})`,
       }),
     };
   }
