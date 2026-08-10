@@ -155,7 +155,19 @@ export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
   }
-  const splat = event.queryStringParameters?.splat || "";
+  // Resolve the sub-path from EITHER the query-string splat (the way
+  // integrations-router does it) OR a path-segment tail (the way Netlify
+  // Functions natively expose sub-paths). The original `?splat=:splat`
+  // redirect rule is supposed to pass it as a query param, but if the
+  // Netlify redirect engine for the new explicit per-provider rules
+  // doesn't substitute `:splat` correctly, this fallback recovers the
+  // sub-path from `event.path` so the function still works.
+  const splatFromQuery = event.queryStringParameters?.splat || "";
+  const fnName = "/.netlify/functions/integrations-slack";
+  const tail = (event.path || "").startsWith(fnName)
+    ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+    : "";
+  const splat = splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
   const auth = await authenticateRequest(event);
