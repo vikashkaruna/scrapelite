@@ -75,6 +75,9 @@ async function handleStatus(userId) {
   if (!r.ok) return respond(500, { error: r.error });
   if (!r.connection) return respond(200, { connected: false, provider: "notion" });
   const { access_token, refresh_token, config, ...safe } = r.connection;
+  const schema = config?.schema || {};
+  const columnCount = Object.keys(schema).length;
+  const titleColumn = Object.entries(schema).find(([, p]) => p?.type === "title")?.[0] || null;
   return respond(200, {
     connected: true,
     provider: "notion",
@@ -82,8 +85,18 @@ async function handleStatus(userId) {
       ...safe,
       database_id: config?.database_id || null,
       has_api_key: !!config?.api_key,
+      token_hint: tokenHint(config?.api_key),
+      column_count: columnCount,
+      title_column: titleColumn,
     },
   });
+}
+
+function tokenHint(token) {
+  if (!token || typeof token !== "string") return null;
+  const tail = token.slice(-4);
+  if (token.length <= 4) return tail;
+  return `${token.slice(0, 7)}…${tail}`;
 }
 
 async function handleConnect(event, userId) {
@@ -132,6 +145,88 @@ async function handleSchema(event, userId) {
   return respond(200, { properties: probe.properties, titleColumn: probe.titleColumn, title: probe.rawTitle });
 }
 
+/**
+ * POST /test — verify the stored token + database still work. Returns
+ * { ok, titleColumn, columnCount } on success. Use this from the
+ * Account UI's "Test connection" button.
+ */
+async function handleTest(event, userId) {
+  const body = await readJsonBody(event).catch(() => ({}));
+  const conn = await getConnection({ userId, provider: "notion", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(412, { error: "Notion is not connected. Set it up in Account → Integrations." });
+  const apiKey = body?.apiKey || conn.connection.config?.api_key;
+  const databaseId = body?.databaseId || conn.connection.config?.database_id;
+  if (!apiKey || !databaseId) return respond(400, { error: "Notion connection is missing apiKey / databaseId. Reconnect." });
+  const probe = await fetchNotionSchema({ apiKey, databaseId });
+  if (!probe.ok) {
+    if (/401|unauthor/i.test(probe.error || "")) {
+      return respond(401, { error: "Notion rejected the integration secret (401). It may have been revoked. Reconnect in Account → Integrations." });
+    }
+    return respond(502, { error: probe.error });
+  }
+  const properties = probe.properties || {};
+  return respond(200, {
+    ok: true,
+    titleColumn: probe.titleColumn,
+    columnCount: Object.keys(properties).length,
+    title: probe.rawTitle,
+  });
+}
+
+/**
+ * PATCH /connect — partial update. Accepts:
+ *   - accountLabel  string   rename the connection
+ *   - databaseId    string   change target database (re-fetches schema)
+ *   - refreshSchema true     re-fetch schema for the current database
+ *
+ * The PAT (apiKey) is NEVER changeable via PATCH — token rotation
+ * requires a full re-paste through POST /connect.
+ */
+async function handlePatch(event, userId) {
+  const body = await readJsonBody(event);
+  const conn = await getConnection({ userId, provider: "notion", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(400, { error: "Notion is not connected. Use POST /connect to set it up first." });
+  const existingConfig = conn.connection.config || {};
+  const fields = {};
+  const configPatch = { ...existingConfig };
+
+  if (typeof body?.accountLabel === "string" && body.accountLabel.trim()) {
+    fields.account_label = body.accountLabel.trim();
+  }
+
+  const newDbId = typeof body?.databaseId === "string" && body.databaseId.trim() ? body.databaseId.trim() : existingConfig.database_id;
+  const dbIdChanged = newDbId !== existingConfig.database_id;
+  if (dbIdChanged) {
+    configPatch.database_id = newDbId;
+  }
+
+  // Re-fetch schema when the database changes OR the caller asked for
+  // a refresh. We also persist the new schema so subsequent pushes use
+  // the latest column types.
+  const shouldRefresh = dbIdChanged || body?.refreshSchema === true;
+  if (shouldRefresh) {
+    if (!existingConfig.api_key) {
+      return respond(400, { error: "Cannot refresh schema: no API key on file. Reconnect with a token." });
+    }
+    const probe = await fetchNotionSchema({ apiKey: existingConfig.api_key, databaseId: newDbId });
+    if (!probe.ok) return respond(400, { error: probe.error });
+    configPatch.schema = probe.properties || defaultNotionSchema();
+  }
+
+  fields.config = configPatch;
+  const r = await upsertConnection({ userId, provider: "notion", fields });
+  if (!r.ok) return respond(500, { error: r.error });
+  return respond(200, {
+    ok: true,
+    connected: true,
+    database_id: configPatch.database_id,
+    schema: configPatch.schema,
+    titleColumn: Object.entries(configPatch.schema || {}).find(([, p]) => p?.type === "title")?.[0] || null,
+  });
+}
+
 async function handlePush(event, userId) {
   const body = await readJsonBody(event);
   const items = Array.isArray(body?.items) ? body.items : null;
@@ -175,9 +270,11 @@ export const handler = async (event) => {
     return handleStatus(userId);
   }
   if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
+  if (event.httpMethod === "PATCH" && subPath[0] === "connect") return handlePatch(event, userId);
   // Disconnect is the only DELETE endpoint for Notion; route it
   // regardless of the sub-path (DELETE is unambiguous).
   if (event.httpMethod === "DELETE") return handleDisconnect(userId);
+  if (event.httpMethod === "POST" && subPath[0] === "test") return handleTest(event, userId);
   if (event.httpMethod === "POST" && subPath[0] === "schema") return handleSchema(event, userId);
   if (event.httpMethod === "POST" && subPath[0] === "push") return handlePush(event, userId);
 

@@ -8,6 +8,7 @@ import {
   cadenceLabel,
   describeCron,
   estimateNextRun,
+  listSchedules,
   listSchedulesLocal,
   presetByKey,
   recordRun,
@@ -122,6 +123,133 @@ describe("localStorage fallback (U-37)", () => {
 
   it("listSchedules returns [] when no key is set", () => {
     expect(listSchedulesLocal()).toEqual([]);
+  });
+});
+
+describe("listSchedules() server merge (2026-08-11 bug fix)", () => {
+  // The bug: listSchedules() called writeLocal(remote) unconditionally,
+  // so when the server returned [] (e.g. transient hiccup, user has
+  // unsynced local items, fresh Supabase project with no rows), the
+  // localStorage cache was wiped. The user then saw "No schedules yet"
+  // even though they had schedules in localStorage from a prior session.
+  //
+  // The fix: when the server returns [] but localStorage has items, the
+  // local items are returned and NOT overwritten. When the server returns
+  // a non-empty array, the local-only items (any with no server
+  // counterpart) are preserved alongside the server data.
+
+  it("server returns [] but local has items → keep local, do not wipe", async () => {
+    const local = [{
+      id: "sch_local1",
+      type: "track",
+      target: "https://local.com",
+      label: "Local only",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    localStorage.setItem("datiq.schedules", JSON.stringify(local));
+    apiClient.listSchedules.mockResolvedValueOnce([]);
+    const result = await listSchedules();
+    expect(result).toEqual(local);
+    // localStorage is preserved (not wiped to [])
+    expect(JSON.parse(localStorage.getItem("datiq.schedules"))).toEqual(local);
+  });
+
+  it("server returns items + local has matching items → server wins, no duplicates", async () => {
+    const local = [{
+      id: "sch_a",
+      type: "track",
+      target: "https://a.com",
+      label: "A",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    localStorage.setItem("datiq.schedules", JSON.stringify(local));
+    const server = [{
+      id: "sch_a",
+      type: "track",
+      target: "https://a.com",
+      label: "A (server)",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    apiClient.listSchedules.mockResolvedValueOnce(server);
+    const result = await listSchedules();
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("A (server)"); // server version
+  });
+
+  it("server returns items + local has UNmatched items → both are kept (merge)", async () => {
+    const local = [{
+      id: "sch_local_only",
+      type: "track",
+      target: "https://local-only.com",
+      label: "Local only",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    localStorage.setItem("datiq.schedules", JSON.stringify(local));
+    const server = [{
+      id: "sch_server1",
+      type: "track",
+      target: "https://server.com",
+      label: "Server",
+      cadenceKey: "weekly",
+      cron: "0 9 * * 1",
+      status: "active",
+      createdAt: "2026-08-05T00:00:00.000Z",
+    }];
+    apiClient.listSchedules.mockResolvedValueOnce(server);
+    const result = await listSchedules();
+    // Both items are present (server + local-only).
+    expect(result.map((s) => s.id).sort()).toEqual(["sch_local_only", "sch_server1"]);
+    // Persisted state is the merged set (so the local-only item is
+    // re-pushed on the next mutation).
+    const persisted = JSON.parse(localStorage.getItem("datiq.schedules"));
+    expect(persisted.map((s) => s.id).sort()).toEqual(["sch_local_only", "sch_server1"]);
+  });
+
+  it("server returns items, local is empty → use server, persist", async () => {
+    localStorage.clear();
+    const server = [{
+      id: "sch_server1",
+      type: "track",
+      target: "https://server.com",
+      label: "Server",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    apiClient.listSchedules.mockResolvedValueOnce(server);
+    const result = await listSchedules();
+    expect(result).toEqual(server);
+    expect(JSON.parse(localStorage.getItem("datiq.schedules"))).toEqual(server);
+  });
+
+  it("server errors → fall back to local without modification", async () => {
+    const local = [{
+      id: "sch_local1",
+      type: "track",
+      target: "https://local.com",
+      label: "Local only",
+      cadenceKey: "daily",
+      cron: "0 9 * * *",
+      status: "active",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }];
+    localStorage.setItem("datiq.schedules", JSON.stringify(local));
+    apiClient.listSchedules.mockRejectedValueOnce({ status: 503, useLocalStorage: true });
+    const result = await listSchedules();
+    expect(result).toEqual(local);
   });
 });
 

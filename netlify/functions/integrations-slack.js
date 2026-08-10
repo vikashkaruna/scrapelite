@@ -84,11 +84,39 @@ async function handleStatus(userId) {
     });
   }
   const { access_token, refresh_token, config, ...safe } = r.connection;
+  const url = config?.webhook_url || "";
   return respond(200, {
     connected: true,
     provider: "slack",
-    connection: { ...safe, has_webhook: !!config?.webhook_url },
+    connection: {
+      ...safe,
+      has_webhook: !!url,
+      // Surface only the host + a short tail of the path, never the
+      // signing secret in the URL. Enough to confirm "yes, this is the
+      // workspace webhook" without leaking the channel/secret segment.
+      webhook_hint: webhookHint(url),
+    },
   });
+}
+
+function webhookHint(url) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("slack.com")) return null;
+    // Format: "hooks.slack.com · services/T0…/B0…/…xQ7z"
+    const pathParts = u.pathname.split("/").filter(Boolean);
+    if (pathParts.length === 0) return u.hostname;
+    // Mask everything but the first letter of each segment, except the
+    // last segment which gets shown as last 4 chars only.
+    const masked = pathParts.map((seg, i) => {
+      if (i === pathParts.length - 1) return `…${seg.slice(-4)}`;
+      return `${seg.slice(0, 3)}…`;
+    });
+    return `${u.hostname} · /${masked.join("/")}`;
+  } catch {
+    return null;
+  }
 }
 
 async function handleConnect(event, userId) {
@@ -116,6 +144,53 @@ async function handleConnect(event, userId) {
   });
   if (!r.ok) return respond(500, { error: r.error });
   return respond(200, { ok: true, connected: true });
+}
+
+/**
+ * PATCH /connect — partial update. Accepts:
+ *   - accountLabel  string   rename the connection in the UI
+ *   - webhookUrl    string   change the webhook (probed first, same as
+ *                            /connect — a typo would silently break
+ *                            every notification)
+ */
+async function handlePatch(event, userId) {
+  const body = await readJsonBody(event);
+  const conn = await getConnection({ userId, provider: "slack", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(400, { error: "Slack is not connected. Use POST /connect to set it up first." });
+  const existingConfig = conn.connection.config || {};
+  const fields = {};
+  const configPatch = { ...existingConfig };
+
+  if (typeof body?.accountLabel === "string" && body.accountLabel.trim()) {
+    fields.account_label = body.accountLabel.trim();
+  }
+
+  if (typeof body?.webhookUrl === "string" && body.webhookUrl.trim()) {
+    const newUrl = body.webhookUrl.trim();
+    if (!/^https:\/\/hooks\.slack\.com\//.test(newUrl)) {
+      return respond(400, { error: "webhookUrl must start with https://hooks.slack.com/" });
+    }
+    // Probe the new webhook the same way /connect does, so a typo
+    // doesn't silently break every subsequent notification.
+    const probe = await postToSlack(
+      buildSlackWelcomeMessage({ userName: "DatIQ user", planLabel: "Test" }),
+      { webhookUrl: newUrl },
+    );
+    if (!probe.ok) {
+      return respond(400, { error: `Slack rejected the new webhook: ${probe.status || probe.error}` });
+    }
+    configPatch.webhook_url = newUrl;
+  }
+
+  if (Object.keys(fields).length === 0 && configPatch === existingConfig) {
+    return respond(400, { error: "No updatable fields supplied. Use { accountLabel, webhookUrl }." });
+  }
+  fields.config = configPatch;
+
+  const r = await upsertConnection({ userId, provider: "slack", fields });
+  if (!r.ok) return respond(500, { error: r.error });
+  return respond(200, { ok: true, connected: true, webhook_hint: webhookHint(configPatch.webhook_url) });
 }
 
 async function handleDisconnect(userId) {
@@ -261,6 +336,9 @@ export const handler = async (event) => {
   }
   if (event.httpMethod === "POST" && subPath[0] === "connect") {
     return handleConnect(event, userId);
+  }
+  if (event.httpMethod === "PATCH" && subPath[0] === "connect") {
+    return handlePatch(event, userId);
   }
   // Disconnect is the only DELETE endpoint for Slack; route it regardless
   // of the sub-path (the body.action source only applies to POST).

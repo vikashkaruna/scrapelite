@@ -7,7 +7,9 @@
 // Endpoints:
 //   GET    /api/integrations/airtable/status
 //   POST   /api/integrations/airtable/connect   { apiKey, baseId, tableId }
+//   PATCH  /api/integrations/airtable/connect   { accountLabel?, baseId?, tableId? }
 //   DELETE /api/integrations/airtable/connect
+//   POST   /api/integrations/airtable/test      { baseId?, tableId? } → { ok, tableName, fields }
 //   POST   /api/integrations/airtable/push      { items, baseId?, tableId? }
 
 import { createClient } from "@supabase/supabase-js";
@@ -18,7 +20,9 @@ import {
 } from "./lib/integrationConnectionStore.js";
 import {
   pushToAirtable,
+  fetchAirtableSchema,
   validateAirtableConfig,
+  autoMapAirtableFields,
 } from "../../src/lib/airtable.js";
 
 const CORS = {
@@ -88,8 +92,25 @@ async function handleStatus(userId) {
       base_id: config?.base_id || null,
       table_id: config?.table_id || null,
       has_api_key: !!config?.api_key,
+      // field_map is the per-table column→extraction-key map. We persist
+      // it server-side too (in addition to localStorage) so cross-device
+      // sync works and the Account page can show what the user mapped.
+      // field_map_summary is a short human-readable list for the UI.
+      field_map: config?.field_map || null,
+      field_map_summary: summarizeFieldMap(config?.field_map),
+      table_meta: config?.table_meta || null,
     },
   });
+}
+
+function summarizeFieldMap(fieldMap) {
+  if (!fieldMap || typeof fieldMap !== "object") return null;
+  const entries = Object.entries(fieldMap)
+    .filter(([_, def]) => def && def.key)
+    .map(([col, def]) => `${col} → ${def.key}`);
+  if (entries.length === 0) return null;
+  if (entries.length <= 3) return entries.join(", ");
+  return entries.slice(0, 3).join(", ") + ` (+${entries.length - 3} more)`;
 }
 
 async function handleConnect(event, userId) {
@@ -101,16 +122,143 @@ async function handleConnect(event, userId) {
   if (errors.length) return respond(400, { error: errors.join(" ") });
   const probe = await probeAirtable(apiKey);
   if (!probe.ok) return respond(400, { error: `Airtable rejected the token (status ${probe.status || probe.error}).` });
+  // On initial connect, fetch the table schema + auto-build the field
+  // map so the user has a working setup on first push (and the Account
+  // page can show what columns will be used).
+  let fieldMap = null;
+  let tableMeta = null;
+  try {
+    const schemaRes = await fetchAirtableSchema({ apiKey, baseId, tableId });
+    if (schemaRes.ok) {
+      fieldMap = autoMapAirtableFields(schemaRes.fields);
+      tableMeta = { tableName: schemaRes.tableName, fields: schemaRes.fields };
+    }
+  } catch { /* non-fatal: connection succeeds even if schema fetch 403s */ }
   const r = await upsertConnection({
     userId,
     provider: "airtable",
     fields: {
-      config: { api_key: apiKey, base_id: baseId, table_id: tableId },
+      config: { api_key: apiKey, base_id: baseId, table_id: tableId, field_map: fieldMap, table_meta: tableMeta },
       account_label: body?.accountLabel || "Airtable",
     },
   });
   if (!r.ok) return respond(500, { error: r.error });
-  return respond(200, { ok: true, connected: true });
+  return respond(200, {
+    ok: true,
+    connected: true,
+    field_map: fieldMap,
+    table_meta: tableMeta,
+  });
+}
+
+/**
+ * PATCH /connect — partial update. Accepts:
+ *   - accountLabel     string   rename the connection in the UI
+ *   - baseId           string   change target base
+ *   - tableId          string   change target table
+ *   - refreshSchema    true     re-fetch table schema + rebuild field map
+ *
+ * The PAT (apiKey) is NEVER changeable via PATCH — token rotation
+ * requires a full re-paste through /connect. This is the same posture
+ * we take everywhere else: secrets don't get partially updated, they
+ * get replaced wholesale.
+ */
+async function handlePatch(event, userId) {
+  const body = await readJsonBody(event);
+  const conn = await getConnection({ userId, provider: "airtable", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(400, { error: "Airtable is not connected. Use POST /connect to set it up first." });
+
+  const existingConfig = conn.connection.config || {};
+  const fields = {};
+  const configPatch = { ...existingConfig };
+
+  if (typeof body?.accountLabel === "string" && body.accountLabel.trim()) {
+    fields.account_label = body.accountLabel.trim();
+  }
+
+  const baseId = typeof body?.baseId === "string" && body.baseId.trim() ? body.baseId.trim() : existingConfig.base_id;
+  const tableId = typeof body?.tableId === "string" && body.tableId.trim() ? body.tableId.trim() : existingConfig.table_id;
+  const idsChanged = baseId !== existingConfig.base_id || tableId !== existingConfig.table_id;
+  if (idsChanged) {
+    // IDs must pass the same validation as the initial connect.
+    const v = validateAirtableConfig({ apiKey: existingConfig.api_key, baseId, tableId });
+    if (v.length) return respond(400, { error: v.join(" ") });
+    configPatch.base_id = baseId;
+    configPatch.table_id = tableId;
+  }
+
+  // If the IDs changed OR the caller asked for an explicit refresh,
+  // re-fetch the table schema and rebuild the field map. Otherwise the
+  // existing field_map is preserved.
+  const shouldRefresh = idsChanged || body?.refreshSchema === true;
+  if (shouldRefresh) {
+    if (!existingConfig.api_key) {
+      return respond(400, { error: "Cannot refresh schema: no API key on file. Reconnect with a token." });
+    }
+    const schemaRes = await fetchAirtableSchema({ apiKey: existingConfig.api_key, baseId, tableId });
+    if (!schemaRes.ok) return respond(400, { error: schemaRes.error });
+    configPatch.field_map = autoMapAirtableFields(schemaRes.fields);
+    configPatch.table_meta = { tableName: schemaRes.tableName, fields: schemaRes.fields };
+  }
+
+  // Allow the client to pass an explicit field_map override (used by
+  // the EditIntegrationModal's "rebuild map" path — or by an advanced
+  // user with a hand-tuned map).
+  if (body?.fieldMap && typeof body.fieldMap === "object") {
+    configPatch.field_map = body.fieldMap;
+  }
+
+  fields.config = configPatch;
+
+  const r = await upsertConnection({
+    userId,
+    provider: "airtable",
+    fields,
+  });
+  if (!r.ok) return respond(500, { error: r.error });
+  return respond(200, {
+    ok: true,
+    connected: true,
+    base_id: configPatch.base_id,
+    table_id: configPatch.table_id,
+    field_map: configPatch.field_map || null,
+    table_meta: configPatch.table_meta || null,
+    field_map_summary: summarizeFieldMap(configPatch.field_map),
+  });
+}
+
+/**
+ * POST /test — verify the stored credentials still work AND the target
+ * table still exists with the columns we know about. Returns:
+ *   { ok, tableName, fieldCount, matched, total }
+ * If the user changed their PAT in Airtable's dashboard without
+ * reconnecting here, this will surface a 401 with the Airtable status.
+ */
+async function handleTest(event, userId) {
+  const body = await readJsonBody(event).catch(() => ({}));
+  const conn = await getConnection({ userId, provider: "airtable", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(412, { error: "Airtable is not connected. Set it up in Account → Integrations." });
+  const apiKey = conn.connection.config?.api_key;
+  const baseId = body?.baseId || conn.connection.config?.base_id;
+  const tableId = body?.tableId || conn.connection.config?.table_id;
+  if (!apiKey || !baseId || !tableId) {
+    return respond(400, { error: "Airtable connection is missing apiKey / baseId / tableId. Reconnect." });
+  }
+  const probe = await probeAirtable(apiKey);
+  if (!probe.ok) return respond(502, { error: `Airtable rejected the token (status ${probe.status || probe.error}). The PAT may have been revoked — reconnect in Account → Integrations.` });
+  const schemaRes = await fetchAirtableSchema({ apiKey, baseId, tableId });
+  if (!schemaRes.ok) return respond(502, { error: schemaRes.error });
+  const fieldMap = autoMapAirtableFields(schemaRes.fields);
+  const matched = Object.keys(fieldMap).length;
+  return respond(200, {
+    ok: true,
+    tableName: schemaRes.tableName,
+    fieldCount: schemaRes.fields.length,
+    matched,
+    fieldMap,
+  });
 }
 
 async function handleDisconnect(userId) {
@@ -125,11 +273,15 @@ async function handlePush(event, userId) {
   if (!items || items.length === 0) return respond(400, { error: "'items' must be a non-empty array." });
   const conn = await getConnection({ userId, provider: "airtable", includeSecrets: true });
   if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(412, { error: "Airtable is not connected. Set it up in Account → Integrations." });
   const apiKey = body?.apiKey || conn.connection?.config?.api_key;
   const baseId = body?.baseId || conn.connection?.config?.base_id;
   const tableId = body?.tableId || conn.connection?.config?.table_id;
+  // Use the server-persisted field_map by default (so cross-device sync
+  // works). The body can still override for one-off pushes.
+  const fieldMap = body?.fieldMap || conn.connection?.config?.field_map || null;
   if (!apiKey || !baseId || !tableId) return respond(400, { error: "Connect Airtable first." });
-  const r = await pushToAirtable(items, { apiKey, baseId, tableId });
+  const r = await pushToAirtable(items, { apiKey, baseId, tableId, fieldMap });
   return respond(200, r);
 }
 
@@ -160,9 +312,14 @@ export const handler = async (event) => {
     return handleStatus(userId);
   }
   if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
+  // PATCH /connect — partial update (rename, change IDs, refresh schema).
+  // The PAT is NEVER changeable via PATCH — token rotation requires a
+  // full re-paste through POST /connect.
+  if (event.httpMethod === "PATCH" && subPath[0] === "connect") return handlePatch(event, userId);
   // Disconnect is the only DELETE endpoint for Airtable; route it
   // regardless of the sub-path (DELETE is unambiguous).
   if (event.httpMethod === "DELETE") return handleDisconnect(userId);
+  if (event.httpMethod === "POST" && subPath[0] === "test") return handleTest(event, userId);
   if (event.httpMethod === "POST" && subPath[0] === "push") return handlePush(event, userId);
 
   return respond(404, { error: `No such endpoint: /integrations/airtable/${subPath.join("/")} (${event.httpMethod})` });
