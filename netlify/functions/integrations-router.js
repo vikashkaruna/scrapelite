@@ -47,7 +47,16 @@ export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
   }
-  const splat = event.queryStringParameters?.splat || "";
+  // Resolve the sub-path from EITHER the query-string splat OR a path-segment
+  // tail. The 2026-08-10 production fix switched netlify.toml from
+  // `?splat=:splat` to `/:splat` (path-based) because the query-string form
+  // wasn't being substituted correctly on per-provider explicit redirects.
+  const splatFromQuery = event.queryStringParameters?.splat || "";
+  const fnName = "/.netlify/functions/integrations-router";
+  const tail = (event.path || "").startsWith(fnName)
+    ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+    : "";
+  const splat = splatFromQuery || tail;
   const segments = splat.split("/").filter(Boolean);
   const provider = segments[0];
   if (!provider) {
@@ -77,15 +86,20 @@ export const handler = async (event) => {
   if (!target) {
     return notImplemented(provider)(event);
   }
-  // Re-dispatch with the splat trimmed of the provider segment. The
-  // provider-specific handler reads subPath from event.queryStringParameters
-  // .splat the same way it did when mounted directly.
+  // Re-dispatch with the sub-path (everything after the provider segment).
+  // The provider-specific handler also has a path-based fallback (commit
+  // 87f5597), so we set BOTH the query (original form) AND rewrite event.path
+  // to the provider function's path. Either form works; the dual-set means
+  // the handler picks the right sub-path regardless of how Netlify routed
+  // the original request.
+  const subPath = segments.slice(1).join("/");
   const newEvent = {
     ...event,
     queryStringParameters: {
       ...(event.queryStringParameters || {}),
-      splat: segments.slice(1).join("/"),
+      splat: subPath,
     },
+    path: `/.netlify/functions/integrations-${provider}${subPath ? "/" + subPath : ""}`,
   };
   return target(newEvent);
 };
