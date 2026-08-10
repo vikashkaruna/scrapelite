@@ -77,10 +77,29 @@
     <div class="kicker">DatIQ · Changelog</div>
     <h1>Every release, every fix, every feature</h1>
     <p>DatIQ ships improvements weekly. This page tracks what changed, when, and why — for users, not for changelog-spelunkers. DatIQ.app is the no-code web intelligence platform.</p>
-    <p class="ch-updated">Last updated: 2026-08-09</p>
+    <p class="ch-updated">Last updated: 2026-08-11</p>
   </section>
 
   <section class="ch-section">
+    <div class="ch-release">
+      <h3>V1.0+ — 2026-08-11</h3>
+      <div class="meta">Integrations overhaul — one-click push to HubSpot, Airtable, Notion, Slack, Zapier</div>
+      <p>The integration stack now uses server-stored connections: connect once from <a href="/account#integrations">Account → Integrations</a>, and every push from Preview, Dashboard, or Batch is a single click. Airtable and Notion no longer ask for an API key on every push — the field map is built and stored the first time you connect, and a "Load columns" button refreshes it if a user has a legacy connection from before this release.</p>
+      <ul>
+        <li><strong>One-click push</strong> to HubSpot, Airtable, Notion, Slack, and Zapier from the Export ▾ menu on Preview, Dashboard, and Batch results</li>
+        <li><strong>Server-stored connections</strong> for all five destinations — tokens live on the server, never re-displayed in the browser</li>
+        <li><strong>Per-provider rich status</strong> on <a href="/account#integrations">/account#integrations</a> — token hint, IDs, field map, title column, column count, and a per-provider Test / Edit / Disconnect action</li>
+        <li><strong>HubSpot</strong> Connect / Test / Edit (label + token rotation) flow — first HubSpot private-app pattern in the stack</li>
+        <li><strong>Airtable</strong> one-click push with auto-built field map; "Load columns" re-fetches the schema for legacy connections</li>
+        <li><strong>Notion</strong> one-click push with database_id, title column, and property count surfaced; Edit modal re-runs schema refresh</li>
+        <li><strong>Slack</strong> destinations surfaced in the Push / Send-to menus; welcome message on first Test; long-title-safe Block Kit payloads</li>
+        <li><strong>Zapier</strong> private-app token connect flow; "Generate new token" in the Edit modal (server mints plaintext, shown once)</li>
+        <li><strong>Account → Integrations</strong> redesigned: Test / Edit / Disconnect on every row, white-label PDF, coupons, and top-up bundles reordered for clarity</li>
+        <li><strong>Workspace</strong> tabs — Collections and Active Schedule surfaces consolidated into the Workspace view</li>
+        <li>204 new tests in this integration pass (Account.invoices, Account.integration, ExportIntegrations.full-rewrite, Workspace, Batch, Preview)</li>
+      </ul>
+    </div>
+
     <div class="ch-release">
       <h3>V1.0+ — 2026-08-09</h3>
       <div class="meta">AEO/GEO/SEO P1 sweep + comparison page redesign</div>
@@ -191,6 +210,19 @@
         <li>Onboarding tour with persona selection as the first step</li>
         <li>Command palette (mod+K) for power users</li>
         <li>Keyboard shortcuts (g d, g b, g s, g p, /, ?) for navigation</li>
+      </ul>
+    </div>
+
+    <div class="ch-group">
+      <h3>Integrations &amp; sharing</h3>
+      <ul>
+        <li><strong>One-click push</strong> to <strong>HubSpot</strong>, <strong>Airtable</strong>, <strong>Notion</strong>, <strong>Slack</strong>, and <strong>Zapier</strong> from Preview, Dashboard, and Batch results</li>
+        <li>Server-stored connections for all five destinations — set up once in <a href="/account#integrations">Account → Integrations</a>, push forever</li>
+        <li><strong>Google Sheets</strong> one-click new sheet from any extraction (no auth required)</li>
+        <li>Slack alerts via Block Kit webhook for schedule changes (formatted payloads, long-title-safe)</li>
+        <li>Per-provider rich status on <a href="/account#integrations">/account#integrations</a> (token hint, IDs, field map, Test / Edit / Disconnect)</li>
+        <li>Shareable public report links (<code>datiq.app/p/&lt;slug&gt;</code>) and the <a href="/gallery">/gallery</a> listing</li>
+        <li>Email delivery of extractions (multi-recipient) from Dashboard and Batch</li>
       </ul>
     </div>
 

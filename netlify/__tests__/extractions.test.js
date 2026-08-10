@@ -26,6 +26,19 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => supabaseMock),
 }));
 
+// Mock the notify dispatcher so POST tests can assert it was called with
+// the right (userId, extraction) and don't accidentally hit Slack / Zapier
+// during unit tests. notifyExtractionComplete is fire-and-forget from
+// extractions.js (the caller does NOT await it) so the mock below returns
+// a resolved promise and the test inspects it via vi.waitFor / a microtask.
+const notifyMock = vi.hoisted(() => ({
+  notifyExtractionComplete: vi.fn().mockResolvedValue({ ok: true, slack: null, zapier: null }),
+  notifyEnrichmentComplete: vi.fn().mockResolvedValue({ ok: true, zapier: null }),
+  notifyMonitoringChange: vi.fn().mockResolvedValue({ ok: true, slack: null, zapier: null }),
+}));
+
+vi.mock("../functions/lib/notify.js", () => notifyMock);
+
 let handler;
 
 function resetChainDefaults() {
@@ -246,6 +259,55 @@ describe("extractions POST (C-09)", () => {
       body: "not json",
     });
     expect(r.statusCode).toBe(400);
+  });
+
+  it("fires notifyExtractionComplete on successful insert (Slack + Zapier fan-out)", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon";
+    userClient();
+    notifyMock.notifyExtractionComplete.mockClear();
+    supabaseMock._chain.single.mockResolvedValueOnce({
+      data: { id: "ext_42", url: "https://x.com", page_title: "X" },
+      error: null,
+    });
+    const h = await loadHandler();
+    const r = await h({
+      method: "POST",
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid.jwt" },
+      body: JSON.stringify({ id: "ext_42", url: "https://x.com", page_title: "X" }),
+    });
+    expect(r.statusCode).toBe(201);
+    // The dispatcher is fire-and-forget — give the microtask a tick to run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(notifyMock.notifyExtractionComplete).toHaveBeenCalledTimes(1);
+    expect(notifyMock.notifyExtractionComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        extraction: expect.objectContaining({ id: "ext_42", url: "https://x.com" }),
+      }),
+    );
+  });
+
+  it("does NOT fire notifyExtractionComplete on insert error (save failed)", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon";
+    userClient();
+    notifyMock.notifyExtractionComplete.mockClear();
+    supabaseMock._chain.single.mockResolvedValueOnce({
+      data: null,
+      error: { message: "RLS rejected" },
+    });
+    const h = await loadHandler();
+    const r = await h({
+      method: "POST",
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid.jwt" },
+      body: JSON.stringify({ id: "ext_42", url: "https://x.com" }),
+    });
+    expect(r.statusCode).toBe(500);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(notifyMock.notifyExtractionComplete).not.toHaveBeenCalled();
   });
 });
 

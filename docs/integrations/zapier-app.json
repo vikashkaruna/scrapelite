@@ -1,0 +1,167 @@
+{
+  "name": "DatIQ",
+  "description": "Zero-code web extraction + enrichment. Extract pages, enrich with contacts / leadership / social, run scheduled monitoring, push to 5,000+ apps via Zapier.",
+  "homepage": "https://datiq.app",
+  "logo": "https://datiq.app/favicon.svg",
+  "brand_color": "#7C3AED",
+  "authentication": {
+    "type": "custom",
+    "test": {
+      "url": "https://datiq.app/api/integrations/zapier/test",
+      "headers": {
+        "X-Zapier-Token": "{{bundle.authData.token}}"
+      }
+    },
+    "fields": [
+      {
+        "key": "token",
+        "label": "DatIQ Zapier Token",
+        "type": "string",
+        "required": true,
+        "help_text": "Get this from Account → Integrations → Zapier in your DatIQ dashboard."
+      }
+    ]
+  },
+  "triggers": {
+    "new_extraction": {
+      "display": {
+        "label": "New Extraction",
+        "description": "Triggers when a new extraction is saved to DatIQ.",
+        "hidden": false
+      },
+      "operation": {
+        "perform": {
+          "url": "https://datiq.app/api/integrations/zapier/poll?event_type=new_extraction",
+          "headers": {
+            "X-Zapier-Token": "{{bundle.authData.token}}"
+          }
+        },
+        "sample": {
+          "id": "e123",
+          "url": "https://example.com",
+          "title": "Example Domain",
+          "summary": "Example is a public domain used in examples.",
+          "created_at": "2026-07-28T10:00:00Z"
+        },
+        "outputFields": [
+          { "key": "id", "label": "Extraction ID" },
+          { "key": "url", "label": "URL" },
+          { "key": "title", "label": "Title" },
+          { "key": "summary", "label": "AI Summary" },
+          { "key": "created_at", "label": "Created At" }
+        ]
+      }
+    },
+    "new_enrichment": {
+      "display": {
+        "label": "New Enrichment",
+        "description": "Triggers when an enrichment (contacts, leadership, social, mission, pricing) completes."
+      },
+      "operation": {
+        "perform": {
+          "url": "https://datiq.app/api/integrations/zapier/poll?event_type=new_enrichment",
+          "headers": { "X-Zapier-Token": "{{bundle.authData.token}}" }
+        },
+        "sample": {
+          "extraction_id": "e123",
+          "focus": "contacts",
+          "data": { "emails": ["press@example.com"], "people": [{ "name": "Jane Doe", "role": "VP Marketing" }] }
+        }
+      }
+    },
+    "monitoring_alert": {
+      "display": {
+        "label": "Monitoring Alert",
+        "description": "Triggers when a DatIQ schedule detects a content change on a tracked page."
+      },
+      "operation": {
+        "perform": {
+          "url": "https://datiq.app/api/integrations/zapier/poll?event_type=monitoring_alert",
+          "headers": { "X-Zapier-Token": "{{bundle.authData.token}}" }
+        },
+        "sample": {
+          "schedule_id": "s123",
+          "url": "https://example.com/pricing",
+          "label": "Track example.com pricing",
+          "previous_hash": "abc",
+          "new_hash": "def",
+          "detected_at": "2026-07-28T10:00:00Z"
+        }
+      }
+    }
+  },
+  "actions": {
+    "extract_url": {
+      "display": {
+        "label": "Extract a URL",
+        "description": "Extract a page with DatIQ and return headings, links, and AI summary."
+      },
+      "operation": {
+        "perform": {
+          "url": "https://datiq.app/api/integrations/zapier/action",
+          "method": "POST",
+          "headers": { "X-Zapier-Token": "{{bundle.authData.token}}" },
+          "body": {
+            "action": "extract_url",
+            "params": {
+              "url": "{{bundle.inputData.url}}",
+              "intent": "{{bundle.inputData.intent}}"
+            }
+          }
+        },
+        "inputFields": [
+          { "key": "url", "label": "Page URL", "type": "string", "required": true },
+          { "key": "intent", "label": "Intent", "type": "string", "required": false,
+            "choices": {
+              "summary": "Summary (default)",
+              "contacts": "Contacts",
+              "pricing": "Pricing",
+              "map": "Domain map",
+              "custom": "Custom (provide prompt)"
+            }
+          }
+        ],
+        "outputFields": [
+          { "key": "metadata.title", "label": "Title" },
+          { "key": "headings", "label": "Headings (JSON)" },
+          { "key": "links", "label": "Links (JSON)" },
+          { "key": "json", "label": "Custom extraction (JSON)" }
+        ]
+      }
+    },
+    "create_schedule": {
+      "display": {
+        "label": "Create a Schedule",
+        "description": "Create a DatIQ schedule that monitors a page for changes."
+      },
+      "operation": {
+        "perform": {
+          "url": "https://datiq.app/api/integrations/zapier/action",
+          "method": "POST",
+          "headers": { "X-Zapier-Token": "{{bundle.authData.token}}" },
+          "body": {
+            "action": "create_schedule",
+            "params": {
+              "url": "{{bundle.inputData.url}}",
+              "cadence": "{{bundle.inputData.cadence}}",
+              "intent": "{{bundle.inputData.intent}}"
+            }
+          }
+        },
+        "inputFields": [
+          { "key": "url", "label": "Page URL", "type": "string", "required": true },
+          { "key": "cadence", "label": "Cadence", "type": "string", "required": true,
+            "choices": {
+              "every_6h": "Every 6 hours",
+              "twice_daily": "Twice daily",
+              "daily": "Daily",
+              "weekdays": "Weekdays",
+              "weekly": "Weekly",
+              "monthly": "Monthly"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

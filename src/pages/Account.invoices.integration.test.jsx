@@ -41,9 +41,20 @@ vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn() }));
 vi.mock("../lib/usageRepo.js", () => repoMocks);
 vi.mock("../lib/paymentRepo.js", () => repoMocks);
 vi.mock("../lib/billingRepo.js", () => billingRepoMocks);
-vi.mock("../lib/supabaseClient.js", () => ({
-  supabase: { auth: { getSession: vi.fn(() => Promise.resolve({ data: { session: null } })) } },
-}));
+// Keep ALL exports the real module provides so the mock stays in sync
+// as Account.jsx (or anything else) starts importing more of them. The
+// 2026-08-10 incident that this test file was missing `isSupabaseEnabled`
+// from the mock manifested as 6 simultaneous vitest failures — every
+// render path that touched Account.jsx blew up at the `!isSupabaseEnabled`
+// JSX check because the destructure left the binding undefined. Future-
+// proof: spread the real module's exports and override only `supabase`.
+vi.mock("../lib/supabaseClient.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    supabase: { auth: { getSession: vi.fn(() => Promise.resolve({ data: { session: null } })) } },
+  };
+});
 
 const INVOICE = {
   id: "inv-1",
