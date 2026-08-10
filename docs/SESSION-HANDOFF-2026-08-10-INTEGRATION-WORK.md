@@ -486,3 +486,127 @@ so the user's flow is unblocked either way, but the underlying cause
 isn't pinned. If anyone has Netlify function-log access for the
 `integration-with-outside-ecosystem` site, the `console.warn` from
 49ae0e9 will log the empty-splat case if it ever fires again.
+
+---
+
+## 15. Resolution + path-fallback (e05e260, 4eb4ae2, 87f5597) + curl helper (852023b, d2d586c) — 2026-08-10 ~13:15–14:10 IST
+
+**Shipped:** 5 follow-on commits in ~50 minutes. The user retried the
+Slack connect after the §14 fix and hit a **different** error:
+`No such endpoint: /integrations/slack/ (POST)` — from the Slack
+handler itself, not the router. The explicit per-provider redirect
+from §14 was firing (we landed on the Slack handler, not the router),
+but the function got the request with an **empty splat**.
+
+### 15a. Diagnosis (e05e260)
+
+Added diagnostic context to the Slack 404 path so the next failure is
+self-debugging: the error string now includes `(splat="<received>")`,
+plus a `console.warn` logs `event.path` and the raw `queryStringParameters`.
+Result of the test: the splat really was empty. The explicit per-provider
+redirect IS firing, but the sub-path isn't being delivered to the function
+in the form the handler expected.
+
+### 15b. Best theory: Netlify is using path-based routing for the new explicit rules
+
+The new redirect rules (`from = "/api/integrations/slack/*"`) are routing
+to the function at `/.netlify/functions/integrations-slack/connect` (with
+`connect` as a path segment) instead of `/.netlify/functions/integrations-slack?splat=connect`
+(query param). The original `?splat=:splat` syntax works for the
+wildcard rule but isn't being substituted correctly for the per-provider
+explicit rules — or at least, not in a way that ends up in
+`event.queryStringParameters.splat`.
+
+### 15c. Fix (4eb4ae2 + 87f5597) — path-based splat fallback in all 5 handlers
+
+Each handler now resolves the sub-path from EITHER the query OR the path:
+
+```js
+const splatFromQuery = event.queryStringParameters?.splat || "";
+const fnName = "/.netlify/functions/integrations-{provider}";
+const tail = (event.path || "").startsWith(fnName)
+  ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
+  : "";
+const splat = splatFromQuery || tail;
+const subPath = splat.split("/").filter(Boolean);
+```
+
+Applied to all 5: slack, hubspot, notion, airtable, zapier.
+
+### 15d. Operator-side helper (852023b + d2d586c) — `scripts/curl-with-sso.sh`
+
+While waiting for the user to test the fix, they hit a different
+problem: the doc's `export NF_JWT=...` pattern is fragile on macOS/zsh
+(the export only lives in the shell session you typed it in, so doing
+the export in one terminal tab and the curl in another — or via an
+editor's integrated terminal — gives a silently-empty `$NF_JWT` and a
+401 from the API). Also, the user had copied only the first 36 chars
+of the JWT (just the header) and was getting the basic-auth HTML page
+back, which `json.tool` couldn't parse.
+
+**Fix in 2 parts:**
+
+1. **`scripts/curl-with-sso.sh`** — thin wrapper that:
+   - Reads from `~/.netlify-sso-cookie` first, falls back to `$NF_JWT` env var
+   - **Validates the JWT shape** (3 base64url segments, ≥ 100 chars) and
+     gives a SPECIFIC error if the user copied only the JWT header —
+     e.g. "Looks like only the JWT HEADER was copied (~36 chars = {"typ":"JWT"...})"
+   - Defaults to the branch deploy URL; override with
+     `DATICQ_BASE=https://datiq.app` to test against production
+   - Every curl example in `docs/CURL-TEST-RECIPE-INTEGRATIONS.md`
+     can be written as `./scripts/curl-with-sso.sh /api/integrations/hubspot/status`
+
+2. **`scripts/curl-with-sso.test.sh`** — 10 (now 15) unit tests covering:
+   missing cookie, malformed cookie (short + wrong dot count), well-formed
+   cookie from env var, well-formed cookie from file, missing path arg,
+   `DATICQ_BASE` override, **the exact 36-char truncated cookie bug** the
+   user hit. All pass.
+
+3. **`docs/CURL-TEST-RECIPE-INTEGRATIONS.md §2b`** rewritten to document
+   BOTH approaches (file-based + env-var) with an explicit
+   "if you got 'variable not found'" debugging block.
+
+### 15e. Files added/changed in §15
+
+```
+netlify.toml                             unchanged (already had 5 explicit rules)
+netlify/functions/integrations-slack.js  +15/-1  (diagnostic + path-fallback)
+netlify/functions/integrations-hubspot.js   +11/-1  (path-fallback)
+netlify/functions/integrations-notion.js    +9/-1  (path-fallback)
+netlify/functions/integrations-airtable.js  +9/-1  (path-fallback)
+netlify/functions/integrations-zapier.js    +9/-1  (path-fallback)
+scripts/curl-with-sso.sh                +79  (new)
+scripts/curl-with-sso.test.sh           +88  (new, 15 tests)
+docs/CURL-TEST-RECIPE-INTEGRATIONS.md   ~60 changed
+```
+
+### 15f. Final session state (14:10 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `e9430ac` (chore: trigger fresh branch deploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `e9430ac57488369244415324346cbe9dc5611887` |
+| Build status | ✅ live (32s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on (same as before) |
+| All 5 integration handlers | path-fallback in place; diagnostic in Slack 404 |
+| `curl-with-sso.sh` | 15/15 tests passing |
+| Async ops | none pending |
+
+### 15g. Next session entry point
+
+1. **Hard-reload** the branch deploy, sign in, open `/account#integrations`
+2. Click **Connect on Slack**, paste a real `https://hooks.slack.com/...`,
+   click **Connect Slack**
+3. **If it works** → the path-fallback theory was right, mark the
+   `§14 open question` as resolved
+4. **If you still see "No such endpoint"** → the new error string
+   includes `(splat="<actual-value>")`. Paste that to the next session —
+   the value will tell us which Netlify redirect behavior to investigate
+5. **If you see the basic-auth HTML page back** → `curl-with-sso.sh`
+   will say exactly why (cookie missing / wrong shape / truncated)
+6. **Operator follow-ups still required** (per §7) — Supabase + Google +
+   Microsoft console redirect URL updates. Documented in
+   `docs/SUPABASE-AUTH-REDIRECT-URLS.md`
