@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import ExportIntegrations from "./ExportIntegrations.jsx";
 
 vi.mock("../lib/airtable.js", async () => {
@@ -27,9 +28,21 @@ vi.mock("../lib/utils.js", async () => {
   };
 });
 
+vi.mock("../lib/integrationsClient.js", () => ({
+  getIntegrationStatus: vi.fn().mockResolvedValue({ connected: false }),
+  pushToIntegration: vi.fn(),
+  PUSH_PROVIDERS: [
+    { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "CRM" },
+    { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "DB" },
+    { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Base" },
+    { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Channel" },
+  ],
+}));
+
 import { pushToAirtable } from "../lib/airtable.js";
 import { pushToNotion, fetchNotionSchema } from "../lib/notion.js";
 import { openInGoogleSheets } from "../lib/utils.js";
+import { getIntegrationStatus, pushToIntegration } from "../lib/integrationsClient.js";
 
 const sampleItems = [
   { id: "ext_a", url: "https://a.com", page_title: "A", host: "a.com", ai_summary: "s", created_at: "2026-07-19T00:00:00Z" },
@@ -38,7 +51,11 @@ const sampleItems = [
 
 function renderModal(overrides = {}) {
   const onClose = vi.fn();
-  const result = render(<ExportIntegrations items={sampleItems} onClose={onClose} {...overrides} />);
+  const result = render(
+    <MemoryRouter>
+      <ExportIntegrations items={sampleItems} onClose={onClose} {...overrides} />
+    </MemoryRouter>
+  );
   return { onClose, ...result };
 }
 
@@ -51,16 +68,22 @@ beforeEach(() => {
   pushToNotion.mockReset();
   fetchNotionSchema.mockReset();
   openInGoogleSheets.mockReset();
+  getIntegrationStatus.mockReset();
+  pushToIntegration.mockReset();
+  // Default: Slack is connected (most tests don't care; the Slack-specific
+  // tests override this to exercise the not-connected path).
+  getIntegrationStatus.mockResolvedValue({ connected: true, connection: { account_label: "Test channel" } });
 });
 
 describe("ExportIntegrations (F18)", () => {
-  it("renders the modal title and the three destination tabs", () => {
+  it("renders the modal title and the four destination tabs", () => {
     renderModal();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/Send to a destination/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Google Sheets/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Airtable/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Notion/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Slack/i })).toBeInTheDocument();
   });
 
   it("shows the row count in the subtitle", () => {
@@ -204,5 +227,59 @@ describe("ExportIntegrations (F18)", () => {
     const { onClose } = renderModal();
     fireEvent.click(screen.getByText(/Send to a destination/i));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  describe("Slack tab", () => {
+    it("shows the 'connected' status banner with the account label when Slack is set up", async () => {
+      const user = userEvent.setup();
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Slack/i }));
+      // Status banner shows account_label from the stored connection.
+      expect(await screen.findByText(/Connected as Test channel/i)).toBeInTheDocument();
+      // Send button is enabled.
+      expect(screen.getByRole("button", { name: /Post 2 messages to Slack/i })).toBeEnabled();
+    });
+
+    it("shows the 'not connected' banner + setup link when Slack has no webhook", async () => {
+      const user = userEvent.setup();
+      getIntegrationStatus.mockResolvedValue({ connected: false });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Slack/i }));
+      // The "not connected" banner appears.
+      expect(await screen.findByText(/Slack isn.t connected yet/i)).toBeInTheDocument();
+      // The setup link is rendered as a button (it navigates to /account#integrations).
+      expect(screen.getByRole("button", { name: /Set up a webhook in Account/i })).toBeInTheDocument();
+      // Send button is disabled.
+      expect(screen.getByRole("button", { name: /Post 2 messages to Slack/i })).toBeDisabled();
+    });
+
+    it("'Post N messages to Slack' calls pushToIntegration('slack', items) and closes on success", async () => {
+      const user = userEvent.setup();
+      pushToIntegration.mockResolvedValue({ ok: true, pushed: 2, total: 2, errors: [], failedRecords: [] });
+      const { onClose } = renderModal();
+      await user.click(screen.getByRole("tab", { name: /Slack/i }));
+      await user.click(screen.getByRole("button", { name: /Post 2 messages to Slack/i }));
+      await waitFor(() => expect(pushToIntegration).toHaveBeenCalledWith("slack", sampleItems));
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it("slack 412 (not connected) surfaces a structured error and keeps the modal open", async () => {
+      const user = userEvent.setup();
+      pushToIntegration.mockResolvedValue({
+        ok: false,
+        pushed: 0,
+        total: 2,
+        errors: ["Slack is not connected. Set a webhook URL in Account → Integrations."],
+        not_connected: true,
+        message: "Slack is not connected. Set a webhook URL in Account → Integrations.",
+      });
+      const { onClose } = renderModal();
+      await user.click(screen.getByRole("tab", { name: /Slack/i }));
+      await user.click(screen.getByRole("button", { name: /Post 2 messages to Slack/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/Slack is not connected. Set a webhook URL/i)).toBeInTheDocument();
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    });
   });
 });

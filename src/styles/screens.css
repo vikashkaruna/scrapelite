@@ -6625,6 +6625,27 @@
 .export-int-help code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: .82em; }
 .export-int-help strong { color: var(--text); }
 
+/* Inline status banner inside a pane (used for Slack's "connected /
+   not connected" indicator, but generic enough for any future
+   connection-gated destination). */
+.export-int-status {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: .85rem; line-height: 1.5;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.export-int-status-ok { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.export-int-status-ok > svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.export-int-status-warn { border-color: color-mix(in srgb, #f59e0b 45%, var(--border)); }
+.export-int-status-warn > svg { color: #f59e0b; flex-shrink: 0; margin-top: 2px; }
+.export-int-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; text-decoration: underline;
+}
+.export-int-link:hover { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+
 .export-int-steps { margin: 0; padding-left: 22px; color: var(--text-2); font-size: .85rem; line-height: 1.7; }
 .export-int-steps li::marker { color: var(--accent); font-weight: 700; }
 

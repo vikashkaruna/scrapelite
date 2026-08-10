@@ -44,7 +44,7 @@ import { emitNewExtraction, emitNewEnrichment, emitMonitoringAlert } from "./zap
  * The env exists for users who haven't connected; the moment a per-user
  * webhook is stored, it takes over.
  */
-async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
+export async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
   if (overrideUrl) return overrideUrl;
   if (userId) {
     try {
@@ -188,4 +188,4 @@ export async function notifyMonitoringChange({ userId, schedule, changedSummary 
   return { ok: true, ...result };
 }
 
-export const _internal = { buildSlackNewExtraction, resolveSlackWebhook, hostOf };
+export const _internal = { buildSlackNewExtraction, hostOf };

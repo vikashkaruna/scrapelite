@@ -6,10 +6,12 @@
 // in Supabase), and every subsequent push reuses those stored credentials
 // via this wrapper.
 //
-// Three providers are push-style (HubSpot, Notion, Airtable). The other
-// two integrations (Slack, Zapier) follow different shapes and are NOT
-// surfaced through this wrapper — Slack is a notification, Zapier is
-// event-driven.
+// Four providers are push-style (HubSpot, Notion, Airtable, Slack). Slack
+// is a notification channel — pushing posts ONE Block Kit message per
+// item to the user's per-user webhook — but the user-facing affordance
+// ("Push to Slack") lives in the same dropdown as the record-store
+// providers, so it's included here. Zapier is event-driven (the dispatcher
+// writes to zapier_events for polling) and is NOT in this list.
 //
 // Auth: every call uses the user's Supabase access token. We get it
 // from `supabase.auth.getSession()` so we never store or refresh it
@@ -18,11 +20,15 @@
 
 import { supabase } from "./supabaseClient.js";
 
-// The 3 push-style providers. Order = display order in the menu.
+// The 4 push-style providers. Order = display order in the menu.
+// Slack comes last because it's the most "ephemeral" destination — a
+// notification, not a record store — and the others are more common
+// workflows for power users.
 export const PUSH_PROVIDERS = [
-  { slug: "hubspot",  name: "HubSpot",  icon: "trending-up", desc: "Push company + contacts to your CRM" },
-  { slug: "notion",   name: "Notion",   icon: "bookmark",    desc: "Create pages in a database" },
-  { slug: "airtable", name: "Airtable", icon: "layers",      desc: "Add records to a base" },
+  { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "Push company + contacts to your CRM" },
+  { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "Create pages in a database" },
+  { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Add records to a base" },
+  { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Post a summary to your channel" },
 ];
 
 async function getAccessToken() {
@@ -81,6 +87,8 @@ export async function getPushProviderStatuses() {
 //   Notion   — single call, body { items: [...] }, uses stored databaseId
 //              and stored schema.
 //   Airtable — single call, body { items: [...] }, uses stored baseId/tableId.
+//   Slack    — single call, body { items: [...] }, server posts one
+//              Block Kit message per item to the user's per-user webhook.
 //
 // Returns the aggregated server response:
 //   { ok, pushed, total, errors: [...], failedRecords: [...] }
@@ -138,6 +146,46 @@ export async function pushToIntegration(slug, items) {
       return {
         ok: body.ok !== false,
         pushed: body.pushed ?? clean.length,
+        total: body.total ?? clean.length,
+        errors: body.errors || [],
+        failedRecords: body.failedRecords || [],
+      };
+    }
+
+    if (slug === "slack") {
+      // Slack: one POST with the full items list, server resolves the
+      // user's per-user webhook and posts one Block Kit message per item.
+      // Returns 412 with `{ error: "Slack is not connected…" }` when the
+      // user hasn't set up Slack — we surface that as a special-case
+      // error so the client can route to the setup page.
+      const { ok, body, status } = await authedFetch(`/api/integrations/slack/send`, {
+        method: "POST",
+        body: JSON.stringify({ items: clean }),
+      });
+      if (!ok) {
+        if (status === 412) {
+          return {
+            ok: false,
+            pushed: 0,
+            total: clean.length,
+            errors: [body?.error || "not_connected"],
+            failedRecords: [],
+            message: body?.error || "Slack is not connected.",
+            not_connected: true,
+          };
+        }
+        return {
+          ok: false,
+          pushed: 0,
+          total: clean.length,
+          errors: [body?.error || "push_failed"],
+          failedRecords: [],
+          message: body?.error || "Push failed",
+        };
+      }
+      return {
+        ok: body.ok !== false,
+        pushed: body.sent ?? clean.length,
         total: body.total ?? clean.length,
         errors: body.errors || [],
         failedRecords: body.failedRecords || [],

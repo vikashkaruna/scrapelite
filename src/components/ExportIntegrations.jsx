@@ -1,21 +1,26 @@
-// src/components/ExportIntegrations.jsx — F18 (export to Google Sheets / Airtable / Notion).
+// src/components/ExportIntegrations.jsx — F18 (export to Google Sheets / Airtable / Notion / Slack).
 //
 // Council intent: "Where extracted data actually lives for non-technical
 // personas; cheapest 'integrations' checkbox."
 //
-// A single modal that lets the user pick one of three destinations and
-// push their selected extractions. The three flows:
+// A single modal that lets the user pick one of four destinations and
+// push their selected extractions. The four flows:
 //
 //   1. Google Sheets — deep link (open a new sheet + download CSV).
 //      No credentials needed; the user uploads the CSV via Drive.
 //   2. Airtable      — API key + base + table, then POST records.
 //   3. Notion        — API key + database ID, then POST pages.
+//   4. Slack         — server posts one Block Kit summary message per
+//                      item to the user's per-user webhook (no client
+//                      credentials needed; Slack was set up at /account).
 //
 // Credentials are NOT persisted (they're sensitive PATs). Only the
 // non-secret parts of the config (Base ID, Table ID, Database ID,
-// schema map) survive across sessions.
+// schema map) survive across sessions. Slack doesn't take client-side
+// credentials at all — the server uses the stored per-user webhook.
 
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useToast } from "./Toast.jsx";
@@ -36,15 +41,18 @@ import {
   defaultNotionSchema,
   _internal as notionInternals,
 } from "../lib/notion.js";
+import { getIntegrationStatus, pushToIntegration } from "../lib/integrationsClient.js";
 
 const TABS = [
-  { key: "sheets",   label: "Google Sheets", icon: "sheet",         desc: "Open a new sheet, upload the downloaded CSV" },
-  { key: "airtable", label: "Airtable",      icon: "table",         desc: "Push records to a base you own" },
-  { key: "notion",   label: "Notion",        icon: "book-open",     desc: "Create pages in a database" },
+  { key: "sheets",   label: "Google Sheets", icon: "sheet",          desc: "Open a new sheet, upload the downloaded CSV" },
+  { key: "airtable", label: "Airtable",      icon: "table",          desc: "Push records to a base you own" },
+  { key: "notion",   label: "Notion",        icon: "book-open",      desc: "Create pages in a database" },
+  { key: "slack",    label: "Slack",         icon: "message-square", desc: "Post a summary message per row" },
 ];
 
 export default function ExportIntegrations({ items, onClose }) {
   const showToast = useToast();
+  const navigate = useNavigate();
   const list = Array.isArray(items) ? items.filter((x) => x && x._status !== "error") : [];
 
   const [tab, setTab] = useState("sheets");
@@ -57,6 +65,12 @@ export default function ExportIntegrations({ items, onClose }) {
   const [notion, setNotion] = useState(() => ({ ...readNotionConfig(), apiKey: "" }));
   const [notionSchema, setNotionSchema] = useState(null); // fetched from the API
   const [notionSchemaLoading, setNotionSchemaLoading] = useState(false);
+  // Slack — connection status only (no client-side creds; the server uses
+  // the stored per-user webhook). `null` = not yet fetched, `false` =
+  // not connected, `true` = connected.
+  const [slackConnected, setSlackConnected] = useState(null);
+  const [slackAccountLabel, setSlackAccountLabel] = useState(null);
+  const [slackStatusLoading, setSlackStatusLoading] = useState(false);
 
   // Esc closes the modal
   useEffect(() => {
@@ -67,6 +81,26 @@ export default function ExportIntegrations({ items, onClose }) {
 
   // Reset errors when switching tabs
   useEffect(() => { setErrors([]); }, [tab]);
+
+  // Fetch Slack connection status when the user opens the Slack tab.
+  // Lazy because the modal can stay open across many tab switches and
+  // the user doesn't pay the round-trip cost until they actually consider
+  // pushing to Slack. Re-fetches on tab open so a recent connect shows up
+  // without a hard reload.
+  useEffect(() => {
+    if (tab !== "slack") return;
+    let cancelled = false;
+    setSlackStatusLoading(true);
+    getIntegrationStatus("slack")
+      .then((s) => {
+        if (cancelled) return;
+        setSlackConnected(!!s?.connected);
+        setSlackAccountLabel(s?.connection?.account_label || null);
+      })
+      .catch(() => { if (!cancelled) setSlackConnected(false); })
+      .finally(() => { if (!cancelled) setSlackStatusLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab]);
 
   const totalCount = list.length;
   const isEmpty = totalCount === 0;
@@ -159,6 +193,39 @@ export default function ExportIntegrations({ items, onClose }) {
     }
   };
 
+  // ── Slack flow ──────────────────────────────────────────────────────────
+  // One Block Kit message per row, posted to the user's per-user webhook.
+  // We don't take any client-side credentials here — Slack was set up at
+  // /account#integrations and the server reuses the stored webhook.
+  const onSlackSend = async () => {
+    setErrors([]);
+    if (isEmpty) { setErrors(["No rows to push."]); return; }
+    if (slackConnected === false) {
+      setErrors(["Slack is not connected. Open Account → Integrations to set up a webhook first."]);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await pushToIntegration("slack", list);
+      if (result.ok) {
+        showToast(`Posted ${result.pushed} message${result.pushed !== 1 ? "s" : ""} to Slack.`, "check-circle");
+        onClose?.();
+      } else if (result.not_connected) {
+        // The server's 412 surfaced as a structured not_connected result.
+        // Refresh the local status so the UI reflects the truth, then
+        // route the user to the setup page on click of the inline link.
+        setSlackConnected(false);
+        setErrors([result.message || "Slack is not connected."]);
+      } else {
+        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
+      }
+    } catch (err) {
+      setErrors([err?.message || "Slack push failed"]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Close on backdrop click (not while busy).
   const onBackdrop = (e) => { if (e.target === e.currentTarget && !busy) onClose?.(); };
 
@@ -173,7 +240,7 @@ export default function ExportIntegrations({ items, onClose }) {
             <h2 id="export-int-title" className="export-int-title">Send to a destination</h2>
             <p className="export-int-sub">
               {totalCount > 0
-                ? `Push ${totalCount} selected row${totalCount !== 1 ? "s" : ""} to Google Sheets, Airtable, or Notion.`
+                ? `Push ${totalCount} selected row${totalCount !== 1 ? "s" : ""} to Google Sheets, Airtable, Notion, or Slack.`
                 : "Select rows on the previous screen first, then choose a destination."}
             </p>
           </div>
@@ -365,6 +432,67 @@ export default function ExportIntegrations({ items, onClose }) {
               </div>
               <p className="export-int-meta">
                 Notion API version {notionInternals.NOTION_VERSION}. Up to {notionInternals.MAX_REQUESTS_PER_PUSH} pages per push (Notion rate-limits aggressively).
+              </p>
+            </div>
+          )}
+
+          {tab === "slack" && (
+            <div className="export-int-pane">
+              <p className="export-int-help">
+                Post a Block Kit summary message to your Slack channel — one
+                message per selected row. No API key to enter; the server uses
+                the webhook you set up in Account → Integrations.
+              </p>
+
+              {slackStatusLoading && (
+                <div className="export-int-status">
+                  <Icon name="loader" size={14} className="push-int-spin" />
+                  <span> Checking Slack connection…</span>
+                </div>
+              )}
+
+              {!slackStatusLoading && slackConnected === true && (
+                <div className="export-int-status export-int-status-ok">
+                  <Icon name="check-circle" size={14} />
+                  <span>
+                    Connected{slackAccountLabel ? ` as ${slackAccountLabel}` : ""}.
+                    {" "}We&apos;ll post {totalCount} message{totalCount !== 1 ? "s" : ""} to your channel.
+                  </span>
+                </div>
+              )}
+
+              {!slackStatusLoading && slackConnected === false && (
+                <div className="export-int-status export-int-status-warn">
+                  <Icon name="alert-triangle" size={14} />
+                  <span>
+                    Slack isn&apos;t connected yet.{" "}
+                    <button
+                      type="button"
+                      className="export-int-link"
+                      onClick={() => { onClose?.(); navigate("/account#integrations"); }}
+                    >
+                      Set up a webhook in Account → Integrations
+                    </button>
+                    , then come back here.
+                  </span>
+                </div>
+              )}
+
+              <div className="export-int-actions">
+                <Button
+                  variant="primary"
+                  icon="message-square"
+                  onClick={onSlackSend}
+                  disabled={busy || isEmpty || slackConnected !== true}
+                  loading={busy}
+                >
+                  Post {totalCount > 0 ? totalCount : ""} message{totalCount !== 1 ? "s" : ""} to Slack
+                </Button>
+              </div>
+              <p className="export-int-meta">
+                Each message includes the page title, URL, host, and (when
+                available) the AI summary, plus a &quot;View in DatIQ&quot;
+                deep link.
               </p>
             </div>
           )}

@@ -8,11 +8,19 @@
 //   DELETE /api/integrations/slack/connect
 //   POST   /api/integrations/slack/test     { channel?: string }
 //   POST   /api/integrations/slack/notify   { type: "new_extraction" | "new_enrichment", payload }
+//   POST   /api/integrations/slack/send     { items: [extraction, ...] }
 //
 // v1 stores the Slack webhook URL per-user in integration_connections
 // (provider='slack', config.webhook_url). v1.0 also honours the global
 // SLACK_WEBHOOK_URL env var for self-hosted operators (this is what the
 // existing scheduled-runner uses for change alerts).
+//
+// /send is the on-demand "Push to Slack" path used by PushIntegrationMenu
+// and the ExportIntegrations modal. It only posts to Slack (no Zapier
+// fan-out — that path is for event-driven triggers, not explicit user
+// actions). Per-item failures are surfaced via failedRecords; the response
+// shape mirrors pushToIntegration so the client can render it the same way
+// as the other push providers.
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -21,7 +29,7 @@ import {
   deleteConnection,
 } from "./lib/integrationConnectionStore.js";
 import { postToSlack, buildSlackWelcomeMessage } from "./lib/slackFormatter.js";
-import { notifyExtractionComplete, buildSlackNewExtraction } from "./lib/notify.js";
+import { notifyExtractionComplete, buildSlackNewExtraction, resolveSlackWebhook } from "./lib/notify.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -145,6 +153,63 @@ async function handleNotify(event, userId) {
   return respond(400, { error: `Unknown notify type: ${type}` });
 }
 
+// On-demand "Push to Slack" — takes a list of items, posts one Block Kit
+// message per item to the user's per-user webhook (with env fallback),
+// and returns an aggregated { sent, total, failedRecords } response that
+// mirrors the other push providers so the client can render a uniform
+// toast.
+//
+// Distinct from /notify:
+//   • /notify is event-driven (fires on new_extraction, new_enrichment),
+//     and it ALSO emits a Zapier event per item. /send is explicit user
+//     action — Slack only, no Zapier fan-out.
+//   • /send is one call with N items; /notify is one call per event.
+async function handleSend(event, userId) {
+  const body = await readJsonBody(event);
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (items.length === 0) {
+    return respond(400, { error: "items must be a non-empty array" });
+  }
+
+  // Resolve the user's webhook once (single DB hit), then loop the posts.
+  // A null result means no Slack is configured — fail fast with the same
+  // 412 the /test endpoint uses, so the client UI can show the same
+  // "set up Slack first" message it already knows how to render.
+  const webhookUrl = await resolveSlackWebhook({ userId });
+  if (!webhookUrl) {
+    return respond(412, {
+      error: "Slack is not connected. Set a webhook URL in Account → Integrations.",
+    });
+  }
+
+  const failedRecords = [];
+  let sent = 0;
+  for (const item of items) {
+    const payload = buildSlackNewExtraction(item);
+    if (!payload) {
+      failedRecords.push({ url: item?.url || null, error: "invalid_item" });
+      continue;
+    }
+    const r = await postToSlack(payload, { webhookUrl });
+    if (r.ok) {
+      sent += 1;
+    } else {
+      failedRecords.push({
+        url: item?.url || null,
+        error: r.error || `slack_${r.status || "unknown"}`,
+      });
+    }
+  }
+
+  return respond(200, {
+    ok: failedRecords.length === 0,
+    sent,
+    total: items.length,
+    errors: failedRecords.map((r) => r.error),
+    failedRecords,
+  });
+}
+
 import { notifyEnrichmentComplete } from "./lib/notify.js";
 async function notifyEnrichmentCompleteSafe(args) {
   try { return await notifyEnrichmentComplete(args); }
@@ -194,6 +259,9 @@ export const handler = async (event) => {
   }
   if (event.httpMethod === "POST" && subPath[0] === "notify") {
     return handleNotify(event, userId);
+  }
+  if (event.httpMethod === "POST" && subPath[0] === "send") {
+    return handleSend(event, userId);
   }
 
   // Unknown sub-path. Log full context so the next session can diagnose

@@ -19,11 +19,12 @@ vi.mock("../functions/lib/integrationConnectionStore.js", () => ({
   deleteConnection: (...args) => mockStore.delete(...args),
 }));
 
-const mockNotify = { extract: vi.fn() };
+const mockNotify = { extract: vi.fn(), resolve: vi.fn() };
 vi.mock("../functions/lib/notify.js", () => ({
   notifyExtractionComplete: (...args) => mockNotify.extract(...args),
   notifyEnrichmentComplete: vi.fn(),
   buildSlackNewExtraction: vi.fn(() => ({ text: "x", blocks: [] })),
+  resolveSlackWebhook: (...args) => mockNotify.resolve(...args),
 }));
 
 import { handler } from "../functions/integrations-slack.js";
@@ -154,6 +155,113 @@ describe("integrations-slack", () => {
         body: JSON.stringify({ type: "unknown" }),
       }));
       expect(r.statusCode).toBe(400);
+    });
+  });
+
+  describe("POST /send (Push to Slack — on-demand fan-out)", () => {
+    it("returns 400 when items is missing or empty", async () => {
+      const r1 = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({}),
+      }));
+      expect(r1.statusCode).toBe(400);
+      const r2 = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({ items: [] }),
+      }));
+      expect(r2.statusCode).toBe(400);
+    });
+
+    it("returns 412 when Slack is not connected (no per-user webhook, no env)", async () => {
+      mockNotify.resolve.mockResolvedValue(null);
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({ items: [{ id: "e1", url: "https://x.com" }] }),
+      }));
+      expect(r.statusCode).toBe(412);
+      const body = JSON.parse(r.body);
+      expect(body.error).toMatch(/not connected/i);
+    });
+
+    it("posts one message per item and returns { ok, sent, total, failedRecords }", async () => {
+      mockNotify.resolve.mockResolvedValue("https://hooks.slack.com/x");
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({
+          items: [
+            { id: "e1", url: "https://a.com", page_title: "A" },
+            { id: "e2", url: "https://b.com", page_title: "B" },
+            { id: "e3", url: "https://c.com", page_title: "C" },
+          ],
+        }),
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+      expect(body.sent).toBe(3);
+      expect(body.total).toBe(3);
+      expect(body.failedRecords).toEqual([]);
+      // 3 Slack POSTs (one per item) + the connection-resolution lookup
+      // (mocked, no fetch) + the supabase getUser (mocked, no fetch).
+      const slackPosts = globalThis.fetch.mock.calls.filter(
+        (c) => String(c[0]) === "https://hooks.slack.com/x"
+      );
+      expect(slackPosts).toHaveLength(3);
+      // Every payload is a Block Kit message (text + blocks).
+      for (const call of slackPosts) {
+        const payload = JSON.parse(call[1].body);
+        expect(payload.blocks).toBeDefined();
+        expect(payload.text).toBeDefined();
+      }
+    });
+
+    it("surfaces per-item Slack failures in failedRecords (other items still post)", async () => {
+      mockNotify.resolve.mockResolvedValue("https://hooks.slack.com/x");
+      // First call succeeds, second fails. The handler should report 1
+      // sent + 1 failed instead of failing the whole batch.
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce({ ok: false, status: 429 });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({
+          items: [
+            { id: "e1", url: "https://a.com", page_title: "A" },
+            { id: "e2", url: "https://b.com", page_title: "B" },
+          ],
+        }),
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(false);
+      expect(body.sent).toBe(1);
+      expect(body.total).toBe(2);
+      expect(body.failedRecords).toHaveLength(1);
+      expect(body.failedRecords[0].url).toBe("https://b.com");
+      expect(body.failedRecords[0].error).toMatch(/slack_429/);
+    });
+
+    it("dispatches via body.action when sub-path is empty (Netlify-redirect-safe)", async () => {
+      // The previous fix (§16) made every handler accept body.action as
+      // the primary dispatch source. /send must work the same way.
+      mockNotify.resolve.mockResolvedValue("https://hooks.slack.com/x");
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        // no queryStringParameters.splat, no event.path tail — only the body
+        body: JSON.stringify({
+          action: "send",
+          items: [{ id: "e1", url: "https://a.com" }],
+        }),
+      }));
+      expect(r.statusCode).toBe(200);
+      expect(JSON.parse(r.body).sent).toBe(1);
     });
   });
 
