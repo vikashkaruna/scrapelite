@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { extractStructure } from "../lib/firecrawlService.js";
-import { summarize, categorizeLinks } from "../lib/aiService.js";
+import { summarize, categorizeLinks, generateContent, CONTENT_FORMATS } from "../lib/aiService.js";
 import { saveExtraction, updateEnrichments } from "../lib/extractionsRepo.js";
 import {
   readEnrichments,
@@ -233,6 +233,57 @@ export function ExtractionProvider({ children }) {
     return entry;
   });
 
+  // Generate content enrichment (one of CONTENT_FORMATS — SEO outline, competitor
+  // summary, social posts, compare, explain). Generates a markdown blob via
+  // aiService.generateContent, then stores it as a "content" kind enrichment
+  // entry so it shows up as a stacked tab like the structured enrichments.
+  // The content is wrapped in { text } so the same persistence path (local
+  // cache + Supabase) works unchanged; the renderer in Preview.jsx switches
+  // on entry.kind === "content" and shows the markdown + a Copy button
+  // instead of StructuredData.
+  const enrichWithContent = useCallbackSafe(async (url, format) => {
+    // Use the current extraction if the URL matches; otherwise synthesize a
+    // minimal one from the saved row (the caller is responsible for
+    // ensuring `current` is loaded for the URL — Preview.jsx does this).
+    const base = current && current.url === url ? current : { url };
+    const extraction = {
+      url: base.url,
+      page_title: base.page_title || "",
+      ai_summary: base.ai_summary || "",
+      headings: Array.isArray(base.headings) ? base.headings : [],
+    };
+    if (!extraction.url) {
+      throw new Error("enrichWithContent called without a current extraction for the URL");
+    }
+    const id = ++reqId.current;
+    const text = await generateContent(extraction, format);
+    if (reqId.current !== id) return null; // superseded
+    const entry = {
+      key: format.key,
+      label: format.label,
+      icon: format.icon,
+      prompt: format.instruction,
+      // Wrap in { text } so the persistence layer (localStorage + Supabase)
+      // can store it the same way as structured data; the renderer keys on
+      // the shape rather than a separate field.
+      data: { text: text || "" },
+      kind: "content",
+      created_at: new Date().toISOString(),
+    };
+    saveEnrichment(url, entry);
+    // Content generations also count against the AI enrichment quota so a
+    // single user can't loop "SEO outline" 1000× to exhaust the budget.
+    billing?.trackEnrichment?.(url);
+    const nextEnrichments = { ...(base.enrichments || {}), [format.key]: entry };
+    commitCurrent({ ...base, enrichments: nextEnrichments });
+    if (base._saved && base.id) {
+      updateEnrichments(base.id, nextEnrichments).catch((err) =>
+        console.warn("[DatIQ] Content enrichment sync failed:", err),
+      );
+    }
+    return entry;
+  });
+
   // Persist the current (or given) extraction.
   const save = async (data) => {
     const saved = await saveExtraction(data || current);
@@ -277,6 +328,7 @@ export function ExtractionProvider({ children }) {
     viewJob,
     extract,
     enrich,
+    enrichWithContent,
     save,
     view,
   };
