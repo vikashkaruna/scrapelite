@@ -6521,6 +6521,43 @@
 .export-dropdown-item b { display: block; }
 .export-dropdown-item .export-plan-hint { display: block; font-size: .72rem; color: var(--text-2); font-weight: 400; margin-top: 2px; }
 
+/* I-1 — "Push to" dropdown (server-side integrations on Preview + Dashboard) */
+.push-integration-menu { display: inline-flex; }
+.push-integration-menu .export-dropdown-menu { right: 0; top: calc(100% + 6px); }
+.push-int-menu { min-width: 280px; }
+.push-int-option { align-items: flex-start; gap: 10px; padding: 10px 12px; }
+.push-int-option-body { flex: 1; min-width: 0; }
+.push-int-option-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.push-int-option-head b { font-size: .92em; }
+.push-int-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: .68rem; font-weight: 600; line-height: 1.4;
+  letter-spacing: .01em;
+}
+.push-int-badge-ok {
+  background: color-mix(in srgb, var(--accent, #2f6df6) 14%, transparent);
+  color: var(--accent, #2f6df6);
+  border: 1px solid color-mix(in srgb, var(--accent, #2f6df6) 28%, transparent);
+}
+.push-int-badge-off {
+  background: color-mix(in srgb, var(--text-3, #888) 12%, transparent);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.push-int-foot {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; padding: 0 4px;
+  font-size: .72rem; color: var(--text-3);
+}
+.push-int-spin { animation: spin 1s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* I-1 — compact mode (inside SelectionBar) — same look as dash-float-btn siblings */
+.push-integration-menu.push-compact { display: inline-flex; }
+
 /* F18 — Export Integrations modal (Google Sheets / Airtable / Notion) */
 .export-int-overlay {
   position: fixed; inset: 0; z-index: 200;

@@ -22,6 +22,7 @@ import FeedbackWidget from "../components/FeedbackWidget.jsx";
 import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
+import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 
 function HeadingRow({ h }) {
@@ -447,6 +448,10 @@ export default function Preview() {
                 </div>
               )}
             </div>
+            <PushIntegrationMenu
+              items={current ? [current] : []}
+              buttonVariant="secondary"
+            />
             <div className="export-dropdown" ref={downloadRef}>
               <Button
                 variant="secondary"

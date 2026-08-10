@@ -9,6 +9,7 @@ import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import CollectionPicker from "../components/CollectionPicker.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
+import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -439,7 +440,7 @@ function CollectionFilter({ items, value, onChange }) {
 }
 
 // ── Floating selection action bar ─────────────────────────────────────────────
-function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo }) {
+function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPush, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo }) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
@@ -470,6 +471,14 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onCs
           <Icon name="mail" size={15} />
           <span>Email</span>
         </button>
+        {onPush && (
+          <PushIntegrationMenu
+            items={selectedItems}
+            buttonLabel={`Push ${count}`}
+            buttonVariant="ghost"
+            compact
+          />
+        )}
         <div className="dash-float-export" ref={exportRef}>
           <button className="dash-float-btn" onClick={() => setExportOpen((v) => !v)} title="Export selected">
             <Icon name="download" size={15} />
@@ -1157,6 +1166,7 @@ export default function Dashboard() {
           onClear={clearSelection}
           onGenerate={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}
           onEmail={() => selectedItems.length > 0 && setEmailOpen(true)}
+          onPush
           onCsv={onExportCsv}
           onPdf={onExportPdf}
           onMarkdown={onExportMarkdown}
