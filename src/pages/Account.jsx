@@ -594,6 +594,15 @@ export default function Account() {
 
           {/* Right column */}
           <div className="account-aside">
+            {/* Explore top-up bundles — moved to the top of the right
+                column (2026-08-11). It's the highest-ROI conversion CTA
+                on this page (users on free / starter plans need a clear
+                upgrade path before they engage with the coupon or white-
+                label features), so it gets prime real estate above both. */}
+            <Button variant="ghost" size="sm" icon="zap" fullWidth onClick={() => navigate("/pricing")}>
+              Explore top-up bundles
+            </Button>
+
             {/* White-label PDF template (Business + Agency, 2026-08-02) */}
             <WhiteLabelTemplateUploader
               userId={resolveTemplateUserId({ user })}
@@ -683,10 +692,6 @@ export default function Account() {
                 </div>
               )}
             </div>
-
-            <Button variant="ghost" size="sm" icon="zap" fullWidth onClick={() => navigate("/pricing")}>
-              Explore top-up bundles
-            </Button>
           </div>
         </div>
       </div>

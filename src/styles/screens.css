@@ -6321,6 +6321,61 @@
   font-size: .8rem; font-weight: 600; color: var(--text-2);
 }
 .ws-section { margin-top: 24px; }
+
+/* Workspace tab nav (Overview | Collections | Schedules) */
+.ws-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill, 999px);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-tabs::-webkit-scrollbar { display: none; }
+.ws-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  font-size: .88rem;
+  border-radius: var(--r-pill, 999px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease;
+}
+.ws-tab:hover { color: var(--text); background: var(--surface-2); }
+.ws-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-on-dark, #fff);
+}
+.ws-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.ws-tab-spin { display: inline-flex; align-items: center; opacity: .7; }
+.ws-tab-spin .spin { animation: ws-spin 1s linear infinite; }
+@keyframes ws-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
 .ws-section-title {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 1rem; font-weight: 700; margin: 0 0 12px;

@@ -120,6 +120,7 @@ export async function getPushProviderStatuses() {
 // Returns the aggregated server response:
 //   { ok, pushed, total, errors: [...], failedRecords: [...] }
 export async function pushToIntegration(slug, items) {
+
   if (!Array.isArray(items) || items.length === 0) {
     return { ok: false, error: "no_items", message: "No extractions to push." };
   }
@@ -241,6 +242,57 @@ export async function pushToIntegration(slug, items) {
   } catch (err) {
     if (err?.message === "not_signed_in") {
       return { ok: false, error: "not_signed_in", message: "Sign in to push to integrations." };
+    }
+    return { ok: false, error: "network", message: err?.message || "Network error" };
+  }
+}
+
+/**
+ * Partial update of a connection (rename, change IDs, refresh schema).
+ * Used by the ExportIntegrations modal when the user wants to:
+ *   - rename the connection (accountLabel)
+ *   - change Airtable Base/Table IDs (and re-fetch the schema)
+ *   - refresh the Airtable field map (refreshSchema: true)
+ *
+ * Returns { ok, ...providerSpecific } on success or { ok: false, error }
+ * on failure.
+ */
+export async function patchIntegrationConnection(slug, patch) {
+  try {
+    const { ok, body, status } = await authedFetch(`/api/integrations/${slug}/connect`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "connect", ...patch }),
+    });
+    if (!ok) {
+      return { ok: false, error: body?.error || `HTTP ${status}` };
+    }
+    return { ok: true, ...body };
+  } catch (err) {
+    if (err?.message === "not_signed_in") {
+      return { ok: false, error: "not_signed_in", message: "Sign in to update the connection." };
+    }
+    return { ok: false, error: "network", message: err?.message || "Network error" };
+  }
+}
+
+/**
+ * Test the connection — server uses the stored credentials to verify
+ * the integration is still wired up correctly. Returns the test result
+ * (e.g. for Airtable: { ok, tableName, fieldCount, matched, fieldMap }).
+ */
+export async function testIntegrationConnection(slug) {
+  try {
+    const { ok, body, status } = await authedFetch(`/api/integrations/${slug}/test`, {
+      method: "POST",
+      body: JSON.stringify({ action: "test" }),
+    });
+    if (!ok) {
+      return { ok: false, error: body?.error || `HTTP ${status}` };
+    }
+    return { ok: true, ...body };
+  } catch (err) {
+    if (err?.message === "not_signed_in") {
+      return { ok: false, error: "not_signed_in", message: "Sign in to test the connection." };
     }
     return { ok: false, error: "network", message: err?.message || "Network error" };
   }
