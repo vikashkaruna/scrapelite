@@ -1,49 +1,45 @@
-// src/components/ExportIntegrations.jsx — F18 (export to Google Sheets / Airtable / Notion / Slack).
+// ExportIntegrations.jsx — F18 (export to Google Sheets / HubSpot / Airtable / Notion / Slack).
 //
 // Council intent: "Where extracted data actually lives for non-technical
 // personas; cheapest 'integrations' checkbox."
 //
-// A single modal that lets the user pick one of four destinations and
-// push their selected extractions. The four flows:
+// A single modal that lets the user pick one of five destinations and
+// push their selected extractions. The five flows:
 //
 //   1. Google Sheets — deep link (open a new sheet + download CSV).
 //      No credentials needed; the user uploads the CSV via Drive.
-//   2. Airtable      — API key + base + table, then POST records.
-//   3. Notion        — API key + database ID, then POST pages.
-//   4. Slack         — server posts one Block Kit summary message per
+//   2. HubSpot      — server uses the stored Private App token; no
+//                      client-side form (one-click push).
+//   3. Airtable     — server uses the stored PAT + base/table IDs +
+//                      per-table field map (one-click push). If the
+//                      field_map hasn't been loaded yet, we show a
+//                      "Load columns" button that calls PATCH /connect
+//                      with refreshSchema:true to fetch + auto-map.
+//   4. Notion       — server uses the stored integration secret +
+//                      database ID + schema (one-click push).
+//   5. Slack        — server posts one Block Kit summary message per
 //                      item to the user's per-user webhook (no client
 //                      credentials needed; Slack was set up at /account).
 //
-// Credentials are NOT persisted (they're sensitive PATs). Only the
-// non-secret parts of the config (Base ID, Table ID, Database ID,
-// schema map) survive across sessions. Slack doesn't take client-side
-// credentials at all — the server uses the stored per-user webhook.
+// 2026-08-11 refactor: the four server-stored tabs (HubSpot, Airtable,
+// Notion, Slack) now share a single StatusGatedPushPane pattern. The
+// old API-key + Base/Table ID forms for Airtable/Notion are gone — the
+// user's credentials live server-side (set up once at /account#integrations)
+// and the push uses them. The schema-fetch + auto-map flow moved to
+// PATCH /connect on the server, so the modal just calls that endpoint
+// when the field_map is empty.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useToast } from "./Toast.jsx";
 import { openInGoogleSheets } from "../lib/utils.js";
 import {
-  pushToAirtable,
-  readAirtableConfig,
-  writeAirtableConfig,
-  validateAirtableConfig,
-  fetchAirtableSchema,
-  autoMapAirtableFields,
-  _internal as airtableInternals,
-} from "../lib/airtable.js";
-import {
-  pushToNotion,
-  fetchNotionSchema,
-  readNotionConfig,
-  writeNotionConfig,
-  validateNotionConfig,
-  defaultNotionSchema,
-  _internal as notionInternals,
-} from "../lib/notion.js";
-import { getIntegrationStatus, pushToIntegration } from "../lib/integrationsClient.js";
+  getIntegrationStatus,
+  pushToIntegration,
+  patchIntegrationConnection,
+} from "../lib/integrationsClient.js";
 
 const TABS = [
   { key: "sheets",   label: "Google Sheets", icon: "sheet",          desc: "Open a new sheet, upload the downloaded CSV" },
@@ -62,32 +58,25 @@ export default function ExportIntegrations({ items, onClose }) {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState([]);
 
-  // Airtable — we keep the API key in component state only (never persisted);
-  // the non-secret parts (Base ID, Table ID, fieldMap, tableMeta) come from
-  // localStorage so the user only re-pastes the PAT on each session.
-  const initialAirtable = useMemo(() => ({ ...readAirtableConfig(), apiKey: "" }), []);
-  const [airtable, setAirtable] = useState(initialAirtable);
-  // Schema state — `airtableSchema` is the field list returned by the
-  // Airtable Meta API; `airtableFieldMap` is the per-table mapping
-  // { AirtableColumnName: { key: extractionKey } } used by the push.
-  const [airtableSchema, setAirtableSchema] = useState(initialAirtable.tableMeta || null);
+  // Per-provider connection status. Lazy-loaded on tab open so we
+  // don't pay the round-trip cost on first paint. Each entry has the
+  // shape returned by GET /api/integrations/{slug}/status:
+  //   { connected: boolean, connection: { account_label, … } }
+  // `null` = not yet fetched.
+  const [providerStatus, setProviderStatus] = useState({
+    hubspot:  null,
+    airtable: null,
+    notion:   null,
+    slack:    null,
+  });
+  const [providerLoading, setProviderLoading] = useState({
+    hubspot:  false,
+    airtable: false,
+    notion:   false,
+    slack:    false,
+  });
+  // Airtable-specific: "Load columns" button state.
   const [airtableSchemaLoading, setAirtableSchemaLoading] = useState(false);
-  // Notion
-  const [notion, setNotion] = useState(() => ({ ...readNotionConfig(), apiKey: "" }));
-  const [notionSchema, setNotionSchema] = useState(null); // fetched from the API
-  const [notionSchemaLoading, setNotionSchemaLoading] = useState(false);
-  // Slack — connection status only (no client-side creds; the server uses
-  // the stored per-user webhook). `null` = not yet fetched, `false` =
-  // not connected, `true` = connected.
-  const [slackConnected, setSlackConnected] = useState(null);
-  const [slackAccountLabel, setSlackAccountLabel] = useState(null);
-  const [slackStatusLoading, setSlackStatusLoading] = useState(false);
-  // HubSpot — same shape as Slack: connection status only, server uses
-  // the stored Private App access token. Mirrors the Slack tab so the
-  // two "auth lives on the server" providers feel consistent.
-  const [hubspotConnected, setHubspotConnected] = useState(null);
-  const [hubspotAccountLabel, setHubspotAccountLabel] = useState(null);
-  const [hubspotStatusLoading, setHubspotStatusLoading] = useState(false);
 
   // Esc closes the modal
   useEffect(() => {
@@ -99,76 +88,27 @@ export default function ExportIntegrations({ items, onClose }) {
   // Reset errors when switching tabs
   useEffect(() => { setErrors([]); }, [tab]);
 
-  // When the user changes Base ID or Table ID, the in-memory schema/fieldMap
-  // is for the previous table and would 422 on push. The right behaviour
-  // depends on whether we already have a saved config for the new table:
-  //   - Yes → restore it into state (saved on a previous "Load columns")
-  //   - No  → clear and prompt the user to "Load columns"
-  // localStorage keeps per-table entries, so the previous table's saved
-  // map is preserved.
-  //
-  // We use a ref to skip the initial mount (which would otherwise re-run
-  // the effect on first render and wipe the just-loaded state).
-  const lastAirtableIdsRef = useRef({ baseId: initialAirtable.baseId, tableId: initialAirtable.tableId });
+  // Generic lazy-load for any server-stored provider. Fetches the
+  // status on tab open and updates the per-provider entry in state.
+  // Cancellable so a fast tab switch doesn't apply a stale result.
   useEffect(() => {
-    const prev = lastAirtableIdsRef.current;
-    if (prev.baseId === airtable.baseId && prev.tableId === airtable.tableId) return;
-    lastAirtableIdsRef.current = { baseId: airtable.baseId, tableId: airtable.tableId };
-    // Always update the "current" pointers in localStorage first.
-    writeAirtableConfig({ baseId: airtable.baseId, tableId: airtable.tableId });
-    // Look up the saved entry for the new (baseId, tableId).
-    const saved = readAirtableConfig();
-    if (saved.fieldMap) {
-      setAirtable((v) => ({ ...v, fieldMap: saved.fieldMap }));
-      setAirtableSchema(saved.tableMeta || null);
-    } else {
-      setAirtable((v) => ({ ...v, fieldMap: null }));
-      setAirtableSchema(null);
-    }
-  }, [airtable.baseId, airtable.tableId]);
-
-  // Fetch Slack connection status when the user opens the Slack tab.
-  // Lazy because the modal can stay open across many tab switches and
-  // the user doesn't pay the round-trip cost until they actually consider
-  // pushing to Slack. Re-fetches on tab open so a recent connect shows up
-  // without a hard reload.
-  useEffect(() => {
-    if (tab !== "slack") return;
+    if (tab === "sheets") return;
     let cancelled = false;
-    setSlackStatusLoading(true);
-    getIntegrationStatus("slack")
+    setProviderLoading((s) => ({ ...s, [tab]: true }));
+    getIntegrationStatus(tab)
       .then((s) => {
         if (cancelled) return;
-        setSlackConnected(!!s?.connected);
-        setSlackAccountLabel(s?.connection?.account_label || null);
+        setProviderStatus((p) => ({ ...p, [tab]: s }));
       })
-      .catch(() => { if (!cancelled) setSlackConnected(false); })
-      .finally(() => { if (!cancelled) setSlackStatusLoading(false); });
-    return () => { cancelled = true; };
-  }, [tab]);
-
-  // HubSpot — same lazy pattern as Slack. Kept in a separate effect so
-  // a HubSpot status failure doesn't surface as a Slack status failure
-  // (and so the per-tab loading spinners are independent).
-  useEffect(() => {
-    if (tab !== "hubspot") return;
-    let cancelled = false;
-    setHubspotStatusLoading(true);
-    getIntegrationStatus("hubspot")
-      .then((s) => {
-        if (cancelled) return;
-        setHubspotConnected(!!s?.connected);
-        setHubspotAccountLabel(s?.connection?.account_label || null);
-      })
-      .catch(() => { if (!cancelled) setHubspotConnected(false); })
-      .finally(() => { if (!cancelled) setHubspotStatusLoading(false); });
+      .catch(() => { if (!cancelled) setProviderStatus((p) => ({ ...p, [tab]: { connected: false } })); })
+      .finally(() => { if (!cancelled) setProviderLoading((s) => ({ ...s, [tab]: false })); });
     return () => { cancelled = true; };
   }, [tab]);
 
   const totalCount = list.length;
   const isEmpty = totalCount === 0;
 
-  // ── Google Sheets flow ─────────────────────────────────────────────────────
+  // ── Google Sheets flow (unchanged) ──────────────────────────────────────
   const onExportSheets = () => {
     if (isEmpty) return;
     openInGoogleSheets(list);
@@ -176,72 +116,26 @@ export default function ExportIntegrations({ items, onClose }) {
     onClose?.();
   };
 
-  // ── Airtable flow ─────────────────────────────────────────────────────────
-  // Load the table's column list from the Airtable Meta API. Builds a
-  // per-table field map and persists it so subsequent pushes use the
-  // user's actual column names (not the defaults like "URL" / "Title").
-  const onAirtableLoadSchema = async () => {
-    setErrors([]);
-    const validationErrors = validateAirtableConfig(airtable);
-    if (validationErrors.length) { setErrors(validationErrors); return; }
-    setAirtableSchemaLoading(true);
-    try {
-      const r = await fetchAirtableSchema({
-        apiKey: airtable.apiKey,
-        baseId: airtable.baseId,
-        tableId: airtable.tableId,
-      });
-      if (!r.ok) { setErrors([r.error || "Failed to load Airtable columns"]); return; }
-      const fieldMap = autoMapAirtableFields(r.fields);
-      setAirtableSchema({ tableName: r.tableName, fields: r.fields });
-      setAirtable((v) => ({ ...v, fieldMap }));
-      writeAirtableConfig({
-        baseId: airtable.baseId,
-        tableId: airtable.tableId,
-        fieldMap,
-        tableMeta: { tableName: r.tableName, fields: r.fields },
-      });
-      const matched = Object.keys(fieldMap).length;
-      const total = r.fields.length;
-      if (matched === 0) {
-        showToast(`Loaded ${total} column(s) from "${r.tableName || "table"}". No auto-matches — your table uses different names.`, "info");
-      } else if (matched < total) {
-        showToast(`Loaded ${total} column(s); auto-mapped ${matched}. The rest were skipped (no matching extraction field).`, "info");
-      } else {
-        showToast(`Loaded ${total} column(s) from "${r.tableName || "table"}" — all auto-mapped.`, "check-circle");
-      }
-    } catch (err) {
-      setErrors([err?.message || "Airtable schema fetch failed"]);
-    } finally {
-      setAirtableSchemaLoading(false);
-    }
-  };
-
+  // ── Airtable flow ──────────────────────────────────────────────────────
+  // One-click push using the server-stored PAT + base/table IDs +
+  // field_map. If the field_map is empty, the server's push handler
+  // falls back to a hard-coded default map (URL/Title/Host/Summary),
+  // which 422s on tables with different columns — so we surface a
+  // "Load columns" button when the field_map is missing.
   const onAirtablePush = async () => {
     setErrors([]);
-    const validationErrors = validateAirtableConfig(airtable);
-    if (validationErrors.length) { setErrors(validationErrors); return; }
     if (isEmpty) { setErrors(["No rows to push."]); return; }
     setBusy(true);
     try {
-      // Persist the non-secret parts (Base + Table IDs + fieldMap) for next time.
-      writeAirtableConfig({
-        baseId: airtable.baseId,
-        tableId: airtable.tableId,
-        fieldMap: airtable.fieldMap,
-        tableMeta: airtableSchema,
-      });
-      const result = await pushToAirtable(list, {
-        apiKey: airtable.apiKey,
-        baseId: airtable.baseId,
-        tableId: airtable.tableId,
-        fieldMap: airtable.fieldMap,
-      });
+      const result = await pushToIntegration("airtable", list);
       if (result.ok) {
-        showToast(`Pushed ${result.pushed} record(s) to Airtable.`, "check-circle");
+        showToast(`Pushed ${result.pushed} record${result.pushed !== 1 ? "s" : ""} to Airtable.`, "check-circle");
         onClose?.();
+      } else if (result.not_connected) {
+        setProviderStatus((p) => ({ ...p, airtable: { connected: false } }));
+        setErrors([result.message || "Airtable is not connected."]);
       } else {
-        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url}: ${r.error}`) || [])]);
+        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
       }
     } catch (err) {
       setErrors([err?.message || "Airtable push failed"]);
@@ -250,50 +144,57 @@ export default function ExportIntegrations({ items, onClose }) {
     }
   };
 
-  // ── Notion flow ──────────────────────────────────────────────────────────
-  const onNotionFetchSchema = async () => {
+  // "Load columns" — call PATCH /connect with refreshSchema:true so
+  // the server fetches the table schema and persists a per-table
+  // field_map. We re-fetch /status afterwards so the modal shows the
+  // new field_map_summary + matched count.
+  const onAirtableLoadSchema = async () => {
     setErrors([]);
-    const validationErrors = validateNotionConfig(notion);
-    if (validationErrors.length) { setErrors(validationErrors); return; }
-    setNotionSchemaLoading(true);
+    setAirtableSchemaLoading(true);
     try {
-      const r = await fetchNotionSchema({ apiKey: notion.apiKey, databaseId: notion.databaseId });
-      if (!r.ok) { setErrors([r.error || "Failed to load database schema"]); return; }
-      // Build a schema map: every Notion column → rich_text by default,
-      // title column gets type "title", url columns get "url".
-      const schema = {};
-      for (const [name, type] of Object.entries(r.properties || {})) {
-        schema[name] = { type, key: name === r.titleColumn ? "page_title" : mapColumnToKey(name) };
+      const r = await patchIntegrationConnection("airtable", { refreshSchema: true });
+      if (!r?.ok) {
+        setErrors([r?.error || "Failed to load Airtable columns"]);
+        return;
       }
-      setNotionSchema(schema);
-      writeNotionConfig({ databaseId: notion.databaseId, schema });
-      showToast(`Loaded schema for "${r.rawTitle || r.titleColumn}" (${Object.keys(schema).length} columns).`, "info");
+      const matched = r.matched ?? 0;
+      const total = r.fieldCount ?? r.fields?.length ?? 0;
+      const tableName = r.tableName || "table";
+      if (matched === 0) {
+        showToast(`Loaded ${total} column(s) from "${tableName}". None auto-matched — rename columns to URL/Title/Host/Summary, or pick a different table.`, "info");
+      } else if (matched < total) {
+        showToast(`Loaded ${total} column(s) from "${tableName}"; auto-mapped ${matched}.`, "info");
+      } else {
+        showToast(`Loaded ${total} column(s) from "${tableName}" — all auto-mapped.`, "check-circle");
+      }
+      // Re-fetch /status so the modal shows the new field_map_summary.
+      const s = await getIntegrationStatus("airtable");
+      setProviderStatus((p) => ({ ...p, airtable: s }));
     } catch (err) {
-      setErrors([err?.message || "Notion schema fetch failed"]);
+      setErrors([err?.message || "Airtable schema fetch failed"]);
     } finally {
-      setNotionSchemaLoading(false);
+      setAirtableSchemaLoading(false);
     }
   };
 
+  // ── Notion flow ────────────────────────────────────────────────────────
+  // One-click push using the stored integration secret + database ID +
+  // schema. The server's push handler reads the schema from the
+  // stored connection and maps extraction fields to Notion columns.
   const onNotionPush = async () => {
     setErrors([]);
-    const validationErrors = validateNotionConfig(notion);
-    if (validationErrors.length) { setErrors(validationErrors); return; }
     if (isEmpty) { setErrors(["No rows to push."]); return; }
     setBusy(true);
     try {
-      const schema = notionSchema || notion.schema || defaultNotionSchema();
-      writeNotionConfig({ databaseId: notion.databaseId, schema });
-      const result = await pushToNotion(list, {
-        apiKey: notion.apiKey,
-        databaseId: notion.databaseId,
-        schema,
-      });
+      const result = await pushToIntegration("notion", list);
       if (result.ok) {
-        showToast(`Pushed ${result.pushed} page(s) to Notion.`, "check-circle");
+        showToast(`Pushed ${result.pushed} page${result.pushed !== 1 ? "s" : ""} to Notion.`, "check-circle");
         onClose?.();
+      } else if (result.not_connected) {
+        setProviderStatus((p) => ({ ...p, notion: { connected: false } }));
+        setErrors([result.message || "Notion is not connected."]);
       } else {
-        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url}: ${r.error}`) || [])]);
+        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
       }
     } catch (err) {
       setErrors([err?.message || "Notion push failed"]);
@@ -302,48 +203,11 @@ export default function ExportIntegrations({ items, onClose }) {
     }
   };
 
-  // ── Slack flow ──────────────────────────────────────────────────────────
-  // One Block Kit message per row, posted to the user's per-user webhook.
-  // We don't take any client-side credentials here — Slack was set up at
-  // /account#integrations and the server reuses the stored webhook.
-  const onSlackSend = async () => {
-    setErrors([]);
-    if (isEmpty) { setErrors(["No rows to push."]); return; }
-    if (slackConnected === false) {
-      setErrors(["Slack is not connected. Open Account → Integrations to set up a webhook first."]);
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await pushToIntegration("slack", list);
-      if (result.ok) {
-        showToast(`Posted ${result.pushed} message${result.pushed !== 1 ? "s" : ""} to Slack.`, "check-circle");
-        onClose?.();
-      } else if (result.not_connected) {
-        // The server's 412 surfaced as a structured not_connected result.
-        // Refresh the local status so the UI reflects the truth, then
-        // route the user to the setup page on click of the inline link.
-        setSlackConnected(false);
-        setErrors([result.message || "Slack is not connected."]);
-      } else {
-        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
-      }
-    } catch (err) {
-      setErrors([err?.message || "Slack push failed"]);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // HubSpot — same shape as Slack: no client-side creds, server uses the
-  // stored Private App access token. The pushToIntegration wrapper
-  // already loops per-item (HubSpot's /push endpoint takes a single
-  // extraction, not a list) and aggregates failedRecords, so the
-  // result shape matches Slack and the error path is identical.
+  // ── HubSpot flow (unchanged) ───────────────────────────────────────────
   const onHubSpotPush = async () => {
     setErrors([]);
     if (isEmpty) { setErrors(["No rows to push."]); return; }
-    if (hubspotConnected === false) {
+    if (providerStatus.hubspot?.connected === false) {
       setErrors(["HubSpot is not connected. Open Account → Integrations to paste a Private App token first."]);
       return;
     }
@@ -354,7 +218,7 @@ export default function ExportIntegrations({ items, onClose }) {
         showToast(`Pushed ${result.pushed} record${result.pushed !== 1 ? "s" : ""} to HubSpot.`, "check-circle");
         onClose?.();
       } else if (result.not_connected) {
-        setHubspotConnected(false);
+        setProviderStatus((p) => ({ ...p, hubspot: { connected: false } }));
         setErrors([result.message || "HubSpot is not connected."]);
       } else {
         setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
@@ -366,8 +230,45 @@ export default function ExportIntegrations({ items, onClose }) {
     }
   };
 
+  // ── Slack flow (unchanged) ─────────────────────────────────────────────
+  const onSlackSend = async () => {
+    setErrors([]);
+    if (isEmpty) { setErrors(["No rows to push."]); return; }
+    if (providerStatus.slack?.connected === false) {
+      setErrors(["Slack is not connected. Open Account → Integrations to set up a webhook first."]);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await pushToIntegration("slack", list);
+      if (result.ok) {
+        showToast(`Posted ${result.pushed} message${result.pushed !== 1 ? "s" : ""} to Slack.`, "check-circle");
+        onClose?.();
+      } else if (result.not_connected) {
+        setProviderStatus((p) => ({ ...p, slack: { connected: false } }));
+        setErrors([result.message || "Slack is not connected."]);
+      } else {
+        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
+      }
+    } catch (err) {
+      setErrors([err?.message || "Slack push failed"]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Close on backdrop click (not while busy).
   const onBackdrop = (e) => { if (e.target === e.currentTarget && !busy) onClose?.(); };
+
+  // Build a "set up" link for the not-connected case. Closes the
+  // modal and navigates to the integrations section of /account.
+  const goToSetup = (providerName) => {
+    onClose?.();
+    navigate("/account#integrations");
+    // We don't show a toast here — the user is navigating with intent,
+    // and a toast would be redundant with the back-forward jump.
+    void providerName;
+  };
 
   return (
     <div className="export-int-overlay" onClick={onBackdrop} role="dialog" aria-modal="true" aria-labelledby="export-int-title">
@@ -440,300 +341,127 @@ export default function ExportIntegrations({ items, onClose }) {
           )}
 
           {tab === "airtable" && (
-            <div className="export-int-pane">
-              <p className="export-int-help">
-                Push rows as records in your Airtable base. You&apos;ll need a{" "}
-                <a href="https://airtable.com/create/tokens" target="_blank" rel="noopener noreferrer">Personal Access Token</a>
-                {" "}with <code>data.records:write</code> scope on the target base.
-              </p>
-              <div className="export-int-field">
-                <label htmlFor="airtable-key">API key</label>
-                <input
-                  id="airtable-key"
-                  type="password"
-                  autoComplete="off"
-                  placeholder="patXXXXXXXXXXXXXX..."
-                  value={airtable.apiKey}
-                  onChange={(e) => setAirtable((v) => ({ ...v, apiKey: e.target.value }))}
-                  disabled={busy}
-                />
-                <span className="export-int-hint">Never stored on our servers. Lost when you close this tab.</span>
-              </div>
-              <div className="export-int-row">
-                <div className="export-int-field">
-                  <label htmlFor="airtable-base">Base ID</label>
-                  <input
-                    id="airtable-base"
-                    type="text"
-                    placeholder="appXXXXXXXXXXXXXX"
-                    value={airtable.baseId}
-                    onChange={(e) => setAirtable((v) => ({ ...v, baseId: e.target.value }))}
-                    disabled={busy}
-                  />
-                </div>
-                <div className="export-int-field">
-                  <label htmlFor="airtable-table">Table ID</label>
-                  <input
-                    id="airtable-table"
-                    type="text"
-                    placeholder="tblXXXXXXXXXXXXXX"
-                    value={airtable.tableId}
-                    onChange={(e) => setAirtable((v) => ({ ...v, tableId: e.target.value }))}
-                    disabled={busy}
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  icon="refresh"
-                  onClick={onAirtableLoadSchema}
-                  loading={airtableSchemaLoading}
-                  disabled={busy || airtableSchemaLoading}
-                  title="Fetch your Airtable table's columns so we map fields correctly"
-                >
-                  Load columns
-                </Button>
-              </div>
-              {airtableSchema && (
-                <div className="export-int-schema">
-                  <div className="export-int-schema-head">
-                    <Icon name="check-circle" size={13} />
-                    Columns loaded{airtableSchema.tableName ? ` from "${airtableSchema.tableName}"` : ""} — {airtableSchema.fields?.length || 0} field{(airtableSchema.fields?.length || 0) !== 1 ? "s" : ""}
+            <StatusGatedPushPane
+              name="Airtable"
+              ctaNoun={{ singular: "record", plural: "records" }}
+              ctaVerb="Push"
+              loading={providerLoading.airtable}
+              status={providerStatus.airtable}
+              onGoToSetup={() => goToSetup("Airtable")}
+              totalCount={totalCount}
+              onPush={onAirtablePush}
+              busy={busy}
+              isEmpty={isEmpty}
+              // Airtable-specific: when the field_map is empty (a
+              // legacy connection that connected before the
+              // refreshSchema code shipped) the push will 422. We
+              // surface a "Load columns" button in that case.
+              renderExtra={(conn) => {
+                if (conn?.field_map && Object.keys(conn.field_map).length > 0) {
+                  return (
+                    <div className="export-int-status export-int-status-ok" style={{ marginTop: 0 }}>
+                      <Icon name="check-circle" size={14} />
+                      <span>
+                        Field map: {conn.field_map_summary || `${Object.keys(conn.field_map).length} column${Object.keys(conn.field_map).length !== 1 ? "s" : ""} mapped`}
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="export-int-status export-int-status-warn" style={{ marginTop: 0 }}>
+                    <Icon name="alert-triangle" size={14} />
+                    <span>
+                      No field map loaded yet.{" "}
+                      <button
+                        type="button"
+                        className="export-int-link"
+                        onClick={onAirtableLoadSchema}
+                        disabled={airtableSchemaLoading}
+                      >
+                        {airtableSchemaLoading ? "Loading…" : "Load columns"}
+                      </button>
+                      {" "}to fetch and auto-map your table&apos;s columns. Required before the first push.
+                    </span>
                   </div>
-                  {airtable.fieldMap && Object.keys(airtable.fieldMap).length > 0 ? (
-                    <ul className="export-int-schema-list">
-                      {Object.entries(airtable.fieldMap).map(([col, def]) => (
-                        <li key={col}>
-                          <strong>{col}</strong>
-                          <span className="export-int-schema-key">← {def?.key || "(unmapped)"}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="export-int-help" style={{ margin: 0 }}>
-                      None of your column names matched our default field names. Either
-                      rename your Airtable columns to <code>URL</code>, <code>Title</code>,
-                      <code> Host</code>, <code>Summary</code> — or paste the API key + IDs
-                      above to load the actual columns. (Airtable rejects field names it
-                      doesn&apos;t recognise — see the error below if the push failed.)
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="export-int-actions">
-                <Button
-                  variant="primary"
-                  icon="table"
-                  onClick={onAirtablePush}
-                  disabled={busy || isEmpty}
-                  loading={busy}
-                >
-                  Push {totalCount > 0 ? totalCount : ""} record{totalCount !== 1 ? "s" : ""} to Airtable
-                </Button>
-              </div>
-              <p className="export-int-meta">
-                Airtable caps at {airtableInternals.MAX_RECORDS_PER_REQUEST} records per request. We batch automatically (up to {airtableInternals.MAX_REQUESTS_PER_PUSH * airtableInternals.MAX_RECORDS_PER_REQUEST} records per push).
-              </p>
-            </div>
+                );
+              }}
+            />
           )}
 
           {tab === "notion" && (
-            <div className="export-int-pane">
-              <p className="export-int-help">
-                Create pages in a Notion database. You&apos;ll need an{" "}
-                <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer">Internal Integration Secret</a>
-                {" "}(<code>secret_…</code>) shared with the target database.
-              </p>
-              <div className="export-int-field">
-                <label htmlFor="notion-key">API key</label>
-                <input
-                  id="notion-key"
-                  type="password"
-                  autoComplete="off"
-                  placeholder="secret_XXXXXXXXXXXXXX..."
-                  value={notion.apiKey}
-                  onChange={(e) => setNotion((v) => ({ ...v, apiKey: e.target.value }))}
-                  disabled={busy}
-                />
-                <span className="export-int-hint">Never stored on our servers. Lost when you close this tab.</span>
-              </div>
-              <div className="export-int-field">
-                <label htmlFor="notion-db">Database ID</label>
-                <div className="export-int-row">
-                  <input
-                    id="notion-db"
-                    type="text"
-                    placeholder="32-char UUID (with or without dashes)"
-                    value={notion.databaseId}
-                    onChange={(e) => setNotion((v) => ({ ...v, databaseId: e.target.value }))}
-                    disabled={busy}
-                  />
-                  <Button
-                    variant="secondary"
-                    icon="refresh"
-                    onClick={onNotionFetchSchema}
-                    loading={notionSchemaLoading}
-                    disabled={busy || notionSchemaLoading}
-                    title="Fetch the database columns from Notion so we map fields correctly"
-                  >
-                    Load columns
-                  </Button>
-                </div>
-              </div>
-              {notionSchema && (
-                <div className="export-int-schema">
-                  <div className="export-int-schema-head">
-                    <Icon name="check-circle" size={13} />
-                    Schema loaded — {Object.keys(notionSchema).length} column{Object.keys(notionSchema).length !== 1 ? "s" : ""}
+            <StatusGatedPushPane
+              name="Notion"
+              ctaNoun={{ singular: "page", plural: "pages" }}
+              ctaVerb="Push"
+              loading={providerLoading.notion}
+              status={providerStatus.notion}
+              onGoToSetup={() => goToSetup("Notion")}
+              totalCount={totalCount}
+              onPush={onNotionPush}
+              busy={busy}
+              isEmpty={isEmpty}
+              renderExtra={(conn) => {
+                if (!conn) return null;
+                return (
+                  <div className="export-int-detail">
+                    {conn.database_id && (
+                      <div className="export-int-detail-line">
+                        <span className="export-int-detail-key">Database</span>
+                        <code className="export-int-detail-val">
+                          {conn.database_id.length > 14
+                            ? `${conn.database_id.slice(0, 8)}…${conn.database_id.slice(-4)}`
+                            : conn.database_id}
+                        </code>
+                      </div>
+                    )}
+                    {conn.title_column && (
+                      <div className="export-int-detail-line">
+                        <span className="export-int-detail-key">Title column</span>
+                        <span className="export-int-detail-val">{conn.title_column}</span>
+                      </div>
+                    )}
+                    {conn.column_count != null && (
+                      <div className="export-int-detail-line">
+                        <span className="export-int-detail-key">Columns</span>
+                        <span className="export-int-detail-val">{conn.column_count}</span>
+                      </div>
+                    )}
                   </div>
-                  <ul className="export-int-schema-list">
-                    {Object.entries(notionSchema).map(([name, def]) => (
-                      <li key={name}>
-                        <strong>{name}</strong> <span className="export-int-schema-type">{def.type}</span>
-                        <span className="export-int-schema-key">← {def.key}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="export-int-actions">
-                <Button
-                  variant="primary"
-                  icon="book-open"
-                  onClick={onNotionPush}
-                  disabled={busy || isEmpty}
-                  loading={busy}
-                >
-                  Push {totalCount > 0 ? totalCount : ""} page{totalCount !== 1 ? "s" : ""} to Notion
-                </Button>
-              </div>
-              <p className="export-int-meta">
-                Notion API version {notionInternals.NOTION_VERSION}. Up to {notionInternals.MAX_REQUESTS_PER_PUSH} pages per push (Notion rate-limits aggressively).
-              </p>
-            </div>
+                );
+              }}
+            />
           )}
 
           {tab === "hubspot" && (
-            <div className="export-int-pane">
-              <p className="export-int-help">
-                Push contacts and companies from your extractions to your
-                HubSpot CRM — one company + contact per row. No API key to
-                enter; the server uses the Private App token you set up in
-                Account → Integrations.
-              </p>
-
-              {hubspotStatusLoading && (
-                <div className="export-int-status">
-                  <Icon name="loader" size={14} className="push-int-spin" />
-                  <span> Checking HubSpot connection…</span>
-                </div>
-              )}
-
-              {!hubspotStatusLoading && hubspotConnected === true && (
-                <div className="export-int-status export-int-status-ok">
-                  <Icon name="check-circle" size={14} />
-                  <span>
-                    Connected{hubspotAccountLabel ? ` as ${hubspotAccountLabel}` : ""}.
-                    {" "}We&apos;ll create {totalCount} company + contact pair{totalCount !== 1 ? "s" : ""} in your CRM.
-                  </span>
-                </div>
-              )}
-
-              {!hubspotStatusLoading && hubspotConnected === false && (
-                <div className="export-int-status export-int-status-warn">
-                  <Icon name="alert-triangle" size={14} />
-                  <span>
-                    HubSpot isn&apos;t connected yet.{" "}
-                    <button
-                      type="button"
-                      className="export-int-link"
-                      onClick={() => { onClose?.(); navigate("/account#integrations"); }}
-                    >
-                      Paste a Private App token in Account → Integrations
-                    </button>
-                    , then come back here.
-                  </span>
-                </div>
-              )}
-
-              <div className="export-int-actions">
-                <Button
-                  variant="primary"
-                  icon="trending-up"
-                  onClick={onHubSpotPush}
-                  disabled={busy || isEmpty || hubspotConnected !== true}
-                  loading={busy}
-                >
-                  Push {totalCount > 0 ? totalCount : ""} record{totalCount !== 1 ? "s" : ""} to HubSpot
-                </Button>
-              </div>
-              <p className="export-int-meta">
-                Each row creates one company and one contact in HubSpot,
-                linked by the company name. Required scopes on your Private
-                App: <code>crm.objects.contacts.write</code> +{" "}
-                <code>crm.objects.companies.write</code>.
-              </p>
-            </div>
+            <StatusGatedPushPane
+              name="HubSpot"
+              ctaNoun={{ singular: "record", plural: "records" }}
+              ctaVerb="Push"
+              loading={providerLoading.hubspot}
+              status={providerStatus.hubspot}
+              onGoToSetup={() => goToSetup("HubSpot")}
+              totalCount={totalCount}
+              onPush={onHubSpotPush}
+              busy={busy}
+              isEmpty={isEmpty}
+              setupHint="Paste a Private App token in Account → Integrations"
+            />
           )}
 
           {tab === "slack" && (
-            <div className="export-int-pane">
-              <p className="export-int-help">
-                Post a Block Kit summary message to your Slack channel — one
-                message per selected row. No API key to enter; the server uses
-                the webhook you set up in Account → Integrations.
-              </p>
-
-              {slackStatusLoading && (
-                <div className="export-int-status">
-                  <Icon name="loader" size={14} className="push-int-spin" />
-                  <span> Checking Slack connection…</span>
-                </div>
-              )}
-
-              {!slackStatusLoading && slackConnected === true && (
-                <div className="export-int-status export-int-status-ok">
-                  <Icon name="check-circle" size={14} />
-                  <span>
-                    Connected{slackAccountLabel ? ` as ${slackAccountLabel}` : ""}.
-                    {" "}We&apos;ll post {totalCount} message{totalCount !== 1 ? "s" : ""} to your channel.
-                  </span>
-                </div>
-              )}
-
-              {!slackStatusLoading && slackConnected === false && (
-                <div className="export-int-status export-int-status-warn">
-                  <Icon name="alert-triangle" size={14} />
-                  <span>
-                    Slack isn&apos;t connected yet.{" "}
-                    <button
-                      type="button"
-                      className="export-int-link"
-                      onClick={() => { onClose?.(); navigate("/account#integrations"); }}
-                    >
-                      Set up a webhook in Account → Integrations
-                    </button>
-                    , then come back here.
-                  </span>
-                </div>
-              )}
-
-              <div className="export-int-actions">
-                <Button
-                  variant="primary"
-                  icon="message-square"
-                  onClick={onSlackSend}
-                  disabled={busy || isEmpty || slackConnected !== true}
-                  loading={busy}
-                >
-                  Post {totalCount > 0 ? totalCount : ""} message{totalCount !== 1 ? "s" : ""} to Slack
-                </Button>
-              </div>
-              <p className="export-int-meta">
-                Each message includes the page title, URL, host, and (when
-                available) the AI summary, plus a &quot;View in DatIQ&quot;
-                deep link.
-              </p>
-            </div>
+            <StatusGatedPushPane
+              name="Slack"
+              ctaNoun={{ singular: "message", plural: "messages" }}
+              ctaVerb="Post"
+              loading={providerLoading.slack}
+              status={providerStatus.slack}
+              onGoToSetup={() => goToSetup("Slack")}
+              totalCount={totalCount}
+              onPush={onSlackSend}
+              busy={busy}
+              isEmpty={isEmpty}
+              setupHint="Set up a webhook in Account → Integrations"
+            />
           )}
 
           {errors.length > 0 && (
@@ -750,17 +478,96 @@ export default function ExportIntegrations({ items, onClose }) {
   );
 }
 
-// Map a Notion column name to the extraction key it should pull from.
-// Best-effort heuristic — the user can re-map by editing the saved
-// schema (UI for that is out of scope for v1).
-function mapColumnToKey(name) {
-  const n = String(name).toLowerCase();
-  if (n === "url" || n === "link" || n === "source url" || n === "source") return "url";
-  if (n === "title" || n === "name" || n === "page title") return "page_title";
-  if (n === "host" || n === "domain") return "host";
-  if (n === "summary" || n === "ai summary" || n === "description") return "ai_summary";
-  if (n === "headings" || n === "h1/h2/h3") return "headings";
-  if (n === "links" || n === "all links") return "links";
-  if (n === "created" || n === "created at" || n === "date" || n === "added on") return "created_at";
-  return name; // fallback: use the column name as the extraction key
+// ── StatusGatedPushPane ──────────────────────────────────────────────────
+// The four server-stored tabs (HubSpot, Airtable, Notion, Slack) all
+// share the same shape: check status, show "connected" / "not
+// connected", and provide a one-click push. This component encapsulates
+// the pattern so each tab can stay tiny and the copy is consistent.
+//
+// Props:
+//   name:        provider display name (for the banner + CTA)
+//   ctaNoun:     { singular, plural } — what one row produces on the
+//                destination (record/records, page/pages, message/messages)
+//   ctaVerb:     "Push" | "Post" — the action verb in the CTA
+//   loading:     boolean — true while status is being fetched
+//   status:      { connected, connection: { account_label, ... } } | null
+//   onGoToSetup: () => void — navigate to /account#integrations
+//   totalCount:  number of rows to push
+//   onPush:      () => void — handler for the push button
+//   busy:        boolean — push in flight
+//   isEmpty:     boolean — no rows selected
+//   setupHint:   string — "Set up a webhook in Account → Integrations"
+//   renderExtra: (conn) => ReactNode — provider-specific detail block
+//                 (e.g. Airtable's field-map, Notion's database ID)
+function StatusGatedPushPane({
+  name, ctaNoun, ctaVerb = "Push", loading, status, onGoToSetup, totalCount,
+  onPush, busy, isEmpty, setupHint, renderExtra,
+}) {
+  const isConnected = status?.connected === true;
+  const accountLabel = status?.connection?.account_label;
+  const isLoadingStatus = loading && !status; // initial load only; refetches don't show the spinner
+  const noun = ctaNoun || { singular: "record", plural: "records" };
+  const ctaLabel = `${ctaVerb} ${totalCount > 0 ? totalCount : ""} ${totalCount === 1 ? noun.singular : noun.plural} to ${name}`;
+
+  if (isLoadingStatus) {
+    return (
+      <div className="export-int-pane">
+        <div className="export-int-status">
+          <Icon name="loader" size={14} className="push-int-spin" />
+          <span> Checking {name} connection…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConnected) {
+    return (
+      <div className="export-int-pane">
+        <p className="export-int-help">
+          No API key to enter — your {name} connection lives in{" "}
+          <strong>Account → Integrations</strong>. Set it up once and every
+          future push just works.
+        </p>
+        <div className="export-int-status export-int-status-warn">
+          <Icon name="alert-triangle" size={14} />
+          <span>
+            {name} isn&apos;t connected yet.{" "}
+            <button type="button" className="export-int-link" onClick={onGoToSetup}>
+              {setupHint || `Set up ${name} in Account → Integrations`}
+            </button>
+            , then come back here.
+          </span>
+        </div>
+        <div className="export-int-actions">
+          <Button variant="primary" icon="trending-up" disabled>
+            {ctaLabel}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="export-int-pane">
+      <p className="export-int-help">
+        Connected{accountLabel ? ` as ${accountLabel}` : ""}. We&apos;ll {ctaVerb.toLowerCase()} {totalCount} {totalCount === 1 ? noun.singular : noun.plural} using the credentials you set up in Account → Integrations.
+      </p>
+      <div className="export-int-status export-int-status-ok">
+        <Icon name="check-circle" size={14} />
+        <span>Connected{accountLabel ? ` as ${accountLabel}` : ""}.</span>
+      </div>
+      {renderExtra && renderExtra(status.connection)}
+      <div className="export-int-actions">
+        <Button
+          variant="primary"
+          icon="trending-up"
+          onClick={onPush}
+          disabled={busy || isEmpty}
+          loading={busy}
+        >
+          {ctaLabel}
+        </Button>
+      </div>
+    </div>
+  );
 }

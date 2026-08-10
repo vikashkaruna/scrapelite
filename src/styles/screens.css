@@ -6702,6 +6702,38 @@
   color: var(--accent); font: inherit; text-decoration: underline;
 }
 .export-int-link:hover { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.export-int-link:disabled { color: var(--text-3); cursor: not-allowed; }
+
+/* Per-provider detail block (Notion's database_id, title column,
+   column count; Airtable's field_map summary chip). Mirrors the
+   Account page's .int-row-detail pattern so the two surfaces feel
+   consistent. */
+.export-int-detail {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: .82rem; color: var(--text-2);
+  margin-top: -4px;
+}
+.export-int-detail-line {
+  display: flex; align-items: baseline; gap: 8px;
+  flex-wrap: wrap;
+}
+.export-int-detail-key {
+  color: var(--text-3);
+  font-weight: 600;
+  min-width: 110px;
+  font-size: .92em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.export-int-detail-val {
+  color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .98em;
+}
+.export-int-detail-line .export-int-detail-val:not(code) {
+  font-family: inherit;
+  font-size: 1em;
+}
 
 .export-int-steps { margin: 0; padding-left: 22px; color: var(--text-2); font-size: .85rem; line-height: 1.7; }
 .export-int-steps li::marker { color: var(--accent); font-weight: 700; }
