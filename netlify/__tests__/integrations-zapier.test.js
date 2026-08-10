@@ -61,6 +61,65 @@ describe("integrations-zapier", () => {
       expect(r.statusCode).toBe(401);
     });
 
+    // Regression: Zapier's Visual Builder frequently misclassifies a JSON
+    // `custom` auth as `api_key` auth on import, which sends the token
+    // as `?api_key=<token>` instead of the X-Zapier-Token header. The
+    // test endpoint now accepts both, so a "Connection failed" 401 in
+    // Zapier's UI is no longer a death sentence — it just means we need
+    // to know about the visual-builder quirk.
+    it("GET /test accepts the token via ?api_key query param (Zapier 'API Key' auth mode)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(
+        JSON.stringify([{ id: "c1", user_id: "u1", config: { token_hash: TOKEN_HASH } }]),
+        { status: 200 },
+      ));
+      globalThis.fetch = fetchMock;
+      const r = await handler(baseEvent({
+        // No X-Zapier-Token header — the visual builder never sets it
+        // when the auth was classified as "API Key" on import.
+        queryStringParameters: { splat: "test", api_key: TOKEN },
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+    });
+
+    it("GET /test accepts the token via ?token query param (some custom templates)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(
+        JSON.stringify([{ id: "c1", user_id: "u1", config: { token_hash: TOKEN_HASH } }]),
+        { status: 200 },
+      ));
+      globalThis.fetch = fetchMock;
+      const r = await handler(baseEvent({
+        queryStringParameters: { splat: "test", token: TOKEN },
+      }));
+      expect(r.statusCode).toBe(200);
+    });
+
+    it("GET /test prefers the X-Zapier-Token header over the query-param fallbacks", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(
+        JSON.stringify([{ id: "c1", user_id: "u1", config: { token_hash: TOKEN_HASH } }]),
+        { status: 200 },
+      ));
+      globalThis.fetch = fetchMock;
+      const r = await handler(baseEvent({
+        headers: { "x-zapier-token": TOKEN },
+        queryStringParameters: { splat: "test", api_key: "wrong-zap-token" },
+      }));
+      expect(r.statusCode).toBe(200);
+    });
+
+    it("GET /test returns 401 with a helpful error when no token is present at all", async () => {
+      const r = await handler(baseEvent({
+        queryStringParameters: { splat: "test" },
+      }));
+      expect(r.statusCode).toBe(401);
+      const body = JSON.parse(r.body);
+      // The error message lists all three accepted locations so a user
+      // debugging from the dashboard knows what to look for.
+      expect(body.error).toMatch(/X-Zapier-Token/);
+      expect(body.error).toMatch(/api_key/);
+    });
+
     it("GET /test returns 200 when the token matches a stored hash", async () => {
       const fetchMock = vi.fn().mockResolvedValue(new Response(
         JSON.stringify([{ id: "c1", user_id: "u1", config: { token_hash: TOKEN_HASH } }]),

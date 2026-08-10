@@ -96,6 +96,39 @@ function generateZapierToken() {
 
 // ── Public (Zapier-side) handlers ─────────────────────────────────────────
 
+/**
+ * Extract the Zapier token from the request. Zapier's Visual Builder
+ * auto-detects the auth mode when a user imports the JSON, and the
+ * result is inconsistent: "Custom" mode puts the field in a header
+ * (the way the JSON says), but the Builder also offers "API Key"
+ * mode, which sends the field as `?api_key=<token>` — and if the user
+ * imports the JSON and the Builder misclassifies it (it does this
+ * often — see §19 of the integration handoff), the token lands in
+ * the URL as a query parameter instead of the X-Zapier-Token header.
+ *
+ * We accept all three locations so the visual-builder quirk doesn't
+ * translate into a useless 401 on a perfectly valid token:
+ *   1. `X-Zapier-Token` header (the spec-compliant path)
+ *   2. `?api_key=<token>` query parameter (Zapier "API Key" auth)
+ *   3. `?token=<token>` query parameter (some custom templates)
+ *
+ * The X-Zapier-Token header remains the preferred path (it doesn't
+ * end up in proxy access logs the way a query string does). The
+ * query-param fallbacks are pure compatibility shims for the visual
+ * builder.
+ */
+function extractZapierToken(event) {
+  const headers = event.headers || {};
+  const query = event.queryStringParameters || {};
+  return (
+    headers["x-zapier-token"] ||
+    headers["X-Zapier-Token"] ||
+    query.api_key ||
+    query.token ||
+    null
+  );
+}
+
 async function verifyZapierToken(plaintext) {
   if (!plaintext || !plaintext.startsWith("zap_")) return { ok: false, error: "malformed_token" };
   const tokenHash = hashToken(plaintext);
@@ -127,16 +160,16 @@ async function verifyZapierToken(plaintext) {
 }
 
 async function handleTest(event) {
-  const token = event.headers?.["x-zapier-token"] || event.headers?.["X-Zapier-Token"];
-  if (!token) return respond(401, { error: 'Missing "X-Zapier-Token" header.' });
+  const token = extractZapierToken(event);
+  if (!token) return respond(401, { error: 'Missing Zapier token (X-Zapier-Token header, ?api_key, or ?token query param).' });
   const v = await verifyZapierToken(token);
   if (!v.ok) return respond(401, { error: v.error });
   return respond(200, { ok: true });
 }
 
 async function handlePoll(event) {
-  const token = event.headers?.["x-zapier-token"] || event.headers?.["X-Zapier-Token"];
-  if (!token) return respond(401, { error: 'Missing "X-Zapier-Token" header.' });
+  const token = extractZapierToken(event);
+  if (!token) return respond(401, { error: 'Missing Zapier token (X-Zapier-Token header, ?api_key, or ?token query param).' });
   const v = await verifyZapierToken(token);
   if (!v.ok) return respond(401, { error: v.error });
 
@@ -186,8 +219,8 @@ function handleActionsList() {
 }
 
 async function handleAction(event) {
-  const token = event.headers?.["x-zapier-token"] || event.headers?.["X-Zapier-Token"];
-  if (!token) return respond(401, { error: 'Missing "X-Zapier-Token" header.' });
+  const token = extractZapierToken(event);
+  if (!token) return respond(401, { error: 'Missing Zapier token (X-Zapier-Token header, ?api_key, or ?token query param).' });
   const v = await verifyZapierToken(token);
   if (!v.ok) return respond(401, { error: v.error });
 
