@@ -1151,3 +1151,190 @@ src/styles/screens.css                       +20
    `failedRecords` with the upstream Slack error code. The UI
    surfaces the first 3 in the errors block at the bottom of the
    modal — paste that into the next session for diagnosis.
+
+---
+
+## 19. Zapier "Connect" — fix the 400 on token generation (78b7f94, 2f8bbde) — 2026-08-10 ~16:45 IST
+
+**Shipped:** Account → Integrations → Zapier now actually mints a
+token when you click "Connect Zapier".
+
+### What the user reported
+
+> The Account -> Integration -> Zapier does not allow generating
+> token to connect with Zapier.
+>
+> Connect Zapier
+> Generate a DatIQ Zapier token. Paste it into Zapier when
+> installing the DatIQ private app.
+> Provide either { token } to store an existing token, or {
+> regenerate: true } to mint a new one.
+> Action*  [Generate a new token ▼] / [Replace the existing token]
+> The plaintext token is shown ONCE. Copy it into Zapier
+> immediately. DatIQ stores only the SHA-256 hash.
+> [Cancel] [Connect Zapier]
+
+The "Provide either { token } to store an existing token, or {
+regenerate: true } to mint a new one." text is the **server's
+400 error message** rendered into the modal as the error banner.
+The user did exactly what the modal asked — picked "Generate a
+new token" and clicked Connect — and got the server yelling at
+them.
+
+### Root cause (semantic label/value mismatch)
+
+The Zapier provider config in `IntegrationConnectModal.jsx` had a
+`select` with two options:
+
+```js
+options: [
+  { value: "generate",    label: "Generate a new token" },
+  { value: "regenerate",  label: "Replace the existing token" },
+],
+```
+
+The submit handler mapped:
+
+```js
+const regen = values._regenerate === "regenerate";
+body = { regenerate: regen };
+```
+
+So:
+- "Generate a new token" (the default!) → `body.regenerate = false`
+- "Replace the existing token" → `body.regenerate = true`
+
+The server requires `regenerate === true` to mint:
+
+```js
+const regenerate = body?.regenerate === true;
+if (!regenerate && !body?.token) {
+  return respond(400, { error: "Provide either { token } to store an existing token, or { regenerate: true } to mint a new one." });
+}
+```
+
+So the **default option** the user picked sent `regenerate: false`
+and the server correctly rejected it. Only "Replace the existing
+token" actually worked, which is a terrible UX because that label
+implies the user already HAS a token to replace.
+
+### Why the labels were swapped
+
+This is what the previous commit author must have thought:
+- "Generate" = first-time, no existing token → don't regenerate
+- "Regenerate" = replace existing → do regenerate
+
+But the server only knows two paths: mint-a-new (`regenerate: true`)
+or store-an-explicit-existing-token (`regenerate: false, token: "..."`).
+The "Generate" path on the client meant "I have no existing token,
+please don't regenerate" which the server interpreted as "I want to
+store an existing token but didn't provide one" → 400.
+
+There was no third path that mapped cleanly to "mint a new one even
+though I don't have an existing one."
+
+### Both client options did the same thing
+
+On the server, when `regenerate: true`, the code mints a fresh
+`zap_<base64url>` token and upserts the connection (PATCH first,
+INSERT fallback), so any previous `token_hash` is overwritten. The
+two client options differed only in the false/true boolean; both
+ultimately resulted in a new token. The select was theatre.
+
+The "store an existing token" server path (`regenerate: false,
+token: "..."`) was reachable only by direct API calls — no UI input
+existed for it.
+
+### The fix (3 files, 1 commit)
+
+1. **`IntegrationConnectModal.jsx` — Zapier provider simplified**
+
+   `fields: []`, no select, no input. The submit handler always
+   sends `{ regenerate: true, action: "connect" }` for Zapier,
+   regardless of any form state. A standalone help paragraph
+   explains that every connect mints a fresh token and invalidates
+   any previous one.
+
+2. **`styles/screens.css` — `.icm-help-standalone`**
+
+   Slightly larger than a field hint, used when a provider has no
+   fields (Zapier is the only one today; future providers like
+   Discord or a Webhook might follow the same shape).
+
+3. **`src/components/IntegrationConnectModal.test.jsx` — new test
+   file** with 5 tests focused on the Zapier flow:
+
+   - Renders no `<select>`, just the standalone help text
+   - Submit POSTs `{ regenerate: true, action: "connect" }` and
+     never the old `{ _regenerate, token }` shape
+   - Success shows the mint-once copy-box with the new plaintext
+   - Server 400 surfaces inline (no thrown exception)
+   - Rejects with "must be signed in" when no session
+
+### What I deliberately didn't change
+
+The "store an existing token" path is still in `handleConnect` —
+it accepts `body.token` and stores its hash without echoing the
+plaintext back. The Zapier server tests (4 of them in
+`netlify/__tests__/integrations-zapier.test.js`) still pass
+without modification.
+
+Removing that server path would be a wider blast radius than the
+user asked for. The 4 existing tests pin its behavior, and any
+future client (e.g. a migration tool, a CLI) might want to use it.
+The modal change is sufficient and self-contained.
+
+### Files changed in §19
+
+```
+src/components/IntegrationConnectModal.jsx       +24/-16
+src/components/IntegrationConnectModal.test.jsx  +180  (new)
+src/styles/screens.css                            +4
+```
+
+### Test count after this commit
+
+| Suite | Files | Tests |
+|---|---|---|
+| `npm run test:contract` (netlify) | 57 passed | 898 passed / 14 skipped |
+| `npm run test:unit` (src + scripts) | 105 passed | 1656 passed |
+| `npm run test:integration` (excluding pre-existing invoice failures) | 40 passed | 270 passed |
+
+The 6 `Account.invoices.integration.test.jsx` failures remain
+pre-existing and unrelated.
+
+### Final session state (16:45 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `2f8bbde` (chore: trigger fresh branch redeploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `2f8bbde…` |
+| Build status | ✅ live (32s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on |
+| Zapier connect flow | ✅ click → POST { regenerate: true } → copy token box |
+| Async ops | none pending |
+
+### Next session entry point
+
+1. **Hard-reload** the branch deploy, sign in
+2. **Verify the fix**: open Account → Integrations → click
+   "Connect" on the Zapier row → confirm the modal shows no
+   "Generate vs Replace" select, just a help paragraph and a
+   "Connect Zapier" button
+3. **Click Connect Zapier**: should mint a `zap_...` token and
+   show it in a copy-box. Click "Copy" and paste it into Zapier
+   when installing the DatIQ private app.
+4. **If the error still appears**: the modal will show the server's
+   response in the error banner. The most likely cause now is the
+   `body.action` dispatch (the §15/§16 fix) failing — paste the
+   new error string into the next session and the diagnostic will
+   point to which leg (body / query / path) is broken.
+5. **If the token mints but the copy box doesn't show**: check
+   the browser console for a `data.token` reference in the
+   response. The modal shows the copy box only if
+   `data.token` is truthy; the server is required to include it on
+   mint but if the JSON is malformed the modal will silently fall
+   through to the generic "Connected" pane.
