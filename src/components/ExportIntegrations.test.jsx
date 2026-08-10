@@ -10,6 +10,7 @@ vi.mock("../lib/airtable.js", async () => {
   return {
     ...actual,
     pushToAirtable: vi.fn(),
+    fetchAirtableSchema: vi.fn(),
   };
 });
 vi.mock("../lib/notion.js", async () => {
@@ -39,7 +40,7 @@ vi.mock("../lib/integrationsClient.js", () => ({
   ],
 }));
 
-import { pushToAirtable } from "../lib/airtable.js";
+import { pushToAirtable, fetchAirtableSchema } from "../lib/airtable.js";
 import { pushToNotion, fetchNotionSchema } from "../lib/notion.js";
 import { openInGoogleSheets } from "../lib/utils.js";
 import { getIntegrationStatus, pushToIntegration } from "../lib/integrationsClient.js";
@@ -66,6 +67,7 @@ beforeEach(() => {
   } catch {}
   pushToAirtable.mockReset();
   pushToNotion.mockReset();
+  fetchAirtableSchema.mockReset();
   fetchNotionSchema.mockReset();
   openInGoogleSheets.mockReset();
   getIntegrationStatus.mockReset();
@@ -180,6 +182,127 @@ describe("ExportIntegrations (F18)", () => {
     await user.click(screen.getByRole("button", { name: /Push .* record/i }));
     await waitFor(() => {
       expect(screen.getByText(/422 INVALID_VALUE_FOR_COLUMN/i)).toBeInTheDocument();
+    });
+  });
+
+  // REGRESSION GUARD — 2026-08-11:
+  //   User's Airtable table uses column names like "Link" / "Name" instead
+  //   of "URL" / "Title". Airtable returned 422 "Unknown field name: URL"
+  //   and the modal showed "7 record(s) failed" with no actionable hint.
+  //   The fix: a "Load columns" button that fetches the table's actual
+  //   field list, auto-maps it to extraction keys, and the subsequent push
+  //   uses the user's column names (not the hard-coded defaults).
+  describe("Airtable 'Load columns' schema flow (2026-08-11 regression)", () => {
+    it("'Load columns' button is visible on the Airtable tab", async () => {
+      const user = userEvent.setup();
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+      expect(screen.getByRole("button", { name: /Load columns/i })).toBeInTheDocument();
+    });
+
+    it("clicking 'Load columns' calls fetchAirtableSchema and shows the auto-mapped columns", async () => {
+      const user = userEvent.setup();
+      fetchAirtableSchema.mockResolvedValue({
+        ok: true,
+        tableName: "My Research",
+        tableId: "tblABCDEFGHIJK",
+        fields: [
+          { name: "Link", type: "url" },
+          { name: "Name", type: "singleLineText" },
+          { name: "Notes", type: "multilineText" },
+        ],
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+      await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+      await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+      await user.type(screen.getByLabelText(/Table ID/i), "tblABCDEFGHIJK");
+      await user.click(screen.getByRole("button", { name: /Load columns/i }));
+      await waitFor(() => {
+        expect(fetchAirtableSchema).toHaveBeenCalledWith(expect.objectContaining({
+          apiKey: "patABCDEFGHIJKLMNOP",
+          baseId: "appABCDEFGHIJK",
+          tableId: "tblABCDEFGHIJK",
+        }));
+      });
+      // The schema panel shows the loaded columns + their extraction key.
+      expect(screen.getByText(/Columns loaded from "My Research"/i)).toBeInTheDocument();
+      expect(screen.getByText("Link")).toBeInTheDocument();
+      expect(screen.getByText("Name")).toBeInTheDocument();
+      // Each mapped column shows the extraction key it pulls from.
+      expect(screen.getAllByText(/← url/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/← page_title/).length).toBeGreaterThan(0);
+    });
+
+    it("'Load columns' failure shows the API error", async () => {
+      const user = userEvent.setup();
+      fetchAirtableSchema.mockResolvedValue({
+        ok: false,
+        error: "Airtable 403: You are not authorized — your token needs the 'schema.bases:read' scope.",
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+      await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+      await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+      await user.type(screen.getByLabelText(/Table ID/i), "tblABCDEFGHIJK");
+      await user.click(screen.getByRole("button", { name: /Load columns/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/schema\.bases:read/)).toBeInTheDocument();
+      });
+    });
+
+    it("after 'Load columns', the push uses the user's column names (NOT the defaults) — this is the bug fix", async () => {
+      const user = userEvent.setup();
+      fetchAirtableSchema.mockResolvedValue({
+        ok: true,
+        tableName: "Custom Base",
+        tableId: "tblABCDEFGHIJK",
+        fields: [
+          { name: "Link", type: "url" },
+          { name: "Name", type: "singleLineText" },
+        ],
+      });
+      pushToAirtable.mockResolvedValue({ ok: true, pushed: 2, total: 2, errors: [], failedRecords: [] });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+      await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+      await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+      await user.type(screen.getByLabelText(/Table ID/i), "tblABCDEFGHIJK");
+      await user.click(screen.getByRole("button", { name: /Load columns/i }));
+      await waitFor(() => expect(fetchAirtableSchema).toHaveBeenCalled());
+      await user.click(screen.getByRole("button", { name: /Push .* record/i }));
+      // The push must use { Link: url, Name: page_title } — NOT { URL, Title }.
+      await waitFor(() => expect(pushToAirtable).toHaveBeenCalledWith(
+        sampleItems,
+        expect.objectContaining({
+          fieldMap: { Link: { key: "url" }, Name: { key: "page_title" } },
+        }),
+      ));
+    });
+
+    it("switching Base ID clears the cached schema so the user re-loads for the new table", async () => {
+      const user = userEvent.setup();
+      fetchAirtableSchema.mockResolvedValue({
+        ok: true,
+        tableName: "First Table",
+        tableId: "tblA",
+        fields: [{ name: "Link", type: "url" }],
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /Airtable/i }));
+      await user.type(screen.getByLabelText(/API key/i), "patABCDEFGHIJKLMNOP");
+      await user.type(screen.getByLabelText(/Base ID/i), "appABCDEFGHIJK");
+      await user.type(screen.getByLabelText(/Table ID/i), "tblAAAAAAAAAAAAA");
+      await user.click(screen.getByRole("button", { name: /Load columns/i }));
+      await waitFor(() => expect(screen.getByText(/Columns loaded from "First Table"/i)).toBeInTheDocument());
+      // Now switch the Table ID to something different. The schema panel
+      // must go away — the cached map is for the previous table.
+      const tableInput = screen.getByLabelText(/Table ID/i);
+      await user.clear(tableInput);
+      await user.type(tableInput, "tblBBBBBBBBBBBBB");
+      await waitFor(() => {
+        expect(screen.queryByText(/Columns loaded from "First Table"/i)).not.toBeInTheDocument();
+      });
     });
   });
 

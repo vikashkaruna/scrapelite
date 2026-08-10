@@ -19,7 +19,7 @@
 // schema map) survive across sessions. Slack doesn't take client-side
 // credentials at all — the server uses the stored per-user webhook.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
@@ -30,6 +30,8 @@ import {
   readAirtableConfig,
   writeAirtableConfig,
   validateAirtableConfig,
+  fetchAirtableSchema,
+  autoMapAirtableFields,
   _internal as airtableInternals,
 } from "../lib/airtable.js";
 import {
@@ -60,8 +62,16 @@ export default function ExportIntegrations({ items, onClose }) {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState([]);
 
-  // Airtable
-  const [airtable, setAirtable] = useState(() => ({ ...readAirtableConfig(), apiKey: "" }));
+  // Airtable — we keep the API key in component state only (never persisted);
+  // the non-secret parts (Base ID, Table ID, fieldMap, tableMeta) come from
+  // localStorage so the user only re-pastes the PAT on each session.
+  const initialAirtable = useMemo(() => ({ ...readAirtableConfig(), apiKey: "" }), []);
+  const [airtable, setAirtable] = useState(initialAirtable);
+  // Schema state — `airtableSchema` is the field list returned by the
+  // Airtable Meta API; `airtableFieldMap` is the per-table mapping
+  // { AirtableColumnName: { key: extractionKey } } used by the push.
+  const [airtableSchema, setAirtableSchema] = useState(initialAirtable.tableMeta || null);
+  const [airtableSchemaLoading, setAirtableSchemaLoading] = useState(false);
   // Notion
   const [notion, setNotion] = useState(() => ({ ...readNotionConfig(), apiKey: "" }));
   const [notionSchema, setNotionSchema] = useState(null); // fetched from the API
@@ -88,6 +98,34 @@ export default function ExportIntegrations({ items, onClose }) {
 
   // Reset errors when switching tabs
   useEffect(() => { setErrors([]); }, [tab]);
+
+  // When the user changes Base ID or Table ID, the in-memory schema/fieldMap
+  // is for the previous table and would 422 on push. The right behaviour
+  // depends on whether we already have a saved config for the new table:
+  //   - Yes → restore it into state (saved on a previous "Load columns")
+  //   - No  → clear and prompt the user to "Load columns"
+  // localStorage keeps per-table entries, so the previous table's saved
+  // map is preserved.
+  //
+  // We use a ref to skip the initial mount (which would otherwise re-run
+  // the effect on first render and wipe the just-loaded state).
+  const lastAirtableIdsRef = useRef({ baseId: initialAirtable.baseId, tableId: initialAirtable.tableId });
+  useEffect(() => {
+    const prev = lastAirtableIdsRef.current;
+    if (prev.baseId === airtable.baseId && prev.tableId === airtable.tableId) return;
+    lastAirtableIdsRef.current = { baseId: airtable.baseId, tableId: airtable.tableId };
+    // Always update the "current" pointers in localStorage first.
+    writeAirtableConfig({ baseId: airtable.baseId, tableId: airtable.tableId });
+    // Look up the saved entry for the new (baseId, tableId).
+    const saved = readAirtableConfig();
+    if (saved.fieldMap) {
+      setAirtable((v) => ({ ...v, fieldMap: saved.fieldMap }));
+      setAirtableSchema(saved.tableMeta || null);
+    } else {
+      setAirtable((v) => ({ ...v, fieldMap: null }));
+      setAirtableSchema(null);
+    }
+  }, [airtable.baseId, airtable.tableId]);
 
   // Fetch Slack connection status when the user opens the Slack tab.
   // Lazy because the modal can stay open across many tab switches and
@@ -139,6 +177,46 @@ export default function ExportIntegrations({ items, onClose }) {
   };
 
   // ── Airtable flow ─────────────────────────────────────────────────────────
+  // Load the table's column list from the Airtable Meta API. Builds a
+  // per-table field map and persists it so subsequent pushes use the
+  // user's actual column names (not the defaults like "URL" / "Title").
+  const onAirtableLoadSchema = async () => {
+    setErrors([]);
+    const validationErrors = validateAirtableConfig(airtable);
+    if (validationErrors.length) { setErrors(validationErrors); return; }
+    setAirtableSchemaLoading(true);
+    try {
+      const r = await fetchAirtableSchema({
+        apiKey: airtable.apiKey,
+        baseId: airtable.baseId,
+        tableId: airtable.tableId,
+      });
+      if (!r.ok) { setErrors([r.error || "Failed to load Airtable columns"]); return; }
+      const fieldMap = autoMapAirtableFields(r.fields);
+      setAirtableSchema({ tableName: r.tableName, fields: r.fields });
+      setAirtable((v) => ({ ...v, fieldMap }));
+      writeAirtableConfig({
+        baseId: airtable.baseId,
+        tableId: airtable.tableId,
+        fieldMap,
+        tableMeta: { tableName: r.tableName, fields: r.fields },
+      });
+      const matched = Object.keys(fieldMap).length;
+      const total = r.fields.length;
+      if (matched === 0) {
+        showToast(`Loaded ${total} column(s) from "${r.tableName || "table"}". No auto-matches — your table uses different names.`, "info");
+      } else if (matched < total) {
+        showToast(`Loaded ${total} column(s); auto-mapped ${matched}. The rest were skipped (no matching extraction field).`, "info");
+      } else {
+        showToast(`Loaded ${total} column(s) from "${r.tableName || "table"}" — all auto-mapped.`, "check-circle");
+      }
+    } catch (err) {
+      setErrors([err?.message || "Airtable schema fetch failed"]);
+    } finally {
+      setAirtableSchemaLoading(false);
+    }
+  };
+
   const onAirtablePush = async () => {
     setErrors([]);
     const validationErrors = validateAirtableConfig(airtable);
@@ -146,12 +224,18 @@ export default function ExportIntegrations({ items, onClose }) {
     if (isEmpty) { setErrors(["No rows to push."]); return; }
     setBusy(true);
     try {
-      // Persist the non-secret parts (Base + Table IDs) for next time.
-      writeAirtableConfig({ baseId: airtable.baseId, tableId: airtable.tableId });
+      // Persist the non-secret parts (Base + Table IDs + fieldMap) for next time.
+      writeAirtableConfig({
+        baseId: airtable.baseId,
+        tableId: airtable.tableId,
+        fieldMap: airtable.fieldMap,
+        tableMeta: airtableSchema,
+      });
       const result = await pushToAirtable(list, {
         apiKey: airtable.apiKey,
         baseId: airtable.baseId,
         tableId: airtable.tableId,
+        fieldMap: airtable.fieldMap,
       });
       if (result.ok) {
         showToast(`Pushed ${result.pushed} record(s) to Airtable.`, "check-circle");
@@ -398,7 +482,43 @@ export default function ExportIntegrations({ items, onClose }) {
                     disabled={busy}
                   />
                 </div>
+                <Button
+                  variant="secondary"
+                  icon="refresh"
+                  onClick={onAirtableLoadSchema}
+                  loading={airtableSchemaLoading}
+                  disabled={busy || airtableSchemaLoading}
+                  title="Fetch your Airtable table's columns so we map fields correctly"
+                >
+                  Load columns
+                </Button>
               </div>
+              {airtableSchema && (
+                <div className="export-int-schema">
+                  <div className="export-int-schema-head">
+                    <Icon name="check-circle" size={13} />
+                    Columns loaded{airtableSchema.tableName ? ` from "${airtableSchema.tableName}"` : ""} — {airtableSchema.fields?.length || 0} field{(airtableSchema.fields?.length || 0) !== 1 ? "s" : ""}
+                  </div>
+                  {airtable.fieldMap && Object.keys(airtable.fieldMap).length > 0 ? (
+                    <ul className="export-int-schema-list">
+                      {Object.entries(airtable.fieldMap).map(([col, def]) => (
+                        <li key={col}>
+                          <strong>{col}</strong>
+                          <span className="export-int-schema-key">← {def?.key || "(unmapped)"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="export-int-help" style={{ margin: 0 }}>
+                      None of your column names matched our default field names. Either
+                      rename your Airtable columns to <code>URL</code>, <code>Title</code>,
+                      <code> Host</code>, <code>Summary</code> — or paste the API key + IDs
+                      above to load the actual columns. (Airtable rejects field names it
+                      doesn&apos;t recognise — see the error below if the push failed.)
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="export-int-actions">
                 <Button
                   variant="primary"
