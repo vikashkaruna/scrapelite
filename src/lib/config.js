@@ -97,6 +97,25 @@ export const hasWebhook = Boolean(WEBHOOK_URL);
 export const hasEmail = Boolean(EMAIL_API_URL);
 export const hasContactWebhook = Boolean(CONTACT_WEBHOOK_URL);
 
+// OAuth return URL — the origin the user lands on after the OAuth provider
+// (Google, Microsoft, GitHub) and Supabase email-link callbacks. Set by
+// runtime-config.js per branch (main → datiq.app, everything else → the
+// branch's own origin). Falls back to window.location.origin if the runtime
+// config didn't specify one (e.g. older branches that haven't redeployed yet).
+export const AUTH_RETURN_URL = String(
+  (typeof window !== "undefined" && window.__DATIQ_RUNTIME__ && window.__DATIQ_RUNTIME__.authReturnUrl) ||
+  (typeof window !== "undefined" ? window.location.origin : "")
+).trim();
+
+// True if this is the production main deployment (datiq.app /
+// main--datiqapp.netlify.app). Used for feature gating — e.g. disable
+// billing in non-prod, show a "staging" banner, etc.
+export const IS_PRODUCTION = Boolean(
+  typeof window !== "undefined" &&
+  window.__DATIQ_RUNTIME__ &&
+  window.__DATIQ_RUNTIME__.isProduction === true
+);
+
 // Convenience summary used by the UI to show the current backend mode.
 export const integrations = {
   supabase: hasSupabase,
