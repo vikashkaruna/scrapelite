@@ -54,7 +54,7 @@ describe("integrationsClient — pushToIntegration(slack)", () => {
     { id: "e2", url: "https://b.com", page_title: "B" },
   ];
 
-  it("POSTs to /api/integrations/slack/send with the items list", async () => {
+  it("POSTs to /api/integrations/slack/send with the items list + action dispatch", async () => {
     globalThis.fetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -65,7 +65,7 @@ describe("integrationsClient — pushToIntegration(slack)", () => {
       "/api/integrations/slack/send",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, action: "send" }),
       })
     );
     expect(result.ok).toBe(true);

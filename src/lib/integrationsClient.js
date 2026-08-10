@@ -105,13 +105,16 @@ export async function pushToIntegration(slug, items) {
     if (slug === "hubspot") {
       // HubSpot takes one extraction at a time. Loop sequentially so we
       // surface per-row errors in failedRecords instead of failing the
-      // whole batch on the first bad row.
+      // whole batch on the first bad row. `action: "push"` in the body
+      // is the §15/§16 dispatch-source fallback so the request still
+      // routes to the hubspot handler's `push` sub-endpoint even when
+      // Netlify's redirect engine drops the URL sub-path.
       const failedRecords = [];
       let pushed = 0;
       for (const item of clean) {
         const { ok, body } = await authedFetch(`/api/integrations/hubspot/push`, {
           method: "POST",
-          body: JSON.stringify({ extraction: item }),
+          body: JSON.stringify({ extraction: item, action: "push" }),
         });
         if (ok) {
           pushed += 1;
@@ -129,9 +132,13 @@ export async function pushToIntegration(slug, items) {
     }
 
     if (slug === "notion" || slug === "airtable") {
+      // `action: "push"` in the body is the §15/§16 dispatch-source
+      // fallback so the request still routes to the provider's `push`
+      // sub-endpoint even when Netlify's redirect engine drops the
+      // URL sub-path on this branch deploy.
       const { ok, body } = await authedFetch(`/api/integrations/${slug}/push`, {
         method: "POST",
-        body: JSON.stringify({ items: clean }),
+        body: JSON.stringify({ items: clean, action: "push" }),
       });
       if (!ok) {
         return {
@@ -158,9 +165,20 @@ export async function pushToIntegration(slug, items) {
       // Returns 412 with `{ error: "Slack is not connected…" }` when the
       // user hasn't set up Slack — we surface that as a special-case
       // error so the client can route to the setup page.
+      //
+      // `action: "send"` in the body is the §15/§16 dispatch-source
+      // fallback. On the branch deploy, Netlify's redirect engine is
+      // known to drop the URL sub-path on `/api/integrations/slack/*`
+      // (so the function is called at `/.netlify/functions/integrations-slack`
+      // with no `/send` tail). The handler's `splat` resolution reads
+      // body.action FIRST, so the request still dispatches to handleSend.
+      // Without this field, the user sees:
+      //   "No such endpoint: /integrations/slack/ (POST) (splat="")"
+      // which is the handler's 404 fallback when all three splat sources
+      // (body / query / path) are empty.
       const { ok, body, status } = await authedFetch(`/api/integrations/slack/send`, {
         method: "POST",
-        body: JSON.stringify({ items: clean }),
+        body: JSON.stringify({ items: clean, action: "send" }),
       });
       if (!ok) {
         if (status === 412) {
