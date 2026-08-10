@@ -6,6 +6,10 @@
 > hard-landing, branch cleanup, branch deploy bring-up, integration UI
 > wiring, and the Supabase auth-routing fix.
 >
+> **2026-08-10 12:30 IST update** — added the "Push to HubSpot / Notion /
+> Airtable" dropdown to Preview + Dashboard in a follow-on commit
+> (`c5785dd`). See §13 at the bottom of this file.
+>
 > **The next session should pick up from here without re-deriving
 > context.** Read §1, §2, §6 first, then jump to whichever section is
 > relevant to the task at hand.
@@ -318,8 +322,95 @@ to walk them through the console updates. The redirect URL doc
 
 ---
 
-**Last updated:** 2026-08-10 11:23 IST
-**Session duration:** ~2 days (2026-08-08 to 2026-08-10)
-**Commits this session:** 5 (3fc48fc, ce8505d, a6d1454, 5f6124b, 8cbe7f2) — plus the staging-merge commit ec469fb
+## 13. Follow-on commit: "Push" dropdown on Preview + Dashboard (c5785dd)
+
+**Shipped:** 2026-08-10 12:30 IST — ~70 minutes after the §12 handoff was
+committed. Resolved the #1 item on the §8 backlog: "Connect-from-Preview/
+Dashboard 'Push to HubSpot' / 'Push to Notion' buttons".
+
+### What it does
+
+A reusable `PushIntegrationMenu` component added to the two places where
+extractions are visible:
+
+- **Preview page** — between Share and Download. Pushes the single
+  extraction currently being viewed.
+- **Dashboard SelectionBar** — between Email and Export. Pushes all
+  selected extractions in one batch (Notion + Airtable) or one round-trip
+  per item (HubSpot, since its server endpoint takes a single extraction).
+
+Each menu shows the 3 push-style integrations (HubSpot, Notion, Airtable)
+with live status badges:
+
+- **Connected ✓** — click to push, toasts the result
+- **Not connected** — click to navigate to `/account#integrations` and
+  set it up
+
+### Files added / changed
+
+```
+src/lib/integrationsClient.js          (NEW, 154 lines)
+src/components/PushIntegrationMenu.jsx (NEW, 199 lines)
+src/pages/Preview.jsx                  (+5 lines, action bar)
+src/pages/Dashboard.jsx                (+12 lines, SelectionBar)
+src/styles/screens.css                 (+37 lines, .push-int-* styles)
+```
+
+### Design decisions worth remembering
+
+1. **Server-side credentials, not browser PATs.** The old `ExportIntegrations.jsx`
+   modal asked the user to paste a PAT each push. The new menu uses
+   the PAT/IDs already stored in `integration_connections` from the
+   /account#integrations connect step. Zero friction on subsequent pushes.
+
+2. **Per-provider body shape.** HubSpot's endpoint takes `{ extraction }`
+   (singular), Notion + Airtable take `{ items }` (array). The client
+   wrapper handles both — HubSpot does N round-trips for an N-item list
+   and aggregates `failedRecords` so a single bad row doesn't fail the
+   whole batch.
+
+3. **Slack + Zapier deliberately not in the menu.** Slack is a
+   *notification* (POST /notify, not /push). Zapier is *event-driven*
+   (polls /events, no push endpoint). They have different UX patterns
+   and would confuse the dropdown. If we add them later, the right shape
+   is a separate "Send notifications to" or "Send to Zapier" submenu.
+
+4. **Backwards compatible.** The old `ExportIntegrations.jsx` modal is
+   still wired and accessible via Dashboard → SelectionBar → Export →
+   "Send to → Integrations...". It's the fallback for users who prefer
+   not to store their PAT server-side.
+
+5. **Status refresh on focus.** When the user returns from
+   `/account#integrations` after connecting a new provider, the menu
+   re-fetches status on `window.focus` so the new "Connected" badge
+   appears immediately. No manual refresh needed.
+
+### What it does NOT do (deferred)
+
+- Per-row Push button in the Dashboard table. SelectionBar covers the
+  bulk case, and a per-row button would be clutter. If users complain,
+  it's a 5-minute add.
+- Notion / Airtable dedup by URL. v1.1 plan; both still create new
+  records on every push. Documented in §8.
+- "Test connection" button on the menu. The status check is sufficient
+  for now; if we add a "test" action it would just re-run the same
+  probe the connect step does.
+
+### Verification matrix (extra spot-checks for this commit)
+
+- [ ] Open the branch deploy URL, sign in, scrape a new URL, hit Preview
+- [ ] Click "Push" — should see 3 providers, with status badges
+- [ ] Click "Not connected → set up" on a provider — should land on
+      /account#integrations
+- [ ] Connect Notion there, come back to Preview via browser back
+- [ ] Click "Push" → "Notion" — should toast "Pushed 1 of 1 extraction to Notion"
+- [ ] Same flow on Dashboard: select 2-3 extractions, hit Push in
+      SelectionBar, push to Airtable — should toast "Pushed 3 of 3"
+
+---
+
+**Last updated:** 2026-08-10 12:30 IST
+**Session duration:** ~2 days (2026-08-08 to 2026-08-10) + the 12:30 follow-on
+**Commits this session:** 6 (3fc48fc, ce8505d, a6d1454, 5f6124b, 8cbe7f2, c5785dd) — plus the staging-merge commit ec469fb
 **Branch deploy URL:** `https://integration-with-outside-ecosystem--datiqapp.netlify.app`
-**Next session entry point:** read §1, §2, §6, then the relevant section
+**Next session entry point:** read §1, §2, §6, §13, then the relevant section
