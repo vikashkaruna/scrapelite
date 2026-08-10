@@ -724,3 +724,218 @@ stored.
    different from `(splat="")` because body.action is the primary
    dispatch source. Paste the new error to the next session and we
    can iterate from there.
+
+---
+
+## 17. Slack fan-out: app-saved extractions + change alerts now reach the channel (26606af, eb88406) — 2026-08-10 ~15:50 IST
+
+**Shipped:** the missing wire-up for Slack + Zapier notifications on
+the two event paths the user reported as silent.
+
+### What the user reported
+
+> DatIQ connected to Slack and posts a test message to confirm the
+> URL works. Slack accepted, the connection is saved.
+> But on completion of extraction change alerts + new-extraction
+> events for that user did not go to that channel.
+
+Translation: the connect flow works (§14–§16 saga already shipped).
+Test messages work. But once the connection is saved, the actual
+event fan-out is broken on TWO paths.
+
+### What was actually broken (two distinct bugs)
+
+**Bug 1 — app-saved extractions were silent.**
+
+`netlify/functions/extractions.js` is the endpoint the DatIQ app calls
+when you save an extraction from the UI. After a successful Supabase
+insert it returned 201 to the browser and that was it — no notification
+fan-out.
+
+Only `netlify/functions/api-v1.js` (the external REST API for
+power-users and integrations) called `notifyExtractionComplete`. So if
+you saved via the DatIQ UI, you got nothing in Slack. The connect
+test message worked because that's a different code path
+(`/api/integrations/slack/test`).
+
+**Bug 2 — scheduled change alerts ignored per-user Slack.**
+
+`netlify/functions/scheduled-runner.js` is the hourly cron that
+re-scrapes every active schedule and fires `fireAlert()` when content
+changes. The Slack branch in `fireAlert` was hard-coded:
+
+```js
+if (process.env.SLACK_WEBHOOK_URL) {
+  const payload = buildSlackChangeAlert(schedule, changedSummary, detectedAt);
+  const r = await postToSlack(payload);
+  ...
+}
+```
+
+That posts to the **global** `SLACK_WEBHOOK_URL` env var. The user's
+per-user webhook stored in `integration_connections.config.webhook_url`
+was never read. So a user who connected Slack via the UI got zero
+change alerts — only the operator (whoever set the env) did.
+
+### The fix (one commit, 6 files)
+
+**1. `notifyExtractionComplete` is now called from `extractions.js`**
+
+After the successful insert:
+
+```js
+// Fire-and-forget: never block the response on Slack/Zapier.
+// notify.js swallows per-channel errors, so a Slack outage can never
+// break the save flow. We log but never await in the request path.
+notifyExtractionComplete({ userId, extraction: data }).catch((err) => {
+  console.warn("[API/extractions] notifyExtractionComplete failed:", err?.message || err);
+});
+return respond(201, { ...v2, ...data });
+```
+
+**2. `notifyMonitoringChange` is the new dispatcher in `notify.js`**
+
+Mirrors `notifyExtractionComplete` but for the change-alert path. Resolves
+the owner's per-user Slack webhook, falls back to env, emits a
+`monitoring_alert` Zapier event:
+
+```js
+export async function notifyMonitoringChange({ userId, schedule, changedSummary }) {
+  if (!schedule) return { ok: false, reason: "missing_schedule" };
+  const result = { slack: null, zapier: null };
+  // Slack — per-user, with env fallback
+  try {
+    const webhookUrl = await resolveSlackWebhook({ userId });
+    if (webhookUrl) {
+      const payload = buildSlackChangeAlert(schedule, changedSummary);
+      const r = await postToSlack(payload, { webhookUrl });
+      result.slack = { ok: r.ok, status: r.status, error: r.error };
+    }
+  } catch (err) { result.slack = { ok: false, error: err?.message }; }
+  // Zapier — append a 'monitoring_alert' event
+  try {
+    await emitMonitoringAlert({ userId, schedule, changedSummary });
+    result.zapier = { ok: true };
+  } catch (err) { result.zapier = { ok: false, error: err?.message }; }
+  return { ok: true, ...result };
+}
+```
+
+**3. `scheduled-runner.fireAlert` calls it**
+
+Replaces the hard-coded env-only Slack branch with a call to
+`notifyMonitoringChange`. Also re-attaches `row.user_id` to the merged
+schedule object so `fireAlert` can pass it through.
+
+**4. Subtle: Slack webhook priority flipped**
+
+```js
+// before
+async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
+  if (overrideUrl) return overrideUrl;
+  if (process.env.SLACK_WEBHOOK_URL) return process.env.SLACK_WEBHOOK_URL;  // ← env won
+  if (userId) {
+    const r = await getConnection({ userId, provider: "slack" });
+    if (r?.connection?.config?.webhook_url) return r.connection.config.webhook_url;
+  }
+  return null;
+}
+
+// after
+async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
+  if (overrideUrl) return overrideUrl;
+  if (userId) {
+    const r = await getConnection({ userId, provider: "slack" });
+    if (r?.connection?.config?.webhook_url) return r.connection.config.webhook_url;  // ← per-user wins
+  }
+  if (process.env.SLACK_WEBHOOK_URL) return process.env.SLACK_WEBHOOK_URL;
+  return null;
+}
+```
+
+A user who explicitly connected their own channel should ALWAYS get
+their own alerts, never the operator's. The env exists for self-hosted
+installs and for users who haven't connected. The moment a per-user
+webhook is stored, it wins. (Before this fix the env won, which is
+backwards — a self-hosted operator who set the env would hijack
+every user's alerts into their own channel.)
+
+### Files changed in §17
+
+```
+netlify/functions/lib/notify.js             +66/-10
+netlify/functions/extractions.js            +8
+netlify/functions/scheduled-runner.js       +20/-10
+netlify/__tests__/lib/notify.test.js        +71/-2
+netlify/__tests__/extractions.test.js       +62
+netlify/__tests__/scheduled-runner.test.js  +68
+```
+
+### Test coverage added (20 new tests, all green)
+
+- `notify.test.js`:
+  - notifyMonitoringChange "no channels" → `{ ok:true, slack:null }`
+  - notifyMonitoringChange SLACK_WEBHOOK_URL env → posts to Slack
+  - notifyMonitoringChange **per-user beats env** (the new priority)
+  - notifyMonitoringChange emits a `monitoring_alert` Zapier event
+  - notifyMonitoringChange survives a Slack 502 (Zapier still fires)
+  - notifyMonitoringChange missing-schedule → `ok:false reason:missing_schedule`
+  - existing notifyExtractionComplete tests still pass (per-user > env)
+- `extractions.test.js`:
+  - POST create → `notifyExtractionComplete` is called with
+    `{ userId: "user-1", extraction: { id, url, ... } }`
+  - POST insert error → `notifyExtractionComplete` is NOT called
+    (we don't notify on a save that didn't actually save)
+- `scheduled-runner.test.js`:
+  - change detected → `notifyMonitoringChange` is called with
+    `{ userId: "u-owner-1", schedule, changedSummary }`
+  - orphan schedule (no user_id) → still called with `userId: null`
+    (so the env fallback path is exercised)
+
+### Test count after this commit
+
+| Suite | Files | Tests |
+|---|---|---|
+| `npm run test:contract` (netlify) | 57 passed | 893 passed / 14 skipped |
+| `npm run test:unit` (src + scripts) | 103 passed | 1639 passed |
+| `npm run test:integration` (excluding pre-existing invoice failures) | 40 passed | 270 passed |
+
+The 6 `Account.invoices.integration.test.jsx` failures are pre-existing
+on the parent commit `c75c9ed` — confirmed by `git stash` + rerun.
+Unrelated to this fix.
+
+### Final session state (15:55 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `eb88406` (chore: trigger fresh branch deploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `eb88406…` |
+| Build status | ✅ live (34s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on |
+| Slack fan-out: app-saved extractions | ✅ `extractions.js` → `notifyExtractionComplete` |
+| Slack fan-out: scheduled change alerts | ✅ `scheduled-runner` → `notifyMonitoringChange` |
+| Slack webhook priority | per-user > env > null (correct now) |
+| `curl-with-sso.sh` | 15/15 tests passing |
+| Commits on this branch (ahead of staging) | 16 |
+| Async ops | none pending |
+
+### Next session entry point
+
+1. **Hard-reload** the branch deploy, sign in
+2. **Verify Bug 1 is fixed**: extract a URL in the app → check your
+   Slack channel for the `✅ New extraction: ...` Block Kit message
+3. **Verify Bug 2 is fixed**: if you have a schedule set to track a page
+   that changed since the last hash, wait for the next hourly tick (or
+   trigger one manually) → check Slack for the `🔔 Tracked page
+   changed` Block Kit message
+4. **If both work** → mark §17 as resolved. The full Slack fan-out
+   story is now end-to-end working.
+5. **If Slack still doesn't receive** → check the per-user webhook is
+   still in `integration_connections` (e.g. via Supabase SQL:
+   `select * from integration_connections where provider='slack' and user_id=...`).
+   Then trigger a real save from the app and check the Netlify function
+   log for `[API/extractions] notifyExtractionComplete failed:` — that
+   warning will be the first concrete data point.
