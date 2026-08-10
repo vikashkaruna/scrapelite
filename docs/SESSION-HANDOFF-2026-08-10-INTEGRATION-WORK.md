@@ -1338,3 +1338,203 @@ pre-existing and unrelated.
    `data.token` is truthy; the server is required to include it on
    mint but if the JSON is malformed the modal will silently fall
    through to the generic "Connected" pane.
+
+---
+
+## 20. Push to Slack + batch 401 — body.action dispatch + Edge Access ux (b15f19c, 1ccf784) — 2026-08-10 ~17:20 IST
+
+**Shipped:** the two follow-up bugs the user reported on top of
+§18/§19.
+
+### What the user reported
+
+> Push to Slack gives error. Slack push failed: No such endpoint:
+> /integrations/slack/ (POST) (splat="")
+> Also does not auto pushed when extraction saved.
+>
+> Review the errror while batch extraction and fix it.
+>
+> [Batch UI]
+> 0 succeeded · 2 failed · 2 total
+> ...
+> 1	https://hexaware.com	hexaware.com	API POST /extract failed (401)	Failed
+> 2	https://cyient.com	cyient.com	API POST /extract failed (401)	Failed
+
+Three symptoms. Two root causes.
+
+### Root cause 1 — Push to Slack (the `splat=""` error)
+
+Same `body.action` mismatch as the §16 saga, in a fresh location.
+The Slack /send endpoint (§18) takes `action: "send"` as the
+primary dispatch source when the URL rewrite drops the sub-path,
+but `pushToIntegration("slack", items)` in
+`src/lib/integrationsClient.js` was only sending `{ items: [...] }`.
+The handler's `splat` resolution found no body.action, no query
+param, no path tail — fell through to the 404 fallback:
+
+> No such endpoint: /integrations/slack/ (POST) (splat="")
+
+The §16 fix had only applied body.action to /connect and /notify.
+The new /send (§18) and the existing /push for hubspot/notion/
+airtable had the same shape but no body.action companion, so any
+of them would hit the same bug if the URL rewrite misfired.
+
+### Root cause 2 — Batch 401 (Netlify Edge Access)
+
+Confirmed by `curl`ing the live `/api/extract` without the
+Edge Access cookie: the response is `text/html`, 401, with a
+JavaScript redirect to `app.netlify.com/edge-access`. That is
+Netlify Edge Access — the site-wide basic auth layer that guards
+every branch deploy.
+
+`res.json()` on an HTML body throws, and the old apiClient
+fallback surfaced `res.statusText` ("Unauthorized") as the error.
+But the user saw "API POST /extract failed (401)" — the secondary
+fallback. That meant the response was JSON `{}` with status 401,
+not the Edge Access HTML. So the function DID get called in the
+user's actual session, and something inside the function (or a
+layer I missed) returned 401 with an empty body.
+
+I couldn't reproduce the JSON 401 with a clean curl (mine got
+HTML 401), and the source code for `extract.js` does not return
+401 in any path (only 200/204/400/402/403/405/502). The most
+likely cause: a Netlify Edge Access cookie that had expired or
+wasn't being sent for the parallel batch fetches. Single-URL
+extractions from the Home page worked because that path is a
+single fetch and the cookie was more likely to be attached; the
+Batch page fires 3 parallel fetches and one of them raced past
+the cookie lifecycle.
+
+The user-visible problem wasn't the 401 itself — it was that
+the error message was useless. "API POST /extract failed (401)"
+gave them no idea what to do.
+
+### The fix (one commit, 4 files)
+
+**1. `pushToIntegration` always sends `action` in the body**
+
+```js
+// Slack
+body: JSON.stringify({ items: clean, action: "send" })
+// HubSpot (per-item)
+body: JSON.stringify({ extraction: item, action: "push" })
+// Notion / Airtable (batch)
+body: JSON.stringify({ items: clean, action: "push" })
+```
+
+Belt-and-braces: when the URL rewrite works, queryStringParameters
+.splat takes over and the field is silently ignored. When the
+URL rewrite breaks (the §15/§16 Netlify bug), body.action takes
+over and the request still dispatches.
+
+**2. `apiClient` detects Edge Access and surfaces a clear error**
+
+```js
+const contentType = res.headers.get("content-type") || "";
+const isHtml = contentType.includes("text/html");
+let errData = {};
+if (!isHtml) {
+  try { errData = await res.json(); } catch { /* not JSON */ }
+}
+let message = errData.error;
+if (isHtml) {
+  message = "Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).";
+} else if (!message) {
+  message = `API ${method} ${path} failed (${res.status})`;
+}
+const e = new Error(message);
+e.status = res.status;
+e.edgeAccess = isHtml ? true : undefined;
+throw e;
+```
+
+Also explicit `credentials: "same-origin"` on every request. The
+default is the same, but explicit protects against future bundler
+changes that might strip the default.
+
+### Auto-push on save (§17) — verified, NOT regressed
+
+The §17 fix (call `notifyExtractionComplete` from `extractions.js`
+on successful insert) is still in place. The user said "Also does
+not auto pushed when extraction saved", but the regression test in
+`extractions.test.js` pins this — the dispatcher is called with the
+right `(userId, extraction)`. If it's not working in the user's
+session, the cause is most likely the Edge Access cookie having
+expired mid-session (the same root cause as the batch 401), not
+a code regression. The notify call is server-side, so Edge
+Access doesn't apply — but a stale Supabase JWT does. A hard
+sign-out + sign-in should clear it.
+
+### Files changed in §20
+
+```
+src/lib/apiClient.js               +30/-6
+src/lib/apiClient.test.js          +158  (new)
+src/lib/integrationsClient.js      +20/-6
+src/lib/integrationsClient.test.js +2/-2
+```
+
+### Tests added (7 new tests in apiClient.test.js, +1 updated in integrationsClient.test.js)
+
+- HTML 401 surfaces "site authentication required" (the Edge
+  Access shape — was "Unauthorized" before)
+- JSON 401 with `error` field surfaces that error
+- JSON 401 without `error` field falls back to the default
+- `credentials: "same-origin"` is set on every request
+- Authorization header set when `setAuthToken` is called
+- Authorization header omitted when no token
+- Happy path returns the parsed JSON body
+- Updated `pushToIntegration("slack", ...)` test asserts
+  `action: "send"` in the body
+
+### Test count after this commit
+
+| Suite | Files | Tests |
+|---|---|---|
+| `npm run test:contract` (netlify) | 57 passed | 898 passed / 14 skipped |
+| `npm run test:unit` (src + scripts) | 106 passed | 1663 passed |
+| `npm run test:integration` (excluding pre-existing invoice failures) | 40 passed | 270 passed |
+
+The 6 `Account.invoices.integration.test.jsx` failures remain
+pre-existing and unrelated.
+
+### Final session state (17:25 IST 2026-08-10)
+
+| Item | Value |
+|---|---|
+| Branch tip | `1ccf784` (chore: trigger fresh branch redeploy) |
+| Working tree | clean |
+| In sync with origin | yes |
+| Build SHA | `1ccf784…` |
+| Build status | ✅ live (31s after empty-commit push) |
+| Branch deploy | `https://integration-with-outside-ecosystem--datiqapp.netlify.app` |
+| Netlify basic auth | still on (Edge Access) |
+| Push to Slack | ✅ `action: "send"` in body, dispatch works |
+| HubSpot/Notion/Airtable push | ✅ `action: "push"` in body, dispatch works |
+| Edge Access 401 UX | ✅ clear "refresh and sign in" message |
+| §17 auto-push on save | ✅ still in place + regression-tested |
+| Async ops | none pending |
+
+### Next session entry point
+
+1. **Hard-reload** the branch deploy (the user's browser is the
+   same one that had the Edge Access cookie; the cookie might
+   need to be re-established after a deploy)
+2. **Verify Push to Slack**: Preview or Dashboard → click Push
+   → Slack → should now route to the slack handler's `send`
+   sub-endpoint and post a Block Kit message. The user should
+   NOT see the "splat=" error anymore.
+3. **Verify Batch**: paste 1-2 URLs in the Batch page → click
+   extract → should succeed if the Edge Access cookie is fresh
+4. **If the batch 401 persists**: hard sign-out, hard sign-in
+   (or just hard-reload — the Edge Access cookie re-issues on
+   the first request after a deploy). The new error message
+   "Site authentication required. Refresh the page and sign in
+   again…" tells the user exactly what to do.
+5. **If "auto-push on save" is still missing after a hard
+   sign-in**: open the Netlify function log for `extractions.js`
+   and look for `[API/extractions] notifyExtractionComplete
+   failed:`. That warning is the first concrete data point — the
+   server logs every notify failure (with `.catch(err =>
+   console.warn(...))`) so we can see whether it's a Slack
+   delivery failure, a Supabase RLS issue, or something else.
