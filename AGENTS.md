@@ -23,7 +23,7 @@
 | **Current branch** | `Integration-with-outside-ecosystem` (HEAD `0979352`, ahead of `main` by 7 commits; main has 3 unmerged PRs — AEO/GEO/SEO + 2 staging merges) |
 | **Latest commit** | `0979352 fix(test): Account.invoices mock was missing isSupabaseEnabled export` |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the merge needs to roll back |
-| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md` — start here next session |
+| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-2.md` — Integrations overhaul + Workspace tabs + Account CTA reorder. Previous handoff: `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md` |
 | **Single remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in §4 of the handoff) |
 
 ---
