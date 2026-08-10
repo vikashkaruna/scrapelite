@@ -45,6 +45,7 @@ import { getIntegrationStatus, pushToIntegration } from "../lib/integrationsClie
 
 const TABS = [
   { key: "sheets",   label: "Google Sheets", icon: "sheet",          desc: "Open a new sheet, upload the downloaded CSV" },
+  { key: "hubspot",  label: "HubSpot",       icon: "trending-up",    desc: "Push contacts + companies to your CRM" },
   { key: "airtable", label: "Airtable",      icon: "table",          desc: "Push records to a base you own" },
   { key: "notion",   label: "Notion",        icon: "book-open",      desc: "Create pages in a database" },
   { key: "slack",    label: "Slack",         icon: "message-square", desc: "Post a summary message per row" },
@@ -71,6 +72,12 @@ export default function ExportIntegrations({ items, onClose }) {
   const [slackConnected, setSlackConnected] = useState(null);
   const [slackAccountLabel, setSlackAccountLabel] = useState(null);
   const [slackStatusLoading, setSlackStatusLoading] = useState(false);
+  // HubSpot — same shape as Slack: connection status only, server uses
+  // the stored Private App access token. Mirrors the Slack tab so the
+  // two "auth lives on the server" providers feel consistent.
+  const [hubspotConnected, setHubspotConnected] = useState(null);
+  const [hubspotAccountLabel, setHubspotAccountLabel] = useState(null);
+  const [hubspotStatusLoading, setHubspotStatusLoading] = useState(false);
 
   // Esc closes the modal
   useEffect(() => {
@@ -99,6 +106,24 @@ export default function ExportIntegrations({ items, onClose }) {
       })
       .catch(() => { if (!cancelled) setSlackConnected(false); })
       .finally(() => { if (!cancelled) setSlackStatusLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  // HubSpot — same lazy pattern as Slack. Kept in a separate effect so
+  // a HubSpot status failure doesn't surface as a Slack status failure
+  // (and so the per-tab loading spinners are independent).
+  useEffect(() => {
+    if (tab !== "hubspot") return;
+    let cancelled = false;
+    setHubspotStatusLoading(true);
+    getIntegrationStatus("hubspot")
+      .then((s) => {
+        if (cancelled) return;
+        setHubspotConnected(!!s?.connected);
+        setHubspotAccountLabel(s?.connection?.account_label || null);
+      })
+      .catch(() => { if (!cancelled) setHubspotConnected(false); })
+      .finally(() => { if (!cancelled) setHubspotStatusLoading(false); });
     return () => { cancelled = true; };
   }, [tab]);
 
@@ -226,6 +251,37 @@ export default function ExportIntegrations({ items, onClose }) {
     }
   };
 
+  // HubSpot — same shape as Slack: no client-side creds, server uses the
+  // stored Private App access token. The pushToIntegration wrapper
+  // already loops per-item (HubSpot's /push endpoint takes a single
+  // extraction, not a list) and aggregates failedRecords, so the
+  // result shape matches Slack and the error path is identical.
+  const onHubSpotPush = async () => {
+    setErrors([]);
+    if (isEmpty) { setErrors(["No rows to push."]); return; }
+    if (hubspotConnected === false) {
+      setErrors(["HubSpot is not connected. Open Account → Integrations to paste a Private App token first."]);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await pushToIntegration("hubspot", list);
+      if (result.ok) {
+        showToast(`Pushed ${result.pushed} record${result.pushed !== 1 ? "s" : ""} to HubSpot.`, "check-circle");
+        onClose?.();
+      } else if (result.not_connected) {
+        setHubspotConnected(false);
+        setErrors([result.message || "HubSpot is not connected."]);
+      } else {
+        setErrors([...(result.errors || []), ...(result.failedRecords?.slice(0, 3).map((r) => `${r.url || "(row)"}: ${r.error}`) || [])]);
+      }
+    } catch (err) {
+      setErrors([err?.message || "HubSpot push failed"]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Close on backdrop click (not while busy).
   const onBackdrop = (e) => { if (e.target === e.currentTarget && !busy) onClose?.(); };
 
@@ -240,7 +296,7 @@ export default function ExportIntegrations({ items, onClose }) {
             <h2 id="export-int-title" className="export-int-title">Send to a destination</h2>
             <p className="export-int-sub">
               {totalCount > 0
-                ? `Push ${totalCount} selected row${totalCount !== 1 ? "s" : ""} to Google Sheets, Airtable, Notion, or Slack.`
+                ? `Push ${totalCount} selected row${totalCount !== 1 ? "s" : ""} to Google Sheets, HubSpot, Airtable, Notion, or Slack.`
                 : "Select rows on the previous screen first, then choose a destination."}
             </p>
           </div>
@@ -432,6 +488,69 @@ export default function ExportIntegrations({ items, onClose }) {
               </div>
               <p className="export-int-meta">
                 Notion API version {notionInternals.NOTION_VERSION}. Up to {notionInternals.MAX_REQUESTS_PER_PUSH} pages per push (Notion rate-limits aggressively).
+              </p>
+            </div>
+          )}
+
+          {tab === "hubspot" && (
+            <div className="export-int-pane">
+              <p className="export-int-help">
+                Push contacts and companies from your extractions to your
+                HubSpot CRM — one company + contact per row. No API key to
+                enter; the server uses the Private App token you set up in
+                Account → Integrations.
+              </p>
+
+              {hubspotStatusLoading && (
+                <div className="export-int-status">
+                  <Icon name="loader" size={14} className="push-int-spin" />
+                  <span> Checking HubSpot connection…</span>
+                </div>
+              )}
+
+              {!hubspotStatusLoading && hubspotConnected === true && (
+                <div className="export-int-status export-int-status-ok">
+                  <Icon name="check-circle" size={14} />
+                  <span>
+                    Connected{hubspotAccountLabel ? ` as ${hubspotAccountLabel}` : ""}.
+                    {" "}We&apos;ll create {totalCount} company + contact pair{totalCount !== 1 ? "s" : ""} in your CRM.
+                  </span>
+                </div>
+              )}
+
+              {!hubspotStatusLoading && hubspotConnected === false && (
+                <div className="export-int-status export-int-status-warn">
+                  <Icon name="alert-triangle" size={14} />
+                  <span>
+                    HubSpot isn&apos;t connected yet.{" "}
+                    <button
+                      type="button"
+                      className="export-int-link"
+                      onClick={() => { onClose?.(); navigate("/account#integrations"); }}
+                    >
+                      Paste a Private App token in Account → Integrations
+                    </button>
+                    , then come back here.
+                  </span>
+                </div>
+              )}
+
+              <div className="export-int-actions">
+                <Button
+                  variant="primary"
+                  icon="trending-up"
+                  onClick={onHubSpotPush}
+                  disabled={busy || isEmpty || hubspotConnected !== true}
+                  loading={busy}
+                >
+                  Push {totalCount > 0 ? totalCount : ""} record{totalCount !== 1 ? "s" : ""} to HubSpot
+                </Button>
+              </div>
+              <p className="export-int-meta">
+                Each row creates one company and one contact in HubSpot,
+                linked by the company name. Required scopes on your Private
+                App: <code>crm.objects.contacts.write</code> +{" "}
+                <code>crm.objects.companies.write</code>.
               </p>
             </div>
           )}

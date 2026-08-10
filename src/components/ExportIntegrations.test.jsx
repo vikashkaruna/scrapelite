@@ -76,14 +76,32 @@ beforeEach(() => {
 });
 
 describe("ExportIntegrations (F18)", () => {
-  it("renders the modal title and the four destination tabs", () => {
+  it("renders the modal title and all five destination tabs", () => {
     renderModal();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/Send to a destination/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Google Sheets/i })).toBeInTheDocument();
+    // HubSpot was added in §13 follow-on parity work so the Batch
+    // page's "Send to Destination" matches the Preview + Dashboard
+    // PushIntegrationMenu. The tab MUST sit between Sheets and
+    // Airtable to match the source order in ExportIntegrations.jsx.
+    expect(screen.getByRole("tab", { name: /HubSpot/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Airtable/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Notion/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Slack/i })).toBeInTheDocument();
+  });
+
+  it("subheader names all five destinations (not just the original four)", () => {
+    renderModal();
+    // Pin the list of destinations in the subhead so a future
+    // refactor that drops one (or reorders them) doesn't silently
+    // mislead the user. The §13 parity commit added HubSpot here.
+    const sub = screen.getByText(/Push 2 selected rows/i);
+    expect(sub.textContent).toMatch(/Google Sheets/);
+    expect(sub.textContent).toMatch(/HubSpot/);
+    expect(sub.textContent).toMatch(/Airtable/);
+    expect(sub.textContent).toMatch(/Notion/);
+    expect(sub.textContent).toMatch(/Slack/);
   });
 
   it("shows the row count in the subtitle", () => {
@@ -227,6 +245,80 @@ describe("ExportIntegrations (F18)", () => {
     const { onClose } = renderModal();
     fireEvent.click(screen.getByText(/Send to a destination/i));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  describe("HubSpot tab", () => {
+    // HubSpot was added in the §13 parity work so the Batch page's
+    // "Send to Destination" matches the Preview + Dashboard
+    // PushIntegrationMenu. The tab shape mirrors Slack: connection
+    // status only on the client (server uses the stored Private App
+    // token), and a single button that fires pushToIntegration which
+    // loops per-item server-side.
+    it("shows the 'connected' status banner with the account label when HubSpot is set up", async () => {
+      const user = userEvent.setup();
+      getIntegrationStatus.mockImplementation(async (slug) => {
+        if (slug === "hubspot") return { connected: true, connection: { account_label: "ACME CRM" } };
+        return { connected: false };
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /HubSpot/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/Connected as ACME CRM/)).toBeInTheDocument();
+      });
+      // The CTA copy should reflect the row count.
+      expect(screen.getByRole("button", { name: /Push 2 records to HubSpot/i })).toBeEnabled();
+    });
+
+    it("shows the 'not connected' banner + setup link when HubSpot has no token", async () => {
+      const user = userEvent.setup();
+      getIntegrationStatus.mockImplementation(async (slug) => {
+        if (slug === "hubspot") return { connected: false };
+        return { connected: false };
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /HubSpot/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/HubSpot isn.t connected yet/)).toBeInTheDocument();
+      });
+      expect(screen.getByRole("button", { name: /Push 2 records to HubSpot/i })).toBeDisabled();
+    });
+
+    it("'Push N records to HubSpot' calls pushToIntegration('hubspot', items) and closes on success", async () => {
+      const user = userEvent.setup();
+      getIntegrationStatus.mockImplementation(async (slug) => {
+        if (slug === "hubspot") return { connected: true, connection: {} };
+        return { connected: false };
+      });
+      pushToIntegration.mockResolvedValue({ ok: true, pushed: 2, total: 2, errors: [], failedRecords: [] });
+      const { onClose } = renderModal();
+      await user.click(screen.getByRole("tab", { name: /HubSpot/i }));
+      await user.click(screen.getByRole("button", { name: /Push 2 records to HubSpot/i }));
+      await waitFor(() => expect(pushToIntegration).toHaveBeenCalledWith("hubspot", sampleItems));
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it("HubSpot push surfaces per-row failedRecords in the error list", async () => {
+      const user = userEvent.setup();
+      getIntegrationStatus.mockImplementation(async (slug) => {
+        if (slug === "hubspot") return { connected: true, connection: {} };
+        return { connected: false };
+      });
+      pushToIntegration.mockResolvedValue({
+        ok: false,
+        pushed: 1,
+        total: 2,
+        errors: ["HubSpot rejected the token (status 401)"],
+        failedRecords: [{ url: "https://a.com", error: "HubSpot rejected the token (status 401)" }],
+      });
+      renderModal();
+      await user.click(screen.getByRole("tab", { name: /HubSpot/i }));
+      await user.click(screen.getByRole("button", { name: /Push 2 records to HubSpot/i }));
+      // Per-row URL + error format matches Slack's pattern (the dashboard
+      // already uses this shape for HubSpot pushes from PushIntegrationMenu).
+      await waitFor(() => {
+        expect(screen.getByText(/https:\/\/a\.com: HubSpot rejected the token/)).toBeInTheDocument();
+      });
+    });
   });
 
   describe("Slack tab", () => {
