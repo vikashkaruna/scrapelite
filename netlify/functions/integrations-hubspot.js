@@ -88,16 +88,22 @@ export const handler = async (event) => {
 
   // Path: /integrations/hubspot/{status|connect|push}
   // Netlify routing: this function is mounted at /api/integrations/hubspot/*
-  // Resolve the sub-path from EITHER the query-string splat OR a path-segment
-  // tail — see the matching fix in integrations-slack.js for the rationale
-  // (the new explicit per-provider redirect rules may pass the sub-path as
-  // either form, and we want both to work).
+  // Resolve the sub-path from THREE sources, in priority order:
+  //   1. body.action          — sent by the Account UI (2026-08-10 fix)
+  //   2. event.queryStringParameters.splat — original Netlify redirect form
+  //   3. event.path tail      — fallback for path-based routing
+  // The body form is the only reliable one in production (Netlify is dropping
+  // the URL sub-path on this branch deploy), but the other two are kept for
+  // backward compatibility with curl tests and other clients.
+  let body = {};
+  try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* ignore */ }
+  const splatFromBody = (body && typeof body.action === "string") ? body.action : "";
   const splatFromQuery = event.queryStringParameters?.splat || "";
   const fnName = "/.netlify/functions/integrations-hubspot";
   const tail = (event.path || "").startsWith(fnName)
     ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
     : "";
-  const splat = splatFromQuery || tail;
+  const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
   // Authenticate every request
@@ -151,7 +157,10 @@ export const handler = async (event) => {
     }
 
     // DELETE /api/integrations/hubspot/connect
-    if (event.httpMethod === "DELETE" && subPath[0] === "connect") {
+    // Disconnect is the only DELETE endpoint for HubSpot; route it
+    // regardless of the sub-path (the body.action source only applies
+    // to POST; DELETE is unambiguous).
+    if (event.httpMethod === "DELETE") {
       const r = await deleteConnection({ userId, provider: "hubspot" });
       if (!r.ok) return respond(500, { error: r.error });
       return respond(200, { ok: true, connected: false });

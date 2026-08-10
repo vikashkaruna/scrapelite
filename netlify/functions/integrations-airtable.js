@@ -137,14 +137,19 @@ export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
   }
-  // Resolve the sub-path from EITHER the query-string splat OR a path-segment
-  // tail — see the matching fix in integrations-slack.js for the rationale.
+  // Resolve the sub-path from THREE sources, in priority order:
+  //   1. body.action          — sent by the Account UI (2026-08-10 fix)
+  //   2. event.queryStringParameters.splat — original Netlify redirect form
+  //   3. event.path tail      — fallback for path-based routing
+  let body = {};
+  try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* ignore */ }
+  const splatFromBody = (body && typeof body.action === "string") ? body.action : "";
   const splatFromQuery = event.queryStringParameters?.splat || "";
   const fnName = "/.netlify/functions/integrations-airtable";
   const tail = (event.path || "").startsWith(fnName)
     ? (event.path || "").slice(fnName.length).replace(/^\/+/, "")
     : "";
-  const splat = splatFromQuery || tail;
+  const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
   const auth = await authenticateRequest(event);
@@ -155,7 +160,9 @@ export const handler = async (event) => {
     return handleStatus(userId);
   }
   if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
-  if (event.httpMethod === "DELETE" && subPath[0] === "connect") return handleDisconnect(userId);
+  // Disconnect is the only DELETE endpoint for Airtable; route it
+  // regardless of the sub-path (DELETE is unambiguous).
+  if (event.httpMethod === "DELETE") return handleDisconnect(userId);
   if (event.httpMethod === "POST" && subPath[0] === "push") return handlePush(event, userId);
 
   return respond(404, { error: `No such endpoint: /integrations/airtable/${subPath.join("/")} (${event.httpMethod})` });

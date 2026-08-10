@@ -189,6 +189,10 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
           if (values[f.key] != null) body[f.key] = values[f.key];
         }
       }
+      // Always include the action in the body so the server-side function
+      // can dispatch even when the URL sub-path is dropped by Netlify's
+      // redirect engine (2026-08-10 production bug — see handoff §15).
+      body.action = "connect";
 
       const { data: { session } } = supabase
         ? await supabase.auth.getSession()
