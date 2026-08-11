@@ -90,11 +90,17 @@ No code required. Background processing keeps the page responsive. Results persi
 ### Export & integrations
 - **CSV** — comprehensive, every enrichment included (deep-flattened JSON paths)
 - **PDF** — jsPDF report, same complete content
+- **Markdown** / **JSON** — paste straight into a doc or pipe into a script
 - **Google Sheets** — Open-in-Google-Sheets with one click
-- **HubSpot / Salesforce** — push contacts and companies
+- **HubSpot** — push contacts and companies with property mapping
+- **Airtable** — push rows into the table you choose, with auto-built field map
+- **Notion** — push into the database you choose, with property mapping
+- **Slack** — push new extractions + change alerts to the channel you choose
+- **Zapier** — trigger 5,000+ apps on new extractions (DatIQ private app)
 - **Webhooks** — fire-and-forget POST on extraction complete
 - **Email delivery** — send extractions to any address
-- **API** — POST /api/extract, POST /api/ai, GET /api/stats
+- **Server-stored connections** — every destination above is set up once in /account#integrations; tokens are stored server-side and never re-displayed
+- **API** — POST /api/extract, POST /api/ai, GET /api/stats; bearer-token access via /api/v1 (Business + Agency)
 - **White-label PDF** (Business + Agency) — upload a single-page PDF template; every export renders on top of it
 
 ---

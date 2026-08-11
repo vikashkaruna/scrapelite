@@ -169,6 +169,14 @@ export function buildSlackWelcomeMessage({ userName, planLabel = "Free" }) {
 /**
  * POST a Block Kit payload to the configured Slack incoming webhook.
  * Returns { ok, status, error? }.
+ *
+ * On non-2xx responses Slack returns a JSON body shaped like
+ *   { "ok": false, "error": "invalid_blocks", "response_metadata": { "messages": ["…"] } }
+ * We read that body so the caller (and the dashboard's failedRecords)
+ * gets a useful diagnostic string instead of just `slack_400`. The old
+ * code threw the body away, which is why "https://www.india.com: slack_400"
+ * was the only signal the user got when a long news-site title blew past
+ * Slack's 150-char header limit.
  */
 export async function postToSlack(payload, { webhookUrl, fetchFn } = {}) {
   const url = webhookUrl || process.env.SLACK_WEBHOOK_URL;
@@ -181,7 +189,33 @@ export async function postToSlack(payload, { webhookUrl, fetchFn } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return { ok: res.ok, status: res.status };
+    if (res.ok) return { ok: true, status: res.status };
+    let detail = "";
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          // Slack's body is the most useful thing we can show — error
+          // codes like `invalid_blocks`, `no_text`, `channel_not_found`.
+          // response_metadata.messages often has the specific offending
+          // field/character.
+          detail =
+            parsed?.error ||
+            (Array.isArray(parsed?.response_metadata?.messages) && parsed.response_metadata.messages[0]) ||
+            text.slice(0, 200);
+        } catch {
+          detail = text.slice(0, 200);
+        }
+      }
+    } catch { /* body-read errored — fall through with detail="" */ }
+    return {
+      ok: false,
+      status: res.status,
+      // Prefix with `slack_` so the UI's existing `slack_<code>` pattern
+      // still matches when there's no body to extract (network 5xx, etc).
+      error: detail ? `${detail} (slack_${res.status})` : `slack_${res.status}`,
+    };
   } catch (err) {
     return { ok: false, error: err?.message || "network error" };
   }

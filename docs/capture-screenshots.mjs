@@ -38,10 +38,22 @@ await ctx.addInitScript(() => {
 
 const page = await ctx.newPage();
 const shot = async (name) => { await page.screenshot({ path: join(OUT, name) }); console.log("  ✓", name); };
+const skip = (name, why) => console.log(`  ⤬ ${name} — ${why}`);
 
 async function go(path) {
   await page.goto(BASE + path, { waitUntil: "networkidle" });
   await sleep(500);
+}
+
+// Wrap every "real extraction" step so a Firecrawl / AI / Supabase blip
+// doesn't kill the rest of the gallery. One stale screenshot is better
+// than losing 8.
+async function safe(label, fn, timeoutMs = 30000) {
+  try {
+    await fn();
+  } catch (e) {
+    skip(label, e.message?.split("\n")[0]?.slice(0, 80) || "threw");
+  }
 }
 
 try {
@@ -58,65 +70,123 @@ try {
   await sleep(400);
 
   // ── Batch run (populates dashboard with 2 pages) ──────────────────────────
-  await go("/batch");
-  await page.locator("textarea.batch-textarea").fill("https://lumio.io\nhttps://stripe.com");
-  await page.locator("main button.btn-primary").click();
-  await page.waitForSelector("text=Batch complete", { timeout: 30000 });
-  await sleep(600);
-  await shot("04-batch.png");
+  await safe("04-batch.png", async () => {
+    await go("/batch");
+    await page.locator("textarea.batch-textarea").fill("https://lumio.io\nhttps://stripe.com");
+    await page.locator("main button.btn-primary").click();
+    await page.waitForSelector("text=Batch complete", { timeout: 30000 });
+    await sleep(600);
+    await shot("04-batch.png");
+  });
 
   // ── Single extraction → Preview ───────────────────────────────────────────
-  await go("/");
-  await page.locator("textarea").first().fill("https://lumio.io");
-  await page.locator("button.hero-action-btn").click();
-  await page.waitForURL("**/preview", { timeout: 30000 });
-  await sleep(1200);
-  await shot("03-preview.png");
+  await safe("03-preview.png", async () => {
+    // Drive via the composer when Firecrawl is fast enough; otherwise inject
+    // a mock current extraction into localStorage and navigate directly. The
+    // mock path is the only reliable way to capture the new Preview UI
+    // when the live extraction is slow or times out.
+    try {
+      await go("/");
+      await page.locator("textarea").first().fill("https://lumio.io");
+      await page.locator("button.hero-action-btn").click();
+      await page.waitForURL("**/preview", { timeout: 20000 });
+    } catch {
+      // Inject mock state and navigate directly.
+      const { LUMIO_EXTRACTION } = await import("../src/data/mockData.js");
+      await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });
+      await page.evaluate((data) => {
+        try { localStorage.setItem("datiq.current", JSON.stringify(data)); } catch {}
+      }, { ...LUMIO_EXTRACTION, _saved: true });
+      await go("/preview");
+    }
+    await sleep(1200);
+    await shot("03-preview.png");
+  });
 
   // ── Schedules (create one, then list) ─────────────────────────────────────
-  await go("/schedules");
-  await page.locator("main button").first().click(); // New schedule
-  await sleep(400);
-  await page.locator('main input[placeholder="https://example.com"]').fill("https://lumio.io/pricing");
-  await page.getByRole("button", { name: "Daily", exact: true }).click();
-  await page.getByRole("button", { name: "Create schedule" }).click();
-  await sleep(800);
-  await shot("05-schedules.png");
+  await safe("05-schedules.png", async () => {
+    await go("/schedules");
+    await page.locator("main button").first().click(); // New schedule
+    await sleep(400);
+    await page.locator('main input[placeholder="https://example.com"]').fill("https://lumio.io/pricing");
+    await page.getByRole("button", { name: "Daily", exact: true }).click();
+    await page.getByRole("button", { name: "Create schedule" }).click();
+    await sleep(800);
+    await shot("05-schedules.png");
+  });
 
   // ── Dashboard (table view) ─────────────────────────────────────────────────
-  await go("/dashboard");
-  await sleep(700);
-  await shot("06-dashboard-table.png");
+  await safe("06-dashboard-table.png", async () => {
+    await go("/dashboard");
+    await sleep(700);
+    await shot("06-dashboard-table.png");
+  });
 
   // ── Dashboard (card view) ──────────────────────────────────────────────────
-  const cardBtn = page.locator('.seg-opt[title="Card view"], button[title="Card view"]').first();
-  if (await cardBtn.count()) { await cardBtn.click(); await sleep(700); await shot("07-dashboard-cards.png"); }
+  await safe("07-dashboard-cards.png", async () => {
+    const cardBtn = page.locator('.seg-opt[title="Card view"], button[title="Card view"]').first();
+    if (await cardBtn.count()) { await cardBtn.click(); await sleep(700); await shot("07-dashboard-cards.png"); }
+    else skip("07-dashboard-cards.png", "Card-view button not found");
+  });
 
   // ── Pricing ────────────────────────────────────────────────────────────────
-  await go("/pricing");
-  await sleep(700);
-  await shot("08-pricing.png");
+  await safe("08-pricing.png", async () => {
+    await go("/pricing");
+    await sleep(700);
+    await shot("08-pricing.png");
+  });
 
   // ── Domain map mode (Map site intent → Preview) ────────────────────────────
-  await go("/");
-  await page.getByRole("button", { name: "Map site", exact: true }).click();
-  await page.locator("textarea").first().fill("https://lumio.io");
-  await page.locator("button.hero-action-btn").click();
-  await page.waitForURL("**/preview", { timeout: 30000 });
-  await sleep(1200);
-  await shot("09-domain-map.png");
+  await safe("09-domain-map.png", async () => {
+    try {
+      await go("/");
+      await page.getByRole("button", { name: "Map site", exact: true }).click();
+      await page.locator("textarea").first().fill("https://lumio.io");
+      await page.locator("button.hero-action-btn").click();
+      await page.waitForURL("**/preview", { timeout: 20000 });
+    } catch {
+      // Mock fallback: build a synthetic domain_map payload and inject.
+      const fake = {
+        url: "https://lumio.io",
+        page_title: "Lumio — domain map",
+        ai_summary: "Synthetic domain map used only for the help-site screenshot.",
+        headings: [],
+        links: [],
+        custom_extraction: null,
+        domain_map: [
+          "https://lumio.io/", "https://lumio.io/pricing", "https://lumio.io/about",
+          "https://lumio.io/contact", "https://lumio.io/blog",
+          "https://lumio.io/blog/introducing-lumio", "https://lumio.io/blog/data-quality",
+          "https://lumio.io/case-studies", "https://lumio.io/case-studies/acme",
+          "https://lumio.io/case-studies/globex", "https://lumio.io/docs",
+          "https://lumio.io/docs/getting-started", "https://lumio.io/docs/api",
+        ],
+        enrichments: {},
+        _saved: true,
+      };
+      await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });
+      await page.evaluate((data) => {
+        try { localStorage.setItem("datiq.current", JSON.stringify(data)); } catch {}
+      }, fake);
+      await go("/preview");
+    }
+    await sleep(1200);
+    await shot("09-domain-map.png");
+  });
 
   // ── Account: the invoices & receipts card ──────────────────────────────────
-  // Scroll it into view first — it sits well below the fold, and a top-of-page
-  // crop shows plan/usage instead of the billing documents this shot is for.
-  await go("/account");
-  await sleep(900);
-  const invCard = page.getByText(/invoices\s*&\s*receipts/i).first();
-  if (await invCard.count()) {
-    await invCard.scrollIntoViewIfNeeded();
-    await sleep(500);
-  }
-  await shot("10-account-billing.png");
+  await safe("10-account-billing.png", async () => {
+    // Scroll it into view first — it sits well below the fold, and a top-of-page
+    // crop shows plan/usage instead of the billing documents this shot is for.
+    await go("/account");
+    await sleep(900);
+    const invCard = page.getByText(/invoices\s*&\s*receipts/i).first();
+    if (await invCard.count()) {
+      await invCard.scrollIntoViewIfNeeded();
+      await sleep(500);
+    }
+    await shot("10-account-billing.png");
+  });
 
   console.log("All screenshots saved to docs/assets/screenshots/");
 } catch (e) {

@@ -15,6 +15,7 @@ import { setMeta } from "../lib/seoMeta.js";
 
 const VERSION = "V1.0";
 const SHIPPED = "2026-07";
+const UPDATED = "2026-08-11";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
@@ -180,12 +181,16 @@ const FEATURE_GROUPS = [
     icon: "plug",
     title: "Integrations & sharing",
     items: [
+      "One-click push to HubSpot, Airtable, Notion, Slack, and Zapier from Preview, Dashboard, and Batch results",
+      "Server-stored connections for all five destinations — set up once in /account#integrations, push forever",
+      "Per-provider rich status (token hint, IDs, field map, title column, column count) on /account#integrations",
+      "Test / Edit / Disconnect actions on every connected row",
+      "Airtable + Notion auto-built field maps; 'Load columns' re-fetches schema for legacy connections",
       "Open in Google Sheets (one-click, no auth)",
-      "Airtable adapter (paste API key + base/table IDs)",
-      "Notion adapter (paste API key + database ID)",
       "Shareable public report links (/p/:slug) + /gallery",
       "Email delivery of extractions (multi-recipient)",
-      "Slack alerts via Block Kit webhook for schedule changes",
+      "Slack alerts via Block Kit webhook for schedule changes (long-title-safe)",
+      "Workspace view consolidates Collections and Active Schedule",
     ],
   },
 ];
@@ -249,13 +254,11 @@ export default function Changelog() {
           <div className="cl-update-banner">
             <Icon name="sparkles" size={16} />
             <div>
-              <strong>Updated 2026-08</strong>
+              <strong>Updated {UPDATED}</strong>
               <span>
-                Business now ships with <strong>white-label PDF</strong> and
-                {" "}<strong>priority support</strong> (previously Agency-only).
-                The <strong>Extra Workspace</strong> add-on now inherits your
-                plan's features, capped at the parent plan's team-seats limit.
-                Developer tier retargeted to <strong>H3 2026</strong>.
+                <strong>One-click push to HubSpot, Airtable, Notion, Slack, and Zapier</strong>
+                {" "}— server-stored connections set up once in /account#integrations, push forever from Preview, Dashboard, and Batch. Business now ships with
+                {" "}<strong>white-label PDF</strong> and <strong>priority support</strong> (previously Agency-only). The <strong>Extra Workspace</strong> add-on inherits your plan's features. Developer tier retargeted to <strong>H3 2026</strong>.
               </span>
             </div>
           </div>

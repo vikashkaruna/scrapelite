@@ -185,16 +185,34 @@ function defaultLabel(type, target) {
 }
 
 export async function listSchedules() {
+  const local = readLocal();
   try {
     const remote = await apiClient.listSchedules();
     if (Array.isArray(remote)) {
-      writeLocal(remote);
-      return remote;
+      // Merge: server is the source of truth, but local-only items
+      // (created offline or before the user signed in) are preserved
+      // so they survive a server round-trip that returns []. The merge
+      // also tolerates a transient server hiccup that returns []
+      // mid-session: the local-only entries are kept around so the
+      // next successful push can sync them up.
+      if (remote.length === 0 && local.length > 0) {
+        // Don't wipe local when the server says empty — the local items
+        // may not have synced yet. Use the local set as the answer.
+        return local;
+      }
+      // Server has authoritative data. Persist and return. Local-only
+      // items (any with no server counterpart) are preserved so they
+      // can be re-pushed by the next mutation.
+      const remoteIds = new Set(remote.map((s) => s.id));
+      const localOnly = local.filter((s) => s.id && !remoteIds.has(s.id));
+      const merged = [...remote, ...localOnly];
+      writeLocal(merged);
+      return merged;
     }
   } catch (err) {
     if (!shouldFallback(err)) throw err;
   }
-  return readLocal();
+  return local;
 }
 
 // Synchronous read for instant first paint (mirrors Dashboard's localStorage-first pattern).

@@ -25,9 +25,9 @@ const INTEGRATIONS = [
   {
     icon: "zap",
     title: "Webhook / n8n",
-    status: "available",
+    status: "coming-soon",
     desc: "Fire a webhook on extraction complete. Integrate DatIQ into any n8n, Make, or Zapier workflow.",
-    action: { label: "Use now", path: "/" },
+    action: { label: "Notify me", path: null },
   },
   {
     icon: "mail",
@@ -39,14 +39,15 @@ const INTEGRATIONS = [
   {
     icon: "trending-up",
     title: "HubSpot",
-    status: "coming-soon",
+    slug: "hubspot",
+    status: "beta",
     desc: "Push contact and company enrichment data directly to HubSpot CRM. Auto-create contacts and enrich existing records.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", path: "/account#integrations" },
   },
   {
     icon: "database",
     title: "Salesforce",
-    status: "coming-soon",
+    status: "roadmap",
     desc: "Sync extracted leads and company data to Salesforce. Map DatIQ fields to custom Salesforce objects.",
     action: { label: "Notify me", path: null },
   },
@@ -54,17 +55,17 @@ const INTEGRATIONS = [
     icon: "layers",
     title: "Airtable",
     slug: "airtable",
-    status: "coming-soon",
+    status: "beta",
     desc: "Push extraction rows straight into an Airtable base. Field mapping handles contacts, links, and headings automatically.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", path: "/account#integrations" },
   },
   {
     icon: "bookmark",
     title: "Notion",
     slug: "notion",
-    status: "coming-soon",
+    status: "beta",
     desc: "Export structured extraction data to a Notion database with field mapping.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", path: "/account#integrations" },
   },
   {
     icon: "table",
@@ -78,17 +79,17 @@ const INTEGRATIONS = [
     icon: "message-square",
     title: "Slack",
     slug: "slack",
-    status: "coming-soon",
+    status: "beta",
     desc: "Get Slack notifications when monitored URLs change or new extractions complete.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", path: "/account#integrations" },
   },
   {
     icon: "share",
     title: "Zapier",
     slug: "zapier",
-    status: "coming-soon",
+    status: "beta",
     desc: "Connect DatIQ to 5,000+ apps via Zapier. Trigger zaps on new extractions, enrichments, or monitoring alerts.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", path: "/account#integrations" },
   },
   {
     icon: "code",
@@ -107,10 +108,11 @@ const INTEGRATIONS = [
 ];
 
 const STATUS_META = {
-  available:    { label: "Available",    cls: "int-status-available" },
-  "coming-soon": { label: "Coming Soon", cls: "int-status-coming"   },
-  "agency-plan": { label: "Agency Plan", cls: "int-status-agency"   },
-  roadmap:       { label: "Roadmap",     cls: "int-status-roadmap"  },
+  available:    { label: "Available",     cls: "int-status-available" },
+  beta:         { label: "Available (Beta)", cls: "int-status-beta" },
+  "coming-soon": { label: "Coming Soon",  cls: "int-status-coming"   },
+  "agency-plan": { label: "Agency Plan",  cls: "int-status-agency"   },
+  roadmap:       { label: "Roadmap",      cls: "int-status-roadmap"  },
 };
 
 export default function Integrations() {
@@ -153,7 +155,7 @@ export default function Integrations() {
                   <p className="int-card-desc">{item.desc}</p>
                   <div className="int-card-foot">
                     <span className={`int-status ${meta.cls}`}>{meta.label}</span>
-                    {item.action && item.status === "available" && (
+                    {item.action && (item.status === "available" || item.status === "beta") && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -162,7 +164,7 @@ export default function Integrations() {
                         {item.action.label}
                       </Button>
                     )}
-                    {item.action && item.status === "coming-soon" && (
+                    {item.action && (item.status === "coming-soon" || item.status === "roadmap") && (
                       <Button
                         variant="ghost"
                         size="sm"

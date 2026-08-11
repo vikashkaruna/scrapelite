@@ -32,6 +32,9 @@
 --   0016  PR2 (invoice drafts, invoices, gapless FY numbering).
 --   0017  PR3 (dunning log + admin audit trail).
 --   0018  0018_ops_monitoring.sql — operational monitoring for automation + services.
+--   0019  0019_api_keys.sql (F-INT-1 — public REST API).
+--   0020  0020_integration_connections.sql (HubSpot/Notion/Airtable/Slack/Zapier tokens).
+--   0021  0021_zapier_events.sql (Zapier event log for polling).
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -1685,6 +1688,195 @@ $$;
 revoke all on function public.prune_ops_history(integer) from public, anon, authenticated;
 
 notify pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0019_api_keys.sql
+-- ============================================================
+-- 0019_api_keys.sql
+-- Public REST API keys (F-INT-1 — API Access, Business/Enterprise plans).
+--
+-- The public Developer API (docs/DatIQ-Developer-API.md) lets customers hit
+-- DatIQ from their own code with a bearer token. This migration creates:
+--   * api_keys       — the keys themselves, hashed, with revocation + expiry
+--   * api_key_usage  — monthly counter for per-key quota enforcement
+--   * increment_api_key_usage() RPC — atomic counter bump
+--
+-- Security model: only the SHA-256 hash of the key is stored. The plaintext
+-- is shown ONCE at creation time and never persisted. A DB leak does not
+-- leak usable keys.
+
+create extension if not exists "pgcrypto";
+
+create table if not exists public.api_keys (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  key_hash      text not null unique,
+  key_prefix    text not null,                        -- e.g. "dq_live_aB3x…"
+  env           text not null check (env in ('live','test')),
+  label         text,
+  plan_id       text,                                  -- plan at issue time
+  last_used_at  timestamptz,
+  expires_at    timestamptz,
+  revoked_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists api_keys_user_idx       on public.api_keys (user_id);
+create index if not exists api_keys_hash_idx       on public.api_keys (key_hash);
+create index if not exists api_keys_active_idx     on public.api_keys (user_id) where revoked_at is null;
+
+alter table public.api_keys enable row level security;
+-- A user can manage their own keys. The /api/* functions use the SERVICE
+-- key to read/write (RLS bypassed) because the request's auth identity is
+-- the key, not a Supabase user JWT.
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'api_keys' and policyname = 'users own api_keys'
+  ) then
+    execute $POL$
+      create policy "users own api_keys" on public.api_keys
+        for all to authenticated
+        using (auth.uid() = user_id) with check (auth.uid() = user_id)
+    $POL$;
+  end if;
+end $$;
+
+-- ── Monthly quota counter ───────────────────────────────────────────────────
+-- One row per (key, month). `month` is 'YYYY-MM'. We don't need a unique
+-- constraint on month format because we control writes from the service.
+create table if not exists public.api_key_usage (
+  key_id  uuid not null references public.api_keys(id) on delete cascade,
+  month   text not null,
+  count   integer not null default 0,
+  primary key (key_id, month)
+);
+
+alter table public.api_key_usage enable row level security;
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'api_key_usage' and policyname = 'service manages usage'
+  ) then
+    execute 'create policy "service manages usage" on public.api_key_usage
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+-- ── Atomic increment RPC ────────────────────────────────────────────────────
+-- Returns the new count for (key_id, month), creating the row if needed.
+-- Used by lib/apiRateLimiter.js to enforce the monthly quota without
+-- read-modify-write races.
+create or replace function public.increment_api_key_usage(p_key_id uuid, p_month text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_count integer;
+begin
+  insert into public.api_key_usage (key_id, month, count)
+    values (p_key_id, p_month, 1)
+    on conflict (key_id, month)
+    do update set count = public.api_key_usage.count + 1
+    returning count into new_count;
+  return new_count;
+end;
+$$;
+
+-- Restrict execution to the service role. (An authenticated user calling
+-- this directly could inflate another user's counter, even with RLS on
+-- api_key_usage, so we lock the function down.)
+revoke all on function public.increment_api_key_usage(uuid, text) from public;
+grant execute on function public.increment_api_key_usage(uuid, text) to service_role;
+
+
+-- ============================================================
+-- 0020_integration_connections.sql
+-- ============================================================
+-- 0020_integration_connections.sql
+-- Per-user OAuth/PAT storage for third-party integrations (HubSpot, Notion,
+-- Airtable, Slack, Zapier). All integrations that need to call an external
+-- API on the user's behalf read their token from this table.
+--
+-- SECURITY: access_token and refresh_token are sensitive. v1 stores them
+-- in plaintext (the only reader is the SERVICE key holder, and RLS further
+-- restricts per-user visibility). v1.1 should add a pgcrypto envelope.
+
+create table if not exists public.integration_connections (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  provider      text not null check (provider in ('hubspot','notion','airtable','slack','zapier','google_sheets')),
+  access_token  text,
+  refresh_token text,
+  scopes        text,
+  account_id    text,
+  account_label text,
+  expires_at    timestamptz,
+  config        jsonb,                       -- provider-specific
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (user_id, provider)
+);
+
+create index if not exists integration_connections_user_idx
+  on public.integration_connections (user_id);
+
+alter table public.integration_connections enable row level security;
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'integration_connections' and policyname = 'users own connections'
+  ) then
+    execute $POL$
+      create policy "users own connections" on public.integration_connections
+        for all to authenticated
+        using (auth.uid() = user_id) with check (auth.uid() = user_id)
+    $POL$;
+  end if;
+end $$;
+
+-- Service role can read/write all rows (the /api/* functions use the
+-- SERVICE key to do server-side work on the user's behalf).
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'integration_connections' and policyname = 'service full access'
+  ) then
+    execute 'create policy "service full access" on public.integration_connections
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0021_zapier_events.sql
+-- ============================================================
+-- 0021_zapier_events.sql
+-- Event log for the Zapier integration. Triggers (new_extraction,
+-- new_enrichment, monitoring_alert) append rows here; Zapier polls them
+-- via /api/integrations/zapier/poll.
+
+create table if not exists public.zapier_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  event_type  text not null check (event_type in ('new_extraction','new_enrichment','monitoring_alert')),
+  payload     jsonb not null,
+  dedupe_key  text,
+  created_at  timestamptz not null default now(),
+  unique (user_id, event_type, dedupe_key)
+);
+
+create index if not exists zapier_events_user_type_time_idx
+  on public.zapier_events (user_id, event_type, created_at desc);
+
+alter table public.zapier_events enable row level security;
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'zapier_events' and policyname = 'service full access'
+  ) then
+    execute 'create policy "service full access" on public.zapier_events
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

@@ -16,7 +16,7 @@
 import { runScrapeChain } from "./lib/scrapeProviders.js";
 import { computeLifecycle } from "../../src/lib/entitlementModel.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
-import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
+import { notifyMonitoringChange } from "./lib/notify.js";
 import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
 import { withJobRun } from "./lib/jobControl.js";
 
@@ -229,14 +229,19 @@ async function fireAlert(schedule, changedSummary) {
   const detectedAt = new Date().toISOString();
   const emailed = await sendAlertEmail(schedule, detectedAt);
   await postAlertWebhook(schedule, changedSummary, detectedAt, emailed);
-  // F17: also post a Slack Block Kit message when SLACK_WEBHOOK_URL is set.
-  if (process.env.SLACK_WEBHOOK_URL) {
-    const payload = buildSlackChangeAlert(schedule, changedSummary, detectedAt);
-    const r = await postToSlack(payload);
-    if (!r.ok) {
-      console.warn(`[DatIQ] Slack alert failed (${r.status || r.error})`);
-    }
-  }
+  // F17 (now per-user aware): hand the Slack + Zapier fan-out to
+  // notifyMonitoringChange so it resolves the OWNER's Slack webhook
+  // from integration_connections (with global SLACK_WEBHOOK_URL fallback
+  // for self-hosted operators) and emits a per-user Zapier event. The
+  // old code only posted to the global env var, which meant a user who
+  // connected Slack via the Account UI never received change alerts.
+  notifyMonitoringChange({
+    userId: schedule.user_id,
+    schedule,
+    changedSummary,
+  }).catch((err) => {
+    console.warn(`[DatIQ] notifyMonitoringChange failed: ${err?.message || err}`);
+  });
 }
 
 // Scrape one target and return a content fingerprint string.
@@ -303,7 +308,12 @@ const run = async () => {
     const entMap = await db.entitlementsFor(rows.map((r) => r.user_id));
 
     for (const row of rows) {
-      const schedule = { ...(row.data || {}), id: row.id };
+      // user_id is projected at the top level (see listActive() — the join
+      // is a Supabase column on scheduled_tasks), so it needs to be
+      // re-attached to the schedule object before runSchedule/fireAlert
+      // can use it. The change-alert fan-out (notifyMonitoringChange)
+      // resolves the OWNER's per-user Slack webhook from this id.
+      const schedule = { ...(row.data || {}), id: row.id, user_id: row.user_id || null };
       if (!schedule.cron || !schedule.target) continue;
       scanned++;
 

@@ -267,6 +267,26 @@ DatIQ exports your data in the format that fits your workflow. Exports are avail
 
 Some formats are available on higher plans — the export menu shows which.
 
+### Push to your tools (HubSpot, Airtable, Notion, Slack, Zapier)
+
+For the destinations you use every day, DatIQ offers one-click **Push** from Preview, Dashboard, and
+Batch results. Each one is set up once in **Account → Integrations**; after that, pushing an extraction
+is a single click and the destination receives the structured data directly — no copy-pasting, no
+CSV re-uploads.
+
+| Destination | What you push | Where to set it up |
+|---|---|---|
+| **HubSpot** | Contacts and companies from an extraction, mapped to the right HubSpot properties | `/account#integrations` |
+| **Airtable** | Each extraction row into the table you choose, with a per-table field map | `/account#integrations` |
+| **Notion** | Each extraction into a Notion database, with a title column and property mapping | `/account#integrations` |
+| **Slack** | New extractions and change alerts into the channel you choose, formatted as a readable message | `/account#integrations` |
+| **Zapier** | New extractions as a trigger event for any of 5,000+ apps | `/account#integrations` |
+| **Google Sheets** | A new sheet from any extraction (no auth required) | The Export ▾ menu on any row |
+
+A connected destination stays connected. You can **Test** the connection from the Account screen,
+**Edit** its label or details, or **Disconnect** it. Tokens are stored server-side and never re-displayed;
+replacing a token is a one-time flow that re-fetches schema where applicable (Airtable / Notion).
+
 ### Sharing a single extraction
 
 From any extraction on the Dashboard or Preview, click **Share** to get a public link. The link

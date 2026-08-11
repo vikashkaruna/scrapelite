@@ -21,6 +21,7 @@ import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
+import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
 
 function respond(statusCode, body) {
@@ -33,6 +34,100 @@ function respond(statusCode, body) {
     },
     body: JSON.stringify(body),
   };
+}
+
+// HTML → plain text (used by the AI-extraction fallback so the prompt
+// stays within the model context window). Tags stripped, scripts/styles
+// removed first so we don't pay tokens for JS/CSS. Whitespace is
+// collapsed; entities are decoded. Returns "" on any failure.
+function htmlToPlainText(html) {
+  if (!html || typeof html !== "string") return "";
+  try {
+    return html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<\/?[a-z][^>]*>/gi, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
+// AI-extraction fallback for customPrompt when the scrape chain returned
+// no customExtraction. Only Firecrawl (and Spider, theoretically) support
+// server-side JSON extraction; Spider/Jina/Direct all return null. Without
+// this fallback, "Find Contact Info" / "Leadership & Board" / etc. silently
+// saved an empty enrichment on any chain that fell through to a
+// non-Firecrawl provider — the user saw "No data returned for this
+// capability" even on a perfectly valid URL. Now the function asks the
+// multi-provider AI chain to extract the JSON from the page text using the
+// user's customPrompt as the schema instruction.
+//
+// Strict-JSON prompt: the model is told to return ONLY a JSON object, with
+// no markdown fences and no preamble. parseJsonLoose tolerates a few
+// common deviations (```json fences, leading prose) so a slightly messy
+// reply still produces a usable extraction instead of silently failing.
+const AI_EXTRACT_MAX_TOKENS = 2048;
+const AI_EXTRACT_TEXT_CHARS = 24000; // ~6k tokens of plain text — well within every model
+
+async function extractJsonWithAI({ prompt, title, text }) {
+  const presence = keyPresence();
+  if (!Object.values(presence).some(Boolean)) return null;
+  const trimmed = (text || "").slice(0, AI_EXTRACT_TEXT_CHARS);
+  const messages = [
+    {
+      role: "user",
+      content:
+        `You are a precise data extractor. Apply the instruction below to the page ` +
+        `content and return ONLY a JSON object. No markdown fences, no explanations, ` +
+        `no preamble — just the JSON.\n\n` +
+        `INSTRUCTION:\n${prompt}\n\n` +
+        `PAGE TITLE: ${title || ""}\n\n` +
+        `PAGE CONTENT (truncated):\n${trimmed}`,
+    },
+  ];
+  const r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
+  if (!r.ok || !r.text) return null;
+  return parseJsonLoose(r.text);
+}
+
+function parseJsonLoose(text) {
+  if (!text) return null;
+  const trimmed = String(text).trim();
+  // Fast path: the whole reply IS JSON.
+  try {
+    const v = JSON.parse(trimmed);
+    return v && typeof v === "object" ? v : null;
+  } catch { /* fall through to the loose extractors */ }
+  // Strip ```json ... ``` or ``` ... ``` fences the model sometimes adds
+  // despite the explicit "no fences" instruction.
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) {
+    try {
+      const v = JSON.parse(fence[1].trim());
+      return v && typeof v === "object" ? v : null;
+    } catch { /* fall through */ }
+  }
+  // Last resort: find the first { ... last } block. The "no preamble"
+  // instruction usually works, but some models add a one-line intro.
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    try {
+      const v = JSON.parse(trimmed.slice(first, last + 1));
+      return v && typeof v === "object" ? v : null;
+    } catch { /* give up */ }
+  }
+  return null;
 }
 
 export const handler = async (event) => {
@@ -166,6 +261,36 @@ export const handler = async (event) => {
       });
     }
 
+    // AI-extraction fallback. Only Firecrawl supports server-side JSON
+    // extraction from a customPrompt. If the chain fell through to Spider,
+    // Jina, or Direct (no API key, quota, transient error, …) the result
+    // has customExtraction === null even though we have valid HTML. Without
+    // this fallback the user's enrichment tab saves as null and shows
+    // "No data returned for this capability" — the bug the user
+    // reported. Call the multi-provider AI chain to do the extraction
+    // server-side; the response is best-effort and never blocks the
+    // response (any failure leaves customExtraction as null, which the
+    // client already handles as "no data").
+    let aiExtractionUsed = false;
+    if (options.customPrompt && !result.customExtraction) {
+      try {
+        const aiJson = await extractJsonWithAI({
+          prompt: options.customPrompt,
+          title: result.title || "",
+          text: htmlToPlainText(result.html || ""),
+        });
+        if (aiJson) {
+          result.customExtraction = aiJson;
+          aiExtractionUsed = true;
+        }
+      } catch (err) {
+        // Non-fatal: the response goes back to the client with null
+        // customExtraction. The error is logged so the regression can
+        // be diagnosed from the function log if it fires repeatedly.
+        console.warn("[DatIQ] AI-extract fallback failed:", err?.message || err);
+      }
+    }
+
     // Build the normalised response.
     const responseBody = {
       data: {
@@ -175,6 +300,12 @@ export const handler = async (event) => {
       },
       source: result.source,
       _providerAttempts: result.attempts,
+      // True when the AI-extraction fallback produced the custom_extraction
+      // (the chain itself didn't have a provider that supports it). Useful
+      // for debug + so future tests can pin the regression fix. Stays
+      // absent from the response when Firecrawl handled it natively, so
+      // existing clients ignore it.
+      ...(aiExtractionUsed ? { _aiExtractFallback: true } : {}),
       // F36 — headless attribution. Only surface when the caller asked for
       // JS rendering; otherwise we omit the field so the UI doesn't show a
       // confusing "rendered via X" message on plain HTTP extractions.
