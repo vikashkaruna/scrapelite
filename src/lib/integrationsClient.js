@@ -164,11 +164,30 @@ export async function pushToIntegration(slug, items) {
       // fallback so the request still routes to the provider's `push`
       // sub-endpoint even when Netlify's redirect engine drops the
       // URL sub-path on this branch deploy.
-      const { ok, body } = await authedFetch(`/api/integrations/${slug}/push`, {
+      const { ok, body, status } = await authedFetch(`/api/integrations/${slug}/push`, {
         method: "POST",
         body: JSON.stringify({ items: clean, action: "push" }),
       });
       if (!ok) {
+        // The server returns 412 with `{ error: "<provider> is not
+        // connected…" }` when the user hasn't set up this provider in
+        // /account#integrations yet. Surface that as a structured
+        // not_connected result so the Export modal can render a
+        // "Set up <provider> in Account → Integrations" link instead
+        // of a red error box. The Slack path below already does this;
+        // Airtable/Notion were missing it, which made a missing
+        // connection look like a hard push failure. 2026-08-11 fix.
+        if (status === 412) {
+          return {
+            ok: false,
+            pushed: 0,
+            total: clean.length,
+            errors: [body?.error || "not_connected"],
+            failedRecords: [],
+            message: body?.error || `${slug} is not connected.`,
+            not_connected: true,
+          };
+        }
         return {
           ok: false,
           pushed: 0,
