@@ -26,7 +26,7 @@ const INTEGRATIONS = [
   {
     icon: "zap",
     title: "Webhook / n8n",
-    status: "coming-soon",
+    status: "available",
     desc: "Fire a webhook on extraction complete. Integrate DatIQ into any n8n, Make, or Zapier workflow.",
     action: { label: "Set up", modal: "webhook" },
   },

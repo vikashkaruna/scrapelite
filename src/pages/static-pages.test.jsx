@@ -207,8 +207,10 @@ describe("F-17 — Integrations page", () => {
       .map((el) => el.textContent.trim());
     // 5 push providers → "Available (Beta)"
     expect(labels.filter((l) => l === "Available (Beta)").length).toBe(5);
-    // Webhook / n8n → "Coming Soon"
-    expect(labels).toContain("Coming Soon");
+    // Webhook / n8n → "Available" (F-44 — WebhookSetupModal is now shipped,
+    // see commit 0e295a4 "real per-user webhook setup (was: marked
+    // available, no UI)". This used to be "Coming Soon" before the UI landed.)
+    expect(labels).toContain("Available");
     // Salesforce → "Roadmap"
     expect(labels).toContain("Roadmap");
     // Mature features → plain "Available"

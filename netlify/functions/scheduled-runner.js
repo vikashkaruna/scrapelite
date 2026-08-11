@@ -155,7 +155,13 @@ async function enqueueChange(client, schedule, changedSummary) {
   const result = await enqueue(client, {
     kind: "schedule.changed",
     refId: schedule.id,
-    userId: schedule.userId || null,
+    // The runner builds the schedule object with `user_id` (snake_case,
+    // matching the supabase row projection in listActive()). The enqueue
+    // helper accepts `userId` (camelCase) and maps it to `user_id` in
+    // the workflow_events row. Reading the wrong key here would silently
+    // drop per-user fan-out (the orchestrator would resolve the OWNER's
+    // Slack + Zapier subscriptions to nothing).
+    userId: schedule.user_id || null,
     payload: {
       scheduleId: schedule.id,
       label: schedule.label,
@@ -186,7 +192,6 @@ async function enqueueChange(client, schedule, changedSummary) {
     console.warn(`[DatIQ] scheduled-runner: enqueue failed for ${schedule.id}: ${result.error}`);
   }
   return result;
-}
 }
 
 // Scrape one target and return a content fingerprint string.

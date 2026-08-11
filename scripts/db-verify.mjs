@@ -61,10 +61,14 @@ grant usage on schema public to anon, authenticated;
 
 // What the migrations claim to create. A mismatch here means a migration was
 // added or renamed without updating this file — deliberately a hard failure.
+// 0022_workflow_events.sql adds 3 tables (workflow_events / workflow_runs /
+// workflow_subscriptions), 1 function (workflow_set_updated_at), and 2
+// triggers (workflow_events_set_updated_at / workflow_subscriptions_set_updated_at).
+// All 3 new tables have RLS enabled, so tablesWithoutRls stays at 0.
 const EXPECT = {
-  tables: 33,
-  functions: 11,
-  triggers: 2,
+  tables: 36,
+  functions: 12,
+  triggers: 4,
   tablesWithoutRls: 0,
 };
 

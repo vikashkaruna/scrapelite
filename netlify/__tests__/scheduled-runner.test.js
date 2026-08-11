@@ -244,9 +244,15 @@ describe("scheduled-runner — change detection", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("content change → notifyMonitoringChange fires with schedule + user_id (per-user Slack + Zapier fan-out)", async () => {
+  it("content change → v2 enqueue carries user_id for per-user Slack + Zapier fan-out (orchestrator + n8n)", async () => {
+    // v2: the runner enqueues a workflow_event with userId set; the
+    // orchestrator (netlify/functions/workflow-orchestrator.js) reads
+    // it and dispatches to self-hosted n8n, which fans out to the
+    // OWNER's Slack webhook and emits a per-user Zapier event. The
+    // legacy direct notifyMonitoringChange path is gone.
     process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
-    notifyMock.notifyMonitoringChange.mockClear();
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
     sbWith([
       { id: "sch_user", user_id: "u-owner-1", data: {
         type: "track", target: "https://a.com", cron: "0 * * * *",
@@ -258,24 +264,34 @@ describe("scheduled-runner — change detection", () => {
     const h = await loadHandler();
     const r = await h();
     expect(r.body).toMatch(/changed 1/);
-    // The dispatcher is fire-and-forget; wait one tick for it to resolve.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(notifyMock.notifyMonitoringChange).toHaveBeenCalledTimes(1);
-    const callArgs = notifyMock.notifyMonitoringChange.mock.calls[0][0];
-    expect(callArgs.userId).toBe("u-owner-1");
-    expect(callArgs.schedule.id).toBe("sch_user");
-    expect(callArgs.schedule.label).toBe("User schedule");
-    expect(callArgs.changedSummary).toEqual(
-      expect.objectContaining({ previousHash: "OLD_HASH_OLD", newHash: expect.any(String) }),
+
+    // Verify the v2 enqueue happened, with userId set so the orchestrator
+    // can resolve the OWNER's Slack + Zapier subscriptions downstream.
+    const enqueueCalls = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).includes("/rest/v1/workflow_events") && (c[1]?.method || "GET").toUpperCase() === "POST"
     );
+    expect(enqueueCalls).toHaveLength(1);
+    const eqBody = JSON.parse(enqueueCalls[0][1].body);
+    expect(eqBody.user_id).toBe("u-owner-1");
+    expect(eqBody.ref_id).toBe("sch_user");
+    expect(eqBody.payload.scheduleId).toBe("sch_user");
+    expect(eqBody.payload.label).toBe("User schedule");
+    expect(eqBody.payload.previousHash).toBe("OLD_HASH_OLD");
+    expect(eqBody.payload.newHash).toBeDefined();
+
+    // No direct notifyMonitoringChange call (legacy v1 path removed).
+    expect(notifyMock.notifyMonitoringChange).not.toHaveBeenCalled();
   });
 
-  it("content change does NOT fire when the schedule has no user_id (legacy rows)", async () => {
+  it("content change → legacy row with no user_id still enqueues (orchestrator falls back to env channels)", async () => {
     // Defensive: schedules inserted before user_id was added have no owner.
-    // The dispatcher is called with userId: null, which resolveSlackWebhook
-    // handles by falling back to the env. We just assert no throw + the
-    // dispatcher still gets called (so the env webhook still fires).
+    // The runner still enqueues — the orchestrator reads userId=null and
+    // falls back to env-based channels (no per-user Slack/Zapier), so the
+    // env webhook still fires. We just assert no throw + an enqueue
+    // happened with user_id = null.
     process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
     notifyMock.notifyMonitoringChange.mockClear();
     sbWith([
       { id: "sch_orphan", data: {
@@ -288,11 +304,17 @@ describe("scheduled-runner — change detection", () => {
     const h = await loadHandler();
     const r = await h();
     expect(r.body).toMatch(/changed 1/);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(notifyMock.notifyMonitoringChange).toHaveBeenCalledTimes(1);
-    // user_id is normalized to null (not undefined) by the runner so the
-    // dispatcher's downstream code doesn't have to handle "missing" twice.
-    expect(notifyMock.notifyMonitoringChange.mock.calls[0][0].userId).toBeNull();
+
+    const enqueueCalls = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).includes("/rest/v1/workflow_events") && (c[1]?.method || "GET").toUpperCase() === "POST"
+    );
+    expect(enqueueCalls).toHaveLength(1);
+    const eqBody = JSON.parse(enqueueCalls[0][1].body);
+    // user_id is null (not undefined) so the orchestrator's downstream
+    // code doesn't have to handle "missing" twice.
+    expect(eqBody.user_id).toBeNull();
+    // No direct legacy dispatcher.
+    expect(notifyMock.notifyMonitoringChange).not.toHaveBeenCalled();
   });
 
   it("no content change → no alert (webhook / Resend NOT called)", async () => {
