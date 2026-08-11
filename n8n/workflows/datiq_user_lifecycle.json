@@ -1,0 +1,155 @@
+{
+  "name": "datiq_user_lifecycle",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "datiq/user-event",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a1aa-7b3843c26dc0",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-resend'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $env.CONTACT_EMAIL_FROM || 'DatIQ <hello@datiq.app>' }}\",\n  \"to\": [\"{{ $json.user?.email }}\"],\n  \"subject\": \"{{ $json.subject || 'Welcome to DatIQ' }}\",\n  \"html\": \"{{ $json.html || '<p>Welcome to DatIQ!</p>' }}\"\n}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a22d-6cfda6f31280",
+      "name": "Send Resend email"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"state\": \"done\", \"finished_at\": \"={{ $now.toISO() }}\", \"last_error\": null }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a0e7-4595bae18cb0",
+      "name": "Mark done"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        300
+      ],
+      "id": "00000000-0000-4000-a8ca-52b5536ef000",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Resend email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Resend email": {
+      "main": [
+        [
+          {
+            "node": "Mark done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a5dd-5f156c4d0700",
+  "id": "00000000-0000-4000-a159-66c9a0560660",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Welcome / reengagement drip. Triggered by DatIQ's welcome-email + reengagement functions."
+  }
+}

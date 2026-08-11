@@ -1,0 +1,103 @@
+{
+  "name": "datiq_daily_digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a2ee-c10d0ee51440",
+      "name": "Daily 21:00 UTC"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events'+ '?select=id,user_id,kind,state&kind=eq.schedule.changed'+ '&created_at=gte.' + $now.minus({days: 1}).toISO()) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a68b-7ec73fd5c1c0",
+      "name": "Query Supabase for today's runs"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Group today's events by user_id\nconst items = $input.all();\nconst byUser = {};\nfor (const item of items) {\n  const u = item.json.user_id || 'anonymous';\n  byUser[u] = (byUser[u] || 0) + 1;\n}\nreturn Object.entries(byUser).map(([user_id, count]) => ({ json: { user_id, count } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a194-461325c6df90",
+      "name": "Group by user"
+    }
+  ],
+  "connections": {
+    "Daily 21:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Query Supabase for today's runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Supabase for today's runs": {
+      "main": [
+        [
+          {
+            "node": "Group by user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a8ec-6f61d6486f80",
+  "id": "00000000-0000-4000-a8e3-444a3ab63900",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Daily digest: emails each user a summary of their schedule activity from the past 24h."
+  }
+}

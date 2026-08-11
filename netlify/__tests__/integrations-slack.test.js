@@ -269,4 +269,58 @@ describe("integrations-slack", () => {
     const r = await handler(baseEvent({ queryStringParameters: { splat: "nope" } }));
     expect(r.statusCode).toBe(404);
   });
+
+  // 2026-08-11 fix: the Slack handler used to have no top-level try/catch
+  // (only Airtable + HubSpot did). When a downstream call threw — e.g. the
+  // Supabase client crashed, or the slackFormatter module threw on a
+  // malformed payload — the function surfaced as a Netlify 502 with no
+  // body, which the modal then rendered as a bare "HTTP 502" with no
+  // debugging information. The fix wraps the dispatch in try/catch and
+  // returns 500 + err.message. This test pins that contract so a future
+  // refactor that drops the try/catch (or swallows the message) is caught.
+  describe("uncaught throw → 500 with err.message (2026-08-11 fix)", () => {
+    it("returns 500 with the error message when handleStatus throws", async () => {
+      mockStore.get.mockRejectedValueOnce(new Error("simulated db down"));
+      const r = await handler(baseEvent({ queryStringParameters: { splat: "status" } }));
+      expect(r.statusCode).toBe(500);
+      const body = JSON.parse(r.body);
+      // The body MUST include the thrown error's message so the modal
+      // can show something other than "HTTP 502" / "Internal error".
+      expect(body.error).toMatch(/simulated db down/);
+    });
+
+    it("returns 500 with the error message when handleConnect throws", async () => {
+      mockStore.upsert.mockRejectedValueOnce(new Error("upsert blew up"));
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "connect" },
+        body: JSON.stringify({ webhookUrl: "https://hooks.slack.com/services/X/Y/Z" }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/upsert blew up/);
+    });
+
+    it("returns 500 with the error message when handleSend throws mid-loop", async () => {
+      mockNotify.resolve.mockResolvedValue("https://hooks.slack.com/x");
+      // The first item's postToSlack resolves fine; the second's
+      // buildSlackNewExtraction throws (simulating a malformed item).
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      const { buildSlackNewExtraction } = await import("../functions/lib/notify.js");
+      buildSlackNewExtraction
+        .mockReturnValueOnce({ text: "x", blocks: [] })
+        .mockImplementationOnce(() => { throw new Error("build blew up"); });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({
+          items: [
+            { id: "e1", url: "https://a.com", page_title: "A" },
+            { id: "e2", url: "https://b.com", page_title: "B" },
+          ],
+        }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/build blew up/);
+    });
+  });
 });

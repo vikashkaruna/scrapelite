@@ -1,0 +1,144 @@
+{
+  "name": "datiq_failure_alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "datiq/failure-alert",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a066-0ebefdbfc810",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "=#datiq-alerts",
+        "text": "=:warning: DatIQ op event: {{ $json.kind }} — {{ $json.payload?.reason || 'see logs' }}"
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a0fd-c82ee681c960",
+      "name": "Notify ops",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "datiq-slack-monitoring",
+          "name": "datiq-slack-monitoring"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"state\": \"done\", \"finished_at\": \"={{ $now.toISO() }}\", \"last_error\": null }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        300
+      ],
+      "id": "00000000-0000-4000-a11a-2d80d1158ae0",
+      "name": "Mark done"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "id": "00000000-0000-4000-a33f-ee4afc454800",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Notify ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify ops": {
+      "main": [
+        [
+          {
+            "node": "Mark done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a771-efc95a512380",
+  "id": "00000000-0000-4000-a4bd-c6e896d87140",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

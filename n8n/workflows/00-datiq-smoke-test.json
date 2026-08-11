@@ -1,0 +1,117 @@
+{
+  "name": "00_datiq_smoke_test",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "smoke-schedule-1",
+      "name": "Every 5 min"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ts-1",
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "host-1",
+              "name": "host",
+              "value": "={{ $env.WEBHOOK_URL || 'n8n' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        300
+      ],
+      "id": "smoke-set-1",
+      "name": "Build payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://' + $env.SITE_URL + '/api/workflow-orchestrator/ping' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"source\": \"n8n-smoke-test\",\n  \"ts\": {{ JSON.stringify($json.timestamp) }},\n  \"host\": {{ JSON.stringify($json.host) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "smoke-http-1",
+      "name": "Ping orchestrator"
+    }
+  ],
+  "connections": {
+    "Every 5 min": {
+      "main": [
+        [
+          {
+            "node": "Build payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build payload": {
+      "main": [
+        [
+          {
+            "node": "Ping orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "smoke-1.0.0",
+  "id": "smoke-test-001",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Hello-world smoke test. Posts a ping to the DatIQ orchestrator every 5 min. Use to confirm n8n → DatIQ connectivity."
+  }
+}

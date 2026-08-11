@@ -1,0 +1,123 @@
+{
+  "name": "datiq_retry_workflow_event",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_retry_workflow_event",
+        "toolDescription": "Reset a failed workflow event back to pending with attempts=0, so the next orchestrator run picks it up. Use after fixing the underlying issue (e.g., rotated a credential).",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "event_id": {
+              "type": "string"
+            },
+            "reset_attempts": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": [
+            "event_id"
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a19d-2de36e4c8700",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.event_id+ ($json.reset_attempts !== false ? '' : '&state=eq.failed')) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"state\": \"pending\", \"attempts\": 0, \"next_attempt_at\": \"={{ $now.toISO() }}\", \"last_error\": null, \"finished_at\": null, \"started_at\": null }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a70b-9bce45d23bc0",
+      "name": "Reset attempts"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a191-d25e1957bba0",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Reset attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset attempts": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a1fa-c61952290260",
+  "id": "00000000-0000-4000-a395-574ae73af500",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

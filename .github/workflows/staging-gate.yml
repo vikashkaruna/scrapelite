@@ -118,6 +118,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
+      # 2026-08-12: this gate keeps failing with
+      # `DEPTH_ZERO_SELF_SIGNED_CERT` on api.github.com. The runner's
+      # bundled CA store occasionally ships without the full chain
+      # GitHub's edge serves, so Node's undici rejects the connection
+      # outright. Refresh the system CA bundle as a belt-and-suspenders
+      # measure; the script itself also has retry + `gh api` fallback.
+      - name: Refresh CA bundle
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ca-certificates
       - name: Check open defects
         run: node scripts/check-open-defects.mjs
         env:

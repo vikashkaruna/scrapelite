@@ -5,6 +5,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import NotifyMeModal from "../components/NotifyMeModal.jsx";
+import WebhookSetupModal from "../components/WebhookSetupModal.jsx";
 import { isWaitlisted } from "../lib/integrationsNotify.js";
 
 const INTEGRATIONS = [
@@ -25,9 +26,9 @@ const INTEGRATIONS = [
   {
     icon: "zap",
     title: "Webhook / n8n",
-    status: "coming-soon",
+    status: "available",
     desc: "Fire a webhook on extraction complete. Integrate DatIQ into any n8n, Make, or Zapier workflow.",
-    action: { label: "Notify me", path: null },
+    action: { label: "Set up", modal: "webhook" },
   },
   {
     icon: "mail",
@@ -119,6 +120,7 @@ export default function Integrations() {
   const navigate = useNavigate();
   const toast = useToast();
   const [notifyOpen, setNotifyOpen] = useState(null); // { slug, label } or null
+  const [webhookOpen, setWebhookOpen] = useState(false);
 
   const handleNotifyClick = (item) => {
     if (!item.slug) {
@@ -127,6 +129,19 @@ export default function Integrations() {
       return;
     }
     setNotifyOpen({ slug: item.slug, label: item.title });
+  };
+
+  // Dispatch an "available" action by its kind: navigate to a path,
+  // or open a modal. Today only Webhook uses a modal; the rest still
+  // route to a destination page (e.g. /dashboard for CSV/Sheets).
+  const handleAvailableAction = (item) => {
+    if (item.action?.modal === "webhook") {
+      setWebhookOpen(true);
+      return;
+    }
+    if (item.action?.path) {
+      navigate(item.action.path);
+    }
   };
 
   return (
@@ -159,7 +174,7 @@ export default function Integrations() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => navigate(item.action.path)}
+                        onClick={() => handleAvailableAction(item)}
                       >
                         {item.action.label}
                       </Button>
@@ -220,6 +235,10 @@ export default function Integrations() {
         slug={notifyOpen?.slug}
         label={notifyOpen?.label}
         onClose={() => setNotifyOpen(null)}
+      />
+      <WebhookSetupModal
+        open={webhookOpen}
+        onClose={() => setWebhookOpen(false)}
       />
     </div>
   );

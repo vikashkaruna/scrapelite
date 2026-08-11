@@ -1,0 +1,123 @@
+{
+  "name": "datiq_list_pending_workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_list_pending_workflows",
+        "toolDescription": "Lists workflow events in the DatIQ automation queue. Use this to answer 'what's pending?', 'what's failed?', 'what changed in the last hour?'. Filter by `state` (pending/processing/done/failed/cancelled), `kind` (schedule.changed/contact.received/payment.captured), or `user_id`. Returns up to 50 events sorted by `next_attempt_at` ascending.",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "processing",
+                "done",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "kind": {
+              "type": "string"
+            },
+            "user_id": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number",
+              "default": 50,
+              "maximum": 200
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a4be-a8249b5e0c40",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events'+ '?select=id,kind,ref_id,user_id,state,attempts,max_attempts,next_attempt_at,started_at,finished_at,last_error,created_at'+ '&order=next_attempt_at.asc&limit=' + ($json.limit || 50)+ ($json.state ? '&state=eq.' + $json.state : '')+ ($json.kind ? '&kind=eq.' + $json.kind : '')+ ($json.user_id ? '&user_id=eq.' + $json.user_id : '')) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a883-bb0af3eda880",
+      "name": "List events"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a0ca-52186f9c7840",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "List events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List events": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a6ee-184c5b47fac0",
+  "id": "00000000-0000-4000-a0d1-1fb7cb8b9a38",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

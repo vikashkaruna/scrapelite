@@ -327,47 +327,68 @@ export const handler = async (event) => {
   const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
-  const auth = await authenticateRequest(event);
-  if (!auth.ok) return auth.response;
-  const userId = auth.user.id;
+  // Top-level try/catch (2026-08-11 fix): a thrown error in any handler
+  // used to surface as a Netlify 502 with no body — opaque to the
+  // browser. The modal then rendered "HTTP 502" with nothing to debug.
+  // This wraps the whole dispatch and converts the throw into a 500
+  // with err.message, which the modal can display verbatim. Airtable
+  // and HubSpot already have this pattern; Slack did not.
+  //
+  // Subtle but critical: each `return handleX(...)` MUST be `return await
+  // handleX(...)`. Returning the bare Promise from an async function
+  // means the try/catch sees the return value (a Promise), NOT a
+  // rejection — the rejection just becomes the function's return value,
+  // which propagates straight to the caller. The test that caught this
+  // was `mockStore.get.mockRejectedValueOnce(new Error("..."))`, which
+  // was a rejected Promise from the inner handler that escaped the
+  // catch. The fix: `await` every handler return so rejections are
+  // thrown inside the try block, where the catch can see them.
+  try {
+    const auth = await authenticateRequest(event);
+    if (!auth.ok) return auth.response;
+    const userId = auth.user.id;
 
-  if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-    return handleStatus(userId);
-  }
-  if (event.httpMethod === "POST" && subPath[0] === "connect") {
-    return handleConnect(event, userId);
-  }
-  if (event.httpMethod === "PATCH" && subPath[0] === "connect") {
-    return handlePatch(event, userId);
-  }
-  // Disconnect is the only DELETE endpoint for Slack; route it regardless
-  // of the sub-path (the body.action source only applies to POST).
-  if (event.httpMethod === "DELETE") {
-    return handleDisconnect(userId);
-  }
-  if (event.httpMethod === "POST" && subPath[0] === "test") {
-    return handleTest(event, userId);
-  }
-  if (event.httpMethod === "POST" && subPath[0] === "notify") {
-    return handleNotify(event, userId);
-  }
-  if (event.httpMethod === "POST" && subPath[0] === "send") {
-    return handleSend(event, userId);
-  }
+    if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
+      return await handleStatus(userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "connect") {
+      return await handleConnect(event, userId);
+    }
+    if (event.httpMethod === "PATCH" && subPath[0] === "connect") {
+      return await handlePatch(event, userId);
+    }
+    // Disconnect is the only DELETE endpoint for Slack; route it regardless
+    // of the sub-path (the body.action source only applies to POST).
+    if (event.httpMethod === "DELETE") {
+      return await handleDisconnect(userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "test") {
+      return await handleTest(event, userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "notify") {
+      return await handleNotify(event, userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "send") {
+      return await handleSend(event, userId);
+    }
 
-  // Unknown sub-path. Log full context so the next session can diagnose
-  // from the error string alone if this fires again.
-  console.warn(
-    "[integrations-slack] No such endpoint — splat:",
-    JSON.stringify(splat),
-    "rawQuery:",
-    JSON.stringify(event.queryStringParameters),
-    "path:",
-    event.path,
-    "method:",
-    event.httpMethod
-  );
-  return respond(404, {
-    error: `No such endpoint: /integrations/slack/${subPath.join("/")} (${event.httpMethod}) (splat=${JSON.stringify(splat)})`,
-  });
+    // Unknown sub-path. Log full context so the next session can diagnose
+    // from the error string alone if this fires again.
+    console.warn(
+      "[integrations-slack] No such endpoint — splat:",
+      JSON.stringify(splat),
+      "rawQuery:",
+      JSON.stringify(event.queryStringParameters),
+      "path:",
+      event.path,
+      "method:",
+      event.httpMethod
+    );
+    return respond(404, {
+      error: `No such endpoint: /integrations/slack/${subPath.join("/")} (${event.httpMethod}) (splat=${JSON.stringify(splat)})`,
+    });
+  } catch (err) {
+    console.error("[integrations-slack] uncaught error", err);
+    return respond(500, { error: `Internal error: ${err?.message || String(err)}` });
+  }
 };

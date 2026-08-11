@@ -55,6 +55,42 @@ describe("integrations-airtable", () => {
       expect(r.statusCode).toBe(200);
       expect(JSON.parse(r.body).connected).toBe(false);
     });
+
+    // 2026-08-11 fix: handleStatus previously omitted token_hint, which
+    // hid the Account page's "Token" line for Airtable and made users
+    // think the PAT hadn't been saved. Notion/HubSpot/Zapier all return
+    // token_hint; Airtable now does too.
+    it("returns token_hint from config.api_key so the Account page shows the Token line", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: {
+          config: {
+            api_key: "patABCDEFGHIJKLMNOP",
+            base_id: "appXXX",
+            table_id: "tblYYY",
+          },
+        },
+      });
+      const r = await handler(baseEvent({ queryStringParameters: { splat: "status" } }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.connected).toBe(true);
+      expect(body.connection.token_hint).toBe("patABCD…MNOP");
+      expect(body.connection.has_api_key).toBe(true);
+    });
+
+    it("returns null token_hint when no api_key is stored (legacy row)", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: { config: { base_id: "appXXX", table_id: "tblYYY" } },
+      });
+      const r = await handler(baseEvent({ queryStringParameters: { splat: "status" } }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.connected).toBe(true);
+      expect(body.connection.token_hint).toBeNull();
+      expect(body.connection.has_api_key).toBe(false);
+    });
   });
 
   describe("POST /connect", () => {

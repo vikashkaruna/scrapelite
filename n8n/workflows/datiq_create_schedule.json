@@ -1,0 +1,153 @@
+{
+  "name": "datiq_create_schedule",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_create_schedule",
+        "toolDescription": "Create a new monitoring schedule. `target` is the URL to track (or array of URLs for batch). `cron` is a 5-field cron expression (UTC).",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "track",
+                "batch"
+              ]
+            },
+            "target": {},
+            "cron": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string",
+              "default": "summary"
+            },
+            "alert_email": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "render_js": {
+              "type": "boolean",
+              "default": false
+            },
+            "custom_prompt": {
+              "type": "string"
+            },
+            "expires_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "user_id",
+            "type",
+            "target",
+            "cron"
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a7d5-47e01870cd80",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/scheduled_tasks') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"id\": \"sch_{{ $now.toMillis() }}\",\n  \"user_id\": \"{{ $json.user_id }}\",\n  \"status\": \"active\",\n  \"cron\": \"{{ $json.cron }}\",\n  \"data\": {{ JSON.stringify({ type: $json.type, target: $json.target, intent: $json.intent, alertEmail: $json.alert_email, label: $json.label, renderJs: $json.render_js, customPrompt: $json.custom_prompt, expiresAt: $json.expires_at, status: 'active' }) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a6a5-be8ddbfa0d80",
+      "name": "Insert"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a22d-7b9bcda1ce00",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a1a7-e680838f8c80",
+  "id": "00000000-0000-4000-a3ff-bc11c9876020",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

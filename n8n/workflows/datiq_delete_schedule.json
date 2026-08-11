@@ -1,0 +1,108 @@
+{
+  "name": "datiq_delete_schedule",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_delete_schedule",
+        "toolDescription": "Permanently delete a monitoring schedule and all its history.",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "schedule_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schedule_id"
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a456-cc9c0413f780",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/scheduled_tasks?id=eq.' + $json.schedule_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a0ca-935a7f881938",
+      "name": "Delete"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a467-e6d0909836c0",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a7de-a32e756d8080",
+  "id": "00000000-0000-4000-a4ae-10b73d7b9300",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

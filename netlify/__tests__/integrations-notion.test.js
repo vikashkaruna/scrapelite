@@ -152,4 +152,58 @@ describe("integrations-notion", () => {
     const r = await handler(baseEvent({ queryStringParameters: { splat: "nope" } }));
     expect(r.statusCode).toBe(404);
   });
+
+  // 2026-08-11 fix: the Notion handler used to have no top-level
+  // try/catch (only Airtable + HubSpot did). When a downstream call
+  // threw — e.g. the connection store crashed, or pushToNotion threw on
+  // a malformed item — the function surfaced as a Netlify 502 with no
+  // body, which the modal then rendered as a bare "HTTP 502". The fix
+  // wraps the dispatch in try/catch and returns 500 + err.message. This
+  // test pins that contract.
+  describe("uncaught throw → 500 with err.message (2026-08-11 fix)", () => {
+    it("returns 500 with the error message when handleStatus throws", async () => {
+      mockStore.get.mockRejectedValueOnce(new Error("simulated db down"));
+      const r = await handler(baseEvent({ queryStringParameters: { splat: "status" } }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/simulated db down/);
+    });
+
+    it("returns 500 with the error message when handleConnect throws", async () => {
+      // The schema probe must succeed first (it's the step before
+      // upsert in handleConnect). If we don't mock it, the probe
+      // returns undefined and the handler bails with 400 before the
+      // upsert throw is reached.
+      fetchNotionSchema.mockResolvedValueOnce({
+        ok: true,
+        properties: { Title: { type: "title" } },
+        titleColumn: "Title",
+      });
+      mockStore.upsert.mockRejectedValueOnce(new Error("upsert blew up"));
+      // /connect is the path the user hits from the Account page; this
+      // is the EXACT scenario that was rendering "HTTP 502" before the
+      // fix.
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "connect" },
+        body: JSON.stringify({ apiKey: "secret_abcdefghijklmnop", databaseId: "abc".repeat(11) }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/upsert blew up/);
+    });
+
+    it("returns 500 with the error message when handlePush throws", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: { config: { api_key: "secret_xyz", database_id: "db" } },
+      });
+      pushToNotion.mockRejectedValueOnce(new Error("notion push crashed"));
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ items: [{ url: "x" }] }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/notion push crashed/);
+    });
+  });
 });
