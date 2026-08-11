@@ -193,3 +193,191 @@ describe("IntegrationConnectModal — Zapier", () => {
     expect(init.credentials).toBe("same-origin");
   });
 });
+
+// 2026-08-11 fix: the Account UI's "Connect X" modal used to show
+// "HTTP 502" with nothing else when a Netlify function crashed before
+// producing a structured `error` field. The fix is two-part:
+//   1. The Slack / Zapier / Notion handlers now wrap their dispatch in
+//      try/catch and return 500 + err.message. HubSpot + Airtable
+//      already did this.
+//   2. The modal now reads the response body as text first, parses it
+//      if possible, and falls back to data.errorMessage / data.message
+//      / the first non-empty string in the body / a 240-char snippet
+//      of the raw body — in that order — before giving up on "HTTP
+//      <status>". The old `data.error || \`HTTP ${res.status}\``
+//      fallback hid every non-`error`-shaped 5xx, which made every
+//      function crash a black box. These tests pin the new fallback
+//      chain so a future refactor can't regress to the bare "HTTP 502"
+//      message.
+//
+// Helper: provider-aware "click Connect" — providers with required
+// fields (slack / notion / airtable / hubspot) need the field filled
+// before submit; zapier has no fields, so no fill is needed. Without
+// this, the browser's native form-validation blocks submit and the
+// test times out without ever seeing the error path.
+async function clickConnect(user, provider) {
+  if (provider === "slack") {
+    await user.type(screen.getByLabelText(/Slack Incoming Webhook URL/i), "https://hooks.slack.com/services/X/Y/Z");
+  } else if (provider === "notion") {
+    await user.type(screen.getByLabelText(/Notion Internal Integration secret/i), "secret_abcdefghijklmnop");
+    await user.type(screen.getByLabelText(/Database ID/i), "abc".repeat(11));
+  } else if (provider === "hubspot") {
+    await user.type(screen.getByLabelText(/HubSpot Private App token/i), "pat-na1-abcdefghijklmnop1234");
+  }
+  await user.click(screen.getByRole("button", { name: new RegExp(`Connect ${provider[0].toUpperCase()}${provider.slice(1)}`, "i") }));
+}
+
+describe("IntegrationConnectModal — error fallback when data.error is missing (2026-08-11 fix)", () => {
+  it("surfaces data.errorMessage when the response has no data.error (Netlify crash shape)", async () => {
+    const user = userEvent.setup();
+    // Netlify's function-injected crash body has { errorType,
+    // errorMessage, trace } but no `error` field. Before the fix, the
+    // modal showed "HTTP 502" and nothing else.
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({
+        errorType: "Error",
+        errorMessage: "Cannot read property 'foo' of undefined",
+        trace: ["at handleConnect (integrations-slack.js:122:5)"],
+      }),
+      json: async () => ({
+        errorType: "Error",
+        errorMessage: "Cannot read property 'foo' of undefined",
+        trace: ["at handleConnect (integrations-slack.js:122:5)"],
+      }),
+    });
+    renderModal({ provider: "slack" });
+    await clickConnect(user, "slack");
+    await waitFor(() => {
+      // The user must see the errorMessage, NOT the bare "HTTP 502".
+      expect(screen.getByText(/Cannot read property 'foo' of undefined/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^HTTP 502$/)).not.toBeInTheDocument();
+  });
+
+  it("surfaces the Internal error message from the new try/catch handler wrap (500 response)", async () => {
+    const user = userEvent.setup();
+    // After the §2026-08-11 fix, the Slack/Zapier/Notion handlers
+    // return 500 with { error: "Internal error: <msg>" } when a
+    // downstream call throws. The modal must surface that, not
+    // "HTTP 500".
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({ error: "Internal error: simulated db down" }),
+      json: async () => ({ error: "Internal error: simulated db down" }),
+    });
+    renderModal({ provider: "slack" });
+    await clickConnect(user, "slack");
+    await waitFor(() => {
+      expect(screen.getByText(/simulated db down/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^HTTP 500$/)).not.toBeInTheDocument();
+  });
+
+  it("surfaces data.message as a fallback when the body has neither error nor errorMessage", async () => {
+    const user = userEvent.setup();
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({ message: "Service unavailable" }),
+      json: async () => ({ message: "Service unavailable" }),
+    });
+    renderModal({ provider: "notion" });
+    await clickConnect(user, "notion");
+    await waitFor(() => {
+      expect(screen.getByText(/Service unavailable/)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces a snippet of a non-JSON 5xx body as a last-resort fallback", async () => {
+    const user = userEvent.setup();
+    // Some upstream proxy returns 502 with text/plain — a non-JSON
+    // body. The modal must show SOMETHING from the body, not just
+    // "HTTP 502".
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "text/plain" },
+      text: async () => "Bad Gateway: upstream connection refused",
+      json: async () => { throw new SyntaxError("Unexpected token B"); },
+    });
+    renderModal({ provider: "hubspot" });
+    await clickConnect(user, "hubspot");
+    await waitFor(() => {
+      expect(screen.getByText(/upstream connection refused/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^HTTP 502$/)).not.toBeInTheDocument();
+  });
+
+  it("truncates a very long non-JSON body to a single-line snippet (≤240 chars)", async () => {
+    const user = userEvent.setup();
+    const long = "stacktrace_fragment " + "x".repeat(500);
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "text/plain" },
+      text: async () => long,
+      json: async () => { throw new SyntaxError("Unexpected token s"); },
+    });
+    renderModal({ provider: "hubspot" });
+    await clickConnect(user, "hubspot");
+    await waitFor(() => {
+      // The 240-char cap is part of the contract: longer bodies get
+      // truncated with … so the modal toast stays on one line.
+      const nodes = screen.getAllByText(/stacktrace_fragment/);
+      expect(nodes.length).toBeGreaterThan(0);
+      const text = nodes[0].textContent || "";
+      expect(text.length).toBeLessThanOrEqual(240);
+      expect(text).toMatch(/…$/);
+    });
+  });
+
+  it("still falls back to 'HTTP 502' only when the body is truly empty (the unavoidable case)", async () => {
+    const user = userEvent.setup();
+    // No JSON, no text — truly empty. The user gets the bare status
+    // (this is the ONLY acceptable case for the old fallback now).
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "application/json" },
+      text: async () => "",
+      json: async () => { throw new SyntaxError("Unexpected end of JSON input"); },
+    });
+    renderModal({ provider: "slack" });
+    await clickConnect(user, "slack");
+    await waitFor(() => {
+      expect(screen.getByText(/^HTTP 502$/)).toBeInTheDocument();
+    });
+  });
+
+  it("does NOT show the 'HTTP 502' fallback when a structured error is present", async () => {
+    const user = userEvent.setup();
+    // Sanity check that the existing data.error path still wins
+    // (priority order: data.error > errorMessage > message > ...).
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({
+        error: "Slack rejected the webhook: 404",
+        errorMessage: "should be ignored",
+      }),
+      json: async () => ({
+        error: "Slack rejected the webhook: 404",
+        errorMessage: "should be ignored",
+      }),
+    });
+    renderModal({ provider: "slack" });
+    await clickConnect(user, "slack");
+    await waitFor(() => {
+      expect(screen.getByText(/Slack rejected the webhook: 404/)).toBeInTheDocument();
+    });
+    // The errorMessage must NOT win over the error field.
+    expect(screen.queryByText(/should be ignored/)).not.toBeInTheDocument();
+  });
+});

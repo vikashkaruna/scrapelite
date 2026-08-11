@@ -262,23 +262,42 @@ export const handler = async (event) => {
   const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
-  const auth = await authenticateRequest(event);
-  if (!auth.ok) return auth.response;
-  const userId = auth.user.id;
+  // Top-level try/catch (2026-08-11 fix): a thrown error in any handler
+  // used to surface as a Netlify 502 with no body — opaque to the
+  // browser. The modal then rendered "HTTP 502" with nothing to debug.
+  // This wraps the whole dispatch and converts the throw into a 500
+  // with err.message, which the modal can display verbatim. Airtable
+  // and HubSpot already have this pattern; Notion did not.
+  //
+  // Subtle but critical: each `return handleX(...)` MUST be `return await
+  // handleX(...)`. Returning the bare Promise from an async function
+  // means the try/catch sees the return value (a Promise), NOT a
+  // rejection — the rejection just becomes the function's return value,
+  // which propagates straight to the caller. The fix: `await` every
+  // handler return so rejections are thrown inside the try block, where
+  // the catch can see them.
+  try {
+    const auth = await authenticateRequest(event);
+    if (!auth.ok) return auth.response;
+    const userId = auth.user.id;
 
-  if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-    return handleStatus(userId);
+    if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
+      return await handleStatus(userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "connect") return await handleConnect(event, userId);
+    if (event.httpMethod === "PATCH" && subPath[0] === "connect") return await handlePatch(event, userId);
+    // Disconnect is the only DELETE endpoint for Notion; route it
+    // regardless of the sub-path (DELETE is unambiguous).
+    if (event.httpMethod === "DELETE") return await handleDisconnect(userId);
+    if (event.httpMethod === "POST" && subPath[0] === "test") return await handleTest(event, userId);
+    if (event.httpMethod === "POST" && subPath[0] === "schema") return await handleSchema(event, userId);
+    if (event.httpMethod === "POST" && subPath[0] === "push") return await handlePush(event, userId);
+
+    return respond(404, { error: `No such endpoint: /integrations/notion/${subPath.join("/")} (${event.httpMethod})` });
+  } catch (err) {
+    console.error("[integrations-notion] uncaught error", err);
+    return respond(500, { error: `Internal error: ${err?.message || String(err)}` });
   }
-  if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
-  if (event.httpMethod === "PATCH" && subPath[0] === "connect") return handlePatch(event, userId);
-  // Disconnect is the only DELETE endpoint for Notion; route it
-  // regardless of the sub-path (DELETE is unambiguous).
-  if (event.httpMethod === "DELETE") return handleDisconnect(userId);
-  if (event.httpMethod === "POST" && subPath[0] === "test") return handleTest(event, userId);
-  if (event.httpMethod === "POST" && subPath[0] === "schema") return handleSchema(event, userId);
-  if (event.httpMethod === "POST" && subPath[0] === "push") return handlePush(event, userId);
-
-  return respond(404, { error: `No such endpoint: /integrations/notion/${subPath.join("/")} (${event.httpMethod})` });
 };
 
 // Re-export so the function reads the lib/* paths consistently.

@@ -247,4 +247,52 @@ describe("integrations-zapier", () => {
     const r = await handler(baseEvent({ queryStringParameters: { splat: "nope" } }));
     expect(r.statusCode).toBe(404);
   });
+
+  // 2026-08-11 fix: the Zapier handler used to have no top-level
+  // try/catch (only Airtable + HubSpot did). When a downstream call
+  // threw — e.g. the connection store crashed, or a Zapier token verify
+  // blew up parsing a malformed response — the function surfaced as a
+  // Netlify 502 with no body, which the modal then rendered as a bare
+  // "HTTP 502". The fix wraps the dispatch in try/catch and returns 500
+  // + err.message. This test pins that contract.
+  describe("uncaught throw → 500 with err.message (2026-08-11 fix)", () => {
+    it("returns 500 with the error message when handleStatus throws", async () => {
+      mockStore.get.mockRejectedValueOnce(new Error("simulated db down"));
+      const r = await handler(baseEvent({ queryStringParameters: { splat: "status" } }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/simulated db down/);
+    });
+
+    it("returns 500 with the error message when handleConnect throws", async () => {
+      mockStore.upsert.mockRejectedValueOnce(new Error("upsert blew up"));
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "connect" },
+        body: JSON.stringify({ regenerate: true }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/upsert blew up/);
+    });
+
+    it("returns 500 with the error message when handleDisconnect throws", async () => {
+      mockStore.delete.mockRejectedValueOnce(new Error("delete blew up"));
+      const r = await handler(baseEvent({
+        httpMethod: "DELETE",
+        queryStringParameters: { splat: "connect" },
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/delete blew up/);
+    });
+
+    it("returns 500 with the error message when /events append throws", async () => {
+      mockEventStore.append.mockRejectedValueOnce(new Error("event store down"));
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "events" },
+        body: JSON.stringify({ event_type: "new_extraction", payload: { id: "e1" } }),
+      }));
+      expect(r.statusCode).toBe(500);
+      expect(JSON.parse(r.body).error).toMatch(/event store down/);
+    });
+  });
 });
