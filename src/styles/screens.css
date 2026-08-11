@@ -3162,10 +3162,12 @@
 .int-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
 .int-status { display: inline-flex; align-items: center; font-size: .72em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 10px; border-radius: var(--r-pill); }
 .int-status-available { background: #dcfce7; color: #15803d; }
+.int-status-beta { background: #e0e7ff; color: #3730a3; }
 .int-status-coming { background: #fef9c3; color: #854d0e; }
 .int-status-agency { background: var(--accent-soft); color: var(--accent); }
 .int-status-roadmap { background: var(--surface-2); color: var(--text-3); }
 [data-theme="dark"] .int-status-available { background: #14532d; color: #4ade80; }
+[data-theme="dark"] .int-status-beta { background: #1e1b4b; color: #a5b4fc; }
 [data-theme="dark"] .int-status-coming { background: #422006; color: #fbbf24; }
 .int-custom { margin-top: 48px; padding: 32px; border: 1px solid var(--border); border-radius: var(--r-lg); text-align: center; background: var(--surface); }
 .int-custom h2 { margin: 0 0 10px; font-size: 1.2em; font-weight: 750; }
@@ -6319,6 +6321,61 @@
   font-size: .8rem; font-weight: 600; color: var(--text-2);
 }
 .ws-section { margin-top: 24px; }
+
+/* Workspace tab nav (Overview | Collections | Schedules) */
+.ws-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill, 999px);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-tabs::-webkit-scrollbar { display: none; }
+.ws-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  font-size: .88rem;
+  border-radius: var(--r-pill, 999px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease;
+}
+.ws-tab:hover { color: var(--text); background: var(--surface-2); }
+.ws-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-on-dark, #fff);
+}
+.ws-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.ws-tab-spin { display: inline-flex; align-items: center; opacity: .7; }
+.ws-tab-spin .spin { animation: ws-spin 1s linear infinite; }
+@keyframes ws-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
 .ws-section-title {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 1rem; font-weight: 700; margin: 0 0 12px;
@@ -6521,6 +6578,43 @@
 .export-dropdown-item b { display: block; }
 .export-dropdown-item .export-plan-hint { display: block; font-size: .72rem; color: var(--text-2); font-weight: 400; margin-top: 2px; }
 
+/* I-1 — "Push to" dropdown (server-side integrations on Preview + Dashboard) */
+.push-integration-menu { display: inline-flex; }
+.push-integration-menu .export-dropdown-menu { right: 0; top: calc(100% + 6px); }
+.push-int-menu { min-width: 280px; }
+.push-int-option { align-items: flex-start; gap: 10px; padding: 10px 12px; }
+.push-int-option-body { flex: 1; min-width: 0; }
+.push-int-option-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.push-int-option-head b { font-size: .92em; }
+.push-int-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: .68rem; font-weight: 600; line-height: 1.4;
+  letter-spacing: .01em;
+}
+.push-int-badge-ok {
+  background: color-mix(in srgb, var(--accent, #2f6df6) 14%, transparent);
+  color: var(--accent, #2f6df6);
+  border: 1px solid color-mix(in srgb, var(--accent, #2f6df6) 28%, transparent);
+}
+.push-int-badge-off {
+  background: color-mix(in srgb, var(--text-3, #888) 12%, transparent);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.push-int-foot {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; padding: 0 4px;
+  font-size: .72rem; color: var(--text-3);
+}
+.push-int-spin { animation: spin 1s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* I-1 — compact mode (inside SelectionBar) — same look as dash-float-btn siblings */
+.push-integration-menu.push-compact { display: inline-flex; }
+
 /* F18 — Export Integrations modal (Google Sheets / Airtable / Notion) */
 .export-int-overlay {
   position: fixed; inset: 0; z-index: 200;
@@ -6587,6 +6681,59 @@
 .export-int-help a:hover { text-decoration: underline; }
 .export-int-help code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: .82em; }
 .export-int-help strong { color: var(--text); }
+
+/* Inline status banner inside a pane (used for Slack's "connected /
+   not connected" indicator, but generic enough for any future
+   connection-gated destination). */
+.export-int-status {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: .85rem; line-height: 1.5;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.export-int-status-ok { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.export-int-status-ok > svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.export-int-status-warn { border-color: color-mix(in srgb, #f59e0b 45%, var(--border)); }
+.export-int-status-warn > svg { color: #f59e0b; flex-shrink: 0; margin-top: 2px; }
+.export-int-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; text-decoration: underline;
+}
+.export-int-link:hover { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.export-int-link:disabled { color: var(--text-3); cursor: not-allowed; }
+
+/* Per-provider detail block (Notion's database_id, title column,
+   column count; Airtable's field_map summary chip). Mirrors the
+   Account page's .int-row-detail pattern so the two surfaces feel
+   consistent. */
+.export-int-detail {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: .82rem; color: var(--text-2);
+  margin-top: -4px;
+}
+.export-int-detail-line {
+  display: flex; align-items: baseline; gap: 8px;
+  flex-wrap: wrap;
+}
+.export-int-detail-key {
+  color: var(--text-3);
+  font-weight: 600;
+  min-width: 110px;
+  font-size: .92em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.export-int-detail-val {
+  color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .98em;
+}
+.export-int-detail-line .export-int-detail-val:not(code) {
+  font-family: inherit;
+  font-size: 1em;
+}
 
 .export-int-steps { margin: 0; padding-left: 22px; color: var(--text-2); font-size: .85rem; line-height: 1.7; }
 .export-int-steps li::marker { color: var(--accent); font-weight: 700; }
@@ -8036,3 +8183,219 @@
 .wlp-help summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
 .wlp-help ul { margin: 8px 0 0; padding-left: 18px; }
 .wlp-help li { margin: 4px 0; line-height: 1.5; }
+
+/* ── Integration Connect Modal (Account → Integrations) ───────────────────── */
+.icm-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 20px;
+}
+.icm-modal {
+  position: relative; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 24px 24px 18px; max-width: 480px; width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  max-height: calc(100vh - 40px); overflow-y: auto;
+}
+.icm-head {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+  align-items: start; margin-bottom: 16px;
+}
+.icm-head-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+  flex-shrink: 0;
+}
+.icm-head h3 {
+  margin: 0 0 4px; font-size: 1.1rem; font-weight: 700;
+  letter-spacing: -.01em;
+}
+.icm-desc {
+  margin: 0; font-size: .85em; color: var(--text-3);
+  line-height: 1.5;
+}
+.icm-close {
+  background: transparent; border: 0; color: var(--text-2);
+  cursor: pointer; padding: 6px; border-radius: 6px;
+  align-self: start;
+}
+.icm-close:hover { color: var(--text); background: var(--surface-2); }
+.icm-body {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.icm-error {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; background: rgba(185,28,28,.08);
+  border: 1px solid rgba(185,28,28,.3);
+  color: #b91c1c; border-radius: 8px; font-size: .88em;
+}
+.icm-success {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; background: rgba(4,120,87,.08);
+  border: 1px solid rgba(4,120,87,.3);
+  color: #047857; border-radius: 8px; font-size: .92em;
+}
+.icm-field {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.icm-field label {
+  font-size: .82em; font-weight: 600; color: var(--text-2);
+  letter-spacing: .01em;
+}
+.icm-required { color: #b91c1c; margin-left: 2px; }
+.icm-field input,
+.icm-field select {
+  padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: 7px; background: var(--surface-2);
+  color: var(--text); font-size: .92em;
+  font-family: inherit;
+}
+.icm-field input:focus,
+.icm-field select:focus {
+  outline: 2px solid var(--accent); outline-offset: -1px;
+}
+.icm-field input[type="password"] { letter-spacing: .04em; }
+.icm-help {
+  margin: 0; font-size: .78em; color: var(--text-3); line-height: 1.5;
+}
+/* Used by providers with no fields (e.g. Zapier) where the entire
+   "form" is just a confirm button. The provider-level explanation
+   sits as a paragraph in the body, slightly larger than a field hint. */
+.icm-help-standalone { font-size: .88em; padding: 4px 0 0; }
+.icm-token-box {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.icm-token-box code {
+  flex: 1; font-size: .82em; word-break: break-all;
+  color: var(--text); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.icm-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── Account → Integrations section ───────────────────────────────────────── */
+.int-section {
+  margin-top: 18px;
+}
+.int-section-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 1em; font-weight: 700; margin-bottom: 4px;
+  letter-spacing: -.005em;
+}
+.int-section-sub {
+  margin: 0 0 14px; font-size: .85em; color: var(--text-3);
+  line-height: 1.5;
+}
+.int-list { display: flex; flex-direction: column; gap: 10px; }
+.int-row {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 14px;
+  padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface-2);
+}
+.int-row-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+  flex-shrink: 0;
+}
+.int-row-meta { min-width: 0; }
+.int-row-name { font-weight: 600; font-size: .95em; }
+.int-row-status {
+  font-size: .78em; color: var(--text-3);
+  display: flex; align-items: center; gap: 5px; margin-top: 2px;
+}
+.int-row-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-3);
+}
+.int-row-status.connected .int-row-status-dot { background: #047857; }
+.int-row-status.connected { color: #047857; }
+.int-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+@media (max-width: 560px) {
+  .int-row { grid-template-columns: auto 1fr; }
+  .int-row-actions { grid-column: 1 / -1; }
+}
+
+/* Rich status detail (2026-08-11) — per-provider key/value lines
+   shown under the "Connected" badge once a connection exists. The
+   server returns token_hint, IDs, field_map, etc.; we render the
+   provider-relevant subset in a small, scannable grid. The chips
+   line (Airtable's field_map_summary) wraps naturally. */
+.int-row-detail {
+  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: .76em;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.int-row-detail-line {
+  display: flex; align-items: baseline; gap: 6px;
+  flex-wrap: wrap;
+}
+.int-row-detail-line.int-row-detail-chips { align-items: center; }
+.int-row-detail-key {
+  color: var(--text-3);
+  font-weight: 600;
+  min-width: 80px;
+  font-size: .92em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.int-row-detail-val {
+  color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .98em;
+}
+.int-row-detail-line:not(.int-row-detail-chips) .int-row-detail-val:not(code) {
+  font-family: inherit;
+  font-size: 1em;
+}
+
+/* EditIntegrationModal — HubSpot token rotation sub-form. Sits below
+   the regular editable fields inside the same modal body so the
+   user can rotate the token without re-opening the connect flow. */
+.eim-token-rotate {
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.eim-token-rotate-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .82em; font-weight: 600;
+  color: var(--text-1);
+}
+.eim-token-hint {
+  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .95em;
+  font-weight: 400;
+}
+.eim-token-rotate-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+}
+.eim-token-rotate-row input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .85em;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  width: 100%;
+  min-width: 0;
+}
+.eim-token-rotate-row input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+@media (max-width: 480px) {
+  .eim-token-rotate-row { grid-template-columns: 1fr; }
+}

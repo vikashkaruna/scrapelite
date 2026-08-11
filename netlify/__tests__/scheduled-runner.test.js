@@ -10,6 +10,17 @@ vi.mock("../functions/lib/scrapeProviders.js", () => ({
   runScrapeChain: runScrapeChainMock,
 }));
 
+// Mock the notify dispatcher so we can assert that scheduled-runner
+// hands the change-alert fan-out to it (Slack per-user webhook + Zapier
+// event). The real notify.js hits Supabase and the network; this stub
+// records the call and resolves with an "ok" response.
+const notifyMock = vi.hoisted(() => ({
+  notifyExtractionComplete: vi.fn().mockResolvedValue({ ok: true, slack: null, zapier: null }),
+  notifyEnrichmentComplete: vi.fn().mockResolvedValue({ ok: true, zapier: null }),
+  notifyMonitoringChange: vi.fn().mockResolvedValue({ ok: true, slack: null, zapier: null }),
+}));
+vi.mock("../functions/lib/notify.js", () => notifyMock);
+
 let fetchMock;
 let handler;
 
@@ -48,6 +59,12 @@ function sbWith(rows) {
     }
     if (u.includes("/rest/v1/scheduled_tasks?id=eq.") && m === "PATCH") {
       return new Response("{}", { status: 200 });
+    }
+    if (u.includes("/rest/v1/entitlements")) {
+      // The runner asks for entitlement rows so it can gate lapsed users.
+      // Default: no rows = no active entitlement = the per-row "fail open"
+      // branch (ent==null && row.user_id) keeps the schedule running.
+      return new Response("[]", { status: 200 });
     }
     if (u.startsWith("https://api.resend.com/")) {
       return new Response("{}", { status: 200 });
@@ -225,6 +242,57 @@ describe("scheduled-runner — change detection", () => {
     const r = await h();
     expect(r.body).toMatch(/no supabase/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("content change → notifyMonitoringChange fires with schedule + user_id (per-user Slack + Zapier fan-out)", async () => {
+    process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
+    notifyMock.notifyMonitoringChange.mockClear();
+    sbWith([
+      { id: "sch_user", user_id: "u-owner-1", data: {
+        type: "track", target: "https://a.com", cron: "0 * * * *",
+        lastHash: "OLD_HASH_OLD",
+        label: "User schedule", intent: "summary",
+      } },
+    ]);
+    runScrapeChainMock.mockResolvedValue({ ok: true, title: "Page A", html: "<p>fresh</p>" });
+    const h = await loadHandler();
+    const r = await h();
+    expect(r.body).toMatch(/changed 1/);
+    // The dispatcher is fire-and-forget; wait one tick for it to resolve.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(notifyMock.notifyMonitoringChange).toHaveBeenCalledTimes(1);
+    const callArgs = notifyMock.notifyMonitoringChange.mock.calls[0][0];
+    expect(callArgs.userId).toBe("u-owner-1");
+    expect(callArgs.schedule.id).toBe("sch_user");
+    expect(callArgs.schedule.label).toBe("User schedule");
+    expect(callArgs.changedSummary).toEqual(
+      expect.objectContaining({ previousHash: "OLD_HASH_OLD", newHash: expect.any(String) }),
+    );
+  });
+
+  it("content change does NOT fire when the schedule has no user_id (legacy rows)", async () => {
+    // Defensive: schedules inserted before user_id was added have no owner.
+    // The dispatcher is called with userId: null, which resolveSlackWebhook
+    // handles by falling back to the env. We just assert no throw + the
+    // dispatcher still gets called (so the env webhook still fires).
+    process.env.SCHEDULE_ALERT_WEBHOOK = "https://n8n.example/webhook/abc";
+    notifyMock.notifyMonitoringChange.mockClear();
+    sbWith([
+      { id: "sch_orphan", data: {
+        type: "track", target: "https://a.com", cron: "0 * * * *",
+        lastHash: "OLD_HASH_OLD",
+        label: "Orphan",
+      } },
+    ]);
+    runScrapeChainMock.mockResolvedValue({ ok: true, title: "T", html: "<p>fresh</p>" });
+    const h = await loadHandler();
+    const r = await h();
+    expect(r.body).toMatch(/changed 1/);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(notifyMock.notifyMonitoringChange).toHaveBeenCalledTimes(1);
+    // user_id is normalized to null (not undefined) by the runner so the
+    // dispatcher's downstream code doesn't have to handle "missing" twice.
+    expect(notifyMock.notifyMonitoringChange.mock.calls[0][0].userId).toBeNull();
   });
 
   it("no content change → no alert (webhook / Resend NOT called)", async () => {

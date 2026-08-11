@@ -10,6 +10,11 @@ import {
   pushToAirtable,
   readAirtableConfig,
   writeAirtableConfig,
+  fetchAirtableSchema,
+  autoMapAirtableFields,
+  defaultAirtableFieldMap,
+  mapAirtableColumnToKey,
+  clearAirtableConfig,
   _internal,
 } from "./airtable.js";
 
@@ -31,6 +36,77 @@ describe("airtable (F18)", () => {
     it("returns empty string for nullish", () => {
       expect(toAirtableFieldKey(null)).toBe("");
       expect(toAirtableFieldKey(undefined)).toBe("");
+    });
+  });
+
+  describe("mapAirtableColumnToKey", () => {
+    it("maps common URL column names to the url extraction key", () => {
+      expect(mapAirtableColumnToKey("URL")).toBe("url");
+      expect(mapAirtableColumnToKey("url")).toBe("url");
+      expect(mapAirtableColumnToKey("Link")).toBe("url");
+      expect(mapAirtableColumnToKey("Source URL")).toBe("url");
+      expect(mapAirtableColumnToKey("Address")).toBe("url");
+    });
+    it("maps title/name/host/summary/headings/links/created columns", () => {
+      expect(mapAirtableColumnToKey("Title")).toBe("page_title");
+      expect(mapAirtableColumnToKey("Name")).toBe("page_title");
+      expect(mapAirtableColumnToKey("Host")).toBe("host");
+      expect(mapAirtableColumnToKey("Domain")).toBe("host");
+      expect(mapAirtableColumnToKey("Summary")).toBe("ai_summary");
+      expect(mapAirtableColumnToKey("AI Summary")).toBe("ai_summary");
+      expect(mapAirtableColumnToKey("Description")).toBe("ai_summary");
+      expect(mapAirtableColumnToKey("Headings")).toBe("headings");
+      expect(mapAirtableColumnToKey("Links")).toBe("links");
+      expect(mapAirtableColumnToKey("Created at")).toBe("created_at");
+      expect(mapAirtableColumnToKey("Date")).toBe("created_at");
+    });
+    it("returns empty string for unknown column names (caller skips them)", () => {
+      expect(mapAirtableColumnToKey("Favorite Color")).toBe("");
+      expect(mapAirtableColumnToKey("Notes")).toBe("");
+    });
+  });
+
+  describe("defaultAirtableFieldMap", () => {
+    it("returns a fresh object each call (no shared mutation)", () => {
+      const a = defaultAirtableFieldMap();
+      const b = defaultAirtableFieldMap();
+      expect(a).not.toBe(b);
+      a.URL = { key: "mutated" };
+      expect(b.URL.key).toBe("url");
+    });
+    it("covers URL, Title, Host, Summary, Created at, Headings, Links", () => {
+      const map = defaultAirtableFieldMap();
+      expect(Object.keys(map).sort()).toEqual([
+        "Created at", "Headings", "Host", "Links", "Summary", "Title", "URL",
+      ]);
+    });
+  });
+
+  describe("autoMapAirtableFields", () => {
+    it("builds a field map from Airtable's field list", () => {
+      const tableFields = [
+        { name: "URL", type: "url" },
+        { name: "Title", type: "singleLineText" },
+        { name: "Page Title", type: "singleLineText" },
+        { name: "Favorite Color", type: "singleLineText" },
+        { name: "Summary", type: "multilineText" },
+        { name: "Created", type: "date" },
+      ];
+      const map = autoMapAirtableFields(tableFields);
+      expect(map).toEqual({
+        URL: { key: "url" },
+        Title: { key: "page_title" },
+        "Page Title": { key: "page_title" },
+        Summary: { key: "ai_summary" },
+        Created: { key: "created_at" },
+      });
+      // Favorite Color is not auto-mapped (no heuristic match)
+      expect(map["Favorite Color"]).toBeUndefined();
+    });
+    it("returns empty map for non-array input", () => {
+      expect(autoMapAirtableFields(null)).toEqual({});
+      expect(autoMapAirtableFields(undefined)).toEqual({});
+      expect(autoMapAirtableFields("not an array")).toEqual({});
     });
   });
 
@@ -58,14 +134,33 @@ describe("airtable (F18)", () => {
       expect(fields.Headings).toBe("H1, H2, H3");
       expect(fields.Links).toBe("a, b");
     });
-    it("stringifies nested objects (e.g. domain_map)", () => {
-      const fields = extractionToAirtableFields({
-        url: "u", page_title: "t", host: "h", ai_summary: "s",
-        custom_extraction: { foo: "bar" },
-      });
-      // custom_extraction is not in the default key list, so it's dropped
-      // (this is intentional — the default schema doesn't surface it).
-      expect(fields.custom_extraction).toBeUndefined();
+    it("uses a custom fieldMap when provided (REGRESSION: bug that caused 422 'Unknown field name: URL')", () => {
+      // The user's Airtable table has columns called "Link" and "Name"
+      // instead of "URL" and "Title". After clicking "Load columns", the
+      // auto-mapped fieldMap is { Link: { key: "url" }, Name: { key: "page_title" } }.
+      // The push must use the user's column names — not the defaults.
+      const customMap = {
+        Link: { key: "url" },
+        Name: { key: "page_title" },
+      };
+      const fields = extractionToAirtableFields(
+        { url: "https://example.com", page_title: "Example" },
+        customMap,
+      );
+      expect(fields).toEqual({ Link: "https://example.com", Name: "Example" });
+      // The defaults (URL, Title) must NOT appear — that's the whole point.
+      expect(fields.URL).toBeUndefined();
+      expect(fields.Title).toBeUndefined();
+    });
+    it("derives host from url when host is missing", () => {
+      const fields = extractionToAirtableFields({ url: "https://www.example.com/path" });
+      expect(fields.Host).toBe("www.example.com");
+    });
+    it("falls back to the default fieldMap when custom map is empty/null", () => {
+      const fields = extractionToAirtableFields({ url: "u" }, null);
+      expect(fields.URL).toBe("u");
+      const fields2 = extractionToAirtableFields({ url: "u" }, {});
+      expect(fields2.URL).toBe("u");
     });
     it("returns empty object for nullish input", () => {
       expect(extractionToAirtableFields(null)).toEqual({});
@@ -120,6 +215,13 @@ describe("airtable (F18)", () => {
       expect(body.typecast).toBe(true);
       expect(body.records).toHaveLength(1);
       expect(body.records[0].fields).toMatchObject({ URL: "u1", Title: "T1" });
+    });
+    it("uses a custom fieldMap when provided", () => {
+      const body = buildAirtableRequestBody(
+        [{ url: "u1", page_title: "T1" }],
+        { Link: { key: "url" }, Name: { key: "page_title" } },
+      );
+      expect(body.records[0].fields).toEqual({ Link: "u1", Name: "T1" });
     });
   });
 
@@ -200,21 +302,174 @@ describe("airtable (F18)", () => {
       expect(result.ok).toBe(false);
       expect(result.failedRecords[0].error).toBe("DNS failure");
     });
+
+    it("parses Unknown field name from 422 and lists the rejected fields + a hint to load columns (REGRESSION: '7 record(s) failed' error from user)", async () => {
+      // Real Airtable response shape: { error: { type: "UNKNOWN_FIELD_NAME", message: "Unknown field name: \"URL\"" } }
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          error: { type: "UNKNOWN_FIELD_NAME", message: 'Unknown field name: "URL"' },
+        }),
+      });
+      const result = await pushToAirtable(
+        [{ url: "https://example.com", page_title: "Example" }],
+        { ...validConfig, fetchFn },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.failedRecords).toHaveLength(1);
+      expect(result.failedRecords[0].error).toMatch(/Unknown field name: "URL"/);
+      expect(result.failedRecords[0].error).toMatch(/rename your Airtable columns|Load columns/i);
+      expect(result.failedRecords[0].unknownFields).toEqual(["URL"]);
+    });
+  });
+
+  describe("fetchAirtableSchema", () => {
+    const validConfig = {
+      apiKey: "patABCDEFGHIJKLMNOP",
+      baseId: "appABCDEFGHIJK",
+      tableId: "tblABCDEFGHIJK",
+    };
+
+    it("hits the Meta API and returns the field list", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "tblABCDEFGHIJK",
+          name: "Scrape Results",
+          fields: [
+            { id: "fld1", name: "URL", type: "url" },
+            { id: "fld2", name: "Title", type: "singleLineText" },
+            { id: "fld3", name: "Notes", type: "multilineText" },
+          ],
+        }),
+      });
+      const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
+      expect(fetchFn).toHaveBeenCalledWith(
+        "https://api.airtable.com/v0/meta/bases/appABCDEFGHIJK/tables/tblABCDEFGHIJK",
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(r.ok).toBe(true);
+      expect(r.tableName).toBe("Scrape Results");
+      expect(r.fields).toEqual([
+        { name: "URL", type: "url", id: "fld1", description: "" },
+        { name: "Title", type: "singleLineText", id: "fld2", description: "" },
+        { name: "Notes", type: "multilineText", id: "fld3", description: "" },
+      ]);
+    });
+
+    it("returns ok:false with a schema-scope hint on 403", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: { type: "INSUFFICIENT_PERMISSIONS", message: "You are not authorized to perform this operation." } }),
+      });
+      const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/schema\.bases:read/);
+    });
+
+    it("returns ok:false with a Base/Table ID hint on 404", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { type: "NOT_FOUND", message: "Could not find table" } }),
+      });
+      const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/Base ID and Table ID/);
+    });
+
+    it("rejects an invalid config before fetching", async () => {
+      const fetchFn = vi.fn();
+      const r = await fetchAirtableSchema({ ...validConfig, apiKey: "", fetchFn });
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(r.ok).toBe(false);
+    });
   });
 
   describe("localStorage config", () => {
-    it("readAirtableConfig returns defaults when nothing stored", () => {
-      expect(readAirtableConfig()).toEqual({ baseId: "", tableId: "" });
+    it("readAirtableConfig returns empty defaults when nothing stored", () => {
+      const cfg = readAirtableConfig();
+      expect(cfg.baseId).toBe("");
+      expect(cfg.tableId).toBe("");
+      expect(cfg.fieldMap).toBeNull();
+      expect(cfg.tableMeta).toBeNull();
     });
-    it("writeAirtableConfig persists baseId and tableId (NOT the API key)", () => {
-      writeAirtableConfig({ baseId: "appXXX", tableId: "tblYYY" });
+    it("writeAirtableConfig persists the fieldMap under a per-table key", () => {
+      writeAirtableConfig({
+        baseId: "appAAA",
+        tableId: "tblBBB",
+        fieldMap: { Link: { key: "url" } },
+        tableMeta: { tableName: "X", fields: [{ name: "Link", type: "url" }] },
+      });
       const stored = JSON.parse(localStorage.getItem("datiq.airtableConfig"));
-      expect(stored).toEqual({ baseId: "appXXX", tableId: "tblYYY" });
-      expect(stored.apiKey).toBeUndefined();
+      expect(stored.currentBaseId).toBe("appAAA");
+      expect(stored.currentTableId).toBe("tblBBB");
+      expect(stored.tables["appAAA::tblBBB"]).toEqual({
+        fieldMap: { Link: { key: "url" } },
+        tableMeta: { tableName: "X", fields: [{ name: "Link", type: "url" }] },
+      });
     });
     it("readAirtableConfig round-trips what was written", () => {
-      writeAirtableConfig({ baseId: "appAAA", tableId: "tblBBB" });
-      expect(readAirtableConfig()).toEqual({ baseId: "appAAA", tableId: "tblBBB" });
+      writeAirtableConfig({
+        baseId: "appAAA",
+        tableId: "tblBBB",
+        fieldMap: { Link: { key: "url" } },
+        tableMeta: { tableName: "X", fields: [{ name: "Link" }] },
+      });
+      expect(readAirtableConfig()).toMatchObject({
+        baseId: "appAAA",
+        tableId: "tblBBB",
+        fieldMap: { Link: { key: "url" } },
+        tableMeta: { tableName: "X" },
+      });
+    });
+    it("keeps separate fieldMaps per table (switching back restores the previous one)", () => {
+      writeAirtableConfig({
+        baseId: "appA",
+        tableId: "tblA",
+        fieldMap: { Link: { key: "url" } },
+      });
+      writeAirtableConfig({
+        baseId: "appA",
+        tableId: "tblB",
+        fieldMap: { Source: { key: "url" } },
+      });
+      // Current is tblB
+      expect(readAirtableConfig().fieldMap).toEqual({ Source: { key: "url" } });
+      // Switch back to tblA — its fieldMap is still there
+      writeAirtableConfig({ baseId: "appA", tableId: "tblA" });
+      expect(readAirtableConfig().fieldMap).toEqual({ Link: { key: "url" } });
+    });
+    it("passing fieldMap: null explicitly clears it for the current table only", () => {
+      writeAirtableConfig({
+        baseId: "appA",
+        tableId: "tblA",
+        fieldMap: { Link: { key: "url" } },
+      });
+      writeAirtableConfig({ fieldMap: null });
+      expect(readAirtableConfig().fieldMap).toBeNull();
+      const stored = JSON.parse(localStorage.getItem("datiq.airtableConfig"));
+      expect(stored.tables["appA::tblA"]).toBeUndefined();
+    });
+    it("clearAirtableConfig removes everything", () => {
+      writeAirtableConfig({ baseId: "appX", tableId: "tblY" });
+      clearAirtableConfig();
+      expect(localStorage.getItem("datiq.airtableConfig")).toBeNull();
+    });
+    it("does not persist the API key", () => {
+      writeAirtableConfig({
+        baseId: "appX",
+        tableId: "tblY",
+        fieldMap: { Link: { key: "url" } },
+      });
+      const stored = JSON.parse(localStorage.getItem("datiq.airtableConfig"));
+      expect(stored.apiKey).toBeUndefined();
+      // Also no key nested anywhere
+      const allJson = JSON.stringify(stored);
+      expect(allJson).not.toMatch(/pat[A-Z]/);
     });
   });
 

@@ -13,11 +13,11 @@
 | | |
 |---|---|
 | **Product** | DatIQ |
-| **Documented version** | **v2.0 core + R5–R19 increments** (current production release) |
+| **Documented version** | **V1.0 production + V1.0+ Integrations** (current staging promotion candidate; one-click push to HubSpot, Airtable, Notion, Slack, Zapier; server-stored connections; Account rich status; Workspace tabs) |
 | **Live site** | https://datiq.app (Netlify project `datiqapp`) |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
 | **Document purpose** | Internal master reference for the product, its screens, and its architecture. Source of truth for the public help split-outs above, onboarding, and support knowledge base. |
-| **Last updated** | 2026-06-20 (R19 — scheduler + unified Home composer) |
+| **Last updated** | 2026-08-11 (staging promotion of the V1.0+ Integrations branch — `Integration-with-outside-ecosystem` → `staging`. Public help was rewritten to match the new flow; full screen-by-screen refresh is the next internal pass.) |
 
 ---
 

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DatIQ — Extract</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="hdr">
+    <img src="icons/icon-32.png" alt="DatIQ" />
+    <h1>DatIQ</h1>
+  </header>
+
+  <main>
+    <!-- Connect view: shown when no API key is set -->
+    <section id="connect-view" hidden>
+      <p class="lead">
+        Paste your DatIQ API key to start extracting pages with one click.
+      </p>
+      <p class="muted small">
+        Get one from
+        <a href="https://datiq.app/account" target="_blank" rel="noreferrer">
+          Account → API keys
+        </a>
+        in your DatIQ dashboard.
+      </p>
+      <label for="api-key-input">API key</label>
+      <input id="api-key-input" type="password" placeholder="dq_live_..." autocomplete="off" />
+      <button id="save-key-btn" class="primary">Save &amp; connect</button>
+      <div id="connect-error" class="error" hidden></div>
+    </section>
+
+    <!-- Connected view: shown when a key is set -->
+    <section id="connected-view" hidden>
+      <p class="lead">
+        Signed in as <code id="key-hint">dq_live_…xxxx</code>
+      </p>
+      <button id="extract-btn" class="primary big">
+        Extract this page
+      </button>
+      <div id="result" class="result" hidden></div>
+      <hr />
+      <button id="signout-btn" class="ghost small">Disconnect</button>
+    </section>
+  </main>
+
+  <footer class="ftr">
+    <a href="https://datiq.app" target="_blank" rel="noreferrer">Open DatIQ</a>
+    <span class="muted">·</span>
+    <a href="https://datiq.app/docs/integrations/browser-extension" target="_blank" rel="noreferrer">Help</a>
+  </footer>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

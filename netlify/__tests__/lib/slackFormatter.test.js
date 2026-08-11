@@ -147,6 +147,54 @@ describe("slackFormatter (F17)", () => {
       expect(r.ok).toBe(false);
       expect(r.status).toBe(404);
     });
+
+    // Regression: postToSlack used to discard Slack's response body, so a
+    // 400 from Block Kit (invalid_blocks, no_text, channel_not_found…)
+    // showed up in the dashboard as a bare `slack_400`. Now the body's
+    // `error` field is surfaced so the user (and the failedRecords list
+    // on the dashboard) can see *why* the post failed.
+    it("surfaces Slack's error reason from the response body on 400", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve(JSON.stringify({
+          ok: false,
+          error: "invalid_blocks",
+          response_metadata: { messages: ["invalid character at line 1 of the header block"] },
+        })),
+      });
+      const r = await postToSlack({ text: "x" }, { webhookUrl: "https://hooks.slack.com/XXX", fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.status).toBe(400);
+      // The dashboard pattern is `slack_<status>`. We keep that as a
+      // suffix so existing client code that greps for `slack_400` still
+      // works, and we prepend the human-readable reason.
+      expect(r.error).toMatch(/invalid_blocks/);
+      expect(r.error).toMatch(/slack_400/);
+    });
+
+    it("falls back to a plain-text body slice when Slack's body is not JSON", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        text: () => Promise.resolve("upstream slack outage"),
+      });
+      const r = await postToSlack({ text: "x" }, { webhookUrl: "https://hooks.slack.com/XXX", fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain("upstream slack outage");
+      expect(r.error).toMatch(/slack_502/);
+    });
+
+    it("still returns slack_<status> when the response has no body at all", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: () => Promise.resolve(""),
+      });
+      const r = await postToSlack({ text: "x" }, { webhookUrl: "https://hooks.slack.com/XXX", fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toBe("slack_503");
+    });
   });
 
   describe("_internal", () => {

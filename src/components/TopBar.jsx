@@ -336,7 +336,9 @@ export default function TopBar() {
     { to: "/batch",       label: "Batch",       icon: "layers-2",  match: (p) => p === "/batch" },
     { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
-    { to: "/collections", label: "Collections", icon: "folder",    match: (p) => p === "/collections" },
+    // Collections moved inside /workspace as a tab (2026-08-11) — the
+    // top-level "Collections" nav item is removed. Old /collections URLs
+    // still work via the redirect in App.jsx.
     ...(user ? [{ to: "/workspace", label: "Workspace", icon: "layout-grid", match: (p) => p === "/workspace" }] : []),
   ];
 

@@ -3,8 +3,15 @@
 // All functions degrade gracefully when Supabase is not configured.
 
 import { supabase } from "./supabaseClient.js";
+import { AUTH_RETURN_URL } from "./config.js";
 
 export const authEnabled = Boolean(supabase);
+
+// Where the user should land after an OAuth / email-link callback.
+// Set by runtime-config.js per branch (main → datiq.app, everything else
+// → the branch's own origin). Falls back to window.location.origin if the
+// runtime config didn't specify one (older branches / dev).
+const returnUrl = AUTH_RETURN_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
 // ── Sign-in / Sign-up ─────────────────────────────────────────────────────────
 
@@ -21,9 +28,8 @@ export async function signUpWithEmail(email, password) {
     email,
     password,
     options: {
-      // Redirect back to whatever origin the user signed up from so the
-      // confirmation link works in both local dev and production.
-      emailRedirectTo: window.location.origin,
+      // Redirect back to this branch's origin (not the production primary).
+      emailRedirectTo: returnUrl,
     },
   });
   if (error) throw error;
@@ -33,7 +39,7 @@ export async function signUpWithEmail(email, password) {
 export async function signInWithOAuth(provider) {
   if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
   const options = {
-    redirectTo: window.location.origin,
+    redirectTo: returnUrl,
   };
   if (provider === "azure") options.scopes = "openid profile email";
 
@@ -52,13 +58,13 @@ export async function signOut() {
 
 /**
  * Send a password-reset email. The link in the email lands the user back on
- * `<origin>/reset-password#access_token=...&type=recovery` where they can
+ * `<returnUrl>/reset-password#access_token=...&type=recovery` where they can
  * pick a new password. Requires Supabase Site URL + redirect allowlist to
- * include `<origin>/reset-password` — see docs/SUPABASE-AUTH-SETUP.md.
+ * include `<returnUrl>/reset-password` — see docs/SUPABASE-AUTH-REDIRECT-URLS.md.
  */
 export async function resetPasswordForEmail(email) {
   if (!supabase) throw new Error("Auth not configured — set VITE_SUPABASE_* env vars.");
-  const redirectTo = `${window.location.origin}/reset-password`;
+  const redirectTo = `${returnUrl}/reset-password`;
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
   if (error) throw error;
   return data;

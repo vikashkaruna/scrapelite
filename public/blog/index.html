@@ -33,6 +33,7 @@
   "url": "https://datiq.app/blog",
   "publisher": { "@type": "Organization", "name": "DatIQ", "logo": "https://datiq.app/favicon.svg" },
   "blogPost": [
+    { "@type": "BlogPosting", "headline": "One-Click Push to HubSpot, Airtable, Notion, Slack, and Zapier", "datePublished": "2026-08-11", "url": "https://datiq.app/blog#one-click-integrations", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "DatIQ is Now an AI-Native Product: AEO/GEO/SEO Hardening + Customer Email Consolidation", "datePublished": "2026-08-09", "url": "https://datiq.app/blog#aeo-geo-seo-p1-sweep", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "Introducing DatIQ: From URL to Intelligence in Seconds", "datePublished": "2026-06-09", "url": "https://datiq.app/blog#introducing-datiq", "author": { "@type": "Organization", "name": "DatIQ" } },
     { "@type": "BlogPosting", "headline": "Every Payment Now Has a Document: Invoices, Receipts, and a Kinder Way to Lapse", "datePublished": "2026-07-27", "url": "https://datiq.app/blog#invoices-receipts", "author": { "@type": "Organization", "name": "DatIQ" } },
@@ -140,7 +141,42 @@
 
   <section class="bg-list">
 
-    <details id="aeo-geo-seo-p1-sweep" open>
+    <details id="one-click-integrations" open>
+      <summary>
+        <span class="tag">Release</span>
+        <h3>One-Click Push to HubSpot, Airtable, Notion, Slack, and Zapier</h3>
+        <p class="excerpt">DatIQ now ships with first-class, server-stored connections to the destinations you already use. Connect once in Account → Integrations, and every push from Preview, Dashboard, or Batch is a single click. No more paste-the-key-every-time, no more re-mapping fields, no more broken Airtable field names.</p>
+        <p class="meta">August 11, 2026 · 5 min read</p>
+      </summary>
+      <div class="body">
+        <h4>What changed</h4>
+        <p>Until this week, pushing an extraction to HubSpot, Airtable, Notion, or Zapier meant opening a modal on every push, pasting an API key, and (for Airtable/Notion) telling DatIQ which base/table/database to use. It worked — but it was friction you paid every time, and the key only lived in your browser's session. If you cleared cookies, you started over.</p>
+        <p>Now, every supported destination is a one-time setup in <a href="/account#integrations">Account → Integrations</a>. After that, every push is a single click — Preview, Dashboard, and Batch results all show the same <strong>Push to …</strong> menu, and pushing either delivers the structured data or tells you the connection needs attention. Tokens are stored server-side, never re-displayed, and re-rotatable in one place.</p>
+        <h4>What you can push to</h4>
+        <ul>
+          <li><strong>HubSpot</strong> — Contacts and Companies from an extraction, with the right property mapping. Connect a HubSpot private-app token, name the connection, and you can edit the label or rotate the token later without re-doing the field map.</li>
+          <li><strong>Airtable</strong> — Each extraction into the table you choose, with a per-table field map built automatically on first connect. The "Load columns" button re-fetches the schema if you change the table.</li>
+          <li><strong>Notion</strong> — Each extraction into a Notion database, with the title column and property count surfaced in the modal. Editing the database ID re-runs the schema refresh for you.</li>
+          <li><strong>Slack</strong> — New extractions and change alerts into the channel you choose, formatted as a readable message. Block Kit payloads are long-title-safe (we hit a real Slack 400 on news-site titles in testing and fixed the character budgeting).</li>
+          <li><strong>Zapier</strong> — New extractions as a trigger event for any of 5,000+ apps. The DatIQ private-app exposes a "new extraction" event with the full payload.</li>
+          <li><strong>Google Sheets</strong> — A new sheet from any extraction (no auth required — still one-click from any Export ▾ menu).</li>
+        </ul>
+        <h4>The Account page redesign</h4>
+        <p>The <a href="/account#integrations">/account#integrations</a> section is no longer a list of disconnected toggles. Each connected row now shows the per-provider detail the server already knew — token hint, IDs, field map summary, title column, column count — and three actions: <strong>Test</strong> (verifies the connection with a provider-specific check), <strong>Edit</strong> (label, IDs, or token rotation), and <strong>Disconnect</strong>.</p>
+        <p>If you haven't connected any destination yet, the same row shows a clear "Not connected — set up" prompt with a one-click path to the connect modal. No more hunting for setup links.</p>
+        <h4>Workspace tabs and the rest</h4>
+        <p>While we were here, we folded Collections and Active Schedule into a single <strong>Workspace</strong> view so you don't lose your place moving between saved extractions and the monitors that produce them. White-label PDF, coupons, and top-up bundles are reordered for clarity on the Account page — the order they appear in is now the order most users care about them.</p>
+        <h4>Who this is for</h4>
+        <p><strong>Anyone with a CRM.</strong> One click from "I just extracted a company" to "it's in HubSpot with the right properties" is the difference between research that lands and research that sits in a spreadsheet.</p>
+        <p><strong>Anyone managing a content pipeline.</strong> Airtable and Notion push let you route extracted data straight into the database your content team already lives in. The schema refresh on Edit means renaming a column in Notion is a 3-second fix in DatIQ.</p>
+        <p><strong>Anyone running scheduled monitors.</strong> Slack change alerts now show in the "Push to" menu alongside every other destination, so a single monitor can email the team and post a channel alert in one push.</p>
+        <h4>What you need to do</h4>
+        <p>If you've been using the old "paste the key each time" flow for Airtable or Notion, do this once: open <a href="/account#integrations">Account → Integrations</a>, click <strong>Set up</strong> on the destination, paste the key + IDs, and your field map is built and stored. The next push from Preview, Dashboard, or Batch is one click. If you had an Airtable connection from before this release, click <strong>Load columns</strong> on the Airtable push tab to backfill the field map (or re-connect from scratch — the flow is faster now).</p>
+        <p>Questions? We read every message at <a href="mailto:hello@datiq.app">hello@datiq.app</a>.</p>
+      </div>
+    </details>
+
+    <details id="aeo-geo-seo-p1-sweep">
       <summary>
         <span class="tag">Release</span>
         <h3>DatIQ is Now an AI-Native Product: AEO/GEO/SEO Hardening + Customer Email Consolidation</h3>

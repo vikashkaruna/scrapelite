@@ -17,6 +17,7 @@
 //     using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 import { createClient } from "@supabase/supabase-js";
+import { notifyExtractionComplete } from "./lib/notify.js";
 
 const TABLE = "extractions";
 
@@ -159,6 +160,13 @@ export const handler = async (event) => {
       }
 
       if (error) throw error;
+      // Fire-and-forget: fan out to the user's connected channels (Slack,
+      // Zapier). notifyExtractionComplete swallows per-channel errors, so a
+      // Slack outage can never break the save flow. We log but never await
+      // in the request path — the user has their saved row already.
+      notifyExtractionComplete({ userId, extraction: data }).catch((err) => {
+        console.warn("[API/extractions] notifyExtractionComplete failed:", err?.message || err);
+      });
       return respond(201, { ...v2, ...data });
     }
 

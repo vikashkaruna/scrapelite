@@ -5,7 +5,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
-import ContentModal from "../components/ContentModal.jsx";
+import ContentView from "../components/ContentView.jsx";
 import ExtractionCharts from "../components/ExtractionCharts.jsx";
 import ExtractSimilarCard from "../components/ExtractSimilarCard.jsx";
 import TagChips from "../components/TagChips.jsx";
@@ -22,6 +22,8 @@ import FeedbackWidget from "../components/FeedbackWidget.jsx";
 import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
+import { CONTENT_FORMATS } from "../lib/aiService.js";
+import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 
 function HeadingRow({ h }) {
@@ -127,12 +129,11 @@ export default function Preview() {
   });
   const navigate = useNavigate();
   const showToast = useToast();
-  const { current, enrich } = useExtraction();
+  const { current, enrich, enrichWithContent } = useExtraction();
   const { checkCanExport } = useBilling();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [contentOpen, setContentOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharedSlug, setSharedSlug] = useState(() => current?.id ? getSharedSlugForId(current.id) : null);
@@ -268,10 +269,41 @@ export default function Preview() {
   };
 
   // Re-run a saved enrichment tab (uses its stored prompt, or the preset's).
+  // Content tabs (kind === "content") use enrichWithContent instead of the
+  // structured extractStructure path — the prompt + handler are different
+  // (markdown generation vs JSON extraction), so a single switch keeps each
+  // path clean.
   const refreshEntry = (entry) => {
+    if (entry.kind === "content") {
+      const format = CONTENT_FORMATS.find((f) => f.key === entry.key);
+      if (format) runQuickContent(format);
+      return;
+    }
     const prompt = entry.prompt || QUICK_ACTION_BY_KEY[entry.key]?.prompt;
     if (!prompt) return;
     runQuickAction({ key: entry.key, label: entry.label, icon: entry.icon, prompt });
+  };
+
+  // Generate content (one of the 5 CONTENT_FORMATS — SEO outline, competitor
+  // summary, social posts, compare, explain). Mirrors runQuickAction so the
+  // user experience is identical: button spins, result lands as a stacked
+  // tab, refresh button re-runs. The result is markdown text (not JSON),
+  // rendered by ContentView.
+  const runQuickContent = async (format) => {
+    if (runningKey) return; // one at a time, same gate as structured runs
+    setRunningKey(format.key);
+    try {
+      const entry = await enrichWithContent(data.url, format);
+      if (entry) {
+        setActiveTab(format.key);
+        showToast(`${format.label} ready`, "sparkles");
+      }
+    } catch (err) {
+      console.error("[DatIQ] Content generation failed:", err);
+      showToast("Content generation failed — check your connection", "alert-triangle");
+    } finally {
+      setRunningKey(null);
+    }
   };
 
   // Groke QW#2 — tags + the global tag catalogue for auto-suggest.
@@ -447,6 +479,10 @@ export default function Preview() {
                 </div>
               )}
             </div>
+            <PushIntegrationMenu
+              items={current ? [current] : []}
+              buttonVariant="secondary"
+            />
             <div className="export-dropdown" ref={downloadRef}>
               <Button
                 variant="secondary"
@@ -595,16 +631,10 @@ export default function Preview() {
                     Run a focused AI extraction — each result is saved as a tab below
                   </p>
                 </div>
-                <button
-                  className="qa-generate-btn"
-                  type="button"
-                  onClick={() => setContentOpen(true)}
-                  title="Generate SEO outline, competitor summary or social posts"
-                >
-                  <Icon name="sparkles" size={14} />
-                  Generate content
-                </button>
               </div>
+
+              {/* Structured enrichments (Find Contact Info, Leadership & Board, …).
+                  Returns JSON; rendered via StructuredData in the tab body. */}
               <div className="qa-row">
                 {QUICK_ACTIONS.map((a) => {
                   const running = runningKey === a.key;
@@ -630,6 +660,45 @@ export default function Preview() {
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Generated content (SEO outline, competitor summary, …).
+                  Returns markdown; rendered via ContentView in the tab body.
+                  Lives in its own sub-section so the user can tell at a
+                  glance that the two button rows produce different output
+                  shapes. Each click creates a stacked tab like the
+                  structured ones and persists to localStorage + Supabase. */}
+              <div className="qa-subsection">
+                <div className="qa-subsection-head">
+                  <Icon name="sparkles" size={12} />
+                  <span>Generate content</span>
+                </div>
+                <div className="qa-row">
+                  {CONTENT_FORMATS.map((f) => {
+                    const running = runningKey === f.key;
+                    const done = !!enrichments[f.key];
+                    return (
+                      <button
+                        key={f.key}
+                        className={"qa-btn" + (running ? " running" : "") + (done ? " done" : "")}
+                        onClick={() => runQuickContent(f)}
+                        disabled={!!runningKey}
+                        title={done ? `Re-run "${f.label}" (refresh)` : f.desc}
+                      >
+                        <span className="qa-ico">
+                          <Icon name={f.icon} size={14} />
+                          {running && <span className="qa-spin" />}
+                          {!running && done && (
+                            <span className="qa-done">
+                              <Icon name="check" size={9} strokeWidth={3} />
+                            </span>
+                            )}
+                        </span>
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -673,7 +742,8 @@ export default function Preview() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <h3>{activeEntry.label}</h3>
                   <p className="ch-sub">
-                    Saved {timeAgo(activeEntry.created_at)} · structured data for this capability
+                    Saved {timeAgo(activeEntry.created_at)} ·{" "}
+                    {activeEntry.kind === "content" ? "generated content for this page" : "structured data for this capability"}
                   </p>
                 </div>
                 <Button
@@ -681,9 +751,15 @@ export default function Preview() {
                   variant="secondary"
                   icon={runningKey === activeEntry.key ? null : "refresh"}
                   onClick={() => refreshEntry(activeEntry)}
+                  // Content tabs refresh via the format catalogue, structured
+                  // tabs via QUICK_ACTION_BY_KEY. Either path needs the
+                  // matching preset to be present, so the button is disabled
+                  // when neither lookup resolves.
                   disabled={
                     !!runningKey ||
-                    !(activeEntry.prompt || QUICK_ACTION_BY_KEY[activeEntry.key]?.prompt)
+                    !(activeEntry.prompt ||
+                      QUICK_ACTION_BY_KEY[activeEntry.key]?.prompt ||
+                      (activeEntry.kind === "content" && CONTENT_FORMATS.some((f) => f.key === activeEntry.key)))
                   }
                 >
                   {runningKey === activeEntry.key ? "Refreshing…" : "Refresh"}
@@ -692,6 +768,12 @@ export default function Preview() {
               <div className="card-pad">
                 {activeEntry.data == null ? (
                   <div className="empty-mini">No data returned for this capability.</div>
+                ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
+                  // Content-kind (or any entry whose data is a {text} blob)
+                  // renders via ContentView — markdown + Copy button. The
+                  // dual check covers both explicitly-tagged content entries
+                  // and older entries that only have the {text} shape.
+                  <ContentView text={activeEntry.data.text || ""} />
                 ) : (
                   <StructuredData data={activeEntry.data} />
                 )}
@@ -774,10 +856,6 @@ export default function Preview() {
             ))}
         </div>
       </div>
-
-      {contentOpen && (
-        <ContentModal item={data} onClose={() => setContentOpen(false)} />
-      )}
     </div>
   );
 }

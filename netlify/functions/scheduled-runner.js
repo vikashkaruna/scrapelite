@@ -187,6 +187,7 @@ async function enqueueChange(client, schedule, changedSummary) {
   }
   return result;
 }
+}
 
 // Scrape one target and return a content fingerprint string.
 async function fingerprintTarget(target, opts) {
@@ -252,7 +253,12 @@ const run = async () => {
     const entMap = await db.entitlementsFor(rows.map((r) => r.user_id));
 
     for (const row of rows) {
-      const schedule = { ...(row.data || {}), id: row.id };
+      // user_id is projected at the top level (see listActive() — the join
+      // is a Supabase column on scheduled_tasks), so it needs to be
+      // re-attached to the schedule object before runSchedule/fireAlert
+      // can use it. The change-alert fan-out (notifyMonitoringChange)
+      // resolves the OWNER's per-user Slack webhook from this id.
+      const schedule = { ...(row.data || {}), id: row.id, user_id: row.user_id || null };
       if (!schedule.cron || !schedule.target) continue;
       scanned++;
 

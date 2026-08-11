@@ -21,19 +21,45 @@ async function request(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
   if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
 
-  const opts = { method, headers };
+  const opts = {
+    method,
+    headers,
+    // Same-origin by default; explicit for clarity. The Edge Access
+    // basic-auth cookie lives on the site domain and must travel with
+    // every API call to the function. Omitting `credentials` would
+    // default to `same-origin` for same-origin requests, but making
+    // it explicit protects against future bundler changes that might
+    // strip the default.
+    credentials: "same-origin",
+  };
   if (body !== undefined) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${BASE}${path}`, opts);
 
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({ error: res.statusText }));
-    const e = new Error(
-      errData.error || `API ${method} ${path} failed (${res.status})`
-    );
+    // Edge Access (Netlify's site-wide basic auth, used on branch
+    // deploys) returns 401 with an HTML page that JS-redirects to the
+    // app.netlify.com/edge-access login. res.json() throws on HTML,
+    // and the catch would fall back to res.statusText ("Unauthorized")
+    // — which is correct but useless for the user. Detect the Edge
+    // Access shape and surface a clear, actionable message.
+    const contentType = res.headers.get("content-type") || "";
+    const isHtml = contentType.includes("text/html");
+    let errData = {};
+    if (!isHtml) {
+      try { errData = await res.json(); } catch { /* not JSON */ }
+    }
+    let message = errData.error;
+    if (isHtml) {
+      message = "Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).";
+    } else if (!message) {
+      message = `API ${method} ${path} failed (${res.status})`;
+    }
+    const e = new Error(message);
     e.status = res.status;
     e.detail = errData.detail;
     e.useLocalStorage = errData.useLocalStorage === true;
+    if (isHtml) e.edgeAccess = true;
     throw e;
   }
 

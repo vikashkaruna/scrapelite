@@ -5,9 +5,12 @@
 //   - Usage stats (extractions + bonus + 4 counters) are present
 //   - Coupon apply / remove UI is present
 //   - Payment history table renders (or empty state)
+//   - Integrations rich status (2026-08-11) — per-provider detail
+//     lines + Test / Edit / Disconnect actions
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import Account from "./Account.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
@@ -37,6 +40,20 @@ const usageRepoMocks = vi.hoisted(() => ({
   getSessionId: vi.fn(() => "sess_test"),
 }));
 
+const integrationMocks = vi.hoisted(() => ({
+  testIntegrationConnection: vi.fn(),
+  patchIntegrationConnection: vi.fn(),
+  pushToIntegration: vi.fn(),
+  getIntegrationStatus: vi.fn(),
+  getPushProviderStatuses: vi.fn(),
+  PUSH_PROVIDERS: [
+    { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "CRM" },
+    { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "DB" },
+    { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Base" },
+    { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Channel" },
+  ],
+}));
+
 vi.mock("../lib/apiClient.js", () => ({ apiClient: apiMocks, setAuthToken: vi.fn() }));
 
 vi.mock("../lib/authService.js", async () => {
@@ -50,6 +67,38 @@ vi.mock("../lib/authService.js", async () => {
 
 vi.mock("../lib/usageRepo.js", () => usageRepoMocks);
 vi.mock("../lib/paymentRepo.js", () => usageRepoMocks);
+
+// The supabaseClient.js has no env vars in the test env, so the real
+// `supabase` export is null. Account.jsx checks for that and silently
+// no-ops the integrations fetch. The I-39 block below needs a working
+// `supabase.auth.getSession()` to drive the status fetch. We install
+// a top-level mock that reads a hoisted `supabaseSession` variable —
+// by default it's "not signed in" (matches the existing tests); the
+// I-39 block sets it to a signed-in session before each render.
+// Spread + importOriginal so we keep the real module's other exports
+// (e.g. isSupabaseEnabled, EXTRACTIONS_TABLE). The I-38 free-plan
+// tests don't touch integrations, so they don't care about the session.
+const supabaseState = vi.hoisted(() => ({ session: null }));
+vi.mock("../lib/supabaseClient.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    supabase: {
+      auth: {
+        getSession: () => Promise.resolve({ data: { session: supabaseState.session } }),
+      },
+    },
+  };
+});
+
+vi.mock("../lib/integrationsClient.js", () => ({
+  testIntegrationConnection: integrationMocks.testIntegrationConnection,
+  patchIntegrationConnection: integrationMocks.patchIntegrationConnection,
+  pushToIntegration: integrationMocks.pushToIntegration,
+  getIntegrationStatus: integrationMocks.getIntegrationStatus,
+  getPushProviderStatuses: integrationMocks.getPushProviderStatuses,
+  PUSH_PROVIDERS: integrationMocks.PUSH_PROVIDERS,
+}));
 
 vi.mock("../lib/globalSettingsService.js", () => ({
   getSettings: () => ({
@@ -71,6 +120,15 @@ beforeEach(() => {
   localStorage.clear();
   authMocks.getSession.mockResolvedValue(null);
   authMocks.onAuthStateChange.mockReturnValue(() => {});
+  // Default: integration status is empty / not connected.
+  // The integration tests override this per-test to drive the rich
+  // status + Test/Edit flows.
+  integrationMocks.testIntegrationConnection.mockResolvedValue({ ok: true });
+  integrationMocks.patchIntegrationConnection.mockResolvedValue({ ok: true });
+  // Reset the supabase session hoisted variable. The I-39 block sets
+  // it to a signed-in session before each test, then restores null
+  // here for the next run.
+  supabaseState.session = null;
   window.history.replaceState(null, "", window.location.pathname);
 });
 
@@ -127,4 +185,211 @@ describe("I-38 — Account: plan + usage", () => {
     render(<Tree />);
     expect(screen.getByPlaceholderText(/enter code/i)).toBeInTheDocument();
   });
+
+  it("puts 'Explore top-up bundles' ABOVE the coupon + white-label cards in the right column (2026-08-11)", () => {
+    render(<Tree />);
+    // The right column is .account-aside. We pin the order of the four
+    // top-level children: the top-up CTA first, then the white-label
+    // uploader, then the coupon card, then quick stats. A future refactor
+    // that reorders these (e.g. moves the CTA back to the bottom) gets
+    // caught here.
+    const aside = document.querySelector(".account-aside");
+    expect(aside).not.toBeNull();
+    const kids = Array.from(aside.children);
+    // First child = the top-up CTA (it has the "Explore top-up bundles" text).
+    expect(kids[0].textContent).toMatch(/Explore top-up bundles/);
+    // Second child is the white-label uploader.
+    expect(kids[1].querySelector(".wltu-card, [class*='white-label']") || kids[1].tagName).toBeTruthy();
+    // Third child = the coupon / promo code card.
+    expect(kids[2].textContent).toMatch(/coupon \/ promo code/i);
+    // Fourth child = the quick stats card.
+    expect(kids[3].classList.contains("account-stats")).toBe(true);
+  });
 });
+
+// ── I-39 — Account Integrations rich status (2026-08-11) ────────────────
+//
+// The Account page now renders per-provider rich status (token_hint, IDs,
+// field_map summary) plus three actions per connected row: Test, Edit,
+// Disconnect. These tests cover the render + interaction paths. The
+// server-side status response is mocked via global.fetch; the
+// testIntegrationConnection wrapper is mocked directly.
+describe("I-39 — Account: Integrations rich status (2026-08-11)", () => {
+  // The Account page reads the session from supabase.auth.getSession()
+  // (not the authService wrapper) and calls /api/integrations/{slug}/status
+  // directly with fetch. We mock the supabase session at the top of
+  // this file (supabaseState.session) and the per-provider /status
+  // response here via global.fetch.
+  function setupSignedInWithStatuses(statuses) {
+    supabaseState.session = { access_token: "test-token", user: { id: "u1" } };
+    authMocks.getSession.mockResolvedValue(supabaseState.session);
+    vi.spyOn(global, "fetch").mockImplementation(async (url) => {
+      const m = String(url).match(/\/api\/integrations\/([^/]+)\/status/);
+      if (m) {
+        const slug = m[1];
+        return makeFetchResponse(200, statuses[slug] || { connected: false, provider: slug });
+      }
+      return makeFetchResponse(200, {});
+    });
+  }
+
+  it("renders the rich status detail (token_hint, database_id, title column, column count) for a connected Notion", async () => {
+    setupSignedInWithStatuses({
+      notion: {
+        connected: true,
+        provider: "notion",
+        connection: {
+          account_label: "Workspace",
+          token_hint: "secret…abcd",
+          database_id: "abcdef0123456789abcdef0123456789",
+          title_column: "Name",
+          column_count: 7,
+          has_api_key: true,
+        },
+      },
+    });
+    render(<Tree />);
+    // Wait for the status fetch to land and the row to render.
+    await waitFor(() => {
+      expect(screen.getByText(/secret…abcd/)).toBeInTheDocument();
+    });
+    // The Notion row should show database ID, title column, and column count.
+    expect(screen.getByText(/abcdef0123…6789/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Name$/)).toBeInTheDocument();
+    expect(screen.getByText(/^7$/)).toBeInTheDocument();
+  });
+
+  it("renders the field_map summary chips for a connected Airtable row", async () => {
+    setupSignedInWithStatuses({
+      airtable: {
+        connected: true,
+        provider: "airtable",
+        connection: {
+          account_label: "ACME",
+          token_hint: "pat…xQ7z",
+          base_id: "appABCDEFGHIJK",
+          table_id: "tblABCDEFGHIJK",
+          table_meta: { tableName: "Leads", fields: [{ name: "URL" }, { name: "Title" }] },
+          field_map: { URL: { key: "url" }, Title: { key: "page_title" } },
+          field_map_summary: "URL→Link, Title→Name (+0 more)",
+          has_api_key: true,
+        },
+      },
+    });
+    render(<Tree />);
+    await waitFor(() => {
+      expect(screen.getByText(/pat…xQ7z/)).toBeInTheDocument();
+    });
+    // Table name shows up.
+    expect(screen.getByText(/^Leads$/)).toBeInTheDocument();
+    // Field map summary is rendered.
+    expect(screen.getByText(/URL→Link, Title→Name/)).toBeInTheDocument();
+  });
+
+  it("shows the Test, Edit, and Disconnect actions for a connected provider", async () => {
+    setupSignedInWithStatuses({
+      hubspot: {
+        connected: true,
+        provider: "hubspot",
+        connection: { account_label: "ACME CRM", token_hint: "pat-na1…xQ7z" },
+      },
+    });
+    render(<Tree />);
+    // Wait for the status row to render with the rich detail.
+    await waitFor(() => {
+      expect(screen.getByText(/pat-na1…xQ7z/)).toBeInTheDocument();
+    });
+    // The three action buttons (Test / Edit / Disconnect) all exist.
+    const testBtn      = screen.getByRole("button", { name: /^Test$/ });
+    const editBtn      = screen.getByRole("button", { name: /^Edit$/ });
+    const disconnectBtn = screen.getByRole("button", { name: /^Disconnect$/ });
+    expect(testBtn).toBeInTheDocument();
+    expect(editBtn).toBeInTheDocument();
+    expect(disconnectBtn).toBeInTheDocument();
+  });
+
+  it("clicking Test calls testIntegrationConnection with the provider slug", async () => {
+    const user = userEvent.setup();
+    integrationMocks.testIntegrationConnection.mockResolvedValue({
+      ok: true, portalId: "12345678",
+    });
+    setupSignedInWithStatuses({
+      hubspot: {
+        connected: true, provider: "hubspot",
+        connection: { account_label: "ACME CRM", token_hint: "pat-na1…xQ7z" },
+      },
+    });
+    render(<Tree />);
+    await waitFor(() => screen.getByRole("button", { name: /^Test$/ }));
+    await user.click(screen.getByRole("button", { name: /^Test$/ }));
+    await waitFor(() => {
+      expect(integrationMocks.testIntegrationConnection).toHaveBeenCalledWith("hubspot");
+    });
+  });
+
+  it("clicking Edit opens the EditIntegrationModal pre-populated with the current values", async () => {
+    const user = userEvent.setup();
+    setupSignedInWithStatuses({
+      airtable: {
+        connected: true, provider: "airtable",
+        connection: {
+          account_label: "ACME Airtable",
+          token_hint: "pat…xQ7z",
+          base_id: "appABCDEFGHIJK",
+          table_id: "tblABCDEFGHIJK",
+          field_map: { URL: { key: "url" } },
+        },
+      },
+    });
+    render(<Tree />);
+    // Find the Edit button inside the Airtable row (not the top-level
+    // integrations section), then click it.
+    const editButtons = await screen.findAllByRole("button", { name: /^Edit$/ });
+    expect(editButtons.length).toBeGreaterThan(0);
+    await user.click(editButtons[0]);
+    // Modal title + the pre-populated values should be visible.
+    expect(await screen.findByRole("heading", { name: /Edit Airtable/i })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("ACME Airtable")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("appABCDEFGHIJK")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("tblABCDEFGHIJK")).toBeInTheDocument();
+  });
+
+  it("clicking Save in the Edit modal calls patchIntegrationConnection with refreshSchema:true for Airtable", async () => {
+    const user = userEvent.setup();
+    setupSignedInWithStatuses({
+      airtable: {
+        connected: true, provider: "airtable",
+        connection: { account_label: "Old", base_id: "appOLD", table_id: "tblOLD" },
+      },
+    });
+    render(<Tree />);
+    const editButtons = await screen.findAllByRole("button", { name: /^Edit$/ });
+    await user.click(editButtons[0]);
+    const accountInput = await screen.findByDisplayValue("Old");
+    await user.clear(accountInput);
+    await user.type(accountInput, "New");
+    await user.click(screen.getByRole("button", { name: /Save & refresh schema/i }));
+    await waitFor(() => {
+      expect(integrationMocks.patchIntegrationConnection).toHaveBeenCalledWith(
+        "airtable",
+        expect.objectContaining({
+          accountLabel: "New",
+          refreshSchema: true,
+        }),
+      );
+    });
+  });
+});
+
+// Helper: build a minimal fetch Response for the test mocks. We don't
+// pull in the full Response polyfill — just enough to satisfy the
+// Account page's `await r.json()` paths.
+function makeFetchResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+    headers: { get: () => "application/json" },
+  };
+}

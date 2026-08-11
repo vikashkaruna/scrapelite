@@ -196,4 +196,22 @@ describe("F-17 — Integrations page", () => {
     const cards = container.querySelectorAll(".int-card");
     expect(cards.length).toBe(13);
   });
+
+  it("labels the 5 push providers as 'Available (Beta)' and Salesforce/Webhook with the right status (2026-08-11)", async () => {
+    const { container } = render(<Tree path="/integrations"><Integrations /></Tree>);
+    await act(async () => { await Promise.resolve(); });
+
+    // Status badges — these are pinned so a future refactor that drops
+    // or renames them gets caught here.
+    const labels = Array.from(container.querySelectorAll(".int-status"))
+      .map((el) => el.textContent.trim());
+    // 5 push providers → "Available (Beta)"
+    expect(labels.filter((l) => l === "Available (Beta)").length).toBe(5);
+    // Webhook / n8n → "Coming Soon"
+    expect(labels).toContain("Coming Soon");
+    // Salesforce → "Roadmap"
+    expect(labels).toContain("Roadmap");
+    // Mature features → plain "Available"
+    expect(labels.filter((l) => l === "Available").length).toBeGreaterThan(0);
+  });
 });

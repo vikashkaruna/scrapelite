@@ -103,6 +103,64 @@
     Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com; form-action 'self' https://checkout.razorpay.com https://js.stripe.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com https://cdn.razorpay.com; connect-src 'self' https: wss:;"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
+# Public REST API (v1) is routed to a single function that dispatches on the
+# `splat` query param. The more specific /api/v1/* rule MUST come first so it
+# wins over the catch-all /api/* rule below.
+[[redirects]]
+  from = "/api/v1/*"
+  to = "/.netlify/functions/api-v1?splat=:splat"
+  status = 200
+  force = true
+
+# Integrations (HubSpot, Zapier, Notion, Airtable, Slack) — the splat is
+# forwarded as a PATH SEGMENT (not a query param) so the function can
+# dispatch on the sub-path. The previous `?splat=:splat` query-string
+# form worked in the wildcard router path but dropped the splat on
+# the per-provider explicit rules in production deploys — the `*` was
+# matching but `:splat` wasn't being substituted, leaving the function
+# with `event.path = "/.netlify/functions/integrations-slack"` (no
+# sub-path) and `event.queryStringParameters.splat = ""`. Each handler
+# now has a path-based fallback (commit 87f5597) that resolves the
+# sub-path from `event.path` when the query is empty.
+[[redirects]]
+  from = "/api/integrations/hubspot/*"
+  to = "/.netlify/functions/integrations-hubspot/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/notion/*"
+  to = "/.netlify/functions/integrations-notion/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/airtable/*"
+  to = "/.netlify/functions/integrations-airtable/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/slack/*"
+  to = "/.netlify/functions/integrations-slack/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/integrations/zapier/*"
+  to = "/.netlify/functions/integrations-zapier/:splat"
+  status = 200
+  force = true
+
+# Wildcard fallback (for any future provider that doesn't get an explicit
+# rule above). Routed through the dispatch router — it also reads the
+# sub-path from `event.path` (commit 49ae0e9).
+[[redirects]]
+  from = "/api/integrations/*"
+  to = "/.netlify/functions/integrations-router/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
