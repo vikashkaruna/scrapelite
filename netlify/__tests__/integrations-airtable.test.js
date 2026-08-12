@@ -1,13 +1,23 @@
 // netlify/__tests__/integrations-airtable.test.js
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Hoist the mock so the regression test below can assert against it.
+// 2026-08-12 fix: the production code now passes the JWT to
+// `supabase.auth.getUser(jwt)` directly, because the bare
+// `supabase.auth.getUser()` form returns `AuthSessionMissingError` on
+// supabase-js v2.108+ when the client has no session and no
+// `hasCustomAuthorizationHeader: true` flag (even though the global
+// `Authorization` header IS set). This regression test pins that
+// contract — if a future refactor drops the JWT arg, the test fails.
+const mockGetUser = vi.fn().mockResolvedValue({
+  data: { user: { id: "u1" } },
+  error: null,
+});
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({
     auth: {
-      getUser: vi.fn().mockResolvedValue({
-        data: { user: { id: "u1" } },
-        error: null,
-      }),
+      getUser: mockGetUser,
     },
   })),
 }));
@@ -46,6 +56,46 @@ describe("integrations-airtable", () => {
   it("401 without auth", async () => {
     const r = await handler(baseEvent({ headers: {} }));
     expect(r.statusCode).toBe(401);
+  });
+
+  // 2026-08-12 fix: supabase-js v2.108+ returns AuthSessionMissingError
+  // when `supabase.auth.getUser()` is called on a client with no session
+  // and no `hasCustomAuthorizationHeader: true` flag, even when the
+  // global `Authorization` header IS set. The production code now
+  // extracts the JWT from the request and calls `getUser(jwt)`. This
+  // regression test pins that — if a future refactor drops the JWT
+  // arg, the test fails with a clear 401 message.
+  describe("auth passes JWT explicitly to getUser (2026-08-12 fix)", () => {
+    it("calls getUser with the bearer token from the Authorization header", async () => {
+      // The status handler calls the connection store first; mock it
+      // to return no connection so the function completes with 200.
+      mockStore.get.mockResolvedValue({ ok: true, connection: null });
+      mockGetUser.mockImplementation((jwt) => {
+        if (!jwt) {
+          return Promise.resolve({
+            data: { user: null },
+            error: { name: "AuthSessionMissingError", message: "Auth session missing!" },
+          });
+        }
+        return Promise.resolve({ data: { user: { id: "u1" } }, error: null });
+      });
+      const r = await handler(baseEvent({
+        httpMethod: "GET",
+        headers: { authorization: "Bearer test-jwt-123" },
+        queryStringParameters: { splat: "status" },
+      }));
+      expect(r.statusCode).toBe(200);
+      expect(mockGetUser).toHaveBeenCalledWith("test-jwt-123");
+      const calls = mockGetUser.mock.calls;
+      expect(calls.every((c) => c[0] !== undefined)).toBe(true);
+    });
+
+    it("returns 401 when the auth header is missing the bearer prefix", async () => {
+      mockGetUser.mockClear();
+      const r = await handler(baseEvent({ headers: { authorization: "just-a-token-no-bearer" } }));
+      expect(r.statusCode).toBe(401);
+      expect(mockGetUser).not.toHaveBeenCalled();
+    });
   });
 
   describe("GET /status", () => {
