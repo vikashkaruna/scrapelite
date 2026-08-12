@@ -11,6 +11,7 @@
 // enquiry *type* rather than a destination for the same reason.
 import { createClient } from "@supabase/supabase-js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
+import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -29,10 +30,10 @@ function getSupabaseForUser(authHeader) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
+  return createClient(url, anonKey, noRealtimeOptions({
     global: { headers: authHeader ? { Authorization: authHeader } : {} },
     auth: { persistSession: false },
-  });
+  }));
 }
 
 export const handler = async (event) => {
