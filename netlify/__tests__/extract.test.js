@@ -407,6 +407,95 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     expect(runChainMock).not.toHaveBeenCalled();
   });
 
+  it("falls back to AI when Firecrawl's own JSON extraction comes back as an empty object", async () => {
+    // Firecrawl's prompt-only (schema-less) JSON extraction frequently
+    // returns `{}` when it can't confidently match the prompt on a real
+    // page. `{}` is truthy in JS, so a naive `!result.customExtraction`
+    // check treated "found nothing" as "already handled" and skipped the
+    // AI fallback entirely — the user-reported regression this pins.
+    process.env.FIRECRAWL_API_KEY = "fc-key";
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            html: "<html><head><title>Acme</title></head><body><p>CEO: Jane Doe</p></body></html>",
+            metadata: { title: "Acme" },
+            json: {}, // Firecrawl succeeded but found nothing for the prompt
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const aiJson = { contacts: [{ name: "Jane Doe", role: "CEO" }] };
+    const runChainMock = vi.fn().mockResolvedValue({ ok: true, text: JSON.stringify(aiJson) });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://example.com/leadership",
+        options: { customPrompt: "Extract leadership contacts." },
+      }),
+    });
+    const body = JSON.parse(r.body);
+    expect(body.data.json).toEqual(aiJson);
+    expect(body._aiExtractFallback).toBe(true);
+    expect(runChainMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports no data (not a stale empty object) when both Firecrawl and the AI fallback find nothing", async () => {
+    process.env.FIRECRAWL_API_KEY = "fc-key";
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: { html: "<html></html>", metadata: { title: "T" }, json: {} },
+        }),
+        { status: 200 },
+      ),
+    );
+    const runChainMock = vi.fn().mockResolvedValue({ ok: true, text: "{}" });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://example.com",
+        options: { customPrompt: "Extract pricing." },
+      }),
+    });
+    const body = JSON.parse(r.body);
+    // Both the provider and the AI fallback genuinely found nothing —
+    // the response should say so explicitly (undefined), not carry a
+    // stale `{}` that the client would render as ambiguous "no data".
+    expect(body.data.json).toBeUndefined();
+  });
+
+  it("parses a bare JSON array reply even with a preamble the model added despite instructions", async () => {
+    // "Social Links" is naturally array-shaped ("extract all social
+    // profile URLs"). If the model prefixes its reply with a one-line
+    // intro and returns `[...]` rather than `{...}`, the loose parser's
+    // old "find { ... }" last resort found no braces at all and threw
+    // away a perfectly good extraction.
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    fetchMock.mockResolvedValueOnce(
+      new Response("<html><body><p>Follow us on Twitter and LinkedIn</p></body></html>", { status: 200 }),
+    );
+    const links = ["https://twitter.com/acme", "https://linkedin.com/company/acme"];
+    const runChainMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, text: `Here are the links:\n${JSON.stringify(links)}` });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://example.com",
+        options: { customPrompt: "Extract all social media profile URLs." },
+      }),
+    });
+    const body = JSON.parse(r.body);
+    expect(body.data.json).toEqual(links);
+    expect(body._aiExtractFallback).toBe(true);
+  });
+
   it("returns null customExtraction when runChain returns ok:false (don't 500)", async () => {
     process.env.SCRAPE_PROVIDER_ORDER = "direct";
     delete process.env.FIRECRAWL_API_KEY;

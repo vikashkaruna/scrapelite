@@ -117,17 +117,41 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* fall through */ }
   }
-  // Last resort: find the first { ... last } block. The "no preamble"
-  // instruction usually works, but some models add a one-line intro.
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  if (first !== -1 && last !== -1 && last > first) {
+  // Last resort: find the outermost JSON object OR array in the reply. The
+  // "no preamble" instruction usually works, but some models add a one-line
+  // intro, and prompts that are naturally list-shaped (e.g. "extract all
+  // social links") sometimes come back as a bare `[...]` rather than an
+  // object — only scanning for `{`/`}` missed that shape entirely and threw
+  // away a perfectly good extraction.
+  const firstObj = trimmed.indexOf("{");
+  const lastObj = trimmed.lastIndexOf("}");
+  const firstArr = trimmed.indexOf("[");
+  const lastArr = trimmed.lastIndexOf("]");
+  const candidates = [];
+  if (firstObj !== -1 && lastObj > firstObj) candidates.push(trimmed.slice(firstObj, lastObj + 1));
+  if (firstArr !== -1 && lastArr > firstArr) candidates.push(trimmed.slice(firstArr, lastArr + 1));
+  for (const candidate of candidates) {
     try {
-      const v = JSON.parse(trimmed.slice(first, last + 1));
+      const v = JSON.parse(candidate);
       return v && typeof v === "object" ? v : null;
-    } catch { /* give up */ }
+    } catch { /* try the next candidate */ }
   }
   return null;
+}
+
+// True when a customPrompt-driven extraction actually found something.
+// Firecrawl's prompt-only JSON extraction (no schema) frequently comes back
+// as `{}` when it can't confidently match the prompt — an EMPTY OBJECT is
+// truthy in JS, so `!result.customExtraction` alone let a genuinely empty
+// extraction masquerade as "already handled" and skip the AI-extraction
+// fallback below, leaving the user with a "No data returned" tab even
+// though the requested info was on the page. Null/undefined/empty-object/
+// empty-array all count as "nothing found" and should still fall through.
+function isEmptyExtraction(v) {
+  if (v == null) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v).length === 0;
+  return false;
 }
 
 export const handler = async (event) => {
@@ -272,14 +296,14 @@ export const handler = async (event) => {
     // response (any failure leaves customExtraction as null, which the
     // client already handles as "no data").
     let aiExtractionUsed = false;
-    if (options.customPrompt && !result.customExtraction) {
+    if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
       try {
         const aiJson = await extractJsonWithAI({
           prompt: options.customPrompt,
           title: result.title || "",
           text: htmlToPlainText(result.html || ""),
         });
-        if (aiJson) {
+        if (!isEmptyExtraction(aiJson)) {
           result.customExtraction = aiJson;
           aiExtractionUsed = true;
         }
@@ -296,7 +320,7 @@ export const handler = async (event) => {
       data: {
         html: result.html,
         metadata: { title: result.title || "" },
-        json: result.customExtraction || undefined,
+        json: isEmptyExtraction(result.customExtraction) ? undefined : result.customExtraction,
       },
       source: result.source,
       _providerAttempts: result.attempts,

@@ -120,6 +120,20 @@ function DomainMapCard({ urls, base }) {
   );
 }
 
+// A saved enrichment entry counts as "nothing found" when its data is
+// null/undefined, an empty object, or an empty array — not just null.
+// Content-kind entries (a {text} blob) are exempt: an empty string is a
+// legitimate (if unlikely) generation result, not a missing extraction.
+function isEmptyEnrichmentData(data) {
+  if (data == null) return true;
+  if (typeof data === "string") return data.trim() === "";
+  if (Array.isArray(data)) return data.length === 0;
+  if (typeof data === "object" && typeof data.text !== "string") {
+    return Object.keys(data).length === 0;
+  }
+  return false;
+}
+
 export default function Preview() {
   useSeo({
     title: "DatIQ Preview — review your extraction | DatIQ.app",
@@ -766,7 +780,7 @@ export default function Preview() {
                 </Button>
               </div>
               <div className="card-pad">
-                {activeEntry.data == null ? (
+                {isEmptyEnrichmentData(activeEntry.data) ? (
                   <div className="empty-mini">No data returned for this capability.</div>
                 ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
                   // Content-kind (or any entry whose data is a {text} blob)
