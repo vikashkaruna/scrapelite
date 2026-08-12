@@ -112,7 +112,14 @@ async function authenticateRequest(event) {
   }
   const { data: { user }, error: userError } = await supabase.auth.getUser(jwt);
   if (userError || !user) {
-    return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
+    // See integrations-slack.js for why this is logged with the real
+    // Supabase reason instead of silently returning the same generic
+    // message for every distinct failure mode.
+    console.warn("[integrations-hubspot] getUser(jwt) rejected:", userError?.message || "no user returned", userError?.status ?? "");
+    return {
+      ok: false,
+      response: respond(401, { error: "Invalid or expired session", reason: userError?.message || "no_user" }),
+    };
   }
   return { ok: true, user };
 }

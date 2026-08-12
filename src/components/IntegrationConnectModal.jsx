@@ -307,7 +307,14 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
             pickFirstNonEmptyString(data) ||
             rawBodySnippet(rawBody) ||
             `HTTP ${res.status}`;
-          setError(fallback);
+          // `reason` (added alongside the generic "Invalid or expired
+          // session" message) carries the real Supabase getUser() error —
+          // e.g. "invalid JWT: unable to parse or verify signature" (a
+          // project/key mismatch) vs "JWT expired" (genuine staleness).
+          // Both render identically without it, which is why this exact
+          // message survived multiple "fixed" sessions — show it inline
+          // so the next report is diagnosable from the toast alone.
+          setError(data.reason && data.reason !== fallback ? `${fallback} (${data.reason})` : fallback);
         }
         setSubmitting(false);
         return;

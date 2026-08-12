@@ -78,7 +78,21 @@ async function authenticateRequest(event) {
   const supabase = getSupabaseForUser(authHeader);
   if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
   const { data: { user }, error } = await supabase.auth.getUser(jwt);
-  if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
+  if (error || !user) {
+    // Swallowing the real Supabase error here is exactly why the
+    // 2026-08-12 fix (passing `jwt` to getUser) was hard to distinguish
+    // from other causes of the same client-visible message — a stale
+    // access token, a JWT signed by a different Supabase project (see
+    // "custom auth domain" note in CLAUDE.md), or genuine session
+    // expiry all render identically to the user. Log the real reason
+    // server-side and surface a non-sensitive `reason` string on the
+    // response so a repeat report is diagnosable without guessing.
+    console.warn("[integrations-slack] getUser(jwt) rejected:", error?.message || "no user returned", error?.status ?? "");
+    return {
+      ok: false,
+      response: respond(401, { error: "Invalid or expired session", reason: error?.message || "no_user" }),
+    };
+  }
   return { ok: true, user };
 }
 
