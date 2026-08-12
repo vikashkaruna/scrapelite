@@ -9,6 +9,7 @@
 // without sending.
 
 import { createClient } from "@supabase/supabase-js";
+import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
 
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -32,9 +33,9 @@ export const handler = async (event) => {
   const token = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1]?.trim();
   if (!token) return { statusCode: 401, body: "authentication required" };
 
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, noRealtimeOptions({
     auth: { autoRefreshToken: false, persistSession: false },
-  });
+  }));
 
   let verifiedUser;
   try {

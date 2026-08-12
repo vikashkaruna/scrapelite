@@ -29,16 +29,17 @@
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
 import { can, computeLifecycle } from "../../../src/lib/entitlementModel.js";
+import { noRealtimeOptions } from "./supabaseServerClient.js";
 
 /** Anon-key client carrying the caller's JWT — same shape as extractions.js. */
 function getSupabaseForUser(authHeader) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
+  return createClient(url, anonKey, noRealtimeOptions({
     global: { headers: authHeader ? { Authorization: authHeader } : {} },
     auth: { persistSession: false },
-  });
+  }));
 }
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
