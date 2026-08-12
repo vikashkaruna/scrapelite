@@ -77,9 +77,19 @@ async function readJsonBody(event) {
 async function authenticateRequest(event) {
   const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
   if (!authHeader) return { ok: false, response: respond(401, { error: "Authentication required" }) };
+  // Extract the raw JWT — supabase-js v2.108+ returns AuthSessionMissingError
+  // when `getUser()` is called on a client with no session and no
+  // `hasCustomAuthorizationHeader: true` flag, EVEN IF the global Authorization
+  // header is set. Passing the JWT directly is the documented server-side
+  // pattern and bypasses the flag check entirely (the request still sends
+  // the `Authorization: Bearer <jwt>` header to /auth/v1/user).
+  // — fix 2026-08-12, "Invalid or expired session" on every integration
+  // connect modal click.
+  const jwt = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1]?.trim();
+  if (!jwt) return { ok: false, response: respond(401, { error: "Authentication required" }) };
   const supabase = getSupabaseForUser(authHeader);
   if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser(jwt);
   if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
   return { ok: true, user };
 }
