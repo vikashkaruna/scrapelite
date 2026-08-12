@@ -57,6 +57,18 @@ name: Phase-Gate Production Deploy
 on:
   push:
     branches: [main]
+    # Docs/help/markdown-only pushes skip the entire gate (including
+    # the manual-approval pause and the deploy). The pre-push hook
+    # already filtered docs-only changes before the push reached GH;
+    # this is the second line of defense in case a commit was authored
+    # on a different machine. 2026-08-12: CI-local-first, see
+    # docs/CI-LOCAL-FIRST.md.
+    paths-ignore:
+      - 'docs/**'
+      - 'public/help/**'
+      - '.claude/**'
+      - '*.md'
+      - 'CHANGELOG.md'
   workflow_dispatch:
     inputs:
       bypass_staging_check:
@@ -86,6 +98,18 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+      # 2026-08-12: CI-local-first — cache Playwright's browser binaries so
+      # the e2e step doesn't re-download chromium (~200MB) on every run.
+      # The cache key is keyed on the lockfile (so package.json changes
+      # bust it correctly) and the OS (so Ubuntu/macOS don't share).
+      # Saves ~90s on warm cache, ~3min on cold. See docs/CI-LOCAL-FIRST.md.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - run: npm ci
 
       - name: Release-readiness audit (admin leaks, email split, screenshot refs)
@@ -107,6 +131,13 @@ jobs:
         run: npm run build
 
       - name: Install Playwright browsers
+        # `--with-deps` re-runs apt on every run (idempotent on warm cache)
+        # but the actual browser download hits the cache above. When the
+        # cache is warm, Playwright sees the browser is already extracted
+        # and skips the download; the apt step still runs to make sure
+        # the system libs (libnss, libxkbcommon, etc.) are present. The
+        # `--with-deps` flag does the apt step itself, so this single
+        # command is correct for both warm and cold cache.
         run: npx playwright install --with-deps chromium
 
       - name: End-to-end smoke tests (Playwright)
