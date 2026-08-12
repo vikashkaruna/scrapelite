@@ -75,7 +75,16 @@ async function authenticateRequest(event) {
   const supabase = getSupabaseForUser(authHeader);
   if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
   const { data: { user }, error } = await supabase.auth.getUser(jwt);
-  if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
+  if (error || !user) {
+    // See integrations-slack.js for why this is logged with the real
+    // Supabase reason instead of silently returning the same generic
+    // message for every distinct failure mode.
+    console.warn("[integrations-notion] getUser(jwt) rejected:", error?.message || "no user returned", error?.status ?? "");
+    return {
+      ok: false,
+      response: respond(401, { error: "Invalid or expired session", reason: error?.message || "no_user" }),
+    };
+  }
   return { ok: true, user };
 }
 
