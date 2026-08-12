@@ -18,6 +18,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { notifyExtractionComplete } from "./lib/notify.js";
+import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
 
 const TABLE = "extractions";
 
@@ -56,12 +57,12 @@ function getSupabaseForUser(authHeader) {
   if (!url || !anonKey) return null;
 
   // Pass the user's JWT so Supabase applies RLS with auth.uid() = user_id.
-  return createClient(url, anonKey, {
+  return createClient(url, anonKey, noRealtimeOptions({
     global: {
       headers: authHeader ? { Authorization: authHeader } : {},
     },
     auth: { persistSession: false },
-  });
+  }));
 }
 
 export const handler = async (event) => {

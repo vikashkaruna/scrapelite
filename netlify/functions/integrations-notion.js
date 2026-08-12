@@ -27,6 +27,7 @@ import {
   validateNotionConfig,
   defaultNotionSchema,
 } from "../../src/lib/notion.js";
+import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,10 +47,10 @@ function getSupabaseForUser(authHeader) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
+  return createClient(url, anonKey, noRealtimeOptions({
     global: { headers: authHeader ? { Authorization: authHeader } : {} },
     auth: { persistSession: false },
-  });
+  }));
 }
 
 async function readJsonBody(event) {
