@@ -5,7 +5,7 @@ import {
   fetchRealUsers, extendUserBonus, inviteUserByEmail, assignUserCoupon,
 } from "../../lib/adminConfigService.js";
 import { addAdminUser, getCoupons } from "../../lib/adminService.js";
-import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
+import { getEffectivePlanById, getEffectivePlans } from "../../lib/pricingOverrides.js";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
@@ -40,14 +40,16 @@ function PlanPeriod({ start, end }) {
   );
 }
 
-function CouponPill({ code, discount }) {
+function CouponPill({ code, discount, planId }) {
   if (!code) return <span className="user-period-none">—</span>;
+  const plan = planId ? getEffectivePlanById(planId) : null;
   return (
-    <span className="user-coupon-pill">
+    <span className="user-coupon-pill" title={plan ? `Restricted to ${plan.name}` : "Valid for any plan"}>
       {code}
       {discount != null && discount > 0 && (
         <span className="user-coupon-pct"> −{discount}%</span>
       )}
+      {plan && <span className="user-coupon-plan"> · {plan.name}</span>}
     </span>
   );
 }
@@ -81,10 +83,16 @@ function ExtendModal({ user, onClose, onSave, saving }) {
 function CouponModal({ user, onClose, onSave, saving }) {
   // Only show coupons designated for manual admin assignment (planId === "manual").
   const allCoupons = getCoupons().filter((c) => c.active && c.planId === "manual");
+  const plans = getEffectivePlans().filter((p) => !p.comingSoon && p.price_usd > 0);
   const [code, setCode]           = useState(user.couponAvailed || "");
   const [customPct, setCustomPct] = useState(
     user.couponDiscount != null ? String(user.couponDiscount) : ""
   );
+  // Which plan this assignment is restricted to — "" means any plan. Distinct
+  // from the coupon's own planId field (always the "manual" sentinel here);
+  // the restriction lives per-assignment so the same catalog coupon can be
+  // given to different users for different plans.
+  const [restrictPlan, setRestrictPlan] = useState(user.couponPlanId || "");
   const [err, setErr] = useState("");
 
   const selected     = allCoupons.find((c) => c.code === code);
@@ -95,7 +103,7 @@ function CouponModal({ user, onClose, onSave, saving }) {
   const submit = async () => {
     setErr("");
     if (!code) { setErr("Please select a coupon."); return; }
-    try { await onSave(user, code, effectivePct); }
+    try { await onSave(user, code, effectivePct, restrictPlan || null); }
     catch (e) { setErr(e.message); }
   };
 
@@ -142,6 +150,21 @@ function CouponModal({ user, onClose, onSave, saving }) {
           </div>
         )}
 
+        {selected && (
+          <div className="cf-field">
+            <label>
+              Restrict to plan
+              <span className="cf-label-hint"> (leave as "Any plan" for a general allocation)</span>
+            </label>
+            <select value={restrictPlan} onChange={(e) => setRestrictPlan(e.target.value)}>
+              <option value="">Any plan</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {selected?.type === "percent" && (
           <div className="cf-field">
             <label>
@@ -163,7 +186,12 @@ function CouponModal({ user, onClose, onSave, saving }) {
         {effectivePct != null && effectivePct > 0 && (
           <div className="coupon-preview-row">
             <Icon name="tag" size={13} />
-            <span>This user will receive <strong>{effectivePct}% off</strong> on their next payment.</span>
+            <span>
+              This user will receive <strong>{effectivePct}% off</strong>
+              {restrictPlan
+                ? <> on the <strong>{plans.find((p) => p.id === restrictPlan)?.name || restrictPlan}</strong> plan only.</>
+                : " on their next payment, on any plan."}
+            </span>
           </div>
         )}
 
@@ -311,19 +339,20 @@ export default function AdminUsers() {
     }
   };
 
-  const handleAssignCoupon = async (user, couponCode, discountPct) => {
+  const handleAssignCoupon = async (user, couponCode, discountPct, planId) => {
     setCouponSaving(true);
     try {
-      const result = await assignUserCoupon(user.id, couponCode, discountPct);
+      const result = await assignUserCoupon(user.id, couponCode, discountPct, planId);
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id
-            ? { ...u, couponAvailed: result.couponCode, couponDiscount: result.discountPct }
+            ? { ...u, couponAvailed: result.couponCode, couponDiscount: result.discountPct, couponPlanId: result.planId }
             : u
         )
       );
       const pctLabel = discountPct != null && discountPct > 0 ? ` (${discountPct}% off)` : "";
-      showToast(`Coupon ${result.couponCode}${pctLabel} assigned to ${user.name}.`);
+      const planLabel = planId ? ` for the ${getEffectivePlanById(planId)?.name || planId} plan` : "";
+      showToast(`Coupon ${result.couponCode}${pctLabel} assigned to ${user.name}${planLabel}.`);
       setCoupon(null);
     } catch (e) {
       throw e; // re-throw so CouponModal displays the error inline
@@ -474,7 +503,7 @@ export default function AdminUsers() {
                         </div>
                       </td>
                       <td><PlanPill planId={u.planId} /></td>
-                      <td><CouponPill code={u.couponAvailed} discount={u.couponDiscount} /></td>
+                      <td><CouponPill code={u.couponAvailed} discount={u.couponDiscount} planId={u.couponPlanId} /></td>
                       <td><PlanPeriod start={u.planStart} end={u.planEnd} /></td>
                       <td className="user-extractions">
                         {u.extractionsThisMonth > 0

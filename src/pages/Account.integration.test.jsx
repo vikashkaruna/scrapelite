@@ -186,7 +186,7 @@ describe("I-38 — Account: plan + usage", () => {
     expect(screen.getByPlaceholderText(/enter code/i)).toBeInTheDocument();
   });
 
-  it("puts 'Explore top-up bundles' ABOVE the coupon + white-label cards in the right column (2026-08-11)", () => {
+  it("puts 'Explore plans & top-up bundles' ABOVE the coupon + white-label cards in the right column (2026-08-11)", () => {
     render(<Tree />);
     // The right column is .account-aside. We pin the order of the four
     // top-level children: the top-up CTA first, then the white-label
@@ -196,8 +196,8 @@ describe("I-38 — Account: plan + usage", () => {
     const aside = document.querySelector(".account-aside");
     expect(aside).not.toBeNull();
     const kids = Array.from(aside.children);
-    // First child = the top-up CTA (it has the "Explore top-up bundles" text).
-    expect(kids[0].textContent).toMatch(/Explore top-up bundles/);
+    // First child = the top-up CTA (it has the "Explore plans & top-up bundles" text).
+    expect(kids[0].textContent).toMatch(/Explore plans & top-up bundles/);
     // Second child is the white-label uploader.
     expect(kids[1].querySelector(".wltu-card, [class*='white-label']") || kids[1].tagName).toBeTruthy();
     // Third child = the coupon / promo code card.

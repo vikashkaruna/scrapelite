@@ -1,9 +1,19 @@
 // TopupBundleModal.jsx — Quantity-selector modal for top-up bundle purchases.
 import { useState } from "react";
-import { getEffectivePlans } from "../lib/pricingOverrides.js";
+import { getEffectivePlans, getGlobalDiscount } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
+import { computeCharge } from "../lib/pricingMath.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
+
+// Active global-sale percent (0 when none / expired) — same source Pricing.jsx's
+// own banner and PaymentConfirmModal read, so this modal never disagrees.
+function activeSalePercent() {
+  const d = getGlobalDiscount();
+  if (!d?.active || !d.percent) return 0;
+  if (d.expiresAt && new Date(d.expiresAt) < new Date()) return 0;
+  return d.percent;
+}
 
 export default function TopupBundleModal({
   bundle,
@@ -20,15 +30,19 @@ export default function TopupBundleModal({
   if (!bundle) return null;
 
   const isINR = currency === "INR";
-  const GST_RATE = 0.18;
-  const basePrice    = isINR && bundle.price_inr ? bundle.price_inr : bundle.price_usd;
-  const subtotal     = basePrice * qty;
-  const gst          = isINR ? Math.round(subtotal * GST_RATE) : 0;
-  const totalPrice   = subtotal + gst;
-  const sym          = isINR ? "₹" : "$";
+  const sym   = isINR ? "₹" : "$";
+
+  // computeCharge is the SAME helper PaymentConfirmModal uses for plan purchases —
+  // using it here too means bundle purchases show (and the server, once a coupon
+  // is wired into checkout for bundles, would charge) the same discounted total
+  // instead of a second, hand-rolled GST calculation.
+  const discountPercent = activeSalePercent();
+  const { gross, discount, base: subtotal, gst, total: totalPrice } =
+    computeCharge(bundle, "once", currency, discountPercent, qty);
+  const basePrice = isINR && bundle.price_inr ? bundle.price_inr : bundle.price_usd;
 
   const fmtINR = (n) => sym + Math.round(n).toLocaleString("en-IN");
-  const fmtUSD = (n) => sym + n;
+  const fmtUSD = (n) => sym + (Number.isInteger(n) ? n : n.toFixed(2));
   const fmtAmt = isINR ? fmtINR : fmtUSD;
 
   const formattedTotal = fmtAmt(totalPrice);
@@ -95,19 +109,27 @@ export default function TopupBundleModal({
         <div className="tbm-summary">
           <div className="tbm-summary-row">
             <span>{bundle.name}{qty > 1 ? ` × ${qty}` : ""}</span>
-            <span>{fmtAmt(subtotal)}</span>
+            <span>{fmtAmt(gross)}</span>
           </div>
           {qty > 1 && (
             <div className="tbm-summary-row tbm-summary-per">
               <span>{formattedUnit} per bundle</span>
             </div>
           )}
+          {discountPercent > 0 && discount > 0 && (
+            <div className="tbm-summary-row tbm-discount-row">
+              <span><Icon name="tag" size={12} /> Sale (−{discountPercent}%)</span>
+              <span>− {fmtAmt(discount)}</span>
+            </div>
+          )}
           {isINR && (
+            <div className="tbm-summary-row tbm-gst-row">
+              <span>GST (18%)</span>
+              <span>+ {fmtINR(gst)}</span>
+            </div>
+          )}
+          {(isINR || discountPercent > 0) && (
             <>
-              <div className="tbm-summary-row tbm-gst-row">
-                <span>GST (18%)</span>
-                <span>+ {fmtINR(gst)}</span>
-              </div>
               <div className="tbm-summary-divider" />
               <div className="tbm-summary-row tbm-total-row">
                 <span>Total charged</span>

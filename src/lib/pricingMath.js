@@ -39,12 +39,13 @@ function discFrac(discountPercent) {
 // the discount is applied to the gross base BEFORE GST, exactly like create-checkout.js.
 // For INR, totalMinor is computed as round(gross * (1-disc) * 1.18 * 100) in ONE step to
 // match the server and avoid rounding drift.
-export function computeCharge(plan, billingPeriod, currency, discountPercent = 0) {
+export function computeCharge(plan, billingPeriod, currency, discountPercent = 0, qty = 1) {
   // Bundles are priced as a single "once" unit and only carry price_usd/price_inr.
   const period = billingPeriod === "annual" ? "annual" : billingPeriod === "once" ? "once" : "monthly";
-  const gross = grossMajor({ prices: plan, billingPeriod: period, currency });
+  const gross = grossMajor({ prices: plan, billingPeriod: period, currency, qty });
   const c = computeChargeMinor({
     gross,
+    qty,
     discountFrac: discFrac(discountPercent),
     currency,
   });

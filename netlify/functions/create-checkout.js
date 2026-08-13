@@ -123,6 +123,12 @@ export const handler = async (event) => {
       };
 
       const stripeDiscPct = Math.round(serverDiscount * 100);
+      // A 100%-off coupon/sale — grant the plan without ever creating a Stripe
+      // session. Mirrors the Razorpay branch below; see its comment for why
+      // this must short-circuit before any gateway call.
+      if (stripeDiscPct >= 100) {
+        return { statusCode: 200, headers, body: JSON.stringify({ status: "free", planId }) };
+      }
       if (stripeDiscPct > 0) {
         try {
           const coupon = await stripe.coupons.create({
@@ -193,6 +199,22 @@ export const handler = async (event) => {
       couponCode: disc > 0 ? couponCode : null,
     });
     const finalAmount = charge.totalMinor;
+
+    // A 100%-off coupon/sale brings a genuinely non-zero price down to exactly
+    // zero. Grant the plan directly instead of asking Razorpay to process a
+    // ₹0/$0 order — Razorpay's own minimum-amount rule below would otherwise
+    // hard-fail this checkout AFTER the coupon reservation above has already
+    // consumed the user's one-time redemption slot, with no way to get it
+    // back. The coupon stays reserved (this is the same "spend the slot"
+    // behavior a real payment would have), and no gateway order/invoice draft
+    // is created since there is no charge to invoice.
+    //
+    // Gated on serverDiscount > 0 so this never fires for a plan/bundle whose
+    // OWN price is already zero (e.g. the free plan posted directly to this
+    // endpoint) — that stays a genuine AMOUNT_TOO_SMALL error, unchanged.
+    if (finalAmount === 0 && serverDiscount > 0 && gross > 0) {
+      return { statusCode: 200, headers, body: JSON.stringify({ status: "free", planId }) };
+    }
 
     // Razorpay minimums: ₹1 (100 paise) for INR, $0.50 (50 cents) for USD
     const minAmount = rzpCurrency === "INR" ? 100 : 50;

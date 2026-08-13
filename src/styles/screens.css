@@ -2749,6 +2749,7 @@
   background: color-mix(in srgb, #f59e0b 14%, transparent); color: #b45309;
 }
 .user-coupon-pct { font-weight: 700; opacity: .85; }
+.user-coupon-plan { font-weight: 500; opacity: .8; text-transform: none; letter-spacing: normal; }
 .coupon-detail-row {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   padding: 10px 12px; border-radius: var(--r); background: var(--surface-2);
@@ -2831,6 +2832,38 @@
   font-size: .9em; font-weight: 600; color: #059669;
 }
 .discount-expiry { font-weight: 500; color: color-mix(in srgb, #059669 70%, var(--text-2)); }
+
+/* Account page: "Your offers" (admin-assigned coupon / bonus extractions) */
+.my-offer-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 8px 0; font-size: .86em; color: var(--text-2);
+}
+.my-offer-row + .my-offer-row { border-top: 1px solid var(--border); }
+.my-offer-meta { color: var(--text-3); flex: 1; }
+.my-offer-applied { display: inline-flex; align-items: center; gap: 4px; color: #059669; font-weight: 600; }
+
+/* OffersBanner (Home + Pricing) — reuses .global-discount-banner chrome but
+   renders as a link, so it needs its own text-decoration + hover state. */
+.offers-banner {
+  text-decoration: none; cursor: pointer; transition: box-shadow .15s, transform .15s;
+}
+.offers-banner:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.offers-banner code {
+  background: color-mix(in srgb, #059669 14%, transparent);
+  padding: 1px 5px; border-radius: 4px; font-weight: 700;
+}
+.offers-banner-compact { margin: 0; font-size: .85em; padding: 8px 16px; }
+
+/* Plan-specific coupon/bonus chip — sits between the tagline and the price so
+   it never collides with the absolutely-positioned .plan-badge/.plan-current-badge. */
+.plan-offer-chip {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .78em; font-weight: 600; color: #b45309;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  border-radius: var(--r-sm); padding: 5px 9px;
+}
+[data-theme="dark"] .plan-offer-chip { color: #fbbf24; }
 
 /* Account page: discount note */
 .apc-discount-note {
@@ -4730,6 +4763,11 @@
   background: var(--surface-2); border-radius: var(--r-md);
   padding: 9px 12px; margin-bottom: 16px;
 }
+.pcm-free-notice {
+  display: flex; align-items: center; gap: 6px;
+  background: color-mix(in srgb, #059669 10%, var(--surface-2));
+  color: #059669; font-weight: 600;
+}
 .pcm-cancel-btn {
   display: block; width: 100%; margin-top: 10px;
   background: none; border: none; cursor: pointer;
@@ -4810,8 +4848,10 @@
   font-size: .8em; color: #e0556b; margin-top: 7px;
 }
 
-/* ── TopupBundleModal GST rows ──────────────────────────────────────────── */
+/* ── TopupBundleModal GST + discount rows ───────────────────────────────── */
 .tbm-gst-row { font-size: .83em; color: var(--text-3); }
+.tbm-discount-row { font-size: .85em; font-weight: 600; color: #059669; }
+.tbm-discount-row span:first-child { display: inline-flex; align-items: center; gap: 4px; }
 .tbm-summary-divider { height: 1px; background: var(--border); margin: 6px 0; }
 .tbm-total-row { font-weight: 700; color: var(--text); }
 
