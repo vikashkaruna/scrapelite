@@ -43,6 +43,16 @@ vi.mock("../lib/firecrawlService.js", () => ({
   mapDomain: vi.fn(),
 }));
 
+// aiService.summarize()'s no-key fallback (mockSummary) has a real 1.2s
+// setTimeout delay — mock it out so tests resolve on microtasks, not
+// wall-clock time.
+vi.mock("../lib/aiService.js", () => ({
+  summarize: vi.fn(async () => "Mock summary"),
+  categorizeLinks: vi.fn(async (links) => links || []),
+  generateContent: vi.fn(async () => ""),
+  CONTENT_FORMATS: [],
+}));
+
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn() }));
 
 vi.mock("../lib/authService.js", async () => {
@@ -116,10 +126,11 @@ function Tree() {
 }
 
 function Probe() {
-  const { extract, enrich, loading } = useExtraction();
+  const { extract, enrich, loading, current } = useExtraction();
   const { showHardBlock, hardBlockReason, checkCanExtractSingle } = useGuestTrial();
   const { pathname } = useLocation();
   const [entry, setEntry] = useState(null);
+  const extractEntry = current?.enrichments?.pricing;
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
@@ -128,8 +139,21 @@ function Probe() {
       <span data-testid="canSingle">{String(checkCanExtractSingle().allowed)}</span>
       <span data-testid="pathname">{pathname}</span>
       <span data-testid="entryReason">{entry?.reason ?? "(none)"}</span>
+      <span data-testid="extractEntryReason">{extractEntry?.reason ?? "(none)"}</span>
+      <span data-testid="extractEntryPresent">{String(Boolean(extractEntry))}</span>
       <button data-testid="extract" onClick={() => extract("https://x.example.com")}>
         extract
+      </button>
+      <button
+        data-testid="extractWithEnrich"
+        onClick={() =>
+          extract("https://x.example.com", {
+            customPrompt: "Extract every pricing tier.",
+            enrichMeta: { key: "pricing", label: "Pricing & Plans", icon: "hash" },
+          })
+        }
+      >
+        extractWithEnrich
       </button>
       <button
         data-testid="enrich"
@@ -231,5 +255,58 @@ describe("ExtractionProvider.enrich — carries the empty-extraction reason", ()
       await Promise.resolve();
     });
     expect(screen.getByTestId("entryReason").textContent).toBe("(none)");
+  });
+});
+
+// Same bug, different call site: extract() (the Home path — and, by the same
+// code shape, Batch's save path) used to gate the enrichment tab on
+// `result.custom_extraction != null`, so an empty result created NO tab and NO
+// reason at all — unlike enrich() above. A user who picked "Find contacts" on
+// Home just saw nothing, indistinguishable from broken. extract() must now
+// match enrich()'s behavior: always create the tab, carry `reason` when empty.
+describe("ExtractionProvider.extract — carries the empty-extraction reason (Home/Batch parity with enrich)", () => {
+  beforeEach(() => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 0, batchCount: 0, sid: "s1" }));
+  });
+
+  it("creates the enrichment tab with a reason even when custom_extraction is null", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      custom_extraction: null,
+      custom_extraction_reason: "ai_not_configured",
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("extractWithEnrich").click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("extractEntryPresent").textContent).toBe("true");
+    expect(screen.getByTestId("extractEntryReason").textContent).toBe("ai_not_configured");
+  });
+
+  it("still creates the tab (with no reason) when the extraction returns real data", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      custom_extraction: { plans: ["free", "pro"] },
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("extractWithEnrich").click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("extractEntryPresent").textContent).toBe("true");
+    expect(screen.getByTestId("extractEntryReason").textContent).toBe("(none)");
   });
 });

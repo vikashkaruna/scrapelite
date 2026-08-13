@@ -52,7 +52,7 @@ export async function runBatch(urls, options = {}, onProgress, signal) {
           };
         } else {
           const [ai_summary, links] = await Promise.all([
-            summarize(structure),
+            summarize(structure, { personaId: options.personaId, intent: options.intent }),
             categorizeLinks(structure.links, structure.url),
           ]);
           if (cancelled) return;
@@ -172,7 +172,7 @@ export async function extractOne(url, options = {}) {
       };
     }
     const [ai_summary, links] = await Promise.all([
-      summarize(structure),
+      summarize(structure, { personaId: options.personaId, intent: options.intent }),
       categorizeLinks(structure.links, structure.url),
     ]);
     const result = {

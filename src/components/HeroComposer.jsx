@@ -200,7 +200,7 @@ export default function HeroComposer({
         return;
       }
       const prompt = resolvePrompt({ intent, customPrompt });
-      const opts = { rawText: text };
+      const opts = { rawText: text, intent };
       if (prompt) {
         opts.customPrompt = prompt;
         const meta = enrichMetaForIntent(intent);
@@ -212,9 +212,9 @@ export default function HeroComposer({
 
     // Single URL
     const target = normalizeUrl(classification.urls[0] || text);
-    if (intent === "map") { extract(target, { mapMode: true }); return; }
+    if (intent === "map") { extract(target, { mapMode: true, intent }); return; }
     const prompt = resolvePrompt({ intent, customPrompt });
-    const opts = { renderJs };
+    const opts = { renderJs, intent };
     if (prompt) {
       opts.customPrompt = prompt;
       const meta = enrichMetaForIntent(intent);

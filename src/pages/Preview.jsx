@@ -52,8 +52,8 @@ function LinkRow({ link, base }) {
   return (
     <a className="lnk-row" href={link.href} target="_blank" rel="noopener noreferrer">
       <FaviconDot url={link.href} />
-      <span className="lnk-text">{link.text}</span>
-      <span className="lnk-href">
+      <span className="lnk-text" title={link.text}>{link.text}</span>
+      <span className="lnk-href" title={link.href}>
         <span className="lnk-host">{hostOf(link.href)}</span>
         <span className="lnk-path">{pathOf(link.href)}</span>
       </span>
@@ -574,7 +574,7 @@ export default function Preview() {
         <div className="preview-head rise">
           <FaviconDot url={data.url} size={44} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h1 className="preview-title">{data.page_title}</h1>
+            <h1 className="preview-title" title={data.page_title}>{data.page_title}</h1>
             <a className="preview-url" href={data.url} target="_blank" rel="noopener noreferrer">
               <Icon name="globe" size={15} /> {data.url} <Icon name="external" size={13} />
             </a>
