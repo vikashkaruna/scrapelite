@@ -14,6 +14,7 @@ import { hasAI, AI_MODEL } from "./config.js";
 import { apiClient } from "./apiClient.js";
 import { hostOf } from "./utils.js";
 import { categoryOf, isCategory, CATEGORY_KEYS } from "./linkCategorizer.js";
+import { PERSONA_BY_ID } from "./personaConfig.js";
 
 const MOCK_DELAY_MS = 1200;
 
@@ -35,7 +36,36 @@ async function callAI(messages, max_tokens = 1024) {
 
 // ── Summarize ─────────────────────────────────────────────────────────────────
 
-function buildSummaryPrompt(extraction) {
+// Per-intent focus clause so the summary leans toward what the user actually
+// asked for, without turning it into a duplicate of the dedicated Quick
+// Enrichment extraction (which is a separate, structured-data call).
+const INTENT_FOCUS = {
+  contacts: " Prioritize anything relevant to leadership, founders, or how to contact the company.",
+  pricing: " Prioritize anything relevant to pricing, plans, or cost.",
+};
+
+function intentFocusLine(intent) {
+  return INTENT_FOCUS[intent] || "";
+}
+
+// Frames WHO the summary is for. Falls back to the original generic wording
+// when no persona is known (anonymous/guest users, or callers that don't
+// pass context) — this keeps existing behavior byte-identical in that case.
+function audienceLine(personaId) {
+  const persona = personaId ? PERSONA_BY_ID[personaId] : null;
+  if (!persona) return "a non-technical researcher";
+  return `a ${persona.label} professional — ${persona.tagline.replace(/\.$/, "").toLowerCase()}`;
+}
+
+/**
+ * @param {object} extraction
+ * @param {{personaId?: string, intent?: string}} [context] - who the summary
+ *   is for (persona) and what they asked for (intent), so the prompt reads
+ *   contextually instead of one generic wording for every user and mode.
+ */
+function buildSummaryPrompt(extraction, context = {}) {
+  const audience = audienceLine(context.personaId);
+  const focus = intentFocusLine(context.intent);
   const headings = (extraction.headings || [])
     .map((h) => `${h.tag}: ${h.text}`)
     .join("\n");
@@ -46,16 +76,16 @@ function buildSummaryPrompt(extraction) {
   // content (capped) rather than just the derived headings/links.
   if (extraction.raw_text) {
     return (
-      `You are summarizing pasted content for a non-technical researcher.\n` +
+      `You are summarizing pasted content for ${audience}.\n` +
       `Write a single concise paragraph (3–5 sentences) describing what the content is about, ` +
-      `its key points, and its apparent intent. Do not use markdown.\n\n` +
+      `its key points, and its apparent intent.${focus} Do not use markdown.\n\n` +
       `Content:\n${String(extraction.raw_text).slice(0, 6000)}\n`
     );
   }
   return (
-    `You are summarizing a web page for a non-technical researcher.\n` +
+    `You are summarizing a web page for ${audience}.\n` +
     `Write a single concise paragraph (3–5 sentences) describing what the page is about, ` +
-    `how it is structured, and its apparent intent. Do not use markdown.\n\n` +
+    `how it is structured, and its apparent intent.${focus} Do not use markdown.\n\n` +
     `URL: ${extraction.url}\n` +
     `Title: ${extraction.page_title}\n\n` +
     `Headings:\n${headings}\n\n` +
@@ -77,10 +107,10 @@ async function mockSummary(extraction) {
   );
 }
 
-async function realSummary(extraction) {
+async function realSummary(extraction, context = {}) {
   try {
     const text = await callAI(
-      [{ role: "user", content: buildSummaryPrompt(extraction) }],
+      [{ role: "user", content: buildSummaryPrompt(extraction, context) }],
       400
     );
     return text || (await mockSummary(extraction));
@@ -93,11 +123,16 @@ async function realSummary(extraction) {
 /**
  * Summarize an extraction.
  * @param {object} extraction
+ * @param {{personaId?: string, intent?: string}} [context] - persona + intent
+ *   so the prompt is tailored to who's asking and what they asked for.
  * @returns {Promise<string>}
  */
-export async function summarize(extraction) {
-  return hasAI ? realSummary(extraction) : mockSummary(extraction);
+export async function summarize(extraction, context = {}) {
+  return hasAI ? realSummary(extraction, context) : mockSummary(extraction);
 }
+
+// Exposed for tests — not part of the public summarization API.
+export { buildSummaryPrompt as _buildSummaryPrompt };
 
 // ── Link categorization ───────────────────────────────────────────────────────
 

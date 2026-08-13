@@ -11,9 +11,11 @@ import { useToast } from "../components/Toast.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
+import { usePersona } from "../components/PersonaProvider.jsx";
 import UrlReviewTable from "../components/UrlReviewTable.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
+import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { incrementBatchRuns } from "../lib/usageService.js";
@@ -159,14 +161,16 @@ function ResultRow({ item, index, onView, onRetry, retrying }) {
             </div>
           )}
           <div style={{ minWidth: 0 }}>
-            <div className="batch-td-title">{isError ? item.url : (item.page_title || item.url)}</div>
+            <div className="batch-td-title" title={isError ? item.url : (item.page_title || item.url)}>
+              {isError ? item.url : (item.page_title || item.url)}
+            </div>
             <div className="batch-td-url">{hostOf(item.url)}</div>
           </div>
         </div>
       </td>
       <td className="batch-td-meta">
         {isError ? (
-          <span className="batch-err-msg">{item._error}</span>
+          <span className="batch-err-msg" title={item._error}>{item._error}</span>
         ) : (
           <div>
             <div className="batch-td-summary">{snippet(item.ai_summary, 100)}</div>
@@ -270,6 +274,7 @@ export default function Batch() {
   const { view } = useExtraction();
   const { user } = useAuth();
   const guestTrial = useGuestTrial();
+  const { personaId } = usePersona();
 
   // Input tab: "paste" or "csv"
   const [inputTab, setInputTab] = useState("paste");
@@ -461,7 +466,7 @@ export default function Batch() {
 
     // Resolve extraction options from intent chip
     const resolvedPrompt = resolveIntentPrompt(intent, customPrompt);
-    const opts = {};
+    const opts = { intent, personaId };
     if (renderJs) opts.renderJs = true;
     if (resolvedPrompt) opts.customPrompt = resolvedPrompt;
     if (intent === "map") opts.mapMode = true;
@@ -503,14 +508,19 @@ export default function Batch() {
           Promise.allSettled(
             successItems.map((r) => {
               const { _status, _error, ...cleanItem } = r;
-              // Persist enrichment tab so Dashboard "View" shows the named extraction type.
-              if (enrichMetaObj && cleanItem.custom_extraction != null) {
+              // Persist enrichment tab so Dashboard "View" shows the named extraction
+              // type — even when empty, carrying `reason` so it's diagnosable instead
+              // of silently missing (mirrors ExtractionProvider.extract()/enrich()).
+              if (enrichMetaObj) {
                 saveEnrichment(cleanItem.url, {
                   key: enrichMetaObj.key,
                   label: enrichMetaObj.label,
                   icon: enrichMetaObj.icon,
                   prompt: resolvedPrompt,
-                  data: cleanItem.custom_extraction,
+                  data: cleanItem.custom_extraction ?? null,
+                  ...(cleanItem.custom_extraction_reason
+                    ? { reason: cleanItem.custom_extraction_reason }
+                    : {}),
                   created_at: cleanItem.created_at,
                 });
               }
@@ -1075,6 +1085,7 @@ export default function Batch() {
                       onSendTo={() => setIntegrationsOpen(true)}
                       disabled={!successResults.length}
                     />
+                    <PushIntegrationMenu items={successResults} buttonVariant="secondary" />
                     <Button
                       variant="ghost"
                       size="sm"
