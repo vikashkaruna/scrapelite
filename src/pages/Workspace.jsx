@@ -165,7 +165,9 @@ export default function Workspace() {
               key={t.key}
               type="button"
               role="tab"
+              id={`ws-tab-${t.key}`}
               aria-selected={tab === t.key}
+              aria-controls={`ws-panel-${t.key}`}
               className={"ws-tab" + (tab === t.key ? " ws-tab-active" : "")}
               onClick={() => setTab(t.key)}
             >
@@ -184,29 +186,35 @@ export default function Workspace() {
         </nav>
 
         {tab === "overview" && (
-          <OverviewTab
-            schedules={schedules}
-            schedulesLoading={schedulesLoading}
-            recent={recent}
-            batchRuns={batchRuns}
-            usage={usage}
-            planName={planName}
-            personaId={personaId}
-            onSwitchToSchedules={() => setTab("schedules")}
-            onSwitchToCollections={() => setTab("collections")}
-          />
+          <div role="tabpanel" id="ws-panel-overview" aria-labelledby="ws-tab-overview" tabIndex={0}>
+            <OverviewTab
+              schedules={schedules}
+              schedulesLoading={schedulesLoading}
+              recent={recent}
+              batchRuns={batchRuns}
+              usage={usage}
+              planName={planName}
+              personaId={personaId}
+              onSwitchToSchedules={() => setTab("schedules")}
+              onSwitchToCollections={() => setTab("collections")}
+            />
+          </div>
         )}
 
         {tab === "collections" && (
-          <CollectionsTab />
+          <div role="tabpanel" id="ws-panel-collections" aria-labelledby="ws-tab-collections" tabIndex={0}>
+            <CollectionsTab />
+          </div>
         )}
 
         {tab === "schedules" && (
-          <SchedulesTab
-            schedules={schedules}
-            schedulesLoading={schedulesLoading}
-            onSwitchToOverview={() => setTab("overview")}
-          />
+          <div role="tabpanel" id="ws-panel-schedules" aria-labelledby="ws-tab-schedules" tabIndex={0}>
+            <SchedulesTab
+              schedules={schedules}
+              schedulesLoading={schedulesLoading}
+              onSwitchToOverview={() => setTab("overview")}
+            />
+          </div>
         )}
       </div>
     </div>

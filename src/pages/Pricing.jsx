@@ -6,6 +6,7 @@ import {
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
 import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
+import { getCouponsForPlan } from "../lib/offersService.js";
 import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
@@ -14,6 +15,8 @@ import Icon from "../components/Icon.jsx";
 import PricingMatrix from "../components/PricingMatrix.jsx";
 import Button from "../components/Button.jsx";
 import TopupBundleModal from "../components/TopupBundleModal.jsx";
+import OffersBanner from "../components/OffersBanner.jsx";
+import { useToast } from "../components/Toast.jsx";
 
 function CurrencyPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -156,6 +159,14 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
         <div className="plan-name">{plan.name}</div>
         <div className="plan-tagline">{plan.tagline}</div>
       </div>
+      {getCouponsForPlan(plan.id).map((c) => (
+        <div key={c.id} className="plan-offer-chip">
+          <Icon name={c.type === "extractions" ? "gift" : "tag"} size={12} />
+          {c.type === "extractions"
+            ? <span>+{c.value} bonus extractions with <strong>{c.code}</strong></span>
+            : <span>{c.value}% off with <strong>{c.code}</strong></span>}
+        </div>
+      ))}
       <div className="plan-price">
         {isFree ? (
           <><span className="price-amount">Free</span><span className="price-period"> forever</span></>
@@ -278,6 +289,7 @@ function TopupCard({ bundle, currency, onBuy, loading }) {
 
 export default function Pricing() {
   const navigate  = useNavigate();
+  const showToast = useToast();
   const {
     currency, rates, setCurrency, planId: currentPlanId,
     initiatePayment, purchaseBatchPack, paymentLoading, paymentError, setPaymentError,
@@ -315,8 +327,11 @@ export default function Pricing() {
     setLocalError("");
     try {
       const result = await initiatePayment?.(planId, billingPeriod);
-      // demo_mode and success both navigate to /account; cancelled stays on pricing
-      if (result?.status === "demo_mode" || result?.status === "success") {
+      // demo_mode, free, and success all navigate to /account; cancelled stays on pricing
+      if (result?.status === "free") {
+        showToast("Your plan is now active — 100% off applied, no payment required.");
+      }
+      if (result?.status === "demo_mode" || result?.status === "success" || result?.status === "free") {
         navigate("/account");
       }
     } catch (e) {

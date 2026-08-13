@@ -18,9 +18,13 @@ function globalPercent() {
 }
 
 // Percent from a coupon code, validated against the selected plan (0 if invalid/non-percent).
-function couponPercentFor(code, planId) {
+// `assignedCoupon` (if it matches `code`) unlocks a planId==="manual" coupon that was
+// admin-assigned specifically to this signed-in user — see adminService.validateCoupon.
+function couponPercentFor(code, planId, assignedCoupon) {
   if (!code) return 0;
-  const { valid, coupon } = validateCoupon(code, planId);
+  const isOwnAssigned = assignedCoupon && assignedCoupon.code.toUpperCase() === code.toUpperCase();
+  const opts = isOwnAssigned ? { allowManual: true, assignedPlanId: assignedCoupon.planId || null } : {};
+  const { valid, coupon } = validateCoupon(code, planId, opts);
   if (!valid || coupon.type !== "percent") return 0;
   return coupon.value || 0;
 }
@@ -44,6 +48,7 @@ export default function PaymentConfirmModal({
   currency,
   currentPlanId,
   appliedCouponCode,   // coupon already on the subscription (from /account)
+  assignedCoupon,      // { code, planId } | null — admin-assigned offer for THIS user
   onApplyCoupon,       // (code) => boolean — persists coupon to subscription, returns validity
   onRemoveCoupon,      // () => void — clears the applied coupon
   onConfirm,           // (planId, couponCode) => void
@@ -66,7 +71,7 @@ export default function PaymentConfirmModal({
   if (!plan) return null;
 
   // Effective discount = max(coupon-for-this-plan, global sale) — mirrors the server.
-  const couponPct   = couponPercentFor(activeCoupon, selectedId);
+  const couponPct   = couponPercentFor(activeCoupon, selectedId, assignedCoupon);
   const globalPct   = globalPercent();
   const effectivePct = Math.max(couponPct, globalPct);
   const discountSrc  = couponPct >= globalPct && couponPct > 0 ? "coupon" : globalPct > 0 ? "global" : null;
@@ -85,7 +90,11 @@ export default function PaymentConfirmModal({
     const code = couponInput.trim().toUpperCase();
     if (!code) return;
     // Validate against the selected plan first so we can show a precise error.
-    const { valid, reason } = validateCoupon(code, selectedId);
+    // If this code happens to be the user's own admin-assigned offer, typing it
+    // manually here works the same as clicking "Apply" on the Account page pill.
+    const isOwnAssigned = assignedCoupon && assignedCoupon.code.toUpperCase() === code;
+    const validateOpts = isOwnAssigned ? { allowManual: true, assignedPlanId: assignedCoupon.planId || null } : {};
+    const { valid, reason } = validateCoupon(code, selectedId, validateOpts);
     if (!valid) { setCouponErr(reason || "Invalid coupon code."); return; }
     // Persist to the subscription for display continuity (/account). The modal's own
     // validation above is authoritative for what's shown + sent; the server re-validates.
@@ -102,8 +111,11 @@ export default function PaymentConfirmModal({
   };
 
   const periodLabel = period === "annual" ? "Annual (12 months)" : "Monthly";
+  const isFree = !isDemo && effectivePct > 0 && total <= 0;
   const confirmLabel = isDemo
     ? `Confirm — activate ${plan.name} (Demo)`
+    : isFree
+    ? `Activate ${plan.name} — Free (100% off)`
     : `Proceed to payment — ${fmt(total, currency)}`;
 
   // A coupon is "applied but inactive for this plan" when it exists but doesn't grant a
@@ -236,6 +248,11 @@ export default function PaymentConfirmModal({
             Activates <strong>{plan.name}</strong> locally for testing — no real charge is made.
           </p>
         )}
+        {isFree && (
+          <p className="pcm-demo-notice pcm-free-notice">
+            <Icon name="check-circle" size={13} /> Your discount covers 100% of the price — no payment method needed.
+          </p>
+        )}
 
         <Button variant="primary" fullWidth onClick={() => onConfirm(selectedId, activeCoupon || null)}>
           {confirmLabel}
@@ -248,7 +265,7 @@ export default function PaymentConfirmModal({
           <div className="pcm-upgrade-section">
             <div className="pcm-upgrade-title">Or step up to a higher plan</div>
             {upgradePlans.map((up) => {
-              const upPct = Math.max(couponPercentFor(activeCoupon, up.id), globalPct);
+              const upPct = Math.max(couponPercentFor(activeCoupon, up.id, assignedCoupon), globalPct);
               const { total: upTotal } = computePricing(up, period, currency, upPct);
               return (
                 <button

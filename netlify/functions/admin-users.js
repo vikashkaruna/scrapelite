@@ -115,6 +115,7 @@ export const handler = async (event) => {
         // Coupon: prefer admin-assigned (user metadata), then payment-flow redemption.
         const couponAvailed  = meta.coupon_availed || couponMap[au.id] || null;
         const couponDiscount = meta.coupon_availed ? (meta.coupon_discount ?? null) : null;
+        const couponPlanId   = meta.coupon_availed ? (meta.coupon_plan_id ?? null) : null;
 
         return {
           id:                   au.id,
@@ -125,6 +126,7 @@ export const handler = async (event) => {
           planEnd:              sub?.current_period_end?.slice(0, 10) || null,
           couponAvailed,
           couponDiscount,
+          couponPlanId,
           bonusExtractions:     Number(meta.bonus_extractions || 0),
           source:               meta.source || appMeta.provider || "organic",
           joinedAt:             (au.created_at || today).slice(0, 10),
@@ -154,13 +156,16 @@ export const handler = async (event) => {
 
       // ── assign coupon ──
       if (body.action === "assign_coupon") {
-        const { userId, couponCode, discountPct } = body;
+        const { userId, couponCode, discountPct, planId } = body;
         if (!userId || !couponCode?.trim()) {
           return respond(400, { error: "userId and couponCode required." });
         }
         const code = couponCode.trim().toUpperCase();
+        const restrictPlanId = planId || null;
 
-        // Update auth user metadata.
+        // Update auth user metadata. coupon_plan_id is the PER-ASSIGNMENT plan
+        // restriction (not the coupon's own planId, which is the client-side
+        // "manual" sentinel) — null means usable on any plan.
         const au   = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
         const meta = au.raw_user_meta_data || {};
         await sbFetch(db, `/auth/v1/admin/users/${userId}`, {
@@ -170,6 +175,7 @@ export const handler = async (event) => {
               ...meta,
               coupon_availed:   code,
               coupon_discount:  discountPct != null ? Number(discountPct) : (meta.coupon_discount ?? null),
+              coupon_plan_id:   restrictPlanId,
             },
           }),
         });
@@ -182,7 +188,44 @@ export const handler = async (event) => {
           body: JSON.stringify({ coupon_code: code, session_id: userId, order_ref: "admin-assigned" }),
         }).catch(() => {}); // non-fatal if coupon_redemptions table doesn't exist yet
 
-        return respond(200, { ok: true, userId, couponCode: code, discountPct: discountPct ?? null });
+        // Mirror into pricing_config.coupons — the SAME server-authoritative table
+        // create-checkout.js reads via pricingSource.loadPricing(). Without this,
+        // the coupon looks right in the UI but the server has no matching record to
+        // apply at actual checkout (its client-side "manual" sentinel is not a real
+        // plan id, so it can never satisfy the plan-match check there). maxUses: 1
+        // scopes it to a single redemption, since it exists for exactly this
+        // assignment — checkout enforcement is per browser session, same as every
+        // other coupon in the system (see pricingSource.reserveCoupon), so this is
+        // not equivalent to true per-user identity enforcement, just consistent
+        // with the rest of the coupon system's existing security posture.
+        if (typeof discountPct === "number" && discountPct > 0) {
+          try {
+            const rows = await sbFetch(db, "/rest/v1/pricing_config?select=key,value&key=eq.coupons");
+            const existing = (rows && rows[0] && rows[0].value) || {};
+            const merged = {
+              ...existing,
+              [code]: {
+                value: Number(discountPct),
+                planId: restrictPlanId,
+                active: true,
+                maxUses: 1,
+                expiresAt: existing[code]?.expiresAt || null,
+              },
+            };
+            await sbFetch(db, "/rest/v1/pricing_config", {
+              method: "POST",
+              headers: { Prefer: "resolution=merge-duplicates" },
+              body: JSON.stringify({ key: "coupons", value: merged }),
+            });
+          } catch (mirrorErr) {
+            // Non-fatal — the assignment still displays on the user's Account
+            // page even if the server-side mirror write failed; only the actual
+            // checkout discount would be missing until this is retried.
+            console.warn("[admin-users] pricing_config.coupons mirror failed:", mirrorErr.message);
+          }
+        }
+
+        return respond(200, { ok: true, userId, couponCode: code, discountPct: discountPct ?? null, planId: restrictPlanId });
       }
 
       // ── extend bonus extractions (default) ──

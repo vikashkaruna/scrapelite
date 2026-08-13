@@ -82,11 +82,15 @@ export default function CollectionsTab() {
                 No collections yet. Add one from the Dashboard row's "Collection" dropdown.
               </div>
             )}
-            <ul className="cs-list">
+            <ul className="cs-list" role="tablist" aria-orientation="vertical" aria-label="Collections">
               {collections.map((c) => (
-                <li key={c.name}>
+                <li key={c.name} role="presentation">
                   <button
                     type="button"
+                    role="tab"
+                    id={`cs-tab-${c.name}`}
+                    aria-selected={active === c.name}
+                    aria-controls="collections-panel"
                     className={"cs-item" + (active === c.name ? " on" : "")}
                     onClick={() => setActive(c.name)}
                   >
@@ -97,9 +101,13 @@ export default function CollectionsTab() {
                 </li>
               ))}
               {untaggedCount > 0 && (
-                <li>
+                <li role="presentation">
                   <button
                     type="button"
+                    role="tab"
+                    id="cs-tab-__untagged__"
+                    aria-selected={active === "__untagged__"}
+                    aria-controls="collections-panel"
                     className={"cs-item" + (active === "__untagged__" ? " on" : "")}
                     onClick={() => setActive("__untagged__")}
                   >
@@ -113,7 +121,13 @@ export default function CollectionsTab() {
           </div>
         </aside>
 
-        <main className="collections-main">
+        <main
+          className="collections-main"
+          role="tabpanel"
+          id="collections-panel"
+          aria-labelledby={active ? `cs-tab-${active}` : undefined}
+          tabIndex={0}
+        >
           {!active ? (
             <div className="collections-empty">
               <Icon name="folder-open" size={36} />
