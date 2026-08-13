@@ -8,6 +8,7 @@
 //     users don't consume trial credits).
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { useState } from "react";
 import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { ExtractionProvider, useExtraction } from "./ExtractionProvider.jsx";
@@ -115,9 +116,10 @@ function Tree() {
 }
 
 function Probe() {
-  const { extract, loading } = useExtraction();
+  const { extract, enrich, loading } = useExtraction();
   const { showHardBlock, hardBlockReason, checkCanExtractSingle } = useGuestTrial();
   const { pathname } = useLocation();
+  const [entry, setEntry] = useState(null);
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
@@ -125,8 +127,24 @@ function Probe() {
       <span data-testid="hardBlockReason">{hardBlockReason}</span>
       <span data-testid="canSingle">{String(checkCanExtractSingle().allowed)}</span>
       <span data-testid="pathname">{pathname}</span>
+      <span data-testid="entryReason">{entry?.reason ?? "(none)"}</span>
       <button data-testid="extract" onClick={() => extract("https://x.example.com")}>
         extract
+      </button>
+      <button
+        data-testid="enrich"
+        onClick={async () =>
+          setEntry(
+            await enrich("https://x.example.com", {
+              key: "pricing",
+              label: "Pricing & Plans",
+              icon: "hash",
+              prompt: "Extract every pricing tier.",
+            }),
+          )
+        }
+      >
+        enrich
       </button>
     </div>
   );
@@ -165,5 +183,53 @@ describe("I-11 — ExtractionProvider: pre-flight guest hard block", () => {
       await Promise.resolve();
     });
     expect(firecrawlMocks.extractStructure).toHaveBeenCalled();
+  });
+});
+
+// 2026-08-13. /api/extract now says WHY a customPrompt came back empty.
+// enrich() has to carry that onto the saved entry, otherwise Preview is back
+// to rendering one indistinguishable "No data returned" for every cause —
+// which is what made "none of the Quick enrichment buttons work" so hard to
+// pin down across several rounds of fixes.
+describe("ExtractionProvider.enrich — carries the empty-extraction reason", () => {
+  beforeEach(() => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 0, batchCount: 0, sid: "s1" }));
+  });
+
+  it("puts custom_extraction_reason onto the enrichment entry", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      custom_extraction: null,
+      custom_extraction_reason: "ai_not_configured",
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("enrich").click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("entryReason").textContent).toBe("ai_not_configured");
+  });
+
+  it("omits reason entirely when the extraction succeeded", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      custom_extraction: { plans: ["free", "pro"] },
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("enrich").click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("entryReason").textContent).toBe("(none)");
   });
 });

@@ -134,6 +134,25 @@ function isEmptyEnrichmentData(data) {
   return false;
 }
 
+// An empty enrichment tab has to say WHICH kind of empty it is. "No data
+// returned" was previously shown for a server with no AI key, a failing AI
+// provider, and a page that genuinely has no pricing on it — so the one
+// actionable case (an unset env var) looked exactly like the two where the
+// user should just move on. `reason` is set by /api/extract; older saved
+// entries have none and keep the original wording.
+export function emptyEnrichmentMessage(reason) {
+  switch (reason) {
+    case "ai_not_configured":
+      return "AI extraction isn't configured on this server. An administrator needs to set GEMINI_API_KEY, AI_API_KEY, or OPENAI_API_KEY.";
+    case "ai_chain_failed":
+      return "The AI provider couldn't be reached for this extraction. Try Refresh in a moment.";
+    case "no_match":
+      return "The AI read this page but found nothing matching this capability.";
+    default:
+      return "No data returned for this capability.";
+  }
+}
+
 export default function Preview() {
   useSeo({
     title: "DatIQ Preview — review your extraction | DatIQ.app",
@@ -781,7 +800,7 @@ export default function Preview() {
               </div>
               <div className="card-pad">
                 {isEmptyEnrichmentData(activeEntry.data) ? (
-                  <div className="empty-mini">No data returned for this capability.</div>
+                  <div className="empty-mini">{emptyEnrichmentMessage(activeEntry.reason)}</div>
                 ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
                   // Content-kind (or any entry whose data is a {text} blob)
                   // renders via ContentView — markdown + Copy button. The

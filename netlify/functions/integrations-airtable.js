@@ -12,7 +12,6 @@
 //   POST   /api/integrations/airtable/test      { baseId?, tableId? } → { ok, tableName, fields }
 //   POST   /api/integrations/airtable/push      { items, baseId?, tableId? }
 
-import { createClient } from "@supabase/supabase-js";
 import {
   getConnection,
   upsertConnection,
@@ -24,7 +23,7 @@ import {
   validateAirtableConfig,
   autoMapAirtableFields,
 } from "../../src/lib/airtable.js";
-import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -40,16 +39,6 @@ function respond(statusCode, body) {
   };
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, noRealtimeOptions({
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  }));
-}
-
 async function readJsonBody(event) {
   if (!event.body) return {};
   if (event.isBase64Encoded) return JSON.parse(Buffer.from(event.body, "base64").toString("utf8"));
@@ -57,32 +46,13 @@ async function readJsonBody(event) {
 }
 
 async function authenticateRequest(event) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
-  if (!authHeader) return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  // Extract the raw JWT — supabase-js v2.108+ returns AuthSessionMissingError
-  // when `getUser()` is called on a client with no session and no
-  // `hasCustomAuthorizationHeader: true` flag, EVEN IF the global Authorization
-  // header is set. Passing the JWT directly is the documented server-side
-  // pattern and bypasses the flag check entirely (the request still sends
-  // the `Authorization: Bearer <jwt>` header to /auth/v1/user).
-  // — fix 2026-08-12, "Invalid or expired session" on every integration
-  // connect modal click.
-  const jwt = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1]?.trim();
-  if (!jwt) return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  const { data: { user }, error } = await supabase.auth.getUser(jwt);
-  if (error || !user) {
-    // See integrations-slack.js for why this is logged with the real
-    // Supabase reason instead of silently returning the same generic
-    // message for every distinct failure mode.
-    console.warn("[integrations-airtable] getUser(jwt) rejected:", error?.message || "no user returned", error?.status ?? "");
-    return {
-      ok: false,
-      response: respond(401, { error: "Invalid or expired session", reason: error?.message || "no_user" }),
-    };
-  }
-  return { ok: true, user };
+  // Shared implementation — see netlify/functions/lib/supabaseServerClient.js.
+  // It distinguishes a genuinely bad session (401) from a server whose anon
+  // key does not match its project URL (503, naming the variable), which is
+  // the distinction this endpoint got wrong for three sessions running.
+  const auth = await authenticateBearer(event, { label: "integrations-airtable" });
+  if (auth.ok) return { ok: true, user: auth.user };
+  return { ok: false, response: respond(auth.status, auth.body) };
 }
 
 async function probeAirtable(apiKey) {

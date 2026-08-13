@@ -26,21 +26,9 @@
 // src/lib/pricingOverrides.js reads localStorage, so admin price/limit
 // overrides are per-operator-browser and must never influence a server-side
 // authorization decision.
-import { createClient } from "@supabase/supabase-js";
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
 import { can, computeLifecycle } from "../../../src/lib/entitlementModel.js";
-import { noRealtimeOptions } from "./supabaseServerClient.js";
-
-/** Anon-key client carrying the caller's JWT — same shape as extractions.js. */
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, noRealtimeOptions({
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  }));
-}
+import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
 function getServiceDb() {
@@ -99,19 +87,19 @@ export async function resolveRequestEntitlement(event) {
     return { ...base, userId: null, guest: true, entitlement: null, degraded: false };
   }
 
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) {
-    // Supabase not configured at all — treat as guest, fail open.
-    return { ...base, userId: null, guest: true, entitlement: null, degraded: true };
-  }
-
-  let user = null;
-  try {
-    const { data, error } = await supabase.auth.getUser();
-    if (!error) user = data?.user ?? null;
-  } catch {
-    /* fall through to degraded */
-  }
+  // `getUser()` with no argument 401s on every request under supabase-js
+  // v2.108+ (AuthSessionMissingError on a session-less server client), so
+  // this resolver silently treated EVERY signed-in caller as a degraded
+  // guest — which fails open, so nothing broke visibly and nobody noticed.
+  // authenticateBearer passes the JWT explicitly.
+  //
+  // Rule 1 at the top of this file still governs: any failure here — a
+  // missing key, an unreachable Supabase, a rejected token — leaves us in
+  // the degraded-guest state that ALLOWS the request. This resolver must
+  // never turn an infrastructure problem into a product outage.
+  const auth = await authenticateBearer(event, { label: "requireEntitlement" });
+  const user = auth.ok ? auth.user : null;
+  const supabase = auth.ok ? auth.client : getUserScopedClient(authHeader).client;
 
   if (!user) {
     // A token was presented but could not be verified. Do NOT silently upgrade

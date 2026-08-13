@@ -296,22 +296,43 @@ export const handler = async (event) => {
     // response (any failure leaves customExtraction as null, which the
     // client already handles as "no data").
     let aiExtractionUsed = false;
+    // WHY an empty enrichment happened, in the response. Every distinct cause
+    // used to collapse into one blank tab reading "No data returned for this
+    // capability", which is why "none of the Quick enrichment buttons work"
+    // survived several rounds of fixes: a server with no AI key configured and
+    // a page that genuinely has no pricing table were indistinguishable from
+    // the UI, from the logs, and from each other.
+    let enrichmentReason = null;
     if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
-      try {
-        const aiJson = await extractJsonWithAI({
-          prompt: options.customPrompt,
-          title: result.title || "",
-          text: htmlToPlainText(result.html || ""),
-        });
-        if (!isEmptyExtraction(aiJson)) {
-          result.customExtraction = aiJson;
-          aiExtractionUsed = true;
+      const aiConfigured = Object.values(keyPresence()).some(Boolean);
+      if (!aiConfigured) {
+        // The single most likely cause in a fresh deployment, and previously
+        // the most silent: extractJsonWithAI() returns null before making any
+        // request when no provider key is set. Nothing else in the product
+        // reveals this — aiService falls back to mock summaries, so summaries
+        // keep "working" and only enrichment visibly dies.
+        enrichmentReason = "ai_not_configured";
+      } else {
+        try {
+          const aiJson = await extractJsonWithAI({
+            prompt: options.customPrompt,
+            title: result.title || "",
+            text: htmlToPlainText(result.html || ""),
+          });
+          if (!isEmptyExtraction(aiJson)) {
+            result.customExtraction = aiJson;
+            aiExtractionUsed = true;
+          } else {
+            // The chain answered, and the answer was "nothing here".
+            enrichmentReason = "no_match";
+          }
+        } catch (err) {
+          // Non-fatal: the response goes back to the client with null
+          // customExtraction. The error is logged so the regression can
+          // be diagnosed from the function log if it fires repeatedly.
+          console.warn("[DatIQ] AI-extract fallback failed:", err?.message || err);
+          enrichmentReason = "ai_chain_failed";
         }
-      } catch (err) {
-        // Non-fatal: the response goes back to the client with null
-        // customExtraction. The error is logged so the regression can
-        // be diagnosed from the function log if it fires repeatedly.
-        console.warn("[DatIQ] AI-extract fallback failed:", err?.message || err);
       }
     }
 
@@ -324,6 +345,9 @@ export const handler = async (event) => {
       },
       source: result.source,
       _providerAttempts: result.attempts,
+      // Present ONLY when a customPrompt was asked for and came back empty.
+      // Absent on success, so existing clients are unaffected.
+      ...(enrichmentReason ? { _enrichment: { ok: false, reason: enrichmentReason } } : {}),
       // True when the AI-extraction fallback produced the custom_extraction
       // (the chain itself didn't have a provider that supports it). Useful
       // for debug + so future tests can pin the regression fix. Stays

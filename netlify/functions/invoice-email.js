@@ -9,9 +9,8 @@
 // address and GSTIN on it — to an address of their choosing. This mirrors the
 // server-authoritative routing already used by contact-email.js, which takes an
 // enquiry *type* rather than a destination for the same reason.
-import { createClient } from "@supabase/supabase-js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
-import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,16 +23,6 @@ function json(statusCode, body) {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS },
     body: JSON.stringify(body),
   };
-}
-
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, noRealtimeOptions({
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  }));
 }
 
 export const handler = async (event) => {
@@ -52,14 +41,12 @@ export const handler = async (event) => {
   const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
   if (!authHeader) return json(401, { error: "Authentication required" });
 
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return json(503, { error: "Supabase not configured" });
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError || !user) return json(401, { error: "Invalid or expired session." });
+  // See extractions.js — `getUser()` with no argument 401s on every request
+  // under supabase-js v2.108+, so this endpoint could never email an invoice.
+  const auth = await authenticateBearer(event, { label: "invoice-email" });
+  if (!auth.ok) return json(auth.status, auth.body);
+  const supabase = auth.client;
+  const user = auth.user;
 
   const { data: invoice, error } = await supabase
     .from("invoices")

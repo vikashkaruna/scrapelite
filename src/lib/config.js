@@ -86,9 +86,19 @@ export const LINK_CHANGELOG = env.VITE_LINK_CHANGELOG || "";
 
 export const hasSupabase = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 // hasFirecrawl signals that real extraction is available (any provider will do).
-// True when Firecrawl, Spider, or Jina keys are configured, or VITE_ENABLE_EXTRACT=true.
-// The Netlify Function always falls back to Direct fetch (no key required), so set
-// VITE_ENABLE_EXTRACT=true in Netlify env to enable real extraction without paid API keys.
+//
+// ⚠️ It is driven by VITE_ENABLE_EXTRACT **and nothing else**. The comment here
+// used to claim it also flipped on when a Firecrawl/Spider/Jina key was
+// present; it never did, and reading it that way sends you hunting for a
+// provider-key bug when extraction silently returns mock data. The provider
+// keys are server-side (no VITE_ prefix), so the browser genuinely cannot see
+// them — this flag is the operator's explicit "real extraction is wired up"
+// switch, which is why the Netlify Function can always fall back to Direct
+// fetch without one.
+//
+// Set VITE_ENABLE_EXTRACT=true in the Netlify build env (it is baked in at
+// build time — a redeploy is required) to enable real extraction, with or
+// without paid API keys. Left unset, extractStructure() serves mockScrape().
 export const hasFirecrawl = ENABLE_EXTRACT;
 // hasAI is always true — the actual key lives in the Netlify Function, not the browser.
 // aiService.js will call /api/ai; the function returns 503 if AI_API_KEY is not set server-side.

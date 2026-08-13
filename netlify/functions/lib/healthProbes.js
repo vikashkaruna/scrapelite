@@ -23,6 +23,9 @@ import {
   HEALTH_STATUS,
   statusPageIndicatorToStatus,
 } from "../../../src/lib/healthModel.js";
+// Same resolution order the functions use, so the probe reports on the key the
+// app actually authenticates with rather than a healthier one nearby.
+import { resolveSupabaseEnv, maskKey } from "./supabaseServerClient.js";
 
 const DEFAULT_TIMEOUT_MS = 4000;
 
@@ -119,15 +122,46 @@ export async function probeSupabaseDb() {
     detail: { endpoint: "rest/v1", probe: "HEAD app_config" } };
 }
 
-/** GoTrue's health endpoint. Sign-in usually breaks before the database does. */
+/**
+ * GoTrue reachability AND anon-key validity. Sign-in usually breaks before the
+ * database does — and the key breaks before either.
+ *
+ * `/auth/v1/health` alone is NOT enough, and trusting it cost us an outage:
+ * that endpoint is UNAUTHENTICATED, so it answers 200 with a completely
+ * invalid `apikey`. This card stayed green for days while every
+ * `auth.getUser()` in the product failed with "Invalid API key" and users were
+ * told their session had expired. So we do two round trips: liveness, then a
+ * real authenticated call that can only succeed if the deployed key actually
+ * belongs to the project at SUPABASE_URL.
+ *
+ * The key check uses the SAME resolution order as the functions
+ * (resolveSupabaseEnv), so this probe reports on the key the app actually
+ * uses — not a different one that happens to be healthy. It deliberately does
+ * NOT fall back to the service key: that would mask exactly the failure we are
+ * looking for.
+ */
 export async function probeSupabaseAuth() {
   const url = env("SUPABASE_URL");
-  const anon = env("SUPABASE_ANON_KEY") || env("VITE_SUPABASE_ANON_KEY") || env("SUPABASE_SERVICE_KEY");
   if (!url) return { id: "supabase-auth", configured: false };
+
+  const resolved = resolveSupabaseEnv(process.env);
+
+  // A REDACTED key is a fault we can report without any network call: the
+  // variable is set, its value is corrupted, and we can name it. Rule 1 of
+  // this file does not apply — this is not "we did not ask", it is a
+  // configured value that is provably unusable.
+  if (resolved.problem === "key_stripped") {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs: 0,
+      status: HEALTH_STATUS.DOWN,
+      note: resolved.message,
+      detail: { anonKey: maskKey(resolved.anonKey), keySource: resolved.keySource || "(none)" },
+    };
+  }
 
   const { ok, res, latencyMs, error } = await timedFetch(
     `${url}/auth/v1/health`,
-    { headers: anon ? { apikey: anon } : {} },
+    { headers: resolved.anonKey ? { apikey: resolved.anonKey } : {} },
   );
   if (!ok) return { id: "supabase-auth", configured: true, reachable: false, latencyMs, note: error };
   if (!res.ok) {
@@ -136,8 +170,54 @@ export async function probeSupabaseAuth() {
   }
   let body = null;
   try { body = await res.json(); } catch { /* the 200 is the signal */ }
+
+  // No anon key at all → we cannot check validity, and rule 1 says "we did not
+  // ask" is never "it is down". Report liveness and say the key was unchecked;
+  // inventing an outage here is exactly what gets a dashboard muted.
+  if (!resolved.anonKey) {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      note: "GoTrue is live. Anon key not configured, so key validity was not checked.",
+      detail: { name: body?.name || "GoTrue", version: body?.version || "", anonKey: "(unset)" },
+    };
+  }
+
+  // Now the part /auth/v1/health cannot tell us. PostgREST's root rejects a
+  // key that does not belong to this project with 401 "Invalid API key" —
+  // the exact string GoTrue returns to auth.getUser(), which is what the
+  // product actually hits.
+  const keyCheck = await timedFetch(`${url}/rest/v1/`, {
+    headers: { apikey: resolved.anonKey, Authorization: `Bearer ${resolved.anonKey}` },
+  });
+  const detail = {
+    name: body?.name || "GoTrue",
+    version: body?.version || "",
+    anonKey: maskKey(resolved.anonKey),
+    keySource: resolved.keySource,
+  };
+  if (!keyCheck.ok) {
+    // The key round trip itself failed to complete. Liveness passed, so report
+    // the component as up but say the key could not be verified — an
+    // unverified key is not a proven-bad key.
+    return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      note: `Anon key not verified: ${keyCheck.error}.`, detail };
+  }
+  if (keyCheck.res.status === 401 || keyCheck.res.status === 403) {
+    let why = "";
+    try { why = (await keyCheck.res.json())?.message || ""; } catch { /* status is the signal */ }
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      status: HEALTH_STATUS.DOWN,
+      note:
+        `Supabase rejected this server's anon key${why ? ` ("${why}")` : ""}. ` +
+        `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
+        "every signed-in request will fail with \"Invalid or expired session\". " +
+        "Fix the value in the Netlify environment for this context.",
+      detail,
+    };
+  }
   return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
-    detail: { name: body?.name || "GoTrue", version: body?.version || "" } };
+    detail: { ...detail, anonKeyValid: true } };
 }
 
 /**
