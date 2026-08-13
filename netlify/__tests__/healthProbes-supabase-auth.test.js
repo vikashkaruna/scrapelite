@@ -9,9 +9,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { probeSupabaseAuth } from "../functions/lib/healthProbes.js";
 import { HEALTH_STATUS } from "../../src/lib/healthModel.js";
 
-const GOOD_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payloadpayload.sig";
-const STRIPPED = "****************aB3d";
 const URL_ = "https://proj.supabase.co";
+
+/** A Supabase-shaped anon key whose payload actually decodes. */
+function keyFor(ref, role = "anon", exp = 2099946073) {
+  const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const p = Buffer.from(
+    JSON.stringify({ iss: "supabase", ref, role, exp }),
+  ).toString("base64url");
+  return `${h}.${p}.sig`;
+}
+
+// Matches URL_'s project, so the offline ref check passes and each test
+// exercises the network branch it is actually about.
+const GOOD_KEY = keyFor("proj");
+const STRIPPED = "****************aB3d";
 
 const ENV_KEYS = ["SUPABASE_URL", "VITE_SUPABASE_URL", "SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY"];
 let saved;
@@ -39,7 +51,7 @@ function wire({ keyStatus = 200, keyBody = {} } = {}) {
     if (u.includes("/auth/v1/health")) {
       return new Response(JSON.stringify({ name: "GoTrue", version: "2.1" }), { status: 200 });
     }
-    if (u.includes("/rest/v1/")) {
+    if (u.includes("/auth/v1/settings")) {
       return new Response(JSON.stringify(keyBody), { status: keyStatus });
     }
     return new Response("{}", { status: 200 });
@@ -138,13 +150,7 @@ describe("probeSupabaseAuth", () => {
 
   // The offline key/URL comparison — the check that finally resolved this.
   describe("offline identity diagnosis", () => {
-    const KEY_FOR = (ref) => {
-      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-      const p = Buffer.from(
-        JSON.stringify({ iss: "supabase", ref, role: "anon", exp: 2099946073 }),
-      ).toString("base64url");
-      return `${h}.${p}.sig`;
-    };
+    const KEY_FOR = (ref) => keyFor(ref);
 
     it("names both projects on a ref mismatch, without any network call", async () => {
       process.env.SUPABASE_URL = "https://aubwooslkkrprdxuiyvj.supabase.co";
@@ -189,13 +195,53 @@ describe("probeSupabaseAuth", () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
+    it("classifies a privilege requirement as unverified, NOT as a bad key", async () => {
+      // The regression. The first version of this probe asked /rest/v1/ — an
+      // endpoint Supabase closed to anon keys in March 2026 — and read its
+      // refusal as proof the key was wrong, reporting a healthy staging
+      // environment as critically down. Any 401/403 that is not specifically
+      // "invalid api key" means we could not answer the question.
+      process.env.SUPABASE_URL = URL_;
+      process.env.SUPABASE_ANON_KEY = GOOD_KEY;
+      wire({ keyStatus: 401, keyBody: { message: "Secret API key required" } });
+      const r = await probeSupabaseAuth();
+      expect(r.status).not.toBe(HEALTH_STATUS.DOWN);
+      expect(r.reachable).toBe(true);
+      expect(r.note).toMatch(/could not be verified/i);
+      expect(r.note).toMatch(/privilege requirement/i);
+      expect(r.detail.rejection).toBe("Secret API key required");
+    });
+
+    it("also stays up for the OpenAPI-schema refusal wording", async () => {
+      process.env.SUPABASE_URL = URL_;
+      process.env.SUPABASE_ANON_KEY = GOOD_KEY;
+      wire({ keyStatus: 403, keyBody: { message: "Access to schema is forbidden" } });
+      const r = await probeSupabaseAuth();
+      expect(r.status).not.toBe(HEALTH_STATUS.DOWN);
+    });
+
+    it("never asks /rest/v1/ — that endpoint refuses every anon key by design", async () => {
+      process.env.SUPABASE_URL = URL_;
+      process.env.SUPABASE_ANON_KEY = GOOD_KEY;
+      wire({ keyStatus: 200 });
+      await probeSupabaseAuth();
+      const called = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(called.some((u) => u.includes("/auth/v1/settings"))).toBe(true);
+      expect(called.some((u) => /\/rest\/v1\/?$/.test(u))).toBe(false);
+    });
+
+    it("reports the key format as context, without making it a status", async () => {
+      process.env.SUPABASE_URL = URL_;
+      process.env.SUPABASE_ANON_KEY = GOOD_KEY; // legacy eyJ… JWT
+      wire({ keyStatus: 200 });
+      const r = await probeSupabaseAuth();
+      expect(r.detail.keyFormat).toBe("jwt");
+      expect(r.status).not.toBe(HEALTH_STATUS.DOWN);
+    });
+
     it("reports a service_role key in the anon slot as DOWN", async () => {
-      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-      const p = Buffer.from(
-        JSON.stringify({ iss: "supabase", ref: "proj", role: "service_role", exp: 2099946073 }),
-      ).toString("base64url");
       process.env.SUPABASE_URL = "https://proj.supabase.co";
-      process.env.SUPABASE_ANON_KEY = `${h}.${p}.sig`;
+      process.env.SUPABASE_ANON_KEY = keyFor("proj", "service_role");
       const r = await probeSupabaseAuth();
       expect(r.status).toBe(HEALTH_STATUS.DOWN);
       expect(r.note).toMatch(/Row Level Security/i);

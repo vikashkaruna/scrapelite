@@ -7,8 +7,26 @@
 // endpoint by editing this one file and reloading (dev) or redeploying just this
 // file (prod) — no rebuild required.
 //
-// Precedence: a non-empty value here OVERRIDES the matching VITE_* value.
+// Precedence — ⚠️ NOT the same for every field, and the difference matters
+// when you are debugging why an updated value "isn't reflecting":
+//
+//   webhookUrl / emailApiUrl / contactWebhookUrl
+//       → THIS FILE WINS. config.js `endpoint()` reads the runtime value
+//         first and only falls back to the VITE_* build-time value.
+//
+//   supabaseUrl / supabaseAnonKey
+//       → THE VITE_* ENV VAR WINS. config.js only falls back to the value
+//         here when the env var is absent or was redacted by the secret
+//         scanner. So editing supabaseUrl here will NOT override a
+//         VITE_SUPABASE_URL set in Netlify.
+//
 // Leave a value as "" to fall back to the build-time .env value.
+//
+// None of this reaches the Netlify Functions: they read process.env only and
+// never load this file. If a FUNCTION is using the wrong Supabase URL, the
+// value is coming from the Netlify environment (SUPABASE_URL, falling back to
+// VITE_SUPABASE_URL) — check /admin/health, which now prints the resolved URL
+// and which variable supplied it.
 //
 // ── Environment routing (2026-08-10) ──────────────────────────────────────────
 //

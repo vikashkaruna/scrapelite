@@ -164,6 +164,60 @@ describe("diagnoseSupabaseIdentity", () => {
     expect(r.detail.keySource).toBe("VITE_SUPABASE_ANON_KEY");
   });
 
+  // "I updated SUPABASE_URL and nothing changed" — the card must say which
+  // variable actually supplied the value, because the one you edited may be
+  // unset, scoped to Builds rather than Functions, or set on another context,
+  // leaving the VITE_ fallback to win silently.
+  it("reports the resolved URL and which variable supplied it", () => {
+    const r = diagnoseSupabaseIdentity({
+      VITE_SUPABASE_URL: PROD_URL,
+      VITE_SUPABASE_ANON_KEY: PROD_KEY,
+    });
+    expect(r.detail.url).toBe(PROD_URL);
+    expect(r.detail.urlSource).toBe("VITE_SUPABASE_URL");
+  });
+
+  it("says (unset) rather than guessing when no URL is configured", () => {
+    const r = diagnoseSupabaseIdentity({});
+    expect(r.detail.url).toBe("(unset)");
+    expect(r.detail.urlSource).toBe("(none)");
+  });
+
+  // Server and browser vars are set independently and nothing compared them.
+  // Disagreeing means the user's session comes from one project and is
+  // validated against another — both values look individually correct.
+  it("catches the functions and the browser pointing at different projects", () => {
+    const r = diagnoseSupabaseIdentity({
+      SUPABASE_URL: PROD_URL,
+      VITE_SUPABASE_URL: `https://${STAGING_URL_REF}.supabase.co`,
+      SUPABASE_ANON_KEY: PROD_KEY,
+    });
+    expect(r.problem).toBe("conflicting_url_vars");
+    expect(r.message).toContain(PROD_REF);
+    expect(r.message).toContain(STAGING_URL_REF);
+  });
+
+  it("catches the two anon keys belonging to different projects", () => {
+    const r = diagnoseSupabaseIdentity({
+      SUPABASE_URL: PROD_URL,
+      SUPABASE_ANON_KEY: PROD_KEY,
+      VITE_SUPABASE_ANON_KEY: makeKey({ ref: STAGING_URL_REF }),
+    });
+    expect(r.problem).toBe("conflicting_key_vars");
+    expect(r.detail.serverKeyRef).toBe(PROD_REF);
+    expect(r.detail.browserKeyRef).toBe(STAGING_URL_REF);
+  });
+
+  it("stays quiet when both pairs agree", () => {
+    const r = diagnoseSupabaseIdentity({
+      SUPABASE_URL: PROD_URL,
+      VITE_SUPABASE_URL: PROD_URL,
+      SUPABASE_ANON_KEY: PROD_KEY,
+      VITE_SUPABASE_ANON_KEY: PROD_KEY,
+    });
+    expect(r.problem).toBeNull();
+  });
+
   it("never puts the key itself in the message or detail", () => {
     const key = makeKey({ ref: STAGING_KEY_REF });
     const r = diagnoseSupabaseIdentity({

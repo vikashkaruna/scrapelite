@@ -29,6 +29,7 @@ import {
   resolveSupabaseEnv,
   maskKey,
   diagnoseSupabaseIdentity,
+  decodeSupabaseKey,
 } from "./supabaseServerClient.js";
 
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -215,17 +216,29 @@ export async function probeSupabaseAuth() {
     };
   }
 
-  // Now the part /auth/v1/health cannot tell us. PostgREST's root rejects a
-  // key that does not belong to this project with 401 "Invalid API key" —
-  // the exact string GoTrue returns to auth.getUser(), which is what the
-  // product actually hits.
-  const keyCheck = await timedFetch(`${url}/rest/v1/`, {
-    headers: { apikey: resolved.anonKey, Authorization: `Bearer ${resolved.anonKey}` },
+  // Now the part /auth/v1/health cannot tell us: is this key actually valid
+  // for this project?
+  //
+  // ⚠️ NOT `/rest/v1/`. That was the first choice here and it was wrong:
+  // Supabase removed anon-key access to the PostgREST OpenAPI root (11 Mar
+  // 2026 for new projects, 8 Apr 2026 for all), so it now refuses EVERY anon
+  // key by design with "Secret API key required" / "Access to schema is
+  // forbidden". The probe read that refusal as proof the key was wrong and
+  // reported a healthy staging environment as broken.
+  //
+  // `/auth/v1/settings` is the right question: it requires an apikey, accepts
+  // an anon/publishable one, and lives in the service this component is about.
+  const KEY_CHECK_PATH = "/auth/v1/settings";
+  const keyCheck = await timedFetch(`${url}${KEY_CHECK_PATH}`, {
+    headers: { apikey: resolved.anonKey },
   });
   const detail = {
     name: body?.name || "GoTrue",
     version: body?.version || "",
     anonKey: maskKey(resolved.anonKey),
+    // Legacy `eyJ…` keys are deprecated end-2026. Context only — never a status.
+    keyFormat: decodeSupabaseKey(resolved.anonKey).format,
+    keyCheck: KEY_CHECK_PATH,
     ...identity.detail,
   };
   if (!keyCheck.ok) {
@@ -237,20 +250,45 @@ export async function probeSupabaseAuth() {
   }
   if (keyCheck.res.status === 401 || keyCheck.res.status === 403) {
     let why = "";
-    try { why = (await keyCheck.res.json())?.message || ""; } catch { /* status is the signal */ }
+    try {
+      const j = await keyCheck.res.json();
+      why = j?.message || j?.msg || j?.error_description || j?.error || "";
+    } catch { /* status is the signal */ }
+
+    // Classify the refusal. "This key is invalid" and "this endpoint needs a
+    // more privileged key" are completely different findings, and collapsing
+    // them is exactly the bug above — a privilege requirement was reported as
+    // a project mismatch, turning a green environment red.
+    if (/invalid\s+api\s+key|no\s+api\s+key/i.test(why)) {
+      return {
+        id: "supabase-auth", configured: true, reachable: true, latencyMs,
+        status: HEALTH_STATUS.DOWN,
+        note:
+          `Supabase rejected this server's anon key ("${why}"). ` +
+          // When the URL is a custom domain we could not compare refs offline,
+          // so say so — that IS the likely cause, and it is a different fix
+          // from "wrong key".
+          (identity.message ||
+            `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
+              "every signed-in request will fail with \"Invalid or expired session\". " +
+              "Fix the value in the Netlify environment for this context."),
+        detail: { ...detail, rejection: why },
+      };
+    }
+
+    // Anything else — "Secret API key required", "Access to schema is
+    // forbidden", or a message we have never seen — means we could not answer
+    // the question, NOT that the key is bad. Rule 1 of this file: "we did not
+    // ask" is never "it is down". Inventing an outage here is what got this
+    // dashboard disbelieved.
     return {
       id: "supabase-auth", configured: true, reachable: true, latencyMs,
-      status: HEALTH_STATUS.DOWN,
       note:
-        `Supabase rejected this server's anon key${why ? ` ("${why}")` : ""}. ` +
-        // When the URL is a custom domain we could not compare refs offline,
-        // so say so — that IS the likely cause, and it is a different fix from
-        // "wrong key".
-        (identity.message ||
-          `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
-            "every signed-in request will fail with \"Invalid or expired session\". " +
-            "Fix the value in the Netlify environment for this context."),
-      detail,
+        `Anon key could not be verified: ${KEY_CHECK_PATH} answered HTTP ` +
+        `${keyCheck.res.status}${why ? ` ("${why}")` : ""}, which is a privilege ` +
+        "requirement rather than a rejected key. GoTrue is live and the offline " +
+        "project-ref check passed; treat the key as unverified, not as wrong.",
+      detail: { ...detail, rejection: why || `HTTP ${keyCheck.res.status}` },
     };
   }
   return { id: "supabase-auth", configured: true, reachable: true, latencyMs,

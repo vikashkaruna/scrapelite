@@ -158,11 +158,43 @@ export function diagnoseSupabaseIdentity(env = process.env) {
   const claims = decodeSupabaseKey(resolved.anonKey);
   const urlRef = projectRefFromUrl(resolved.url);
   const detail = {
+    // The URL is not a secret, and printing it (plus WHICH variable it came
+    // from) is the difference between "I updated SUPABASE_URL and nothing
+    // changed" being a mystery and being obvious: the value may be arriving
+    // from the VITE_ fallback because the one you edited is unset, scoped to
+    // Builds instead of Functions, or set on a different deploy context.
+    url: resolved.url || "(unset)",
+    urlSource: resolved.urlSource || "(none)",
     urlRef: urlRef || "(not a *.supabase.co URL)",
     keyRef: claims.ref || `(${claims.format})`,
     keyRole: claims.role || "(unknown)",
     keySource: resolved.keySource || "(none)",
   };
+
+  // Do the server-side vars and the browser-side vars point at the SAME
+  // project? They are set independently in Netlify, and nothing has ever
+  // compared them. If they disagree, the browser gets a session from one
+  // project and these functions validate it against another — so every
+  // signed-in request fails while both values look individually correct.
+  // That is the same class of bug as the ref mismatch, one level up.
+  const serverUrl = String(env.SUPABASE_URL || "").trim();
+  const browserUrl = String(env.VITE_SUPABASE_URL || "").trim();
+  if (serverUrl && browserUrl) {
+    const a = projectRefFromUrl(serverUrl);
+    const b = projectRefFromUrl(browserUrl);
+    if (a && b && a !== b) {
+      return {
+        problem: "conflicting_url_vars",
+        message:
+          `SUPABASE_URL points at project "${a}" but VITE_SUPABASE_URL points at ` +
+          `"${b}". These functions use the first and the browser bundle uses the ` +
+          "second, so a session issued to the user by one project is validated " +
+          "against the other and every signed-in request fails. Point both at " +
+          "the same project.",
+        detail: { ...detail, serverUrl, browserUrl },
+      };
+    }
+  }
 
   // A service_role key in an anon slot is the most dangerous thing we can find
   // here: VITE_SUPABASE_ANON_KEY is compiled into the browser bundle, and a
@@ -177,6 +209,21 @@ export function diagnoseSupabaseIdentity(env = process.env) {
         "browser bundle from VITE_SUPABASE_ANON_KEY — replace it with the " +
         "project's anon/publishable key immediately.",
       detail,
+    };
+  }
+
+  // Same question for the two anon keys, for the same reason.
+  const serverKeyRef = decodeSupabaseKey(String(env.SUPABASE_ANON_KEY || "").trim()).ref;
+  const browserKeyRef = decodeSupabaseKey(String(env.VITE_SUPABASE_ANON_KEY || "").trim()).ref;
+  if (serverKeyRef && browserKeyRef && serverKeyRef !== browserKeyRef) {
+    return {
+      problem: "conflicting_key_vars",
+      message:
+        `SUPABASE_ANON_KEY is issued for project "${serverKeyRef}" but ` +
+        `VITE_SUPABASE_ANON_KEY is issued for "${browserKeyRef}". The browser and ` +
+        "these functions would authenticate against different projects. Use the " +
+        "same project's anon key for both.",
+      detail: { ...detail, serverKeyRef, browserKeyRef },
     };
   }
 
