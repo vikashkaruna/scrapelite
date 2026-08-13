@@ -135,4 +135,70 @@ describe("probeSupabaseAuth", () => {
     const r = await probeSupabaseAuth();
     expect(r.status).toBe(HEALTH_STATUS.DOWN);
   });
+
+  // The offline key/URL comparison — the check that finally resolved this.
+  describe("offline identity diagnosis", () => {
+    const KEY_FOR = (ref) => {
+      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+      const p = Buffer.from(
+        JSON.stringify({ iss: "supabase", ref, role: "anon", exp: 2099946073 }),
+      ).toString("base64url");
+      return `${h}.${p}.sig`;
+    };
+
+    it("names both projects on a ref mismatch, without any network call", async () => {
+      process.env.SUPABASE_URL = "https://aubwooslkkrprdxuiyvj.supabase.co";
+      process.env.SUPABASE_ANON_KEY = KEY_FOR("aubwooslkkyprdxuiyvj");
+      const r = await probeSupabaseAuth();
+      expect(r.status).toBe(HEALTH_STATUS.DOWN);
+      expect(r.note).toContain("aubwooslkkrprdxuiyvj");
+      expect(r.note).toContain("aubwooslkkyprdxuiyvj");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the refs in detail so the card shows them side by side", async () => {
+      process.env.SUPABASE_URL = "https://proj.supabase.co";
+      process.env.SUPABASE_ANON_KEY = KEY_FOR("proj");
+      wire({ keyStatus: 200 });
+      const r = await probeSupabaseAuth();
+      expect(r.detail).toMatchObject({ urlRef: "proj", keyRef: "proj", keyRole: "anon" });
+    });
+
+    // Production's fault. The old code answered "GoTrue returned HTTP 401",
+    // which read as "the auth service is down" and sent debugging the wrong way.
+    it("blames the key, not GoTrue, when the gateway 401s the liveness call", async () => {
+      process.env.SUPABASE_URL = "https://api.datiq.app";
+      process.env.SUPABASE_ANON_KEY = KEY_FOR("sikkfxysjhirmtwkumpt");
+      fetchMock.mockResolvedValue(new Response("", { status: 401 }));
+      const r = await probeSupabaseAuth();
+      expect(r.status).toBe(HEALTH_STATUS.DOWN);
+      expect(r.note).toMatch(/gateway rejected/i);
+      expect(r.note).toMatch(/not necessarily down/i);
+      // And it explains the custom-domain trap that caused it.
+      expect(r.note).toMatch(/rest\/v1/);
+    });
+
+    it("does NOT short-circuit the live checks for a custom domain", async () => {
+      // A full custom domain is legitimate — only the network can settle it,
+      // so the probe must still ask rather than declaring it broken offline.
+      process.env.SUPABASE_URL = "https://api.datiq.app";
+      process.env.SUPABASE_ANON_KEY = KEY_FOR("sikkfxysjhirmtwkumpt");
+      wire({ keyStatus: 200 });
+      const r = await probeSupabaseAuth();
+      expect(r.status).not.toBe(HEALTH_STATUS.DOWN);
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    it("reports a service_role key in the anon slot as DOWN", async () => {
+      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+      const p = Buffer.from(
+        JSON.stringify({ iss: "supabase", ref: "proj", role: "service_role", exp: 2099946073 }),
+      ).toString("base64url");
+      process.env.SUPABASE_URL = "https://proj.supabase.co";
+      process.env.SUPABASE_ANON_KEY = `${h}.${p}.sig`;
+      const r = await probeSupabaseAuth();
+      expect(r.status).toBe(HEALTH_STATUS.DOWN);
+      expect(r.note).toMatch(/Row Level Security/i);
+    });
+  });
 });

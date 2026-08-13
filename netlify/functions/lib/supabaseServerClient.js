@@ -85,6 +85,146 @@ export function maskKey(value) {
   return `${value.slice(0, 3)}…${value.slice(-4)} (${value.length} chars)`;
 }
 
+// ── Key/URL identity ────────────────────────────────────────────────────────
+//
+// A Supabase anon key is a JWT, and its payload names the project it belongs
+// to. So "does this key match this URL?" is answerable OFFLINE, for free,
+// before any network call — which matters more than it sounds: that question
+// went unasked for three debugging sessions while the only feedback anyone had
+// was the string "Invalid API key". The ref was sitting in plaintext inside
+// the key the whole time.
+//
+// We decode the payload WITHOUT verifying the signature. That is correct here:
+// we are not authenticating anything, we are reading a self-declared project
+// id for a diagnostic. Nothing is trusted on the strength of it.
+
+/**
+ * Read the claims out of a Supabase key.
+ *
+ * Handles both formats:
+ *   - legacy JWT      `eyJ…` → { format: "jwt", ref, role, exp }
+ *   - newer publishable `sb_publishable_…` / `sb_secret_…` → no claims to read
+ *
+ * Never throws — a malformed key returns format "unknown" so callers can say
+ * "could not read" rather than crashing a health probe.
+ */
+export function decodeSupabaseKey(key) {
+  const empty = { format: "unknown", ref: null, role: null, exp: null };
+  if (typeof key !== "string" || !key) return { ...empty, format: "missing" };
+  if (/^sb_(publishable|secret)_/.test(key)) {
+    return { ...empty, format: "publishable" };
+  }
+  const parts = key.split(".");
+  if (parts.length !== 3) return empty;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return {
+      format: "jwt",
+      ref: typeof payload.ref === "string" ? payload.ref : null,
+      role: typeof payload.role === "string" ? payload.role : null,
+      exp: Number.isFinite(payload.exp) ? payload.exp : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * The project ref for a Supabase URL — the first host label of a
+ * `<ref>.supabase.co` address.
+ *
+ * Returns null for anything else, which is NOT an error: a full custom domain
+ * is legitimate. It just means the ref cannot be compared, so the caller must
+ * not claim a mismatch it cannot actually see.
+ */
+export function projectRefFromUrl(url) {
+  try {
+    const host = new URL(String(url)).hostname;
+    if (!/\.supabase\.(co|in|red)$/.test(host)) return null;
+    return host.split(".")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare the deployed key against the deployed URL and name what is wrong.
+ * Pure and offline.
+ *
+ * @returns {{problem: string|null, message: string|null, detail: object}}
+ */
+export function diagnoseSupabaseIdentity(env = process.env) {
+  const resolved = resolveSupabaseEnv(env);
+  const claims = decodeSupabaseKey(resolved.anonKey);
+  const urlRef = projectRefFromUrl(resolved.url);
+  const detail = {
+    urlRef: urlRef || "(not a *.supabase.co URL)",
+    keyRef: claims.ref || `(${claims.format})`,
+    keyRole: claims.role || "(unknown)",
+    keySource: resolved.keySource || "(none)",
+  };
+
+  // A service_role key in an anon slot is the most dangerous thing we can find
+  // here: VITE_SUPABASE_ANON_KEY is compiled into the browser bundle, and a
+  // service key bypasses RLS entirely — every user could read every other
+  // user's rows. Report it above everything else.
+  if (claims.role && claims.role !== "anon") {
+    return {
+      problem: "service_role_in_anon_slot",
+      message:
+        `${resolved.keySource} holds a "${claims.role}" key, not an anon key. ` +
+        "A service key bypasses Row Level Security and is compiled into the " +
+        "browser bundle from VITE_SUPABASE_ANON_KEY — replace it with the " +
+        "project's anon/publishable key immediately.",
+      detail,
+    };
+  }
+
+  if (claims.exp && claims.exp * 1000 < Date.now()) {
+    return {
+      problem: "key_expired",
+      message:
+        `${resolved.keySource} expired on ${new Date(claims.exp * 1000).toISOString().slice(0, 10)}. ` +
+        "Issue a new anon key in Supabase → Settings → API.",
+      detail,
+    };
+  }
+
+  // THE STAGING FAULT. One character apart is still a different project, and
+  // Supabase answers "Invalid API key" without ever hinting which side is wrong.
+  if (urlRef && claims.ref && urlRef !== claims.ref) {
+    return {
+      problem: "ref_mismatch",
+      message:
+        `Project mismatch: SUPABASE_URL points at project "${urlRef}", but ` +
+        `${resolved.keySource} is issued for project "${claims.ref}". ` +
+        "Supabase rejects this as \"Invalid API key\". Copy the anon key from " +
+        `Supabase → project ${urlRef} → Settings → API, or point SUPABASE_URL ` +
+        `at https://${claims.ref}.supabase.co — whichever project is the right one.`,
+      detail,
+    };
+  }
+
+  // THE PRODUCTION FAULT. A custom AUTH domain fronts /auth/v1 only, so every
+  // PostgREST call the functions make has nothing to talk to. A full custom
+  // domain is legitimate, so this is reported as context rather than a verdict
+  // — the network checks decide, and this explains the result.
+  if (resolved.url && !urlRef) {
+    return {
+      problem: "custom_domain",
+      message:
+        `SUPABASE_URL is "${resolved.url}", which is not a *.supabase.co project URL. ` +
+        "If this is a custom AUTH domain it fronts /auth/v1 only, so every " +
+        "database call these functions make (/rest/v1) has nothing behind it. " +
+        "SUPABASE_URL must be the project URL; the custom domain belongs in " +
+        "Supabase's own dashboard config for the OAuth callback.",
+      detail,
+    };
+  }
+
+  return { problem: null, message: null, detail };
+}
+
 const URL_CANDIDATES = ["SUPABASE_URL", "VITE_SUPABASE_URL"];
 const ANON_KEY_CANDIDATES = ["SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY"];
 
@@ -159,8 +299,16 @@ export function isInvalidApiKeyError(error) {
   return /invalid api key/i.test(msg);
 }
 
-/** Operator-facing text for a key/URL mismatch, naming what to check. */
+/**
+ * Operator-facing text for a key/URL mismatch, naming what to check.
+ *
+ * Prefers the OFFLINE diagnosis, which can usually say exactly which project
+ * each side belongs to — far more actionable than "they do not match", which
+ * is all this said before and is why the same values got re-pasted twice.
+ */
 export function invalidApiKeyMessage(env = process.env) {
+  const identity = diagnoseSupabaseIdentity(env);
+  if (identity.problem) return identity.message;
   const { urlSource, keySource, anonKey } = resolveSupabaseEnv(env);
   return (
     "Supabase rejected this server's API key. The anon key and the project URL " +

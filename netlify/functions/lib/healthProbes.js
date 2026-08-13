@@ -25,7 +25,11 @@ import {
 } from "../../../src/lib/healthModel.js";
 // Same resolution order the functions use, so the probe reports on the key the
 // app actually authenticates with rather than a healthier one nearby.
-import { resolveSupabaseEnv, maskKey } from "./supabaseServerClient.js";
+import {
+  resolveSupabaseEnv,
+  maskKey,
+  diagnoseSupabaseIdentity,
+} from "./supabaseServerClient.js";
 
 const DEFAULT_TIMEOUT_MS = 4000;
 
@@ -159,14 +163,43 @@ export async function probeSupabaseAuth() {
     };
   }
 
+  // The key names its own project, so a mismatch is provable with NO network
+  // call — and it is strictly more useful than anything the network can tell
+  // us, because Supabase only ever answers "Invalid API key" without saying
+  // which side is wrong. Run it FIRST. A `custom_domain` finding is context
+  // rather than a verdict, so it does not short-circuit the live checks.
+  const identity = diagnoseSupabaseIdentity(process.env);
+  if (identity.problem && identity.problem !== "custom_domain") {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs: 0,
+      status: HEALTH_STATUS.DOWN,
+      note: identity.message,
+      detail: { ...identity.detail, anonKey: maskKey(resolved.anonKey) },
+    };
+  }
+
   const { ok, res, latencyMs, error } = await timedFetch(
     `${url}/auth/v1/health`,
     { headers: resolved.anonKey ? { apikey: resolved.anonKey } : {} },
   );
   if (!ok) return { id: "supabase-auth", configured: true, reachable: false, latencyMs, note: error };
   if (!res.ok) {
-    return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
-      status: HEALTH_STATUS.DOWN, note: `GoTrue returned HTTP ${res.status}.` };
+    // A 401 here is the gateway rejecting the apikey, NOT GoTrue being down.
+    // Reporting it as "GoTrue returned HTTP 401" is what made production's
+    // card strictly less useful than staging's while both had key faults —
+    // so attach whatever the offline diagnosis knows.
+    const isAuthReject = res.status === 401 || res.status === 403;
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      status: HEALTH_STATUS.DOWN,
+      note: isAuthReject
+        ? `Supabase's gateway rejected this server's anon key (HTTP ${res.status}) — ` +
+          "GoTrue itself is not necessarily down. " +
+          (identity.message ||
+            `Check ${resolved.keySource} against SUPABASE_URL for this context.`)
+        : `GoTrue returned HTTP ${res.status}.`,
+      detail: { ...identity.detail, anonKey: maskKey(resolved.anonKey) },
+    };
   }
   let body = null;
   try { body = await res.json(); } catch { /* the 200 is the signal */ }
@@ -193,7 +226,7 @@ export async function probeSupabaseAuth() {
     name: body?.name || "GoTrue",
     version: body?.version || "",
     anonKey: maskKey(resolved.anonKey),
-    keySource: resolved.keySource,
+    ...identity.detail,
   };
   if (!keyCheck.ok) {
     // The key round trip itself failed to complete. Liveness passed, so report
@@ -210,9 +243,13 @@ export async function probeSupabaseAuth() {
       status: HEALTH_STATUS.DOWN,
       note:
         `Supabase rejected this server's anon key${why ? ` ("${why}")` : ""}. ` +
-        `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
-        "every signed-in request will fail with \"Invalid or expired session\". " +
-        "Fix the value in the Netlify environment for this context.",
+        // When the URL is a custom domain we could not compare refs offline,
+        // so say so — that IS the likely cause, and it is a different fix from
+        // "wrong key".
+        (identity.message ||
+          `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
+            "every signed-in request will fail with \"Invalid or expired session\". " +
+            "Fix the value in the Netlify environment for this context."),
       detail,
     };
   }

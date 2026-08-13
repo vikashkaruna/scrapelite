@@ -138,7 +138,33 @@ dashboard fix on the staging Supabase project. See §4.
 
 ---
 
-## 4. The Supabase project-mismatch — still pending
+## 4. The Supabase project-mismatch — ROOT CAUSE FOUND 2026-08-13
+
+> **Resolved.** The suspicion recorded below was right in shape and wrong in
+> detail, and the detail is what mattered. It was never an OAuth/redirect
+> problem: the **dev/staging anon key committed in `public/runtime-config.js`
+> was issued for a different project than the URL it was paired with** —
+> `aubwooslkk·y·prdxuiyvj` vs `aubwooslkk·r·prdxuiyvj`, one character apart at
+> position 11. Supabase answers `Invalid API key` and names neither side, and
+> a project ref only ever appears base64-encoded inside the JWT, so reading
+> the file could not reveal it.
+>
+> Separately, production had `SUPABASE_URL` set to `https://api.datiq.app`.
+> That custom domain fronts `/auth/v1` only, so every `/rest/v1` call the
+> Netlify Functions make had nothing behind it.
+>
+> **The rule both faults imply: `SUPABASE_URL` is always the
+> `<ref>.supabase.co` project URL, and an anon key must belong to the project
+> in the URL beside it.** Both are now checked automatically —
+> `diagnoseSupabaseIdentity()` in
+> `netlify/functions/lib/supabaseServerClient.js` decodes the key's `ref`
+> claim and compares it, offline, with no network call; `/admin/health` shows
+> both refs side by side; and `src/lib/runtimeConfigIdentity.test.js` fails
+> the build if a mismatched pair is ever committed again.
+>
+> The original text is kept below because the reasoning is still instructive —
+> and because it shows how close a correct-sounding theory can sit to the
+> actual cause without touching it.
 
 The code changes above fix the **scanner-stripping** and the **URL
 cleanup**. They do NOT fix the deeper "staging can't validate
