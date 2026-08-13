@@ -19,6 +19,7 @@ import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
+import { usePersona } from "./PersonaProvider.jsx";
 import { uid } from "../lib/utils.js";
 
 const ExtractionContext = createContext(null);
@@ -34,6 +35,7 @@ export function ExtractionProvider({ children }) {
   const billing = useBilling();
   const { user } = useAuth();
   const guestTrial = useGuestTrial();
+  const { personaId } = usePersona();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
   const [loading, setLoading] = useState(false);
@@ -113,7 +115,7 @@ export function ExtractionProvider({ children }) {
       } else {
         // Standard (and custom-extraction) mode: summarize and AI-tag concurrently.
         const [ai_summary, links] = await Promise.all([
-          summarize(structure),
+          summarize(structure, { personaId, intent: options.intent }),
           categorizeLinks(structure.links, structure.url),
         ]);
         if (reqId.current !== id) return; // superseded by a newer extraction
@@ -127,15 +129,22 @@ export function ExtractionProvider({ children }) {
         // Reload any enrichments previously saved for this URL (persisted tabs).
         const enrichments = readEnrichments(url);
         // A custom/contacts extraction run from Home is itself a capability —
-        // record it as an enrichment so it persists and shows as a tab.
-        if (result.custom_extraction != null && options.enrichMeta) {
+        // record it as an enrichment so it persists and shows as a tab, even
+        // when the extraction came back empty. This mirrors enrich() below so
+        // a Home run surfaces the SAME "why is this empty" reason instead of
+        // silently omitting the tab (previously gated on `!= null`, which made
+        // a missing AI key on the server look identical to "nothing works").
+        if (options.enrichMeta) {
           const meta = options.enrichMeta;
           const entry = {
             key: meta.key,
             label: meta.label,
             icon: meta.icon,
             prompt: options.customPrompt || "",
-            data: result.custom_extraction,
+            data: result.custom_extraction ?? null,
+            ...(result.custom_extraction_reason
+              ? { reason: result.custom_extraction_reason }
+              : {}),
             created_at: result.created_at,
           };
           enrichments[meta.key] = entry;
@@ -216,6 +225,11 @@ export function ExtractionProvider({ children }) {
       icon: preset.icon,
       prompt: preset.prompt,
       data: structure.custom_extraction ?? null,
+      // Why the extraction was empty, when it was. Rendered by Preview so an
+      // empty tab explains itself instead of just being blank.
+      ...(structure.custom_extraction_reason
+        ? { reason: structure.custom_extraction_reason }
+        : {}),
       created_at: new Date().toISOString(),
     };
     saveEnrichment(url, entry); // local cache (keyed by URL)

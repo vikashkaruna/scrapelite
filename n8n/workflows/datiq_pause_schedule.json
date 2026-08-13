@@ -1,0 +1,119 @@
+{
+  "name": "datiq_pause_schedule",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_pause_schedule",
+        "toolDescription": "Pause a monitoring schedule. The orchestrator won't fire it while paused.",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "schedule_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schedule_id"
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a74d-056bd8b2be00",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/scheduled_tasks?id=eq.' + $json.schedule_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"status\": \"paused\", \"updated_at\": \"={{ $now.toISO() }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a4e9-af86f2af7300",
+      "name": "Pause"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a1b7-bf57c3e34d60",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pause",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a299-28f73cf8ee40",
+  "id": "00000000-0000-4000-a71d-214308efef00",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

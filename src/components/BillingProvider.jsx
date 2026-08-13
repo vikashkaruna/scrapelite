@@ -227,6 +227,24 @@ export function BillingProvider({ children }) {
         upgradePlan(confirmedPlanId);
         return { status: "demo_mode" };
 
+      } else if (result.status === "free") {
+        // Server resolved a 100%-off coupon/sale — the plan is granted without
+        // ever loading Razorpay/Stripe. Mirrors the demo_mode bookkeeping (no
+        // real gateway order exists to snapshot, so there is nothing more to
+        // sync than the plan + a zero-amount audit trail).
+        upgradePlan(confirmedPlanId);
+        await syncSubscriptionToDb(confirmedPlanId, "free_coupon", {});
+        await logPaymentEvent({
+          type:        "payment.captured",
+          provider:    "free_coupon",
+          providerId:  confirmedCoupon || "sale",
+          planId:      confirmedPlanId,
+          amountCents: 0,
+          currency,
+        });
+        setPaymentHistory(await fetchPaymentHistory());
+        return { status: "free", planId: confirmedPlanId };
+
       } else if (result.status === "success") {
         // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
         upgradePlan(confirmedPlanId);
@@ -388,7 +406,15 @@ export function BillingProvider({ children }) {
   const applyCoupon = useCallback((code) => {
     setCouponError("");
     setCouponSuccess("");
-    const { valid, reason, coupon } = validateCoupon(code, planId);
+    // A coupon an admin assigned to THIS signed-in user (user_metadata.coupon_availed)
+    // is allowed to self-apply even if it's a planId==="manual" coupon — see
+    // validateCoupon's allowManual doc. The bypass activates only when the typed/
+    // clicked code matches the assignment on the authenticated user's own account,
+    // never for an arbitrary discovered code.
+    const meta = user?.user_metadata || {};
+    const isOwnAssigned = meta.coupon_availed && String(meta.coupon_availed).toUpperCase() === String(code).toUpperCase();
+    const validateOpts = isOwnAssigned ? { allowManual: true, assignedPlanId: meta.coupon_plan_id || null } : {};
+    const { valid, reason, coupon } = validateCoupon(code, planId, validateOpts);
     if (!valid) { setCouponError(reason); return false; }
     incrementCouponUses(code);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
@@ -503,6 +529,14 @@ export function BillingProvider({ children }) {
           currency={currency}
           currentPlanId={planId}
           appliedCouponCode={subscription.coupon?.code || ""}
+          assignedCoupon={
+            user?.user_metadata?.coupon_availed
+              ? {
+                  code:    user.user_metadata.coupon_availed,
+                  planId:  user.user_metadata.coupon_plan_id || null,
+                }
+              : null
+          }
           onApplyCoupon={applyCoupon}
           onRemoveCoupon={removeCoupon}
           onConfirm={handlePaymentConfirm}

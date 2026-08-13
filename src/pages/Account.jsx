@@ -440,7 +440,12 @@ export default function Account() {
 
   const handleUpgrade = async (targetPlanId) => {
     const result = await initiatePayment?.(targetPlanId, "monthly");
-    if (result?.status === "demo_mode" || result?.status === "success") navigate("/account");
+    if (result?.status === "free") {
+      toast("Your plan is now active — 100% off applied, no payment required.");
+    }
+    if (result?.status === "demo_mode" || result?.status === "success" || result?.status === "free") {
+      navigate("/account");
+    }
   };
 
   const nextTier = allPlans.find((p) => p.price_usd > plan.price_usd);
@@ -453,9 +458,6 @@ export default function Account() {
             <div className="eyebrow"><Icon name="user" />Billing &amp; Usage</div>
             <h1 className="account-title">Your plan &amp; usage</h1>
           </div>
-          <Button variant="secondary" size="sm" icon="zap" onClick={() => navigate("/pricing")}>
-            View all plans
-          </Button>
         </div>
 
         {paymentError && (
@@ -787,13 +789,13 @@ export default function Account() {
 
           {/* Right column */}
           <div className="account-aside">
-            {/* Explore top-up bundles — moved to the top of the right
+            {/* Explore plans & top-up bundles — moved to the top of the right
                 column (2026-08-11). It's the highest-ROI conversion CTA
                 on this page (users on free / starter plans need a clear
                 upgrade path before they engage with the coupon or white-
                 label features), so it gets prime real estate above both. */}
             <Button variant="ghost" size="sm" icon="zap" fullWidth onClick={() => navigate("/pricing")}>
-              Explore top-up bundles
+              Explore plans &amp; top-up bundles
             </Button>
 
             {/* White-label PDF template (Business + Agency, 2026-08-02) */}
@@ -801,6 +803,44 @@ export default function Account() {
               userId={resolveTemplateUserId({ user })}
               canManage={canWhiteLabel}
             />
+
+            {/* Your offers — coupon / bonus extractions an admin assigned to
+                THIS account (adminConfigService.assignUserCoupon /
+                extendUserBonus). Read straight off the Supabase auth user's
+                own metadata — no extra API call needed. */}
+            {(user?.user_metadata?.coupon_availed || user?.user_metadata?.bonus_extractions > 0) && (
+              <div className="card card-pad">
+                <div className="card-section-title"><Icon name="gift" size={15} />Your offers</div>
+                {user?.user_metadata?.coupon_availed && (
+                  <div className="my-offer-row">
+                    <span className="user-coupon-pill">
+                      {user.user_metadata.coupon_availed}
+                      {user.user_metadata.coupon_discount > 0 && (
+                        <span className="user-coupon-pct"> −{user.user_metadata.coupon_discount}%</span>
+                      )}
+                    </span>
+                    <span className="my-offer-meta">
+                      {user.user_metadata.coupon_plan_id
+                        ? `Valid for ${getEffectivePlanById(user.user_metadata.coupon_plan_id)?.name || user.user_metadata.coupon_plan_id} only`
+                        : "Valid for any plan"}
+                    </span>
+                    {subscription.coupon?.code === user.user_metadata.coupon_availed ? (
+                      <span className="my-offer-applied"><Icon name="check-circle" size={13} />Applied</span>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={() => applyCoupon(user.user_metadata.coupon_availed)}>
+                        Apply
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {user?.user_metadata?.bonus_extractions > 0 && (
+                  <div className="my-offer-row">
+                    <Icon name="zap" size={13} />
+                    <span>+{user.user_metadata.bonus_extractions} bonus extractions granted by admin</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Coupon */}
             <div className="card card-pad">

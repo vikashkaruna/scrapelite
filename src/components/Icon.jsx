@@ -143,8 +143,13 @@ import {
   Ban,
   Columns3,
   TrendingDown,
-  // Ops monitoring additions
+  // Workflows (workflow-implementation-and-optimization branch)
+  RotateCcw,
+  Timer,
   Activity,
+  RefreshCw,
+  MousePointerClick,
+  // Ops monitoring (staging branch)
   Server,
   Gauge,
 } from "lucide-react";
@@ -183,6 +188,11 @@ const MAP = {
   zap: Zap,
   filter: Filter,
   sparkles: Sparkles,
+  "rotate-ccw": RotateCcw,
+  timer: Timer,
+  activity: Activity,
+  "refresh-cw": RefreshCw,
+  "mouse-pointer-click": MousePointerClick,
   dot: Circle,
   database: Database,
   mail: Mail,

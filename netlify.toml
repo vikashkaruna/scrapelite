@@ -73,7 +73,15 @@
   # the webhook URL is a public n8n endpoint. If the scanner's heuristics
   # ever start flagging another public VITE_ value, add it here.
   # See docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md.
-  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_WEBHOOK_URL"
+  #
+  # SUPABASE_ANON_KEY (no VITE_ prefix) was MISSING from this list until
+  # 2026-08-13, and that is the other half of the same bug. The Netlify
+  # Functions read `SUPABASE_ANON_KEY || VITE_SUPABASE_ANON_KEY`, so a
+  # redacted server-side copy won the fallback and every authenticated
+  # request died with GoTrue's "Invalid API key" — surfaced to users as
+  # "Invalid or expired session" on every integration connect. Same key,
+  # same publishable status, same reason to omit it.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,SUPABASE_ANON_KEY,VITE_WEBHOOK_URL"
 
 # Baseline browser protections for every static response.
 [[headers]]

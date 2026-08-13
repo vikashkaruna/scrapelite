@@ -1,0 +1,214 @@
+{
+  "name": "datiq_schedule_changed_router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "datiq/schedule-changed-router",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a683-8125af9a3f40",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Read user preferences from workflow_subscriptions. Falls back to\n// the channels embedded in the event payload.\nconst evt = $input.first().json;\nconst channels = Array.isArray(evt.channels) ? evt.channels : [];\nconst out = { slack: channels.find(c => c.type === 'slack') || null, email: channels.find(c => c.type === 'email') || null };\nreturn [{ json: { event: evt, channels: out } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a668-36fea644c500",
+      "name": "Resolve channels"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{ $json.channels.slack?.channel || '#monitoring' }}",
+        "text": "=:rotating_light: *Content changed:* {{ $json.event.payload.label }} ({{ $json.event.payload.scheduleId }})\n>Target: {{ $json.event.payload.target }}\n>Intent: {{ $json.event.payload.intent }}\n>Previous hash: `{{ $json.event.payload.previousHash }}`\n>New hash: `{{ $json.event.payload.newHash }}`\n>Detected: {{ $json.event.payload.detectedAt }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "id": "00000000-0000-4000-a880-6595f9ba5a00",
+      "name": "Post to Slack",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "datiq-slack-monitoring",
+          "name": "datiq-slack-monitoring"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-resend'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $env.ALERT_EMAIL_FROM || 'DatIQ Alerts <alerts@datiq.app>' }}\",\n  \"to\": [\"{{ $json.channels.email?.to || $json.event.payload.alertEmail }}\"],\n  \"subject\": \"DatIQ — content changed: {{ $json.event.payload.label }}\",\n  \"html\": \"<h2>Content changed</h2><p>Your schedule <b>{{ $json.event.payload.label }}</b> detected a change.</p><p><a href='{{ $json.event.payload.siteUrl }}/schedules'>View in DatIQ →</a></p>\"\n}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        300
+      ],
+      "id": "00000000-0000-4000-a0f3-a56f41dda118",
+      "name": "Send Resend email"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.event.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"state\": \"done\", \"finished_at\": \"={{ $now.toISO() }}\", \"last_error\": null }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        300
+      ],
+      "id": "00000000-0000-4000-a0bf-f2286ff4a7b8",
+      "name": "Mark done"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        300
+      ],
+      "id": "00000000-0000-4000-a60c-c061dc816880",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve channels": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Resend email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Resend email": {
+      "main": [
+        [
+          {
+            "node": "Mark done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a862-451d7231e580",
+  "id": "00000000-0000-4000-a0eb-8bd00a623210",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

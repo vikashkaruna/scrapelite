@@ -66,6 +66,37 @@ describe("listExtractions (U-56)", () => {
     const rows = await listExtractions();
     expect(rows.length).toBe(1);
   });
+
+  it("API success with [] but localStorage has items → merges local-only items instead of dropping them", async () => {
+    // Regression for the Dashboard "loads extractions then they disappear"
+    // bug: an item saved while unauthenticated (or via the localStorage
+    // fallback) never reaches this account's server rows. A legitimate
+    // 200-empty response must not wipe it from the full Dashboard.
+    localStorage.setItem("datiq.saved", JSON.stringify([SAMPLE]));
+    apiMocks.listExtractions.mockResolvedValue([]);
+    const rows = await listExtractions();
+    expect(rows.length).toBe(1);
+    expect(rows[0].id).toBe("ext_1");
+    expect(rows[0]._saved).toBe(true);
+  });
+
+  it("API success with a partial list → merges in local-only items not present on the server", async () => {
+    const SERVER_ITEM = { ...SAMPLE, id: "ext_server", page_title: "Server item" };
+    localStorage.setItem("datiq.saved", JSON.stringify([SAMPLE]));
+    apiMocks.listExtractions.mockResolvedValue([SERVER_ITEM]);
+    const rows = await listExtractions();
+    const ids = rows.map((r) => r.id).sort();
+    expect(ids).toEqual(["ext_1", "ext_server"]);
+  });
+
+  it("API success where server row matches a local id → server row wins, no duplicate", async () => {
+    localStorage.setItem("datiq.saved", JSON.stringify([SAMPLE]));
+    const SERVER_VERSION = { ...SAMPLE, page_title: "Updated on server" };
+    apiMocks.listExtractions.mockResolvedValue([SERVER_VERSION]);
+    const rows = await listExtractions();
+    expect(rows.length).toBe(1);
+    expect(rows[0].page_title).toBe("Updated on server");
+  });
 });
 
 describe("saveExtraction strips _status / _error (U-57)", () => {

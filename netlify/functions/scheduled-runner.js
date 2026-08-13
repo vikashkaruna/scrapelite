@@ -3,20 +3,26 @@
 // Fires hourly (see `config.schedule`). For every active schedule whose cron
 // matches the current UTC hour, it re-scrapes the target, fingerprints the
 // content, compares it to the stored hash, and — when the content changed —
-// records the change and fires an alert (webhook). This is the server half of
-// the "Track changes" feature; the browser half is schedulerService.js.
+// records the change and enqueues a `schedule.changed` event into the
+// workflow pipeline. The orchestrator (netlify/functions/workflow-orchestrator.js)
+// then dispatches the event to self-hosted n8n, which fans out to email/Slack/etc.
+//
+// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §8
+// Replaces the previous direct Resend/Slack/webhook delivery with the
+// `enqueueEvent()` queue so we get retries, observability, and an MCP surface.
 //
 // Requirements to actually run in production:
 //   • SUPABASE_URL + SUPABASE_SERVICE_KEY  (service key bypasses RLS to read/update all users' schedules)
 //   • the public.scheduled_tasks table (see schedules.js header / CLAUDE.md)
-//   • (optional) SCHEDULE_ALERT_WEBHOOK or VITE_WEBHOOK_URL for change alerts
+//   • the public.workflow_events table (supabase/migrations/0018_workflow_events.sql)
 //
 // Netlify auto-registers any function that exports `config.schedule`.
 
 import { runScrapeChain } from "./lib/scrapeProviders.js";
 import { computeLifecycle } from "../../src/lib/entitlementModel.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
-import { notifyMonitoringChange } from "./lib/notify.js";
+import { enqueue, buildCtx } from "./lib/workflowEnqueue.js";
+import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
 import { withJobRun } from "./lib/jobControl.js";
 
@@ -71,6 +77,8 @@ function sb() {
     "Content-Type": "application/json",
   };
   return {
+    base,
+    headers,
     async listActive() {
       // Two additions to the original `status=eq.active&select=id,data`:
       //
@@ -128,120 +136,62 @@ function escapeHtml(s) {
   ));
 }
 
-// Compose the change-alert email body.
-function changeEmailHtml(schedule, detectedAt) {
-  const isBatch = schedule.type === "batch";
-  const target = isBatch
-    ? `${schedule.target.length} URL${schedule.target.length !== 1 ? "s" : ""}`
-    : escapeHtml(schedule.target);
-  const row = (k, v) =>
-    `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">${k}</td>` +
-    `<td style="padding:4px 0;color:#111827;font-size:13px;font-weight:600">${v}</td></tr>`;
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Monitoring</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">Content changed</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
-    `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">` +
-    `Your schedule <strong>${escapeHtml(schedule.label)}</strong> detected a change since the last check.</p>` +
-    `<table style="border-collapse:collapse;margin-bottom:18px">` +
-    row("What", isBatch ? "Batch monitor" : "Tracked page") +
-    row("Target", target) +
-    row("Extracting", escapeHtml(schedule.intent || "summary")) +
-    row("Detected", new Date(detectedAt).toUTCString()) +
-    `</table>` +
-    `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;` +
-    `text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View in DatIQ →</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">` +
-    `You're receiving this because you set up a DatIQ monitoring schedule with this email. ` +
-    `Pause or remove it anytime on the Schedules page.</p>` +
-    `</div></div>`
-  );
-}
-
-// Direct email via Resend (https://resend.com) — REST, no SDK. Returns true on send.
-async function sendAlertEmail(schedule, detectedAt) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !schedule.alertEmail) return false;
-  const from = process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [schedule.alertEmail],
-        subject: `DatIQ — content changed: ${schedule.label}`,
-        html: changeEmailHtml(schedule, detectedAt),
-      }),
-    });
-    if (!res.ok) {
-      console.warn(`[DatIQ] Resend alert failed (${res.status})`);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn("[DatIQ] Resend alert error:", err.message);
-    return false;
-  }
-}
-
-// Post a change event to the automation webhook (n8n / Zapier / Make), if set.
+// Enqueue a `schedule.changed` event for the workflow pipeline. The orchestrator
+// (netlify/functions/workflow-orchestrator.js) polls every 5 min and dispatches
+// the event to self-hosted n8n, which fans out to email/Slack/etc.
 //
-// TODO(SCHEDULE_ALERT_WEBHOOK): wire up a real automation endpoint and add
-// it to Netlify per context before the production cutover:
-//   • production context  → real n8n/Zapier URL that posts to Slack / email / etc.
-//   • staging context     → staging n8n URL (or empty for now)
-//   • deploy-preview      → empty (skip alerts for PR previews)
-// Until this is set, change alerts are silently dropped (this function returns
-// early on the empty `hook` check below). See NETLIFY-ENVIRONMENTS.md §5.2
-// for the full per-context env var list, and the VITE_WEBHOOK_URL row in
-// §6 for the build-time fallback that's currently the only value wired.
-async function postAlertWebhook(schedule, changedSummary, detectedAt, emailed) {
-  const hook = process.env.SCHEDULE_ALERT_WEBHOOK || process.env.VITE_WEBHOOK_URL || "";
-  if (!hook) return;
-  try {
-    await fetch(hook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event: "schedule.changed",
-        scheduleId: schedule.id,
-        label: schedule.label,
-        type: schedule.type,
-        intent: schedule.intent,
-        alertEmail: schedule.alertEmail || null,
-        emailSent: emailed,            // true if Resend already delivered the email
-        target: schedule.target,
-        ...changedSummary,
-        at: detectedAt,
-      }),
-    });
-  } catch (err) {
-    console.warn("[DatIQ] alert webhook failed:", err.message);
+// v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §8. Replaces the previous
+// direct Resend/Slack/webhook delivery with the queue so we get retries,
+// observability, and an MCP surface.
+//
+// `client` is the supabase client built in `sb()` above. `schedule` is the
+// merged schedule object (id + data). `changedSummary` is {newHash, previousHash}.
+async function enqueueChange(client, schedule, changedSummary) {
+  if (!client) {
+    console.warn("[DatIQ] scheduled-runner: no supabase client — change alert dropped");
+    return { ok: false, error: "no_client" };
   }
-}
-
-// Notify on a detected change: send a real email (Resend) AND post the webhook
-// event (for automations). Either path is optional; both degrade gracefully.
-async function fireAlert(schedule, changedSummary) {
   const detectedAt = new Date().toISOString();
-  const emailed = await sendAlertEmail(schedule, detectedAt);
-  await postAlertWebhook(schedule, changedSummary, detectedAt, emailed);
-  // F17 (now per-user aware): hand the Slack + Zapier fan-out to
-  // notifyMonitoringChange so it resolves the OWNER's Slack webhook
-  // from integration_connections (with global SLACK_WEBHOOK_URL fallback
-  // for self-hosted operators) and emits a per-user Zapier event. The
-  // old code only posted to the global env var, which meant a user who
-  // connected Slack via the Account UI never received change alerts.
-  notifyMonitoringChange({
-    userId: schedule.user_id,
-    schedule,
-    changedSummary,
-  }).catch((err) => {
-    console.warn(`[DatIQ] notifyMonitoringChange failed: ${err?.message || err}`);
+  const result = await enqueue(client, {
+    kind: "schedule.changed",
+    refId: schedule.id,
+    // The runner builds the schedule object with `user_id` (snake_case,
+    // matching the supabase row projection in listActive()). The enqueue
+    // helper accepts `userId` (camelCase) and maps it to `user_id` in
+    // the workflow_events row. Reading the wrong key here would silently
+    // drop per-user fan-out (the orchestrator would resolve the OWNER's
+    // Slack + Zapier subscriptions to nothing).
+    userId: schedule.user_id || null,
+    payload: {
+      scheduleId: schedule.id,
+      label: schedule.label,
+      type: schedule.type,
+      intent: schedule.intent,
+      target: schedule.target,
+      alertEmail: schedule.alertEmail || null,
+      renderJs: schedule.renderJs || false,
+      customPrompt: schedule.customPrompt || null,
+      newHash: changedSummary.newHash,
+      previousHash: changedSummary.previousHash || null,
+      detectedAt,
+      siteUrl: SITE_URL,
+    },
+    // _ctx flows with the event so n8n knows which DatIQ environment
+    // produced it (used for the Supabase URL, site URL, branch name).
+    // See netlify/functions/lib/workflowEnqueue.js buildCtx().
+    _ctx: buildCtx(),
+    channels: [
+      // Default delivery channels for this event kind. The n8n workflow
+      // also reads `workflow_subscriptions` for per-user preferences and
+      // can add/remove channels at dispatch time.
+      { type: "email", to: schedule.alertEmail || null, template: "schedule.changed" },
+      { type: "slack", channel: "#monitoring", template: "schedule.changed" },
+    ],
   });
+  if (!result.ok) {
+    console.warn(`[DatIQ] scheduled-runner: enqueue failed for ${schedule.id}: ${result.error}`);
+  }
+  return result;
 }
 
 // Scrape one target and return a content fingerprint string.
@@ -285,7 +235,7 @@ async function runSchedule(db, schedule) {
   await db.patch(schedule.id, { data: next, next_run_at: null });
 
   if (changed) {
-    await fireAlert(schedule, { newHash, previousHash: schedule.lastHash });
+    await enqueueChange(db, schedule, { newHash, previousHash: schedule.lastHash });
   }
   return next.lastStatus;
 }

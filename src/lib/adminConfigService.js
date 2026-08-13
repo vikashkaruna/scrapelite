@@ -5,7 +5,7 @@
 const ENDPOINT = "/api/admin-ai-config";
 const ADMIN_AUTH_KEY = "scrapelite.adminAuth"; // session token (see adminService.js)
 
-function adminToken() {
+export function adminToken() {
   return localStorage.getItem(ADMIN_AUTH_KEY) || "";
 }
 
@@ -93,16 +93,19 @@ export async function extendUserBonus(userId, bonus) {
   return data; // { ok, userId, newBonus }
 }
 
-/** Assign a coupon code (+ optional discount %) to a user via auth metadata. */
-export async function assignUserCoupon(userId, couponCode, discountPct) {
+/**
+ * Assign a coupon code (+ optional discount % and plan restriction) to a
+ * user via auth metadata. `planId` null/omitted = usable on any plan.
+ */
+export async function assignUserCoupon(userId, couponCode, discountPct, planId) {
   const res = await fetch(USERS_ENDPOINT, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ action: "assign_coupon", userId, couponCode, discountPct }),
+    body: JSON.stringify({ action: "assign_coupon", userId, couponCode, discountPct, planId: planId || null }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Assign coupon failed (${res.status})`);
-  return data; // { ok, userId, couponCode, discountPct }
+  return data; // { ok, userId, couponCode, discountPct, planId }
 }
 
 /** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */

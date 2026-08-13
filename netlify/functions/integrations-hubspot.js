@@ -31,7 +31,6 @@
 //           { ok, portalId? } on success, or an error if the PAT was
 //           revoked.
 
-import { createClient } from "@supabase/supabase-js";
 import {
   pushExtractionToHubSpot,
   DEFAULT_CONTACT_MAPPING,
@@ -42,6 +41,7 @@ import {
   upsertConnection,
   deleteConnection,
 } from "./lib/integrationConnectionStore.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -55,16 +55,6 @@ function respond(statusCode, body) {
     headers: { "Content-Type": "application/json", ...CORS },
     body: JSON.stringify(body),
   };
-}
-
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  });
 }
 
 async function readJsonBody(event) {
@@ -89,19 +79,13 @@ function tokenHint(token) {
 }
 
 async function authenticateRequest(event) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
-  if (!authHeader) {
-    return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  }
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) {
-    return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  }
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
-  }
-  return { ok: true, user };
+  // Shared implementation — see netlify/functions/lib/supabaseServerClient.js.
+  // It distinguishes a genuinely bad session (401) from a server whose anon
+  // key does not match its project URL (503, naming the variable), which is
+  // the distinction this endpoint got wrong for three sessions running.
+  const auth = await authenticateBearer(event, { label: "integrations-hubspot" });
+  if (auth.ok) return { ok: true, user: auth.user };
+  return { ok: false, response: respond(auth.status, auth.body) };
 }
 
 export const handler = async (event) => {

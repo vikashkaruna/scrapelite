@@ -112,18 +112,23 @@ test.beforeEach(async ({ page }) => {
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 
-test("the admin sidebar links to Automation and Health", async ({ page }) => {
+test("the admin sidebar links to Monitoring, Workflows, and Health", async ({ page }) => {
+  // The workflow branch split the old single "Automation" nav item into
+  // two: "Workflows" (the n8n pipeline observability page at
+  // /admin/automation) and "Monitoring" (the ops + scheduled-runner
+  // dashboard at /admin/monitoring). Health is unchanged.
   await enterAdmin(page);
   await page.goto("/admin/revenue");
   await expect(page.locator(".admin-sidebar")).toBeVisible();
-  await expect(page.locator(".admin-nav").getByText("Automation")).toBeVisible();
+  await expect(page.locator(".admin-nav").getByText("Monitoring")).toBeVisible();
+  await expect(page.locator(".admin-nav").getByText("Workflows")).toBeVisible();
   await expect(page.locator(".admin-nav").getByText("Health")).toBeVisible();
 });
 
-test("clicking Automation navigates to the monitoring dashboard", async ({ page }) => {
+test("clicking Monitoring navigates to the monitoring dashboard", async ({ page }) => {
   await enterAdmin(page);
   await page.goto("/admin/revenue");
-  await page.locator(".admin-nav").getByText("Automation").click();
+  await page.locator(".admin-nav").getByText("Monitoring").click();
   await expect(page).toHaveURL(/\/admin\/monitoring$/);
   await expect(page.getByRole("heading", { name: /Automation Monitoring/i })).toBeVisible();
 });

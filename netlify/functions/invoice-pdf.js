@@ -19,9 +19,9 @@
 // The PDF is rendered on demand from the stored invoice + lines. It is
 // deterministic (same row in, same bytes out), so this is equivalent to serving
 // a stored object while avoiding a Storage dependency for the common case.
-import { createClient } from "@supabase/supabase-js";
 import { buildInvoiceDoc } from "../../src/lib/invoiceModel.js";
 import { invoiceFilename, renderInvoicePdf } from "../../src/lib/invoicePdf.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -36,16 +36,6 @@ function json(statusCode, body) {
   };
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  });
-}
-
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
@@ -56,14 +46,12 @@ export const handler = async (event) => {
   const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
   if (!authHeader) return json(401, { error: "Authentication required" });
 
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return json(503, { error: "Supabase not configured" });
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError || !user) return json(401, { error: "Invalid or expired session." });
+  // See extractions.js — `getUser()` with no argument 401s on every request
+  // under supabase-js v2.108+, so this endpoint could never serve a PDF.
+  const auth = await authenticateBearer(event, { label: "invoice-pdf" });
+  if (!auth.ok) return json(auth.status, auth.body);
+  const supabase = auth.client;
+  const user = auth.user;
 
   try {
     const { data: invoice, error } = await supabase

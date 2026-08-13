@@ -330,8 +330,10 @@ describe("Q4 — Workspace tabs (2026-08-11 Collections moved into Workspace)", 
     expect(await screen.findByText("Stripe")).toBeInTheDocument();
     expect(screen.getByText("Q2")).toBeInTheDocument();
     expect(screen.getByText("Untagged")).toBeInTheDocument();
-    // Clicking a collection lists its items
-    await user.click(screen.getByRole("button", { name: /stripe/i }));
+    // Clicking a collection lists its items. The collection picker is a real
+    // ARIA tablist now (Part F fix), so its items report role="tab", not the
+    // native button role.
+    await user.click(screen.getByRole("tab", { name: /stripe/i }));
     expect(await screen.findByText("Stripe Pricing")).toBeInTheDocument();
     expect(screen.queryByText("Linear")).toBeNull();
   });

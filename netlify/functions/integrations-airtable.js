@@ -12,7 +12,6 @@
 //   POST   /api/integrations/airtable/test      { baseId?, tableId? } → { ok, tableName, fields }
 //   POST   /api/integrations/airtable/push      { items, baseId?, tableId? }
 
-import { createClient } from "@supabase/supabase-js";
 import {
   getConnection,
   upsertConnection,
@@ -24,6 +23,7 @@ import {
   validateAirtableConfig,
   autoMapAirtableFields,
 } from "../../src/lib/airtable.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,16 +39,6 @@ function respond(statusCode, body) {
   };
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  });
-}
-
 async function readJsonBody(event) {
   if (!event.body) return {};
   if (event.isBase64Encoded) return JSON.parse(Buffer.from(event.body, "base64").toString("utf8"));
@@ -56,13 +46,13 @@ async function readJsonBody(event) {
 }
 
 async function authenticateRequest(event) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
-  if (!authHeader) return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
-  return { ok: true, user };
+  // Shared implementation — see netlify/functions/lib/supabaseServerClient.js.
+  // It distinguishes a genuinely bad session (401) from a server whose anon
+  // key does not match its project URL (503, naming the variable), which is
+  // the distinction this endpoint got wrong for three sessions running.
+  const auth = await authenticateBearer(event, { label: "integrations-airtable" });
+  if (auth.ok) return { ok: true, user: auth.user };
+  return { ok: false, response: respond(auth.status, auth.body) };
 }
 
 async function probeAirtable(apiKey) {
@@ -89,6 +79,13 @@ async function handleStatus(userId) {
     provider: "airtable",
     connection: {
       ...safe,
+      // token_hint is the 4-char-tail display of the stored PAT. The
+      // Account page renders a "Token" line whenever token_hint is
+      // defined (it does this for HubSpot, Notion, Slack, Zapier — but
+      // Airtable was missing it, which made users think the PAT
+      // hadn't been saved when in fact the row was correctly
+      // populated). 2026-08-11 fix.
+      token_hint: tokenHint(config?.api_key),
       base_id: config?.base_id || null,
       table_id: config?.table_id || null,
       has_api_key: !!config?.api_key,
@@ -101,6 +98,15 @@ async function handleStatus(userId) {
       table_meta: config?.table_meta || null,
     },
   });
+}
+
+// "pat…XXXX" — first 7 + last 4 with an ellipsis, mirroring HubSpot
+// and Notion. Null when there's no token to hint at.
+function tokenHint(token) {
+  if (!token || typeof token !== "string") return null;
+  const tail = token.slice(-4);
+  if (token.length <= 4) return tail;
+  return `${token.slice(0, 7)}…${tail}`;
 }
 
 function summarizeFieldMap(fieldMap) {

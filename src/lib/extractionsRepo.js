@@ -103,20 +103,36 @@ const local = {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+function sortedLocalItems() {
+  return local
+    .read()
+    .slice()
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map((r) => ({ ...r, _saved: true }));
+}
+
 /** List saved extractions, newest first. */
 export async function listExtractions() {
+  const localItems = sortedLocalItems();
   try {
     const data = await apiClient.listExtractions();
-    return (data || []).map((r) => ({ ...r, _saved: true }));
+    const serverItems = (data || []).map((r) => ({ ...r, _saved: true }));
+    // Merge rather than replace: an item saved while unauthenticated (or
+    // one whose save fell back to localStorage) lives only in `local` and
+    // never reaches this account's server rows. A legitimately-empty (or
+    // partial) server response must not make those items vanish from the
+    // full Dashboard, which — unlike the owner-filtered Home widget — is
+    // documented to show every local item regardless of ownership.
+    const serverIds = new Set(serverItems.map((r) => r.id));
+    const localOnly = localItems.filter((r) => !serverIds.has(r.id));
+    return [...serverItems, ...localOnly].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at),
+    );
   } catch (err) {
     // Read is always safe to degrade — any API failure falls back to localStorage.
     // Writes (save/delete) remain strict and surface errors to the user.
     console.warn("[DatIQ] listExtractions: API unavailable, using localStorage:", err.message);
-    return local
-      .read()
-      .slice()
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .map((r) => ({ ...r, _saved: true }));
+    return localItems;
   }
 }
 

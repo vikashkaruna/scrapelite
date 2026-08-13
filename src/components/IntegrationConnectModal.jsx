@@ -138,6 +138,35 @@ const PROVIDERS = {
   },
 };
 
+/**
+ * Return the first non-empty string-valued field in `obj` (one level deep).
+ * Used as a last-resort error message when the server returns a JSON body
+ * with no `error` / `errorMessage` / `message` field — we still want to
+ * show the user SOMETHING from the body, even if it's an unexpected
+ * shape, so they (or we) can debug it.
+ */
+function pickFirstNonEmptyString(obj) {
+  if (!obj || typeof obj !== "object") return null;
+  for (const v of Object.values(obj)) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Truncate a non-JSON response body to a single-line, reasonable-length
+ * snippet for display in the toast. 240 chars is the sweet spot — long
+ * enough for a stack-trace fragment, short enough to not blow up the
+ * modal. Strips newlines so the toast stays on one line.
+ */
+function rawBodySnippet(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const flat = raw.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= 240) return flat;
+  return flat.slice(0, 237) + "…";
+}
+
 export default function IntegrationConnectModal({ open, provider, onClose, onConnected, onTokenMinted }) {
   const [values, setValues] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -228,15 +257,64 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
         typeof res.headers?.get === "function" ? res.headers.get(h) : "";
       const contentType = getHeader("content-type") || "";
       const isHtml = contentType.includes("text/html");
+      // Read the body as text first so we always have the raw payload to
+      // fall back on. The pre-fix code only did res.json() and discarded
+      // anything that wasn't JSON, which is exactly what the 502 modal
+      // hit: the function crashed mid-dispatch and Netlify returned an
+      // HTML error page or a JSON body with no `error` field (e.g. the
+      // unhandled-throw case `{"error":"Internal error: ..."}` was the
+      // ONLY JSON shape that had anything usable — the older Airtable
+      // and the HubSpot handler both already wrapped that case; Slack /
+      // Zapier / Notion did NOT, so the modal ended up with a bare
+      // `HTTP 502` and nothing else). Now we parse if we can, and
+      // always keep the raw text for the fallback.
+      //
+      // Fall back to res.json() if res.text() isn't implemented (some
+      // test mocks only stub json()). The success path reads data.token
+      // for Zapier, so we mustn't drop the parsed body just because
+      // text() returned undefined.
       let data = {};
+      let rawBody = "";
       if (!isHtml) {
-        try { data = await res.json(); } catch { /* not JSON */ }
+        try {
+          rawBody = await res.text();
+        } catch { /* nothing to show */ }
+        if (rawBody) {
+          try { data = JSON.parse(rawBody); } catch { /* not JSON, leave data as {} */ }
+        } else {
+          // text() wasn't implemented (e.g. a test mock) or returned
+          // an empty string. Try json() so the success path can still
+          // read its fields.
+          try { data = await res.json(); } catch { /* not JSON */ }
+        }
       }
       if (!res.ok || data.error) {
         if (isHtml) {
           setError("Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).");
         } else {
-          setError(data.error || `HTTP ${res.status}`);
+          // Prefer the structured `error` field the server functions all
+          // emit. If it's missing (e.g. a Netlify-injected crash body
+          // with only `errorMessage` / `message`, or a non-JSON
+          // response), pick the most useful available alternative. The
+          // user previously saw only `HTTP 502` in this case, which
+          // gave them no information. Now the most useful field of the
+          // raw body surfaces in the toast, so a future "why is this
+          // 502" bug is debuggable from the UI alone.
+          const fallback =
+            data.error ||
+            data.errorMessage ||
+            data.message ||
+            pickFirstNonEmptyString(data) ||
+            rawBodySnippet(rawBody) ||
+            `HTTP ${res.status}`;
+          // `reason` (added alongside the generic "Invalid or expired
+          // session" message) carries the real Supabase getUser() error —
+          // e.g. "invalid JWT: unable to parse or verify signature" (a
+          // project/key mismatch) vs "JWT expired" (genuine staleness).
+          // Both render identically without it, which is why this exact
+          // message survived multiple "fixed" sessions — show it inline
+          // so the next report is diagnosable from the toast alone.
+          setError(data.reason && data.reason !== fallback ? `${fallback} (${data.reason})` : fallback);
         }
         setSubmitting(false);
         return;

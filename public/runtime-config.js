@@ -7,8 +7,26 @@
 // endpoint by editing this one file and reloading (dev) or redeploying just this
 // file (prod) — no rebuild required.
 //
-// Precedence: a non-empty value here OVERRIDES the matching VITE_* value.
+// Precedence — ⚠️ NOT the same for every field, and the difference matters
+// when you are debugging why an updated value "isn't reflecting":
+//
+//   webhookUrl / emailApiUrl / contactWebhookUrl
+//       → THIS FILE WINS. config.js `endpoint()` reads the runtime value
+//         first and only falls back to the VITE_* build-time value.
+//
+//   supabaseUrl / supabaseAnonKey
+//       → THE VITE_* ENV VAR WINS. config.js only falls back to the value
+//         here when the env var is absent or was redacted by the secret
+//         scanner. So editing supabaseUrl here will NOT override a
+//         VITE_SUPABASE_URL set in Netlify.
+//
 // Leave a value as "" to fall back to the build-time .env value.
+//
+// None of this reaches the Netlify Functions: they read process.env only and
+// never load this file. If a FUNCTION is using the wrong Supabase URL, the
+// value is coming from the Netlify environment (SUPABASE_URL, falling back to
+// VITE_SUPABASE_URL) — check /admin/health, which now prints the resolved URL
+// and which variable supplied it.
 //
 // ── Environment routing (2026-08-10) ──────────────────────────────────────────
 //
@@ -87,9 +105,24 @@ window.__DATIQ_RUNTIME__ = {
   // by Supabase's own design — they identify the project, RLS enforces
   // authorization. If you ever rotate either project, update the matching
   // value here AND the Netlify env's VITE_SUPABASE_ANON_KEY.
+  //
+  // ⚠️ A key must belong to the project in `supabaseUrl` directly above.
+  // The dev/staging value that used to sit here was issued for project
+  // `aubwooslkkyprdxuiyvj` while the URL says `aubwooslkkrprdxuiyvj` — ONE
+  // character apart, at position 11. Supabase answers "Invalid API key" and
+  // names neither side, and since a project ref only appears base64-encoded
+  // inside the JWT, no amount of reading this file revealed it. That cost
+  // three debugging sessions across both environments.
+  //
+  // It is left EMPTY rather than guessed: `src/lib/config.js` then falls back
+  // to the build-time VITE_SUPABASE_ANON_KEY, making the Netlify env the
+  // single source for staging. To restore the belt-and-braces copy here,
+  // paste the anon key from Supabase → project `aubwooslkkrprdxuiyvj` →
+  // Settings → API. `src/lib/runtimeConfigIdentity.test.js` verifies any
+  // value you put here actually belongs to its project.
   supabaseAnonKey: _isMain
     ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM"
-    : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1Yndvb3Nsa2t5cHJkeHVpeXZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2Mzc3MTAsImV4cCI6MjA5NjIxMzcxMH0.FJdHk7iwkFaz5m87kRQBHUh691RVAUkhgAoPXwJxcG4",
+    : "",
   // The OAuth / email-confirmation / password-reset return URL for this
   // branch. The Supabase client passes this as `redirectTo` so the OAuth
   // provider (Google, Microsoft, GitHub) and the Supabase email-link

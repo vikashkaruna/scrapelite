@@ -16,8 +16,8 @@
 //     for all to authenticated
 //     using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-import { createClient } from "@supabase/supabase-js";
 import { notifyExtractionComplete } from "./lib/notify.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const TABLE = "extractions";
 
@@ -50,20 +50,6 @@ function isMissingColumnError(error) {
   );
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-
-  // Pass the user's JWT so Supabase applies RLS with auth.uid() = user_id.
-  return createClient(url, anonKey, {
-    global: {
-      headers: authHeader ? { Authorization: authHeader } : {},
-    },
-    auth: { persistSession: false },
-  });
-}
-
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
@@ -80,28 +66,21 @@ export const handler = async (event) => {
     });
   }
 
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) {
-    return respond(503, {
-      error: "Supabase not configured",
-      useLocalStorage: true,
-    });
+  // Verify the token and get the authenticated user's ID. This used to call
+  // `getUser()` with NO argument, which supabase-js v2.108+ rejects with
+  // AuthSessionMissingError on a session-less server client — i.e. this
+  // endpoint 401'd every authenticated request and silently pushed every user
+  // onto the localStorage fallback. The shared helper passes the JWT
+  // explicitly and tells a bad session (401) apart from a misconfigured
+  // server (503).
+  const auth = await authenticateBearer(event, { label: "extractions" });
+  if (!auth.ok) {
+    // useLocalStorage keeps the client's graceful degradation intact for
+    // every failure mode, including the new 503.
+    return respond(auth.status, { ...auth.body, useLocalStorage: true });
   }
-
-  // Verify the token and get the authenticated user's ID.
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return respond(401, {
-      error: "Invalid or expired session. Please sign in again.",
-      useLocalStorage: true,
-    });
-  }
-
-  const userId = user.id;
+  const supabase = auth.client;
+  const userId = auth.user.id;
   const id = event.queryStringParameters?.id;
   const method = event.httpMethod;
 

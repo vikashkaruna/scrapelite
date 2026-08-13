@@ -10,14 +10,17 @@ import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
 const NAV = [
-  { to: "/admin/revenue",  label: "Revenue",  icon: "bar-chart" },
-  { to: "/admin/pricing",  label: "Pricing",  icon: "dollar-sign" },
-  { to: "/admin/coupons",  label: "Coupons",  icon: "bookmark" },
-  { to: "/admin/users",    label: "Users",    icon: "users" },
-  { to: "/admin/ai",       label: "AI",       icon: "sparkles" },
-  { to: "/admin/monitoring", label: "Automation", icon: "activity" },
+  { to: "/admin/revenue",    label: "Revenue",    icon: "bar-chart" },
+  { to: "/admin/pricing",    label: "Pricing",    icon: "dollar-sign" },
+  { to: "/admin/coupons",    label: "Coupons",    icon: "bookmark" },
+  { to: "/admin/users",      label: "Users",      icon: "users" },
+  { to: "/admin/ai",         label: "AI",         icon: "sparkles" },
+  // n8n workflow pipeline observability (workflow-implementation-and-optimization branch)
+  { to: "/admin/automation", label: "Workflows",  icon: "zap" },
+  // Ops monitoring + service health (staging branch)
+  { to: "/admin/monitoring", label: "Monitoring", icon: "activity" },
   { to: "/admin/health",     label: "Health",     icon: "server" },
-  { to: "/admin/general",  label: "General",  icon: "settings" },
+  { to: "/admin/general",    label: "General",    icon: "settings" },
 ];
 
 const LS_COL = "datiq.adminSidebarCollapsed";

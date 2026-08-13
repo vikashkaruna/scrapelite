@@ -32,8 +32,24 @@ name: Staging Gate
 on:
   push:
     branches: [staging]
+    # Docs/help/markdown-only pushes don't change the build or any test —
+    # skip the GH run entirely and let the pre-push hook's docs-only-skip
+    # path handle the feedback. Saves ~5 min of GH minutes per docs push.
+    # 2026-08-12: CI-local-first, see docs/CI-LOCAL-FIRST.md.
+    paths-ignore:
+      - 'docs/**'
+      - 'public/help/**'
+      - '.claude/**'
+      - '*.md'
+      - 'CHANGELOG.md'
   pull_request:
     branches: [staging, main]
+    paths-ignore:
+      - 'docs/**'
+      - 'public/help/**'
+      - '.claude/**'
+      - '*.md'
+      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
@@ -59,6 +75,18 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+      # 2026-08-12: CI-local-first — cache Playwright's browser binaries so
+      # the e2e step doesn't re-download chromium (~200MB) on every run.
+      # The cache key is keyed on the lockfile (so package.json changes
+      # bust it correctly) and the OS (so Ubuntu/macOS don't share).
+      # Saves ~90s on warm cache, ~3min on cold. See docs/CI-LOCAL-FIRST.md.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - run: npm ci
 
       - name: Release-readiness audit (admin leaks, email split, screenshot refs)
@@ -80,6 +108,13 @@ jobs:
         run: npm run build
 
       - name: Install Playwright browsers
+        # `--with-deps` re-runs apt on every run (idempotent on warm cache)
+        # but the actual browser download hits the cache above. When the
+        # cache is warm, Playwright sees the browser is already extracted
+        # and skips the download; the apt step still runs to make sure
+        # the system libs (libnss, libxkbcommon, etc.) are present. The
+        # `--with-deps` flag does the apt step itself, so this single
+        # command is correct for both warm and cold cache.
         run: npx playwright install --with-deps chromium
 
       - name: End-to-end smoke tests (Playwright)
@@ -118,6 +153,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
+      # 2026-08-12: this gate keeps failing with
+      # `DEPTH_ZERO_SELF_SIGNED_CERT` on api.github.com. The runner's
+      # bundled CA store occasionally ships without the full chain
+      # GitHub's edge serves, so Node's undici rejects the connection
+      # outright. Refresh the system CA bundle as a belt-and-suspenders
+      # measure; the script itself also has retry + `gh api` fallback.
+      - name: Refresh CA bundle
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ca-certificates
       - name: Check open defects
         run: node scripts/check-open-defects.mjs
         env:

@@ -115,6 +115,58 @@ describe("integrationsClient — pushToIntegration(slack)", () => {
   });
 });
 
+describe("integrationsClient — pushToIntegration(airtable) 412 path", () => {
+  // 2026-08-11 fix: the Airtable branch of pushToIntegration previously
+  // only surfaced generic errors on non-2xx, so a 412 "Airtable is not
+  // connected" came back as a red error box in the Export modal instead
+  // of a friendly "Set up Airtable in Account → Integrations" link.
+  // Slack had this from the start; Airtable/Notion now do too.
+  const items = [{ id: "e1", url: "https://a.com", page_title: "A" }];
+
+  it("surfaces 412 as a structured not_connected result for Airtable", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 412,
+      text: async () => JSON.stringify({ error: "Airtable is not connected. Set it up in Account → Integrations." }),
+    });
+    const result = await pushToIntegration("airtable", items);
+    expect(result.ok).toBe(false);
+    expect(result.not_connected).toBe(true);
+    expect(result.pushed).toBe(0);
+    expect(result.total).toBe(items.length);
+    expect(result.message).toMatch(/not connected/i);
+    // The Export modal's onAirtablePush branches on result.not_connected
+    // to render the "Set up Airtable in Account → Integrations" link
+    // and refresh providerStatus. This test pins that contract.
+  });
+
+  it("surfaces 412 as a structured not_connected result for Notion", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 412,
+      text: async () => JSON.stringify({ error: "Notion is not connected. Set it up in Account → Integrations." }),
+    });
+    const result = await pushToIntegration("notion", items);
+    expect(result.ok).toBe(false);
+    expect(result.not_connected).toBe(true);
+    expect(result.message).toMatch(/not connected/i);
+  });
+
+  it("does NOT set not_connected for a generic 500 (still a hard error)", async () => {
+    // 412 is the only "missing connection" status. Other 4xx/5xx are
+    // real errors and should surface as such — the modal shows them in
+    // the red error box, not as a "set up" link.
+    globalThis.fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => JSON.stringify({ error: "internal error" }),
+    });
+    const result = await pushToIntegration("airtable", items);
+    expect(result.ok).toBe(false);
+    expect(result.not_connected).toBeUndefined();
+  });
+});
+
 describe("integrationsClient — getIntegrationStatus", () => {
   it("returns { connected: false } when the server returns a non-2xx", async () => {
     globalThis.fetch.mockResolvedValue({

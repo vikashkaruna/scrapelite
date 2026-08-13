@@ -23,6 +23,14 @@ import {
   HEALTH_STATUS,
   statusPageIndicatorToStatus,
 } from "../../../src/lib/healthModel.js";
+// Same resolution order the functions use, so the probe reports on the key the
+// app actually authenticates with rather than a healthier one nearby.
+import {
+  resolveSupabaseEnv,
+  maskKey,
+  diagnoseSupabaseIdentity,
+  decodeSupabaseKey,
+} from "./supabaseServerClient.js";
 
 const DEFAULT_TIMEOUT_MS = 4000;
 
@@ -119,25 +127,172 @@ export async function probeSupabaseDb() {
     detail: { endpoint: "rest/v1", probe: "HEAD app_config" } };
 }
 
-/** GoTrue's health endpoint. Sign-in usually breaks before the database does. */
+/**
+ * GoTrue reachability AND anon-key validity. Sign-in usually breaks before the
+ * database does — and the key breaks before either.
+ *
+ * `/auth/v1/health` alone is NOT enough, and trusting it cost us an outage:
+ * that endpoint is UNAUTHENTICATED, so it answers 200 with a completely
+ * invalid `apikey`. This card stayed green for days while every
+ * `auth.getUser()` in the product failed with "Invalid API key" and users were
+ * told their session had expired. So we do two round trips: liveness, then a
+ * real authenticated call that can only succeed if the deployed key actually
+ * belongs to the project at SUPABASE_URL.
+ *
+ * The key check uses the SAME resolution order as the functions
+ * (resolveSupabaseEnv), so this probe reports on the key the app actually
+ * uses — not a different one that happens to be healthy. It deliberately does
+ * NOT fall back to the service key: that would mask exactly the failure we are
+ * looking for.
+ */
 export async function probeSupabaseAuth() {
   const url = env("SUPABASE_URL");
-  const anon = env("SUPABASE_ANON_KEY") || env("VITE_SUPABASE_ANON_KEY") || env("SUPABASE_SERVICE_KEY");
   if (!url) return { id: "supabase-auth", configured: false };
+
+  const resolved = resolveSupabaseEnv(process.env);
+
+  // A REDACTED key is a fault we can report without any network call: the
+  // variable is set, its value is corrupted, and we can name it. Rule 1 of
+  // this file does not apply — this is not "we did not ask", it is a
+  // configured value that is provably unusable.
+  if (resolved.problem === "key_stripped") {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs: 0,
+      status: HEALTH_STATUS.DOWN,
+      note: resolved.message,
+      detail: { anonKey: maskKey(resolved.anonKey), keySource: resolved.keySource || "(none)" },
+    };
+  }
+
+  // The key names its own project, so a mismatch is provable with NO network
+  // call — and it is strictly more useful than anything the network can tell
+  // us, because Supabase only ever answers "Invalid API key" without saying
+  // which side is wrong. Run it FIRST. A `custom_domain` finding is context
+  // rather than a verdict, so it does not short-circuit the live checks.
+  const identity = diagnoseSupabaseIdentity(process.env);
+  if (identity.problem && identity.problem !== "custom_domain") {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs: 0,
+      status: HEALTH_STATUS.DOWN,
+      note: identity.message,
+      detail: { ...identity.detail, anonKey: maskKey(resolved.anonKey) },
+    };
+  }
 
   const { ok, res, latencyMs, error } = await timedFetch(
     `${url}/auth/v1/health`,
-    { headers: anon ? { apikey: anon } : {} },
+    { headers: resolved.anonKey ? { apikey: resolved.anonKey } : {} },
   );
   if (!ok) return { id: "supabase-auth", configured: true, reachable: false, latencyMs, note: error };
   if (!res.ok) {
-    return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
-      status: HEALTH_STATUS.DOWN, note: `GoTrue returned HTTP ${res.status}.` };
+    // A 401 here is the gateway rejecting the apikey, NOT GoTrue being down.
+    // Reporting it as "GoTrue returned HTTP 401" is what made production's
+    // card strictly less useful than staging's while both had key faults —
+    // so attach whatever the offline diagnosis knows.
+    const isAuthReject = res.status === 401 || res.status === 403;
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      status: HEALTH_STATUS.DOWN,
+      note: isAuthReject
+        ? `Supabase's gateway rejected this server's anon key (HTTP ${res.status}) — ` +
+          "GoTrue itself is not necessarily down. " +
+          (identity.message ||
+            `Check ${resolved.keySource} against SUPABASE_URL for this context.`)
+        : `GoTrue returned HTTP ${res.status}.`,
+      detail: { ...identity.detail, anonKey: maskKey(resolved.anonKey) },
+    };
   }
   let body = null;
   try { body = await res.json(); } catch { /* the 200 is the signal */ }
+
+  // No anon key at all → we cannot check validity, and rule 1 says "we did not
+  // ask" is never "it is down". Report liveness and say the key was unchecked;
+  // inventing an outage here is exactly what gets a dashboard muted.
+  if (!resolved.anonKey) {
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      note: "GoTrue is live. Anon key not configured, so key validity was not checked.",
+      detail: { name: body?.name || "GoTrue", version: body?.version || "", anonKey: "(unset)" },
+    };
+  }
+
+  // Now the part /auth/v1/health cannot tell us: is this key actually valid
+  // for this project?
+  //
+  // ⚠️ NOT `/rest/v1/`. That was the first choice here and it was wrong:
+  // Supabase removed anon-key access to the PostgREST OpenAPI root (11 Mar
+  // 2026 for new projects, 8 Apr 2026 for all), so it now refuses EVERY anon
+  // key by design with "Secret API key required" / "Access to schema is
+  // forbidden". The probe read that refusal as proof the key was wrong and
+  // reported a healthy staging environment as broken.
+  //
+  // `/auth/v1/settings` is the right question: it requires an apikey, accepts
+  // an anon/publishable one, and lives in the service this component is about.
+  const KEY_CHECK_PATH = "/auth/v1/settings";
+  const keyCheck = await timedFetch(`${url}${KEY_CHECK_PATH}`, {
+    headers: { apikey: resolved.anonKey },
+  });
+  const detail = {
+    name: body?.name || "GoTrue",
+    version: body?.version || "",
+    anonKey: maskKey(resolved.anonKey),
+    // Legacy `eyJ…` keys are deprecated end-2026. Context only — never a status.
+    keyFormat: decodeSupabaseKey(resolved.anonKey).format,
+    keyCheck: KEY_CHECK_PATH,
+    ...identity.detail,
+  };
+  if (!keyCheck.ok) {
+    // The key round trip itself failed to complete. Liveness passed, so report
+    // the component as up but say the key could not be verified — an
+    // unverified key is not a proven-bad key.
+    return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      note: `Anon key not verified: ${keyCheck.error}.`, detail };
+  }
+  if (keyCheck.res.status === 401 || keyCheck.res.status === 403) {
+    let why = "";
+    try {
+      const j = await keyCheck.res.json();
+      why = j?.message || j?.msg || j?.error_description || j?.error || "";
+    } catch { /* status is the signal */ }
+
+    // Classify the refusal. "This key is invalid" and "this endpoint needs a
+    // more privileged key" are completely different findings, and collapsing
+    // them is exactly the bug above — a privilege requirement was reported as
+    // a project mismatch, turning a green environment red.
+    if (/invalid\s+api\s+key|no\s+api\s+key/i.test(why)) {
+      return {
+        id: "supabase-auth", configured: true, reachable: true, latencyMs,
+        status: HEALTH_STATUS.DOWN,
+        note:
+          `Supabase rejected this server's anon key ("${why}"). ` +
+          // When the URL is a custom domain we could not compare refs offline,
+          // so say so — that IS the likely cause, and it is a different fix
+          // from "wrong key".
+          (identity.message ||
+            `${resolved.keySource} does not belong to the project at SUPABASE_URL — ` +
+              "every signed-in request will fail with \"Invalid or expired session\". " +
+              "Fix the value in the Netlify environment for this context."),
+        detail: { ...detail, rejection: why },
+      };
+    }
+
+    // Anything else — "Secret API key required", "Access to schema is
+    // forbidden", or a message we have never seen — means we could not answer
+    // the question, NOT that the key is bad. Rule 1 of this file: "we did not
+    // ask" is never "it is down". Inventing an outage here is what got this
+    // dashboard disbelieved.
+    return {
+      id: "supabase-auth", configured: true, reachable: true, latencyMs,
+      note:
+        `Anon key could not be verified: ${KEY_CHECK_PATH} answered HTTP ` +
+        `${keyCheck.res.status}${why ? ` ("${why}")` : ""}, which is a privilege ` +
+        "requirement rather than a rejected key. GoTrue is live and the offline " +
+        "project-ref check passed; treat the key as unverified, not as wrong.",
+      detail: { ...detail, rejection: why || `HTTP ${keyCheck.res.status}` },
+    };
+  }
   return { id: "supabase-auth", configured: true, reachable: true, latencyMs,
-    detail: { name: body?.name || "GoTrue", version: body?.version || "" } };
+    detail: { ...detail, anonKeyValid: true } };
 }
 
 /**
@@ -272,6 +427,24 @@ export async function probeResend() {
   );
   if (!ok) return { id: "email-resend", configured: true, reachable: false, latencyMs, note: error };
   if (res.status === 401 || res.status === 403) {
+    // Resend has two key permission levels: "Full access" and "Sending
+    // access" (the least-privilege choice for a key that only ever needs to
+    // send mail — exactly what this app uses it for). A sending-access key
+    // is CORRECTLY rejected from GET /domains, a Full-access-only endpoint,
+    // and Resend names that specific case in the response body
+    // (`name: "restricted_api_key"`) so it can be told apart from a key
+    // that is actually invalid or revoked. Reporting the former as "down —
+    // no mail can be sent" is a false positive: the key still sends mail
+    // fine, it just can't be used to read domain-verification status from
+    // here. Any other 401/403 (bad body, wrong `name`, or none at all —
+    // the ordinary shape of an invalid key) is a genuine rejection.
+    let body = null;
+    try { body = await res.json(); } catch { /* falls through to "rejected" below */ }
+    if (body?.name === "restricted_api_key") {
+      return { id: "email-resend", configured: true, reachable: true, latencyMs,
+        note: "API key is scoped to sending access — domain verification status can't be checked from health, but mail can still send.",
+        detail: { scope: "sending_access" } };
+    }
     return { id: "email-resend", configured: true, reachable: true, latencyMs,
       status: HEALTH_STATUS.DOWN, note: "RESEND_API_KEY was rejected — no mail can be sent." };
   }

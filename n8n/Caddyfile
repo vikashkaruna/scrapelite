@@ -1,0 +1,47 @@
+# n8n/Caddyfile
+#
+# Optional reverse proxy for self-hosted n8n. Use this if you want to
+# put n8n behind a real domain (https://n8n.datiq.app) on the Hostinger
+# VPS. Skip this file if you're using n8n's hosted URL.
+#
+# Why Caddy:
+#   - Automatic HTTPS via Let's Encrypt (no cert renewal cron)
+#   - Lightweight (single Go binary, ~30 MB RAM)
+#   - HTTP/2 + HTTP/3 by default
+#
+# Run as a separate container:
+#   docker compose -f n8n/docker-compose.yml -f n8n/docker-compose.caddy.yml up -d
+#
+# Or install on the host directly:
+#   sudo apt install caddy
+#   sudo cp n8n/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl restart caddy
+
+# Global options
+{
+    email ops@datiq.app   # for Let's Encrypt notifications
+}
+
+# Main n8n UI
+n8n.datiq.app {
+    reverse_proxy 127.0.0.1:5678 {
+        # n8n uses long-lived connections for streaming execution logs.
+        flush_interval -1
+    }
+
+    # Security headers
+    header {
+        # HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Don't allow embedding
+        X-Frame-Options "SAMEORIGIN"
+        # Disable mime sniffing
+        X-Content-Type-Options "nosniff"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Rate-limit the MCP endpoint specifically (Claude Desktop can be chatty)
+    @mcp path /mcp/*
+    rate_limit @mcp 30r/m
+}

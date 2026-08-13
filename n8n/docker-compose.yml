@@ -1,0 +1,69 @@
+# n8n/docker-compose.yml
+#
+# Self-hosted n8n for the DatIQ workflow pipeline. Runs on a Hostinger VPS
+# (or any Docker-capable host). The user already has an instance at
+# https://n8n-k8q6.srv1738397.hstgr.cloud/ — this compose is the
+# reference setup for new instances or for re-provisioning.
+#
+# v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §4
+#
+# Quick start:
+#   1. cp n8n/.env.example n8n/.env   (then fill in real values)
+#   2. mkdir -p n8n-data
+#   3. docker compose up -d
+#   4. Open https://<host> and create the first admin user
+#   5. From n8n UI, import n8n/workflows/*.json (or use the
+#      import:workflow CLI command in scripts/import-n8n.sh)
+#
+# Secrets (set in .env, never committed):
+#   N8N_ENCRYPTION_KEY   32 random bytes (encrypts stored credentials)
+#   N8N_BASIC_AUTH_USER  optional, basic auth in front of the UI
+#   N8N_BASIC_AUTH_PASSWORD
+#   N8N_USER_MANAGEMENT_DISABLED  "true" when using basic auth
+#   WEBHOOK_URL          the public URL of this instance (used in
+#                        workflow email/Slack links back to DatIQ)
+#   DATIQ_N8N_API_KEY    shared secret the orchestrator + DatIQ send
+#                        in `Authorization: Bearer ...` for MCP + webhook
+#                        endpoints. Generate: openssl rand -hex 32
+#
+# Volumes:
+#   n8n_data:/home/node/.n8n    SQLite + encrypted credentials + workflow
+#                                 run history. Back this up.
+
+services:
+  n8n:
+    image: n8nio/n8n:1.95.4          # pin to a specific minor; bump via ops/UPGRADES.md
+    container_name: datiq-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"        # bind to localhost; expose via Caddy or Cloudflare Tunnel
+    env_file:
+      - .env
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows-import:ro   # one-way: workflows-in dir for re-import
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # Resource limits — adjust for your VPS. DatIQ's traffic is bursty
+    # (every 5 min a poll + occasional webhook bursts); 1 CPU / 1 GB
+    # is plenty for V1.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+volumes:
+  n8n_data:
+    driver: local
+    # For Hostinger: mount a real path so backups can reach the volume
+    # without going through Docker's volume API. See n8n/ops/BACKUPS.md.
+    #
+    # name: /var/lib/datiq-n8n    # uncomment to use a host path instead

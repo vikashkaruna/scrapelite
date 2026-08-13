@@ -34,8 +34,8 @@
 // plaintext is shown once. Zapier includes the plaintext in
 // `X-Zapier-Token` on every call.
 
-import { createClient } from "@supabase/supabase-js";
 import { createHash, randomBytes } from "node:crypto";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import {
   getConnection,
   upsertConnection,
@@ -58,16 +58,6 @@ function respond(statusCode, body) {
   };
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  });
-}
-
 async function readJsonBody(event) {
   if (!event.body) return {};
   if (event.isBase64Encoded) return JSON.parse(Buffer.from(event.body, "base64").toString("utf8"));
@@ -75,13 +65,13 @@ async function readJsonBody(event) {
 }
 
 async function authenticateRequest(event) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
-  if (!authHeader) return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
-  return { ok: true, user };
+  // Shared implementation — see netlify/functions/lib/supabaseServerClient.js.
+  // It distinguishes a genuinely bad session (401) from a server whose anon
+  // key does not match its project URL (503, naming the variable), which is
+  // the distinction this endpoint got wrong for three sessions running.
+  const auth = await authenticateBearer(event, { label: "integrations-zapier" });
+  if (auth.ok) return { ok: true, user: auth.user };
+  return { ok: false, response: respond(auth.status, auth.body) };
 }
 
 function hashToken(plaintext) {
@@ -352,44 +342,63 @@ export const handler = async (event) => {
   const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
-  // Public, no JWT required:
-  if (event.httpMethod === "GET" && subPath[0] === "test") return handleTest(event);
-  if (event.httpMethod === "GET" && subPath[0] === "poll") return handlePoll(event);
-  if (event.httpMethod === "GET" && subPath[0] === "actions") return handleActionsList();
-  if (event.httpMethod === "POST" && subPath[0] === "action") return handleAction(event);
+  // Top-level try/catch (2026-08-11 fix): a thrown error in any handler
+  // used to surface as a Netlify 502 with no body — opaque to the
+  // browser. The modal then rendered "HTTP 502" with nothing to debug.
+  // This wraps the whole dispatch and converts the throw into a 500
+  // with err.message, which the modal can display verbatim. Airtable
+  // and HubSpot already have this pattern; Zapier did not.
+  //
+  // Subtle but critical: each `return handleX(...)` MUST be `return await
+  // handleX(...)`. Returning the bare Promise from an async function
+  // means the try/catch sees the return value (a Promise), NOT a
+  // rejection — the rejection just becomes the function's return value,
+  // which propagates straight to the caller. The fix: `await` every
+  // handler return so rejections are thrown inside the try block, where
+  // the catch can see them.
+  try {
+    // Public, no JWT required:
+    if (event.httpMethod === "GET" && subPath[0] === "test") return await handleTest(event);
+    if (event.httpMethod === "GET" && subPath[0] === "poll") return await handlePoll(event);
+    if (event.httpMethod === "GET" && subPath[0] === "actions") return handleActionsList();
+    if (event.httpMethod === "POST" && subPath[0] === "action") return await handleAction(event);
 
-  // Internal, JWT required:
-  const auth = await authenticateRequest(event);
-  if (!auth.ok) return auth.response;
+    // Internal, JWT required:
+    const auth = await authenticateRequest(event);
+    if (!auth.ok) return auth.response;
 
-  if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-    return handleStatus(auth.user.id);
-  }
-  if (event.httpMethod === "POST" && subPath[0] === "connect") {
-    return handleConnect(event, auth.user.id);
-  }
-  // Disconnect is the only DELETE endpoint for Zapier; route it
-  // regardless of the sub-path (DELETE is unambiguous).
-  if (event.httpMethod === "DELETE") {
-    return handleDisconnect(auth.user.id);
-  }
+    if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
+      return await handleStatus(auth.user.id);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "connect") {
+      return await handleConnect(event, auth.user.id);
+    }
+    // Disconnect is the only DELETE endpoint for Zapier; route it
+    // regardless of the sub-path (DELETE is unambiguous).
+    if (event.httpMethod === "DELETE") {
+      return await handleDisconnect(auth.user.id);
+    }
 
-  // Test event injection (admin-style — used by the cron to add events):
-  if (event.httpMethod === "POST" && subPath[0] === "events") {
-    let body;
-    try { body = await readJsonBody(event); }
-    catch { return respond(400, { error: "Invalid JSON" }); }
-    const { event_type, payload, dedupe_key } = body || {};
-    if (!event_type) return respond(400, { error: "event_type is required" });
-    const r = await appendEvent({
-      userId: auth.user.id,
-      eventType: event_type,
-      payload,
-      dedupeKey: dedupe_key,
-    });
-    if (!r.ok) return respond(500, { error: r.error });
-    return respond(201, { ok: true });
-  }
+    // Test event injection (admin-style — used by the cron to add events):
+    if (event.httpMethod === "POST" && subPath[0] === "events") {
+      let body;
+      try { body = await readJsonBody(event); }
+      catch { return respond(400, { error: "Invalid JSON" }); }
+      const { event_type, payload, dedupe_key } = body || {};
+      if (!event_type) return respond(400, { error: "event_type is required" });
+      const r = await appendEvent({
+        userId: auth.user.id,
+        eventType: event_type,
+        payload,
+        dedupeKey: dedupe_key,
+      });
+      if (!r.ok) return respond(500, { error: r.error });
+      return respond(201, { ok: true });
+    }
 
-  return respond(404, { error: `No such endpoint: /integrations/zapier/${subPath.join("/")} (${event.httpMethod})` });
+    return respond(404, { error: `No such endpoint: /integrations/zapier/${subPath.join("/")} (${event.httpMethod})` });
+  } catch (err) {
+    console.error("[integrations-zapier] uncaught error", err);
+    return respond(500, { error: `Internal error: ${err?.message || String(err)}` });
+  }
 };

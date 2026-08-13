@@ -212,3 +212,46 @@ describe("extractOne (Groke QW#4 — ba-4 per-URL retry)", () => {
     expect(out.url).toBe("https://fail.com");
   });
 });
+
+// Batch mode previously always got the generic summarize() prompt, with no
+// way to carry which persona/intent launched the run — forwards personaId +
+// intent from runBatch()/extractOne()'s options into every summarize() call,
+// same as the single-URL path in ExtractionProvider.
+describe("runBatch / extractOne — forwards personaId + intent to summarize()", () => {
+  it("runBatch passes options.personaId and options.intent through to summarize()", async () => {
+    const { extractStructure } = await import("./firecrawlService.js");
+    const { summarize } = await import("./aiService.js");
+    extractStructure.mockReset();
+    summarize.mockClear();
+    extractStructure.mockImplementation(async (url) => ({
+      url,
+      page_title: "P",
+      headings: [],
+      links: [],
+    }));
+    await runBatch(["https://a.com"], { personaId: "sales", intent: "contacts" });
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://a.com" }),
+      { personaId: "sales", intent: "contacts" },
+    );
+  });
+
+  it("extractOne passes options.personaId and options.intent through to summarize()", async () => {
+    const { extractStructure } = await import("./firecrawlService.js");
+    const { summarize } = await import("./aiService.js");
+    extractStructure.mockReset();
+    summarize.mockClear();
+    extractStructure.mockImplementation(async (url) => ({
+      url,
+      page_title: "P",
+      headings: [],
+      links: [],
+    }));
+    const { extractOne } = await import("./batchService.js");
+    await extractOne("https://a.com", { personaId: "seo", intent: "pricing" });
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://a.com" }),
+      { personaId: "seo", intent: "pricing" },
+    );
+  });
+});

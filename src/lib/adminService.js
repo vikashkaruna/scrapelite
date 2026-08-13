@@ -118,16 +118,36 @@ export function deleteCoupon(id) {
   return coupons;
 }
 
-export function validateCoupon(code, currentPlanId) {
+/**
+ * @param {string} code
+ * @param {string} currentPlanId
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowManual] - Bypasses the "admin assignment only"
+ *   rejection for a `planId === "manual"` coupon. Callers must only set this
+ *   when the caller has already confirmed the code was assigned to THIS
+ *   signed-in user (see BillingProvider.applyCoupon) — never for free-text
+ *   entry, so a discovered/shared manual code still can't be self-applied by
+ *   anyone else.
+ * @param {string} [opts.assignedPlanId] - When bypassing the manual check,
+ *   the plan this specific assignment is restricted to (or null/unset for
+ *   "any plan"). A manual coupon's own `planId` field is the "manual"
+ *   sentinel, not a real plan id, so the plan restriction for an assigned
+ *   coupon comes from the per-assignment value here instead.
+ */
+export function validateCoupon(code, currentPlanId, opts = {}) {
   const now = new Date();
   const coupon = getCoupons().find((c) => c.code.toUpperCase() === code.toUpperCase());
   if (!coupon) return { valid: false, reason: "Coupon code not found." };
   if (!coupon.active) return { valid: false, reason: "This coupon has been deactivated." };
-  if (coupon.planId === "manual") return { valid: false, reason: "This coupon is for admin assignment only and cannot be self-applied." };
+  const isManual = coupon.planId === "manual";
+  if (isManual && !opts.allowManual) {
+    return { valid: false, reason: "This coupon is for admin assignment only and cannot be self-applied." };
+  }
   if (coupon.maxUses && coupon.uses >= coupon.maxUses) return { valid: false, reason: "Coupon has reached its usage limit." };
   if (coupon.expiresAt && new Date(coupon.expiresAt) < now) return { valid: false, reason: "This coupon has expired." };
-  if (coupon.planId && currentPlanId && coupon.planId !== currentPlanId) {
-    const planLabel = coupon.planId.charAt(0).toUpperCase() + coupon.planId.slice(1);
+  const restrictTo = isManual ? (opts.assignedPlanId || null) : coupon.planId;
+  if (restrictTo && currentPlanId && restrictTo !== currentPlanId) {
+    const planLabel = restrictTo.charAt(0).toUpperCase() + restrictTo.slice(1);
     return { valid: false, reason: `This coupon is only valid for the ${planLabel} plan.` };
   }
   return { valid: true, coupon };

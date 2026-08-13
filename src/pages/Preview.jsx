@@ -52,8 +52,8 @@ function LinkRow({ link, base }) {
   return (
     <a className="lnk-row" href={link.href} target="_blank" rel="noopener noreferrer">
       <FaviconDot url={link.href} />
-      <span className="lnk-text">{link.text}</span>
-      <span className="lnk-href">
+      <span className="lnk-text" title={link.text}>{link.text}</span>
+      <span className="lnk-href" title={link.href}>
         <span className="lnk-host">{hostOf(link.href)}</span>
         <span className="lnk-path">{pathOf(link.href)}</span>
       </span>
@@ -118,6 +118,39 @@ function DomainMapCard({ urls, base }) {
       </div>
     </div>
   );
+}
+
+// A saved enrichment entry counts as "nothing found" when its data is
+// null/undefined, an empty object, or an empty array — not just null.
+// Content-kind entries (a {text} blob) are exempt: an empty string is a
+// legitimate (if unlikely) generation result, not a missing extraction.
+function isEmptyEnrichmentData(data) {
+  if (data == null) return true;
+  if (typeof data === "string") return data.trim() === "";
+  if (Array.isArray(data)) return data.length === 0;
+  if (typeof data === "object" && typeof data.text !== "string") {
+    return Object.keys(data).length === 0;
+  }
+  return false;
+}
+
+// An empty enrichment tab has to say WHICH kind of empty it is. "No data
+// returned" was previously shown for a server with no AI key, a failing AI
+// provider, and a page that genuinely has no pricing on it — so the one
+// actionable case (an unset env var) looked exactly like the two where the
+// user should just move on. `reason` is set by /api/extract; older saved
+// entries have none and keep the original wording.
+export function emptyEnrichmentMessage(reason) {
+  switch (reason) {
+    case "ai_not_configured":
+      return "AI extraction isn't configured on this server. An administrator needs to set GEMINI_API_KEY, AI_API_KEY, or OPENAI_API_KEY.";
+    case "ai_chain_failed":
+      return "The AI provider couldn't be reached for this extraction. Try Refresh in a moment.";
+    case "no_match":
+      return "The AI read this page but found nothing matching this capability.";
+    default:
+      return "No data returned for this capability.";
+  }
 }
 
 export default function Preview() {
@@ -541,7 +574,7 @@ export default function Preview() {
         <div className="preview-head rise">
           <FaviconDot url={data.url} size={44} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h1 className="preview-title">{data.page_title}</h1>
+            <h1 className="preview-title" title={data.page_title}>{data.page_title}</h1>
             <a className="preview-url" href={data.url} target="_blank" rel="noopener noreferrer">
               <Icon name="globe" size={15} /> {data.url} <Icon name="external" size={13} />
             </a>
@@ -766,8 +799,8 @@ export default function Preview() {
                 </Button>
               </div>
               <div className="card-pad">
-                {activeEntry.data == null ? (
-                  <div className="empty-mini">No data returned for this capability.</div>
+                {isEmptyEnrichmentData(activeEntry.data) ? (
+                  <div className="empty-mini">{emptyEnrichmentMessage(activeEntry.reason)}</div>
                 ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
                   // Content-kind (or any entry whose data is a {text} blob)
                   // renders via ContentView — markdown + Copy button. The

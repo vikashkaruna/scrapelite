@@ -1,0 +1,108 @@
+{
+  "name": "datiq_get_workflow_event",
+  "nodes": [
+    {
+      "parameters": {
+        "toolName": "datiq_get_workflow_event",
+        "toolDescription": "Returns a single workflow event by id, including the latest few attempts (from workflow_runs). Use this to diagnose 'why did this fail?'.",
+        "toolInputSchema": {
+          "type": "object",
+          "properties": {
+            "event_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id"
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "00000000-0000-4000-a49f-3d1d922ba980",
+      "name": "MCP Trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.event_id + '&select=*') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $credentials['datiq-supabase-service'].value }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "00000000-0000-4000-a5dd-61d36e937a80",
+      "name": "Get event"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "id": "00000000-0000-4000-a412-bda655fb70c0",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "MCP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get event": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-4000-a6dc-885e6bcb0e00",
+  "id": "00000000-0000-4000-a7ea-9ef56d10be80",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": ""
+  }
+}

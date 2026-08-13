@@ -329,7 +329,15 @@ async function initiateStripeCheckout({ planId, currency, rates, billingPeriod, 
     throw new Error(err.error || "Failed to create checkout session. Please try again.");
   }
 
-  const { url } = await resp.json();
+  const data = await resp.json();
+  // A 100%-off coupon/sale — the server already granted the plan; there is no
+  // Stripe session to redirect to.
+  if (data.status === "free") {
+    onStageChange?.(PAYMENT_STAGE.ACTIVATING, "Activating your plan…");
+    return { status: "free", planId: data.planId || planId };
+  }
+
+  const { url } = data;
   savePendingPayment({ provider: "stripe", planId, currency, billingPeriod });
   onStageChange?.(PAYMENT_STAGE.PORTAL_OPEN, "Redirecting to secure checkout…");
   window.location.href = url;
@@ -343,17 +351,16 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
   const displayName = plan?.name || "Top-up";
   const rzpCurrency = currency === "INR" ? "INR" : "USD"; // INR-only in practice; USD routes to Stripe
 
-  // Step 1: Load SDK
-  onStageChange?.(PAYMENT_STAGE.PREPARING, "Loading payment portal…");
-  await loadRazorpay(); // throws with user-friendly message on failure
-
   // NOTE: the charged amount is computed SERVER-SIDE (create-checkout.js) — the server
   // is authoritative and ignores any client amount. We no longer send `amount`.
   const periodLabel = billingPeriod === "annual"
     ? `annual · ${rzpCurrency === "INR" ? `₹${(plan?.price_inr_annual || 0).toLocaleString("en-IN")}/mo` : `$${plan?.price_usd_annual || plan?.price_usd || 0}/mo`}`
     : billingPeriod === "once" ? "one-time" : "monthly";
 
-  // Step 2: Create order on server (server computes the authoritative amount + GST)
+  // Step 1: Create order on server (server computes the authoritative amount + GST).
+  // Done BEFORE loading the Razorpay SDK so a 100%-off coupon/sale — which the
+  // server resolves into a { status: "free" } response instead of an order —
+  // never has to load or open the payment portal at all.
   onStageChange?.(PAYMENT_STAGE.PREPARING, "Creating your order…");
   let orderResp;
   try {
@@ -387,12 +394,25 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
     throw new Error(err.error || "Failed to initiate payment. Please try again.");
   }
 
-  const { orderId, amount: orderAmount, currency: orderCurrency } = await orderResp.json();
+  const orderData = await orderResp.json();
+
+  // A 100%-off coupon/sale — the server already granted the plan; skip loading
+  // the SDK and opening the payment portal entirely.
+  if (orderData.status === "free") {
+    onStageChange?.(PAYMENT_STAGE.ACTIVATING, "Activating your plan…");
+    return { status: "free", planId: orderData.planId || planId };
+  }
+
+  const { orderId, amount: orderAmount, currency: orderCurrency } = orderData;
 
   // Save pending data for recovery (Razorpay doesn't redirect, but useful for debugging)
   savePendingPayment({ provider: "razorpay", planId, orderId, currency: rzpCurrency, billingPeriod });
 
-  // Step 4: Open Razorpay modal
+  // Step 2: Load the Razorpay SDK now that we know a real charge is needed.
+  onStageChange?.(PAYMENT_STAGE.PREPARING, "Loading payment portal…");
+  await loadRazorpay(); // throws with user-friendly message on failure
+
+  // Step 3: Open Razorpay modal
   onStageChange?.(PAYMENT_STAGE.PORTAL_OPEN, "Complete your payment in the secure portal");
 
   return new Promise((resolve, reject) => {

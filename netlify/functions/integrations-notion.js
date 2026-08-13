@@ -14,7 +14,6 @@
 // The connect step validates the token + database by calling
 // GET /v1/databases/{id} and stores both in integration_connections.
 
-import { createClient } from "@supabase/supabase-js";
 import {
   getConnection,
   upsertConnection,
@@ -27,6 +26,7 @@ import {
   validateNotionConfig,
   defaultNotionSchema,
 } from "../../src/lib/notion.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,16 +42,6 @@ function respond(statusCode, body) {
   };
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  });
-}
-
 async function readJsonBody(event) {
   if (!event.body) return {};
   if (event.isBase64Encoded) return JSON.parse(Buffer.from(event.body, "base64").toString("utf8"));
@@ -59,13 +49,13 @@ async function readJsonBody(event) {
 }
 
 async function authenticateRequest(event) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
-  if (!authHeader) return { ok: false, response: respond(401, { error: "Authentication required" }) };
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) return { ok: false, response: respond(503, { error: "Supabase not configured" }) };
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return { ok: false, response: respond(401, { error: "Invalid or expired session" }) };
-  return { ok: true, user };
+  // Shared implementation — see netlify/functions/lib/supabaseServerClient.js.
+  // It distinguishes a genuinely bad session (401) from a server whose anon
+  // key does not match its project URL (503, naming the variable), which is
+  // the distinction this endpoint got wrong for three sessions running.
+  const auth = await authenticateBearer(event, { label: "integrations-notion" });
+  if (auth.ok) return { ok: true, user: auth.user };
+  return { ok: false, response: respond(auth.status, auth.body) };
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -262,23 +252,42 @@ export const handler = async (event) => {
   const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
-  const auth = await authenticateRequest(event);
-  if (!auth.ok) return auth.response;
-  const userId = auth.user.id;
+  // Top-level try/catch (2026-08-11 fix): a thrown error in any handler
+  // used to surface as a Netlify 502 with no body — opaque to the
+  // browser. The modal then rendered "HTTP 502" with nothing to debug.
+  // This wraps the whole dispatch and converts the throw into a 500
+  // with err.message, which the modal can display verbatim. Airtable
+  // and HubSpot already have this pattern; Notion did not.
+  //
+  // Subtle but critical: each `return handleX(...)` MUST be `return await
+  // handleX(...)`. Returning the bare Promise from an async function
+  // means the try/catch sees the return value (a Promise), NOT a
+  // rejection — the rejection just becomes the function's return value,
+  // which propagates straight to the caller. The fix: `await` every
+  // handler return so rejections are thrown inside the try block, where
+  // the catch can see them.
+  try {
+    const auth = await authenticateRequest(event);
+    if (!auth.ok) return auth.response;
+    const userId = auth.user.id;
 
-  if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-    return handleStatus(userId);
+    if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
+      return await handleStatus(userId);
+    }
+    if (event.httpMethod === "POST" && subPath[0] === "connect") return await handleConnect(event, userId);
+    if (event.httpMethod === "PATCH" && subPath[0] === "connect") return await handlePatch(event, userId);
+    // Disconnect is the only DELETE endpoint for Notion; route it
+    // regardless of the sub-path (DELETE is unambiguous).
+    if (event.httpMethod === "DELETE") return await handleDisconnect(userId);
+    if (event.httpMethod === "POST" && subPath[0] === "test") return await handleTest(event, userId);
+    if (event.httpMethod === "POST" && subPath[0] === "schema") return await handleSchema(event, userId);
+    if (event.httpMethod === "POST" && subPath[0] === "push") return await handlePush(event, userId);
+
+    return respond(404, { error: `No such endpoint: /integrations/notion/${subPath.join("/")} (${event.httpMethod})` });
+  } catch (err) {
+    console.error("[integrations-notion] uncaught error", err);
+    return respond(500, { error: `Internal error: ${err?.message || String(err)}` });
   }
-  if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
-  if (event.httpMethod === "PATCH" && subPath[0] === "connect") return handlePatch(event, userId);
-  // Disconnect is the only DELETE endpoint for Notion; route it
-  // regardless of the sub-path (DELETE is unambiguous).
-  if (event.httpMethod === "DELETE") return handleDisconnect(userId);
-  if (event.httpMethod === "POST" && subPath[0] === "test") return handleTest(event, userId);
-  if (event.httpMethod === "POST" && subPath[0] === "schema") return handleSchema(event, userId);
-  if (event.httpMethod === "POST" && subPath[0] === "push") return handlePush(event, userId);
-
-  return respond(404, { error: `No such endpoint: /integrations/notion/${subPath.join("/")} (${event.httpMethod})` });
 };
 
 // Re-export so the function reads the lib/* paths consistently.

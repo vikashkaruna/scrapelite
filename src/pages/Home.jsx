@@ -18,6 +18,7 @@ import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import TrustStrip from "../components/TrustStrip.jsx";
+import OffersBanner from "../components/OffersBanner.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -443,6 +444,11 @@ export default function Home() {
               )}
             </div>
           )}
+
+          {/* Active coupons/discounts — hidden entirely when nothing is active */}
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
+            <OffersBanner variant="compact" />
+          </div>
 
           {/* F14 — in-product trust strip (under the composer) */}
           <TrustStrip />
