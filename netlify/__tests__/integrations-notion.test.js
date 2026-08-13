@@ -209,6 +209,47 @@ describe("integrations-notion", () => {
     });
   });
 
+  // 2026-08-13 fix. Passing the JWT (above) was necessary but not sufficient:
+  // with a bad anon key deployed, GoTrue answers "Invalid API key" and the
+  // endpoint used to relay that as 401 "Invalid or expired session" — telling
+  // a correctly-signed-in user to sign in again, forever. End-to-end proof
+  // through the real handler that a server fault now reads as a server fault.
+  describe("server misconfiguration is reported as 503, not 401 (2026-08-13 fix)", () => {
+    it("503s with the variable named when Supabase rejects the API key", async () => {
+      mockGetUser.mockResolvedValueOnce({
+        data: { user: null },
+        error: { message: "Invalid API key" },
+      });
+      const r = await handler(baseEvent());
+      expect(r.statusCode).toBe(503);
+      const body = JSON.parse(r.body);
+      expect(body.reason).toBe("invalid_api_key");
+      expect(body.error).toMatch(/SUPABASE_ANON_KEY/);
+      // The old, misleading wording must be gone from this path.
+      expect(body.error).not.toMatch(/expired session/i);
+    });
+
+    it("503s before any network call when the anon key was redacted by Netlify", async () => {
+      process.env.SUPABASE_ANON_KEY = "****************aB3d";
+      delete process.env.VITE_SUPABASE_ANON_KEY;
+      mockGetUser.mockClear();
+      const r = await handler(baseEvent());
+      expect(r.statusCode).toBe(503);
+      expect(JSON.parse(r.body).reason).toBe("key_stripped");
+      expect(mockGetUser).not.toHaveBeenCalled();
+    });
+
+    it("still 401s for a genuinely expired token", async () => {
+      mockGetUser.mockResolvedValueOnce({
+        data: { user: null },
+        error: { message: "JWT expired" },
+      });
+      const r = await handler(baseEvent());
+      expect(r.statusCode).toBe(401);
+      expect(JSON.parse(r.body).reason).toBe("JWT expired");
+    });
+  });
+
   // 2026-08-11 fix: the Notion handler used to have no top-level
   // try/catch (only Airtable + HubSpot did). When a downstream call
   // threw — e.g. the connection store crashed, or pushToNotion threw on

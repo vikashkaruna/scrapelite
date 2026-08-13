@@ -514,4 +514,73 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     expect(r.statusCode).toBe(200);
     expect(JSON.parse(r.body).data.json).toBeUndefined();
   });
+
+  // 2026-08-13. An empty enrichment used to be a single indistinguishable
+  // outcome: "No data returned for this capability", shown identically whether
+  // the server had no AI key at all, the provider was down, or the page simply
+  // had no pricing on it. Only the first is actionable, and it was the likely
+  // cause all along — so users kept reporting "none of the Quick enrichment
+  // buttons work" while every fix addressed a different layer.
+  describe("empty enrichment carries WHY (2026-08-13)", () => {
+    const emptyPageEvent = {
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://example.com",
+        options: { customPrompt: "Extract every pricing tier." },
+      }),
+    };
+
+    beforeEach(() => {
+      process.env.SCRAPE_PROVIDER_ORDER = "direct";
+      delete process.env.FIRECRAWL_API_KEY;
+    });
+
+    it("reason=ai_not_configured when no provider key is set", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      const runChainMock = vi.fn();
+      const h = await loadHandlerWithAI(runChainMock, () => ({
+        gemini: false, anthropic: false, openai: false,
+      }));
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment).toEqual({ ok: false, reason: "ai_not_configured" });
+      expect(runChainMock).not.toHaveBeenCalled();
+    });
+
+    it("reason=ai_chain_failed when the provider throws", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      const runChainMock = vi.fn().mockRejectedValue(new Error("upstream 500"));
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment).toEqual({ ok: false, reason: "ai_chain_failed" });
+    });
+
+    it("reason=no_match when the AI answers but finds nothing", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      const runChainMock = vi.fn().mockResolvedValue({ ok: true, text: "{}" });
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment).toEqual({ ok: false, reason: "no_match" });
+    });
+
+    it("is ABSENT on success, so existing clients are unaffected", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      const runChainMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, text: JSON.stringify({ plans: ["free"] }) });
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body.data.json).toEqual({ plans: ["free"] });
+      expect(body._enrichment).toBeUndefined();
+    });
+
+    it("is ABSENT when no customPrompt was asked for", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      const h = await loadHandlerWithAI(vi.fn());
+      const r = await h({
+        httpMethod: "POST",
+        body: JSON.stringify({ url: "https://example.com" }),
+      });
+      expect(JSON.parse(r.body)._enrichment).toBeUndefined();
+    });
+  });
 });

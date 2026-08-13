@@ -24,9 +24,8 @@
 //     for all to authenticated
 //     using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-import { createClient } from "@supabase/supabase-js";
 import { denyResponse, requireCapability } from "./lib/requireEntitlement.js";
-import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const TABLE = "scheduled_tasks";
 
@@ -59,16 +58,6 @@ function sanitizeSchedule(schedule) {
   return safe;
 }
 
-function getSupabaseForUser(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, noRealtimeOptions({
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
-    auth: { persistSession: false },
-  }));
-}
-
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
@@ -79,17 +68,15 @@ export const handler = async (event) => {
     return respond(401, { error: "Authentication required", useLocalStorage: true });
   }
 
-  const supabase = getSupabaseForUser(authHeader);
-  if (!supabase) {
-    return respond(503, { error: "Supabase not configured", useLocalStorage: true });
+  // See extractions.js — `getUser()` with no argument 401s on every request
+  // under supabase-js v2.108+. The shared helper passes the JWT and separates
+  // a bad session (401) from a misconfigured server (503).
+  const auth = await authenticateBearer(event, { label: "schedules" });
+  if (!auth.ok) {
+    return respond(auth.status, { ...auth.body, useLocalStorage: true });
   }
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    return respond(401, { error: "Invalid or expired session.", useLocalStorage: true });
-  }
-
-  const userId = user.id;
+  const supabase = auth.client;
+  const userId = auth.user.id;
   const id = event.queryStringParameters?.id;
   const method = event.httpMethod;
 

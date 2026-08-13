@@ -216,6 +216,11 @@ export function ExtractionProvider({ children }) {
       icon: preset.icon,
       prompt: preset.prompt,
       data: structure.custom_extraction ?? null,
+      // Why the extraction was empty, when it was. Rendered by Preview so an
+      // empty tab explains itself instead of just being blank.
+      ...(structure.custom_extraction_reason
+        ? { reason: structure.custom_extraction_reason }
+        : {}),
       created_at: new Date().toISOString(),
     };
     saveEnrichment(url, entry); // local cache (keyed by URL)
