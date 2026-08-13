@@ -427,6 +427,24 @@ export async function probeResend() {
   );
   if (!ok) return { id: "email-resend", configured: true, reachable: false, latencyMs, note: error };
   if (res.status === 401 || res.status === 403) {
+    // Resend has two key permission levels: "Full access" and "Sending
+    // access" (the least-privilege choice for a key that only ever needs to
+    // send mail — exactly what this app uses it for). A sending-access key
+    // is CORRECTLY rejected from GET /domains, a Full-access-only endpoint,
+    // and Resend names that specific case in the response body
+    // (`name: "restricted_api_key"`) so it can be told apart from a key
+    // that is actually invalid or revoked. Reporting the former as "down —
+    // no mail can be sent" is a false positive: the key still sends mail
+    // fine, it just can't be used to read domain-verification status from
+    // here. Any other 401/403 (bad body, wrong `name`, or none at all —
+    // the ordinary shape of an invalid key) is a genuine rejection.
+    let body = null;
+    try { body = await res.json(); } catch { /* falls through to "rejected" below */ }
+    if (body?.name === "restricted_api_key") {
+      return { id: "email-resend", configured: true, reachable: true, latencyMs,
+        note: "API key is scoped to sending access — domain verification status can't be checked from health, but mail can still send.",
+        detail: { scope: "sending_access" } };
+    }
     return { id: "email-resend", configured: true, reachable: true, latencyMs,
       status: HEALTH_STATUS.DOWN, note: "RESEND_API_KEY was rejected — no mail can be sent." };
   }

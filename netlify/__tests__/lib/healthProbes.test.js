@@ -282,6 +282,33 @@ describe("probeResend (P-06)", () => {
     expect(r.note).toMatch(/RESEND_API_KEY/);
   });
 
+  // A "Sending access" key — Resend's least-privilege choice for a key that
+  // only ever sends mail, which is all this app does with it — is correctly
+  // rejected from GET /domains (a Full-access-only endpoint) with a named
+  // `restricted_api_key` error. That is not the same as an invalid/revoked
+  // key: sending still works, so this must not report "down".
+  it("is ok when the key is valid but scoped to sending access only", async () => {
+    process.env.RESEND_API_KEY = "re_sending_only";
+    fetchMock.mockResolvedValue(
+      json({ statusCode: 401, name: "restricted_api_key", message: "This API key is restricted to only send emails" }, 401),
+    );
+    const r = await probes.probeResend();
+    expect(r.status).toBeUndefined(); // classifies to OK — reachable, no explicit status
+    expect(r.reachable).toBe(true);
+    expect(r.note).toMatch(/sending access/i);
+    expect(r.detail).toMatchObject({ scope: "sending_access" });
+  });
+
+  // An actually-invalid key returns 401/403 with a different (or no) body —
+  // that must still be reported as down, not swallowed by the new branch.
+  it("is still down when a 401 body names a different/unknown error", async () => {
+    process.env.RESEND_API_KEY = "re_bad";
+    fetchMock.mockResolvedValue(json({ statusCode: 401, name: "invalid_api_key", message: "API key is invalid" }, 401));
+    const r = await probes.probeResend();
+    expect(r.status).toBe("down");
+    expect(r.note).toMatch(/RESEND_API_KEY/);
+  });
+
   it("is down when unreachable", async () => {
     process.env.RESEND_API_KEY = "re_x";
     fetchMock.mockRejectedValue(new Error("timeout"));
