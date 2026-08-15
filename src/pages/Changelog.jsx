@@ -11,7 +11,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
-import { setMeta } from "../lib/seoMeta.js";
+import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 const VERSION = "V1.0";
 const SHIPPED = "2026-07";
@@ -226,7 +226,7 @@ export default function Changelog() {
       title: `${VERSION} — What's in DatIQ`,
       description:
         `Every feature available in DatIQ ${VERSION}, grouped by capability: extraction, batch, schedules, dashboard, auth, billing, and power-user tools.`,
-      url: typeof window !== "undefined" ? `${window.location.origin}/changelog` : "/changelog",
+      url: canonicalUrl("/changelog"),
     });
   }, []);
 

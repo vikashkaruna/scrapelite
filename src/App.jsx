@@ -47,8 +47,10 @@ import UseCaseLead from "./pages/UseCaseLead.jsx";
 import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
 import UseCaseSEO from "./pages/UseCaseSEO.jsx";
 import UseCaseResearch from "./pages/UseCaseResearch.jsx";
-import VsBrowseAI from "./pages/VsBrowseAI.jsx";
-import VsClay from "./pages/VsClay.jsx";
+// The five per-tool /vs/* comparisons are static-owned (hand-written HTML in
+// public/vs/<slug>/index.html) and have no React route — see
+// scripts/site-routes.mjs. Only the hub is React.
+import VsCompare from "./pages/VsCompare.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import ProgrammaticRoute from "./pages/ProgrammaticRoute.jsx";
 import BattleCard from "./pages/BattleCard.jsx";
@@ -234,8 +236,7 @@ function Shell() {
           <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
           <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
-          <Route path="/vs/browse-ai"                  element={<VsBrowseAI />} />
-          <Route path="/vs/clay"                       element={<VsClay />} />
+          <Route path="/vs/compare"                    element={<VsCompare />} />
           <Route path="/changelog"                     element={<Changelog />} />
           <Route path="/for-sales"                     element={<ProgrammaticRoute />} />
           <Route path="/for-seo"                       element={<ProgrammaticRoute />} />
@@ -246,8 +247,10 @@ function Shell() {
           <Route path="/vs/battlecard"                 element={<BattleCard />} />
           <Route path="/dmca"                          element={<DmcaRedirect />} />
           <Route path="/docs"                          element={<DocsRedirect />} />
-          <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
-          <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />
+          {/* /compare and /compare/* used to <Navigate> to /vs/browse-ai. That
+              route no longer exists in React (the page is static-owned), so the
+              redirects moved to netlify.toml as 301s — a client-side Navigate
+              to a non-route would land on NotFound. */}
           {/* Q6 — shareable report links + public gallery */}
           <Route path="/p/:slug"                       element={<PublicReport />} />
           <Route path="/gallery"                       element={<Gallery />} />

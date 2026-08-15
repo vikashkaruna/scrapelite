@@ -5,6 +5,13 @@ import Icon from "./Icon.jsx";
 const LEGAL_LINKS = [
   { label: "Privacy", path: "/privacy", icon: "shield" },
   { label: "Terms",   path: "/terms",   icon: "file" },
+  // Deep-links to the cookie controls on the Privacy page. Both GDPR and the
+  // DPDP Act require withdrawing consent to be as easy as giving it, which
+  // means a persistent, site-wide route back to the choice — not a one-time
+  // banner the visitor can never summon again.
+  // A stable, named anchor — NOT #section-N. Those ids come from the SECTIONS
+  // array index in Privacy.jsx and shift if a section is ever inserted.
+  { label: "Cookie preferences", path: "/privacy#cookie-preferences", icon: "shield" },
   { label: "Contact", path: "/contact", icon: "mail" },
 ];
 

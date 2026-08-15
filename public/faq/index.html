@@ -1,10 +1,12 @@
 <!doctype html>
 <html lang="en" data-theme="light">
 <head>
+<script src="/runtime-config.js"></script>
+<script src="/analytics.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Frequently Asked Questions | DatIQ.app</title>
-<meta name="description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl. DatIQ.app is the no-code web intelligence platform.">
+<title>What is DatIQ? Product overview and FAQ | DatIQ.app</title>
+<meta name="description" content="What DatIQ is, who it is for, what it can extract, and how it works — plus answers on pricing, plans, exports, scheduling, API access and troubleshooting.">
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
 <link rel="canonical" href="https://datiq.app/faq">
 <link rel="icon" href="/favicon.svg">
@@ -13,14 +15,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/help/help.css">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Frequently Asked Questions | DatIQ.app">
+<meta property="og:title" content="What is DatIQ? Product overview and FAQ | DatIQ.app">
 <meta property="og:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl.">
 <meta property="og:url" content="https://datiq.app/faq">
 <meta property="og:site_name" content="DatIQ">
 <meta property="og:image" content="https://datiq.app/og-card.jpg">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Frequently Asked Questions | DatIQ.app">
+<meta name="twitter:title" content="What is DatIQ? Product overview and FAQ | DatIQ.app">
 <meta name="twitter:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, and troubleshooting.">
 <meta name="twitter:image" content="https://datiq.app/og-card.jpg">
 <meta name="twitter:site" content="@datiq_app">
@@ -132,6 +134,9 @@
   .faq-hero { text-align: center; padding: 64px 0 32px; }
   .faq-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 12px; }
   .faq-hero p { color: var(--text-2); font-size: 1.05rem; max-width: 600px; margin: 0 auto 24px; }
+  .faq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
+  .faq-card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 14px 16px; font-size: 0.9rem; color: var(--text-2, #4b5563); line-height: 1.6; }
+  .faq-card strong { display: block; color: var(--text-1, #111827); margin-bottom: 4px; }
   .faq-toc { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 16px 20px; margin: 0 0 32px; }
   .faq-toc h2 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3, #9ca3af); margin: 0 0 8px; }
   .faq-toc ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -185,14 +190,17 @@
 <div class="container">
   <section class="faq-hero">
     <div class="kicker">DatIQ · Help center</div>
-    <h1>Frequently Asked Questions</h1>
-    <p>Quick answers about DatIQ — pricing, plans, exports, scheduling, API access, and troubleshooting common extraction issues. DatIQ.app is the no-code web intelligence platform.</p>
+    <h1>What is DatIQ? Overview and FAQ</h1>
+    <p>DatIQ.app is a no-code web intelligence platform that turns any public URL into structured data — headings, links, contacts, pricing, AI summaries, and custom fields — in seconds, with no code required. Below: who it is for, what it extracts, how it works, and quick answers on pricing, plans, exports, scheduling, API access and troubleshooting.</p>
     <p class="faq-updated">Last updated: 2026-08-08</p>
   </section>
 
   <nav class="faq-toc" aria-label="On this page">
     <h2>On this page</h2>
     <ul>
+      <li><a href="#who">Who is DatIQ for?</a></li>
+      <li><a href="#extract">What can you extract?</a></li>
+      <li><a href="#how">How does DatIQ work?</a></li>
       <li><a href="#overview">Overview</a></li>
       <li><a href="#pricing">Pricing &amp; plans</a></li>
       <li><a href="#features">Features</a></li>
@@ -200,6 +208,46 @@
       <li><a href="#account">Account &amp; data</a></li>
     </ul>
   </nav>
+
+<section class="faq-section" id="who">
+    <h2>Who is DatIQ for?</h2>
+    <ul>
+      <li><strong>SDRs and BDRs</strong> doing prospect research — pull leadership names, emails, and pricing from a company site in one click.</li>
+      <li><strong>Competitive intelligence analysts</strong> — monitor competitor pricing, messaging, and leadership changes on a schedule.</li>
+      <li><strong>SEO and content marketers</strong> — extract heading structure, link profiles, and content gaps from any site.</li>
+      <li><strong>Market researchers</strong> — aggregate structured data from many company sites in a single batch run.</li>
+      <li><strong>Recruiters</strong> — find candidate sources, extract team pages, and surface tech-stack signals.</li>
+      <li><strong>Startup founders</strong> — research competitors and customers during discovery.</li>
+      <li><strong>VCs</strong> doing due diligence — pull product, pricing, and team data from a target's site in minutes.</li>
+      <li><strong>Digital agencies</strong> — handle multi-client prospect research and reporting at scale.</li>
+    </ul>
+  </section>
+
+<section class="faq-section" id="extract">
+    <h2>What can you extract?</h2>
+    <div class="faq-grid">
+      <div class="faq-card"><strong>Web extraction</strong>Headings H1–H6, all internal / external links, metadata, page summary.</div>
+      <div class="faq-card"><strong>AI summary</strong>Plain-language overview of any page in a few sentences.</div>
+      <div class="faq-card"><strong>Custom extraction</strong>Describe any field in English; the AI locates and structures it.</div>
+      <div class="faq-card"><strong>Domain mapping</strong>Discover every indexed URL on a site.</div>
+      <div class="faq-card"><strong>Contact extraction</strong>Surface leadership names, email addresses, social profiles.</div>
+      <div class="faq-card"><strong>Pricing extraction</strong>Structured pricing tiers from any pricing page.</div>
+      <div class="faq-card"><strong>Content generation</strong>SEO outlines, competitive briefs, social posts from saved pages.</div>
+      <div class="faq-card"><strong>Exports</strong>CSV (comprehensive) and PDF (jsPDF report, white-label on Business + Agency).</div>
+    </div>
+  </section>
+
+<section class="faq-section" id="how">
+    <h2>How does DatIQ work?</h2>
+    <ol style="color: var(--text-2, #4b5563); line-height: 1.7; padding-left: 22px;">
+      <li><strong>Paste a URL</strong> on the home screen (or up to hundreds of URLs for a batch run).</li>
+      <li><strong>Choose options</strong> — pick intent chips (summary, contacts, pricing, map, custom) or describe a custom field in plain English.</li>
+      <li><strong>AI extracts</strong> the structured data and renders it on the Preview screen.</li>
+      <li><strong>Enrich</strong> the extraction with one-click capabilities (leadership, social links, mission, pricing breakdown).</li>
+      <li><strong>Save</strong> the extraction to your Dashboard, group it under a Collection, and tag it.</li>
+      <li><strong>Export</strong> to CSV or PDF, share via a public link, or push to HubSpot, Airtable, Notion, Slack, or Zapier (one-click from Preview, Dashboard, and Batch).</li>
+    </ol>
+  </section>
 
   <section class="faq-section" id="overview">
     <h2>Overview</h2>
@@ -216,7 +264,7 @@
 
     <details class="faq-item" id="faq-who">
       <summary>Who is DatIQ for?</summary>
-      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="/what-is-datiq">What is DatIQ?</a> for the full persona list.</p>
+      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="#who">the full persona list below</a> for the full persona list.</p>
     </details>
   </section>
 
@@ -266,6 +314,42 @@
       <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
       <p class="answer">Yes — every extraction has a Share button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
     </details>
+
+    <details class="faq-item" id="faq-share">
+      <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
+      <p class="answer">Yes — every extraction has a <strong>Share</strong> button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
+    </details>
+
+    <details class="faq-item" id="faq-spreadsheet">
+      <summary>How do I export to a spreadsheet?</summary>
+      <p class="answer">Use <strong>CSV</strong> from any export menu, then open it in your spreadsheet tool.</p>
+    </details>
+
+    <details class="faq-item" id="faq-schedule-email">
+      <summary>Will scheduled runs email me?</summary>
+      <p class="answer">Only if you add an alert email to the schedule. Automated runs that detect a change send the alert; the manual <strong>Run now</strong> button just shows you the result on screen.</p>
+    </details>
+
+    <details class="faq-item" id="faq-command-palette">
+      <summary>How do I get to a specific page fast?</summary>
+      <p class="answer">Press <kbd>mod</kbd>+<kbd>k</kbd> (or <kbd>ctrl</kbd>+<kbd>k</kbd>) anywhere to open the command palette. Type a page name (Home, Dashboard, Pricing, Schedules) and press <kbd>Enter</kbd>.</p>
+    </details>
+
+    <details class="faq-item" id="faq-outcome-tiles">
+      <summary>What are those chips above the URL box?</summary>
+      <p class="answer">Those are <strong>outcome tiles</strong> — pre-wired shortcuts for the six most common jobs (AI summary, lead list, pricing, competitor research, job board, custom). Click one to pre-fill the URL, intent and prompt. Click several to combine prompts into one extraction.</p>
+    </details>
+
+    <details class="faq-item" id="faq-workspace">
+      <summary>What is the Workspace page?</summary>
+      <p class="answer">When you sign in, the top nav gains a <strong>Workspace</strong> entry — a logged-in command center for your recent extractions, schedules, batch runs and notifications.</p>
+    </details>
+
+    <details class="faq-item" id="faq-gallery">
+      <summary>What is the Gallery?</summary>
+      <p class="answer"><a href="/gallery">/gallery</a> lists recent public extractions. Useful for browsing what others have shared and for discovering new use-cases.</p>
+    </details>
+
   </section>
 
   <section class="faq-section" id="troubleshooting">

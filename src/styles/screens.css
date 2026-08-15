@@ -7398,6 +7398,54 @@
 .referral-share-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); cursor: pointer; transition: color .15s; }
 .referral-share-btn:hover { color: var(--accent); border-color: var(--accent); }
 
+/* ── /vs/compare — the comparison hub table ────────────────────────────────
+   Seven columns do not fit a phone, and shrinking the type until they do makes
+   the table unreadable rather than responsive. So the table keeps a sane
+   min-width and scrolls inside its own container — the same approach
+   .pricing-matrix already uses — with the feature column pinned so you never
+   lose track of which row you are reading. */
+.vsc-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.vsc-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: .86rem; }
+.vsc-table th, .vsc-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.vsc-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); font-weight: 700; font-size: .82rem; white-space: nowrap; }
+.vsc-table thead th a { color: var(--text); text-decoration: none; }
+.vsc-table thead th a:hover { color: var(--accent); text-decoration: underline; }
+.vsc-datiq-head { color: var(--accent); }
+
+/* Pinned first column. Needs its own background or the scrolled cells show
+   through it, and a higher z-index in the header where the two stickies meet. */
+.vsc-table th:first-child,
+.vsc-rowhead { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 200px; }
+.vsc-table thead th:first-child { z-index: 3; background: var(--surface-2); }
+.vsc-rowhead { font-weight: 600; text-align: left; }
+.vsc-rownote { display: block; font-weight: 400; font-size: .75rem; color: var(--text-2); margin-top: 2px; }
+
+.vsc-grouprow th { background: color-mix(in srgb, var(--accent) 6%, var(--surface-2)); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); position: sticky; left: 0; }
+
+.vsc-cell { color: var(--text-2); }
+.vsc-cell.vsc-datiq { color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.vsc-mark { display: inline-flex; width: 16px; height: 16px; margin-right: 6px; border-radius: 50%; align-items: center; justify-content: center; vertical-align: -3px; }
+.vsc-yes .vsc-mark, .vsc-yes { color: #16a34a; }
+.vsc-partial .vsc-mark, .vsc-partial { color: #d97706; }
+.vsc-no .vsc-mark, .vsc-no { color: var(--text-2); }
+.vsc-cell.vsc-yes, .vsc-cell.vsc-partial, .vsc-cell.vsc-no { color: var(--text-2); }
+.vsc-cell.vsc-yes .vsc-mark { color: #16a34a; }
+.vsc-cell.vsc-partial .vsc-mark { color: #d97706; }
+.vsc-cell.vsc-no .vsc-mark { color: var(--text-2); opacity: .6; }
+
+/* Colour alone must not carry the yes/partial/no distinction — the icon shape
+   differs too, and this text is read out by screen readers. */
+.vsc-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.vsc-legend { margin-top: 12px; font-size: .78rem; color: var(--text-2); line-height: 1.6; }
+.vsc-legend span { display: inline-flex; vertical-align: -2px; }
+
+.vsc-toollinks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 24px 0 8px; }
+.vsc-toollink { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-decoration: none; color: var(--text); transition: border-color .15s, transform .15s; }
+.vsc-toollink:hover { border-color: var(--accent); transform: translateY(-1px); }
+.vsc-toollink-name { font-weight: 600; font-size: .88rem; }
+.vsc-toollink-tag { flex: 1; font-size: .75rem; color: var(--text-2); }
+
 /* ── Consent banner ────────────────────────────────────────────────────────
    Overrides on the .usage-upsell-banner base, same additive approach as
    .referral-banner above. Neutral accent rather than a warning colour: this

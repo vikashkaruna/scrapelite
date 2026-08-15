@@ -186,9 +186,82 @@
   status = 200
   force = true
 
+# ── Retired URLs (must come BEFORE the SPA catch-all) ────────────────────────
+# Mirrored in scripts/site-routes.mjs REDIRECTS; page-ownership.test.mjs asserts
+# the two lists match, so a URL cannot be retired in one place only.
+#
+# 301, not 302: these moves are permanent, and only a 301 transfers the ranking
+# signal of the old URL to the new one.
+
+# /vs/* normalised to directory form so all five comparisons share one shape.
+# public/vs/firecrawl.html and public/vs/firecrawl/index.html were BYTE-IDENTICAL
+# duplicates, both live, competing for the same query.
+[[redirects]]
+  from = "/vs/firecrawl.html"
+  to = "/vs/firecrawl"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/vs/apify.html"
+  to = "/vs/apify"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/vs/phantombuster.html"
+  to = "/vs/phantombuster"
+  status = 301
+  force = true
+
+# The comparison hub moved from a hand-maintained file to a React route, so it
+# can no longer drift from the real pricing and plan matrix.
+[[redirects]]
+  from = "/vs/compare.html"
+  to = "/vs/compare"
+  status = 301
+  force = true
+
+# /what-is-datiq merged into the consolidated FAQ.
+[[redirects]]
+  from = "/what-is-datiq"
+  to = "/faq"
+  status = 301
+  force = true
+
+# docs/build-help.mjs derives help filenames from the section TITLE, so
+# retitling guide section 14 from "FAQ & troubleshooting" to "Troubleshooting"
+# (its FAQ entries moved to /faq) renamed the generated page. The section
+# NUMBER is unchanged, so /help/15-* and /help/16-* are unaffected — only this
+# one URL moved.
+[[redirects]]
+  from = "/help/14-faq-and-troubleshooting.html"
+  to = "/help/14-troubleshooting.html"
+  status = 301
+  force = true
+
+# These two were React <Navigate> elements in App.jsx pointing at
+# /vs/browse-ai. That React route is gone (the page is static-owned now), so
+# without these a client-side navigation would land on NotFound.
+[[redirects]]
+  from = "/compare"
+  to = "/vs/browse-ai"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/compare/*"
+  to = "/vs/browse-ai"
+  status = 301
+  force = true
+
 # ── SPA fallback ──────────────────────────────────────────────────────────────
 # React Router: serve index.html for all routes so direct /preview and
 # /dashboard URLs work instead of returning a 404.
+#
+# No `force`, deliberately: real files in dist/ win over this rule, which is
+# what lets the prerendered HTML and the static-owned pages be served to
+# crawlers instead of an empty shell.
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -216,6 +289,65 @@
     Cache-Control = "no-store, no-cache, must-revalidate, private"
     X-Frame-Options = "DENY"
     Referrer-Policy = "no-referrer"
+
+# ── SEO: the signed-in application must never be indexed ─────────────────────
+# These routes are not content. Every one of them serves the SPA shell, which
+# carries index.html's canonical pointing at the homepage — so Google was being
+# told "/dashboard IS https://datiq.app/". That is the same defect that got
+# /privacy, /terms and /vs/battlecard dropped from the index as duplicates.
+#
+# This header is the REAL defence because it needs no JavaScript. The inline
+# guard in index.html covers the same prefix list for JS-executing crawlers,
+# and robots.txt asks politely; the list is kept in scripts/site-routes.mjs as
+# PRIVATE_PREFIXES and asserted against this file by page-ownership.test.mjs.
+[[headers]]
+  for = "/dashboard/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/dashboard"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/account/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/account"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/preview"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/batch"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/schedules"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/workspace"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/collections"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/payment/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/reset-password"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/onboarding"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║ Environment variables                                                    ║

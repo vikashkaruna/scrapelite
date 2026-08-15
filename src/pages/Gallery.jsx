@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import { getGallery, buildPublicUrl } from "../lib/shareService.js";
-import { setMeta } from "../lib/seoMeta.js";
+import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 function timeAgo(iso) {
   if (!iso) return "";
@@ -24,7 +24,7 @@ export default function Gallery() {
     setMeta({
       title: "Public extraction gallery — DatIQ",
       description: "Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.",
-      url: typeof window !== "undefined" ? window.location.href : "/gallery",
+      url: canonicalUrl("/gallery"),
     });
     // Refresh the gallery in case it was updated since mount.
     setItems(getGallery(100));

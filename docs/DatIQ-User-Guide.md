@@ -367,7 +367,14 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 ---
 
-## 14. FAQ & troubleshooting
+## 14. Troubleshooting
+
+> Looking for general questions — pricing, plans, sharing, keyboard shortcuts, what DatIQ can
+> extract? Those all live in one place now: **[the DatIQ FAQ](https://datiq.app/faq)**. This section
+> covers only what to do when something has gone wrong.
+>
+> The section number is kept as 14 deliberately, so the existing
+> `/help/14-faq-and-troubleshooting.html`, `/help/15-…` and `/help/16-…` URLs keep working.
 
 **My extraction came back thin or empty.**
 Some pages block automated access or load their content with heavy JavaScript. Try enabling JavaScript
@@ -385,34 +392,10 @@ this message, just refresh the page and try again.
 The results table shows the reason next to each failed URL. Common causes are unreachable sites,
 non-HTML pages, or sites that block automated requests. Other URLs in the batch still succeed.
 
-**Will scheduled runs email me?**
-Only if you add an alert email to the schedule. Automated runs that detect a change send the alert;
-the manual **Run now** button just shows you the result on screen.
-
-**How do I export to a spreadsheet?**
-Use **CSV** from any export menu, then open it in your spreadsheet tool.
-
-**Can I share an extraction with someone who doesn't have a DatIQ account?**
-Yes — every extraction has a **Share** button that creates a public link at
-`datiq.app/p/<short-code>`. The recipient sees a read-only report, no sign-in required. You can
-revoke the link at any time.
-
-**How do I get to a specific page fast?**
-Press <kbd>mod</kbd>+<kbd>k</kbd> (or <kbd>ctrl</kbd>+<kbd>k</kbd>) anywhere to open the command
-palette. Type a page name (Home, Dashboard, Pricing, Schedule, etc.) and press <kbd>Enter</kbd>.
-
-**What are those chips above the URL box?**
-Those are **outcome tiles** — pre-wired shortcuts for the six most common jobs (AI summary, lead
-list, pricing, competitor research, job board, custom). Click one to pre-fill the URL, intent, and
-prompt. Click several to combine prompts into one extraction.
-
-**What is the Workspace page?**
-When you sign in, the top nav gains a **Workspace** entry — a logged-in command center for your
-recent extractions, schedules, batch runs, and notifications.
-
-**What is the Gallery?**
-`/gallery` lists recent public extractions. Useful for browsing what others have shared and for
-discovering new use-cases.
+**Nothing here matches my problem.**
+Check [the FAQ](https://datiq.app/faq) for general questions about sharing, exports, scheduling
+alerts, keyboard shortcuts and what each screen does. If it is still not covered,
+[contact us](https://datiq.app/contact) and we will help.
 
 ---
 

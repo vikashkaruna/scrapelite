@@ -155,9 +155,18 @@ describe("BattleCard (FB1)", () => {
     expect(winners.length).toBeGreaterThan(0);
   });
 
-  it("has a footer link back to Home and to other comparison pages", () => {
+  // ⚠️ Asserting the href STRING is what let a real bug ship: /vs/firecrawl was
+  // a react-router <Link> to a path with no matching <Route>, so every in-app
+  // click landed on NotFound while a direct URL hit worked fine (a static file
+  // serves it). This test passed the whole time.
+  //
+  // The href assertions stay — they still catch a typo — but the check that
+  // actually matters now lives in src/__tests__/no-broken-links.test.js, which
+  // reads the SOURCE and fails when a <Link to> has no declared route.
+  it("has a footer link back to Home and to the comparison pages", () => {
     renderBattleCard();
     expect(screen.getByText(/Back to DatIQ/i).getAttribute("href")).toBe("/");
+    expect(screen.getByText(/Compare all tools/i).getAttribute("href")).toBe("/vs/compare");
     expect(screen.getByText(/DatIQ vs Browse.ai/i).getAttribute("href")).toBe("/vs/browse-ai");
     expect(screen.getByText(/DatIQ vs Firecrawl/i).getAttribute("href")).toBe("/vs/firecrawl");
   });

@@ -22,6 +22,26 @@ const META_NAMES = [
 const NOINDEX_NEUTRAL_TITLE = "DatIQ";
 const NOINDEX_NEUTRAL_DESC  = "Restricted area.";
 
+/**
+ * The production origin, hard-coded on purpose.
+ *
+ * Callers used to build canonical/og:url from `window.location.origin`. That is
+ * wrong in two environments that matter: under scripts/prerender.mjs the origin
+ * is http://localhost:4319, so the committed HTML would ship a localhost
+ * canonical to production; and on a branch deploy it would canonicalise to the
+ * preview host, inviting Google to index the preview instead of the real site.
+ *
+ * A canonical must name the ONE URL you want indexed, which is never the URL
+ * the code happens to be running on.
+ */
+export const SITE_ORIGIN = "https://datiq.app";
+
+/** Absolute production URL for a path, with any query string dropped. */
+export function canonicalUrl(pathname) {
+  const clean = String(pathname || "/").split(/[?#]/)[0];
+  return `${SITE_ORIGIN}${clean.startsWith("/") ? clean : `/${clean}`}`;
+}
+
 function setMetaTag(attr, key, content) {
   if (typeof document === "undefined") return;
   const sel = `meta[${attr}="${key}"]`;
@@ -59,6 +79,18 @@ export function setMeta({ title, description, url, image, type = "article" }) {
   if (title)        setMetaTag("property", "og:title", title);
   if (description)  setMetaTag("property", "og:description", description);
   if (url)          setMetaTag("property", "og:url", url);
+  // ⚠️ The canonical is the whole point, and it was missing here.
+  //
+  // This helper set og:url but never <link rel="canonical">, so every page
+  // using it — /changelog, /gallery, /vs/battlecard and all six programmatic
+  // pages — kept the one hard-coded in index.html, which points at the
+  // HOMEPAGE. Google was being told nine distinct pages were all duplicates
+  // of "/" and dropped them from the index accordingly. og:url is a social
+  // sharing hint; it carries no canonicalisation weight whatsoever.
+  //
+  // Caught by the canonical assertion in scripts/prerender.mjs, which fails
+  // the build rather than silently emitting a wrong one.
+  if (url)          setLinkRel("canonical", url);
   if (type)         setMetaTag("property", "og:type", type);
   if (image)        setMetaTag("property", "og:image", image);
   if (title || description) {
@@ -109,7 +141,8 @@ export function setNoIndex() {
   // Some crawlers also accept a rel="canonical" on a <link> element.
   const linkCanon = document.head.querySelector('link[rel="canonical"]');
   if (linkCanon) linkCanon.remove();
-  void setLinkRel; // silence unused-import lint; kept for future use
+  // (setLinkRel is now used by setMeta for the canonical — the old
+  // unused-symbol suppression that lived here is gone.)
 }
 
 /**

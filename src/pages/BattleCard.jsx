@@ -19,7 +19,7 @@ import { Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { extractStructure } from "../lib/firecrawlService.js";
-import { setMeta } from "../lib/seoMeta.js";
+import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
@@ -117,7 +117,7 @@ export default function BattleCard() {
       title: "Battle-card generator — DatIQ",
       description:
         "Paste 2 competitor URLs and DatIQ builds a side-by-side battle card automatically. Title, headings, pricing signals, links, and AI summary — compared.",
-      url: typeof window !== "undefined" ? `${window.location.origin}/vs/battlecard` : "/vs/battlecard",
+      url: canonicalUrl("/vs/battlecard"),
     });
   }, []);
 
@@ -266,9 +266,15 @@ export default function BattleCard() {
           <p>
             <Link to="/">← Back to DatIQ</Link>
             <span> · </span>
-            <Link to="/vs/browse-ai">DatIQ vs Browse.ai</Link>
+            <Link to="/vs/compare">Compare all tools</Link>
             <span> · </span>
-            <Link to="/vs/firecrawl">DatIQ vs Firecrawl</Link>
+            {/* Plain <a>, not <Link>. These are static-owned pages with no
+                React route: /vs/firecrawl shipped as a <Link> and dead-ended
+                on NotFound for every in-app click, while a direct URL hit
+                worked — which is why nobody caught it. */}
+            <a href="/vs/browse-ai">DatIQ vs Browse.ai</a>
+            <span> · </span>
+            <a href="/vs/firecrawl">DatIQ vs Firecrawl</a>
           </p>
         </footer>
       </div>

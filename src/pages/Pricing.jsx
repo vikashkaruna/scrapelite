@@ -17,6 +17,8 @@ import Button from "../components/Button.jsx";
 import TopupBundleModal from "../components/TopupBundleModal.jsx";
 import OffersBanner from "../components/OffersBanner.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 function CurrencyPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -288,6 +290,10 @@ function TopupCard({ bundle, currency, onBuy, loading }) {
 }
 
 export default function Pricing() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/pricing/index.html this page now owns.
+  useSeo(seoFor("/pricing"));
+
   const navigate  = useNavigate();
   const showToast = useToast();
   const {

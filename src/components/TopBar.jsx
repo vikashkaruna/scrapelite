@@ -26,25 +26,30 @@ function Brand({ onClick }) {
 // ── Explore dropdown items ────────────────────────────────────────
 // Flat list (no group separators). Entries with a `group` key render a
 // labelled block ("Resources"); all other entries are standalone items.
+// `external: true` renders a plain <a href> — a full page load. That is not a
+// style choice: those destinations are STATIC-OWNED pages with no React route
+// (see scripts/site-routes.mjs), so a react-router <Link> would fall through to
+// NotFound. Everything without the flag is a React route and navigates in-app.
 const EXPLORE_ITEMS = [
-  { label: "Plans & Pricing", icon: "tag",    path: "/pricing" },
-  { label: "Use Cases",       icon: "target", path: "/use-cases", external: true },
+  { label: "Plans & Pricing", icon: "tag", path: "/pricing" },
+  { label: "Integrations",    icon: "zap", path: "/integrations" },
   {
     group: "Resources",
     items: [
-      { label: "Integrations",  icon: "zap",         path: "/integrations" },
-      { label: "Compare Tools", icon: "bar-chart",   path: "/vs/compare.html", external: true },
-      { label: "Public Gallery", icon: "library",   path: "/gallery" },
-      { label: "Blog",          icon: "book-open",   path: "/blog" },
-      { label: "Changelog",     icon: "history",     path: "/changelog" },
-      { label: "Help Center",   icon: "help-circle", path: "/help/index.html", external: true },
+      { label: "Use Cases",      icon: "target",      path: "/use-cases" },
+      { label: "Compare Tools",  icon: "bar-chart",   path: "/vs/compare" },
+      { label: "Public Gallery", icon: "library",     path: "/gallery" },
+      { label: "Blog",           icon: "book-open",   path: "/blog" },
+      { label: "Changelog",      icon: "history",     path: "/changelog" },
+      { label: "Help Center",    icon: "help-circle", path: "/help/index.html", external: true },
+      { label: "FAQ",            icon: "help-circle", path: "/faq",             external: true },
     ],
   },
   { label: "Contact Us",  icon: "mail", path: "/contact" },
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (

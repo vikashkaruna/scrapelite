@@ -13,7 +13,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { getRouteBySlug } from "../lib/programmaticRoutes.js";
-import { setMeta } from "../lib/seoMeta.js";
+import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 export default function ProgrammaticRoute() {
   const location = useLocation();
@@ -28,7 +28,7 @@ export default function ProgrammaticRoute() {
     setMeta({
       title: `${route.h1} — DatIQ`,
       description: route.description,
-      url: typeof window !== "undefined" ? `${window.location.origin}/${fullSlug}` : `/${fullSlug}`,
+      url: canonicalUrl(`/${fullSlug}`),
     });
   }, [route, fullSlug]);
 

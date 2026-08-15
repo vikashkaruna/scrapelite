@@ -3,6 +3,8 @@ import { useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { captureEmail } from "../lib/emailCaptureService.js";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 const FEATURED_POST = {
   slug: "introducing-datiq",
@@ -524,6 +526,10 @@ function PostModal({ post, onClose }) {
 }
 
 export default function Blog() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/blog/index.html this page now owns.
+  useSeo(seoFor("/blog"));
+
   const [email, setEmail] = useState("");
   const [subStatus, setSubStatus] = useState("idle");
   const [selectedPost, setSelectedPost] = useState(null);

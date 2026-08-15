@@ -2,6 +2,8 @@
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 const USE_CASES = [
   {
@@ -39,6 +41,10 @@ const USE_CASES = [
 ];
 
 export default function UseCases() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/use-cases/index.html this page now owns.
+  useSeo(seoFor("/use-cases"));
+
   const navigate = useNavigate();
 
   return (
