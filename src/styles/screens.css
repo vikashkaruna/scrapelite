@@ -7398,6 +7398,38 @@
 .referral-share-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); cursor: pointer; transition: color .15s; }
 .referral-share-btn:hover { color: var(--accent); border-color: var(--accent); }
 
+/* ── Consent banner ────────────────────────────────────────────────────────
+   Overrides on the .usage-upsell-banner base, same additive approach as
+   .referral-banner above. Neutral accent rather than a warning colour: this
+   is a question, not an alert, and colouring it like a problem pushes people
+   to click the nearest button to make it go away.
+
+   There is deliberately no `.uub-dismiss` rule here — the component renders
+   no dismiss control, because consent obtained by ignoring a dialog is not
+   consent. See ConsentBanner.jsx. */
+.consent-banner-wrap { border-top: 1px solid var(--border); }
+.consent-banner { background: color-mix(in srgb, var(--accent) 5%, var(--surface-2)); border-left: 3px solid var(--accent); }
+.consent-banner .uub-desc a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.consent-decline-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 16px; background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: .86rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+.consent-decline-btn:hover { border-color: var(--text-2); color: var(--text); }
+
+/* Below ~640px the two actions no longer fit beside the copy. Let the banner
+   wrap and give the buttons a full row rather than shrinking the decline
+   option into something harder to hit than "Allow" — an asymmetry that would
+   quietly bias the choice. */
+@media (max-width: 640px) {
+  .consent-banner { flex-wrap: wrap; }
+  .consent-banner .uub-content { flex: 1 1 100%; }
+  .consent-banner .uub-upgrade-btn,
+  .consent-banner .consent-decline-btn { flex: 1 1 0; }
+}
+
 /* ── FB1: Battle-card generator ────────────────────────────────────── */
 .bc-page      { background: var(--bg); }
 .bc-container { max-width: 980px; }

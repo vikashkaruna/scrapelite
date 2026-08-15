@@ -15,6 +15,7 @@
 
 import { supabase } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
+import { apiClient } from "./apiClient.js";
 
 export const ANALYTICS_TABLE = "analytics_events";
 const LS_KEY = "datiq.analytics";
@@ -100,7 +101,7 @@ export async function flush() {
   if (_pending.length === 0) {
     // Even with an empty buffer, opportunistically merge LS buffer in.
     const lsBuf = lsRead();
-    if (lsBuf.length > 0 && supabase) {
+    if (lsBuf.length > 0 && isIngestAvailable()) {
       _pending = lsBuf.concat(_pending);
     } else {
       return 0;
@@ -109,7 +110,7 @@ export async function flush() {
   const events = _pending.slice();
   _pending = [];
 
-  if (!supabase) {
+  if (!isIngestAvailable()) {
     // localStorage fallback
     const existing = lsRead();
     lsWrite(existing.concat(events));
@@ -119,12 +120,13 @@ export async function flush() {
     const rows = events.map((e) => ({
       name: e.name,
       properties: e.properties,
+      // user_id is sent for shape compatibility only — the server IGNORES it
+      // and resolves the real user from the JWT. See netlify/functions/analytics.js.
       user_id: e.user_id,
       session_id: e.session_id,
       ts: e.ts,
     }));
-    const { error } = await supabase.from(ANALYTICS_TABLE).insert(rows);
-    if (error) throw error;
+    await apiClient.recordAnalytics({ events: rows });
     return events.length;
   } catch (err) {
     // Persist to localStorage so we don't lose the events.
@@ -133,6 +135,52 @@ export async function flush() {
     if (typeof console !== "undefined") console.warn("[DatIQ analytics] flush failed:", err);
     return 0;
   }
+}
+
+// Events used to go straight from the browser into Supabase with the anon key.
+// That required an `insert with check (true)` RLS policy, and 0005 paired it
+// with `select using (true)` — so the whole event log was readable by anyone
+// holding the published anon key. 0024_analytics_rls.sql drops both policies
+// and POST /api/analytics (service key) is now the only write path.
+//
+// The gate is still `supabase` being configured, because that is the same
+// signal the endpoint itself checks: with no Supabase there is nowhere for the
+// events to land, and buffering to localStorage is the correct behaviour.
+function isIngestAvailable() {
+  return !!supabase;
+}
+
+// ── Flush on the way out ──────────────────────────────────────────────────
+// The 5-minute timer alone loses every event from a visitor who leaves sooner,
+// which is most of them: the buffer is in memory, so it goes with the tab.
+// `visibilitychange` is the reliable signal (Safari and mobile browsers may
+// never fire `pagehide`/`beforeunload`), and sendBeacon is the only transport
+// guaranteed to survive the teardown.
+function flushBeacon() {
+  try {
+    if (_pending.length === 0) return;
+    const events = _pending.slice();
+    _pending = [];
+
+    if (!isIngestAvailable() || typeof navigator === "undefined" || !navigator.sendBeacon) {
+      lsWrite(lsRead().concat(events));
+      return;
+    }
+    const blob = new Blob([JSON.stringify({ events })], { type: "application/json" });
+    const sent = navigator.sendBeacon("/api/analytics", blob);
+    // sendBeacon cannot carry the Authorization header, so these land as
+    // anonymous rows. That is an acceptable trade for not losing them —
+    // session_id still ties the events together for funnel purposes.
+    if (!sent) lsWrite(lsRead().concat(events));
+  } catch {
+    /* never throw during teardown */
+  }
+}
+
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushBeacon();
+  });
 }
 
 // ── Funnel queries ────────────────────────────────────────────────────────────

@@ -65,6 +65,8 @@ import SuspendedBanner from "./components/SuspendedBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
 import ReferralBanner from "./components/ReferralBanner.jsx";
+import ConsentBanner from "./components/ConsentBanner.jsx";
+import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 
 
@@ -89,6 +91,11 @@ function Shell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // GA4 + in-house page views on every route change. Called here, above the
+  // /admin early return below, because hooks must run unconditionally — the
+  // hook itself skips /admin paths rather than relying on not being called.
+  usePageView();
 
   // FA2 — referral ?ref=CODE handler. Redeem the code on first paint, then
   // strip the param from the URL so the user can't accidentally share it
@@ -193,6 +200,11 @@ function Shell() {
       <ReferralBanner />
       <SuspendedBanner />
       <UsageUpsellBanner />
+      {/* Last in the banner stack: the other four are contextual and usually
+          absent, so this sits closest to the content when it is the only one
+          showing. Not rendered on /admin — Shell returns a separate admin
+          <Routes> above this point. */}
+      <ConsentBanner />
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />

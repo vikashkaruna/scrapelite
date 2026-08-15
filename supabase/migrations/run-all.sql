@@ -32,10 +32,12 @@
 --   0016  PR2 (invoice drafts, invoices, gapless FY numbering).
 --   0017  PR3 (dunning log + admin audit trail).
 --   0018  0018_ops_monitoring.sql — operational monitoring for automation + services.
---   0019  0019_api_keys.sql (F-INT-1 — public REST API).
---   0020  0020_integration_connections.sql (HubSpot/Notion/Airtable/Slack/Zapier tokens).
---   0021  0021_zapier_events.sql (Zapier event log for polling).
---   0022  0022_workflow_events.sql — v2 n8n workflow event log + runs + subscriptions.
+--   0019  0019_api_keys.sql
+--   0020  0020_integration_connections.sql
+--   0021  0021_zapier_events.sql
+--   0022  v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
+--   0023  0023_consent.sql
+--   0024  0024_analytics_rls.sql
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -1879,10 +1881,10 @@ do $$ begin
   end if;
 end $$;
 
+
+-- ============================================================
 -- 0022_workflow_events.sql
 -- ============================================================
--- 0022_workflow_events.sql — v2 n8n workflow event log + runs + subscriptions
--- (renumbered from 0018 to 0022 to avoid collision with 0018_ops_monitoring).
 -- scripts/workflow-events.sql — v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
 -- Run in: Supabase Dashboard → SQL Editor. Safe to re-run (every statement is
 -- IF NOT EXISTS or guarded).
@@ -2038,6 +2040,194 @@ create trigger workflow_subscriptions_set_updated_at
 --   select count(*) from public.workflow_runs;
 --   select count(*) from public.workflow_subscriptions;
 --   \d public.workflow_events                        -- expect 15 columns + 5 indexes
+
+
+-- ============================================================
+-- 0023_consent.sql
+-- ============================================================
+-- 0023_consent.sql
+-- Analytics-consent records and their audit trail.
+--
+-- Why this exists at all: a consent choice kept only in localStorage cannot
+-- answer the two questions that matter when someone asks. "When did I agree,
+-- and to what?" needs a durable, timestamped, policy-versioned record. "Delete
+-- my analytics data" needs a key to delete BY. A browser key provides neither
+-- the moment it is cleared.
+--
+-- ── Subject keying ───────────────────────────────────────────────────────
+-- Most consent is given BEFORE signup — a visitor lands from search, answers
+-- the banner, and only creates an account later, if ever. So the subject is
+-- keyed on the anonymous session id (usageRepo.getSessionId), and user_id is
+-- back-filled when that session later signs in. Keying on user_id alone would
+-- mean no record for the majority of visitors, which is exactly the population
+-- a regulator asks about.
+--
+-- ── Two tables, on purpose ───────────────────────────────────────────────
+--   consent_records — current state. One row per subject, upserted.
+--   consent_audit   — append-only history. Every change, forever.
+-- A single mutable table cannot show that consent was granted in March and
+-- withdrawn in August; an audit trail whose rows can be updated is not an
+-- audit trail. Same reasoning as ops_audit_log in 0018.
+--
+-- ── Privacy of the consent record itself ─────────────────────────────────
+-- No raw IP is stored. A coarse country (from Netlify's own geo context) is
+-- enough to reason about which regime applies, and collecting a full IP to
+-- prove someone consented to analytics would be self-defeating.
+--
+-- RLS is enabled with NO anon policy, deliberately: these rows are written and
+-- read only by the service key via /api/consent. Same posture as
+-- pricing_config — a client that could write here could forge consent.
+
+create table if not exists public.consent_records (
+  id             uuid primary key default gen_random_uuid(),
+  -- 'session:<id>' before sign-in, so the natural key is stable and unique
+  -- whether or not a user_id is ever attached.
+  subject_key    text not null unique,
+  session_id     text not null,
+  user_id        uuid references auth.users(id) on delete cascade,
+  analytics      text not null check (analytics in ('granted','denied')),
+  policy_version text not null,
+  -- GA4's User Deletion API keys on client_id. Capturing it at consent time is
+  -- what makes a later Google-side erasure request possible at all; without it
+  -- we could delete our own rows and nothing else.
+  ga_client_id   text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create index if not exists consent_records_session_idx
+  on public.consent_records (session_id);
+create index if not exists consent_records_user_idx
+  on public.consent_records (user_id)
+  where user_id is not null;
+
+create table if not exists public.consent_audit (
+  id             uuid primary key default gen_random_uuid(),
+  subject_key    text not null,
+  session_id     text,
+  -- Plain uuid, NO foreign key — two reasons, both load-bearing:
+  --   1. `on delete set null` would UPDATE this row when a user is deleted,
+  --      which the append-only trigger below rejects, making account deletion
+  --      fail outright.
+  --   2. An audit row records that consent happened. It should survive the
+  --      subject's deletion, not be silently rewritten by it.
+  -- consent_records keeps the real FK (on delete cascade), so the *current
+  -- state* still disappears with the account.
+  user_id        uuid,
+  analytics      text not null check (analytics in ('granted','denied')),
+  policy_version text not null,
+  source         text not null check (source in ('banner','privacy_page','withdrawal','link')),
+  user_agent     text,
+  -- Coarse ISO country only. NEVER an IP address — see the header note.
+  country        text,
+  ts             timestamptz not null default now()
+);
+
+create index if not exists consent_audit_subject_time_idx
+  on public.consent_audit (subject_key, ts desc);
+
+alter table public.consent_records enable row level security;
+alter table public.consent_audit   enable row level security;
+
+-- Service-role only. There is intentionally no anon or authenticated policy:
+-- every read and write goes through netlify/functions/consent.js, which
+-- resolves user_id from the JWT rather than trusting the request body.
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'consent_records' and policyname = 'service full access'
+  ) then
+    execute 'create policy "service full access" on public.consent_records
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where tablename = 'consent_audit' and policyname = 'service full access'
+  ) then
+    execute 'create policy "service full access" on public.consent_audit
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+-- consent_audit is append-only at the database level, not merely by convention.
+-- A trigger is the only thing that makes "append-only" survive a future
+-- handler bug or an operator with the service key doing a well-meant cleanup.
+create or replace function public.consent_audit_immutable()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'consent_audit is append-only: % is not permitted', tg_op;
+end $$;
+
+drop trigger if exists consent_audit_no_change on public.consent_audit;
+create trigger consent_audit_no_change
+  before update or delete on public.consent_audit
+  for each row execute function public.consent_audit_immutable();
+
+
+-- ============================================================
+-- 0024_analytics_rls.sql
+-- ============================================================
+-- 0024_analytics_rls.sql
+-- Close the world-readable analytics event log.
+--
+-- ── What was wrong ───────────────────────────────────────────────────────
+-- 0005_analytics.sql shipped these two policies:
+--
+--   create policy "anon read access"   on public.analytics_events
+--     for select using (true);
+--   create policy "anon insert access" on public.analytics_events
+--     for insert with check (true);
+--
+-- justified in its own header as "the data we record is non-PII (no email, no
+-- user content)". That was not accurate: every row carries session_id, a
+-- nullable user_id, and a free-form jsonb `properties` blob that call sites
+-- fill with whatever they like. `for select using (true)` means ANY holder of
+-- the anon key — which is published in the browser bundle by design — could
+-- read the entire behavioural history of every visitor and every signed-in
+-- user. That is a data exposure, not a schema detail.
+--
+-- It also made the consent work undeliverable. 0023 adds a "withdraw and
+-- erase" promise; a table anyone can read is a table from which nothing can
+-- meaningfully be erased.
+--
+-- ── What changes ─────────────────────────────────────────────────────────
+-- Both anon policies are dropped. Writes move to netlify/functions/analytics.js
+-- which uses the service key (service_role bypasses RLS), reached from the
+-- browser via POST /api/analytics. Reads have no caller today — computeFunnel()
+-- in analyticsService.js is exercised only by its own tests — so nothing breaks.
+-- Any future admin analytics screen must read through a verifyAdminToken()-gated
+-- function, the same rule that already governs admin-revenue.js.
+--
+-- Deliberately NOT done here: adding a permissive authenticated-insert policy
+-- as a "safety net". A net that lets the browser write directly is the hole
+-- this migration exists to close.
+
+drop policy if exists "anon read access"   on public.analytics_events;
+drop policy if exists "anon insert access" on public.analytics_events;
+
+alter table public.analytics_events enable row level security;
+
+-- Explicit service-role grant. service_role already bypasses RLS, so this is
+-- documentation-as-code: it states who the intended writer is, and makes the
+-- absence of any other policy obviously deliberate rather than an oversight
+-- that a future migration might "fix" by re-opening the table.
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+     where tablename = 'analytics_events' and policyname = 'service full access'
+  ) then
+    execute 'create policy "service full access" on public.analytics_events
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+-- Consent withdrawal (POST /api/consent/withdraw) deletes by session_id and by
+-- user_id. The session index already exists from 0005; this makes the user_id
+-- path a lookup rather than a sequential scan over the whole log.
+create index if not exists analytics_events_user_not_null_idx
+  on public.analytics_events (user_id)
+  where user_id is not null;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

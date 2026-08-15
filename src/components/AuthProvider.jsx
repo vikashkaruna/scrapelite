@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { getSession, onAuthStateChange } from "../lib/authService.js";
 import { setAuthToken } from "../lib/apiClient.js";
 import { applyTrialCredit } from "../lib/usageService.js";
+import { linkConsentToUser } from "../lib/consentService.js";
 import { claimBillingSession } from "../lib/billingRepo.js";
 import { clearEntitlementCache } from "../lib/entitlementClient.js";
 
@@ -136,6 +137,14 @@ export function AuthProvider({ children }) {
         // FR-Z-02 (Q2 2026-07-15): grant the once-only trial credit on signup
         // (25 extractions for the Free plan). Idempotent — re-runs are no-ops.
         try { applyTrialCredit("free"); } catch { /* localStorage unavailable */ }
+        // Attach this now-known user to the consent record their anonymous
+        // session already wrote. Most consent is given before signup, so
+        // without this back-fill the majority of records would never be
+        // traceable to a person — which is the population an access or
+        // erasure request actually concerns. Does NOT change the choice.
+        try {
+          linkConsentToUser().catch(() => { /* best-effort */ });
+        } catch { /* best-effort */ }
         // Claim this browser's billing session for the signed-in user, so a
         // purchase made before signing in (or in a previous session) is bound
         // to the account rather than to localStorage. Idempotent, and refuses
