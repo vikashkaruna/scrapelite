@@ -7569,6 +7569,17 @@
   .consent-banner .consent-decline-btn { flex: 1 1 0; }
 }
 
+/* Reserve room at the bottom of the document, only while the fixed banner
+   above is actually showing (see ConsentBanner.jsx's body-class toggle), so
+   scrolling to the very bottom of the page never leaves the footer's
+   Privacy/Terms/Cookie-preferences links sitting underneath it. Sized per
+   breakpoint to roughly match the banner's own height, which grows once its
+   content wraps to multiple rows below 640px. */
+body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
+@media (max-width: 640px) {
+  body.has-consent-banner .site-footer-slim { padding-bottom: 190px; }
+}
+
 /* ── FB1: Battle-card generator ────────────────────────────────────── */
 .bc-page      { background: var(--bg); }
 .bc-container { max-width: 980px; }

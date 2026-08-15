@@ -55,7 +55,22 @@ export default function ConsentBanner() {
     return () => clearTimeout(timerRef.current);
   }, [chosen]);
 
-  if (chosen || autoHidden) return null;
+  // Being `position: fixed` at the viewport bottom means this banner sits
+  // directly over the footer's own Privacy/Terms/Cookie-preferences links
+  // whenever the page is scrolled all the way down — a real click-blocking
+  // bug, not just a layout nit (it's what made the footer e2e spec time out
+  // trying to click "Terms"). Toggling this class lets Footer.jsx reserve
+  // matching bottom space only while the banner is actually visible, instead
+  // of always padding the page (which would waste space for returning
+  // visitors who already chose) or reflowing content the moment the app
+  // boots (the whole reason this banner is `fixed` rather than in-flow).
+  const visible = !chosen && !autoHidden;
+  useEffect(() => {
+    document.body.classList.toggle("has-consent-banner", visible);
+    return () => document.body.classList.remove("has-consent-banner");
+  }, [visible]);
+
+  if (!visible) return null;
 
   const choose = (choice) => {
     clearTimeout(timerRef.current);
