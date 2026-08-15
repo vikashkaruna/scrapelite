@@ -82,7 +82,12 @@ export const REACT_OWNED = [
  */
 export const STATIC_OWNED = [
   { path: "/faq",               file: "faq/index.html",               priority: "0.8", changefreq: "monthly" },
-  { path: "/dmca",              file: "dmca.html",                    priority: "0.3", changefreq: "yearly" },
+  // `redirectOnly`: App.jsx keeps a /dmca route, but it renders nothing — it
+  // just sets window.location to the static file. That is a safety net for a
+  // client-side navigation, NOT a second document competing for the URL, so it
+  // does not count as double ownership. Any route flagged this way must render
+  // null and do nothing but redirect; page-ownership.test.mjs enforces that.
+  { path: "/dmca",              file: "dmca.html",                    priority: "0.3", changefreq: "yearly", redirectOnly: true },
 
   // The five per-tool comparisons, all in directory form so they share one
   // shape. Each is linked from the /vs/compare table.

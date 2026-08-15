@@ -6,6 +6,72 @@ import { configDefaults } from "vitest/config";
 export default defineConfig({
   plugins: [
     react(),
+    // ── Make the dev server route like Netlify does ───────────────────────
+    //
+    // Netlify serves a real file in the publish directory BEFORE applying the
+    // `/* → /index.html` SPA fallback, and applies the 301s in netlify.toml.
+    // Vite's dev server does neither: it hands every unmatched path the SPA
+    // shell. So the static-owned pages (/vs/browse-ai, /faq, the /vs detail
+    // pages) rendered as the React app locally while serving real HTML in
+    // production, and the retired URLs silently 200'd instead of redirecting.
+    //
+    // That divergence is not cosmetic — it is the same class of problem this
+    // whole change set exists to remove, and it made five e2e smoke specs fail
+    // locally for reasons that had nothing to do with the code under test.
+    //
+    // `apply: "serve"` keeps it out of the build and out of Vitest, matching
+    // the plugin below.
+    {
+      name: "datiq-netlify-like-routing",
+      apply: "serve",
+      async configureServer(server) {
+        const { readFileSync, existsSync, statSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const { REDIRECTS, prerenderableRoutes } = await import("./scripts/site-routes.mjs");
+        const PUBLIC = join(process.cwd(), "public");
+
+        // Longest `from` first so /compare/* cannot shadow a more specific rule.
+        const rules = [...REDIRECTS].sort((a, b) => b.from.length - a.from.length);
+
+        // ⚠️ The same trap serveDist() guards in scripts/prerender.mjs, in a
+        // second place. React-owned routes ALSO have a file at
+        // public/<route>/index.html — their prerendered output — but that file
+        // references hashed PRODUCTION asset URLs which do not exist in dev. So
+        // serving it here paints static markup, React never boots, and every
+        // interaction silently does nothing. These routes must get the SPA
+        // shell in dev; only static-owned pages are served as files.
+        const prerendered = new Set(prerenderableRoutes().map((r) => r.path));
+
+        server.middlewares.use((req, res, next) => {
+          const url = (req.url || "/").split("?")[0];
+
+          for (const r of rules) {
+            const isWildcard = r.from.endsWith("/*");
+            const base = isWildcard ? r.from.slice(0, -2) : r.from;
+            if (isWildcard ? url === base || url.startsWith(`${base}/`) : url === base) {
+              res.statusCode = 301;
+              res.setHeader("Location", r.to);
+              res.end();
+              return;
+            }
+          }
+
+          // Directory index: /vs/browse-ai → public/vs/browse-ai/index.html.
+          // Vite's static handler does not do this for extensionless paths.
+          const bare = url.replace(/\/$/, "") || "/";
+          if (url !== "/" && !url.includes(".") && !prerendered.has(bare)) {
+            const candidate = join(PUBLIC, url.replace(/^\/+/, ""), "index.html");
+            if (existsSync(candidate) && statSync(candidate).isFile()) {
+              res.setHeader("Content-Type", "text/html; charset=utf-8");
+              res.end(readFileSync(candidate));
+              return;
+            }
+          }
+
+          next();
+        });
+      },
+    },
     // The Vite proxy middleware logs ECONNREFUSED stack traces to
     // Vite's logger for every request when the proxy target
     // (Netlify Functions dev server on :9999) is unreachable — exactly

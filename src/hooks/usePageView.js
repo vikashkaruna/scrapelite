@@ -42,17 +42,42 @@ export function usePageView() {
   useEffect(() => {
     const path = `${location.pathname}${location.search || ""}`;
     if (path === lastPath.current) return;
-    lastPath.current = path;
+
+    // ⚠️ lastPath is marked inside send(), NOT here.
+    //
+    // Marking it at SCHEDULE time loses the event entirely under React
+    // StrictMode, which double-invokes effects as mount → cleanup → mount:
+    // the first pass marks the path and queues the frame, the cleanup cancels
+    // that frame, and the remount then sees path === lastPath and returns
+    // early. Net result: no page_view is ever sent. Production has no
+    // StrictMode so this "worked", but any effect re-run inside a single frame
+    // reproduces it.
+    //
+    // Recording the send when it actually happens makes a cancelled schedule
+    // harmless — the next run simply schedules again.
 
     if (isPrivatePath(location.pathname)) return;
 
-    // One frame's delay so the route's useSeo has written document.title.
-    const raf =
-      typeof requestAnimationFrame === "function"
-        ? requestAnimationFrame(send)
-        : setTimeout(send, 0);
+    // A macrotask, NOT requestAnimationFrame.
+    //
+    // rAF is throttled to zero in any backgrounded tab, so a page opened via
+    // middle-click or "open in new tab" would never record a view until the
+    // user focused it. Verified: in a headless browser the callback never runs
+    // at all, and no page_view was ever sent.
+    //
+    // The delay is only there so document.title is settled. React flushes CHILD
+    // effects before parent ones — the route's useSeo runs before Shell's
+    // usePageView — so the title is already correct by now; this tick is
+    // belt-and-braces for a route that sets its title asynchronously.
+    const timer = setTimeout(send, 0);
 
     function send() {
+      // Claim it here, at the moment the event goes out — see the note above.
+      // Also guards the double-fire case: if two frames somehow both run, the
+      // second sees the path already claimed.
+      if (path === lastPath.current) return;
+      lastPath.current = path;
+
       const title = typeof document !== "undefined" ? document.title : "";
       const href = typeof window !== "undefined" ? window.location.href : path;
 
@@ -73,13 +98,7 @@ export function usePageView() {
       }
     }
 
-    return () => {
-      if (typeof cancelAnimationFrame === "function" && typeof raf === "number") {
-        cancelAnimationFrame(raf);
-      } else {
-        clearTimeout(raf);
-      }
-    };
+    return () => clearTimeout(timer);
   }, [location.pathname, location.search]);
 }
 

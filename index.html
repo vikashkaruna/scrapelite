@@ -1,14 +1,20 @@
 <!DOCTYPE html>
-<!-- data-datiq-app marks this document as the React shell. public/analytics.js
-     reads it in <head>, BEFORE <body> exists, to decide whether gtag should
-     send its own page_view (static page: yes) or leave that to usePageView.js
-     after the router has set the title (SPA: no). A #root lookup cannot answer
-     that question this early. Prerendered pages inherit the attribute and do
-     boot React, so they correctly count as SPA; the hand-written static pages
-     under public/ never carry it. -->
 <html lang="en" data-datiq-app="spa">
   <head>
     <meta charset="UTF-8" />
+    <!-- ⚠️ Nothing may go between <!DOCTYPE> and <html>. Vite's dev server
+         injects the @vitejs/plugin-react refresh preamble at exactly that
+         position, so a comment there SWALLOWS the preamble and the dev server
+         dies with "can't detect preamble". Production builds are unaffected,
+         which is what makes it easy to ship. Keep commentary inside <head>.
+
+         data-datiq-app on <html> above marks this document as the React shell.
+         public/analytics.js reads it in <head>, BEFORE <body> exists, to decide
+         whether gtag should send its own page_view (static page: yes) or leave
+         that to usePageView.js after the router has set the title (SPA: no). A
+         #root lookup cannot answer that question this early. Prerendered pages
+         inherit the attribute and do boot React, so they correctly count as
+         SPA; the hand-written static pages under public/ never carry it. -->
 
     <!-- Runtime endpoint overrides (read at load, not baked in at build). Must
          run before the app module so config.js can read window.__DATIQ_RUNTIME__.
@@ -47,7 +53,7 @@
          per-page canonical baked in and re-set by useSeo on mount; a blanket
          rule would delete that canonical at head-parse time on every real
          page load, leaving a window where a JS-executing crawler sees none. -->
-    <script>
+    <script data-datiq-private-guard>
       (function () {
         try {
           if (typeof window === "undefined" || !window.location) return;

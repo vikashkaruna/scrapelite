@@ -5,7 +5,14 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import BattleCard from "./BattleCard.jsx";
 
-vi.mock("../lib/seoMeta.js", () => ({ setMeta: vi.fn() }));
+vi.mock("../lib/seoMeta.js", () => ({
+  setMeta: vi.fn(),
+  // Real implementation, not a stub: these tests assert the canonical
+  // URL that gets set, and a mocked-away canonicalUrl would let a
+  // localhost or query-string canonical pass unnoticed — which is the
+  // exact bug it was introduced to prevent.
+  canonicalUrl: (p) => `https://datiq.app${String(p || "/").split(/[?#]/)[0]}`,
+}));
 
 const extractStructureMock = vi.fn();
 

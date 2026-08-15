@@ -1,81 +1,149 @@
 # DatIQ robots.txt
 #
-# /admin* is the operator console. It is PIN-gated, never linked from any
-# public page, never listed in the sitemap, never surfaced in structured
-# data. The Disallow lines below block it for every known crawler — the
-# public-facing allow list is the source of truth for what gets indexed.
-# Belt-and-braces: the /admin* route also serves X-Robots-Tag: noindex and
-# a <meta name="robots" content="noindex,..."> tag so a crawler that
-# ignores this file still won't index the page.
+# ── Structure ────────────────────────────────────────────────────────────
+# ONE wildcard group, then per-bot groups, then the sitemap.
+#
+# This file previously had TWO `User-agent: *` groups — one near the top with
+# the /api/ and /admin disallows, and a second at the bottom repeating only the
+# /admin ones. Google merges same-named groups, so it behaved; but the REP spec
+# says a crawler picks the single most specific matching group, and a stricter
+# implementation would have taken only the LAST one and lost the /api/ disallow
+# entirely. There is now exactly one.
+#
+# A blanket `Allow: /` also makes per-path Allow lines redundant, so the long
+# list of individually allowed marketing paths has gone. What is NOT allowed is
+# what matters, and that is now the only thing enumerated.
+#
+# ── What is blocked and why ──────────────────────────────────────────────
+# /api/     — JSON endpoints. Nothing to index, and crawling them wastes budget.
+# /admin*   — the operator console. PIN-gated, never linked, never in the
+#             sitemap. Belt-and-braces: netlify.toml also sends
+#             X-Robots-Tag: noindex for it, and index.html rewrites the robots
+#             meta client-side, so a crawler ignoring this file still complies.
+# the app   — /dashboard, /account, /preview and the rest are the signed-in
+#             product, not content. They render the SPA shell, so to a crawler
+#             they are near-identical pages with nothing unique on them. Every
+#             one also carries X-Robots-Tag: noindex from netlify.toml, which
+#             is the real enforcement; these lines just save the crawl.
+#
+# The private list is kept in scripts/site-routes.mjs as PRIVATE_PREFIXES and
+# asserted against this file by scripts/page-ownership.test.mjs.
 
 User-agent: *
 Allow: /
-Allow: /about
-Allow: /blog
-Allow: /pricing
-Allow: /use-cases/
-Allow: /vs/
-Allow: /privacy
-Allow: /terms
-Allow: /help/
-Allow: /gallery
-Allow: /changelog
-Allow: /integrations
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+Disallow: /batch
+Disallow: /schedules
+Disallow: /workspace
+Disallow: /collections
+Disallow: /payment
+Disallow: /reset-password
+Disallow: /onboarding
+
+# ── AI and answer-engine crawlers ────────────────────────────────────────
+# DatIQ wants to be citable in AI answers, so these are explicitly allowed
+# rather than left to the wildcard — several of them treat an absent named
+# group as a reason to be conservative.
+#
+# Each repeats the disallows: a named group REPLACES the wildcard group for
+# that crawler rather than adding to it, so a group with only Allow lines
+# grants that bot the admin console and the signed-in app. That was the case
+# for GPTBot and every bot below it until now.
+
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: Claude-User
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: CCBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+# Google-Extended controls whether content may be used for Gemini training and
+# grounding. It is INDEPENDENT of Googlebot, which governs Search indexing and
+# is allowed above. We want DatIQ citable by Gemini, so this is allowed too. To
+# opt out of Gemini grounding, change this to `Disallow: /` AND update the
+# Organization.disambiguatingDescription in index.html.
+User-agent: Google-Extended
+Allow: /
 Disallow: /api/
 Disallow: /admin
 Disallow: /admin/
 
-User-agent: GPTBot
-Allow: /
-Allow: /about
-Allow: /blog
-Allow: /pricing
-Allow: /use-cases/
-Allow: /vs/
-Allow: /help/
-
-User-agent: OAI-SearchBot
-Allow: /
-
-User-agent: ClaudeBot
-Allow: /
-
-User-agent: Googlebot
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: CCBot
-Allow: /
-
-User-agent: anthropic-ai
-Allow: /
-
-User-agent: Claude-User
-Allow: /
-
-# Google-Extended controls whether content can be used for Gemini training
-# and grounding. It is INDEPENDENT of Googlebot (which controls Google Search
-# indexing — that one is still allowed). We want DatIQ to be citable by
-# Gemini, so we explicitly allow Google-Extended. If you ever want to opt
-# out of Gemini grounding, change this to `Disallow: /` here AND update the
-# `Organization.disambiguatingDescription` in index.html.
-User-agent: Google-Extended
-Allow: /
-
-# Bytespider is ByteDance's crawler. Allowing improves discovery on TikTok
-# / Douyin search surfaces, which are a meaningful traffic source for some
-# of our international personas. Flip back to `Disallow: /` if the crawler
-# starts ignoring rate limits.
+# Bytespider is ByteDance's crawler. Allowing it improves discovery on TikTok /
+# Douyin search surfaces, a meaningful traffic source for some of our
+# international personas. Flip to `Disallow: /` if it starts ignoring rate limits.
 User-agent: Bytespider
 Allow: /
-
-# A second wildcard block, scoped to /admin/*, applied to EVERY user-agent
-# (the named bots above only see the public allow list and never reach this
-# block, so this is purely a backstop for crawlers that don't match any
-# named user-agent line above).
-User-agent: *
+Disallow: /api/
 Disallow: /admin
 Disallow: /admin/
 

@@ -73,6 +73,29 @@ if [ "${PREPUSH_FORCE:-0}" != "1" ] && [ -n "${UPSTREAM:-}" ]; then
       exit 0
     fi
   fi
+
+  # ── Prerender staleness gate ─────────────────────────────────────────
+  # The static HTML under public/<route>/index.html is GENERATED from the
+  # React pages by scripts/prerender.mjs and committed (it is deliberately
+  # not built on Netlify, so a deploy can never fail on a Chromium
+  # download). That trade means the committed output can go stale, and a
+  # stale prerender is the worst failure mode available here: the site
+  # keeps serving crawlers an older version of every marketing page while
+  # everything looks green.
+  #
+  # So: if the sources that feed the prerender moved but its output did
+  # not, stop the push. Cheap string check — no browser, no build.
+  PRERENDER_SRC="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^(src/(pages|components|styles|lib|hooks)/|index\.html$|scripts/site-routes\.mjs$)' || true)"
+  PRERENDER_OUT="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^public/.*/index\.html$' || true)"
+  if [ -n "$PRERENDER_SRC" ] && [ -z "$PRERENDER_OUT" ]; then
+    printf '\033[31m✗ pre-push:\033[0m prerendered pages are stale.\n'
+    printf '  These changed but no generated page did:\n'
+    printf '%s\n' "$PRERENDER_SRC" | head -8 | sed 's/^/    /'
+    printf '\n  Run:  \033[1mnpm run prerender\033[0m   then commit the result.\n'
+    printf '  (skip with PREPUSH_FORCE=1 git push … — only if you are certain\n'
+    printf '   the change cannot affect any prerendered page)\n'
+    exit 1
+  fi
 fi
 
 # ── Run the test suites ───────────────────────────────────────────────
