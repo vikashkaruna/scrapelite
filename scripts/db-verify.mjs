@@ -533,6 +533,33 @@ group("0024 analytics_events is no longer world-readable");
   check("RLS is still enabled on analytics_events", rls === true, `relrowsecurity=${rls}`);
 }
 
+// ── 0025 gallery curation ─────────────────────────────────────────────────────
+group("0025 gallery curation — persona tagging + review metadata");
+{
+  const ok = await one(`insert into public.public_reports (slug, title, url, data, persona)
+    values ('gc-ok','T','https://x.com','{}'::jsonb,'sales') returning id, curated`);
+  eq("persona accepts a known id", ok.curated, false);
+
+  const nullPersona = await one(`insert into public.public_reports (slug, title, url, data)
+    values ('gc-null','T','https://x.com','{}'::jsonb) returning persona`);
+  eq("persona stays nullable for ordinary shares", nullPersona.persona, null);
+
+  const badPersona = await throws(`insert into public.public_reports (slug, title, url, data, persona)
+    values ('gc-bad','T','https://x.com','{}'::jsonb,'not-a-real-persona')`);
+  check("an unknown persona id is rejected", !!badPersona, badPersona || "insert succeeded");
+
+  await q(`update public.public_reports
+    set curated = true, persona = 'seo', reviewed_at = now(), reviewed_by = 'admin@datiq.app'
+    where id = $1`, [ok.id]);
+  const curated = await one(`select curated, persona, reviewed_by from public.public_reports where id = $1`, [ok.id]);
+  eq("curation flips curated + records who reviewed it", curated.curated, true);
+  eq("curation does not change the persona already set", curated.persona, "seo");
+
+  const idx = await one(`select count(*)::int n from pg_indexes
+    where tablename = 'public_reports' and indexname = 'public_reports_curated_persona_idx'`);
+  eq("the curated+persona partial index exists", idx.n, 1);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"─".repeat(62)}`);
 console.log(`[db-verify] ${files.length} migrations applied · ${pass} assertions passed · ${fail} failed`);

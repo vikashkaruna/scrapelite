@@ -23,7 +23,7 @@ vi.mock("./supabaseClient.js", () => ({
 
 const { generateSlug, isValidSlug, shareExtraction, unshareExtraction,
         getPublicBySlug, getPublicBySlugLocal, getSharedSlugForId,
-        getGallery, buildPublicUrl, _resetShareForTests } =
+        getGallery, getCuratedGallery, buildPublicUrl, _resetShareForTests } =
   await import("./shareService.js");
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
@@ -354,5 +354,66 @@ describe("FA1 — public-quota counter (shareService integration)", () => {
     expect(isPubliclyShared(ext.id)).toBe(false);
     await shareExtraction(ext);
     expect(isPubliclyShared(ext.id)).toBe(true);
+  });
+});
+
+// ── Curated persona showcase ────────────────────────────────────────────────
+// Distinct from getGallery() (tested above) — getCuratedGallery() is NEVER
+// local-only, because a showcase has to look the same to every visitor.
+
+function makeCuratedQueryClient(rows, { throwOnQuery = false } = {}) {
+  const calls = { eqArgs: [] };
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn((col, val) => { calls.eqArgs.push([col, val]); return chain; }),
+    order: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    then: (resolve, reject) => {
+      // The query is awaited directly (no terminal .maybeSingle()/.single()),
+      // so it must itself be thenable — mirrors the real supabase-js builder.
+      if (throwOnQuery) return Promise.resolve({ data: null, error: new Error("boom") }).then(resolve, reject);
+      return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    },
+  };
+  return { from: vi.fn(() => chain), calls };
+}
+
+describe("Q8/persona — getCuratedGallery", () => {
+  it("returns [] when Supabase isn't configured — no local fallback", async () => {
+    supabaseMock.enabled = false;
+    const result = await getCuratedGallery({ persona: "sales" });
+    expect(result).toEqual([]);
+  });
+
+  it("returns [] (not a throw) when the Supabase query errors", async () => {
+    const { from } = makeCuratedQueryClient([], { throwOnQuery: true });
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+    const result = await getCuratedGallery({});
+    expect(result).toEqual([]);
+  });
+
+  it("filters by is_public=true and curated=true unconditionally", async () => {
+    const rows = [{ slug: "abc12345", title: "T", url: "https://x.com", persona: "seo", created_at: "2026-08-01T00:00:00Z" }];
+    const { from, calls } = makeCuratedQueryClient(rows);
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+    const result = await getCuratedGallery({});
+    expect(result).toEqual(rows);
+    expect(calls.eqArgs).toContainEqual(["is_public", true]);
+    expect(calls.eqArgs).toContainEqual(["curated", true]);
+  });
+
+  it("adds a persona filter only when one is given", async () => {
+    const { from: fromWithPersona, calls: withPersona } = makeCuratedQueryClient([]);
+    supabaseMock.enabled = true;
+    supabaseMock.from = fromWithPersona;
+    await getCuratedGallery({ persona: "recruiter" });
+    expect(withPersona.eqArgs).toContainEqual(["persona", "recruiter"]);
+
+    const { from: fromNoPersona, calls: noPersona } = makeCuratedQueryClient([]);
+    supabaseMock.from = fromNoPersona;
+    await getCuratedGallery({});
+    expect(noPersona.eqArgs.some(([col]) => col === "persona")).toBe(false);
   });
 });

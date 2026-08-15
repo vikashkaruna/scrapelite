@@ -178,6 +178,15 @@ a:hover { text-decoration: underline; }
 .doc tr:last-child td { border-bottom: 0; }
 .doc td code { white-space: nowrap; }
 
+/* keyboard shortcut key caps — same treatment as the in-app shortcuts
+   modal (.hotkey-combo in screens.css) so the docs and the product agree. */
+.doc kbd {
+  display: inline-block; font-family: var(--mono); font-size: .82em;
+  padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface-2); color: var(--text);
+}
+.doc .key-alt { color: var(--text-3); font-size: .85em; margin: 0 2px; }
+
 /* figures / screenshots */
 .doc figure { margin: 8px 0 26px; }
 .doc figure img, .doc img {

@@ -15,6 +15,7 @@ const NAV = [
   { to: "/admin/coupons",    label: "Coupons",    icon: "bookmark" },
   { to: "/admin/users",      label: "Users",      icon: "users" },
   { to: "/admin/ai",         label: "AI",         icon: "sparkles" },
+  { to: "/admin/gallery",    label: "Gallery",    icon: "image" },
   // n8n workflow pipeline observability (workflow-implementation-and-optimization branch)
   { to: "/admin/automation", label: "Workflows",  icon: "zap" },
   // Ops monitoring + service health (staging branch)
