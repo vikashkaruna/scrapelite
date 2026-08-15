@@ -1,5 +1,6 @@
 // netlify/__tests__/integrations-notion.test.js
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { clearServerEnv } from "./helpers/serverEnv.js";
 
 // Hoist the mock so the regression test below can assert against it.
 // 2026-08-12 fix: the production code now passes the JWT to
@@ -50,6 +51,13 @@ const baseEvent = (overrides = {}) => ({
 
 describe("integrations-notion", () => {
   beforeEach(() => {
+    // Start from nothing configured, THEN set only what these tests exercise.
+    // Without the clear, a developer's .env (which Vitest loads into
+    // process.env) leaves VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY set, and
+    // supabaseServerClient resolves `SUPABASE_* || VITE_SUPABASE_*` — so the
+    // "invalid API key" message named the developer's variable instead of the
+    // one this test asserts on. Green in CI, red on a real machine.
+    clearServerEnv();
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_ANON_KEY = "anon";
     process.env.SUPABASE_SERVICE_KEY = "service";

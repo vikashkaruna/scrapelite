@@ -20,6 +20,22 @@ vi.mock("./Toast.jsx", () => ({
   useToast: () => toast,
 }));
 
+// Pin the PLATFORM webhook URL to "unset".
+//
+// resolveWebhookUrl() falls back to config.js's WEBHOOK_URL, which Vite inlines
+// from VITE_WEBHOOK_URL in .env. Every developer has one (the README tells them
+// to), so "no URL is set anywhere" was false on a real machine and these two
+// tests failed locally while passing in CI, which has no .env.
+//
+// Every assertion in this file concerns the USER-set URL in localStorage; none
+// exercises the platform fallback. Pinning it off makes the suite depend on the
+// fixture rather than on whoever is running it.
+vi.mock("../lib/config.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  WEBHOOK_URL: "",
+  hasWebhook: false,
+}));
+
 function renderModal(props = {}) {
   const onClose = vi.fn();
   const utils = render(<WebhookSetupModal open onClose={onClose} {...props} />);
