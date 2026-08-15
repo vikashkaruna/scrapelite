@@ -277,6 +277,38 @@ export function getGallery(limit = 50) {
   return readIndex().slice(0, limit);
 }
 
+/**
+ * The curated persona showcase — DISTINCT from getGallery() above. getGallery()
+ * is local-only by design (this browser's "you recently shared" list); a
+ * curated showcase has to be the same for every visitor, so this always reads
+ * Supabase and only rows an admin explicitly promoted via /admin/gallery
+ * (see netlify/functions/admin-gallery.js, 0025_gallery_curation.sql).
+ *
+ * `persona` filters to one persona id; omitted/null returns every curated row
+ * regardless of persona. Returns [] (not a throw) when Supabase isn't
+ * configured or the query fails — there is no meaningful local fallback here,
+ * since "curated" is server-side-only metadata that never lives in localStorage.
+ */
+export async function getCuratedGallery({ persona, limit = 50 } = {}) {
+  if (!isSupabaseEnabled || !supabase) return [];
+  try {
+    let query = supabase
+      .from(TABLE)
+      .select("slug,title,url,intent,persona,created_at")
+      .eq("is_public", true)
+      .eq("curated", true)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (persona) query = query.eq("persona", persona);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    if (typeof console !== "undefined") console.warn("[DatIQ share] curated gallery fetch failed:", err);
+    return [];
+  }
+}
+
 export function buildPublicUrl(slug) {
   if (typeof window === "undefined") return `/p/${slug}`;
   return `${window.location.origin}/p/${slug}`;

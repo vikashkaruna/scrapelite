@@ -3,6 +3,7 @@
 // Triggered by the "?" hotkey. Lists every shortcut the app supports.
 
 import Icon from "./Icon.jsx";
+import { formatShortcut } from "../lib/platformKeys.js";
 
 const SHORTCUTS = [
   { combo: "?",            label: "Show this shortcuts panel",         group: "Help" },
@@ -46,7 +47,7 @@ export default function HotkeyHelp({ open, onClose }) {
               <ul>
                 {items.map((s) => (
                   <li key={s.combo}>
-                    <kbd className="hotkey-combo">{s.combo}</kbd>
+                    <kbd className="hotkey-combo">{formatShortcut(s.combo)}</kbd>
                     <span className="hotkey-label">{s.label}</span>
                   </li>
                 ))}

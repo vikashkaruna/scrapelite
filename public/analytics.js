@@ -152,7 +152,7 @@
       "align-items:center", "justify-content:center",
       "padding:14px 20px",
       "background:var(--surface,#fff)",
-      "color:var(--text-1,#111827)",
+      "color:var(--text,#111827)",
       "border-top:1px solid var(--border,#e5e7eb)",
       "box-shadow:0 -2px 12px rgba(0,0,0,.08)",
       "font:14px/1.5 system-ui,-apple-system,sans-serif",
@@ -173,7 +173,7 @@
         "font-weight:600", "font-size:14px",
         primary
           ? "background:var(--accent,#6366f1);color:#fff;border:1px solid var(--accent,#6366f1)"
-          : "background:transparent;color:var(--text-1,#111827);border:1px solid var(--border,#d1d5db)",
+          : "background:transparent;color:var(--text,#111827);border:1px solid var(--border,#d1d5db)",
       ].join(";");
       return b;
     }
@@ -222,6 +222,13 @@
     bar.appendChild(allow);
     bar.appendChild(deny);
     document.body.appendChild(bar);
+
+    // Fades out on its own if the visitor takes no action — engage, don't
+    // distract. This is purely visual: it must never call choose(), or an
+    // ignored prompt would silently become "denied" forever. bar.remove() is
+    // a no-op if choose() already removed it, so no extra guarding needed.
+    // Matches src/components/ConsentBanner.jsx's AUTO_HIDE_MS for the SPA.
+    setTimeout(function () { bar.remove(); }, 20000);
   }
 
   if (document.readyState === "loading") {

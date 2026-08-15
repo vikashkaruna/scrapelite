@@ -1,11 +1,15 @@
 // src/components/ConsentBanner.jsx — analytics consent for the React app.
 //
-// Sits in the same banner slot as UsageUpsellBanner / ReferralBanner /
-// GuestTrialBanner and reuses their chrome (.usage-upsell-banner-wrap +
-// additive modifier classes), the pattern ReferralBanner established, so this
-// reads as one design language rather than a fourth banner style.
+// Floats above the bottom of the viewport rather than sitting in the in-flow
+// banner stack (UsageUpsellBanner / ReferralBanner / GuestTrialBanner) — those
+// are advisories that push page content down; this is a permission prompt
+// that shouldn't be the first thing a visitor sees or reflow the page they
+// came to read. It still reuses the same `.uub-*` inner chrome (icon/title/
+// desc/button layout) so it reads as one design language, but owns its own
+// wrap class (`.consent-banner-wrap`) instead of `.usage-upsell-banner-wrap`
+// so it never inherits that class's warning-amber tint again.
 //
-// Two deliberate departures from the neighbouring banners:
+// Three deliberate departures from the neighbouring banners:
 //
 //  1. NO DISMISS BUTTON. The other banners are advisories you can wave away.
 //     This one asks a question that has only two valid answers, and closing it
@@ -14,7 +18,16 @@
 //
 //  2. NO MONTHLY RE-PROMPT. The others store a `YYYY-MM` dismissal so they
 //     return next month. A recorded choice here is durable until the visitor
-//     changes it from the Privacy page or the footer.
+//     changes it from the Privacy page or the footer's "Cookie preferences"
+//     link (Footer.jsx → /privacy#cookie-preferences → clearConsent()).
+//
+//  3. AUTO-HIDES, BUT NEVER DECIDES. If the visitor takes no action within
+//     AUTO_HIDE_MS it fades out on its own — the goal is to engage, not
+//     distract, and a prompt that lingers forever is a worse experience than
+//     one that gets out of the way. Hiding is purely visual: it must never
+//     call setConsent(), or an ignored prompt would silently become "denied"
+//     forever with no way for the visitor to notice or revisit it. The
+//     footer's "Cookie preferences" link is what lets them come back to it.
 //
 // Not rendered on /admin: Shell returns a separate admin <Routes> before this
 // point, so the exclusion is structural rather than a path check here.
@@ -22,25 +35,36 @@
 // The static-owned pages (/faq, /dmca, /vs/* detail pages, /help/*) have no
 // React at all — public/analytics.js renders an equivalent bar there.
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { hasChosen, setConsent, GRANTED, DENIED } from "../lib/consentService.js";
+
+const AUTO_HIDE_MS = 20_000;
 
 export default function ConsentBanner() {
   // Read once on mount. analytics.js has already applied any stored choice to
   // Consent Mode by the time React boots, so there is nothing to re-sync here.
   const [chosen, setChosen] = useState(() => hasChosen());
+  const [autoHidden, setAutoHidden] = useState(false);
+  const timerRef = useRef(null);
 
-  if (chosen) return null;
+  useEffect(() => {
+    if (chosen) return undefined;
+    timerRef.current = setTimeout(() => setAutoHidden(true), AUTO_HIDE_MS);
+    return () => clearTimeout(timerRef.current);
+  }, [chosen]);
+
+  if (chosen || autoHidden) return null;
 
   const choose = (choice) => {
+    clearTimeout(timerRef.current);
     setConsent(choice, "banner");
     setChosen(true);
   };
 
   return (
-    <div className="usage-upsell-banner-wrap consent-banner-wrap">
+    <div className="consent-banner-wrap">
       <div
         className="usage-upsell-banner consent-banner"
         role="region"

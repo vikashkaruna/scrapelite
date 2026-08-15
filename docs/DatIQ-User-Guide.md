@@ -372,9 +372,6 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 > Looking for general questions — pricing, plans, sharing, keyboard shortcuts, what DatIQ can
 > extract? Those all live in one place now: **[the DatIQ FAQ](https://datiq.app/faq)**. This section
 > covers only what to do when something has gone wrong.
->
-> The section number is kept as 14 deliberately, so the existing
-> `/help/14-faq-and-troubleshooting.html`, `/help/15-…` and `/help/16-…` URLs keep working.
 
 **My extraction came back thin or empty.**
 Some pages block automated access or load their content with heavy JavaScript. Try enabling JavaScript
@@ -409,15 +406,13 @@ to see the full list.
 | <kbd>?</kbd> | Show this help. |
 | <kbd>Esc</kbd> | Close any open modal or overlay. |
 | <kbd>/</kbd> | Focus the search / URL input. |
-| <kbd>mod</kbd>+<kbd>k</kbd> | Open the command palette (jump anywhere). |
+| <kbd>⌘K</kbd> <span class="key-alt">(Mac)</span> / <kbd>Ctrl+K</kbd> <span class="key-alt">(Windows/Linux)</span> | Open the command palette (jump anywhere). |
 | <kbd>g</kbd> then <kbd>d</kbd> | Go to Dashboard. |
 | <kbd>g</kbd> then <kbd>b</kbd> | Go to Batch. |
 | <kbd>g</kbd> then <kbd>s</kbd> | Go to Schedules. |
 | <kbd>g</kbd> then <kbd>p</kbd> | Go to Pricing. |
 | <kbd>g</kbd> then <kbd>w</kbd> | Go to Workspace. |
 | <kbd>g</kbd> then <kbd>t</kbd> | Replay the onboarding tour. |
-
-(`mod` = <kbd>⌘</kbd> on Mac, <kbd>Ctrl</kbd> on Windows / Linux.)
 
 ---
 

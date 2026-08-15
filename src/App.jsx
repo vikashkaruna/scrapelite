@@ -35,6 +35,7 @@ import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import AdminAI from "./pages/admin/AdminAI.jsx";
+import AdminGallery from "./pages/admin/AdminGallery.jsx";
 import AdminGeneral from "./pages/admin/AdminGeneral.jsx";
 import AdminAutomation from "./pages/admin/AdminAutomation.jsx";
 import AdminMonitoring from "./pages/admin/AdminMonitoring.jsx";
@@ -184,6 +185,7 @@ function Shell() {
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="users"   element={<AdminUsers />} />
           <Route path="ai"        element={<AdminAI />} />
+          <Route path="gallery"   element={<AdminGallery />} />
           <Route path="general"   element={<AdminGeneral />} />
           <Route path="automation" element={<AdminAutomation />} />
           <Route path="monitoring" element={<AdminMonitoring />} />
@@ -202,11 +204,6 @@ function Shell() {
       <ReferralBanner />
       <SuspendedBanner />
       <UsageUpsellBanner />
-      {/* Last in the banner stack: the other four are contextual and usually
-          absent, so this sits closest to the content when it is the only one
-          showing. Not rendered on /admin — Shell returns a separate admin
-          <Routes> above this point. */}
-      <ConsentBanner />
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />
@@ -268,6 +265,11 @@ function Shell() {
           full-screen LoadingScreen). Global so it persists across route changes. */}
       <ExtractionProgressDock />
       <Footer />
+      {/* Floating, not part of the in-flow banner stack above: it is a
+          bottom-anchored overlay that auto-hides on its own timer rather
+          than pushing page content down. Not rendered on /admin — Shell
+          returns a separate admin <Routes> above this point. */}
+      <ConsentBanner />
     </>
   );
 }
