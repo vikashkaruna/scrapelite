@@ -208,7 +208,7 @@ function DashCard({ item, selected, onToggle, onView, onDelete, category }) {
 }
 
 // ── Export Dropdown ───────────────────────────────────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo, disabled, label }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled, label }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -261,14 +261,8 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
               <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
             </button>
           </div>
-          {onSendTo && (
-            <div className="export-dropdown-section">
-              <div className="export-dropdown-section-label">Send to</div>
-              <button className="export-dropdown-item" onClick={() => { onSendTo(); setOpen(false); }}>
-                <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
-              </button>
-            </div>
-          )}
+          {/* No "Send to" section — destinations live on the Push button, which
+              now carries Google Sheets too. Export ▾ is downloads + clipboard. */}
         </div>
       )}
     </div>
@@ -440,7 +434,7 @@ function CollectionFilter({ items, value, onChange }) {
 }
 
 // ── Floating selection action bar ─────────────────────────────────────────────
-function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPush, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo }) {
+function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPush, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onAdvanced }) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
@@ -474,9 +468,9 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPu
         {onPush && (
           <PushIntegrationMenu
             items={selectedItems}
-            buttonLabel={`Push ${count}`}
             buttonVariant="ghost"
             compact
+            onAdvanced={onAdvanced}
           />
         )}
         <div className="dash-float-export" ref={exportRef}>
@@ -514,14 +508,7 @@ function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPu
                   <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
                 </button>
               </div>
-              {onSendTo && (
-                <div className="export-dropdown-section">
-                  <div className="export-dropdown-section-label">Send to</div>
-                  <button className="export-dropdown-item" onClick={() => { onSendTo(); setExportOpen(false); }}>
-                    <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
-                  </button>
-                </div>
-              )}
+              {/* No "Send to" — see the header Export dropdown above. */}
             </div>
           )}
         </div>
@@ -990,7 +977,6 @@ export default function Dashboard() {
                 onCopyCsv={onCopyCsv}
                 onCopyMarkdown={onCopyMarkdown}
                 onCopyJson={onCopyJson}
-                onSendTo={() => setIntegrationsOpen(true)}
                 disabled={exportCount === 0}
                 label={exportLabel}
               />
@@ -1174,7 +1160,7 @@ export default function Dashboard() {
           onCopyCsv={onCopyCsv}
           onCopyMarkdown={onCopyMarkdown}
           onCopyJson={onCopyJson}
-          onSendTo={() => selectedItems.length > 0 && setIntegrationsOpen(true)}
+          onAdvanced={() => selectedItems.length > 0 && setIntegrationsOpen(true)}
         />
       )}
 

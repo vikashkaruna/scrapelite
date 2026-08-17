@@ -77,7 +77,7 @@ function parseUrlsFromText(text) {
 }
 
 // ── Export Dropdown (matches Dashboard pattern) ───────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo, disabled }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -130,14 +130,8 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
               <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
             </button>
           </div>
-          {onSendTo && (
-            <div className="export-dropdown-section">
-              <div className="export-dropdown-section-label">Send to</div>
-              <button className="export-dropdown-item" onClick={() => { onSendTo(); setOpen(false); }}>
-                <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
-              </button>
-            </div>
-          )}
+          {/* No "Send to" section — destinations live on the Push button, which
+              now carries Google Sheets too. Export ▾ is downloads + clipboard. */}
         </div>
       )}
     </div>
@@ -1084,10 +1078,13 @@ export default function Batch() {
                       onCopyCsv={onCopyCsv}
                       onCopyMarkdown={onCopyMarkdown}
                       onCopyJson={onCopyJson}
-                      onSendTo={() => setIntegrationsOpen(true)}
                       disabled={!successResults.length}
                     />
-                    <PushIntegrationMenu items={successResults} buttonVariant="secondary" />
+                    <PushIntegrationMenu
+                      items={successResults}
+                      buttonVariant="secondary"
+                      onAdvanced={() => setIntegrationsOpen(true)}
+                    />
                     <Button
                       variant="ghost"
                       size="sm"
