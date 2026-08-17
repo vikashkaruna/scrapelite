@@ -78,23 +78,21 @@ export function GuestTrialProvider({ children }) {
   const [showHardBlock, setShowHardBlock] = useState(false);
   const [hardBlockReason, setHardBlockReason] = useState("single");
 
-  // On mount (guest only): if the hard limit was already reached from a previous
-  // session, show the block immediately so users can't extract without seeing it.
-  useEffect(() => {
-    if (user) return; // logged-in users are never gated
-    const s = getSettings();
-    const shl = s.guest_single_hard_limit  ?? SINGLE_HARD_LIMIT;
-    const bhl = s.guest_batch_hard_limit   ?? BATCH_HARD_LIMIT;
-    const initialCount      = getGuestCount();
-    const initialBatchCount = getGuestBatchCount();
-    if (isSingleHardLimitReached(initialCount, shl)) {
-      setHardBlockReason("single");
-      setShowHardBlock(true);
-    } else if (isBatchHardLimitReached(initialBatchCount, bhl)) {
-      setHardBlockReason("batch");
-      setShowHardBlock(true);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: an over-limit guest is deliberately NOT shown the hard block on mount
+  // any more (R17 #118 used to do that).
+  //
+  // That behaviour existed because an extraction attempt was the only trigger,
+  // and four extraction paths didn't check at all — so mount-time visibility
+  // was doing defensive work. requireGuestCredit() now runs on every path, so
+  // the modal enforces nothing on mount: it can be closed, and closing grants
+  // nothing. It is purely a notification there, and GuestTrialBanner already
+  // does that job permanently and without blocking the page.
+  //
+  // Which leaves only the cost: a full-viewport interstitial thrown at someone
+  // who has just loaded the homepage and done nothing — no intent, no context,
+  // nothing invested. The same dialog at the moment they actually try to
+  // extract has all three. Keeping it here made the gate more annoying without
+  // making it any stronger.
 
   const prevUserRef = useRef(user);
 

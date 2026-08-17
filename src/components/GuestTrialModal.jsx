@@ -60,8 +60,14 @@ export default function GuestTrialModal() {
 
   // FA3 — task-aware copy. For the hard block, force the kind to match the
   // reason (so a blocked batch run sees batch copy, not single-URL copy).
+  //
+  // "batch_runs", not "batch": the guest exhausted their allowance of RUNS,
+  // which has nothing to do with how many URLs fit in one batch. Passing
+  // { kind: "batch", urls: BATCH_LIMIT * 4 } made the dialog announce "You
+  // need 20 URLs in one batch" — a limit they never hit, quoting a number
+  // invented by that multiplication.
   const ctx = hardBlockReason === "batch"
-    ? { kind: "batch", urls: BATCH_LIMIT * 4 } // worst-case hint: a batch of 4× their limit
+    ? { kind: "batch_runs", used: BATCH_LIMIT }
     : hardBlockReason === "schedule"
       ? { kind: "schedule" }
       : undefined;
@@ -108,7 +114,11 @@ export default function GuestTrialModal() {
           <li><Icon name="check" size={14} /> AI summaries + link intelligence</li>
           <li><Icon name="check" size={14} /> CSV export &amp; saved dashboard</li>
           <li><Icon name="check" size={14} /> Contacts, pricing &amp; custom extraction</li>
-          {isHard && <li><Icon name="check" size={14} /> Batch mode (up to 200 URLs)</li>}
+          {/* Was "Batch mode (up to 200 URLs)" — 200 is the Business tier. The
+              account this dialog offers is Free, which allows 5 URLs a batch,
+              so it promised 40x what it delivers at the exact moment someone
+              decides to sign up. */}
+          {isHard && <li><Icon name="check" size={14} /> Batch mode included</li>}
         </ul>
         <div className="gtm-actions">
           {/* Note: these only OPEN the auth modal. They must not dismiss the
@@ -119,7 +129,10 @@ export default function GuestTrialModal() {
             icon="user-plus"
             onClick={() => { openAuth("signup"); if (!isHard) setShowPrompt(false); }}
           >
-            {isHard
+            {/* Only name a plan when there's actually one to sell. A guest out
+                of batch runs is recommended the Free plan, which would render
+                "Create free account & start Free". */}
+            {isHard && paywall.recommendedPlanId && paywall.recommendedPlanId !== "free"
               ? `Create free account & start ${paywall.recommendedPlanName}`
               : "Create free account"}
           </Button>

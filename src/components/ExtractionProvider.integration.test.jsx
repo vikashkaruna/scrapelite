@@ -183,9 +183,9 @@ describe("I-11 — ExtractionProvider: pre-flight guest hard block", () => {
 
     // Pre-flight reports not allowed.
     expect(screen.getByTestId("canSingle").textContent).toBe("false");
-    // Hard block is mounted.
-    expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
-    expect(screen.getByTestId("hardBlockReason").textContent).toBe("single");
+    // No interstitial before the user has done anything — the dialog is
+    // raised by the attempt below, not by mounting over the limit.
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
 
     // Click extract — should be a no-op.
     await act(async () => {
@@ -194,6 +194,9 @@ describe("I-11 — ExtractionProvider: pre-flight guest hard block", () => {
     });
     expect(firecrawlMocks.extractStructure).not.toHaveBeenCalled();
     expect(screen.getByTestId("pathname").textContent).toBe("/");
+    // ...and the attempt is what raises the dialog.
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
+    expect(screen.getByTestId("hardBlockReason").textContent).toBe("single");
   });
 
   it("guest below the hard limit → extract() proceeds", async () => {

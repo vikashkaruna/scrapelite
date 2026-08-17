@@ -203,12 +203,20 @@ describe("I-09 — GuestTrialProvider: hard block (single)", () => {
     expect(screen.getByTestId("canSingle").textContent).toBe("false");
     unmount();
 
-    // Simulate a reload: the count is preserved in localStorage.
-    // Mounting again should immediately show the hard block on mount
-    // (the mount useEffect reads the count and sets showHardBlock).
+    // Simulate a reload: the count is preserved in localStorage. The block is
+    // deliberately NOT re-shown on mount — it enforces nothing there (it can be
+    // closed, and closing grants nothing) and GuestTrialBanner already reports
+    // the state without blocking the page. What must survive a reload is the
+    // ENFORCEMENT, so assert that instead of the dialog's visibility.
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByTestId("count").textContent).toBe("10");
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+    expect(screen.getByTestId("canSingle").textContent).toBe("false");
+
+    // ...and the first attempt after that reload is refused, and raises it.
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("false");
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
   });
 
@@ -267,7 +275,11 @@ describe("requireGuestCredit — retry after dismissing must re-block", () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
 
-    // Over the single limit on mount.
+    // Over the limit, but no interstitial thrown at page load.
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+
+    // First attempt is refused and raises the dialog.
+    act(() => screen.getByTestId("gateSingle").click());
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
 
     // User closes the dialog to go browse /pricing.
