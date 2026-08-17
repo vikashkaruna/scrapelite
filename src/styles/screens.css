@@ -6190,6 +6190,16 @@
   background: var(--surface-2); color: var(--text-3);
   border-radius: var(--r-pill); padding: 2px 8px; font-size: .72em; font-weight: 700;
 }
+/* A schedule that never reached the database. It cannot fire, because the
+   hourly runner reads Supabase and has no view of a browser's localStorage —
+   so it gets a warning tag rather than a next-run time. */
+.sch-card-local-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--warning-soft, rgba(245,158,11,.12));
+  color: var(--warning, #f59e0b);
+  border-radius: var(--r-pill); padding: 2px 8px; font-size: .72em; font-weight: 700;
+}
+.sch-next-warn { color: var(--warning, #f59e0b); }
 .sch-card-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 5px; font-size: .82em; color: var(--text-3); }
 .sch-card-meta span { display: inline-flex; align-items: center; gap: 5px; text-transform: capitalize; }
 .sch-card-runs { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: .8em; }
@@ -8671,3 +8681,18 @@ body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
 @media (max-width: 480px) {
   .eim-token-rotate-row { grid-template-columns: 1fr; }
 }
+
+/* ── Browser-only saved data notice (Dashboard) ─────────────────────────────
+   Guest extractions are kept in localStorage by design (extractionsRepo's
+   401 branch) so the app stays usable signed out — but they used to look
+   identical to account-backed rows right up until the user cleared site data. */
+.local-data-notice {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 18px;
+  border: 1px solid var(--warning, #f59e0b);
+  background: var(--warning-soft, rgba(245,158,11,.10));
+  border-radius: var(--r-md, 10px);
+  font-size: .88em; color: var(--text);
+}
+.local-data-notice > svg { color: var(--warning, #f59e0b); flex-shrink: 0; }
+.local-data-notice-text { flex: 1; min-width: 220px; }

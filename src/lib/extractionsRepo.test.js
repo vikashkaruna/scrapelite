@@ -278,3 +278,71 @@ describe("Q3 — extractionsRepo: free-plan saved-searches cap", () => {
     expect(r._saved).toBe(true);
   });
 });
+
+// ── Guest rows: counting them, and claiming them after sign-in ───────────────
+//
+// shouldFallback() treats 401 as "keep it locally", which is right — a guest's
+// extractions stay usable, unlike a guest's schedule, which is simply inert.
+// The gap was that nothing said those rows were browser-only, and nothing moved
+// them onto the account once one existed.
+
+describe("unclaimed local rows", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  function seedLocal(rows) {
+    localStorage.setItem("datiq.saved", JSON.stringify(rows));
+  }
+
+  it("counts only rows with no owner", async () => {
+    const { countUnclaimedLocal } = await import("./extractionsRepo.js");
+    seedLocal([
+      { ...SAMPLE, id: "a", user_id: null },
+      { ...SAMPLE, id: "b", user_id: undefined },
+      { ...SAMPLE, id: "c", user_id: "u1" },
+    ]);
+    expect(countUnclaimedLocal()).toBe(2);
+  });
+
+  it("is zero when everything already belongs to an account", async () => {
+    const { countUnclaimedLocal } = await import("./extractionsRepo.js");
+    seedLocal([{ ...SAMPLE, id: "a", user_id: "u1" }]);
+    expect(countUnclaimedLocal()).toBe(0);
+  });
+
+  it("claiming replays each row through saveExtraction so the owner is re-resolved", async () => {
+    const { claimLocalExtractions } = await import("./extractionsRepo.js");
+    seedLocal([
+      { ...SAMPLE, id: "a", user_id: null },
+      { ...SAMPLE, id: "b", user_id: null },
+    ]);
+    apiMocks.createExtraction.mockImplementation(async (row) => ({ ...row, user_id: "u1" }));
+
+    const { claimed, failed } = await claimLocalExtractions();
+    expect(claimed).toBe(2);
+    expect(failed).toBe(0);
+    expect(apiMocks.createExtraction).toHaveBeenCalledTimes(2);
+  });
+
+  it("a row that only fell back to localStorage is NOT counted as claimed", async () => {
+    const { claimLocalExtractions } = await import("./extractionsRepo.js");
+    seedLocal([{ ...SAMPLE, id: "a", user_id: null }]);
+    // 401 → shouldFallback → saved locally, still ownerless. Counting this as
+    // claimed would hide the warning while the data is still browser-only.
+    apiMocks.createExtraction.mockRejectedValue({ status: 401 });
+
+    const { claimed, failed } = await claimLocalExtractions();
+    expect(claimed).toBe(0);
+    expect(failed).toBe(1);
+  });
+
+  it("is a no-op when there is nothing to claim", async () => {
+    const { claimLocalExtractions } = await import("./extractionsRepo.js");
+    seedLocal([{ ...SAMPLE, id: "a", user_id: "u1" }]);
+    const result = await claimLocalExtractions();
+    expect(result).toEqual({ claimed: 0, failed: 0 });
+    expect(apiMocks.createExtraction).not.toHaveBeenCalled();
+  });
+});

@@ -71,6 +71,7 @@ import ReferralBanner from "./components/ReferralBanner.jsx";
 import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
+import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
 
 
 // Redirect /docs to the static help site
@@ -258,6 +259,9 @@ function Shell() {
       </main>
       {showAuthModal && <AuthModal />}
       <GuestTrialModal />
+      {/* Saves a schedule built while signed out, once the user signs in.
+          Global because OAuth navigates the document away and back. */}
+      <PendingScheduleFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />

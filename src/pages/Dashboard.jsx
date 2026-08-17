@@ -10,6 +10,7 @@ import FaviconDot from "../components/FaviconDot.jsx";
 import CollectionPicker from "../components/CollectionPicker.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
 import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import LocalDataNotice from "../components/LocalDataNotice.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -931,6 +932,9 @@ export default function Dashboard() {
   return (
     <div className="page fade">
       <div className="container" style={{ paddingTop: 36, paddingBottom: 72 }}>
+        {/* Guest rows live in localStorage only — say so, and claim them on
+            sign-in. See extractionsRepo.shouldFallback's 401 branch. */}
+        <LocalDataNotice onClaimed={refreshData} />
         <div className="dash-header">
           <div>
             <div className="eyebrow">

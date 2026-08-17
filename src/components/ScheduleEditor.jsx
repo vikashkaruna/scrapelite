@@ -19,7 +19,9 @@ import {
   buildCron,
   describeCron,
   estimateNextRun,
+  isAuthError,
 } from "../lib/schedulerService.js";
+import { setPendingSchedule } from "../lib/pendingSchedule.js";
 import { isValidEmail, fmtDate, hostOf, extractUrls } from "../lib/utils.js";
 
 const INTENTS = [
@@ -56,7 +58,7 @@ function cronToBuilder(cron) {
 
 export default function ScheduleEditor({ draft, existing, onSaved, onCancel }) {
   const showToast = useToast();
-  const { user } = useAuth();
+  const { user, openAuth } = useAuth();
 
   const seed = existing || draft || {};
   const isEdit = Boolean(existing);
@@ -116,17 +118,30 @@ export default function ScheduleEditor({ draft, existing, onSaved, onCancel }) {
       target,
     };
 
+    const schedule = isEdit
+      ? applyEdits(existing, common)
+      : buildSchedule({ type: seed.type || "track", renderJs: seed.renderJs || false, ...common });
+
     try {
-      let schedule;
-      if (isEdit) {
-        schedule = applyEdits(existing, common);
-      } else {
-        schedule = buildSchedule({ type: seed.type || "track", renderJs: seed.renderJs || false, ...common });
-      }
       await saveSchedule(schedule);
       showToast(isEdit ? "Schedule updated" : "Schedule created", "calendar-clock");
       onSaved?.(schedule);
     } catch (err) {
+      // A schedule only runs if it reaches Supabase — the hourly runner reads
+      // the database, never the browser. So "not signed in" can't be swallowed
+      // the way it is for extractions: stash the schedule, get them signed in,
+      // and PendingScheduleFlush saves it for real on the way back.
+      if (isAuthError(err)) {
+        const stashed = setPendingSchedule(schedule);
+        showToast(
+          stashed
+            ? "Sign in to save this schedule — we'll finish saving it for you."
+            : "Sign in to save this schedule.",
+          "log-in",
+        );
+        openAuth("signup");
+        return;
+      }
       console.error("[DatIQ] Schedule save failed:", err);
       showToast(err?.message || "Couldn't save the schedule. Please try again.");
     }
