@@ -434,90 +434,6 @@ function CollectionFilter({ items, value, onChange }) {
   );
 }
 
-// ── Floating selection action bar ─────────────────────────────────────────────
-function SelectionBar({ count, selectedItems, onClear, onGenerate, onEmail, onPush, onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onAdvanced }) {
-  const [exportOpen, setExportOpen] = useState(false);
-  const exportRef = useRef(null);
-
-  useEffect(() => {
-    if (!exportOpen) return;
-    const handler = (e) => { if (exportRef.current && !exportRef.current.contains(e.target)) setExportOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [exportOpen]);
-
-  return (
-    <div className="dash-float-bar" role="toolbar" aria-label="Selection actions">
-      <div className="dash-float-left">
-        <span className="dash-float-count">
-          <Icon name="check-square" size={15} />
-          {count} selected
-        </span>
-        <button className="dash-float-clear" onClick={onClear}>
-          <Icon name="x" size={13} /> Clear
-        </button>
-      </div>
-      <div className="dash-float-actions">
-        <button className="dash-float-btn" onClick={onGenerate} title="Generate SEO outline, competitor summary or social posts">
-          <Icon name="wand" size={15} />
-          <span>Generate</span>
-        </button>
-        <button className="dash-float-btn" onClick={onEmail} title="Email selected extractions">
-          <Icon name="mail" size={15} />
-          <span>Email</span>
-        </button>
-        {onPush && (
-          <PushIntegrationMenu
-            items={selectedItems}
-            buttonVariant="ghost"
-            compact
-            onAdvanced={onAdvanced}
-          />
-        )}
-        <div className="dash-float-export" ref={exportRef}>
-          <button className="dash-float-btn" onClick={() => setExportOpen((v) => !v)} title="Export selected">
-            <Icon name="download" size={15} />
-            <span>Export</span>
-            <Icon name="chevron-down" size={12} />
-          </button>
-          {exportOpen && (
-            <div className="export-dropdown-menu export-dropdown-menu--up">
-              <div className="export-dropdown-section">
-                <div className="export-dropdown-section-label">Download</div>
-                <button className="export-dropdown-item" onClick={() => { onCsv(); setExportOpen(false); }}>
-                  <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
-                </button>
-                <button className="export-dropdown-item" onClick={() => { onPdf(); setExportOpen(false); }}>
-                  <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
-                </button>
-                <button className="export-dropdown-item" onClick={() => { onMarkdown(); setExportOpen(false); }}>
-                  <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
-                </button>
-                <button className="export-dropdown-item" onClick={() => { onJson(); setExportOpen(false); }}>
-                  <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
-                </button>
-              </div>
-              <div className="export-dropdown-section">
-                <div className="export-dropdown-section-label">Copy to clipboard</div>
-                <button className="export-dropdown-item" onClick={() => { onCopyCsv && onCopyCsv(); setExportOpen(false); }}>
-                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
-                </button>
-                <button className="export-dropdown-item" onClick={() => { onCopyMarkdown && onCopyMarkdown(); setExportOpen(false); }}>
-                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
-                </button>
-                <button className="export-dropdown-item" onClick={() => { onCopyJson && onCopyJson(); setExportOpen(false); }}>
-                  <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
-                </button>
-              </div>
-              {/* No "Send to" — see the header Export dropdown above. */}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   useSeo({
     title: "DatIQ Dashboard — your saved extractions | DatIQ.app",
@@ -985,6 +901,18 @@ export default function Dashboard() {
                 label={exportLabel}
               />
             )}
+            {/* Push sits beside Export and shares its selection semantics
+                (exportTargets: the selection when there is one, otherwise
+                everything filtered). It used to live only in the floating
+                selection bar, which is why that bar had to exist at all. */}
+            {hasItems && (
+              <PushIntegrationMenu
+                items={exportItems}
+                buttonVariant="secondary"
+                disabled={exportCount === 0}
+                onAdvanced={() => exportCount > 0 && setIntegrationsOpen(true)}
+              />
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -1159,25 +1087,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Floating selection bar — appears when rows are selected */}
-      {selected.size > 0 && (
-        <SelectionBar
-          count={selected.size}
-          selectedItems={selectedItems}
-          onClear={clearSelection}
-          onGenerate={() => selectedItems.length > 0 && setContentItem(selectedItems[0])}
-          onEmail={() => selectedItems.length > 0 && setEmailOpen(true)}
-          onPush
-          onCsv={onExportCsv}
-          onPdf={onExportPdf}
-          onMarkdown={onExportMarkdown}
-          onJson={onExportJson}
-          onCopyCsv={onCopyCsv}
-          onCopyMarkdown={onCopyMarkdown}
-          onCopyJson={onCopyJson}
-          onAdvanced={() => selectedItems.length > 0 && setIntegrationsOpen(true)}
-        />
-      )}
 
       {emailOpen && selectedItems.length > 0 && (
         <EmailModal

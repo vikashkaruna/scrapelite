@@ -4380,41 +4380,6 @@
   text-transform: uppercase; color: var(--text-3);
 }
 
-/* ── Floating selection bar ───────────────────────────────────── */
-.dash-float-bar {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  z-index: 300; display: flex; align-items: center; gap: 8px;
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.10);
-  padding: 8px 14px; min-width: 460px; max-width: 90vw;
-  animation: float-bar-in .22s cubic-bezier(.34,1.56,.64,1) both;
-}
-@keyframes float-bar-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-.dash-float-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.dash-float-count {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-weight: 700; font-size: .88em; color: var(--accent); white-space: nowrap;
-}
-.dash-float-clear {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 9px; border-radius: 6px; border: none;
-  background: none; color: var(--text-3); font-size: .84em; font-weight: 600;
-  cursor: pointer; transition: background .12s, color .12s;
-}
-.dash-float-clear:hover { background: var(--surface-2); color: var(--text); }
-.dash-float-actions { display: flex; align-items: center; gap: 6px; }
-.dash-float-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 13px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--text); font-size: .88em; font-weight: 650;
-  cursor: pointer; transition: background .12s, border-color .12s, box-shadow .12s; white-space: nowrap;
-}
-.dash-float-btn:hover { background: var(--surface-3, var(--surface-2)); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
-.dash-float-export { position: relative; }
-
 /* ── Home batch hint ──────────────────────────────────────────── */
 .home-batch-hint {
   display: flex; align-items: center; gap: 6px; justify-content: center;
@@ -6758,7 +6723,9 @@
 .push-int-spin { animation: spin 1s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* I-1 — compact mode (inside SelectionBar) — same look as dash-float-btn siblings */
+/* Compact mode — a smaller Push button for tight rows. No caller today
+   (the floating selection bar that used it is gone); kept because the prop
+   is part of PushIntegrationMenu's documented API. */
 .push-integration-menu.push-compact { display: inline-flex; }
 
 /* F18 — Export Integrations modal (Google Sheets / Airtable / Notion) */
