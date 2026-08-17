@@ -54,6 +54,7 @@ const GuestTrialContext = createContext({
   hardBlockReason: "single",
   checkCanExtractSingle: () => ({ allowed: true }),
   checkCanExtractBatch: () => ({ allowed: true }),
+  requireGuestCredit: () => true,
   trackGuestExtraction: () => {},
   trackGuestBatchRun: () => {},
   TRIAL_LIMIT,
@@ -177,6 +178,29 @@ export function GuestTrialProvider({ children }) {
     return { allowed: true };
   }, [user, batchCount, batchHardLimit]);
 
+  /**
+   * The single gate every extraction entry point must call.
+   *
+   * Returns true if the caller may proceed; returns false AND raises the hard
+   * block if not. Checking and blocking used to be two separate steps that each
+   * caller wired up itself, which is how four paths — batch per-row Retry,
+   * the Schedules "Run now" button, the battle card, and quick-action enrich —
+   * ended up reaching extractStructure() with no gate and no counter at all.
+   *
+   * `kind` is "batch" for a multi-URL run, anything else for a single URL.
+   */
+  const requireGuestCredit = useCallback(
+    (kind = "single") => {
+      if (user) return true; // logged-in users are never gated
+      const check = kind === "batch" ? checkCanExtractBatch() : checkCanExtractSingle();
+      if (check.allowed) return true;
+      setHardBlockReason(check.reason);
+      setShowHardBlock(true);
+      return false;
+    },
+    [user, checkCanExtractBatch, checkCanExtractSingle],
+  );
+
   // ── Post-extraction tracking (called after a successful extraction) ───────────
 
   const trackGuestExtraction = useCallback(
@@ -227,6 +251,7 @@ export function GuestTrialProvider({ children }) {
         setHardBlockReason,
         checkCanExtractSingle,
         checkCanExtractBatch,
+        requireGuestCredit,
         trackGuestExtraction,
         trackGuestBatchRun,
         TRIAL_LIMIT: softLimit,

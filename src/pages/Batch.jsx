@@ -343,6 +343,10 @@ export default function Batch() {
   // via the standard runBatch → success path, so retried items appear in the
   // Dashboard with the same shape as a first-time success.
   const handleRetry = async (item, index) => {
+    // A retry is a fresh scrape, so it goes through the same gate as any other
+    // extraction. This path used to reach extractOne() with no check at all,
+    // which made the results table a way to keep extracting past the limit.
+    if (guestTrial?.requireGuestCredit?.("single") === false) return;
     setRetryingIndex(index);
     try {
       const fresh = await extractOne(item.url, {
@@ -367,6 +371,8 @@ export default function Batch() {
     } catch (err) {
       showToast("Retry failed. Please try again.");
     } finally {
+      // Counted whatever the outcome — the provider call was made either way.
+      if (!user) guestTrial?.trackGuestExtraction?.(1);
       setRetryingIndex(-1);
     }
   };
@@ -448,14 +454,7 @@ export default function Batch() {
     }
 
     // Enforce guest hard limit for batch runs
-    if (!user) {
-      const guestBatchCheck = guestTrial?.checkCanExtractBatch?.();
-      if (guestBatchCheck && !guestBatchCheck.allowed) {
-        guestTrial.setHardBlockReason?.("batch");
-        guestTrial.setShowHardBlock?.(true);
-        return;
-      }
-    }
+    if (guestTrial?.requireGuestCredit?.("batch") === false) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -499,8 +498,6 @@ export default function Batch() {
           "check-circle",
         );
 
-        // Track guest trial (1 credit per batch run, separate from single-URL count)
-        if (!user) guestTrial.trackGuestBatchRun?.(1);
 
         // Auto-save successful results to Dashboard + record batch run history.
         const enrichMetaObj = getEnrichMetaForIntent(intent);
@@ -563,6 +560,11 @@ export default function Batch() {
         showToast("Batch extraction failed. Please try again.");
       }
     } finally {
+      // Track the guest batch credit here, not in the success branch. It used
+      // to sit inside `if (!controller.signal.aborted)`, so starting a run and
+      // hitting Cancel consumed real provider calls for free — and could be
+      // repeated indefinitely. Once a run starts, it counts.
+      if (!user) guestTrial?.trackGuestBatchRun?.(1);
       setRunning(false);
     }
   };

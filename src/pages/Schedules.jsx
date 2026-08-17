@@ -11,6 +11,7 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import ScheduleEditor from "../components/ScheduleEditor.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
 import {
   listSchedules,
   listSchedulesLocal,
@@ -129,6 +130,7 @@ export default function Schedules() {
   const navigate = useNavigate();
   const location = useLocation();
   const showToast = useToast();
+  const guestTrial = useGuestTrial();
   const [items, setItems] = useState(listSchedulesLocal);
   const [runningId, setRunningId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -163,6 +165,9 @@ export default function Schedules() {
   };
 
   const onRunNow = async (schedule) => {
+    // "Run now" is a real scrape — same gate as any other extraction. This
+    // path reached extractStructure() ungated and uncounted.
+    if (guestTrial?.requireGuestCredit?.("single") === false) return;
     setRunningId(schedule.id);
     try {
       const opts = {};
@@ -184,6 +189,7 @@ export default function Schedules() {
       refresh();
       showToast("Check failed. We'll retry on the next scheduled run.");
     } finally {
+      guestTrial?.trackGuestExtraction?.(1); // no-ops when signed in
       setRunningId(null);
     }
   };

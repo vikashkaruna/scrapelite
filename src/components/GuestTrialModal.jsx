@@ -41,9 +41,22 @@ export default function GuestTrialModal() {
 
   if (!isHard && !isSoft) return null;
 
-  const dismiss = isHard
-    ? () => setShowHardBlock(false) // only reachable via auth buttons; backdrop doesn't fire
-    : () => setShowPrompt(false);
+  // Closing this modal never grants anything — it only hides the dialog. The
+  // limit lives in the counters, and every extraction entry point re-runs the
+  // pre-flight (see GuestTrialProvider.requireGuestCredit), so a closed dialog
+  // reappears the moment the user tries again.
+  //
+  // Opening the auth modal specifically must NOT close the hard block:
+  // previously both buttons ran `openAuth(...); dismiss()`, so closing the auth
+  // modal without signing up left the gate cleared while the counters stood.
+  // Only a real auth transition clears it — GuestTrialProvider's
+  // `isLoggedIn && !wasLoggedIn` branch.
+  //
+  // The hard block is still not *casually* dismissible (no Escape, no backdrop
+  // click) but it does keep one explicit exit, because this overlay covers the
+  // whole viewport: without it an over-limit guest cannot reach /pricing to
+  // upgrade, which is the one thing the block is trying to sell them.
+  const dismiss = isHard ? () => setShowHardBlock(false) : () => setShowPrompt(false);
 
   // FA3 — task-aware copy. For the hard block, force the kind to match the
   // reason (so a blocked batch run sees batch copy, not single-URL copy).
@@ -98,10 +111,13 @@ export default function GuestTrialModal() {
           {isHard && <li><Icon name="check" size={14} /> Batch mode (up to 200 URLs)</li>}
         </ul>
         <div className="gtm-actions">
+          {/* Note: these only OPEN the auth modal. They must not dismiss the
+              hard block — see `dismiss` above. In soft mode closing the prompt
+              is harmless, so it still closes there. */}
           <Button
             variant="primary"
             icon="user-plus"
-            onClick={() => { openAuth("signup"); dismiss(); }}
+            onClick={() => { openAuth("signup"); if (!isHard) setShowPrompt(false); }}
           >
             {isHard
               ? `Create free account & start ${paywall.recommendedPlanName}`
@@ -110,17 +126,17 @@ export default function GuestTrialModal() {
           <Button
             variant="ghost"
             icon="log-in"
-            onClick={() => { openAuth("signin"); dismiss(); }}
+            onClick={() => { openAuth("signin"); if (!isHard) setShowPrompt(false); }}
           >
             Sign in
           </Button>
         </div>
-        {/* Dismiss link — only in soft mode */}
-        {!isHard && (
-          <button className="gtm-dismiss" onClick={() => setShowPrompt(false)}>
-            Continue as guest (limited)
-          </button>
-        )}
+        {/* Exit link. In soft mode it's "keep going, limited". In hard mode it
+            only closes the dialog so the user can still browse and reach
+            /pricing — no further extraction is possible either way. */}
+        <button className="gtm-dismiss" onClick={dismiss}>
+          {isHard ? "Keep browsing (no extractions left)" : "Continue as guest (limited)"}
+        </button>
       </div>
       {/* Backdrop — dismisses soft prompt, but NOT the hard block */}
       {!isHard && (
