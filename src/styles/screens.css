@@ -8696,3 +8696,59 @@ body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
 }
 .local-data-notice > svg { color: var(--warning, #f59e0b); flex-shrink: 0; }
 .local-data-notice-text { flex: 1; min-width: 220px; }
+
+/* ── Composer: embedded-links chooser + background-run option ────────────────
+   Shown when a paste is prose that CONTAINS links (classifyInput's "embedded").
+   Deliberately an inline strip, not a modal: it's a refinement of what the user
+   just typed, and both answers are legitimate — extracting the linked pages, or
+   extracting the text itself. Guessing silently is what we're replacing. */
+.hero-embedded-choice {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin: 8px 12px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-soft-2, var(--border));
+  background: var(--accent-soft, rgba(79,70,229,.07));
+  border-radius: var(--r-md, 10px);
+  font-size: .85em; color: var(--text-2);
+}
+.hero-embedded-q { display: inline-flex; align-items: center; gap: 7px; }
+.hero-embedded-q b { color: var(--text); }
+.hero-embedded-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-embedded-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-2); font-size: .95em; font-weight: 600; cursor: pointer;
+}
+.hero-embedded-btn:hover { border-color: var(--accent); color: var(--text); }
+.hero-embedded-primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.hero-embedded-primary:hover { color: #fff; filter: brightness(1.06); }
+
+/* "Run in background" lives in the + menu; the dot marks it active without
+   adding another chip to the composer's bottom row. */
+.hero-plus-wrap { position: relative; }
+.hero-plus-dot {
+  position: absolute; top: 4px; right: 4px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.hero-menu-item-on { color: var(--text); }
+.hero-menu-check { margin-left: auto; color: var(--accent); flex-shrink: 0; }
+
+/* Content-format chips inside Home's Advanced options (mirrors /batch). */
+.advanced-formats {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 6px 0 0 25px;
+}
+.advanced-formats-label { font-size: .8em; color: var(--text-3); }
+.advanced-format-chip {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-3); font-size: .78em; font-weight: 600; cursor: pointer;
+}
+.advanced-format-chip:hover { border-color: var(--accent); color: var(--text-2); }
+.advanced-format-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }

@@ -254,7 +254,7 @@ function BatchGateBanner({ onUpgrade, planId, planLimit }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Batch() {
   useSeo({
-    title: "DatIQ Batch — extract from many URLs at once | DatIQ.app",
+    title: "DatIQ Batch extraction — many URLs at once | DatIQ.app",
     description:
       "DatIQ Batch — paste up to hundreds of URLs and extract structured data from every page in one run. DatIQ.app is the zero-code web data extraction platform for sales, SEO, and research teams.",
     canonical: "https://datiq.app/batch",
@@ -294,17 +294,27 @@ export default function Batch() {
     return BATCH_INTENTS.some((b) => b.key === i) ? i : "summary";
   });
   const [customPrompt, setCustomPrompt] = useState(() => {
+    // A custom prompt typed on Home now arrives with the nav state. It used to
+    // be dropped entirely, so a Home batch with intent:"custom" auto-ran here
+    // with an empty prompt — extracting nothing, with no indication why.
+    const fromHome = location.state?.customPrompt;
+    if (typeof fromHome === "string" && fromHome.trim()) return fromHome;
     const i = location.state?.intent;
     if (i === "contacts") return CONTACTS_PROMPT;
     if (i === "pricing")  return PRICING_PROMPT;
     return "";
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [renderJs, setRenderJs] = useState(false);
+  // Also carried over from Home rather than silently reset to false.
+  const [renderJs, setRenderJs] = useState(() => location.state?.renderJs === true);
 
   // Content generation per URL
-  const [generateContentEnabled, setGenerateContentEnabled] = useState(false);
-  const [selectedContentFormatKey, setSelectedContentFormatKey] = useState("seo-outline");
+  const [generateContentEnabled, setGenerateContentEnabled] = useState(
+    () => Boolean(location.state?.generateContent),
+  );
+  const [selectedContentFormatKey, setSelectedContentFormatKey] = useState(
+    () => location.state?.generateContent?.key || "seo-outline",
+  );
   const selectedContentFormat = CONTENT_FORMATS.find((f) => f.key === selectedContentFormatKey) || CONTENT_FORMATS[0];
 
   // Persist draft textarea to localStorage so it survives refresh / back-nav
@@ -700,7 +710,7 @@ export default function Batch() {
           <div className="eyebrow">
             <Icon name="layers-2" size={13} /> Batch mode
           </div>
-          <h1 className="batch-h1">Multi-URL extraction</h1>
+          <h1 className="batch-h1">Batch extraction</h1>
           <p className="batch-sub">
             Extract structured data from multiple URLs simultaneously. Import from CSV or paste a list.
             Each URL counts toward your monthly extraction quota.

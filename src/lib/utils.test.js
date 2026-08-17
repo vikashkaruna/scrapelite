@@ -43,16 +43,19 @@ describe("URL and input helpers", () => {
   });
 
   it("classifies a URL, URL list, raw content, and empty input predictably", () => {
-    expect(classifyInput("example.com")).toEqual({ kind: "single", urls: ["https://example.com"] });
-    expect(classifyInput("https://a.com\nhttps://b.com")).toEqual({
+    // toMatchObject, not toEqual: the result also carries urlCount/tokenCount/
+    // density so the composer can tell "a list of links" from "prose that
+    // mentions links". These assertions are about the verdict + the URLs.
+    expect(classifyInput("example.com")).toMatchObject({ kind: "single", urls: ["https://example.com"] });
+    expect(classifyInput("https://a.com\nhttps://b.com")).toMatchObject({
       kind: "multi",
       urls: ["https://a.com", "https://b.com"],
     });
-    expect(classifyInput("hello world, this is not a url")).toEqual({
+    expect(classifyInput("hello world, this is not a url")).toMatchObject({
       kind: "text",
       urls: [],
     });
-    expect(classifyInput("")).toEqual({ kind: "empty", urls: [] });
+    expect(classifyInput("")).toMatchObject({ kind: "empty", urls: [] });
   });
 
   it("extractUrls splits, normalizes, dedupes, and reports invalid", () => {

@@ -337,8 +337,12 @@ export default function TopBar() {
   const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
   const mainLinks = [
-    { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" },
-    { to: "/batch",       label: "Batch",       icon: "layers-2",  match: (p) => p === "/batch" },
+    // "Extract" covers batch too: the Home composer detects 2+ URLs (or a CSV,
+    // or links inside pasted prose) and routes to /batch itself, so a separate
+    // Batch nav item advertised a second front door to the same feature. The
+    // route still exists — it's the run + results surface, reached from the
+    // composer and from Dashboard's batch-run history.
+    { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
     { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Collections moved inside /workspace as a tab (2026-08-11) — the
