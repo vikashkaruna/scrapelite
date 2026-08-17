@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   deleteBatchRun,
+  getBatchRun,
   listBatchRuns,
   makeBatchLabel,
   readBatchMap,
@@ -131,5 +132,71 @@ describe("makeBatchLabel", () => {
     const label = makeBatchLabel("summary", 1, "2026-07-15T10:00:00.000Z");
     expect(label).toMatch(/1 URL\b/);
     expect(label).not.toMatch(/1 URLs/);
+  });
+});
+
+// ── Runs carry every row, including failures ────────────────────────────────
+//
+// Failures were only ever in the page's React state: leaving /batch lost the
+// failure list AND the per-row Retry that goes with it. Dashboard can't stand
+// in, because only successes are saved as extractions — a failed URL has no
+// row there at all. Storing `rows` on the run is what makes /batch?run=<id>
+// able to rebuild the table.
+
+describe("batch run rows + lookup", () => {
+  beforeEach(() => localStorage.clear());
+
+  const run = (over = {}) => ({
+    id: "run_1",
+    kind: "batch",
+    label: "AI summary · 3 URLs · Aug 18",
+    intent: "summary",
+    createdAt: "2026-08-18T10:00:00.000Z",
+    totalUrls: 3,
+    successCount: 2,
+    failedCount: 1,
+    rows: [
+      { url: "https://a.com", status: "success", error: null, title: "A" },
+      { url: "https://b.com", status: "success", error: null, title: "B" },
+      { url: "https://c.com", status: "error", error: "timed out", title: null },
+    ],
+    ...over,
+  });
+
+  it("round-trips the rows, failures included", () => {
+    saveBatchRun(run());
+    const stored = getBatchRun("run_1");
+    expect(stored.rows).toHaveLength(3);
+    expect(stored.rows.find((r) => r.status === "error")).toMatchObject({
+      url: "https://c.com",
+      error: "timed out",
+    });
+  });
+
+  it("getBatchRun returns null for an unknown or missing id", () => {
+    saveBatchRun(run());
+    expect(getBatchRun("nope")).toBeNull();
+    expect(getBatchRun(null)).toBeNull();
+    expect(getBatchRun(undefined)).toBeNull();
+  });
+
+  it("keeps counts independent of what was savable to the Dashboard", () => {
+    // successCount is the count of rows that SUCCEEDED, not the count that
+    // saved. It used to be the saved count, computed inside a .then() — so if
+    // every save rejected, the run was never recorded at all and vanished from
+    // history while the on-screen table still showed successes.
+    saveBatchRun(run());
+    const stored = getBatchRun("run_1");
+    expect(stored.successCount).toBe(2);
+    expect(stored.failedCount).toBe(1);
+    expect(stored.totalUrls).toBe(3);
+  });
+
+  it("labels a map batch as 'Map site' rather than the generic fallback", () => {
+    expect(makeBatchLabel("map", 4, "2026-08-18T10:00:00.000Z")).toMatch(/^Map site · 4 URLs/);
+  });
+
+  it("still labels a genuinely unknown intent with the fallback", () => {
+    expect(makeBatchLabel("wat", 1, "2026-08-18T10:00:00.000Z")).toMatch(/^Extraction · 1 URL/);
   });
 });

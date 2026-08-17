@@ -1007,7 +1007,18 @@ export default function Dashboard() {
           return run ? (
             <div className="batch-filter-banner">
               <Icon name="layers-2" size={14} />
-              <span>Showing <b>{run.label}</b> — {run.successCount} saved</span>
+              <span>
+                Showing <b>{run.label}</b> — {run.successCount} saved
+                {run.failedCount > 0 && `, ${run.failedCount} failed`}
+              </span>
+              {/* Dashboard only holds the SAVED pages — failures were never
+                  saved as extractions, so the run's own results view is the
+                  only place to see them (and retry them). */}
+              {run.failedCount > 0 && (
+                <button className="batch-filter-clear" onClick={() => navigate(`/batch?run=${run.id}`)} title="Open this run's results">
+                  <Icon name="arrow-up-right" size={13} /> View run
+                </button>
+              )}
               <button className="batch-filter-clear" onClick={() => setBatchFilter(null)} title="Clear filter">
                 <Icon name="x" size={13} /> Show all
               </button>

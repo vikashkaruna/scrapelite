@@ -16,6 +16,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
+import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useToast } from "./Toast.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
@@ -51,6 +52,7 @@ export default function HeroComposer({
   const navigate = useNavigate();
   const showToast = useToast();
   const { extract } = useExtraction();
+  const { startBatchRun } = useBatchRun();
 
   const [batchMode, setBatchMode] = useState(false);
   // Sticky "run in background" preference — lives in the + menu rather than as
@@ -222,6 +224,23 @@ export default function HeroComposer({
     if (isMulti || classification.kind === "csv") {
       const urls = classification.urls?.length ? classification.urls : detectedUrls;
       if (urls.length < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
+      // Background: start the run right here and stay put. Navigating to /batch
+      // to then say "you can navigate away" would defeat the point — the whole
+      // request is not to be moved off the page. The run lives in
+      // BatchRunProvider either way, so it doesn't care which route started it.
+      if (background) {
+        startBatchRun({
+          urls,
+          intent,
+          renderJs,
+          customPrompt: resolvePrompt({ intent, customPrompt }),
+          generateContent,
+          background: true,
+        });
+        return;
+      }
+
+      // Foreground: hand off to /batch, which auto-runs and shows the table.
       // Carry the full run configuration. Only { urls, intent, autorun } used to
       // travel, so a Home batch with intent:"custom" arrived with an empty
       // prompt and auto-ran immediately — silently extracting nothing useful.

@@ -72,6 +72,7 @@ import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
+import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
 // Redirect /docs to the static help site
@@ -288,9 +289,14 @@ export default function App() {
               <PersonaProvider>
                 <BillingProvider>
                   <ExtractionProvider>
-                    <div className="app-root">
-                      <Shell />
-                    </div>
+                    {/* Owns an in-flight batch above the router, so a run
+                        survives navigation and reports through the same
+                        global dock as a single extraction. */}
+                    <BatchRunProvider>
+                      <div className="app-root">
+                        <Shell />
+                      </div>
+                    </BatchRunProvider>
                   </ExtractionProvider>
                 </BillingProvider>
               </PersonaProvider>
