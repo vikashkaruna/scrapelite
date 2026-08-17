@@ -3039,6 +3039,16 @@
 /* ── Payment integration — Pricing page additions ───────────────────────────── */
 .btn-loading { display: flex; align-items: center; gap: 6px; }
 .btn-loading svg { animation: spin 0.9s linear infinite; }
+/* Button.jsx swaps the left icon for a .spinner while `loading`. The shared
+   .spinner tints itself with --accent, which is invisible on a primary button
+   (accent background) — so inside any button the spinner tracks the button's
+   own text colour instead. */
+.btn-loading .spinner {
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  flex-shrink: 0;
+}
+.btn-loading[disabled] { opacity: .85; cursor: progress; }
 
 .provider-badge {
   display: flex; align-items: center; gap: 6px; font-size: .8em; color: var(--text-3);

@@ -7,15 +7,15 @@
 //     read from Supabase: a showcase has to look the same to every visitor,
 //     not just the browser that happened to share something.
 //
-//  2. "Recently shared" — the existing local-only feed (getGallery()), an
-//     uncurated mirror of whatever this browser has shared. Left completely
-//     unchanged so its sync contract (and the tests that assert it) keeps
-//     working.
+//  2. "Recently shared" — the uncurated feed (getGallery()): every public
+//     report, newest first, read from Supabase and merged with anything this
+//     browser shared while signed out. getGalleryLocal() paints instantly from
+//     localStorage first, then the async result replaces it.
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
-import { getGallery, getCuratedGallery, buildPublicUrl } from "../lib/shareService.js";
+import { getGallery, getGalleryLocal, getCuratedGallery, buildPublicUrl } from "../lib/shareService.js";
 import { PERSONAS, PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
@@ -43,7 +43,7 @@ function GalleryCard({ it }) {
 }
 
 export default function Gallery() {
-  const [items, setItems] = useState(() => getGallery(100));
+  const [items, setItems] = useState(() => getGalleryLocal(100));
   const [curated, setCurated] = useState([]);
   const [curatedLoading, setCuratedLoading] = useState(true);
   const [activePersona, setActivePersona] = useState(null);
@@ -54,8 +54,9 @@ export default function Gallery() {
       description: "Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.",
       url: canonicalUrl("/gallery"),
     });
-    // Refresh the local gallery in case it was updated since mount.
-    setItems(getGallery(100));
+    // Server + local merge. Never clears `items` on failure — getGallery()
+    // falls back to the local list rather than throwing.
+    getGallery(100).then(setItems).catch(() => {});
 
     getCuratedGallery({ limit: 100 })
       .then(setCurated)
