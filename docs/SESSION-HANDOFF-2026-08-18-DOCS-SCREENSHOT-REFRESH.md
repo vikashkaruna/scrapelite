@@ -18,8 +18,15 @@ documentation, screenshots, and marketing collateral.
 | `origin/merge-home-and-batch-run` | `ac4a812` | **byte-identical to `origin/staging`** |
 
 `git merge-base --is-ancestor origin/merge-home-and-batch-run origin/staging` returned true and
-`git log origin/staging..origin/merge-home-and-batch-run` was empty, so the branch was fully
-merged and **deleted** (local + remote), as requested.
+`git log origin/staging..origin/merge-home-and-batch-run` was empty, so the branch was fully merged.
+
+* **`origin/merge-home-and-batch-run` — DELETED.**
+* **The local branch still exists.** It is checked out in
+  `.claude/worktrees/staging-main-pr-test-failures-7e9684`, owned by a *live* peer session, and git
+  refuses to delete a branch a worktree holds. Nothing is at risk — the worktree is clean and sits on
+  `ac4a812`, every commit of which is on `staging`. The owner chose to leave it rather than change a
+  running session's HEAD. To finish the cleanup once that session ends:
+  `git worktree remove .claude/worktrees/staging-main-pr-test-failures-7e9684 && git branch -d merge-home-and-batch-run`
 
 The working branch started at `origin/main`, which is *behind* staging. It was reset onto
 `origin/staging` before any work — the task said "use the latest staging branch".
@@ -119,7 +126,11 @@ already correct (the prior session updated it).
 ## 4. Three stale e2e specs — found, and fixed
 
 **The previous session reported all-green, but its 8 pre-push gates do not include e2e.** Three
-smoke specs asserting the *old* nav contract had shipped to `staging` broken:
+smoke specs asserting the *old* nav contract had shipped to `staging` broken.
+
+**Confirmed independently by CI:** the owner pasted the *Staging Gate: Test Suites* log, which had
+failed 6 h earlier in 6m59s with `3 failed / 111 passed / 1 skipped` — naming these exact three
+specs. This commit is what turns that gate green.
 
 | Spec | Was asserting | Now asserts |
 |---|---|---|
@@ -153,8 +164,24 @@ and a second dev server shut down. The prior handoff documented the same symptom
 | `npm run test:db` | **25 migrations / 124 assertions / 0 failed** |
 | `npm run build` | clean |
 | `npm run test:security` | clean |
-| e2e smoke (`--workers=2`) | see §6 |
-| `npm run readiness` | see §6 |
+| e2e smoke (`--workers=1`, full) | **115 passed / 1 skipped / 0 failed** |
+| `npm run readiness` | **6 pass / 1 warn / 0 fail** — stale-screenshot warn CLEARED |
+
+---
+
+### Staging deploy
+
+Pushing `staging` auto-triggered a Netlify **branch deploy**, `ready` at `dddf6f9`. Verified live:
+
+* `npm run smoke:staging` — **10 passed / 0 failed**.
+* **Bundle-hash check** (the standing rule: never trust a 200): staging serves
+  `index-C-woAjkA.js` on *both* `staging--datiqapp.netlify.app` and `staging.datiq.app`, while
+  production serves `index-BWT72APE.js`. The old alias bug — where `staging.datiq.app` silently
+  served production — has **not** returned.
+* Refreshed content confirmed live on the deploy: the new help batch page, all five new FAQ
+  entries, zero occurrences of the corrected "Pro and above" Google Sheets claim, and the new
+  `01-home.png` (361,482 bytes, matching the committed file).
+* **Production is untouched** — last production deploy remains `17e6c82` (2026-08-15).
 
 ---
 
