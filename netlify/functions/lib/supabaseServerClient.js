@@ -111,8 +111,17 @@ export function maskKey(value) {
 export function decodeSupabaseKey(key) {
   const empty = { format: "unknown", ref: null, role: null, exp: null };
   if (typeof key !== "string" || !key) return { ...empty, format: "missing" };
-  if (/^sb_(publishable|secret)_/.test(key)) {
+  // The two new-format keys are NOT interchangeable and must not share a
+  // verdict. `sb_publishable_…` is the browser-safe key; `sb_secret_…`
+  // bypasses Row Level Security exactly like a service_role JWT does.
+  // Collapsing both to "publishable" made the service-key guard below blind
+  // to the newer format — and the newer format is what Supabase now issues
+  // by default, so the guard was silently unarmed on any recent project.
+  if (/^sb_publishable_/.test(key)) {
     return { ...empty, format: "publishable" };
+  }
+  if (/^sb_secret_/.test(key)) {
+    return { ...empty, format: "secret" };
   }
   const parts = key.split(".");
   if (parts.length !== 3) return empty;
@@ -200,6 +209,20 @@ export function diagnoseSupabaseIdentity(env = process.env) {
   // here: VITE_SUPABASE_ANON_KEY is compiled into the browser bundle, and a
   // service key bypasses RLS entirely — every user could read every other
   // user's rows. Report it above everything else.
+  // Same danger, newer key format. An sb_secret_… key carries no role claim
+  // to inspect, so the check above cannot see it — the format IS the signal.
+  if (claims.format === "secret") {
+    return {
+      problem: "secret_key_in_anon_slot",
+      message:
+        `${resolved.keySource} holds an "sb_secret_…" key, not a publishable key. ` +
+        "A secret key bypasses Row Level Security and is compiled into the " +
+        "browser bundle from VITE_SUPABASE_ANON_KEY — replace it with the " +
+        "project's sb_publishable_… key immediately and rotate the leaked secret.",
+      detail,
+    };
+  }
+
   if (claims.role && claims.role !== "anon") {
     return {
       problem: "service_role_in_anon_slot",
