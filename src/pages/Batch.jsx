@@ -2,7 +2,7 @@
 // Supports: paste URLs textarea, CSV file import, progress tracking, and
 // combined export (CSV / PDF / Markdown / JSON).
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
@@ -11,6 +11,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
+import { useBatchRun } from "../components/BatchRunProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import UrlReviewTable from "../components/UrlReviewTable.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
@@ -18,13 +19,11 @@ import ExportIntegrations from "../components/ExportIntegrations.jsx";
 import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
-import { incrementBatchRuns } from "../lib/usageService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
-import { saveEnrichment } from "../lib/enrichmentStore.js";
 import { isValidUrl, csvDownload, markdownDownload, jsonDownload, copyToClipboard, uid } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
-import { saveBatchRun, recordBatchItems, makeBatchLabel } from "../lib/batchRunsService.js";
+import { getBatchRun } from "../lib/batchRunsService.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
 import { useSeo } from "../hooks/useSeo.js";
 
@@ -41,14 +40,6 @@ const BATCH_INTENTS = [
   { key: "map",      icon: "network",  label: "Map site",       desc: "Discover all indexed sub-pages per domain" },
   { key: "custom",   icon: "code",     label: "Custom…",        desc: "Same prompt applied to all URLs" },
 ];
-
-// Derive enrichMeta (for persisting enrichment tabs) based on intent.
-function getEnrichMetaForIntent(intent) {
-  if (intent === "contacts") return { key: "contacts", label: "Find Contact Info", icon: "mail" };
-  if (intent === "pricing")  return { key: "pricing",  label: "Pricing & Plans",   icon: "hash" };
-  if (intent === "custom")   return { key: "custom",   label: "Custom extraction", icon: "code" };
-  return null; // summary and map don't produce named enrichment tabs
-}
 
 function resolveIntentPrompt(intent, customPrompt) {
   if (intent === "contacts") return CONTACTS_PROMPT;
@@ -77,7 +68,7 @@ function parseUrlsFromText(text) {
 }
 
 // ── Export Dropdown (matches Dashboard pattern) ───────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onSendTo, disabled }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -130,14 +121,8 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
               <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
             </button>
           </div>
-          {onSendTo && (
-            <div className="export-dropdown-section">
-              <div className="export-dropdown-section-label">Send to</div>
-              <button className="export-dropdown-item" onClick={() => { onSendTo(); setOpen(false); }}>
-                <Icon name="share" size={14} /> <span><b>Integrations…</b><span className="export-plan-hint">Sheets · Airtable · Notion</span></span>
-              </button>
-            </div>
-          )}
+          {/* No "Send to" section — destinations live on the Push button, which
+              now carries Google Sheets too. Export ▾ is downloads + clipboard. */}
         </div>
       )}
     </div>
@@ -260,7 +245,7 @@ function BatchGateBanner({ onUpgrade, planId, planLimit }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Batch() {
   useSeo({
-    title: "DatIQ Batch — extract from many URLs at once | DatIQ.app",
+    title: "DatIQ Batch extraction — many URLs at once | DatIQ.app",
     description:
       "DatIQ Batch — paste up to hundreds of URLs and extract structured data from every page in one run. DatIQ.app is the zero-code web data extraction platform for sales, SEO, and research teams.",
     canonical: "https://datiq.app/batch",
@@ -300,17 +285,27 @@ export default function Batch() {
     return BATCH_INTENTS.some((b) => b.key === i) ? i : "summary";
   });
   const [customPrompt, setCustomPrompt] = useState(() => {
+    // A custom prompt typed on Home now arrives with the nav state. It used to
+    // be dropped entirely, so a Home batch with intent:"custom" auto-ran here
+    // with an empty prompt — extracting nothing, with no indication why.
+    const fromHome = location.state?.customPrompt;
+    if (typeof fromHome === "string" && fromHome.trim()) return fromHome;
     const i = location.state?.intent;
     if (i === "contacts") return CONTACTS_PROMPT;
     if (i === "pricing")  return PRICING_PROMPT;
     return "";
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [renderJs, setRenderJs] = useState(false);
+  // Also carried over from Home rather than silently reset to false.
+  const [renderJs, setRenderJs] = useState(() => location.state?.renderJs === true);
 
   // Content generation per URL
-  const [generateContentEnabled, setGenerateContentEnabled] = useState(false);
-  const [selectedContentFormatKey, setSelectedContentFormatKey] = useState("seo-outline");
+  const [generateContentEnabled, setGenerateContentEnabled] = useState(
+    () => Boolean(location.state?.generateContent),
+  );
+  const [selectedContentFormatKey, setSelectedContentFormatKey] = useState(
+    () => location.state?.generateContent?.key || "seo-outline",
+  );
   const selectedContentFormat = CONTENT_FORMATS.find((f) => f.key === selectedContentFormatKey) || CONTENT_FORMATS[0];
 
   // Persist draft textarea to localStorage so it survives refresh / back-nav
@@ -327,14 +322,50 @@ export default function Batch() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Run state
-  const [running, setRunning] = useState(false);
+  // Run state lives in BatchRunProvider so it survives navigation. This page
+  // reads it rather than owning it; the floating dock renders the progress.
+  const { job: batchJob, results, setResults, startBatchRun, cancelBatchRun } = useBatchRun();
+  const running = batchJob?.status === "running";
+  const runInBackground = location.state?.background === true;
+
+  // ── Addressable results: /batch?run=<id> ──────────────────────────────────
+  // A finished run used to live only in this component's state, so navigating
+  // away lost the results table — including the failed rows and their Retry
+  // buttons, which Dashboard can never show because only successes are saved
+  // as extractions. saveBatchRun now stores every row, so a run can be
+  // reopened by id from the dock or from Dashboard's run history.
+  const [searchParams] = useSearchParams();
+  const requestedRunId = searchParams.get("run");
+  const [archivedRun, setArchivedRun] = useState(null);
+
+  useEffect(() => {
+    if (!requestedRunId) { setArchivedRun(null); return; }
+    const run = getBatchRun(requestedRunId);
+    if (!run) {
+      showToast("That batch run is no longer in this browser's history.");
+      setArchivedRun(null);
+      return;
+    }
+    setArchivedRun(run);
+  }, [requestedRunId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rows to render: a live run wins, otherwise the archived one. Archived rows
+  // carry url/status/error/title only — enough for the table, the filters, the
+  // sort and Retry, but not the full extraction (that's on Dashboard).
+  const archivedResults = archivedRun?.rows?.length
+    ? archivedRun.rows.map((r) => ({
+        url: r.url,
+        page_title: r.title || "",
+        _status: r.status,
+        ...(r.error ? { _error: r.error } : {}),
+        _archived: true,
+      }))
+    : null;
+
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   // F16 — results table filter + sort
   const [resultsFilter, setResultsFilter] = useState("all"); // all | success | error
   const [resultsSort, setResultsSort] = useState("original"); // original | url-asc | url-desc | status | title | headings
-  const [progress, setProgress] = useState({ completed: 0, total: 0, current: "" });
-  const [results, setResults] = useState(null);
   const [retryingIndex, setRetryingIndex] = useState(-1);
 
   // Groke QW#4 (ba-4) — per-URL retry on a failed batch row.
@@ -343,6 +374,10 @@ export default function Batch() {
   // via the standard runBatch → success path, so retried items appear in the
   // Dashboard with the same shape as a first-time success.
   const handleRetry = async (item, index) => {
+    // A retry is a fresh scrape, so it goes through the same gate as any other
+    // extraction. This path used to reach extractOne() with no check at all,
+    // which made the results table a way to keep extracting past the limit.
+    if (guestTrial?.requireGuestCredit?.("single") === false) return;
     setRetryingIndex(index);
     try {
       const fresh = await extractOne(item.url, {
@@ -367,10 +402,11 @@ export default function Batch() {
     } catch (err) {
       showToast("Retry failed. Please try again.");
     } finally {
+      // Counted whatever the outcome — the provider call was made either way.
+      if (!user) guestTrial?.trackGuestExtraction?.(1);
       setRetryingIndex(-1);
     }
   };
-  const abortRef = useRef(null);
 
   // Derived URL list
   const { valid: pastedUrls, invalid: invalidUrls } =
@@ -447,131 +483,25 @@ export default function Batch() {
       return;
     }
 
-    // Enforce guest hard limit for batch runs
-    if (!user) {
-      const guestBatchCheck = guestTrial?.checkCanExtractBatch?.();
-      if (guestBatchCheck && !guestBatchCheck.allowed) {
-        guestTrial.setHardBlockReason?.("batch");
-        guestTrial.setShowHardBlock?.(true);
-        return;
-      }
-    }
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setRunning(true);
-    setResults(null);
-    setProgress({ completed: 0, total: urlCount, current: activeUrls[0] || "" });
-
-    // Resolve extraction options from intent chip
+    // The run itself lives in BatchRunProvider, above the router, so it keeps
+    // going if the user navigates away — which is what "run in background"
+    // needs. It also means the guest gate, progress reporting and the post-run
+    // persistence live in one place instead of being duplicated in this page.
     const resolvedPrompt = resolveIntentPrompt(intent, customPrompt);
-    const opts = { intent, personaId };
-    if (renderJs) opts.renderJs = true;
-    if (resolvedPrompt) opts.customPrompt = resolvedPrompt;
-    if (intent === "map") opts.mapMode = true;
-    if (generateContentEnabled && intent !== "map") opts.generateContent = selectedContentFormat;
 
-    // Unique ID for this batch run — used to group results in Dashboard history.
-    const batchRunId = uid();
-    const batchStarted = new Date().toISOString();
-
-    try {
-      const batchResults = await runBatch(
-        activeUrls,
-        opts,
-        (completed, total, latest) => {
-          setProgress({ completed, total, current: activeUrls[completed] || "" });
-          if (latest._status === "success") {
-            billing?.trackExtraction?.(1);
-          }
-        },
-        controller.signal,
-      );
-
-      if (!controller.signal.aborted) {
-        setResults(batchResults);
-        incrementBatchRuns(1);
-        const successItems = batchResults.filter((r) => r?._status === "success");
-        const failed = batchResults.filter((r) => r?._status === "error").length;
-        showToast(
-          `Batch complete — ${successItems.length} succeeded${failed ? `, ${failed} failed` : ""}`,
-          "check-circle",
-        );
-
-        // Track guest trial (1 credit per batch run, separate from single-URL count)
-        if (!user) guestTrial.trackGuestBatchRun?.(1);
-
-        // Auto-save successful results to Dashboard + record batch run history.
-        const enrichMetaObj = getEnrichMetaForIntent(intent);
-        if (successItems.length > 0) {
-          Promise.allSettled(
-            successItems.map((r) => {
-              const { _status, _error, ...cleanItem } = r;
-              // Persist enrichment tab so Dashboard "View" shows the named extraction
-              // type — even when empty, carrying `reason` so it's diagnosable instead
-              // of silently missing (mirrors ExtractionProvider.extract()/enrich()).
-              if (enrichMetaObj) {
-                saveEnrichment(cleanItem.url, {
-                  key: enrichMetaObj.key,
-                  label: enrichMetaObj.label,
-                  icon: enrichMetaObj.icon,
-                  prompt: resolvedPrompt,
-                  data: cleanItem.custom_extraction ?? null,
-                  ...(cleanItem.custom_extraction_reason
-                    ? { reason: cleanItem.custom_extraction_reason }
-                    : {}),
-                  created_at: cleanItem.created_at,
-                });
-              }
-              return saveExtraction(cleanItem);
-            }),
-          ).then((settled) => {
-            const savedRows = settled
-              .filter((s) => s.status === "fulfilled")
-              .map((s) => s.value);
-            const savedCount = savedRows.length;
-
-            if (savedCount > 0) {
-              // Record which extraction IDs belong to this batch run
-              const savedIds = savedRows.map((r) => r.id).filter(Boolean);
-              recordBatchItems(batchRunId, savedIds);
-
-              // Persist the batch run metadata for Dashboard history
-              saveBatchRun({
-                id: batchRunId,
-                kind: "batch",
-                label: makeBatchLabel(intent, urlCount, batchStarted),
-                intent,
-                createdAt: batchStarted,
-                totalUrls: urlCount,
-                successCount: savedCount,
-                failedCount: failed,
-              });
-
-              showToast(
-                `${savedCount} page${savedCount !== 1 ? "s" : ""} saved to Dashboard`,
-                "bookmark",
-              );
-            }
-          });
-        }
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        console.error("[DatIQ] Batch failed:", err);
-        showToast("Batch extraction failed. Please try again.");
-      }
-    } finally {
-      setRunning(false);
-    }
+    await startBatchRun({
+      urls: activeUrls,
+      intent,
+      personaId,
+      renderJs,
+      customPrompt: resolvedPrompt,
+      generateContent: generateContentEnabled && intent !== "map" ? selectedContentFormat : null,
+      background: runInBackground,
+    });
   };
 
-  const handleCancel = () => {
-    abortRef.current?.abort();
-    setRunning(false);
-    showToast("Batch cancelled.");
-  };
+  // Kept for the page's own affordances; the dock's Cancel calls the same thing.
+  const handleCancel = () => cancelBatchRun();
 
   // Auto-run once when arriving from the Home composer with autorun set.
   const autoRanRef = useRef(false);
@@ -585,13 +515,18 @@ export default function Batch() {
 
   // ── Export helpers ───────────────────────────────────────────────────────────
   // Strip batch-only fields so they don't appear in exported CSV/JSON/MD columns.
+  // A live run wins; otherwise show the archived run named by ?run=<id>.
+  const shownResults = results || archivedResults;
+  // Archived rows are metadata only (url/status/error/title) — enough for the
+  // table and Retry, but there is nothing to export from them, so exports stay
+  // driven by the live results. Dashboard holds the saved pages.
   const successResults = (results || [])
     .filter((r) => r?._status === "success")
     .map(({ _status, _error, ...clean }) => clean);
 
   // F16 — derived view of the results table (filter + sort applied)
   const displayedResults = useMemo(() => {
-    const list = Array.isArray(results) ? results : [];
+    const list = Array.isArray(shownResults) ? shownResults : [];
     const filtered = resultsFilter === "all"
       ? list
       : list.filter((r) => (r?._status || "success") === resultsFilter);
@@ -610,7 +545,7 @@ export default function Batch() {
       default: break;
     }
     return sorted;
-  }, [results, resultsFilter, resultsSort]);
+  }, [shownResults, resultsFilter, resultsSort]);
 
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
@@ -694,7 +629,6 @@ export default function Batch() {
             ? "var(--warning, #f59e0b)"
             : "var(--success, #22c55e)";
 
-  const progressPct = progress.total > 0 ? (progress.completed / progress.total) * 100 : 0;
 
   return (
     <div className="page fade">
@@ -704,7 +638,7 @@ export default function Batch() {
           <div className="eyebrow">
             <Icon name="layers-2" size={13} /> Batch mode
           </div>
-          <h1 className="batch-h1">Multi-URL extraction</h1>
+          <h1 className="batch-h1">Batch extraction</h1>
           <p className="batch-sub">
             Extract structured data from multiple URLs simultaneously. Import from CSV or paste a list.
             Each URL counts toward your monthly extraction quota.
@@ -723,7 +657,7 @@ export default function Batch() {
         ) : (
           <>
             {/* Input section */}
-            {!running && !results && (
+            {!running && !shownResults && (
               <div className="batch-input-card card rise">
                 {/* Tab switcher */}
                 <div className="batch-tabs">
@@ -1028,49 +962,41 @@ export default function Batch() {
               </div>
             )}
 
-            {/* Progress */}
+            {/* Progress is rendered by the global ExtractionProgressDock, the
+                same surface single extractions use — so it stays visible (and
+                cancellable) after navigating away, which an in-page bar could
+                never do. */}
             {running && (
-              <div className="batch-progress-card card rise">
-                <div className="batch-progress-header">
-                  <Icon name="loader" size={18} className="spin" />
-                  <span>
-                    Extracting {progress.completed} / {progress.total} URLs…
-                  </span>
-                </div>
-                <div className="batch-progress-bar-wrap">
-                  <div
-                    className="batch-progress-bar"
-                    style={{ width: `${progressPct}%` }}
-                    role="progressbar"
-                    aria-valuenow={progress.completed}
-                    aria-valuemax={progress.total}
-                  />
-                </div>
-                {progress.current && (
-                  <p className="batch-progress-current">
-                    <Icon name="globe" size={12} />
-                    {progress.current}
-                  </p>
-                )}
-                <Button variant="ghost" size="sm" icon="x" onClick={handleCancel} style={{ marginTop: 12 }}>
-                  Cancel
-                </Button>
+              <div className="batch-running-note card rise">
+                <Icon name="loader" size={16} className="spin" />
+                <span>
+                  Extracting {batchJob.completed} / {batchJob.total} URLs — progress and
+                  Cancel are in the panel at the bottom right. You can navigate away.
+                </span>
               </div>
             )}
 
             {/* Results */}
-            {results && !running && (
+            {shownResults && !running && (
               <div className="batch-results rise">
                 <div className="batch-results-header">
                   <div>
                     <h2 className="batch-results-title">
                       <Icon name="check-circle" size={20} />
-                      Batch complete
+                      {archivedRun && !results ? archivedRun.label : "Batch complete"}
                     </h2>
                     <p className="batch-results-sub">
-                      {successResults.length} succeeded ·{" "}
-                      {results.filter((r) => r?._status === "error").length} failed ·{" "}
-                      {results.length} total
+                      {shownResults.filter((r) => r?._status === "success").length} succeeded ·{" "}
+                      {shownResults.filter((r) => r?._status === "error").length} failed ·{" "}
+                      {shownResults.length} total
+                      {archivedRun && !results && (
+                        <>
+                          {" · "}
+                          <span className="batch-archived-note">
+                            <Icon name="clock" size={11} /> saved run — open the pages in Dashboard
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="batch-results-ctas">
@@ -1082,10 +1008,13 @@ export default function Batch() {
                       onCopyCsv={onCopyCsv}
                       onCopyMarkdown={onCopyMarkdown}
                       onCopyJson={onCopyJson}
-                      onSendTo={() => setIntegrationsOpen(true)}
                       disabled={!successResults.length}
                     />
-                    <PushIntegrationMenu items={successResults} buttonVariant="secondary" />
+                    <PushIntegrationMenu
+                      items={successResults}
+                      buttonVariant="secondary"
+                      onAdvanced={() => setIntegrationsOpen(true)}
+                    />
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1126,9 +1055,9 @@ export default function Batch() {
                             <Icon name={f.icon} size={11} />
                             {f.label}
                             <span className="batch-filter-chip-count">
-                              {f.key === "all" ? results.length :
-                                f.key === "success" ? results.filter((r) => r?._status === "success").length :
-                                results.filter((r) => r?._status === "error").length}
+                              {f.key === "all" ? shownResults.length :
+                                f.key === "success" ? shownResults.filter((r) => r?._status === "success").length :
+                                shownResults.filter((r) => r?._status === "error").length}
                             </span>
                           </button>
                         ))}
@@ -1165,7 +1094,7 @@ export default function Batch() {
                       {displayedResults.map((item, i) => {
                         // Map filtered/sorted index back to the original results
                         // index so retry/view handlers still work correctly.
-                        const originalIdx = results.indexOf(item);
+                        const originalIdx = shownResults.indexOf(item);
                         return (
                           <ResultRow
                             key={item?.id || originalIdx}

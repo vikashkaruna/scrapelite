@@ -79,10 +79,29 @@ export function looksLikeUrl(value) {
 
 // Split a blob into the URLs it contains (newline / comma / semicolon / whitespace
 // separated), deduped and normalized to https://. Returns { valid, invalid }.
+// Trailing punctuation that belongs to the surrounding sentence, not the URL.
+// Only matters once URLs can come from prose ("…see https://figma.com/pricing.")
+// — in a one-URL-per-line list there is nothing to strip. Left alone: a
+// trailing "/" (a real path) and a ")" that closes a "(" inside the URL itself,
+// as in Wikipedia links.
+function trimUrlPunctuation(token) {
+  let t = token;
+  // Leading wrappers: "(https://x)", "<https://x>", quotes, markdown brackets.
+  while (t.length > 1 && /^[([<'"«“‘]/.test(t)) t = t.slice(1);
+  while (t.length > 1 && /[.,;:!?'"»”’>\]]$/.test(t)) t = t.slice(0, -1);
+  // A ")" only closes the URL when it has no matching "(" inside it — so
+  // en.wikipedia.org/wiki/Foo_(bar) keeps its paren, but "(https://b.com)"
+  // does not (its "(" was already stripped above).
+  while (t.length > 1 && t.endsWith(")") && (t.match(/\(/g) || []).length < (t.match(/\)/g) || []).length) {
+    t = t.slice(0, -1);
+  }
+  return t;
+}
+
 export function extractUrls(text) {
   const raw = String(text)
     .split(/[\n,;\s]+/)
-    .map((s) => s.trim())
+    .map((s) => trimUrlPunctuation(s.trim()))
     .filter(Boolean);
   const valid = [];
   const invalid = [];
@@ -99,36 +118,64 @@ export function extractUrls(text) {
 }
 
 // Classify what the user typed/pasted into the composer.
-//   "single" — exactly one URL
-//   "multi"  — two or more URLs (and little/no other prose)
-//   "csv"    — a CSV-shaped input (header row + data rows) — needs to go to /batch
-//   "text"   — raw text / HTML to extract directly (paste-anything)
-//   "empty"  — nothing meaningful
+//   "single"   — exactly one URL
+//   "multi"    — two or more URLs and little/no other prose
+//   "csv"      — a CSV-shaped input (header row + data rows) — needs to go to /batch
+//   "embedded" — prose/HTML/markdown that CONTAINS two or more URLs
+//   "text"     — raw text / HTML to extract directly (paste-anything)
+//   "empty"    — nothing meaningful
+//
+// Every result also carries `urls`, `urlCount`, `tokenCount` and `density`
+// (urls ÷ tokens, 0–1). The verdict alone was not enough: "multi" requires
+// nearly every token to be a URL, so pasting an email, a Slack thread or a
+// markdown list that happens to contain eight links fell through to "text" and
+// the whole blob was extracted as ONE pasted document. The URLs were already
+// found and returned — nothing on the text path read them. `embedded` names
+// that case so the composer can offer the choice instead of silently picking.
 export function classifyInput(value) {
   const s = String(value).trim();
-  if (!s) return { kind: "empty", urls: [] };
-  if (looksLikeUrl(s)) return { kind: "single", urls: [normalizeUrl(s)] };
+  if (!s) return { kind: "empty", urls: [], urlCount: 0, tokenCount: 0, density: 0 };
+
+  const tokenCount = s.split(/[\n,;\s]+/).map((t) => t.trim()).filter(Boolean).length;
+
+  if (looksLikeUrl(s)) {
+    const urls = [normalizeUrl(s)];
+    return { kind: "single", urls, urlCount: 1, tokenCount, density: 1 };
+  }
 
   const { valid } = extractUrls(s);
+  const density = tokenCount === 0 ? 0 : valid.length / tokenCount;
+  const base = { urls: valid, urlCount: valid.length, tokenCount, density };
+
   // Treat as a URL list when the input is essentially a set of links: every
   // whitespace/line/comma token resolves to a URL (allow a couple of stray tokens).
-  const tokenCount = s.split(/[\n,;\s]+/).map((t) => t.trim()).filter(Boolean).length;
   if (valid.length >= 2 && valid.length >= tokenCount - 1) {
-    return { kind: "multi", urls: valid };
+    return { ...base, kind: "multi" };
   }
   if (valid.length === 1 && tokenCount === 1) {
-    return { kind: "single", urls: valid };
+    return { ...base, kind: "single" };
   }
   // Q1 — CSV detection. A CSV has a header line with column names + at least
   // one data row. We treat as CSV when the first line is non-URL text with
   // multiple comma-separated values and the second line is a comma-separated
   // record (URLs or otherwise).
   if (looksLikeCsv(s)) {
-    return { kind: "csv", urls: valid };
+    return { ...base, kind: "csv" };
+  }
+  // Prose that carries a usable set of links. Checked before "text" so the
+  // composer can ask, but deliberately NOT auto-routed: a newsletter with ten
+  // links is genuinely ambiguous — extract the ten pages, or summarise the
+  // newsletter? Only the reader knows.
+  if (valid.length >= EMBEDDED_MIN_URLS) {
+    return { ...base, kind: "embedded" };
   }
   // Anything else is raw content (a pricing table, an email thread, newsletter HTML…).
-  return { kind: "text", urls: valid };
+  return { ...base, kind: "text" };
 }
+
+// Below this, prose with a stray link is just prose — one link in an article is
+// far more likely to be a citation than a request to extract that page.
+export const EMBEDDED_MIN_URLS = 2;
 
 // CSV detection heuristic for Q1 smart composer.
 //   - Multi-line input
@@ -138,8 +185,10 @@ export function classifyInput(value) {
 //   - Second line is not a URL itself (so we don't false-positive on
 //     paste-anything that has a stray comma)
 //   - We intentionally do NOT require the first line to have a "url" header
-//     word — even a "Name,Website,Description" CSV should be treated as CSV
-//     so the user can pick the URL column on /batch.
+//     word — even a "Name,Website,Description" CSV counts as CSV.
+//     (Note: the composer forwards the EXTRACTED URLs, not the CSV body, so
+//     /batch never sees the columns and there is no column picker there. The
+//     detected column name is surfaced on Home instead.)
 export function looksLikeCsv(text) {
   const s = String(text).trim();
   if (!s.includes("\n")) return false;

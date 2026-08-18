@@ -51,6 +51,11 @@ export function pickRecommendedPlan(ctx = {}) {
     planId = "pro"; // Scheduled monitoring first appears on Pro (Go/Select are both 0)
   } else if (ctx.kind === "api") {
     planId = "business"; // API access = Business+
+  } else if (ctx.kind === "batch_runs") {
+    // A guest out of free batch runs needs an ACCOUNT, not an upgrade — the
+    // free plan already includes batch. Recommending a paid tier here would
+    // sell past the thing that actually unblocks them.
+    planId = "free";
   }
   const plan = findPlan(planId);
   return plan;
@@ -91,6 +96,20 @@ export function buildPaywallCopy({ route, usage = {}, currentPlan, ctx, currency
         : `Batch mode maxes out at ${cp.limits?.batch_max_urls || 5} URLs`;
       body = `${plan.name} handles up to ${targetLabel} URLs per batch and ships with ${plan.limits?.extractions?.toLocaleString() || "more"} extractions/mo.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;
+      break;
+    }
+    // Distinct from "batch" above. That one is "this batch is too BIG for your
+    // plan" (a batch_max_urls cap). This one is "you've used all your free
+    // batch RUNS" — a count of runs, nothing to do with size. They shared a
+    // kind, so exhausting your run allowance produced "You need 20 URLs in one
+    // batch": a limit the user never hit, quoting a number derived from
+    // guest_batch_hard_limit x 4 that meant nothing to them.
+    case "batch_runs": {
+      const used = context.used || 0;
+      title = `You've used all ${used} free batch run${used !== 1 ? "s" : ""}`;
+      body = `Create a free account for ${cp.limits?.extractions || 10} extractions a month, `
+           + `saved to your dashboard instead of just this browser.`;
+      ctaLabel = "Create a free account";
       break;
     }
     case "export": {

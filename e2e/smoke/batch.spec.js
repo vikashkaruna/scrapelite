@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 test("batch page renders heading + URL textarea", async ({ page }) => {
   await page.goto("/batch");
-  await expect(page.getByRole("heading", { name: /Multi-URL extraction/i }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Batch extraction/i }).first()).toBeVisible();
   await expect(page.locator("textarea").first()).toBeVisible();
 });
 

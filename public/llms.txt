@@ -26,12 +26,12 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 
 ## Pricing (as of 2026)
 - Free: 10 extractions/month + 25 trial credits, no credit card
-- Go: $4.80/month (or $4/mo billed annually · ₹299/mo annual) — entry tier
-- Select: $14.40/month (or $12/mo annually · ₹999/mo annual) — 100 extractions + PDF export
-- Pro: $20.40/month (or $17/mo annually · ₹1,499/mo annual) — 250 extractions + scheduled monitoring + Google Sheets
-- Business: $44.40/month (or $37/mo annually · ₹3,499/mo annual) — 1,000 extractions + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
+- Go: $4.80/month (or $4/mo billed annually · ₹299/mo annual) — 200 extractions
+- Select: $14.40/month (or $12/mo annually · ₹999/mo annual) — 500 extractions + PDF export
+- Pro: $20.40/month (or $17/mo annually · ₹1,499/mo annual) — 1,000 extractions + scheduled monitoring + Google Sheets
+- Business: $44.40/month (or $37/mo annually · ₹3,499/mo annual) — 10,000 extractions + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
 - Agency: $106.80/month (or $89/mo annually · ₹8,499/mo annual) — unlimited + 5 workspaces + white-label PDF + priority support + every integration
-- Developer: $32.40/month (coming H2 2026) — 10K row credits, API-first
+- Developer: $32.40/month (coming H3 2026) — 10K row credits, API-first
 
 ## Integrations (all server-stored connections — set up once in /account#integrations)
 - **HubSpot** — push contacts and companies with property mapping
@@ -39,7 +39,8 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - **Notion** — push into a database, with property mapping
 - **Slack** — new extractions + change alerts to a channel (Block Kit)
 - **Zapier** — trigger 5,000+ apps on new extractions
-- **Google Sheets** — one-click new sheet, no auth
+- **Google Sheets** — one-click new sheet, no auth, no setup
+All of the above are reachable from a single Push menu on Preview, Dashboard, and Batch results. Export is downloads + clipboard only.
 - **API access** — bearer-token REST API on Business + Agency
 
 ## Plan-level features

@@ -68,7 +68,7 @@
       "name": "What formats can I export?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above."
+        "text": "Export ▾ gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push ▾ — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all."
       }
     },
     {
@@ -108,7 +108,7 @@
       "name": "A batch URL failed. How do I find out why?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed."
+        "text": "The results table shows the reason next to each failed URL, with a Retry button on that row. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed. Failures stay with the run, and every run has its own link, so you can reopen it later from Batch runs on the Dashboard and retry from there — only successful pages become Dashboard entries, so the run page is the only place a failed URL appears."
       }
     },
     {
@@ -125,6 +125,46 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "Yes. DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Stripe is also available for international customers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an account to use DatIQ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No — you can start extracting immediately, and a trial banner shows how many free single extractions and batch runs remain. Signing in changes three things: your saved pages move from this browser onto your account, schedules can actually run (they execute on DatIQ's servers), and Push destinations become available."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I extracted pages without signing in. Where are they?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "They are saved, but only in the browser you used — clearing site data or switching browsers loses them. Your Dashboard says so at the top and tells you how many pages are browser-only. Sign in and DatIQ moves them onto your account automatically; there is nothing to re-run or re-import."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I keep working while a batch runs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Turn on Run in background in the composer's plus menu and the run keeps going while you move around the app. Progress shows in a dock in the corner — how many URLs are done, which one is being read, and a Cancel button. The setting is remembered between visits and applies to single extractions too."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "My schedule says \"Not running\" — why?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It was created while you were signed out, so it could not be saved to your account. Recurring runs happen on DatIQ's servers rather than in your browser, so a schedule needs an account before anything can run it. Sign in and DatIQ saves the schedule for you automatically."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I pasted an email full of links and it extracted the whole thing as one page.",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "That is one of two reasonable readings, so DatIQ asks instead of guessing. When your paste is text that contains links, an inline chooser appears under the box: \"Extract all N\" pulls the individual pages, and \"Extract this text as one page\" treats the paste as a single document."
       }
     }
   ]
@@ -297,7 +337,7 @@
 
     <details class="faq-item" id="faq-export">
       <summary>What formats can I export?</summary>
-      <p class="answer">CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above.</p>
+      <p class="answer">Export ▾ gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push ▾ — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all.</p>
     </details>
 
     <details class="faq-item" id="faq-schedule">
@@ -312,17 +352,17 @@
 
     <details class="faq-item" id="faq-share">
       <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
-      <p class="answer">Yes — every extraction has a Share button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
-    </details>
-
-    <details class="faq-item" id="faq-share">
-      <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
       <p class="answer">Yes — every extraction has a <strong>Share</strong> button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
     </details>
 
     <details class="faq-item" id="faq-spreadsheet">
       <summary>How do I export to a spreadsheet?</summary>
-      <p class="answer">Use <strong>CSV</strong> from any export menu, then open it in your spreadsheet tool.</p>
+      <p class="answer">Use <strong>CSV</strong> from any <strong>Export ▾</strong> menu, then open it in your spreadsheet tool. For Google Sheets specifically, pick <strong>Google Sheets</strong> from the <strong>Push ▾</strong> menu — it needs no setup and opens a blank sheet ready for the CSV it just downloaded.</p>
+    </details>
+
+    <details class="faq-item" id="faq-background-run">
+      <summary>Can I keep working while a batch runs?</summary>
+      <p class="answer">Yes. Turn on <strong>Run in background</strong> in the composer's <strong>＋</strong> menu and the run keeps going while you move around the app. Progress shows in a dock in the corner — how many URLs are done, which one is being read, and a Cancel button. The setting is remembered between visits and applies to single extractions too.</p>
     </details>
 
     <details class="faq-item" id="faq-schedule-email">
@@ -367,12 +407,22 @@
 
     <details class="faq-item" id="faq-batch-fail">
       <summary>A batch URL failed. How do I find out why?</summary>
-      <p class="answer">The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed.</p>
+      <p class="answer">The results table shows the reason next to each failed URL, with a Retry button on that row. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed. Failures stay with the run, and every run has its own link, so you can reopen it later from Batch runs on the Dashboard and retry from there — only successful pages become Dashboard entries, so the run page is the only place a failed URL appears.</p>
     </details>
 
     <details class="faq-item" id="faq-app-updated">
       <summary>"App updated — please refresh."</summary>
       <p class="answer">DatIQ ships improvements regularly. If you've had a tab open for a while and an export or action shows this message, just refresh the page and try again.</p>
+    </details>
+
+    <details class="faq-item" id="faq-schedule-not-running">
+      <summary>My schedule says "Not running" — why?</summary>
+      <p class="answer">It was created while you were signed out, so it could not be saved to your account. Recurring runs happen on DatIQ's servers rather than in your browser, so a schedule needs an account before anything can run it. Sign in and DatIQ saves the schedule for you automatically — it is labelled "Not running" rather than shown with a next-run time it cannot honour.</p>
+    </details>
+
+    <details class="faq-item" id="faq-embedded-links">
+      <summary>I pasted an email full of links and it extracted the whole thing as one page.</summary>
+      <p class="answer">That is one of two reasonable readings, so DatIQ asks instead of guessing. When your paste is text that contains links, an inline chooser appears under the box: "Extract all N" pulls the individual pages, and "Extract this text as one page" treats the paste as a single document.</p>
     </details>
   </section>
 
@@ -382,6 +432,16 @@
     <details class="faq-item" id="faq-data">
       <summary>Where is my data stored?</summary>
       <p class="answer">All extractions and account data are stored in Supabase (Postgres) on encrypted-at-rest infrastructure in the US-East region. DatIQ is DPDP Act 2023 compliant and never trains on your extractions. See the <a href="/privacy">Privacy Policy</a> for the full data handling notice.</p>
+    </details>
+
+    <details class="faq-item" id="faq-need-account">
+      <summary>Do I need an account to use DatIQ?</summary>
+      <p class="answer">No — you can start extracting immediately, and a trial banner shows how many free single extractions and batch runs remain. Signing in changes three things: your saved pages move from this browser onto your account, schedules can actually run (they execute on DatIQ's servers), and Push destinations become available.</p>
+    </details>
+
+    <details class="faq-item" id="faq-browser-only">
+      <summary>I extracted pages without signing in. Where are they?</summary>
+      <p class="answer">They are saved, but only in the browser you used — clearing site data or switching browsers loses them. Your Dashboard says so at the top and tells you how many pages are browser-only. Sign in and DatIQ moves them onto your account automatically; there is nothing to re-run or re-import.</p>
     </details>
 
     <details class="faq-item" id="faq-delete">

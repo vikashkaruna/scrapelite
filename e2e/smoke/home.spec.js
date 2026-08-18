@@ -66,12 +66,21 @@ test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", asy
   await expect(page.getByText(/Use Batch mode/i)).toHaveCount(0);
 });
 
-test("TopBar nav shows Extract / Batch / Dashboard links (in that order)", async ({ page }) => {
+test("TopBar nav shows Extract / Schedules / Dashboard links (in that order)", async ({ page }) => {
   await page.goto("/");
   // mainLinks are buttons in .topbar-desktop-actions.
   const nav = page.locator(".topbar-desktop-actions .nav-link");
   await expect(nav.nth(0)).toContainText(/Extract/i);
-  await expect(nav.nth(1)).toContainText(/Batch/i);
-  await expect(nav.nth(2)).toContainText(/Schedules/i);
-  await expect(nav.nth(3)).toContainText(/Dashboard/i);
+  await expect(nav.nth(1)).toContainText(/Schedules/i);
+  await expect(nav.nth(2)).toContainText(/Dashboard/i);
+});
+
+test("TopBar has no Batch nav item — Extract is the only entry point", async ({ page }) => {
+  await page.goto("/");
+  // Batch was deliberately removed from the nav: the composer already routed
+  // multi-URL input to /batch, so Batch was a screen users got bounced to
+  // rather than a separate feature they chose. The route survives; the nav
+  // item must not come back, or there are two doors to one thing again.
+  const nav = page.locator(".topbar-desktop-actions .nav-link");
+  await expect(nav.filter({ hasText: /^\s*Batch\s*$/i })).toHaveCount(0);
 });

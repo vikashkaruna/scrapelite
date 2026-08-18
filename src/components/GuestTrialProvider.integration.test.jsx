@@ -119,8 +119,10 @@ function AuthDriver({ userEmail }) {
 
 function Probe() {
   const { count, batchCount, showPrompt, showHardBlock, hardBlockReason,
-    checkCanExtractSingle, checkCanExtractBatch,
+    checkCanExtractSingle, checkCanExtractBatch, requireGuestCredit,
+    setShowHardBlock,
     trackGuestExtraction, trackGuestBatchRun } = useGuestTrial();
+  const [lastGate, setLastGate] = useState("");
   // Expose the state on the DOM for assertions.
   return (
     <div>
@@ -131,8 +133,14 @@ function Probe() {
       <span data-testid="hardBlockReason">{hardBlockReason}</span>
       <span data-testid="canSingle">{String(checkCanExtractSingle().allowed)}</span>
       <span data-testid="canBatch">{String(checkCanExtractBatch().allowed)}</span>
+      <span data-testid="lastGate">{lastGate}</span>
       <button data-testid="track1" onClick={() => trackGuestExtraction(1)}>track1</button>
       <button data-testid="trackBatch" onClick={() => trackGuestBatchRun(1)}>trackBatch</button>
+      <button data-testid="gateSingle" onClick={() => setLastGate(String(requireGuestCredit("single")))}>gateSingle</button>
+      <button data-testid="gateBatch" onClick={() => setLastGate(String(requireGuestCredit("batch")))}>gateBatch</button>
+      {/* Stands in for closing the dialog — the modal's exit link and its
+          auth buttons both ultimately go through this setter. */}
+      <button data-testid="closeBlock" onClick={() => setShowHardBlock(false)}>closeBlock</button>
     </div>
   );
 }
@@ -195,12 +203,20 @@ describe("I-09 — GuestTrialProvider: hard block (single)", () => {
     expect(screen.getByTestId("canSingle").textContent).toBe("false");
     unmount();
 
-    // Simulate a reload: the count is preserved in localStorage.
-    // Mounting again should immediately show the hard block on mount
-    // (the mount useEffect reads the count and sets showHardBlock).
+    // Simulate a reload: the count is preserved in localStorage. The block is
+    // deliberately NOT re-shown on mount — it enforces nothing there (it can be
+    // closed, and closing grants nothing) and GuestTrialBanner already reports
+    // the state without blocking the page. What must survive a reload is the
+    // ENFORCEMENT, so assert that instead of the dialog's visibility.
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByTestId("count").textContent).toBe("10");
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+    expect(screen.getByTestId("canSingle").textContent).toBe("false");
+
+    // ...and the first attempt after that reload is refused, and raises it.
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("false");
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
   });
 
@@ -239,5 +255,81 @@ describe("I-10 — GuestTrialProvider: batch hard block", () => {
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
     expect(screen.getByTestId("hardBlockReason").textContent).toBe("batch");
     expect(screen.getByTestId("canBatch").textContent).toBe("false");
+  });
+});
+
+// ── requireGuestCredit — the single gate every extraction path must use ──────
+// The reported leak: hit the limit, get prompted, close the prompt, retry, and
+// keep extracting. Two independent causes, both pinned here.
+//   (1) The modal's own auth buttons cleared showHardBlock, so opening the auth
+//       modal and closing it without signing up left the gate visibly gone.
+//   (2) Four extraction paths never called a check at all, so once the dialog
+//       was out of the way nothing re-evaluated the limit.
+// Closing the dialog is allowed (the overlay covers the whole viewport, so an
+// over-limit guest must still be able to reach /pricing) — but it must never
+// grant credit, and the next attempt must re-block.
+
+describe("requireGuestCredit — retry after dismissing must re-block", () => {
+  it("blocks and re-raises the hard block on every subsequent attempt", async () => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 10, batchCount: 0, sid: "s1" }));
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    // Over the limit, but no interstitial thrown at page load.
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+
+    // First attempt is refused and raises the dialog.
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
+
+    // User closes the dialog to go browse /pricing.
+    act(() => screen.getByTestId("closeBlock").click());
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+
+    // ...and immediately retries an extraction. The gate must refuse AND
+    // put the dialog back. This is the exact sequence that used to succeed.
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("false");
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
+  });
+
+  it("closing the dialog never grants credit — the counter is untouched", async () => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 10, batchCount: 0, sid: "s1" }));
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => screen.getByTestId("closeBlock").click());
+    expect(screen.getByTestId("count").textContent).toBe("10");
+    expect(screen.getByTestId("canSingle").textContent).toBe("false");
+    expect(JSON.parse(localStorage.getItem(TRIAL_KEY)).count).toBe(10);
+  });
+
+  it("gates batch independently of single, with the matching reason", async () => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 2, batchCount: 5, sid: "s1" }));
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => screen.getByTestId("closeBlock").click());
+
+    // Batch is exhausted → refused.
+    act(() => screen.getByTestId("gateBatch").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("false");
+    expect(screen.getByTestId("hardBlockReason").textContent).toBe("batch");
+
+    // Single still has headroom → allowed. Exhausting one axis must not
+    // silently close the other (the banner already reports them separately).
+    act(() => screen.getByTestId("closeBlock").click());
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("true");
+  });
+
+  it("allows a guest who is under the limit and leaves the block down", async () => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 1, batchCount: 0, sid: "s1" }));
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("lastGate").textContent).toBe("true");
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
   });
 });

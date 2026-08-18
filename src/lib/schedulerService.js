@@ -119,13 +119,29 @@ function writeLocal(list) {
 // isn't running) reports an unreachable upstream as Bad Gateway / Gateway
 // Timeout, not a 500 — without these, schedule creation fails outright
 // instead of degrading to localStorage the moment functions aren't running.
+//
+// 401/403 are DELIBERATELY NOT HERE, unlike extractionsRepo's same-named
+// helper. The asymmetry is the point: an extraction kept in localStorage still
+// works — the user can see it, export it, come back to it. A schedule kept in
+// localStorage is inert, because the thing that runs schedules is an hourly
+// Netlify function reading Supabase, which cannot see a browser's storage. So
+// treating "you are not signed in" as "the backend is down" produced a
+// schedule that rendered as active, showed a next run time, and never fired.
+// Callers must handle a 401 by getting the user signed in (see
+// lib/pendingSchedule.js) rather than pretending the save succeeded.
 function shouldFallback(err) {
   const s = err?.status;
   return (
     err?.useLocalStorage ||
-    s === undefined || s === 401 || s === 403 || s === 404 ||
+    s === undefined || s === 404 ||
     s === 500 || s === 502 || s === 503 || s === 504
   );
+}
+
+/** True when this error means "sign in first", not "the backend is broken". */
+export function isAuthError(err) {
+  const s = err?.status;
+  return s === 401 || s === 403;
 }
 
 // ── Public CRUD ───────────────────────────────────────────────────────────────
@@ -210,7 +226,10 @@ export async function listSchedules() {
       return merged;
     }
   } catch (err) {
-    if (!shouldFallback(err)) throw err;
+    // Reading is different from writing: a signed-out user should still see
+    // the drafts sitting in their browser, so an auth error is fine here.
+    // saveSchedule() is the one that must refuse to fake success.
+    if (!shouldFallback(err) && !isAuthError(err)) throw err;
   }
   return local;
 }
@@ -248,12 +267,26 @@ export async function saveSchedule(schedule) {
   try {
     const saved = await apiClient.upsertSchedule(schedule);
     if (saved?.id) {
-      const merged = readLocal().map((s) => (s.id === schedule.id ? { ...s, ...saved } : s));
+      // `_localOnly` is cleared here: the row reached Supabase, so
+      // scheduled-runner.js can now see it and it will actually fire.
+      const merged = readLocal().map((s) =>
+        s.id === schedule.id ? { ...s, ...saved, _localOnly: false } : s,
+      );
       writeLocal(merged);
       return merged.find((s) => s.id === saved.id) || saved;
     }
   } catch (err) {
-    if (shouldFallback(err)) return schedule; // backend unreachable — the local-only save stands
+    if (shouldFallback(err)) {
+      // Backend unreachable — the local-only save stands, but flag it so the
+      // Schedules table can say out loud that it isn't running yet. An
+      // unflagged local row is indistinguishable from a live one, which is
+      // exactly how these went unnoticed.
+      const flagged = readLocal().map((s) =>
+        s.id === schedule.id ? { ...s, _localOnly: true } : s,
+      );
+      writeLocal(flagged);
+      return { ...schedule, _localOnly: true };
+    }
     // A real rejection (e.g. 402 "scheduled monitoring is not on your plan",
     // or a validation error) — undo the optimistic write and surface the
     // server's actual reason (err.message) rather than leaving a phantom entry.
@@ -265,8 +298,11 @@ export async function saveSchedule(schedule) {
 
 export async function deleteSchedule(id) {
   writeLocal(readLocal().filter((s) => s.id !== id));
+  // Deleting is like listing, not like saving: a signed-out user removing a
+  // local-only draft has nothing on the server to delete, so a 401 is a no-op
+  // rather than a failure.
   try { await apiClient.deleteSchedule(id); }
-  catch (err) { if (!shouldFallback(err)) throw err; }
+  catch (err) { if (!shouldFallback(err) && !isAuthError(err)) throw err; }
 }
 
 export async function toggleSchedule(id) {
@@ -276,8 +312,9 @@ export async function toggleSchedule(id) {
   s.status = s.status === "active" ? "paused" : "active";
   if (s.status === "active") s.nextRunAt = estimateNextRun(s.cron);
   writeLocal(list);
+  // Same reasoning as deleteSchedule: pausing a local-only draft is local.
   try { await apiClient.upsertSchedule(s); }
-  catch (err) { if (!shouldFallback(err)) throw err; }
+  catch (err) { if (!shouldFallback(err) && !isAuthError(err)) throw err; }
   return s;
 }
 

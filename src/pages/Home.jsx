@@ -27,6 +27,7 @@ import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
+import { CONTENT_FORMATS } from "../lib/aiService.js";
 import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 
@@ -104,6 +105,9 @@ export default function Home() {
 
   // ── Advanced options (Render JS) ───────────────────────────────────────
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Per-URL AI content generation (was /batch-only until now).
+  const [genContentEnabled, setGenContentEnabled] = useState(false);
+  const [genContentKey, setGenContentKey] = useState("seo-outline");
   const [renderJs, setRenderJs]         = useState(false);
 
   // ── OG Preview state ───────────────────────────────────────────────────
@@ -415,6 +419,7 @@ export default function Home() {
             intent={intent}
             customPrompt={resolvedCustomPrompt}
             renderJs={renderJs}
+          generateContent={genContentEnabled && intent !== "map" ? CONTENT_FORMATS.find((f) => f.key === genContentKey) : null}
             accentColor={persona ? persona.color : undefined}
             placeholder={persona ? `https://${examples[0]}  ·  or paste any text to extract` : undefined}
           />
@@ -545,6 +550,44 @@ export default function Home() {
                   <span className="advanced-row-hint">Waits 3 s for React/Vue/Angular SPAs to finish rendering</span>
                 </span>
               </label>
+
+              {/* Moved here from /batch, which was the only place it existed —
+                  so the option vanished the moment you ran from Home, even
+                  though Home routes multi-URL input straight to /batch. Applies
+                  to single and batch runs alike. */}
+              <label className="advanced-row">
+                <input
+                  type="checkbox"
+                  checked={genContentEnabled}
+                  onChange={(e) => setGenContentEnabled(e.target.checked)}
+                  disabled={intent === "map"}
+                  style={{ accentColor: "var(--accent)", width: 15, height: 15, flexShrink: 0 }}
+                />
+                <span className="advanced-row-label">
+                  <Icon name="file-text" size={14} />
+                  Generate AI content for each URL
+                  <span className="advanced-row-hint">
+                    {intent === "map"
+                      ? "Not available in Map site mode"
+                      : "Creates content per result (+1–2 s per URL)"}
+                  </span>
+                </span>
+              </label>
+              {genContentEnabled && intent !== "map" && (
+                <div className="advanced-formats">
+                  <span className="advanced-formats-label">Content type:</span>
+                  {CONTENT_FORMATS.map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className={"advanced-format-chip" + (genContentKey === f.key ? " on" : "")}
+                      onClick={() => setGenContentKey(f.key)}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

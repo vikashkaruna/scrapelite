@@ -25,13 +25,25 @@ export function listBatchRuns() {
 
 /**
  * Save a batch run record.
- * @param {{ id, label, intent, createdAt, totalUrls, successCount, failedCount }} run
+ *
+ * `rows` carries EVERY row including failures ({ url, status, error, title }).
+ * Failures used to live only in the page's React state, so leaving /batch lost
+ * both the failure list and the per-row Retry that goes with it — and Dashboard
+ * can't show them, since only successes are ever saved as extractions.
+ *
+ * @param {{ id, label, intent, createdAt, totalUrls, successCount, failedCount, rows? }} run
  */
 export function saveBatchRun(run) {
   try {
     const runs = [run, ...listBatchRuns().filter((r) => r.id !== run.id)].slice(0, MAX_RUNS);
     localStorage.setItem(RUNS_KEY, JSON.stringify(runs));
   } catch { /* ignore quota errors */ }
+}
+
+/** One run by id — backs the addressable /batch?run=<id> results view. */
+export function getBatchRun(id) {
+  if (!id) return null;
+  return listBatchRuns().find((r) => r.id === id) || null;
 }
 
 export function deleteBatchRun(id) {
@@ -105,6 +117,9 @@ const INTENT_LABELS = {
   summary:  "AI summary",
   contacts: "Find contacts",
   pricing:  "Scrape pricing",
+  // "map" was missing, so every map batch was labelled the fallback
+  // "Extraction" and became indistinguishable in the run history.
+  map:      "Map site",
   custom:   "Custom extraction",
 };
 

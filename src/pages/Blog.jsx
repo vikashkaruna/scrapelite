@@ -45,6 +45,62 @@ Start with any URL. No sign-up required.
 
 const POSTS = [
   {
+    slug: "one-composer-background-runs-addressable-batches",
+    tag: "Release",
+    title: "One Box to Start Anything: Background Runs and Batches You Can Come Back To",
+    excerpt:
+      "Batch is no longer a place you go — it's something the composer does. Runs now survive navigation, every batch gets its own link, and failed URLs stop disappearing when you leave the page.",
+    date: "August 18, 2026",
+    readTime: "4 min read",
+    coverIcon: "layers-2",
+    fullContent: `
+DatIQ had two ways to start an extraction, and only one of them was real.
+
+The Home composer already noticed when you pasted more than one URL and sent you to the Batch screen. So Batch was never a separate feature you chose — it was a screen you got *bounced to*. Worse, two useful options lived **only** on that screen, which meant they silently vanished the moment you started a run from Home, which is how almost everyone starts a run.
+
+This release makes the composer the single place anything begins.
+
+## Batch is a behaviour, not a destination
+
+**Batch is gone from the navigation.** Paste one URL or fifty; import a CSV or drag one onto the box. DatIQ works out what you gave it and runs it. The batch screen still exists — you just arrive there because you ran a batch, not because you went looking for it first.
+
+The two orphaned options moved to **Advanced options** on Home, where they now apply to single and batch runs alike:
+
+- **Generate AI content for each URL**, with the content-type picker
+- The **detected URL column** readout when you import a CSV
+
+## Runs no longer die when you navigate
+
+A batch used to be tied to the screen that started it. Click away and the run was abandoned mid-flight.
+
+Turn on **Run in background** in the composer's **＋** menu and a run keeps going while you do something else — read a page you extracted earlier, browse your Dashboard, whatever. Progress follows you in a small dock: how many URLs are done, which one is being read right now, and a Cancel button. The setting sticks between visits, and it applies to single extractions too.
+
+## Every batch has an address
+
+Batch results now live at their own link, so a run survives a reload, a bookmark, or a week.
+
+That fixes something quietly frustrating. Only *successful* pages become Dashboard entries — a URL that failed has no Dashboard row at all. Previously the failure list lived in the page's memory, so leaving the screen lost both the failures **and** the per-row Retry. Now failures are saved with the run, each with its reason and a working Retry button, and your Dashboard links back to the run when it had any.
+
+## Pasted a newsletter full of links?
+
+A page of prose with eight links in it is genuinely ambiguous: do you want the eight pages, or a summary of the thing containing them? DatIQ used to quietly pick the second and extract the whole blob as one document.
+
+Now it asks. Paste text that contains links and you get an inline chooser — **"Extract all 8"** or **"Extract this text as one page"**. Neither is a guess.
+
+## One Push, one list
+
+Destinations used to be reachable two ways, with two different lists — and the shorter list was the more prominent one. There is now a single **Push ▾** menu everywhere: HubSpot, Notion, Airtable, Slack, and Google Sheets, which needs no setup at all. **Export ▾** is now strictly downloads and clipboard. Two menus, two jobs, no overlap.
+
+## Signed out? You'll know what that costs
+
+Working without an account still works — but DatIQ no longer lets it look more permanent than it is. Your Dashboard says how many pages are saved in that browser only, and signing in moves them onto your account automatically.
+
+Schedules got the honest version of the same treatment. Recurring runs execute on our servers, so a schedule created while signed out could never actually run — but it used to list itself as active with a next-run time. Now DatIQ holds the schedule, asks you to sign in, and saves it for you; anything unsaved says **"Not running"** rather than promising a run that was never going to happen.
+
+Start with any URL. No sign-up required.
+    `.trim(),
+  },
+  {
     slug: "one-click-integrations-hubspot-airtable-notion-slack-zapier",
     tag: "Release",
     title: "One-Click Push to HubSpot, Airtable, Notion, Slack, and Zapier",
@@ -87,7 +143,7 @@ While we were here, we folded Collections and Active Schedule into a single **Wo
 
 ## What you need to do
 
-If you've been using the old "paste the key each time" flow for Airtable or Notion, do this once: open **Account → Integrations**, click **Set up** on the destination, paste the key + IDs, and your field map is built and stored. The next push from Preview, Dashboard, or Batch is one click. If you had an Airtable connection from before this release, click **Load columns** on the Airtable push tab to backfill the field map (or re-connect from scratch — the flow is faster now).
+If you've been using the old "paste the key each time" flow for Airtable or Notion, do this once: open **Account → Integrations**, click **Set up** on the destination, paste the key + IDs, and your field map is built and stored. The next push from Preview, Dashboard, or Batch is one click. If you had an Airtable connection from before this release, use **Load columns** to backfill the field map — it now lives under **More destination options…** at the bottom of the Push menu (or re-connect from scratch — the flow is faster now).
 
 Questions? We read every message at **hello@datiq.app**.
 `.trim(),

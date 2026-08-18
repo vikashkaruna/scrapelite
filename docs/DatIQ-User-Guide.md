@@ -62,9 +62,9 @@ layered on top of it.
 | P3 | Workspace & Collaboration | *(roadmap)* shared workspaces, role-based access, team controls. |
 | P4 | Intelligence Mesh (API) | *(roadmap)* REST + webhook API and native integrations. |
 
-> Pillar 0 is what runs the moment you click **Extract** on the Home screen, the moment you submit
-> a list on **Batch**, and the moment a **Schedule** fires. It is the engine; the rest of DatIQ is
-> everything you can do once the engine has the data.
+> Pillar 0 is what runs the moment you click **Extract** on the Home screen — whether that is one URL, a
+> pasted list that becomes a **batch**, or a **schedule** firing later on. It is the engine; the rest of
+> DatIQ is everything you can do once the engine has the data.
 
 ![DatIQ Home in dark mode](assets/screenshots/02-home-dark.png)
 
@@ -89,20 +89,35 @@ toolbar options you pick, so one box handles single pages, many pages, and recur
 
 ![DatIQ Home screen](assets/screenshots/01-home.png)
 
+The composer is the **only place you start an extraction** — single page, many pages, or recurring. There is
+no separate "Batch" screen to go to first; paste what you have and DatIQ works out what it is.
+
 **The input box** accepts:
 
 - **A single URL** → a normal one-page extraction.
 - **Several URLs** (pasted as a list, one per line) → DatIQ recognises them and runs a **batch**.
+- **Text that happens to contain links** — an email, a Slack thread, a Markdown list — → DatIQ counts the
+  links and **asks which you meant**: *"Extract all 8"* or *"Extract this text as one page"*. Both are
+  reasonable readings of a newsletter with ten links in it, so DatIQ never guesses for you.
 - **Pasted text or page content** → DatIQ can structure and summarise raw text you paste in, even without a URL.
 
 **The toolbar (bottom of the box):**
 
-- **＋ Add content** — import a CSV of URLs, or paste a long list of links.
+- **＋** — the options menu: **Import CSV** (upload a list of URLs), **Add multiple URLs** (switch the box to
+  a multi-line list), and **Run in background** (see below). A dot on the ＋ means background mode is on.
 - **Batch** — force batch mode for multiple URLs.
 - **Schedule** — arm a recurring cadence (e.g. *Daily*) so the extraction repeats automatically. Choose **Custom schedule…** to open the full scheduling screen.
 - **Extract** — the action button. Its icon reflects the mode: a single page, a batch (layers), or a scheduled run (calendar).
 
 You can also **drag and drop a CSV file** anywhere onto the box to load a list of URLs.
+
+### Run in background
+
+Turn on **Run in background** in the ＋ menu and a run keeps going while you carry on working — browse your
+Dashboard, start reading another page, or move around the app; the run is not tied to the screen you started
+it from. Progress appears in a small **dock** in the corner showing `Extracting 3 / 12 URLs…`, the URL being
+read right now, and a **Cancel** button. The setting is remembered between visits and applies to single and
+batch runs alike.
 
 > **Tip:** the quick-example chips above the box ("SaaS pricing page", "Company about page", "Blog / content")
 > fill the box with a sample so you can try DatIQ instantly.
@@ -121,8 +136,17 @@ Below the input box is **"What do you want to extract?"** with a row of **intent
 | **Map site** | A list of indexed URLs across the whole domain — useful for SEO and site audits. |
 | **Custom…** | Describe any field in plain English and DatIQ extracts just that. |
 
-**Advanced options** (the link under the chips) let you fine-tune a run — for example, asking DatIQ to
-render JavaScript-heavy pages before reading them.
+**Advanced options** (the link under the chips) let you fine-tune a run. These apply to single **and** batch
+runs, so a setting you pick here survives when DatIQ routes a multi-URL paste into a batch:
+
+- **Render JavaScript** — waits a few seconds for React/Vue/Angular pages to finish drawing before reading them.
+  Use it when a page looks empty in the results but fine in your browser.
+- **Generate AI content for each URL** — drafts content per result as the run goes (adds roughly 1–2 s per URL).
+  Pick the **content type** — *SEO blog outline*, *competitor summary*, or *social posts* — from the chips that
+  appear. Not available in **Map site** mode.
+
+When you import a CSV, DatIQ also shows **which column it detected the URLs in**, so you can confirm it picked
+the right one before running.
 
 When you choose **Map site**, the Preview shows the discovered URLs grouped for easy scanning:
 
@@ -174,22 +198,36 @@ Copy the result and use it anywhere.
 
 ## 7. Batch extraction
 
-When you need many pages at once, use **Batch**. Reach it from the **Batch** tab in the top navigation,
-or just paste several URLs into the Home composer.
+When you need many pages at once, use **Batch**. You start it exactly the same way you start anything else —
+**from the Home composer**. Paste several URLs (or import a CSV, or turn on **Batch** in the toolbar) and
+DatIQ runs them as a batch and takes you to the batch screen. There is no separate Batch tab in the
+navigation; **Extract** covers it.
 
 ![DatIQ batch results](assets/screenshots/04-batch.png)
 
 How it works:
 
-1. **Paste URLs** (one per line) or **Import CSV** of links.
-2. Choose an **intent** (the same chips as single extraction).
-3. Click **Extract N URLs**.
-4. Watch progress; when it finishes you get a **results table** — each row shows the page, a summary
-   snippet, and a status. Failed URLs are listed with a reason.
-5. All successful pages are **saved to your Dashboard automatically**, and grouped together as one batch run.
-6. **Export ▾** the whole batch (CSV, PDF, Markdown, JSON), start a **New batch**, or **View in Dashboard**.
+1. **Paste URLs** (one per line) into the Home composer, or **Import CSV**, or drag a CSV onto the box.
+2. Choose an **intent** (the same chips as single extraction), and any **Advanced options** you want.
+3. Click **Extract**.
+4. Watch progress in the **dock** — `Extracting 3 / 12 URLs…` with the current URL and a **Cancel** button.
+   With **Run in background** on, you can leave the page and the run continues.
+5. When it finishes you get a **results table** — each row shows the page, a summary snippet, and a status.
+   **Filter** by *All / Success / Failed* and **sort** the rows; each failed URL shows its reason and a
+   **Retry** button.
+6. All successful pages are **saved to your Dashboard automatically**, and grouped together as one batch run.
+7. **Export ▾** the whole batch (CSV, PDF, Markdown, JSON), **Push** it to a connected destination, start a
+   **New batch**, or **View in Dashboard**.
 
-Your typed list is remembered if you navigate away and come back, so you won't lose a long list of URLs.
+### Coming back to a batch later
+
+Every batch run gets its **own address**. The results page is `datiq.app/batch?run=<id>`, so you can bookmark
+it, reload it, or share it with yourself and the full results — **including the failures** — come back exactly
+as they were, with Retry still working.
+
+That matters because only *successful* pages become Dashboard entries. A URL that failed has no Dashboard row
+at all, so the batch results page is the only place its failure and its Retry button live. Your Dashboard also
+links back here from a run's banner when that run had failures.
 
 > **Note:** each URL in a batch counts toward your monthly extraction allowance, and plans have a maximum
 > number of URLs per batch. The page tells you your current limit.
@@ -202,6 +240,12 @@ Scheduling lets DatIQ **re-check a page on a recurring cadence and alert you whe
 for watching a competitor's pricing, a careers page, or any page that matters.
 
 ![DatIQ schedules screen](assets/screenshots/05-schedules.png)
+
+> **Scheduling needs an account.** Recurring runs happen on DatIQ's servers, not in your browser — so a
+> schedule has to be saved to your account before anything can run it. If you create one while signed out,
+> DatIQ **holds onto it and prompts you to sign in**, then saves it for you automatically the moment you do.
+> Any schedule that could not be saved is clearly labelled **"Not running — sign in to start this schedule"**
+> rather than showing you a next-run time it can't honour.
 
 **Two ways to create a schedule:**
 
@@ -242,19 +286,35 @@ Features:
 - **Type filter** — All / Single / Batch / Scheduled, with a chip on each row showing where it came from.
 - **Grouping** — batch runs and scheduled runs collapse into a single parent row you can expand; single extractions stand alone.
 - **Table or card view** — switch with the layout toggle.
-- **Refresh** — re-load your archive at any time.
+- **Batch runs** — reopen any past run's full results, failures included.
+- **Export ▾**, **Push ▾**, and **Refresh** sit together in the toolbar.
 
 ![DatIQ Dashboard, card view](assets/screenshots/07-dashboard-cards.png)
 
-**Working with selections:** tick one or more rows and a toolbar appears with **Generate** (content),
-**Email**, and **Export ▾**. Each row also has **View** (open in Preview) and **Delete**.
+**Working with selections:** tick one or more rows and a selection row appears beside the filters with
+**Generate** (content), **Email**, and a count you can **Clear**. **Export ▾** and **Push ▾** stay in the
+toolbar and follow your selection: with rows ticked they act on those rows, and with nothing ticked they act
+on everything currently filtered — so *"Export all 8"* and *"Push to (8)"* always agree. Each row also has
+**View** (open in Preview) and **Delete**.
+
+### Signed out? Your pages are saved in this browser only
+
+You can extract without an account, and those pages are saved — but **only in the browser you used**. Clearing
+site data or switching browsers loses them. The Dashboard says so plainly at the top, telling you how many
+pages are browser-only. **Sign in and DatIQ moves them onto your account for you** — nothing to re-run and
+nothing to re-import.
 
 ---
 
 ## 10. Exports & sharing
 
-DatIQ exports your data in the format that fits your workflow. Exports are available from **Preview**
-(**Download ▾**), the **Dashboard** (**Export ▾**), and **Batch** results (**Export ▾**).
+There are exactly **two** ways to get data out, and they do not overlap:
+
+- **Export ▾** — **downloads and clipboard.** Files you save, or text you paste somewhere.
+- **Push ▾** — **send it to another tool.** One button, one list of destinations.
+
+Export is available from **Preview** (**Download ▾**), the **Dashboard** (**Export ▾**), and **Batch**
+results (**Export ▾**). Push sits next to it in all three places.
 
 | Format | Best for |
 |---|---|
@@ -267,25 +327,33 @@ DatIQ exports your data in the format that fits your workflow. Exports are avail
 
 Some formats are available on higher plans — the export menu shows which.
 
-### Push to your tools (HubSpot, Airtable, Notion, Slack, Zapier)
+### Push to your tools
 
-For the destinations you use every day, DatIQ offers one-click **Push** from Preview, Dashboard, and
-Batch results. Each one is set up once in **Account → Integrations**; after that, pushing an extraction
-is a single click and the destination receives the structured data directly — no copy-pasting, no
-CSV re-uploads.
+**Push ▾** is the single place destinations live — from Preview, Dashboard, and Batch results. Everything you
+can send to is in that one menu, so there is no second list to go hunting for.
 
-| Destination | What you push | Where to set it up |
+| Destination | What you push | Setup |
 |---|---|---|
-| **HubSpot** | Contacts and companies from an extraction, mapped to the right HubSpot properties | `/account#integrations` |
-| **Airtable** | Each extraction row into the table you choose, with a per-table field map | `/account#integrations` |
-| **Notion** | Each extraction into a Notion database, with a title column and property mapping | `/account#integrations` |
-| **Slack** | New extractions and change alerts into the channel you choose, formatted as a readable message | `/account#integrations` |
-| **Zapier** | New extractions as a trigger event for any of 5,000+ apps | `/account#integrations` |
-| **Google Sheets** | A new sheet from any extraction (no auth required) | The Export ▾ menu on any row |
+| **HubSpot** | Contacts and companies from an extraction, mapped to the right HubSpot properties | Once, in `/account#integrations` |
+| **Airtable** | Each extraction row into the table you choose, with a per-table field map | Once, in `/account#integrations` |
+| **Notion** | Each extraction into a Notion database, with a title column and property mapping | Once, in `/account#integrations` |
+| **Slack** | New extractions and change alerts into the channel you choose, formatted as a readable message | Once, in `/account#integrations` |
+| **Google Sheets** | A CSV of the rows you picked, with a blank sheet opened ready to receive it | **No setup needed** |
 
-A connected destination stays connected. You can **Test** the connection from the Account screen,
-**Edit** its label or details, or **Disconnect** it. Tokens are stored server-side and never re-displayed;
-replacing a token is a one-time flow that re-fetches schema where applicable (Airtable / Notion).
+Google Sheets is marked *"No setup needed"* in the menu because there is genuinely nothing to authorise —
+DatIQ downloads the CSV and opens a fresh sheet for you to drop it into.
+
+The four connected destinations are set up once in **Account → Integrations**; after that, pushing is a single
+click and the destination receives the structured data directly — no copy-pasting, no CSV re-uploads. A
+connected destination stays connected: **Test** it, **Edit** its label, or **Disconnect** it from the Account
+screen. Tokens are stored server-side and never re-displayed; replacing a token re-fetches the schema where
+that applies (Airtable / Notion).
+
+Need to change an Airtable or Notion **field mapping**? Open **More destination options…** at the bottom of
+the Push menu.
+
+**Zapier** works differently and is not in the Push menu: it *listens* for new extractions as a trigger event
+for any of 5,000+ apps, rather than being somewhere you push to. Set it up in `/account#integrations`.
 
 ### Sharing a single extraction
 
@@ -349,8 +417,16 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 ## 12. Accounts, trial & sign-in
 
-- **Try without an account** — you can start extracting straight away. A trial banner shows how many free runs remain.
-- **Sign up / sign in** — create an account with email, or continue with Google, Microsoft, or GitHub. An account keeps your work and lifts trial limits.
+- **Try without an account** — you can start extracting straight away. A trial banner shows how many free
+  single extractions and batch runs remain. DatIQ never interrupts you on arrival: the limit is checked
+  **when you start a run**, so you are only ever stopped at the moment it actually applies.
+- **Sign up / sign in** — create an account with email, or continue with Google, Microsoft, or GitHub. An
+  account keeps your work and lifts trial limits.
+- **What signing in gets you** — three things stop being temporary:
+  - **Your saved pages move onto your account** automatically, instead of living in one browser.
+  - **Schedules actually run.** Recurring runs happen on DatIQ's servers, so they need an account (see
+    [Scheduling](#8-scheduling--change-monitoring)).
+  - **Push destinations** become available.
 - **Personas** — optionally tell DatIQ what kind of work you do, and it tailors examples and labels to you. This is opt-in and changeable any time.
 - **Sign out** — clears your session data from the device.
 
@@ -386,8 +462,25 @@ DatIQ ships improvements regularly. If you've had a tab open for a while and an 
 this message, just refresh the page and try again.
 
 **A batch URL failed.**
-The results table shows the reason next to each failed URL. Common causes are unreachable sites,
-non-HTML pages, or sites that block automated requests. Other URLs in the batch still succeed.
+The results table shows the reason next to each failed URL, with a **Retry** button on that row. Common
+causes are unreachable sites, non-HTML pages, or sites that block automated requests. Other URLs in the
+batch still succeed. Failures are kept with the run, so you can come back to
+`datiq.app/batch?run=<id>` later and retry from there — a failed URL has no Dashboard entry, because only
+successful pages are saved there.
+
+**I navigated away and lost my run.**
+You shouldn't any more. Turn on **Run in background** in the composer's **＋** menu and runs continue while
+you move around the app, with progress in the corner dock. To find a finished run afterwards, open **Batch
+runs** on the Dashboard.
+
+**I pasted an email / document full of links and it extracted the whole thing as one page.**
+That is one of the two things DatIQ can reasonably do with it, so it asks rather than guesses. Look for the
+inline chooser under the box: **"Extract all N"** pulls the individual links; **"Extract this text as one
+page"** treats the paste as a single document.
+
+**My schedule says "Not running".**
+It was created while signed out and could not be saved to your account, so no server has it to run. Sign in
+and DatIQ saves it for you automatically.
 
 **Nothing here matches my problem.**
 Check [the FAQ](https://datiq.app/faq) for general questions about sharing, exports, scheduling

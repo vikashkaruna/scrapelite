@@ -71,6 +71,8 @@ import ReferralBanner from "./components/ReferralBanner.jsx";
 import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
+import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
+import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
 // Redirect /docs to the static help site
@@ -258,6 +260,9 @@ function Shell() {
       </main>
       {showAuthModal && <AuthModal />}
       <GuestTrialModal />
+      {/* Saves a schedule built while signed out, once the user signs in.
+          Global because OAuth navigates the document away and back. */}
+      <PendingScheduleFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
@@ -284,9 +289,14 @@ export default function App() {
               <PersonaProvider>
                 <BillingProvider>
                   <ExtractionProvider>
-                    <div className="app-root">
-                      <Shell />
-                    </div>
+                    {/* Owns an in-flight batch above the router, so a run
+                        survives navigation and reports through the same
+                        global dock as a single extraction. */}
+                    <BatchRunProvider>
+                      <div className="app-root">
+                        <Shell />
+                      </div>
+                    </BatchRunProvider>
                   </ExtractionProvider>
                 </BillingProvider>
               </PersonaProvider>
