@@ -76,7 +76,7 @@ begin
     end if;
   end if;
 
-  foreach table_name in array[
+  foreach table_name in array array[
     'extractions', 'scheduled_tasks', 'api_keys',
     'integration_connections', 'zapier_events', 'workflow_subscriptions',
     'workflow_events', 'consent_records', 'public_reports',
@@ -99,7 +99,7 @@ begin
     end if;
   end loop;
 
-  foreach table_name in array['subscriptions', 'payment_events', 'usage_records', 'coupon_redemptions'] loop
+  foreach table_name in array array['subscriptions', 'payment_events', 'usage_records', 'coupon_redemptions'] loop
     if to_regclass('public.' || table_name) is not null and cardinality(session_ids) > 0 then
       execute format('delete from public.%I where session_id = any($1)', table_name) using session_ids;
       get diagnostics row_count = row_count;
