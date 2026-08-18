@@ -206,7 +206,7 @@ export const PLANS = [
       { label: "CSV import enrichment",            included: true },
       { label: "5 scheduled monitors",             included: true },
       { label: "API access",                       included: true },
-      { label: "3 seats + HubSpot / Salesforce",   included: true },
+      { label: "3 seats + HubSpot CRM sync",       included: true },
       { label: "White-label PDF",                  included: true },
       { label: "Priority support",                 included: true },
     ],

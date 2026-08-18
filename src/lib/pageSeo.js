@@ -65,7 +65,7 @@ export const PAGE_SEO = {
             "name": "Business",
             "price": "44.40",
             "priceCurrency": "USD",
-            "description": "5000 extractions/month, API, 3 seats, HubSpot/Salesforce, white-label PDF"
+            "description": "10,000 extractions/month, API, 3 seats, HubSpot CRM sync, white-label PDF"
           },
           {
             "@type": "Offer",
@@ -244,8 +244,8 @@ export const PAGE_SEO = {
     ]
   },
   "/integrations": {
-    "title": "DatIQ Integrations — HubSpot, Salesforce, Google Sheets, Slack, webhooks | DatIQ.app",
-    "description": "DatIQ integrations: CSV and PDF export, webhooks, HubSpot, Salesforce, Google Sheets, Slack, Airtable, Notion. Move extracted data into the tools your team already uses.",
+    "title": "DatIQ Integrations — HubSpot, Notion, Airtable, Slack, webhooks | DatIQ.app",
+    "description": "DatIQ integrations: CSV and PDF export, webhooks, HubSpot, Google Sheets, Slack, Airtable, Notion. Move extracted data into the tools your team already uses.",
     "canonical": "https://datiq.app/integrations",
     "jsonLd": []
   },

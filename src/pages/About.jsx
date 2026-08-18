@@ -60,7 +60,7 @@ const PILLARS = [
     label: "Pillar 2",
     title: "Distribution & Workflow",
     status: "live",
-    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot, Salesforce). The intelligence leaves the app on your terms.",
+    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot). The intelligence leaves the app on your terms.",
   },
   {
     id: "p3",

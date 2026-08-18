@@ -114,11 +114,12 @@ No code required. Background processing keeps the page responsive. Results persi
 | Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
 |---|---|---|---|---|
 | Free | $0 | ₹0 | 10 / month + 25-trial credit | No credit card, headings + links + summary, CSV export |
-| Select | $14.40 | ₹999 | 100 / month | + PDF export, custom extraction |
-| Pro | $29 | ₹1,499 | 250 / month | + Scheduled monitoring, Google Sheets, batch |
-| Business | $44.40 | ₹3,499 | 1,000 / month | + API, 3 seats, HubSpot + Salesforce, white-label PDF, priority support |
+| Go | $4.80 | ₹299 | 200 / month | + PDF export, email export |
+| Select | $14.40 | ₹999 | 500 / month | + Markdown/JSON export, custom extraction |
+| Pro | $20.40 | ₹1,499 | 1,000 / month | + Scheduled monitoring, Google Sheets, batch |
+| Business | $44.40 | ₹3,499 | 10,000 / month | + API, 3 seats, HubSpot CRM sync, white-label PDF, priority support |
 | Agency | $106.80 | ₹8,499 | Unlimited | + 5 workspaces, white-label PDF, priority support |
-| Developer | $32.40 | ₹2,499 | 10K row credits | API-first (coming H2 2026) |
+| Developer | $32.40 | ₹2,499 | 10K row credits | API-first (coming H3 2026) |
 | Enterprise | Custom ≥$1,000 | Custom | Custom | SSO, DPA, SLA, on-prem |
 
 20% discount on all annual plans. INR pricing available. GST invoices on every payment.
