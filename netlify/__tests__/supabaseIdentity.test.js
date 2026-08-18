@@ -54,7 +54,15 @@ describe("decodeSupabaseKey", () => {
 
   it("recognises the newer publishable format without trying to decode it", () => {
     expect(decodeSupabaseKey("sb_publishable_abc123").format).toBe("publishable");
-    expect(decodeSupabaseKey("sb_secret_abc123").format).toBe("publishable");
+  });
+
+  it("does NOT lump sb_secret_ in with sb_publishable_ (2026-08-18)", () => {
+    // These are not interchangeable: sb_secret_ bypasses RLS the way a
+    // service_role JWT does. Reporting it as "publishable" left the
+    // service-key-in-anon-slot guard unarmed for the format Supabase now
+    // issues by default.
+    expect(decodeSupabaseKey("sb_secret_abc123").format).toBe("secret");
+    expect(decodeSupabaseKey("sb_secret_abc123").role).toBeNull();
   });
 
   it("never throws on junk", () => {
@@ -139,6 +147,24 @@ describe("diagnoseSupabaseIdentity", () => {
     });
     expect(r.problem).toBe("key_expired");
     expect(r.message).toContain("2020-09");
+  });
+
+  it("flags an sb_secret_ key sitting in the anon slot (2026-08-18)", () => {
+    const r = diagnoseSupabaseIdentity({
+      SUPABASE_URL: "https://abc123.supabase.co",
+      SUPABASE_ANON_KEY: "sb_secret_leakedvalue",
+    });
+    expect(r.problem).toBe("secret_key_in_anon_slot");
+    expect(r.message).toMatch(/bypasses Row Level Security/);
+    expect(r.message).toMatch(/rotate/i);
+  });
+
+  it("leaves a correct sb_publishable_ key in the anon slot alone (2026-08-18)", () => {
+    const r = diagnoseSupabaseIdentity({
+      SUPABASE_URL: "https://abc123.supabase.co",
+      SUPABASE_ANON_KEY: "sb_publishable_fine",
+    });
+    expect(r.problem).not.toBe("secret_key_in_anon_slot");
   });
 
   it("does not invent a mismatch for a publishable-format key", () => {
