@@ -114,3 +114,57 @@ describe("FA3 — buildPaywallCopy", () => {
     expect(out.title).toMatch(/used all 10 free extractions/i);
   });
 });
+
+// ── "you ran out of batch RUNS" is not "your batch is too BIG" ──────────────
+//
+// These are two different limits and they shared one context kind. A guest who
+// exhausted guest_batch_hard_limit (a count of RUNS) was shown copy built from
+// the batch_max_urls path, producing "You need 20 URLs in one batch" — a limit
+// they never hit, quoting a number that came from multiplying their run
+// allowance by four.
+
+describe("batch_runs — exhausted free batch runs", () => {
+  const args = (ctx) => ({
+    route: "/batch",
+    usage: { extractions: 0 },
+    currentPlan: { id: "free", name: "Free", limits: { extractions: 10 } },
+    ctx,
+    currency: "USD",
+  });
+
+  it("names the limit the user actually hit", () => {
+    const copy = buildPaywallCopy(args({ kind: "batch_runs", used: 5 }));
+    expect(copy.title).toBe("You've used all 5 free batch runs");
+  });
+
+  it("never talks about URLs-per-batch, which is a different limit", () => {
+    const copy = buildPaywallCopy(args({ kind: "batch_runs", used: 5 }));
+    expect(copy.title).not.toMatch(/URLs in one batch/i);
+    expect(`${copy.title} ${copy.body}`).not.toMatch(/\b20\b/);
+  });
+
+  it("singularises a limit of one", () => {
+    expect(buildPaywallCopy(args({ kind: "batch_runs", used: 1 })).title)
+      .toBe("You've used all 1 free batch run");
+  });
+
+  it("recommends an account, not an upgrade — free plan already has batch", () => {
+    const copy = buildPaywallCopy(args({ kind: "batch_runs", used: 5 }));
+    expect(copy.recommendedPlanId).toBe("free");
+    expect(copy.ctaLabel).toBe("Create a free account");
+  });
+
+  it("leaves the size-based batch copy untouched", () => {
+    // The genuine "this batch is too big for your plan" case still works.
+    // (usage at the cap is what selects the "You need N URLs" phrasing.)
+    const copy = buildPaywallCopy({
+      route: "/batch",
+      usage: { extractions: 10 },
+      currentPlan: { id: "free", name: "Free", limits: { extractions: 10, batch_max_urls: 5 } },
+      ctx: { kind: "batch", urls: 120 },
+      currency: "USD",
+    });
+    expect(copy.title).toMatch(/120 URLs in one batch/);
+    expect(copy.recommendedPlanId).toBe("business");
+  });
+});

@@ -17,8 +17,7 @@ import Privacy from "./Privacy.jsx";
 import Terms from "./Terms.jsx";
 import UseCases from "./UseCases.jsx";
 import UseCaseLead from "./UseCaseLead.jsx";
-import VsBrowseAI from "./VsBrowseAI.jsx";
-import VsClay from "./VsClay.jsx";
+import VsCompare, { TOOLS } from "./VsCompare.jsx";
 import Integrations from "./Integrations.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
 import { ToastProvider } from "../components/Toast.jsx";
@@ -171,21 +170,30 @@ describe("F-15 — UseCases hub", () => {
   });
 });
 
-describe("F-16 — Comparison pages", () => {
-  it("/vs/browse-ai H1 mentions both DatIQ and Browse.ai", async () => {
-    render(<Tree path="/vs/browse-ai"><VsBrowseAI /></Tree>);
+// The per-tool comparison pages are static-owned now (hand-written HTML in
+// public/vs/<slug>/index.html, no React route), so there is nothing to render
+// here. Their existence and their links from the hub are asserted structurally
+// by scripts/page-ownership.test.mjs, and their content by e2e/smoke/vs.spec.js
+// against the real served files.
+describe("F-16 — Comparison hub", () => {
+  it("/vs/compare names every tool it links to", async () => {
+    render(<Tree path="/vs/compare"><VsCompare /></Tree>);
     await act(async () => { await Promise.resolve(); });
     const text = document.body.textContent;
     expect(text).toMatch(/DatIQ/i);
-    expect(text).toMatch(/Browse\.ai/i);
+    for (const name of ["Browse.ai", "Clay", "Firecrawl", "Apify", "PhantomBuster"]) {
+      expect(text).toContain(name);
+    }
   });
 
-  it("/vs/clay H1 mentions both DatIQ and Clay", async () => {
-    render(<Tree path="/vs/clay"><VsClay /></Tree>);
+  it("links to a detail page for every tool in the table", async () => {
+    const { container } = render(<Tree path="/vs/compare"><VsCompare /></Tree>);
     await act(async () => { await Promise.resolve(); });
-    const text = document.body.textContent;
-    expect(text).toMatch(/DatIQ/i);
-    expect(text).toMatch(/Clay/i);
+    for (const t of TOOLS) {
+      // Plain <a href>, not <Link> — these targets have no React route, so a
+      // client-side navigation would dead-end in NotFound.
+      expect(container.querySelector(`a[href="${t.href}"]`)).toBeTruthy();
+    }
   });
 });
 

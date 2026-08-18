@@ -7,6 +7,8 @@ import { useToast } from "../components/Toast.jsx";
 import NotifyMeModal from "../components/NotifyMeModal.jsx";
 import WebhookSetupModal from "../components/WebhookSetupModal.jsx";
 import { isWaitlisted } from "../lib/integrationsNotify.js";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 const INTEGRATIONS = [
   {
@@ -117,6 +119,10 @@ const STATUS_META = {
 };
 
 export default function Integrations() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/integrations/index.html this page now owns.
+  useSeo(seoFor("/integrations"));
+
   const navigate = useNavigate();
   const toast = useToast();
   const [notifyOpen, setNotifyOpen] = useState(null); // { slug, label } or null

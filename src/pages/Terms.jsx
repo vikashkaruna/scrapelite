@@ -1,7 +1,12 @@
 // Terms.jsx — Terms of Service page (route "/terms").
+//
+// ⚠️ As in Privacy.jsx, SECTIONS drives the #section-N anchor ids by ARRAY
+// INDEX. Edit in place; appending is safe; inserting or reordering silently
+// repoints every existing deep link.
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import { useSeo } from "../hooks/useSeo.js";
 
 const SECTIONS = [
   {
@@ -76,6 +81,33 @@ const SECTIONS = [
 export default function Terms() {
   const navigate = useNavigate();
 
+  // Without this, /terms served index.html's hard-coded canonical pointing at
+  // the homepage, and Google dropped it as a duplicate. See Privacy.jsx.
+  useSeo({
+    title: "Terms of Service | DatIQ.app",
+    description:
+      "The terms governing your use of DatIQ: acceptable use, account and billing terms, intellectual property, liability, and the Indian arbitration clause that governs disputes.",
+    canonical: "https://datiq.app/terms",
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: "Terms of Service",
+        url: "https://datiq.app/terms",
+        description: "DatIQ's terms of service.",
+        isPartOf: { "@type": "WebSite", name: "DatIQ", url: "https://datiq.app" },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: "https://datiq.app/" },
+          { "@type": "ListItem", position: 2, name: "Terms of Service", item: "https://datiq.app/terms" },
+        ],
+      },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="container" style={{ maxWidth: 860, padding: "clamp(32px,5vw,64px) clamp(20px,4vw,44px)" }}>
@@ -143,6 +175,13 @@ export default function Terms() {
               admin@datiq.app
             </a>
           </div>
+          <p className="legal-text" style={{ marginTop: 14, marginBottom: 0 }}>
+            To report copyright infringement or request removal of content, follow our{" "}
+            <a href="/dmca" className="legal-link">
+              DMCA and content takedown process
+            </a>
+            . Indian complainants may also submit under the Information Technology Act, 2000.
+          </p>
         </div>
       </div>
     </div>

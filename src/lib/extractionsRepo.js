@@ -224,3 +224,50 @@ export async function deleteExtraction(id) {
   }
   local.remove(id);
 }
+
+// ── Guest-saved rows: counting them, and claiming them after sign-in ─────────
+//
+// shouldFallback() deliberately treats 401 as "keep it locally" (unlike
+// schedulerService, where a local-only row is inert). That's the right call —
+// a guest's extractions stay usable. But nothing ever told the user those rows
+// live in one browser and vanish with the site data, and nothing moved them to
+// the account once there WAS an account.
+
+/** Local rows that were saved without an account, i.e. server has never seen them. */
+export function readUnclaimedLocal() {
+  try {
+    return (local.read() || []).filter((r) => r && !r.user_id);
+  } catch {
+    return [];
+  }
+}
+
+/** How many saved pages exist only in this browser. Drives the sign-in nudge. */
+export function countUnclaimedLocal() {
+  return readUnclaimedLocal().length;
+}
+
+/**
+ * Re-save every account-less local row so it lands under the signed-in user.
+ * saveExtraction() re-resolves the owner each call, so this is just a replay.
+ *
+ * Best-effort and idempotent: rows that fail stay local and unclaimed, so a
+ * later attempt picks them up again rather than losing them. Returns
+ * { claimed, failed }.
+ */
+export async function claimLocalExtractions() {
+  const pending = readUnclaimedLocal();
+  if (pending.length === 0) return { claimed: 0, failed: 0 };
+
+  const results = await Promise.allSettled(pending.map((row) => saveExtraction(row)));
+  let claimed = 0;
+  let failed = 0;
+  for (const r of results) {
+    // A fallback save returns a row that is still unclaimed — only count rows
+    // that actually came back owned, or the nudge would disappear while the
+    // data is still browser-only.
+    if (r.status === "fulfilled" && r.value?.user_id) claimed += 1;
+    else failed += 1;
+  }
+  return { claimed, failed };
+}

@@ -119,3 +119,44 @@ export async function inviteUserByEmail(form) {
   if (!res.ok) throw Object.assign(new Error(data.error || `Invite failed (${res.status})`), { status: res.status, localOnly: data.localOnly });
   return data;
 }
+
+// ── Gallery curation ─────────────────────────────────────────────────────────
+// The human-verification gate for /gallery — an admin previews a shared
+// report's actual content, then tags it with a persona to promote it into
+// the curated showcase. See netlify/functions/admin-gallery.js.
+
+const GALLERY_ENDPOINT = "/api/admin-gallery";
+
+/** Fetch every public_reports row for admin review. Returns { reports, warning? }. */
+export async function fetchGalleryReports() {
+  const res = await fetch(GALLERY_ENDPOINT, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Failed to load gallery reports (${res.status})`);
+  return data;
+}
+
+/** Promote a report into the curated showcase under the given persona. */
+export async function curateGalleryReport(id, persona) {
+  const res = await fetch(GALLERY_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ action: "curate", id, persona }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Curate failed (${res.status})`);
+  return data;
+}
+
+/** Remove a report from the curated showcase (it stays shared/public). */
+export async function uncurateGalleryReport(id) {
+  const res = await fetch(GALLERY_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ action: "uncurate", id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Uncurate failed (${res.status})`);
+  return data;
+}

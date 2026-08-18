@@ -13,8 +13,14 @@ import {
   normalizeContactType,
 } from "../lib/contactRouting.js";
 import { getSettings, loadSettings } from "../lib/globalSettingsService.js";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 export default function Contact() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/contact/index.html this page now owns.
+  useSeo(seoFor("/contact"));
+
   const navigate = useNavigate();
   const { search } = useLocation();
   const showToast = useToast();

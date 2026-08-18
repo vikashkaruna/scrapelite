@@ -54,6 +54,7 @@ const GuestTrialContext = createContext({
   hardBlockReason: "single",
   checkCanExtractSingle: () => ({ allowed: true }),
   checkCanExtractBatch: () => ({ allowed: true }),
+  requireGuestCredit: () => true,
   trackGuestExtraction: () => {},
   trackGuestBatchRun: () => {},
   TRIAL_LIMIT,
@@ -77,23 +78,21 @@ export function GuestTrialProvider({ children }) {
   const [showHardBlock, setShowHardBlock] = useState(false);
   const [hardBlockReason, setHardBlockReason] = useState("single");
 
-  // On mount (guest only): if the hard limit was already reached from a previous
-  // session, show the block immediately so users can't extract without seeing it.
-  useEffect(() => {
-    if (user) return; // logged-in users are never gated
-    const s = getSettings();
-    const shl = s.guest_single_hard_limit  ?? SINGLE_HARD_LIMIT;
-    const bhl = s.guest_batch_hard_limit   ?? BATCH_HARD_LIMIT;
-    const initialCount      = getGuestCount();
-    const initialBatchCount = getGuestBatchCount();
-    if (isSingleHardLimitReached(initialCount, shl)) {
-      setHardBlockReason("single");
-      setShowHardBlock(true);
-    } else if (isBatchHardLimitReached(initialBatchCount, bhl)) {
-      setHardBlockReason("batch");
-      setShowHardBlock(true);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: an over-limit guest is deliberately NOT shown the hard block on mount
+  // any more (R17 #118 used to do that).
+  //
+  // That behaviour existed because an extraction attempt was the only trigger,
+  // and four extraction paths didn't check at all — so mount-time visibility
+  // was doing defensive work. requireGuestCredit() now runs on every path, so
+  // the modal enforces nothing on mount: it can be closed, and closing grants
+  // nothing. It is purely a notification there, and GuestTrialBanner already
+  // does that job permanently and without blocking the page.
+  //
+  // Which leaves only the cost: a full-viewport interstitial thrown at someone
+  // who has just loaded the homepage and done nothing — no intent, no context,
+  // nothing invested. The same dialog at the moment they actually try to
+  // extract has all three. Keeping it here made the gate more annoying without
+  // making it any stronger.
 
   const prevUserRef = useRef(user);
 
@@ -177,6 +176,29 @@ export function GuestTrialProvider({ children }) {
     return { allowed: true };
   }, [user, batchCount, batchHardLimit]);
 
+  /**
+   * The single gate every extraction entry point must call.
+   *
+   * Returns true if the caller may proceed; returns false AND raises the hard
+   * block if not. Checking and blocking used to be two separate steps that each
+   * caller wired up itself, which is how four paths — batch per-row Retry,
+   * the Schedules "Run now" button, the battle card, and quick-action enrich —
+   * ended up reaching extractStructure() with no gate and no counter at all.
+   *
+   * `kind` is "batch" for a multi-URL run, anything else for a single URL.
+   */
+  const requireGuestCredit = useCallback(
+    (kind = "single") => {
+      if (user) return true; // logged-in users are never gated
+      const check = kind === "batch" ? checkCanExtractBatch() : checkCanExtractSingle();
+      if (check.allowed) return true;
+      setHardBlockReason(check.reason);
+      setShowHardBlock(true);
+      return false;
+    },
+    [user, checkCanExtractBatch, checkCanExtractSingle],
+  );
+
   // ── Post-extraction tracking (called after a successful extraction) ───────────
 
   const trackGuestExtraction = useCallback(
@@ -227,6 +249,7 @@ export function GuestTrialProvider({ children }) {
         setHardBlockReason,
         checkCanExtractSingle,
         checkCanExtractBatch,
+        requireGuestCredit,
         trackGuestExtraction,
         trackGuestBatchRun,
         TRIAL_LIMIT: softLimit,

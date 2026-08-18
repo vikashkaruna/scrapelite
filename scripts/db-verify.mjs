@@ -65,10 +65,21 @@ grant usage on schema public to anon, authenticated;
 // workflow_subscriptions), 1 function (workflow_set_updated_at), and 2
 // triggers (workflow_events_set_updated_at / workflow_subscriptions_set_updated_at).
 // All 3 new tables have RLS enabled, so tablesWithoutRls stays at 0.
+//
+// 0023_consent.sql adds 2 tables (consent_records / consent_audit), 1 function
+// (consent_audit_immutable) and 1 trigger (consent_audit_no_change, which makes
+// the audit log append-only at the database level rather than by convention).
+// Both tables have RLS enabled with service-role-only policies, so
+// tablesWithoutRls stays at 0.
+//
+// 0024_analytics_rls.sql adds no objects — it DROPS the two `using (true)` anon
+// policies that made analytics_events world-readable, and adds one partial
+// index. Policy changes are not counted here, so these numbers are unaffected
+// by it; the RLS behaviour itself is asserted separately below.
 const EXPECT = {
-  tables: 36,
-  functions: 12,
-  triggers: 4,
+  tables: 38,
+  functions: 13,
+  triggers: 5,
   tablesWithoutRls: 0,
 };
 
@@ -454,6 +465,99 @@ group("0018 prune_ops_history()");
 
   const bad = await throws(`select public.prune_ops_history(0)`);
   check("prune_ops_history refuses a zero window", !!bad, bad || "call succeeded");
+}
+
+group("0023 consent records + append-only audit");
+{
+  await q(`insert into public.consent_records
+             (subject_key, session_id, analytics, policy_version)
+           values ('session:abc', 'abc', 'granted', '2026-08-15')`);
+
+  // The natural key is the subject, so a second choice by the same visitor
+  // must UPDATE rather than accumulate rows — otherwise "current consent"
+  // becomes ambiguous and the withdraw path has nothing definite to flip.
+  const dupe = await throws(
+    `insert into public.consent_records (subject_key, session_id, analytics, policy_version)
+     values ('session:abc', 'abc', 'denied', '2026-08-15')`);
+  check("consent_records is unique per subject", !!dupe, dupe || "duplicate insert succeeded");
+
+  const badChoice = await throws(
+    `insert into public.consent_records (subject_key, session_id, analytics, policy_version)
+     values ('session:xyz', 'xyz', 'maybe', '2026-08-15')`);
+  check("consent_records rejects a non-binary choice", !!badChoice,
+        badChoice || "'maybe' was accepted");
+
+  const badSource = await throws(
+    `insert into public.consent_audit (subject_key, analytics, policy_version, source)
+     values ('session:abc', 'granted', '2026-08-15', 'guessed')`);
+  check("consent_audit rejects an unknown source", !!badSource,
+        badSource || "'guessed' was accepted");
+
+  await q(`insert into public.consent_audit
+             (subject_key, session_id, analytics, policy_version, source)
+           values ('session:abc', 'abc', 'granted', '2026-08-15', 'banner')`);
+
+  // The whole point of an audit trail: it must survive a buggy handler or a
+  // well-meant cleanup by someone holding the service key.
+  const upd = await throws(
+    `update public.consent_audit set analytics = 'denied' where subject_key = 'session:abc'`);
+  check("consent_audit rejects UPDATE", !!upd, upd || "update succeeded");
+
+  const del = await throws(
+    `delete from public.consent_audit where subject_key = 'session:abc'`);
+  check("consent_audit rejects DELETE", !!del, del || "delete succeeded");
+
+  const rows = (await one(`select count(*)::int n from public.consent_audit`)).n;
+  eq("the audit row is still there after both attempts", rows, 1);
+}
+
+group("0024 analytics_events is no longer world-readable");
+{
+  // The exposure this migration closes: `for select using (true)` let any
+  // holder of the published anon key read every event row. Assert by name so
+  // a future migration that re-adds it fails here loudly.
+  const anonPolicies = (await one(
+    `select count(*)::int n from pg_policies
+      where tablename = 'analytics_events'
+        and policyname in ('anon read access','anon insert access')`)).n;
+  eq("both anon policies are gone", anonPolicies, 0);
+
+  const permissive = (await one(
+    `select count(*)::int n from pg_policies
+      where tablename = 'analytics_events'
+        and 'anon' = any(coalesce(roles, '{}'))`)).n;
+  eq("no policy grants the anon role anything", permissive, 0);
+
+  const rls = (await one(
+    `select relrowsecurity from pg_class where relname = 'analytics_events'`)).relrowsecurity;
+  check("RLS is still enabled on analytics_events", rls === true, `relrowsecurity=${rls}`);
+}
+
+// ── 0025 gallery curation ─────────────────────────────────────────────────────
+group("0025 gallery curation — persona tagging + review metadata");
+{
+  const ok = await one(`insert into public.public_reports (slug, title, url, data, persona)
+    values ('gc-ok','T','https://x.com','{}'::jsonb,'sales') returning id, curated`);
+  eq("persona accepts a known id", ok.curated, false);
+
+  const nullPersona = await one(`insert into public.public_reports (slug, title, url, data)
+    values ('gc-null','T','https://x.com','{}'::jsonb) returning persona`);
+  eq("persona stays nullable for ordinary shares", nullPersona.persona, null);
+
+  const badPersona = await throws(`insert into public.public_reports (slug, title, url, data, persona)
+    values ('gc-bad','T','https://x.com','{}'::jsonb,'not-a-real-persona')`);
+  check("an unknown persona id is rejected", !!badPersona, badPersona || "insert succeeded");
+
+  await q(`update public.public_reports
+    set curated = true, persona = 'seo', reviewed_at = now(), reviewed_by = 'admin@datiq.app'
+    where id = $1`, [ok.id]);
+  const curated = await one(`select curated, persona, reviewed_by from public.public_reports where id = $1`, [ok.id]);
+  eq("curation flips curated + records who reviewed it", curated.curated, true);
+  eq("curation does not change the persona already set", curated.persona, "seo");
+
+  const idx = await one(`select count(*)::int n from pg_indexes
+    where tablename = 'public_reports' and indexname = 'public_reports_curated_persona_idx'`);
+  eq("the curated+persona partial index exists", idx.n, 1);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

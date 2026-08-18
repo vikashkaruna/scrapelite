@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { useSeo } from "../hooks/useSeo.js";
+import { seoFor } from "../lib/pageSeo.js";
 
 const VALUES = [
   {
@@ -58,7 +60,7 @@ const PILLARS = [
     label: "Pillar 2",
     title: "Distribution & Workflow",
     status: "live",
-    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot, Salesforce). The intelligence leaves the app on your terms.",
+    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot). The intelligence leaves the app on your terms.",
   },
   {
     id: "p3",
@@ -77,6 +79,10 @@ const PILLARS = [
 ];
 
 export default function About() {
+  // Title, description, canonical and JSON-LD for this route.
+  // Ported from the hand-written public/about/index.html this page now owns.
+  useSeo(seoFor("/about"));
+
   const navigate = useNavigate();
   const personas = Object.values(PERSONA_BY_ID);
 

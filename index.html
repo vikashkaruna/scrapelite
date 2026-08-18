@@ -1,7 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-datiq-app="spa">
   <head>
     <meta charset="UTF-8" />
+    <!-- ⚠️ Nothing may go between <!DOCTYPE> and <html>. Vite's dev server
+         injects the @vitejs/plugin-react refresh preamble at exactly that
+         position, so a comment there SWALLOWS the preamble and the dev server
+         dies with "can't detect preamble". Production builds are unaffected,
+         which is what makes it easy to ship. Keep commentary inside <head>.
+
+         data-datiq-app on <html> above marks this document as the React shell.
+         public/analytics.js reads it in <head>, BEFORE <body> exists, to decide
+         whether gtag should send its own page_view (static page: yes) or leave
+         that to usePageView.js after the router has set the title (SPA: no). A
+         #root lookup cannot answer that question this early. Prerendered pages
+         inherit the attribute and do boot React, so they correctly count as
+         SPA; the hand-written static pages under public/ never carry it. -->
+
+    <!-- Runtime endpoint overrides (read at load, not baked in at build). Must
+         run before the app module so config.js can read window.__DATIQ_RUNTIME__.
+         ⚠️ It must ALSO run before /analytics.js directly below: analytics.js
+         distinguishes "gaMeasurementId absent" (fall back to its built-in id)
+         from "gaMeasurementId empty" (deliberately disabled). If this file has
+         not run yet, the key reads as absent and the PRODUCTION property fires
+         on staging, branch deploys and previews. Keep these two in this order. -->
+    <script src="/runtime-config.js"></script>
+
+    <!-- Google tag (gtag.js), via the shared consent-aware loader. Synchronous
+         so the Consent Mode v2 default lands on the dataLayer before gtag.js
+         can run. See public/analytics.js. -->
+    <script src="/analytics.js"></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
@@ -11,15 +38,35 @@
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <link rel="canonical" href="https://datiq.app/" />
 
-    <!-- SEO: /admin/* is operator-only. The in-page AdminLayout rewrites
-         the robots meta + OG tags to noindex on the client. The
-         server-rendered shell below is a defense-in-depth fallback for
-         crawlers that don't execute JS. -->
-    <script>
+    <!-- SEO: these prefixes are the signed-in application, not content. They
+         must never be indexed, and — critically — must never keep the root
+         canonical above, which would tell Google "/dashboard IS the homepage"
+         and get the real page dropped as a duplicate. That is exactly the bug
+         that left /privacy, /terms and /vs/battlecard out of the index.
+
+         netlify.toml sends X-Robots-Tag for the same list, which is the real
+         defence (it works for crawlers that don't execute JS). This block is
+         the in-page belt-and-braces.
+
+         ⚠️ Deliberately an explicit ALLOW-LIST of private prefixes, not
+         "any path that isn't /". Public routes are prerendered with a correct
+         per-page canonical baked in and re-set by useSeo on mount; a blanket
+         rule would delete that canonical at head-parse time on every real
+         page load, leaving a window where a JS-executing crawler sees none. -->
+    <script data-datiq-private-guard>
       (function () {
         try {
           if (typeof window === "undefined" || !window.location) return;
-          if (window.location.pathname.indexOf("/admin") === 0) {
+          var PRIVATE = [
+            "/admin", "/dashboard", "/account", "/preview", "/batch",
+            "/schedules", "/workspace", "/collections", "/payment",
+            "/reset-password", "/onboarding"
+          ];
+          var path = window.location.pathname || "";
+          var isPrivate = PRIVATE.some(function (p) {
+            return path === p || path.indexOf(p + "/") === 0 || path.indexOf(p) === 0;
+          });
+          if (isPrivate) {
             var setMeta = function (attr, key, content) {
               var sel = "meta[" + attr + '="' + key + '"]';
               var el = document.head.querySelector(sel);
@@ -137,10 +184,6 @@
       }
     }
     </script>
-
-    <!-- Runtime endpoint overrides (read at load, not baked in at build). Must
-         run before the app module so config.js can read window.__DATIQ_RUNTIME__. -->
-    <script src="/runtime-config.js"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

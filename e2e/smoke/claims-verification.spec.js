@@ -44,12 +44,17 @@ test("CLAIM: Select plan starts at $14.40/month (monthly billing)", async ({ pag
 
 // ── Batch claims ──────────────────────────────────────────────────────────────
 
-test("CLAIM: Batch mode is accessible from the main nav and renders", async ({ page }) => {
+// The claim this pins deliberately CHANGED: batch is no longer something you
+// navigate to, it is what the Home composer does when you give it more than one
+// URL. The docs, help site and changelog all now say "there is no separate Batch
+// tab", so the claim under test is that pasting a list gets you there.
+test("CLAIM: pasting multiple URLs in the Home composer routes to batch", async ({ page }) => {
   await page.goto("/");
-  // The "Batch" nav link in TopBar
-  await page.getByRole("button", { name: /Batch/i }).first().click();
-  await expect(page).toHaveURL(/\/batch$/);
-  await expect(page.getByRole("heading", { name: /Multi-URL extraction/i }).first()).toBeVisible();
+  await page.locator("textarea").first()
+    .fill("https://stripe.com/pricing\nhttps://linear.app/pricing");
+  await page.locator("button.hero-action-btn").click();
+  await expect(page).toHaveURL(/\/batch/);
+  await expect(page.getByRole("heading", { name: /Batch extraction/i }).first()).toBeVisible();
 });
 
 test("CLAIM: Batch page accepts multiple URLs and shows the count", async ({ page }) => {

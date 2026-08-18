@@ -139,6 +139,31 @@ window.__DATIQ_RUNTIME__ = {
   authReturnUrl: _isMain
     ? "https://datiq.app"
     : window.location.origin,
+  // ── Google Analytics 4 ──────────────────────────────────────────────────
+  // Read by public/analytics.js at RUNTIME, so the property can be repointed
+  // by redeploying this one file — no rebuild.
+  //
+  // ⚠️ Absent key and empty string mean DIFFERENT things to analytics.js:
+  //   - key missing entirely → it falls back to its built-in literal
+  //     (the safety net for "runtime-config.js failed to load")
+  //   - key present but ""   → deliberately DISABLED, no tag at all
+  // So the branch below is what keeps staging and branch-deploy traffic OUT of
+  // the production property. To start measuring a non-production environment,
+  // create a SECOND GA4 property and put its id in the else-branch — do not
+  // reuse the production id, or staging sessions become production sessions.
+  gaMeasurementId: _isMain ? "G-B0DZLRWG63" : "",
+
+  // Bumped whenever the cookie/analytics wording in the Privacy Policy changes
+  // materially. Stamped onto every consent record so an old consent is
+  // distinguishable from one given under the current policy.
+  consentPolicyVersion: "2026-08-15",
+
+  // Verification-only: lets analytics.js run against a localhost dev server,
+  // which it otherwise skips entirely. Leave false in every committed state —
+  // it exists so the consent flow can be observed in a browser, and it cannot
+  // re-enable /admin or an empty measurement id.
+  gaDebugLocal: false,
+
   // Boolean flags for feature gating (e.g. "disable billing on staging/branch deploys").
   isProduction: _isMain,
   isStaging: _isStaging,

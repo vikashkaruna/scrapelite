@@ -1,6 +1,7 @@
 // admin-health.test.js — the service/host/database health endpoint.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ALL_SERVER_ENV_KEYS, clearServerEnv } from "./helpers/serverEnv.js";
 import { createHmac } from "crypto";
 
 let fetchMock;
@@ -20,15 +21,15 @@ const authed = (extra = {}) => ({
   ...extra,
 });
 
-const ENV_KEYS = [
-  "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "NETLIFY_AUTH_TOKEN", "NETLIFY_SITE_ID",
-  "SITE_ID", "RESEND_API_KEY", "GEMINI_API_KEY", "AI_API_KEY", "OPENAI_API_KEY",
-  "SPIDER_API_KEY", "JINA_API_KEY", "FIRECRAWL_API_KEY", "VITE_FIRECRAWL_API_KEY",
-];
+// Shared list — see netlify/__tests__/helpers/serverEnv.js. The copy that used
+// to live here omitted VITE_SUPABASE_URL and the anon keys, so on a machine
+// with a real .env (Vitest loads it into process.env) probes this suite expects
+// to be UNCONFIGURED found live credentials and ran for real.
+const ENV_KEYS = ALL_SERVER_ENV_KEYS;
 
 beforeEach(async () => {
   vi.resetModules();
-  for (const k of ENV_KEYS) delete process.env[k];
+  clearServerEnv(ENV_KEYS);
   process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -39,7 +40,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   delete process.env.ADMIN_TOKEN_SECRET;
-  for (const k of ENV_KEYS) delete process.env[k];
+  clearServerEnv(ENV_KEYS);
 });
 
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status });

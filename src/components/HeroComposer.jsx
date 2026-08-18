@@ -16,6 +16,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
+import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useToast } from "./Toast.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
@@ -44,14 +45,25 @@ export default function HeroComposer({
   intent = "summary",
   customPrompt = "",
   renderJs = false,
+  generateContent = null,
   accentColor,
   placeholder,
 }) {
   const navigate = useNavigate();
   const showToast = useToast();
   const { extract } = useExtraction();
+  const { startBatchRun } = useBatchRun();
 
   const [batchMode, setBatchMode] = useState(false);
+  // Sticky "run in background" preference — lives in the + menu rather than as
+  // another toolbar chip, so the composer's bottom row stays uncluttered.
+  const [background, setBackground] = useState(() => {
+    try { return localStorage.getItem("datiq.runInBackground") === "1"; } catch { return false; }
+  });
+  // When prose carries links we ask instead of guessing: "extract the N links"
+  // and "extract this text as one page" are both legitimate readings and only
+  // the reader knows which they meant. null = not yet answered.
+  const [embeddedChoice, setEmbeddedChoice] = useState(null); // null | "urls" | "text"
   const [presetKey, setPresetKey] = useState(null); // armed cadence
   const [plusOpen, setPlusOpen] = useState(false);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
@@ -84,22 +96,39 @@ export default function HeroComposer({
 
   const classification = classifyInput(value);
   const { valid: detectedUrls } = extractUrls(value);
-  const isMulti = batchMode || classification.kind === "multi";
+  // Prose carrying >= 2 links. Answered via the inline chooser below; until it
+  // is answered the action button stays in whatever mode the raw text implies.
+  const isEmbedded = classification.kind === "embedded";
+  const embeddedAsUrls = isEmbedded && embeddedChoice === "urls";
+  const embeddedAsText = isEmbedded && embeddedChoice === "text";
+  const isMulti = batchMode || classification.kind === "multi" || embeddedAsUrls;
   const urlCount = detectedUrls.length;
   // Raw pasted text can't be scheduled (no URL to re-fetch).
-  const canSchedule = classification.kind !== "text";
+  const canSchedule = classification.kind !== "text" && !embeddedAsText;
+
+  // Reset the chooser whenever the input changes shape, so a previous answer
+  // can't silently apply to a completely different paste.
+  useEffect(() => { setEmbeddedChoice(null); }, [classification.kind, urlCount]);
+
+  // Persist the background preference.
+  useEffect(() => {
+    try { localStorage.setItem("datiq.runInBackground", background ? "1" : "0"); } catch { /* ignore */ }
+  }, [background]);
 
   // ── Action mode → icon + label (the "intelligent" three-mode button) ────────
   const actionMode =
     presetKey && canSchedule ? "schedule" :
     isMulti                  ? "batch" :
-    classification.kind === "text" ? "text" :
+    (classification.kind === "text" || embeddedAsText) ? "text" :
+    isEmbedded               ? "choose" :
     intent === "map"         ? "map" : "single";
 
   const ACTION = {
     schedule: { icon: "calendar-clock", label: "Schedule" },
     batch:    { icon: "layers-2",       label: `Extract${urlCount ? ` ${urlCount}` : ""}` },
     text:     { icon: "zap",            label: "Extract" },
+    // Waiting on the embedded chooser — pressing it just focuses the question.
+    choose:   { icon: "help-circle",    label: "Choose" },
     map:      { icon: "network",        label: "Map" },
     single:   { icon: "zap",            label: "Extract" },
   }[actionMode];
@@ -185,16 +214,54 @@ export default function HeroComposer({
       return;
     }
 
+    // Prose with links, question not yet answered — don't guess.
+    if (isEmbedded && !embeddedChoice) {
+      showToast(`Found ${urlCount} links — choose whether to extract them or this text.`);
+      return;
+    }
+
     // Batch / multi-URL → dedicated screen (auto-runs).
     if (isMulti || classification.kind === "csv") {
       const urls = classification.urls?.length ? classification.urls : detectedUrls;
       if (urls.length < 2) { showToast("Add at least 2 URLs for batch mode."); return; }
-      navigate("/batch", { state: { urls, intent, autorun: true, source: classification.kind === "csv" ? "csv" : "multi" } });
+      // Background: start the run right here and stay put. Navigating to /batch
+      // to then say "you can navigate away" would defeat the point — the whole
+      // request is not to be moved off the page. The run lives in
+      // BatchRunProvider either way, so it doesn't care which route started it.
+      if (background) {
+        startBatchRun({
+          urls,
+          intent,
+          renderJs,
+          customPrompt: resolvePrompt({ intent, customPrompt }),
+          generateContent,
+          background: true,
+        });
+        return;
+      }
+
+      // Foreground: hand off to /batch, which auto-runs and shows the table.
+      // Carry the full run configuration. Only { urls, intent, autorun } used to
+      // travel, so a Home batch with intent:"custom" arrived with an empty
+      // prompt and auto-ran immediately — silently extracting nothing useful.
+      // renderJs was dropped the same way.
+      navigate("/batch", {
+        state: {
+          urls,
+          intent,
+          autorun: true,
+          source: classification.kind === "csv" ? "csv" : "multi",
+          customPrompt: resolvePrompt({ intent, customPrompt }),
+          renderJs,
+          generateContent,
+          background,
+        },
+      });
       return;
     }
 
     // Raw text (paste-anything)
-    if (classification.kind === "text") {
+    if (classification.kind === "text" || embeddedAsText) {
       if (text.length < TEXT_MIN_LEN && !/\s/.test(text)) {
         showToast("That doesn't look like a valid URL. Paste a full URL or longer text.");
         return;
@@ -214,13 +281,22 @@ export default function HeroComposer({
     const target = normalizeUrl(classification.urls[0] || text);
     if (intent === "map") { extract(target, { mapMode: true, intent }); return; }
     const prompt = resolvePrompt({ intent, customPrompt });
-    const opts = { renderJs, intent };
+    const opts = { renderJs, intent, background };
+    if (generateContent) opts.generateContent = generateContent;
     if (prompt) {
       opts.customPrompt = prompt;
       const meta = enrichMetaForIntent(intent);
       if (meta) opts.enrichMeta = meta;
     }
     extract(target, opts);
+  };
+
+  // "Extract all N links" — reuse the same ingest path drag-drop and CSV import
+  // already use, so there is exactly one way text becomes a URL list.
+  const chooseEmbeddedUrls = () => {
+    setEmbeddedChoice("urls");
+    setBatchMode(true);
+    onChange(classification.urls.join("\n"));
   };
 
   // "Custom schedule…" → hand off to the /schedules editor with the input prefilled.
@@ -295,6 +371,14 @@ export default function HeroComposer({
               Raw text detected — will run as paste-anything
             </>
           )}
+          {isEmbedded && (
+            <>
+              <Icon name="link" size={12} />
+              {embeddedChoice === "text"
+                ? "Will extract this text as one page"
+                : `${urlCount} links found in this text`}
+            </>
+          )}
           {presetKey && (
             <span className="hero-composer-armed">
               <Icon name="calendar-clock" size={11} /> {presetByKey(presetKey).label}
@@ -303,6 +387,28 @@ export default function HeroComposer({
               </button>
             </span>
           )}
+        </div>
+      )}
+
+      {/* Prose carrying links — ask, don't guess. A newsletter with ten links
+          is genuinely ambiguous: extract the ten pages, or summarise the
+          newsletter? Before this, the classifier required nearly every token to
+          be a URL to say "multi", so this input silently became one pasted
+          document and the links it had already found were thrown away. */}
+      {isEmbedded && !embeddedChoice && (
+        <div className="hero-embedded-choice" role="group" aria-label="How should this text be handled?">
+          <span className="hero-embedded-q">
+            <Icon name="link" size={13} />
+            Found <b>{urlCount}</b> links in this text — what would you like?
+          </span>
+          <div className="hero-embedded-actions">
+            <button type="button" className="hero-embedded-btn hero-embedded-primary" onClick={chooseEmbeddedUrls}>
+              <Icon name="layers-2" size={13} /> Extract all {urlCount}
+            </button>
+            <button type="button" className="hero-embedded-btn" onClick={() => setEmbeddedChoice("text")}>
+              <Icon name="file-text" size={13} /> Extract this text as one page
+            </button>
+          </div>
         </div>
       )}
 
@@ -330,11 +436,12 @@ export default function HeroComposer({
               type="button"
               className="hero-icon-btn"
               onClick={() => setPlusOpen((v) => !v)}
-              title="Add content — import a CSV of URLs"
-              aria-label="Add content"
+              title={background ? "Options — running in background" : "Add content — import a CSV of URLs"}
+              aria-label="Add content and options"
               aria-expanded={plusOpen}
             >
               <Icon name="plus" size={18} />
+              {background && <span className="hero-plus-dot" aria-hidden="true" />}
             </button>
             {plusOpen && (
               <div className="hero-menu">
@@ -343,6 +450,22 @@ export default function HeroComposer({
                 </button>
                 <button type="button" className="hero-menu-item" onClick={() => { setPlusOpen(false); setBatchMode(true); taRef.current?.focus(); }}>
                   <Icon name="list-checks" size={15} /> <span><b>Paste multiple URLs</b><span className="hero-menu-hint">Switch to a batch list</span></span>
+                </button>
+                {/* Applies to single AND batch runs. A menu item rather than a
+                    toolbar chip so the bottom row doesn't grow a third toggle. */}
+                <button
+                  type="button"
+                  className={"hero-menu-item" + (background ? " hero-menu-item-on" : "")}
+                  role="menuitemcheckbox"
+                  aria-checked={background}
+                  onClick={() => setBackground((v) => !v)}
+                >
+                  <Icon name="clock" size={15} />
+                  <span>
+                    <b>Run in background</b>
+                    <span className="hero-menu-hint">Stay on this page — progress shows in the corner</span>
+                  </span>
+                  {background && <Icon name="check" size={14} className="hero-menu-check" />}
                 </button>
               </div>
             )}

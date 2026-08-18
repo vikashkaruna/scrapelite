@@ -32,7 +32,9 @@
     "ci:install-hook": "cp scripts/pre-push.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push && echo 'Installed pre-push hook — every git push will run npm run test:prepush first.'",
     "migrate:prod": "node scripts/migrate-prod.mjs",
     "build:sql": "node scripts/build-run-all.mjs",
-    "build:extension": "node scripts/build-extension.mjs"
+    "build:extension": "node scripts/build-extension.mjs",
+    "prerender": "node scripts/prerender.mjs",
+    "build:sitemap": "node scripts/build-sitemap.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

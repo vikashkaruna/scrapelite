@@ -1,10 +1,12 @@
 <!doctype html>
 <html lang="en" data-theme="light">
 <head>
+<script src="/runtime-config.js"></script>
+<script src="/analytics.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Frequently Asked Questions | DatIQ.app</title>
-<meta name="description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl. DatIQ.app is the no-code web intelligence platform.">
+<title>What is DatIQ? Product overview and FAQ | DatIQ.app</title>
+<meta name="description" content="What DatIQ is, who it is for, what it can extract, and how it works — plus answers on pricing, plans, exports, scheduling, API access and troubleshooting.">
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
 <link rel="canonical" href="https://datiq.app/faq">
 <link rel="icon" href="/favicon.svg">
@@ -13,14 +15,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/help/help.css">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Frequently Asked Questions | DatIQ.app">
+<meta property="og:title" content="What is DatIQ? Product overview and FAQ | DatIQ.app">
 <meta property="og:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, troubleshooting, and how DatIQ compares to Clay, Browse.ai, and Firecrawl.">
 <meta property="og:url" content="https://datiq.app/faq">
 <meta property="og:site_name" content="DatIQ">
 <meta property="og:image" content="https://datiq.app/og-card.jpg">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Frequently Asked Questions | DatIQ.app">
+<meta name="twitter:title" content="What is DatIQ? Product overview and FAQ | DatIQ.app">
 <meta name="twitter:description" content="Frequently asked questions about DatIQ — pricing, plans, exports, scheduling, API, and troubleshooting.">
 <meta name="twitter:image" content="https://datiq.app/og-card.jpg">
 <meta name="twitter:site" content="@datiq_app">
@@ -50,7 +52,7 @@
       "name": "How much does DatIQ cost?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $19 / month (Select, 100 extractions + PDF export). Pro is $29 / month, Business $79 / month, Agency $299 / month. Annual plans get a 20% discount. INR pricing is available."
+        "text": "DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $4.80 / month (Go). Select is $14.40 / month (100 extractions + PDF export), Pro $20.40 / month, Business $44.40 / month, Agency $106.80 / month. Annual billing is cheaper again. INR pricing is available."
       }
     },
     {
@@ -66,7 +68,7 @@
       "name": "What formats can I export?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above."
+        "text": "Export ▾ gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push ▾ — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all."
       }
     },
     {
@@ -82,7 +84,7 @@
       "name": "Does DatIQ offer an API?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. The Developer plan (H3 2026) is an API-first tier. Business and Agency plans include API access today — POST to /api/extract, /api/ai, and GET /api/stats."
+        "text": "Yes. The Developer plan (H2 2026) is an API-first tier. Business and Agency plans include API access today — POST to /api/extract, /api/ai, and GET /api/stats."
       }
     },
     {
@@ -106,7 +108,7 @@
       "name": "A batch URL failed. How do I find out why?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed."
+        "text": "The results table shows the reason next to each failed URL, with a Retry button on that row. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed. Failures stay with the run, and every run has its own link, so you can reopen it later from Batch runs on the Dashboard and retry from there — only successful pages become Dashboard entries, so the run page is the only place a failed URL appears."
       }
     },
     {
@@ -124,6 +126,46 @@
         "@type": "Answer",
         "text": "Yes. DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Stripe is also available for international customers."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an account to use DatIQ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No — you can start extracting immediately, and a trial banner shows how many free single extractions and batch runs remain. Signing in changes three things: your saved pages move from this browser onto your account, schedules can actually run (they execute on DatIQ's servers), and Push destinations become available."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I extracted pages without signing in. Where are they?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "They are saved, but only in the browser you used — clearing site data or switching browsers loses them. Your Dashboard says so at the top and tells you how many pages are browser-only. Sign in and DatIQ moves them onto your account automatically; there is nothing to re-run or re-import."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I keep working while a batch runs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Turn on Run in background in the composer's plus menu and the run keeps going while you move around the app. Progress shows in a dock in the corner — how many URLs are done, which one is being read, and a Cancel button. The setting is remembered between visits and applies to single extractions too."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "My schedule says \"Not running\" — why?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It was created while you were signed out, so it could not be saved to your account. Recurring runs happen on DatIQ's servers rather than in your browser, so a schedule needs an account before anything can run it. Sign in and DatIQ saves the schedule for you automatically."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I pasted an email full of links and it extracted the whole thing as one page.",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "That is one of two reasonable readings, so DatIQ asks instead of guessing. When your paste is text that contains links, an inline chooser appears under the box: \"Extract all N\" pulls the individual pages, and \"Extract this text as one page\" treats the paste as a single document."
+      }
     }
   ]
 }
@@ -132,6 +174,9 @@
   .faq-hero { text-align: center; padding: 64px 0 32px; }
   .faq-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 12px; }
   .faq-hero p { color: var(--text-2); font-size: 1.05rem; max-width: 600px; margin: 0 auto 24px; }
+  .faq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
+  .faq-card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 14px 16px; font-size: 0.9rem; color: var(--text-2, #4b5563); line-height: 1.6; }
+  .faq-card strong { display: block; color: var(--text, #111827); margin-bottom: 4px; }
   .faq-toc { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 16px 20px; margin: 0 0 32px; }
   .faq-toc h2 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3, #9ca3af); margin: 0 0 8px; }
   .faq-toc ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -140,7 +185,7 @@
   .faq-section { padding: 24px 0; }
   .faq-section h2 { font-size: 1.4rem; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
   .faq-item { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 0; margin-bottom: 12px; }
-  .faq-item summary { padding: 16px 20px; font-weight: 600; cursor: pointer; color: var(--text-1, #111827); font-size: 1rem; }
+  .faq-item summary { padding: 16px 20px; font-weight: 600; cursor: pointer; color: var(--text, #111827); font-size: 1rem; }
   .faq-item summary::marker { color: var(--accent, #6366f1); }
   .faq-item details[open] summary { border-bottom: 1px solid var(--border, #e5e7eb); }
   .faq-item .answer { padding: 16px 20px; color: var(--text-2, #4b5563); line-height: 1.7; margin: 0; }
@@ -185,14 +230,17 @@
 <div class="container">
   <section class="faq-hero">
     <div class="kicker">DatIQ · Help center</div>
-    <h1>Frequently Asked Questions</h1>
-    <p>Quick answers about DatIQ — pricing, plans, exports, scheduling, API access, and troubleshooting common extraction issues. DatIQ.app is the no-code web intelligence platform.</p>
+    <h1>What is DatIQ? Overview and FAQ</h1>
+    <p>DatIQ.app is a no-code web intelligence platform that turns any public URL into structured data — headings, links, contacts, pricing, AI summaries, and custom fields — in seconds, with no code required. Below: who it is for, what it extracts, how it works, and quick answers on pricing, plans, exports, scheduling, API access and troubleshooting.</p>
     <p class="faq-updated">Last updated: 2026-08-08</p>
   </section>
 
   <nav class="faq-toc" aria-label="On this page">
     <h2>On this page</h2>
     <ul>
+      <li><a href="#who">Who is DatIQ for?</a></li>
+      <li><a href="#extract">What can you extract?</a></li>
+      <li><a href="#how">How does DatIQ work?</a></li>
       <li><a href="#overview">Overview</a></li>
       <li><a href="#pricing">Pricing &amp; plans</a></li>
       <li><a href="#features">Features</a></li>
@@ -200,6 +248,46 @@
       <li><a href="#account">Account &amp; data</a></li>
     </ul>
   </nav>
+
+<section class="faq-section" id="who">
+    <h2>Who is DatIQ for?</h2>
+    <ul>
+      <li><strong>SDRs and BDRs</strong> doing prospect research — pull leadership names, emails, and pricing from a company site in one click.</li>
+      <li><strong>Competitive intelligence analysts</strong> — monitor competitor pricing, messaging, and leadership changes on a schedule.</li>
+      <li><strong>SEO and content marketers</strong> — extract heading structure, link profiles, and content gaps from any site.</li>
+      <li><strong>Market researchers</strong> — aggregate structured data from many company sites in a single batch run.</li>
+      <li><strong>Recruiters</strong> — find candidate sources, extract team pages, and surface tech-stack signals.</li>
+      <li><strong>Startup founders</strong> — research competitors and customers during discovery.</li>
+      <li><strong>VCs</strong> doing due diligence — pull product, pricing, and team data from a target's site in minutes.</li>
+      <li><strong>Digital agencies</strong> — handle multi-client prospect research and reporting at scale.</li>
+    </ul>
+  </section>
+
+<section class="faq-section" id="extract">
+    <h2>What can you extract?</h2>
+    <div class="faq-grid">
+      <div class="faq-card"><strong>Web extraction</strong>Headings H1–H6, all internal / external links, metadata, page summary.</div>
+      <div class="faq-card"><strong>AI summary</strong>Plain-language overview of any page in a few sentences.</div>
+      <div class="faq-card"><strong>Custom extraction</strong>Describe any field in English; the AI locates and structures it.</div>
+      <div class="faq-card"><strong>Domain mapping</strong>Discover every indexed URL on a site.</div>
+      <div class="faq-card"><strong>Contact extraction</strong>Surface leadership names, email addresses, social profiles.</div>
+      <div class="faq-card"><strong>Pricing extraction</strong>Structured pricing tiers from any pricing page.</div>
+      <div class="faq-card"><strong>Content generation</strong>SEO outlines, competitive briefs, social posts from saved pages.</div>
+      <div class="faq-card"><strong>Exports</strong>CSV (comprehensive) and PDF (jsPDF report, white-label on Business + Agency).</div>
+    </div>
+  </section>
+
+<section class="faq-section" id="how">
+    <h2>How does DatIQ work?</h2>
+    <ol style="color: var(--text-2, #4b5563); line-height: 1.7; padding-left: 22px;">
+      <li><strong>Paste a URL</strong> on the home screen (or up to hundreds of URLs for a batch run).</li>
+      <li><strong>Choose options</strong> — pick intent chips (summary, contacts, pricing, map, custom) or describe a custom field in plain English.</li>
+      <li><strong>AI extracts</strong> the structured data and renders it on the Preview screen.</li>
+      <li><strong>Enrich</strong> the extraction with one-click capabilities (leadership, social links, mission, pricing breakdown).</li>
+      <li><strong>Save</strong> the extraction to your Dashboard, group it under a Collection, and tag it.</li>
+      <li><strong>Export</strong> to CSV or PDF, share via a public link, or push to HubSpot, Airtable, Notion, Slack, or Zapier (one-click from Preview, Dashboard, and Batch).</li>
+    </ol>
+  </section>
 
   <section class="faq-section" id="overview">
     <h2>Overview</h2>
@@ -216,7 +304,7 @@
 
     <details class="faq-item" id="faq-who">
       <summary>Who is DatIQ for?</summary>
-      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="/what-is-datiq">What is DatIQ?</a> for the full persona list.</p>
+      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="#who">the full persona list below</a> for the full persona list.</p>
     </details>
   </section>
 
@@ -225,7 +313,7 @@
 
     <details class="faq-item" id="faq-cost">
       <summary>How much does DatIQ cost?</summary>
-      <p class="answer">DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $19 / month (Select, 100 extractions + PDF export). Pro is $29 / month, Business $79 / month, Agency $299 / month. Annual plans get a 20% discount. INR pricing is available. See <a href="/pricing">full pricing</a>.</p>
+      <p class="answer">DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $4.80 / month (Go). Select is $14.40 / month (100 extractions + PDF export), Pro $20.40 / month, Business $44.40 / month, Agency $106.80 / month. Annual billing is cheaper again. INR pricing is available. See <a href="/pricing">full pricing</a>.</p>
     </details>
 
     <details class="faq-item" id="faq-india">
@@ -249,7 +337,7 @@
 
     <details class="faq-item" id="faq-export">
       <summary>What formats can I export?</summary>
-      <p class="answer">CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above.</p>
+      <p class="answer">Export ▾ gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push ▾ — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all.</p>
     </details>
 
     <details class="faq-item" id="faq-schedule">
@@ -259,13 +347,49 @@
 
     <details class="faq-item" id="faq-api">
       <summary>Does DatIQ offer an API?</summary>
-      <p class="answer">Yes. The Developer plan (H3 2026) is an API-first tier. Business and Agency plans include API access today — POST to <code>/api/extract</code>, <code>/api/ai</code>, and GET <code>/api/stats</code>.</p>
+      <p class="answer">Yes. The Developer plan (H2 2026) is an API-first tier. Business and Agency plans include API access today — POST to <code>/api/extract</code>, <code>/api/ai</code>, and GET <code>/api/stats</code>.</p>
     </details>
 
     <details class="faq-item" id="faq-share">
       <summary>Can I share an extraction with someone who doesn't have a DatIQ account?</summary>
-      <p class="answer">Yes — every extraction has a Share button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
+      <p class="answer">Yes — every extraction has a <strong>Share</strong> button that creates a public link at <code>datiq.app/p/&lt;short-code&gt;</code>. The recipient sees a read-only report, no sign-in required. You can revoke the link at any time.</p>
     </details>
+
+    <details class="faq-item" id="faq-spreadsheet">
+      <summary>How do I export to a spreadsheet?</summary>
+      <p class="answer">Use <strong>CSV</strong> from any <strong>Export ▾</strong> menu, then open it in your spreadsheet tool. For Google Sheets specifically, pick <strong>Google Sheets</strong> from the <strong>Push ▾</strong> menu — it needs no setup and opens a blank sheet ready for the CSV it just downloaded.</p>
+    </details>
+
+    <details class="faq-item" id="faq-background-run">
+      <summary>Can I keep working while a batch runs?</summary>
+      <p class="answer">Yes. Turn on <strong>Run in background</strong> in the composer's <strong>＋</strong> menu and the run keeps going while you move around the app. Progress shows in a dock in the corner — how many URLs are done, which one is being read, and a Cancel button. The setting is remembered between visits and applies to single extractions too.</p>
+    </details>
+
+    <details class="faq-item" id="faq-schedule-email">
+      <summary>Will scheduled runs email me?</summary>
+      <p class="answer">Only if you add an alert email to the schedule. Automated runs that detect a change send the alert; the manual <strong>Run now</strong> button just shows you the result on screen.</p>
+    </details>
+
+    <details class="faq-item" id="faq-command-palette">
+      <summary>How do I get to a specific page fast?</summary>
+      <p class="answer">Press <kbd>mod</kbd>+<kbd>k</kbd> (or <kbd>ctrl</kbd>+<kbd>k</kbd>) anywhere to open the command palette. Type a page name (Home, Dashboard, Pricing, Schedules) and press <kbd>Enter</kbd>.</p>
+    </details>
+
+    <details class="faq-item" id="faq-outcome-tiles">
+      <summary>What are those chips above the URL box?</summary>
+      <p class="answer">Those are <strong>outcome tiles</strong> — pre-wired shortcuts for the six most common jobs (AI summary, lead list, pricing, competitor research, job board, custom). Click one to pre-fill the URL, intent and prompt. Click several to combine prompts into one extraction.</p>
+    </details>
+
+    <details class="faq-item" id="faq-workspace">
+      <summary>What is the Workspace page?</summary>
+      <p class="answer">When you sign in, the top nav gains a <strong>Workspace</strong> entry — a logged-in command center for your recent extractions, schedules, batch runs and notifications.</p>
+    </details>
+
+    <details class="faq-item" id="faq-gallery">
+      <summary>What is the Gallery?</summary>
+      <p class="answer"><a href="/gallery">/gallery</a> lists recent public extractions. Useful for browsing what others have shared and for discovering new use-cases.</p>
+    </details>
+
   </section>
 
   <section class="faq-section" id="troubleshooting">
@@ -283,12 +407,22 @@
 
     <details class="faq-item" id="faq-batch-fail">
       <summary>A batch URL failed. How do I find out why?</summary>
-      <p class="answer">The results table shows the reason next to each failed URL. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed.</p>
+      <p class="answer">The results table shows the reason next to each failed URL, with a Retry button on that row. Common causes are unreachable sites, non-HTML pages (e.g. PDFs, images), or sites that block automated requests. Other URLs in the batch still succeed. Failures stay with the run, and every run has its own link, so you can reopen it later from Batch runs on the Dashboard and retry from there — only successful pages become Dashboard entries, so the run page is the only place a failed URL appears.</p>
     </details>
 
     <details class="faq-item" id="faq-app-updated">
       <summary>"App updated — please refresh."</summary>
       <p class="answer">DatIQ ships improvements regularly. If you've had a tab open for a while and an export or action shows this message, just refresh the page and try again.</p>
+    </details>
+
+    <details class="faq-item" id="faq-schedule-not-running">
+      <summary>My schedule says "Not running" — why?</summary>
+      <p class="answer">It was created while you were signed out, so it could not be saved to your account. Recurring runs happen on DatIQ's servers rather than in your browser, so a schedule needs an account before anything can run it. Sign in and DatIQ saves the schedule for you automatically — it is labelled "Not running" rather than shown with a next-run time it cannot honour.</p>
+    </details>
+
+    <details class="faq-item" id="faq-embedded-links">
+      <summary>I pasted an email full of links and it extracted the whole thing as one page.</summary>
+      <p class="answer">That is one of two reasonable readings, so DatIQ asks instead of guessing. When your paste is text that contains links, an inline chooser appears under the box: "Extract all N" pulls the individual pages, and "Extract this text as one page" treats the paste as a single document.</p>
     </details>
   </section>
 
@@ -298,6 +432,16 @@
     <details class="faq-item" id="faq-data">
       <summary>Where is my data stored?</summary>
       <p class="answer">All extractions and account data are stored in Supabase (Postgres) on encrypted-at-rest infrastructure in the US-East region. DatIQ is DPDP Act 2023 compliant and never trains on your extractions. See the <a href="/privacy">Privacy Policy</a> for the full data handling notice.</p>
+    </details>
+
+    <details class="faq-item" id="faq-need-account">
+      <summary>Do I need an account to use DatIQ?</summary>
+      <p class="answer">No — you can start extracting immediately, and a trial banner shows how many free single extractions and batch runs remain. Signing in changes three things: your saved pages move from this browser onto your account, schedules can actually run (they execute on DatIQ's servers), and Push destinations become available.</p>
+    </details>
+
+    <details class="faq-item" id="faq-browser-only">
+      <summary>I extracted pages without signing in. Where are they?</summary>
+      <p class="answer">They are saved, but only in the browser you used — clearing site data or switching browsers loses them. Your Dashboard says so at the top and tells you how many pages are browser-only. Sign in and DatIQ moves them onto your account automatically; there is nothing to re-run or re-import.</p>
     </details>
 
     <details class="faq-item" id="faq-delete">

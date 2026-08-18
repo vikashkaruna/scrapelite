@@ -3039,6 +3039,16 @@
 /* ── Payment integration — Pricing page additions ───────────────────────────── */
 .btn-loading { display: flex; align-items: center; gap: 6px; }
 .btn-loading svg { animation: spin 0.9s linear infinite; }
+/* Button.jsx swaps the left icon for a .spinner while `loading`. The shared
+   .spinner tints itself with --accent, which is invisible on a primary button
+   (accent background) — so inside any button the spinner tracks the button's
+   own text colour instead. */
+.btn-loading .spinner {
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  flex-shrink: 0;
+}
+.btn-loading[disabled] { opacity: .85; cursor: progress; }
 
 .provider-badge {
   display: flex; align-items: center; gap: 6px; font-size: .8em; color: var(--text-3);
@@ -4369,41 +4379,6 @@
   font-size: .7rem; font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-3);
 }
-
-/* ── Floating selection bar ───────────────────────────────────── */
-.dash-float-bar {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  z-index: 300; display: flex; align-items: center; gap: 8px;
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.10);
-  padding: 8px 14px; min-width: 460px; max-width: 90vw;
-  animation: float-bar-in .22s cubic-bezier(.34,1.56,.64,1) both;
-}
-@keyframes float-bar-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-.dash-float-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.dash-float-count {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-weight: 700; font-size: .88em; color: var(--accent); white-space: nowrap;
-}
-.dash-float-clear {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 9px; border-radius: 6px; border: none;
-  background: none; color: var(--text-3); font-size: .84em; font-weight: 600;
-  cursor: pointer; transition: background .12s, color .12s;
-}
-.dash-float-clear:hover { background: var(--surface-2); color: var(--text); }
-.dash-float-actions { display: flex; align-items: center; gap: 6px; }
-.dash-float-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 13px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--text); font-size: .88em; font-weight: 650;
-  cursor: pointer; transition: background .12s, border-color .12s, box-shadow .12s; white-space: nowrap;
-}
-.dash-float-btn:hover { background: var(--surface-3, var(--surface-2)); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
-.dash-float-export { position: relative; }
 
 /* ── Home batch hint ──────────────────────────────────────────── */
 .home-batch-hint {
@@ -5897,6 +5872,52 @@
   flex-wrap: wrap;
 }
 
+/* ── AdminGallery page ──────────────────────────────────────────────────────
+   The human-verification gate for /gallery — a report is already public
+   before it ever appears here, so this UI is about reviewing and tagging,
+   not publishing. */
+.admin-gallery-filter-row { display: flex; gap: 6px; margin-bottom: 18px; }
+.admin-gallery-filter-btn {
+  padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2);
+  font-size: .84em; font-weight: 600; cursor: pointer;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.admin-gallery-filter-btn:hover { border-color: var(--text-3); color: var(--text); }
+.admin-gallery-filter-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.admin-gallery-list { display: flex; flex-direction: column; gap: 12px; }
+.admin-gallery-row-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.admin-gallery-row-main { min-width: 0; }
+.admin-gallery-row-title {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-weight: 700; font-size: .96em; color: var(--text);
+}
+.admin-gallery-row-meta {
+  display: flex; align-items: center; gap: 4px;
+  font-size: .8em; color: var(--text-3); margin: 4px 0 0;
+}
+.admin-gallery-curated-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px;
+  background: color-mix(in srgb, #16a34a 14%, var(--surface));
+  color: #16a34a; font-size: .74em; font-weight: 700;
+}
+.admin-gallery-preview {
+  margin: 14px 0; padding: 16px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); max-height: 480px; overflow-y: auto;
+}
+.admin-gallery-row-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px;
+}
+.admin-gallery-persona-field { margin: 0; }
+.admin-gallery-persona-field select { min-width: 220px; }
+.admin-gallery-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 40px 20px; text-align: center; color: var(--text-2);
+}
+
 /* Hard-block overlay variant — own dark background (no dismissible backdrop div) */
 .guest-trial-overlay.gtm-hard {
   background: rgba(0,0,0,.60);
@@ -6134,6 +6155,16 @@
   background: var(--surface-2); color: var(--text-3);
   border-radius: var(--r-pill); padding: 2px 8px; font-size: .72em; font-weight: 700;
 }
+/* A schedule that never reached the database. It cannot fire, because the
+   hourly runner reads Supabase and has no view of a browser's localStorage —
+   so it gets a warning tag rather than a next-run time. */
+.sch-card-local-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--warning-soft, rgba(245,158,11,.12));
+  color: var(--warning, #f59e0b);
+  border-radius: var(--r-pill); padding: 2px 8px; font-size: .72em; font-weight: 700;
+}
+.sch-next-warn { color: var(--warning, #f59e0b); }
 .sch-card-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 5px; font-size: .82em; color: var(--text-3); }
 .sch-card-meta span { display: inline-flex; align-items: center; gap: 5px; text-transform: capitalize; }
 .sch-card-runs { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: .8em; }
@@ -6692,7 +6723,9 @@
 .push-int-spin { animation: spin 1s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* I-1 — compact mode (inside SelectionBar) — same look as dash-float-btn siblings */
+/* Compact mode — a smaller Push button for tight rows. No caller today
+   (the floating selection bar that used it is gone); kept because the prop
+   is part of PushIntegrationMenu's documented API. */
 .push-integration-menu.push-compact { display: inline-flex; }
 
 /* F18 — Export Integrations modal (Google Sheets / Airtable / Notion) */
@@ -6921,6 +6954,33 @@
 .gallery-card-meta  { display: inline-flex; gap: 8px; align-items: center; font-size: .72rem; margin-top: 6px; }
 .gallery-card-tag   { padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 600; text-transform: capitalize; }
 .gallery-card-time  { color: var(--text-2); }
+
+/* ── Curated persona showcase (/gallery) ───────────────────────────────────
+   Distinct from the plain .gallery-grid above: these cards carry a persona
+   badge and sit behind a filter row, because unlike "recently shared" this
+   section is a promise ("here's a good example for you"), not just a feed. */
+.gallery-section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.gallery-section-title { display: inline-flex; align-items: center; gap: 6px; font-size: 1.05rem; font-weight: 700; margin: 0; }
+.persona-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.persona-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2);
+  font-size: .8rem; font-weight: 600; cursor: pointer;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.persona-chip:hover { border-color: var(--text-3); color: var(--text); }
+.persona-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.gallery-curated-wrap { position: relative; }
+.gallery-persona-badge {
+  position: absolute; top: -8px; left: 12px; z-index: 1;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--persona-color, var(--accent)) 16%, var(--surface));
+  color: var(--persona-color, var(--accent));
+  font-size: .68rem; font-weight: 700; white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
 
 /* Q9 — provenance badges + summary strip */
 .prov-badge {
@@ -7397,6 +7457,115 @@
 .referral-code-hint { font-size: .75rem; color: var(--text-2); }
 .referral-share-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); cursor: pointer; transition: color .15s; }
 .referral-share-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── /vs/compare — the comparison hub table ────────────────────────────────
+   Seven columns do not fit a phone, and shrinking the type until they do makes
+   the table unreadable rather than responsive. So the table keeps a sane
+   min-width and scrolls inside its own container — the same approach
+   .pricing-matrix already uses — with the feature column pinned so you never
+   lose track of which row you are reading. */
+.vsc-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.vsc-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: .86rem; }
+.vsc-table th, .vsc-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.vsc-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); font-weight: 700; font-size: .82rem; white-space: nowrap; }
+.vsc-table thead th a { color: var(--text); text-decoration: none; }
+.vsc-table thead th a:hover { color: var(--accent); text-decoration: underline; }
+.vsc-datiq-head { color: var(--accent); }
+
+/* Pinned first column. Needs its own background or the scrolled cells show
+   through it, and a higher z-index in the header where the two stickies meet. */
+.vsc-table th:first-child,
+.vsc-rowhead { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 200px; }
+.vsc-table thead th:first-child { z-index: 3; background: var(--surface-2); }
+.vsc-rowhead { font-weight: 600; text-align: left; }
+.vsc-rownote { display: block; font-weight: 400; font-size: .75rem; color: var(--text-2); margin-top: 2px; }
+
+.vsc-grouprow th { background: color-mix(in srgb, var(--accent) 6%, var(--surface-2)); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); position: sticky; left: 0; }
+
+.vsc-cell { color: var(--text-2); }
+.vsc-cell.vsc-datiq { color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.vsc-mark { display: inline-flex; width: 16px; height: 16px; margin-right: 6px; border-radius: 50%; align-items: center; justify-content: center; vertical-align: -3px; }
+.vsc-yes .vsc-mark, .vsc-yes { color: #16a34a; }
+.vsc-partial .vsc-mark, .vsc-partial { color: #d97706; }
+.vsc-no .vsc-mark, .vsc-no { color: var(--text-2); }
+.vsc-cell.vsc-yes, .vsc-cell.vsc-partial, .vsc-cell.vsc-no { color: var(--text-2); }
+.vsc-cell.vsc-yes .vsc-mark { color: #16a34a; }
+.vsc-cell.vsc-partial .vsc-mark { color: #d97706; }
+.vsc-cell.vsc-no .vsc-mark { color: var(--text-2); opacity: .6; }
+
+/* Colour alone must not carry the yes/partial/no distinction — the icon shape
+   differs too, and this text is read out by screen readers. */
+.vsc-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.vsc-legend { margin-top: 12px; font-size: .78rem; color: var(--text-2); line-height: 1.6; }
+.vsc-legend span { display: inline-flex; vertical-align: -2px; }
+
+.vsc-toollinks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 24px 0 8px; }
+.vsc-toollink { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-decoration: none; color: var(--text); transition: border-color .15s, transform .15s; }
+.vsc-toollink:hover { border-color: var(--accent); transform: translateY(-1px); }
+.vsc-toollink-name { font-weight: 600; font-size: .88rem; }
+.vsc-toollink-tag { flex: 1; font-size: .75rem; color: var(--text-2); }
+
+/* ── Consent banner ────────────────────────────────────────────────────────
+   A floating, bottom-anchored overlay — NOT part of the in-flow banner stack,
+   so it owns its own wrap rule rather than extending .usage-upsell-banner-wrap
+   (that base is warning-amber tinted for the usage-limit banner; inheriting it
+   here previously left an amber strip showing on either side of the centered,
+   accent-tinted inner box on wide viewports). `.consent-banner` itself still
+   reuses `.usage-upsell-banner`'s layout (flex row, max-width, padding) — that
+   base rule carries no colour, so it's safe to share.
+
+   Neutral accent rather than a warning colour: this is a question, not an
+   alert, and colouring it like a problem pushes people to click the nearest
+   button to make it go away.
+
+   There is deliberately no `.uub-dismiss` rule here — the component renders
+   no dismiss control, because consent obtained by ignoring a dialog is not
+   consent. It auto-hides on its own timer instead (see ConsentBanner.jsx) —
+   that's a visual fade, not a recorded decision. See ConsentBanner.jsx. */
+.consent-banner-wrap {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 20px -8px rgba(0, 0, 0, .18);
+  animation: consent-banner-in .25s ease-out;
+}
+@keyframes consent-banner-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.consent-banner { background: color-mix(in srgb, var(--accent) 5%, var(--surface-2)); border-left: 3px solid var(--accent); }
+.consent-banner .uub-desc a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.consent-decline-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 16px; background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: .86rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+.consent-decline-btn:hover { border-color: var(--text-2); color: var(--text); }
+
+/* Below ~640px the two actions no longer fit beside the copy. Let the banner
+   wrap and give the buttons a full row rather than shrinking the decline
+   option into something harder to hit than "Allow" — an asymmetry that would
+   quietly bias the choice. */
+@media (max-width: 640px) {
+  .consent-banner { flex-wrap: wrap; }
+  .consent-banner .uub-content { flex: 1 1 100%; }
+  .consent-banner .uub-upgrade-btn,
+  .consent-banner .consent-decline-btn { flex: 1 1 0; }
+}
+
+/* Reserve room at the bottom of the document, only while the fixed banner
+   above is actually showing (see ConsentBanner.jsx's body-class toggle), so
+   scrolling to the very bottom of the page never leaves the footer's
+   Privacy/Terms/Cookie-preferences links sitting underneath it. Sized per
+   breakpoint to roughly match the banner's own height, which grows once its
+   content wraps to multiple rows below 640px. */
+body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
+@media (max-width: 640px) {
+  body.has-consent-banner .site-footer-slim { padding-bottom: 190px; }
+}
 
 /* ── FB1: Battle-card generator ────────────────────────────────────── */
 .bc-page      { background: var(--bg); }
@@ -8479,3 +8648,100 @@
 @media (max-width: 480px) {
   .eim-token-rotate-row { grid-template-columns: 1fr; }
 }
+
+/* ── Browser-only saved data notice (Dashboard) ─────────────────────────────
+   Guest extractions are kept in localStorage by design (extractionsRepo's
+   401 branch) so the app stays usable signed out — but they used to look
+   identical to account-backed rows right up until the user cleared site data. */
+.local-data-notice {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 18px;
+  border: 1px solid var(--warning, #f59e0b);
+  background: var(--warning-soft, rgba(245,158,11,.10));
+  border-radius: var(--r-md, 10px);
+  font-size: .88em; color: var(--text);
+}
+.local-data-notice > svg { color: var(--warning, #f59e0b); flex-shrink: 0; }
+.local-data-notice-text { flex: 1; min-width: 220px; }
+
+/* ── Composer: embedded-links chooser + background-run option ────────────────
+   Shown when a paste is prose that CONTAINS links (classifyInput's "embedded").
+   Deliberately an inline strip, not a modal: it's a refinement of what the user
+   just typed, and both answers are legitimate — extracting the linked pages, or
+   extracting the text itself. Guessing silently is what we're replacing. */
+.hero-embedded-choice {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin: 8px 12px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-soft-2, var(--border));
+  background: var(--accent-soft, rgba(79,70,229,.07));
+  border-radius: var(--r-md, 10px);
+  font-size: .85em; color: var(--text-2);
+}
+.hero-embedded-q { display: inline-flex; align-items: center; gap: 7px; }
+.hero-embedded-q b { color: var(--text); }
+.hero-embedded-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-embedded-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-2); font-size: .95em; font-weight: 600; cursor: pointer;
+}
+.hero-embedded-btn:hover { border-color: var(--accent); color: var(--text); }
+.hero-embedded-primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.hero-embedded-primary:hover { color: #fff; filter: brightness(1.06); }
+
+/* "Run in background" lives in the + menu; the dot marks it active without
+   adding another chip to the composer's bottom row. */
+.hero-plus-wrap { position: relative; }
+.hero-plus-dot {
+  position: absolute; top: 4px; right: 4px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.hero-menu-item-on { color: var(--text); }
+.hero-menu-check { margin-left: auto; color: var(--accent); flex-shrink: 0; }
+
+/* Content-format chips inside Home's Advanced options (mirrors /batch). */
+.advanced-formats {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 6px 0 0 25px;
+}
+.advanced-formats-label { font-size: .8em; color: var(--text-3); }
+.advanced-format-chip {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-3); font-size: .78em; font-weight: 600; cursor: pointer;
+}
+.advanced-format-chip:hover { border-color: var(--accent); color: var(--text-2); }
+.advanced-format-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+
+/* ── Batch: run-in-progress note + archived-run marker ──────────────────────
+   The in-page progress card is gone — progress lives in the global dock, which
+   keeps working after you navigate away (an in-page bar never could). */
+.batch-running-note {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; margin-bottom: 18px;
+  font-size: .88em; color: var(--text-2);
+}
+.batch-running-note > svg { color: var(--accent); flex-shrink: 0; }
+.batch-archived-note {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--text-3);
+}
+
+/* Dock: batch rows need a Cancel beside the step text. */
+.extract-dock-step-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.extract-dock-step-row > span { display: inline-flex; align-items: center; gap: 6px; }
+.extract-dock-cancel {
+  border: none; background: none; padding: 0;
+  color: var(--text-3); font-size: .95em; font-weight: 600;
+  cursor: pointer; text-decoration: underline;
+}
+.extract-dock-cancel:hover { color: var(--danger, #ef4444); }

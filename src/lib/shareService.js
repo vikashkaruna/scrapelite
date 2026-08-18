@@ -273,8 +273,92 @@ export function getSharedSlugForId(id) {
   return readShared().find((s) => s.id === id)?.slug || null;
 }
 
-export function getGallery(limit = 50) {
+/**
+ * Synchronous, local-only read of this browser's share index. Used for instant
+ * first paint before getGallery() resolves — the same localStorage-first
+ * pattern Dashboard uses for saved extractions.
+ */
+export function getGalleryLocal(limit = 50) {
   return readIndex().slice(0, limit);
+}
+
+/**
+ * The "recently shared" feed behind /gallery.
+ *
+ * This reads Supabase, not just localStorage. publish() already writes the row
+ * to `public_reports` (that write is what makes /p/:slug resolve in another
+ * browser at all), so a local-only read meant a visitor who had never shared
+ * anything themselves saw an empty gallery on a public marketing page.
+ *
+ * Server rows are MERGED with local rows keyed on slug rather than replacing
+ * them — reports published while signed out exist only in localStorage, and
+ * extractionsRepo.listExtractions() had to learn this same lesson: a successful
+ * query legitimately returning [] must not be trusted as authoritative and wipe
+ * the local cache.
+ *
+ * Returns the local list (never throws) when Supabase is unconfigured or the
+ * query fails, matching getCuratedGallery()'s degrade-quietly contract.
+ */
+export async function getGallery(limit = 50) {
+  const local = readIndex();
+  if (!isSupabaseEnabled || !supabase) return local.slice(0, limit);
+
+  try {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("slug,title,url,intent,created_at")
+      .eq("is_public", true)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+
+    const bySlug = new Map();
+    // Local first so a locally-known title survives, then let the server fill
+    // in anything this browser has never seen.
+    for (const row of local) if (row?.slug) bySlug.set(row.slug, row);
+    for (const row of data || []) {
+      if (!row?.slug) continue;
+      bySlug.set(row.slug, { ...row, ...bySlug.get(row.slug) });
+    }
+    return [...bySlug.values()]
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+      .slice(0, limit);
+  } catch (err) {
+    if (typeof console !== "undefined") console.warn("[DatIQ share] gallery fetch failed:", err);
+    return local.slice(0, limit);
+  }
+}
+
+/**
+ * The curated persona showcase — DISTINCT from getGallery() above. getGallery()
+ * is every public report, newest first; this is only the rows an admin
+ * explicitly promoted via /admin/gallery (see netlify/functions/admin-gallery.js,
+ * 0025_gallery_curation.sql), so it is Supabase-only with no local fallback —
+ * `curated` is server-side metadata that never lives in localStorage.
+ *
+ * `persona` filters to one persona id; omitted/null returns every curated row
+ * regardless of persona. Returns [] (not a throw) when Supabase isn't
+ * configured or the query fails — there is no meaningful local fallback here,
+ * since "curated" is server-side-only metadata that never lives in localStorage.
+ */
+export async function getCuratedGallery({ persona, limit = 50 } = {}) {
+  if (!isSupabaseEnabled || !supabase) return [];
+  try {
+    let query = supabase
+      .from(TABLE)
+      .select("slug,title,url,intent,persona,created_at")
+      .eq("is_public", true)
+      .eq("curated", true)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (persona) query = query.eq("persona", persona);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    if (typeof console !== "undefined") console.warn("[DatIQ share] curated gallery fetch failed:", err);
+    return [];
+  }
 }
 
 export function buildPublicUrl(slug) {

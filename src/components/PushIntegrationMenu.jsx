@@ -29,6 +29,20 @@ import {
   getPushProviderStatuses,
   pushToIntegration,
 } from "../lib/integrationsClient.js";
+import { openInGoogleSheets } from "../lib/utils.js";
+
+// Google Sheets sits in this menu but is NOT a PUSH_PROVIDER: there is no
+// server-side connection and nothing to authorise. It downloads a CSV and
+// opens a blank sheet for the user to upload it into. It used to live only in
+// the Export ▾ → "Send to" modal, so the same menu offered five destinations
+// in one place and four in another. One list, one affordance.
+const SHEETS_ROW = {
+  slug: "sheets",
+  name: "Google Sheets",
+  icon: "sheet",
+  desc: "Download a CSV and open a new sheet",
+  clientSide: true,
+};
 
 export default function PushIntegrationMenu({
   items,
@@ -37,6 +51,11 @@ export default function PushIntegrationMenu({
   compact = false,
   disabled = false,
   onPushed,
+  // Opens the full ExportIntegrations modal. Optional: pages that don't mount
+  // it just omit this and the link isn't rendered. It exists because that
+  // modal carries per-provider recovery the menu rows don't — notably
+  // Airtable's "Load columns", the only way to repair an empty field_map.
+  onAdvanced,
 }) {
   const navigate = useNavigate();
   const showToast = useToast();
@@ -90,7 +109,20 @@ export default function PushIntegrationMenu({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // Google Sheets needs no connection and no server round-trip — it downloads
+  // the CSV and opens a blank sheet to upload it into.
+  const handleSheets = () => {
+    setOpen(false);
+    openInGoogleSheets(cleanItems);
+    showToast(
+      `Downloaded a CSV of ${cleanItems.length} row${cleanItems.length !== 1 ? "s" : ""}. Upload it in the Google Sheets tab that just opened.`,
+      "sheet",
+    );
+    onPushed?.("sheets", { ok: true, pushed: cleanItems.length, total: cleanItems.length });
+  };
+
   const handlePickProvider = async (slug) => {
+    if (slug === SHEETS_ROW.slug) return handleSheets();
     const status = statuses[slug];
     if (!status?.connected) {
       setOpen(false);
@@ -119,13 +151,10 @@ export default function PushIntegrationMenu({
     }
   };
 
-  // Label: caller wins, else "Push" or "Push N".
-  const label =
-    buttonLabel !== undefined
-      ? buttonLabel
-      : isSingle
-      ? "Push"
-      : `Push ${cleanItems.length}`;
+  // Always "Push" — the count belongs in the menu header, not the button.
+  // "Push 2" made the same control read differently on Batch, Dashboard and
+  // Preview depending on the selection.
+  const label = buttonLabel !== undefined ? buttonLabel : "Push";
 
   return (
     <div className={"export-dropdown push-integration-menu" + (compact ? " push-compact" : "")} ref={wrapRef}>
@@ -147,9 +176,10 @@ export default function PushIntegrationMenu({
             <div className="export-dropdown-section-label">
               Push to{isSingle ? "" : ` (${cleanItems.length})`}
             </div>
-            {PUSH_PROVIDERS.map((p) => {
+            {[...PUSH_PROVIDERS, SHEETS_ROW].map((p) => {
               const status = statuses[p.slug];
-              const isConnected = !!status?.connected;
+              // Sheets needs no connection, so it never shows a connect badge.
+              const isConnected = p.clientSide || !!status?.connected;
               const isPushingThis = pushingSlug === p.slug;
               const accLabel = status?.connection?.account_label;
               return (
@@ -165,7 +195,11 @@ export default function PushIntegrationMenu({
                   <span className="push-int-option-body">
                     <span className="push-int-option-head">
                       <b>{p.name}</b>
-                      {isConnected ? (
+                      {p.clientSide ? (
+                        <span className="push-int-badge push-int-badge-ok" title="No setup needed">
+                          <Icon name="check" size={10} strokeWidth={3} /> No setup needed
+                        </span>
+                      ) : isConnected ? (
                         <span className="push-int-badge push-int-badge-ok" title={accLabel ? `Connected as ${accLabel}` : "Connected"}>
                           <Icon name="check" size={10} strokeWidth={3} />
                           {accLabel ? ` ${accLabel}` : " Connected"}
@@ -185,6 +219,17 @@ export default function PushIntegrationMenu({
             })}
           </div>
           <div className="export-dropdown-section">
+            {onAdvanced && (
+              <button
+                type="button"
+                role="menuitem"
+                className="export-dropdown-item"
+                onClick={() => { setOpen(false); onAdvanced(); }}
+              >
+                <Icon name="settings" size={14} />
+                <span><b>More destination options…</b><span className="export-plan-hint">Field mapping &amp; per-provider setup</span></span>
+              </button>
+            )}
             <p className="push-int-foot">
               <Icon name="info" size={11} />
               {loadingStatus

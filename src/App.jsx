@@ -35,6 +35,7 @@ import AdminPricing from "./pages/admin/AdminPricing.jsx";
 import AdminCoupons from "./pages/admin/AdminCoupons.jsx";
 import AdminUsers from "./pages/admin/AdminUsers.jsx";
 import AdminAI from "./pages/admin/AdminAI.jsx";
+import AdminGallery from "./pages/admin/AdminGallery.jsx";
 import AdminGeneral from "./pages/admin/AdminGeneral.jsx";
 import AdminAutomation from "./pages/admin/AdminAutomation.jsx";
 import AdminMonitoring from "./pages/admin/AdminMonitoring.jsx";
@@ -47,8 +48,10 @@ import UseCaseLead from "./pages/UseCaseLead.jsx";
 import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
 import UseCaseSEO from "./pages/UseCaseSEO.jsx";
 import UseCaseResearch from "./pages/UseCaseResearch.jsx";
-import VsBrowseAI from "./pages/VsBrowseAI.jsx";
-import VsClay from "./pages/VsClay.jsx";
+// The five per-tool /vs/* comparisons are static-owned (hand-written HTML in
+// public/vs/<slug>/index.html) and have no React route — see
+// scripts/site-routes.mjs. Only the hub is React.
+import VsCompare from "./pages/VsCompare.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import ProgrammaticRoute from "./pages/ProgrammaticRoute.jsx";
 import BattleCard from "./pages/BattleCard.jsx";
@@ -65,7 +68,11 @@ import SuspendedBanner from "./components/SuspendedBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
 import ReferralBanner from "./components/ReferralBanner.jsx";
+import ConsentBanner from "./components/ConsentBanner.jsx";
+import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
+import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
+import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
 // Redirect /docs to the static help site
@@ -89,6 +96,11 @@ function Shell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // GA4 + in-house page views on every route change. Called here, above the
+  // /admin early return below, because hooks must run unconditionally — the
+  // hook itself skips /admin paths rather than relying on not being called.
+  usePageView();
 
   // FA2 — referral ?ref=CODE handler. Redeem the code on first paint, then
   // strip the param from the URL so the user can't accidentally share it
@@ -175,6 +187,7 @@ function Shell() {
           <Route path="coupons" element={<AdminCoupons />} />
           <Route path="users"   element={<AdminUsers />} />
           <Route path="ai"        element={<AdminAI />} />
+          <Route path="gallery"   element={<AdminGallery />} />
           <Route path="general"   element={<AdminGeneral />} />
           <Route path="automation" element={<AdminAutomation />} />
           <Route path="monitoring" element={<AdminMonitoring />} />
@@ -222,8 +235,7 @@ function Shell() {
           <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
           <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
-          <Route path="/vs/browse-ai"                  element={<VsBrowseAI />} />
-          <Route path="/vs/clay"                       element={<VsClay />} />
+          <Route path="/vs/compare"                    element={<VsCompare />} />
           <Route path="/changelog"                     element={<Changelog />} />
           <Route path="/for-sales"                     element={<ProgrammaticRoute />} />
           <Route path="/for-seo"                       element={<ProgrammaticRoute />} />
@@ -234,8 +246,10 @@ function Shell() {
           <Route path="/vs/battlecard"                 element={<BattleCard />} />
           <Route path="/dmca"                          element={<DmcaRedirect />} />
           <Route path="/docs"                          element={<DocsRedirect />} />
-          <Route path="/compare"                       element={<Navigate to="/vs/browse-ai" replace />} />
-          <Route path="/compare/*"                     element={<Navigate to="/vs/browse-ai" replace />} />
+          {/* /compare and /compare/* used to <Navigate> to /vs/browse-ai. That
+              route no longer exists in React (the page is static-owned), so the
+              redirects moved to netlify.toml as 301s — a client-side Navigate
+              to a non-route would land on NotFound. */}
           {/* Q6 — shareable report links + public gallery */}
           <Route path="/p/:slug"                       element={<PublicReport />} />
           <Route path="/gallery"                       element={<Gallery />} />
@@ -246,6 +260,9 @@ function Shell() {
       </main>
       {showAuthModal && <AuthModal />}
       <GuestTrialModal />
+      {/* Saves a schedule built while signed out, once the user signs in.
+          Global because OAuth navigates the document away and back. */}
+      <PendingScheduleFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
@@ -253,6 +270,11 @@ function Shell() {
           full-screen LoadingScreen). Global so it persists across route changes. */}
       <ExtractionProgressDock />
       <Footer />
+      {/* Floating, not part of the in-flow banner stack above: it is a
+          bottom-anchored overlay that auto-hides on its own timer rather
+          than pushing page content down. Not rendered on /admin — Shell
+          returns a separate admin <Routes> above this point. */}
+      <ConsentBanner />
     </>
   );
 }
@@ -267,9 +289,14 @@ export default function App() {
               <PersonaProvider>
                 <BillingProvider>
                   <ExtractionProvider>
-                    <div className="app-root">
-                      <Shell />
-                    </div>
+                    {/* Owns an in-flight batch above the router, so a run
+                        survives navigation and reports through the same
+                        global dock as a single extraction. */}
+                    <BatchRunProvider>
+                      <div className="app-root">
+                        <Shell />
+                      </div>
+                    </BatchRunProvider>
                   </ExtractionProvider>
                 </BillingProvider>
               </PersonaProvider>

@@ -9,19 +9,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let fetchMock;
 let probes;
 
-const ENV_KEYS = [
-  "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY",
-  "NETLIFY_AUTH_TOKEN", "NETLIFY_SITE_ID", "SITE_ID", "RESEND_API_KEY",
-  "GEMINI_API_KEY", "AI_API_KEY", "OPENAI_API_KEY",
-  "FIRECRAWL_API_KEY", "VITE_FIRECRAWL_API_KEY", "SPIDER_API_KEY", "JINA_API_KEY",
-  "CONTEXT", "SITE_NAME", "BRANCH", "DEPLOY_ID", "DEPLOY_PRIME_URL", "AWS_REGION",
-  "PURGE_ENABLED", "PURGE_DRY_RUN", "OPS_JOBS_DISABLED",
-  "SUPABASE_PROJECT_NAME",
-];
+// Shared with admin-health.test.js and integrations-notion.test.js. This list
+// used to live here and was missing VITE_SUPABASE_URL, so on a machine with a
+// real .env (which Vitest loads into process.env) the resolver compared this
+// test's SUPABASE_URL against the developer's leaked VITE_SUPABASE_URL,
+// detected a project mismatch, and returned an identity diagnostic instead of
+// the GoTrue version this suite asks for. Passed in CI, failed locally.
+import { ALL_SERVER_ENV_KEYS, clearServerEnv } from "../helpers/serverEnv.js";
+
+const ENV_KEYS = ALL_SERVER_ENV_KEYS;
 
 beforeEach(async () => {
   vi.resetModules();
-  for (const k of ENV_KEYS) delete process.env[k];
+  clearServerEnv(ENV_KEYS);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   probes = await import("../../functions/lib/healthProbes.js");
@@ -30,7 +30,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  for (const k of ENV_KEYS) delete process.env[k];
+  clearServerEnv(ENV_KEYS);
 });
 
 const json = (body, status = 200) =>

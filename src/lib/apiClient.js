@@ -84,6 +84,29 @@ export const apiClient = {
    */
   sendContactEmail: (payload) => request("/contact-email", "POST", payload),
 
+  // ── Analytics consent ──────────────────────────────────────────────────────
+  // Routed through here rather than a bare fetch so the Authorization header
+  // travels with them: the function resolves user_id from the JWT and never
+  // from the body, so a consent recorded without the header would be filed as
+  // anonymous even for a signed-in user.
+  /** Record a choice. Payload: { analytics, source, policyVersion, sessionId, gaClientId }. */
+  recordConsent: (payload) => request("/consent", "POST", payload),
+
+  /** Back-fill user_id onto this session's existing record. Payload: { sessionId }. */
+  linkConsent: (payload) => request("/consent/link", "POST", payload),
+
+  /** Deny + erase this subject's analytics_events rows. Payload: { sessionId }. */
+  withdrawConsent: (payload) => request("/consent/withdraw", "POST", payload),
+
+  // ── Product analytics ingest ───────────────────────────────────────────────
+  /**
+   * Batch-write in-house events. Payload: { events: [...] }.
+   * The browser can no longer INSERT into analytics_events directly — that
+   * required an anon RLS policy which also made the table world-readable
+   * (see 0024_analytics_rls.sql).
+   */
+  recordAnalytics: (payload) => request("/analytics", "POST", payload),
+
   // ── Extractions CRUD ───────────────────────────────────────────────────────
   /** List all saved extractions, newest first. */
   listExtractions: () => request("/extractions", "GET"),

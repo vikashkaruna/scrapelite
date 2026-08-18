@@ -1,225 +1,180 @@
-<!doctype html>
-<html lang="en" data-theme="light">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DatIQ Public Gallery — shared extractions you can browse | DatIQ.app</title>
-<meta name="description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more. DatIQ.app is the no-code web intelligence platform.">
-<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
-<link rel="canonical" href="https://datiq.app/gallery">
-<link rel="icon" href="/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/help/help.css">
-<meta property="og:type" content="website">
-<meta property="og:title" content="DatIQ Public Gallery — shared extractions you can browse">
-<meta property="og:description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.">
-<meta property="og:url" content="https://datiq.app/gallery">
-<meta property="og:site_name" content="DatIQ">
-<meta property="og:image" content="https://datiq.app/og-card.jpg">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="DatIQ Public Gallery — shared extractions you can browse">
-<meta name="twitter:description" content="Browse real, anonymized public reports extracted with DatIQ.">
-<style>
-  .ga-hero { text-align: center; padding: 64px 0 32px; }
-  .ga-hero h1 { font-size: clamp(1.9rem,4vw,2.9rem); font-weight: 800; margin: 0 0 16px; }
-  .ga-hero p { color: var(--text-2); font-size: 1.1rem; max-width: 640px; margin: 0 auto 24px; line-height: 1.6; }
-  .ga-section { padding: 24px 0; }
-  .ga-empty { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 48px 24px; text-align: center; }
-  .ga-empty h2 { font-size: 1.2rem; font-weight: 700; margin: 0 0 12px; }
-  .ga-empty p { color: var(--text-2, #4b5563); line-height: 1.6; max-width: 480px; margin: 0 auto 20px; }
-  .ga-cta { display: inline-flex; align-items: center; gap: 8px; background: var(--accent, #6366f1); color: #fff; padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; }
-  .ga-cta:hover { opacity: 0.9; }
-  .ga-cta-secondary { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border, #d1d5db); color: var(--text-1, #111827); padding: 12px 28px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem; margin-left: 8px; }
-  .ga-cta-secondary:hover { background: var(--surface-2, #f9fafb); }
-  .ga-note { background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 16px 20px; margin: 24px 0; font-size: 0.9rem; color: var(--text-2, #4b5563); }
-  .ga-updated { font-size: 0.8rem; color: var(--text-3, #9ca3af); margin-top: 16px; }
-  .ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin: 16px 0; }
-  .ga-card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 20px; transition: box-shadow 0.15s, transform 0.15s; }
-  .ga-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.06); transform: translateY(-1px); }
-  .ga-card-tag { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent, #6366f1); background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent); padding: 3px 10px; border-radius: 20px; margin-bottom: 10px; }
-  .ga-card-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; color: var(--text-1, #111827); }
-  .ga-card-summary { font-size: 0.875rem; color: var(--text-2, #4b5563); line-height: 1.55; margin: 0 0 12px; }
-  .ga-card-data { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 6px; }
-  .ga-card-data li { font-size: 0.8rem; color: var(--text-2, #4b5563); line-height: 1.5; padding: 0; }
-  .ga-card-data strong { color: var(--text-1, #111827); font-weight: 600; }
-  .ga-card-link { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--accent, #6366f1); text-decoration: none; }
-  .ga-card-link:hover { text-decoration: underline; }
-  .container { max-width: 880px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 44px); }
-</style>
-<script>
-  (function () {
-    try {
-      var t = localStorage.getItem("datiq.theme");
-      if (t === "light" || t === "dark") {
-        document.documentElement.setAttribute("data-theme", t);
-      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-        document.documentElement.setAttribute("data-theme", "dark");
+<!-- GENERATED by scripts/prerender.mjs — do not edit. Edit the React page and run `npm run prerender`. -->
+<!DOCTYPE html><html lang="en" data-datiq-app="spa" data-theme="light"><head>
+    <meta charset="UTF-8">
+    <!-- ⚠️ Nothing may go between <!DOCTYPE> and <html>. Vite's dev server
+         injects the @vitejs/plugin-react refresh preamble at exactly that
+         position, so a comment there SWALLOWS the preamble and the dev server
+         dies with "can't detect preamble". Production builds are unaffected,
+         which is what makes it easy to ship. Keep commentary inside <head>.
+
+         data-datiq-app on <html> above marks this document as the React shell.
+         public/analytics.js reads it in <head>, BEFORE <body> exists, to decide
+         whether gtag should send its own page_view (static page: yes) or leave
+         that to usePageView.js after the router has set the title (SPA: no). A
+         #root lookup cannot answer that question this early. Prerendered pages
+         inherit the attribute and do boot React, so they correctly count as
+         SPA; the hand-written static pages under public/ never carry it. -->
+
+    <!-- Runtime endpoint overrides (read at load, not baked in at build). Must
+         run before the app module so config.js can read window.__DATIQ_RUNTIME__.
+         ⚠️ It must ALSO run before /analytics.js directly below: analytics.js
+         distinguishes "gaMeasurementId absent" (fall back to its built-in id)
+         from "gaMeasurementId empty" (deliberately disabled). If this file has
+         not run yet, the key reads as absent and the PRODUCTION property fires
+         on staging, branch deploys and previews. Keep these two in this order. -->
+    <script src="/runtime-config.js"></script>
+
+    <!-- Google tag (gtag.js), via the shared consent-aware loader. Synchronous
+         so the Consent Mode v2 default lands on the dataLayer before gtag.js
+         can run. See public/analytics.js. -->
+    <script src="/analytics.js"></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary meta -->
+    <title>Public extraction gallery — DatIQ</title>
+    <meta name="description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+    <link rel="canonical" href="https://datiq.app/gallery">
+
+    <!-- SEO: these prefixes are the signed-in application, not content. They
+         must never be indexed, and — critically — must never keep the root
+         canonical above, which would tell Google "/dashboard IS the homepage"
+         and get the real page dropped as a duplicate. That is exactly the bug
+         that left /privacy, /terms and /vs/battlecard out of the index.
+
+         netlify.toml sends X-Robots-Tag for the same list, which is the real
+         defence (it works for crawlers that don't execute JS). This block is
+         the in-page belt-and-braces.
+
+         ⚠️ Deliberately an explicit ALLOW-LIST of private prefixes, not
+         "any path that isn't /". Public routes are prerendered with a correct
+         per-page canonical baked in and re-set by useSeo on mount; a blanket
+         rule would delete that canonical at head-parse time on every real
+         page load, leaving a window where a JS-executing crawler sees none. -->
+    <meta name="theme-color" content="#6366f1">
+    <meta name="author" content="DatIQ">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Public extraction gallery — DatIQ">
+    <meta property="og:description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.">
+    <meta property="og:url" content="https://datiq.app/gallery">
+    <meta property="og:site_name" content="DatIQ">
+    <meta property="og:image" content="https://datiq.app/og-card.jpg">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Public extraction gallery — DatIQ">
+    <meta name="twitter:description" content="Browse real, anonymized public reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.">
+    <meta name="twitter:image" content="https://datiq.app/og-card.jpg">
+    <meta name="twitter:site" content="@datiq_app">
+
+    <!-- JSON-LD: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "DatIQ",
+      "alternateName": "DatIQ — The Unified Web Intelligence Platform",
+      "url": "https://datiq.app",
+      "logo": "https://datiq.app/favicon.svg",
+      "description": "DatIQ is the unified web intelligence platform. Its foundation is Pillar 0 — Web Intelligence (Core) — a proven single, batch, and scheduled URL-extraction engine that the rest of the platform is built upon. From any public URL, get headings, links, contacts, pricing, AI summaries, enrichment, scheduling, and exports.",
+      "slogan": "Intelligence from Web",
+      "sameAs": [
+        "https://www.linkedin.com/company/datiq",
+        "https://twitter.com/datiq_app",
+        "https://github.com/vikashkaruna/scrapelite"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "email": "hello@datiq.app",
+        "availableLanguage": "English"
       }
-    } catch (e) {}
-  })();
-</script>
-</head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
-    </span>
-    <span class="brand-name">Dat<b>IQ</b></span>
-  </a>
-  <div class="topbar-actions">
-    <a class="nav-link" href="/pricing">Pricing</a>
-    <a class="nav-link" href="/what-is-datiq">What is DatIQ</a>
-    <a class="nav-link" href="/">← Launch the app</a>
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-    </button>
-  </div>
-</header>
+    }
+    </script>
 
-<main id="main-content">
-<div class="container">
-  <section class="ga-hero">
-    <div class="kicker">DatIQ · Public Gallery</div>
-    <h1>Public extraction gallery</h1>
-    <p>Browse real, anonymized reports extracted with DatIQ. See what structured data looks like for pricing pages, directories, articles, and more.</p>
-  </section>
+    <!-- JSON-LD: WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "DatIQ",
+      "alternateName": "DatIQ — Intelligence from Web",
+      "url": "https://datiq.app",
+      "description": "DatIQ: The Unified Web Intelligence Platform — single, batch, and scheduled URL extraction, enrichment, and operationalization. Built on Pillar 0 (Web Intelligence Core).",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://datiq.app/?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
 
-  <aside class="ga-note">
-    <strong>How this page works.</strong> The interactive gallery lives in the app — it shows every public extraction your browser has visited (from share links) plus a curated set of seed reports. This static page is the AI-crawler view. Open the app to browse interactively.
-  </aside>
+    <!-- JSON-LD: SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "DatIQ",
+      "alternateName": "DatIQ — The Unified Web Intelligence Platform",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "url": "https://datiq.app",
+      "description": "DatIQ is the unified web intelligence platform. Pillar 0 (Web Intelligence Core) is the proven single, batch, and scheduled URL-extraction engine that the whole platform is built on. From a single URL to an entire domain, DatIQ delivers structured intelligence — headings, links, contacts, pricing, AI summaries — in seconds, with no code required.",
+      "featureList": [
+        "Pillar 0: Web Intelligence (Core) — single, batch, and scheduled URL extraction",
+        "Headings H1–H6, internal/external links, metadata",
+        "AI summary: plain-language overview of any page",
+        "Custom field extraction in plain English",
+        "Contact extraction: emails, LinkedIn, leadership names",
+        "Pricing extraction from any pricing page",
+        "Domain mapping: discover all indexed URLs on a site",
+        "CSV and PDF export",
+        "Content generation: SEO briefs, email drafts"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "name": "Free plan",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "10 extractions per month, no credit card required."
+      }
+    }
+    </script>
 
-  <section class="ga-section">
-    <h2 style="font-size:1.3rem; font-weight:700; margin:0 0 16px;">Curated samples — one per persona</h2>
-    <p style="color: var(--text-2, #4b5563); margin: 0 0 16px;">Anonymised representative outputs from real extraction shapes. Each sample shows the structured data DatIQ returns for a typical URL in that persona's workflow.</p>
-    <div class="ga-grid">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <!-- Apply the saved theme synchronously before React renders, so the
+         first paint uses the right colors. Without this, the page briefly
+         paints in the default light theme and axe-core samples a mid-
+         transition value that fails contrast checks. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("datiq.theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.setAttribute("data-theme", t);
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            document.documentElement.setAttribute("data-theme", "dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin="" src="/assets/index-Bx6ul8CT.js"></script>
+    <link rel="modulepreload" crossorigin="" href="/assets/preload-helper-Czpn1I53.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/supabaseClient-BUTFfta5.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/apiClient-CJKX0grO.js">
+    <link rel="stylesheet" crossorigin="" href="/assets/index-Bvx21KKJ.css">
+  </head>
+  <body class="has-consent-banner">
+    <div id="root"><div class="app-root"><a class="skip-link" href="#main-content">Skip to main content</a><header class="topbar" aria-label="Site header"><div class="topbar-inner"><div class="brand" role="button" aria-label="DatIQ home"><div class="brand-mark"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layers" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg></div><div class="brand-text"><div class="brand-name">Dat<b>IQ</b></div><div class="brand-tagline">Intelligence from Web</div></div></div><div class="topbar-actions topbar-desktop-actions"><nav class="nav-links" aria-label="Main navigation"><button type="button" class="nav-link nav-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe" aria-hidden="true" style="flex-shrink: 0; display: block;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg><span class="nav-link-text">Extract</span></button><button type="button" class="nav-link nav-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-repeat" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m17 2 4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="m7 22-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg><span class="nav-link-text">Schedules</span></button><button type="button" class="nav-link nav-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-grid" aria-hidden="true" style="flex-shrink: 0; display: block;"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect></svg><span class="nav-link-text">Dashboard</span></button><div class="nav-dropdown"><button type="button" class="nav-link nav-link-icon nav-link-dropdown active" aria-expanded="false" aria-haspopup="true"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-compass" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg><span class="nav-link-text">Explore</span><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true" style="flex-shrink: 0; display: block; transition: transform 0.15s; transform: rotate(0deg); margin-left: 1px;"><path d="m6 9 6 6 6-6"></path></svg></button></div></nav><button class="theme-toggle" aria-label="Toggle theme" title="Toggle light / dark"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button><button class="btn btn-primary btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" x2="3" y1="12" y2="12"></line></svg>Sign in</button></div><div class="topbar-mobile-actions"><button class="theme-toggle" aria-label="Toggle theme"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button><button class="theme-toggle hamburger-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu" aria-hidden="true" style="flex-shrink: 0; display: block;"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button></div></div></header><nav class="mobile-nav" aria-label="Mobile navigation" aria-hidden="true" inert=""><div class="mobile-nav-section"><button class="mobile-nav-item"><span class="mobile-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe" aria-hidden="true" style="flex-shrink: 0; display: block;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg></span><span>Extract</span></button><button class="mobile-nav-item"><span class="mobile-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-repeat" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m17 2 4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="m7 22-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg></span><span>Schedules</span></button><button class="mobile-nav-item"><span class="mobile-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-grid" aria-hidden="true" style="flex-shrink: 0; display: block;"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect></svg></span><span>Dashboard</span></button><button class="mobile-nav-item active" aria-expanded="false"><span class="mobile-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-compass" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg></span><span>Explore</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true" style="flex-shrink: 0; display: block; margin-left: auto; transition: transform 0.15s; transform: rotate(0deg);"><path d="m6 9 6 6 6-6"></path></svg></button></div><div class="mobile-nav-divider"></div><div class="mobile-nav-section"><button class="mobile-nav-item mobile-nav-item-primary"><span class="mobile-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" x2="3" y1="12" y2="12"></line></svg></span>Sign in</button></div></nav><div class="guest-trial-bar" role="status"><div class="guest-trial-bar-inner"><span class="gtb-text"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-flask-conical" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"></path><path d="M8.5 2h7"></path><path d="M7 16h10"></path></svg>Trial mode — <b>10</b> extractions · <b>5</b> batch runs remaining.</span><button class="gtb-cta">Sign up free →</button></div></div><main id="main-content"><div class="page"><div class="container" style="padding-top: clamp(32px, 5vh, 56px); padding-bottom: clamp(40px, 6vh, 72px);"><header class="rise" style="text-align: center; margin-bottom: 32px;"><span class="ws-eyebrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-library" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="m16 6 4 14"></path><path d="M12 6v14"></path><path d="M8 8v12"></path><path d="M4 4v16"></path></svg>Public gallery</span><h1 style="font-size: clamp(28px, 4vw, 40px); margin: 10px 0px 0px; letter-spacing: -0.02em;">Real extractions. Shared publicly.</h1><p style="color: var(--text-2); max-width: 600px; margin: 10px auto 0px; line-height: 1.55;">Browse the latest reports our users have shared. Each one is a live page you can view, copy, or use as inspiration for your own extractions.</p></header><h2 class="gallery-section-title" style="margin-bottom: 16px;">Recently shared</h2><div class="card rise" style="padding: 32px; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-inbox" aria-hidden="true" style="flex-shrink: 0; display: block;"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><h2 style="margin-top: 12px; font-size: 1.2rem;">No shared reports yet</h2><p style="color: var(--text-2); margin: 8px 0px 0px;">Extract a page and click <strong>Share</strong> to publish it here.</p><p style="margin-top: 18px;"><a class="btn btn-primary" href="/">Extract your first page →</a></p></div></div></div></main><footer class="site-footer" role="contentinfo" aria-label="Site footer"><div class="site-footer-slim container"><div class="footer-socials" aria-label="Social links"><a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="LinkedIn"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-linkedin" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect width="4" height="12" x="2" y="9"></rect><circle cx="4" cy="4" r="2"></circle></svg></a><a href="https://twitter.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="Twitter / X"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-twitter" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"></path></svg></a></div><span class="footer-copy">© 2026 DatIQ · The Unified Web Intelligence Platform · Intelligence from Web<a class="footer-version-tag" href="/changelog" aria-label="DatIQ V1.0 — what's new" title="See what's in DatIQ V1.0">V1.0</a></span><div class="footer-legal-links"><span class="footer-legal-group"><button class="footer-nav-link"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg>Privacy</button></span><span class="footer-legal-group"><span class="footer-legal-sep" aria-hidden="true">·</span><button class="footer-nav-link"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-text" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Terms</button></span><span class="footer-legal-group"><span class="footer-legal-sep" aria-hidden="true">·</span><button class="footer-nav-link"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg>Cookie preferences</button></span><span class="footer-legal-group"><span class="footer-legal-sep" aria-hidden="true">·</span><button class="footer-nav-link"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mail" aria-hidden="true" style="flex-shrink: 0; display: block;"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>Contact</button></span></div></div></footer><div class="consent-banner-wrap"><div class="usage-upsell-banner consent-banner" role="region" aria-label="Cookie and analytics consent"><div class="uub-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield" aria-hidden="true" style="flex-shrink: 0; display: block;"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg></div><div class="uub-content"><span class="uub-title">Help us improve DatIQ?</span><span class="uub-desc">We use Google Analytics to understand which features people actually use. Nothing is stored on your device until you allow it, and we never sell your data. <a href="/privacy">Read the Privacy Policy</a>.</span></div><button class="uub-upgrade-btn">Allow analytics</button><button class="consent-decline-btn">Decline analytics</button></div></div></div></div>
+  
 
-      <article class="ga-card">
-        <div class="ga-card-tag">Sales / SDR / BDR</div>
-        <h3 class="ga-card-title">stripe.com — leadership &amp; mission</h3>
-        <p class="ga-card-summary">Stripe is a financial infrastructure platform. Accept payments, send payouts, manage businesses online with integrated fraud, billing, and tax tools.</p>
-        <ul class="ga-card-data">
-          <li><strong>Contacts:</strong> Patrick Collison (CEO), John Collison (President), David Singleton (CTO)</li>
-          <li><strong>Mission:</strong> "Increase the GDP of the internet."</li>
-          <li><strong>Tags:</strong> fintech · payments · API · 2010</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/lead-generation">See lead-gen use case →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">Competitive Intelligence</div>
-        <h3 class="ga-card-title">notion.so/pricing — pricing teardown</h3>
-        <p class="ga-card-summary">Notion offers four plans (Free, Plus, Business, Enterprise). Pricing model shifted in 2024 to per-user-per-month billing. AI add-on is a separate charge.</p>
-        <ul class="ga-card-data">
-          <li><strong>Tiers:</strong> Free $0 · Plus $10/mo · Business $18/mo · Enterprise Custom</li>
-          <li><strong>AI add-on:</strong> $8/user/month (annual) or $10/user/month (monthly)</li>
-          <li><strong>Tags:</strong> saas · productivity · per-seat</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/competitor-research">See competitor research →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">SEO / Content Marketer</div>
-        <h3 class="ga-card-title">moz.com/blog — heading &amp; link audit</h3>
-        <p class="ga-card-summary">Moz Blog — curated SEO and content marketing articles. Index page with topic and skill-level filters. Strong internal link structure.</p>
-        <ul class="ga-card-data">
-          <li><strong>Headings:</strong> H1×1, H2×3, H3×9 (Beginner / Intermediate / Advanced filters)</li>
-          <li><strong>Links:</strong> 47 internal, 18 external (categorised)</li>
-          <li><strong>Schema:</strong> Blog, BlogPosting, BreadcrumbList, Organization</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/seo-audit">See SEO audit →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">Market Researcher</div>
-        <h3 class="ga-card-title">payments market — 20-company batch</h3>
-        <p class="ga-card-summary">Aggregated data on Stripe, Adyen, PayPal, Square, Checkout.com, Razorpay, and 14 others. Pricing model, GTM motion, target customer, headquarters.</p>
-        <ul class="ga-card-data">
-          <li><strong>20 companies</strong> across global payments</li>
-          <li><strong>Schema:</strong> name, mission, pricing_model, leadership, HQ, founded</li>
-          <li><strong>Tags:</strong> fintech · payments · global · batch</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/market-research">See market research →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">Recruiter</div>
-        <h3 class="ga-card-title">stripe.com/jobs — hiring signals</h3>
-        <p class="ga-card-summary">Stripe careers page. Active job count, team distribution, key engineering and product leadership hires, and recent compensation benchmarks.</p>
-        <ul class="ga-card-data">
-          <li><strong>Open roles:</strong> 142 (Engineering 78, Product 24, GTM 18, Other 22)</li>
-          <li><strong>Recent hires:</strong> 4 VPs in last 90 days</li>
-          <li><strong>Tags:</strong> hiring · engineering · fintech</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/lead-generation">See lead-gen use case →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">Startup Founder / VC</div>
-        <h3 class="ga-card-title">notion.so — due diligence brief</h3>
-        <p class="ga-card-summary">AI-written company brief: team, product, pricing, market position, competitive moat. Useful for fast qualitative diligence on any startup URL.</p>
-        <ul class="ga-card-data">
-          <li><strong>Team:</strong> ~800 employees (per LinkedIn, Aug 2026)</li>
-          <li><strong>Funding:</strong> Series C, $320M+ raised, last valuation $10B (2021)</li>
-          <li><strong>Product:</strong> Productivity workspace, freemium → enterprise</li>
-        </ul>
-        <a class="ga-card-link" href="/use-cases/competitor-research">See competitor research →</a>
-      </article>
-
-      <article class="ga-card">
-        <div class="ga-card-tag">Agency / Enterprise</div>
-        <h3 class="ga-card-title">hubspot.com — full domain map</h3>
-        <p class="ga-card-summary">Mapped 1,247 crawlable URLs across hubspot.com. Extracted product copy, pricing, leadership, partner program, customer stories, and the careers index.</p>
-        <ul class="ga-card-data">
-          <li><strong>URLs mapped:</strong> 1,247</li>
-          <li><strong>Capabilities used:</strong> Map, Pricing, Mission, Custom ("extract every product tier")</li>
-          <li><strong>Tags:</strong> enterprise · agency · domain-map</li>
-        </ul>
-        <a class="ga-card-link" href="/extract-pricing">See extract pricing →</a>
-      </article>
-
-    </div>
-    <p class="ga-updated">Last updated: 2026-08-09 · Anonymised and regenerated for illustration; the live app produces real-time extractions.</p>
-  </section>
-
-  <section class="ga-section">
-    <h2 style="font-size:1.3rem; font-weight:700; margin:0 0 12px;">Open the interactive gallery</h2>
-    <p style="color: var(--text-2, #4b5563); margin: 0 0 16px;">Anyone with a DatIQ account can hit the <strong>Share</strong> button on any extraction to publish it at <code>datiq.app/p/&lt;slug&gt;</code>. The interactive gallery aggregates every shared extraction your browser has seen, plus the curated set, and lets you filter by tag, intent, and persona.</p>
-    <a class="ga-cta" href="/">Open the gallery in DatIQ →</a>
-    <a class="ga-cta-secondary" href="/help/index.html">Read the help guide</a>
-  </section>
-
-  <section class="ga-section">
-    <h2 style="font-size: 1.2rem; font-weight: 700; margin: 0 0 12px;">Example public report formats</h2>
-    <p>When you share an extraction from the app, it becomes a public read-only report. Each report shows:</p>
-    <ul style="color: var(--text-2, #4b5563); line-height: 1.7;">
-      <li>Page title, URL, and a plain-language AI summary at the top</li>
-      <li>Headings H1–H6 in document order, with click-to-anchor</li>
-      <li>Internal and external links, filterable and AI-categorized</li>
-      <li>Enrichment tabs: contacts, social, mission, pricing, custom fields</li>
-      <li>"Open in DatIQ" CTA for recipients who want to extract their own data</li>
-    </ul>
-  </section>
-</div>
-</main>
-
-<footer class="site-footer" style="text-align: center; padding: 24px; font-size: 0.85rem; color: var(--text-3, #9ca3af); border-top: 1px solid var(--border, #e5e7eb); margin-top: 24px;">
-  © 2026 DatIQ · <a href="/">datiq.app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
-</footer>
-
-<script>
-  (function () {
-    var btn = document.getElementById("themeToggle");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
-      var cur = document.documentElement.getAttribute("data-theme") || "light";
-      var next = cur === "dark" ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("datiq.theme", next); } catch (e) {}
-    });
-  })();
-</script>
-</body>
-</html>
+</body></html>

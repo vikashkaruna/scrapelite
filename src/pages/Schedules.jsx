@@ -11,6 +11,7 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import ScheduleEditor from "../components/ScheduleEditor.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useGuestTrial } from "../components/GuestTrialProvider.jsx";
 import {
   listSchedules,
   listSchedulesLocal,
@@ -53,6 +54,10 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
   const status = schedule.lastStatus ? STATUS_META[schedule.lastStatus] : null;
   const paused = schedule.status === "paused";
   const expired = schedule.expiresAt && new Date(schedule.expiresAt) < new Date();
+  // Never reached the database, so scheduled-runner.js (which reads Supabase
+  // hourly) cannot see it. It will not fire. Say so instead of showing a next
+  // run time that will never arrive.
+  const localOnly = schedule._localOnly === true;
 
   return (
     <div className={"sch-card card" + (paused ? " sch-card-paused" : "") + (highlight ? " sch-card-hi" : "")}>
@@ -70,6 +75,11 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
               </span>
               {paused && <span className="sch-card-paused-tag">Paused</span>}
               {expired && <span className="sch-card-paused-tag">Ended</span>}
+              {localOnly && (
+                <span className="sch-card-local-tag" title="Saved in this browser only — sign in so it actually runs">
+                  <Icon name="alert-triangle" size={11} /> Not running
+                </span>
+              )}
             </span>
             <span className="sch-card-meta">
               <span><Icon name="globe" size={12} /> {isBatch ? `${targetCount} URLs` : hostOf(schedule.target)}</span>
@@ -80,7 +90,9 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
               {status
                 ? <span className={"sch-status " + status.cls}><Icon name={status.icon} size={12} /> {status.label}{schedule.lastRunAt && ` · ${timeAgo(schedule.lastRunAt)}`}</span>
                 : <span className="sch-status sch-status-idle"><Icon name="clock" size={12} /> Not run yet</span>}
-              {!paused && !expired && <span className="sch-next"><Icon name="calendar" size={12} /> Next ≈ {dtText(schedule.nextRunAt)}</span>}
+              {localOnly
+                ? <span className="sch-next sch-next-warn"><Icon name="alert-triangle" size={12} /> Sign in to start this schedule</span>
+                : !paused && !expired && <span className="sch-next"><Icon name="calendar" size={12} /> Next ≈ {dtText(schedule.nextRunAt)}</span>}
             </span>
           </span>
           <Icon name={expanded ? "chevron-up" : "chevron-down"} size={18} className="sch-card-caret" />
@@ -110,7 +122,7 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
           <DetailRow icon="mail" label="Alert">{schedule.alertEmail || <span className="muted">Dashboard only (no email)</span>}</DetailRow>
           <DetailRow icon="calendar" label="Created">{dtText(schedule.createdAt)}</DetailRow>
           <DetailRow icon="clock" label="Last run">{schedule.lastRunAt ? `${dtText(schedule.lastRunAt)} (${status?.label || "—"})` : "Not run yet"}</DetailRow>
-          <DetailRow icon="calendar-clock" label="Next run">{paused ? "Paused" : expired ? "Ended" : dtText(schedule.nextRunAt)}</DetailRow>
+          <DetailRow icon="calendar-clock" label="Next run">{localOnly ? "Never — not saved to your account" : paused ? "Paused" : expired ? "Ended" : dtText(schedule.nextRunAt)}</DetailRow>
           <DetailRow icon="calendar" label="Runs until">{schedule.expiresAt ? fmtDate(schedule.expiresAt) : <span className="muted">No end date</span>}</DetailRow>
           <DetailRow icon="check-circle" label="Total runs">{schedule.runCount || 0}</DetailRow>
         </div>
@@ -129,6 +141,7 @@ export default function Schedules() {
   const navigate = useNavigate();
   const location = useLocation();
   const showToast = useToast();
+  const guestTrial = useGuestTrial();
   const [items, setItems] = useState(listSchedulesLocal);
   const [runningId, setRunningId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -163,6 +176,9 @@ export default function Schedules() {
   };
 
   const onRunNow = async (schedule) => {
+    // "Run now" is a real scrape — same gate as any other extraction. This
+    // path reached extractStructure() ungated and uncounted.
+    if (guestTrial?.requireGuestCredit?.("single") === false) return;
     setRunningId(schedule.id);
     try {
       const opts = {};
@@ -184,6 +200,7 @@ export default function Schedules() {
       refresh();
       showToast("Check failed. We'll retry on the next scheduled run.");
     } finally {
+      guestTrial?.trackGuestExtraction?.(1); // no-ops when signed in
       setRunningId(null);
     }
   };

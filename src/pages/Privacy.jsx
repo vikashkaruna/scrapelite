@@ -1,7 +1,20 @@
 // Privacy.jsx — Privacy Policy page (route "/privacy").
-import { useNavigate } from "react-router-dom";
+//
+// ⚠️ SECTIONS drives the table of contents, the visible numbering AND the
+// #section-N anchor ids, all from the array INDEX. Editing a section in place
+// is safe; INSERTING or REORDERING one silently repoints every existing deep
+// link (including the ones this page's own TOC hands out, and any that have
+// been shared or indexed). If a new section is genuinely needed, append it.
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
+import { useToast } from "../components/Toast.jsx";
+import { useSeo } from "../hooks/useSeo.js";
+import { getConsent, clearConsent, withdrawAndErase } from "../lib/consentService.js";
+
+/** Bumped alongside consentService.POLICY_VERSION whenever section 6 changes materially. */
+const LAST_UPDATED = "August 15, 2026";
 
 const SECTIONS = [
   {
@@ -70,6 +83,10 @@ const SECTIONS = [
         heading: "Supabase",
         text: "User data and extraction records are stored using Supabase. Supabase is SOC 2 Type 2 certified and compliant with GDPR.",
       },
+      {
+        heading: "Google Analytics",
+        text: "If you allow analytics, Google LLC processes product-usage events (pages viewed, features used, approximate location at country level) on our behalf. No extracted content, page data, or the URLs you submit for extraction are ever sent to Google Analytics. See the Cookies and Local Storage section below for what is set, when, and how to withdraw.",
+      },
     ],
   },
   {
@@ -94,11 +111,19 @@ const SECTIONS = [
     content: [
       {
         heading: "What we store locally",
-        text: "DatIQ uses your browser's localStorage (not traditional cookies) to store preferences such as your selected theme, persona, and unsaved extraction results. This data stays on your device and is not transmitted to our servers.",
+        text: "DatIQ uses your browser's localStorage to store preferences such as your selected theme, persona, unsaved extraction results, and your analytics choice below. This data stays on your device and is not transmitted to our servers.",
       },
       {
-        heading: "No tracking cookies",
-        text: "We do not use third-party tracking cookies, advertising pixels, or cross-site tracking technologies. We may use minimal first-party analytics to understand aggregate product usage.",
+        heading: "Analytics cookies (Google Analytics 4)",
+        text: "We use Google Analytics 4 (property G-B0DZLRWG63), provided by Google LLC, to understand which parts of DatIQ people actually use. When — and only when — you allow it, Google Analytics sets first-party cookies named _ga and _ga_* in your browser to recognise repeat visits. The tag is loaded with Google Consent Mode v2 defaulting to 'denied', which means that before you choose, no analytics cookie or identifier is stored on your device; Google receives only cookieless, non-identifying signals that let us estimate overall traffic. We enable IP anonymisation, and we do not enable Google Signals, advertising features, or ads personalisation. We do not use advertising pixels or cross-site tracking technologies. Our internal operator tools are excluded from analytics entirely.",
+      },
+      {
+        heading: "Your choice, and the record we keep of it",
+        text: "You choose Allow or Decline the first time you visit, and you can change your mind at any time using the 'Cookie preferences' control at the bottom of this page or in the site footer. Declining is honoured immediately and permanently: nothing is stored and no identifier is set. We keep a record of your choice — the decision, the time, the version of this policy it was given under, and a coarse country — so we can demonstrate that consent was properly obtained. We deliberately do not store your IP address for this purpose.",
+      },
+      {
+        heading: "Erasing your analytics data",
+        text: "The 'Erase my analytics data' control at the bottom of this page withdraws your consent and immediately and permanently deletes the product-usage events DatIQ holds for your session and account. Please note the limit of what we can do on your behalf: data already held inside Google Analytics can only be removed through Google's own deletion process, which we must submit separately. If you want that done as well, email admin@datiq.app with the subject line 'Analytics Erasure' and we will submit the request to Google on your behalf.",
       },
     ],
   },
@@ -111,7 +136,7 @@ const SECTIONS = [
       },
       {
         heading: "Lawful basis for processing",
-        text: "We process your personal data on the basis of your consent, given at the time of registration or use of the Service, or on the basis of legitimate purposes as specified under the DPDP Act. You may withdraw your consent at any time by contacting admin@datiq.app, though withdrawal may limit your ability to use certain features of the Service.",
+        text: "We process your personal data on the basis of your consent, given at the time of registration or use of the Service, or on the basis of legitimate purposes as specified under the DPDP Act. Analytics processing specifically relies on the separate, explicit consent you give through the notice shown on your first visit — it is never bundled into your acceptance of the Terms, and declining it does not restrict your use of the Service in any way. You may withdraw any consent at any time using the controls at the end of this page or by contacting admin@datiq.app; withdrawing consent for features other than analytics may limit your ability to use certain parts of the Service.",
       },
       {
         heading: "Rights of Data Principals",
@@ -142,8 +167,150 @@ const SECTIONS = [
   },
 ];
 
+/**
+ * The two controls that make the consent in section 6 actually revocable.
+ * Both GDPR and the DPDP Act require withdrawal to be as easy as giving
+ * consent, so they live on the page that describes the consent rather than
+ * behind a support email.
+ *
+ * They are deliberately separate actions. "Change my choice" re-opens the
+ * question; "erase my data" is a destructive act with a different consequence,
+ * and collapsing the two would mean anyone reconsidering their choice silently
+ * destroyed their history.
+ */
+function CookieControls() {
+  const showToast = useToast();
+  const [choice, setChoice] = useState(() => getConsent());
+  const [erasing, setErasing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const reopen = () => {
+    clearConsent();
+    setChoice(null);
+    showToast("Cookie preferences cleared — the consent notice will appear again.", "shield");
+  };
+
+  const erase = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setConfirming(false);
+    setErasing(true);
+    const res = await withdrawAndErase();
+    setErasing(false);
+    setChoice(getConsent());
+    if (res.ok) {
+      showToast(
+        res.deleted > 0
+          ? `Analytics consent withdrawn and ${res.deleted} event${res.deleted === 1 ? "" : "s"} erased.`
+          : "Analytics consent withdrawn. There was no stored event data to erase.",
+        "check",
+      );
+    } else {
+      // Say what did and did not happen. The withdrawal is local and already
+      // in force even when the erase call failed, and implying otherwise would
+      // be the more alarming error.
+      showToast(
+        `Consent withdrawn, but the erase request failed: ${res.error}. Email admin@datiq.app and we will complete it.`,
+        "alert-triangle",
+      );
+    }
+  };
+
+  const label =
+    choice?.analytics === "granted" ? "Allowed"
+      : choice?.analytics === "denied" ? "Declined"
+        : "Not set";
+
+  return (
+    <div className="legal-contact card card-pad" id="cookie-preferences">
+      <div className="legal-contact-title">Cookie preferences</div>
+      <p className="legal-text">
+        Current analytics setting: <b>{label}</b>
+        {choice?.ts && (
+          <> · chosen {new Date(choice.ts).toLocaleDateString()} under policy version {choice.policyVersion || "—"}</>
+        )}
+      </p>
+      <div className="legal-contact-row" style={{ gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+        <Button variant="secondary" size="sm" icon="shield" onClick={reopen}>
+          Change my choice
+        </Button>
+        <Button
+          variant={confirming ? "danger" : "ghost"}
+          size="sm"
+          icon="trash-2"
+          onClick={erase}
+          disabled={erasing}
+        >
+          {erasing
+            ? "Erasing…"
+            : confirming
+              ? "Confirm — erase permanently"
+              : "Erase my analytics data"}
+        </Button>
+        {confirming && (
+          <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        )}
+      </div>
+      {confirming && (
+        <p className="legal-text" style={{ marginTop: 10, marginBottom: 0 }}>
+          This permanently deletes the product-usage events we hold for this session and account.
+          It cannot be undone. Data already inside Google Analytics needs a separate request — see
+          section 6.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Privacy() {
   const navigate = useNavigate();
+  const { hash } = useLocation();
+
+  // A browser scrolls to #fragment on a full page load; React Router does not
+  // on a client-side navigation, so the footer's "Cookie preferences" link
+  // would land at the top of a long legal page with no sign of what it was
+  // supposed to reveal. One frame's delay so the section has rendered.
+  useEffect(() => {
+    if (!hash) return;
+    const id = hash.slice(1);
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hash]);
+
+  // THE canonical fix for this route. Until now /privacy inherited index.html's
+  // hard-coded <link rel="canonical" href="https://datiq.app/">, which told
+  // Google this page IS the homepage — so Search Console dropped it as
+  // "Alternate page with proper canonical tag" and it never got indexed.
+  // Same story for /terms and /vs/battlecard.
+  useSeo({
+    title: "Privacy Policy — how DatIQ handles your data | DatIQ.app",
+    description:
+      "How DatIQ collects, uses and stores your data: what we keep, which processors we use, your GDPR, CCPA and DPDP Act rights, our analytics cookie consent, and how to withdraw it or erase your analytics data.",
+    canonical: "https://datiq.app/privacy",
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: "Privacy Policy",
+        url: "https://datiq.app/privacy",
+        description:
+          "DatIQ's privacy policy, including cookie and analytics consent, DPDP Act compliance, and data-subject rights.",
+        dateModified: "2026-08-15",
+        isPartOf: { "@type": "WebSite", name: "DatIQ", url: "https://datiq.app" },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: "https://datiq.app/" },
+          { "@type": "ListItem", position: 2, name: "Privacy Policy", item: "https://datiq.app/privacy" },
+        ],
+      },
+    ],
+  });
 
   return (
     <div className="page">
@@ -158,7 +325,7 @@ export default function Privacy() {
           </div>
           <div>
             <h1 className="legal-title">Privacy Policy</h1>
-            <p className="legal-meta">Last updated: June 8, 2026 · Effective: June 8, 2026</p>
+            <p className="legal-meta">Last updated: {LAST_UPDATED} · Effective: {LAST_UPDATED}</p>
           </div>
         </div>
 
@@ -204,6 +371,8 @@ export default function Privacy() {
           </div>
         ))}
 
+        <CookieControls />
+
         <div className="legal-contact card card-pad">
           <div className="legal-contact-title">Contact Us</div>
           <p className="legal-text">
@@ -215,6 +384,13 @@ export default function Privacy() {
               admin@datiq.app
             </a>
           </div>
+          <p className="legal-text" style={{ marginTop: 14, marginBottom: 0 }}>
+            For copyright or content-removal requests, see our{" "}
+            <a href="/dmca" className="legal-link">
+              DMCA and content takedown process
+            </a>
+            .
+          </p>
         </div>
       </div>
     </div>

@@ -395,3 +395,73 @@ describe("toggleSchedule", () => {
     expect(listSchedulesLocal()[0].status).toBe("active");
   });
 });
+
+// ── A schedule that was never persisted server-side cannot run ───────────────
+//
+// This module's shouldFallback() deliberately does NOT list 401/403, unlike the
+// same-named helper in extractionsRepo. The asymmetry is the whole point: an
+// extraction kept in localStorage still works, but a schedule kept there is
+// inert, because what executes schedules is netlify/functions/scheduled-runner.js
+// — an hourly function reading Supabase, which cannot see a browser's storage.
+// Treating "not signed in" as "backend unreachable" produced schedules that
+// rendered as active, advertised a next run time, and never fired.
+
+describe("saveSchedule — auth errors must not masquerade as success", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  const draft = () =>
+    buildSchedule({ type: "track", target: "https://example.com", cadenceKey: "daily" });
+
+  it("rethrows a 401 instead of silently keeping a dead local entry", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 401 });
+    await expect(saveSchedule(draft())).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rolls the optimistic local write back on a 401", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 401 });
+    await expect(saveSchedule(draft())).rejects.toBeTruthy();
+    // No phantom entry left behind claiming to be scheduled.
+    expect(listSchedulesLocal()).toHaveLength(0);
+  });
+
+  it("rethrows a 403 the same way", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 403 });
+    await expect(saveSchedule(draft())).rejects.toMatchObject({ status: 403 });
+    expect(listSchedulesLocal()).toHaveLength(0);
+  });
+
+  it("still degrades to local-only when the backend is genuinely down", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 503 });
+    const saved = await saveSchedule(draft());
+    expect(saved).toBeTruthy();
+    expect(listSchedulesLocal()).toHaveLength(1);
+  });
+
+  it("flags a locally-degraded schedule so the UI can say it isn't running", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 502 });
+    const saved = await saveSchedule(draft());
+    expect(saved._localOnly).toBe(true);
+    expect(listSchedulesLocal()[0]._localOnly).toBe(true);
+  });
+
+  it("clears the flag once the schedule reaches the server", async () => {
+    const s = draft();
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 502 });
+    await saveSchedule(s);
+    expect(listSchedulesLocal()[0]._localOnly).toBe(true);
+
+    apiClient.upsertSchedule.mockResolvedValueOnce({ ...s });
+    await saveSchedule(s);
+    expect(listSchedulesLocal()[0]._localOnly).toBe(false);
+  });
+
+  it("listing still works signed out — reading locally is harmless", async () => {
+    apiClient.upsertSchedule.mockRejectedValueOnce({ status: 503 });
+    await saveSchedule(draft());
+    apiClient.listSchedules.mockRejectedValueOnce({ status: 401 });
+    await expect(listSchedules()).resolves.toHaveLength(1);
+  });
+});

@@ -76,14 +76,7 @@ export function ExtractionProvider({ children }) {
     }
 
     // Enforce guest hard limit before starting (single-URL extraction)
-    if (!user) {
-      const guestCheck = guestTrial?.checkCanExtractSingle?.();
-      if (guestCheck && !guestCheck.allowed) {
-        guestTrial.setHardBlockReason?.("single");
-        guestTrial.setShowHardBlock?.(true);
-        return;
-      }
-    }
+    if (guestTrial?.requireGuestCredit?.("single") === false) return;
 
     const id = ++reqId.current;
     lastUrl.current = url;
@@ -194,6 +187,10 @@ export function ExtractionProvider({ children }) {
       console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
       setJob(null);
+      // A failed attempt still consumed a provider call, so it consumes a guest
+      // credit too. Counting successes only made every failing URL free, which
+      // is a trivially repeatable way to sit at the limit forever.
+      if (!user) guestTrial?.trackGuestExtraction?.(1);
       // Q11 — analytics: failure
       analytics.extractionFailed({ url, intent: options.intent || "summary", error: String(err?.message || err) });
       navigate("/");
@@ -216,6 +213,10 @@ export function ExtractionProvider({ children }) {
       return null;
     }
 
+    // A quick action is a real scrape + AI call, so it consumes a guest credit
+    // like any other extraction. This path had no gate at all.
+    if (guestTrial?.requireGuestCredit?.("single") === false) return null;
+
     const id = ++reqId.current;
     const structure = await extractStructure(url, { customPrompt: preset.prompt });
     if (reqId.current !== id) return null; // superseded by a newer run
@@ -234,6 +235,7 @@ export function ExtractionProvider({ children }) {
     };
     saveEnrichment(url, entry); // local cache (keyed by URL)
     billing?.trackEnrichment?.(url);
+    if (!user) guestTrial?.trackGuestExtraction?.(1);
     const base = current && current.url === url ? current : { url };
     const nextEnrichments = { ...(base.enrichments || {}), [preset.key]: entry };
     commitCurrent({ ...base, enrichments: nextEnrichments });

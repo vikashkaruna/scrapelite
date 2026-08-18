@@ -23,7 +23,7 @@ vi.mock("./supabaseClient.js", () => ({
 
 const { generateSlug, isValidSlug, shareExtraction, unshareExtraction,
         getPublicBySlug, getPublicBySlugLocal, getSharedSlugForId,
-        getGallery, buildPublicUrl, _resetShareForTests } =
+        getGallery, getGalleryLocal, getCuratedGallery, buildPublicUrl, _resetShareForTests } =
   await import("./shareService.js");
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ describe("Q8 — shareService: offline (Supabase disabled)", () => {
   it("getGallery returns the most recent shared extraction first", async () => {
     await shareExtraction({ ...sampleExtraction(), id: "ext_a", title: "A" });
     await shareExtraction({ ...sampleExtraction(), id: "ext_b", title: "B" });
-    const g = getGallery();
+    const g = await getGallery();
     expect(g[0].title).toBe("B");
     expect(g[1].title).toBe("A");
   });
@@ -150,8 +150,15 @@ describe("Q8 — shareService: offline (Supabase disabled)", () => {
     for (let i = 0; i < 5; i++) {
       await shareExtraction({ ...sampleExtraction(), id: `ext_${i}` });
     }
-    expect(getGallery(2)).toHaveLength(2);
-    expect(getGallery(10)).toHaveLength(5);
+    expect(await getGallery(2)).toHaveLength(2);
+    expect(await getGallery(10)).toHaveLength(5);
+  });
+
+  it("getGalleryLocal is the synchronous local-only read (first-paint path)", async () => {
+    await shareExtraction({ ...sampleExtraction(), id: "ext_a", title: "A" });
+    const g = getGalleryLocal();
+    expect(Array.isArray(g)).toBe(true);
+    expect(g[0].title).toBe("A");
   });
 
   it("buildPublicUrl constructs a URL from origin + slug", () => {
@@ -354,5 +361,139 @@ describe("FA1 — public-quota counter (shareService integration)", () => {
     expect(isPubliclyShared(ext.id)).toBe(false);
     await shareExtraction(ext);
     expect(isPubliclyShared(ext.id)).toBe(true);
+  });
+});
+
+// ── Curated persona showcase ────────────────────────────────────────────────
+// Distinct from getGallery() (tested above) — getCuratedGallery() is NEVER
+// local-only, because a showcase has to look the same to every visitor.
+
+function makeCuratedQueryClient(rows, { throwOnQuery = false } = {}) {
+  const calls = { eqArgs: [] };
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn((col, val) => { calls.eqArgs.push([col, val]); return chain; }),
+    order: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    then: (resolve, reject) => {
+      // The query is awaited directly (no terminal .maybeSingle()/.single()),
+      // so it must itself be thenable — mirrors the real supabase-js builder.
+      if (throwOnQuery) return Promise.resolve({ data: null, error: new Error("boom") }).then(resolve, reject);
+      return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    },
+  };
+  return { from: vi.fn(() => chain), calls };
+}
+
+describe("Q8/persona — getCuratedGallery", () => {
+  it("returns [] when Supabase isn't configured — no local fallback", async () => {
+    supabaseMock.enabled = false;
+    const result = await getCuratedGallery({ persona: "sales" });
+    expect(result).toEqual([]);
+  });
+
+  it("returns [] (not a throw) when the Supabase query errors", async () => {
+    const { from } = makeCuratedQueryClient([], { throwOnQuery: true });
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+    const result = await getCuratedGallery({});
+    expect(result).toEqual([]);
+  });
+
+  it("filters by is_public=true and curated=true unconditionally", async () => {
+    const rows = [{ slug: "abc12345", title: "T", url: "https://x.com", persona: "seo", created_at: "2026-08-01T00:00:00Z" }];
+    const { from, calls } = makeCuratedQueryClient(rows);
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+    const result = await getCuratedGallery({});
+    expect(result).toEqual(rows);
+    expect(calls.eqArgs).toContainEqual(["is_public", true]);
+    expect(calls.eqArgs).toContainEqual(["curated", true]);
+  });
+
+  it("adds a persona filter only when one is given", async () => {
+    const { from: fromWithPersona, calls: withPersona } = makeCuratedQueryClient([]);
+    supabaseMock.enabled = true;
+    supabaseMock.from = fromWithPersona;
+    await getCuratedGallery({ persona: "recruiter" });
+    expect(withPersona.eqArgs).toContainEqual(["persona", "recruiter"]);
+
+    const { from: fromNoPersona, calls: noPersona } = makeCuratedQueryClient([]);
+    supabaseMock.from = fromNoPersona;
+    await getCuratedGallery({});
+    expect(noPersona.eqArgs.some(([col]) => col === "persona")).toBe(false);
+  });
+});
+
+// ── getGallery reads the server, merged with this browser's local rows ───────
+// The whole point: /gallery is a public page, so a visitor who has never shared
+// anything must still see shared reports. But rows published while signed out
+// live only in localStorage, so a server read must never REPLACE the local list
+// (the bug extractionsRepo.listExtractions() already had to fix).
+
+describe("getGallery — server + local merge", () => {
+  beforeEach(() => {
+    _resetShareForTests();
+    supabaseMock.enabled = false;
+    delete supabaseMock.from;
+  });
+
+  it("returns server rows even when this browser has shared nothing", async () => {
+    const rows = [
+      { slug: "srv00001", title: "Server one", url: "https://a.com", intent: "summary", created_at: "2026-08-02T00:00:00Z" },
+      { slug: "srv00002", title: "Server two", url: "https://b.com", intent: "pricing", created_at: "2026-08-01T00:00:00Z" },
+    ];
+    const { from, calls } = makeCuratedQueryClient(rows);
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+
+    const g = await getGallery(100);
+    expect(g.map((r) => r.slug)).toEqual(["srv00001", "srv00002"]);
+    // Public rows only — and NOT restricted to curated ones.
+    expect(calls.eqArgs).toContainEqual(["is_public", true]);
+    expect(calls.eqArgs.some(([col]) => col === "curated")).toBe(false);
+  });
+
+  it("keeps a local-only row the server doesn't know about", async () => {
+    supabaseMock.enabled = false;
+    const { slug } = await shareExtraction({ ...sampleExtraction(), id: "ext_local", title: "Local only" });
+
+    // Server now answers, but without that row (e.g. it was shared signed out).
+    const { from } = makeCuratedQueryClient([
+      { slug: "srv00001", title: "Server one", url: "https://a.com", created_at: "2026-08-02T00:00:00Z" },
+    ]);
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+
+    const slugs = (await getGallery(100)).map((r) => r.slug);
+    expect(slugs).toContain(slug);
+    expect(slugs).toContain("srv00001");
+  });
+
+  it("falls back to the local list when the query errors — never wipes it", async () => {
+    supabaseMock.enabled = false;
+    await shareExtraction({ ...sampleExtraction(), id: "ext_local", title: "Local only" });
+
+    const { from } = makeCuratedQueryClient([], { throwOnQuery: true });
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+
+    const g = await getGallery(100);
+    expect(g).toHaveLength(1);
+    expect(g[0].title).toBe("Local only");
+  });
+
+  it("does not duplicate a row present both locally and on the server", async () => {
+    supabaseMock.enabled = false;
+    const { slug } = await shareExtraction({ ...sampleExtraction(), id: "ext_both", title: "Both" });
+
+    const { from } = makeCuratedQueryClient([
+      { slug, title: "Both", url: "https://example.com", created_at: "2026-08-02T00:00:00Z" },
+    ]);
+    supabaseMock.enabled = true;
+    supabaseMock.from = from;
+
+    const g = await getGallery(100);
+    expect(g.filter((r) => r.slug === slug)).toHaveLength(1);
   });
 });

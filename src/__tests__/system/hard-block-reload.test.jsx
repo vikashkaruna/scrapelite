@@ -1,8 +1,20 @@
 // src/__tests__/system/hard-block-reload.test.jsx
-// S-02 — When datiq.guestTrial.count >= SINGLE_HARD_LIMIT in localStorage at
-// mount time, the GuestTrialProvider renders the hard block on first render
-// (before any user action). Catches the R17 regression where the hard block
-// only mounted after the user attempted an extraction.
+// S-02 — A reload must not hand an over-limit guest a fresh allowance.
+//
+// This originally asserted that the hard block DIALOG rendered on first render,
+// guarding the R17 regression where it only appeared after an extraction
+// attempt. That was the right guard at the time for the wrong-looking reason:
+// back then four extraction paths (batch Retry, schedule Run-now, the battle
+// card, quick-enrich) never called the gate at all, so "only on attempt"
+// really did mean "sometimes never", and mount-time visibility was papering
+// over it.
+//
+// requireGuestCredit() now runs on every entry point, so the dialog enforces
+// nothing at mount — it can be closed, and closing grants nothing. What must
+// survive a reload is the ENFORCEMENT, which is what these tests assert now.
+// The interstitial-on-page-load was dropped deliberately: it hit someone who
+// had just opened the site and done nothing, which is the worst moment to ask
+// them to sign up. See the note in GuestTrialProvider.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
@@ -33,56 +45,75 @@ beforeEach(() => {
 });
 
 function Probe() {
-  const { showHardBlock, hardBlockReason, count } = useGuestTrial();
+  const { showHardBlock, hardBlockReason, count, requireGuestCredit } = useGuestTrial();
   return (
     <div>
       <span data-testid="showHardBlock">{String(showHardBlock)}</span>
       <span data-testid="hardBlockReason">{hardBlockReason}</span>
       <span data-testid="count">{count}</span>
+      <button data-testid="gateSingle" onClick={() => requireGuestCredit("single")}>single</button>
+      <button data-testid="gateBatch" onClick={() => requireGuestCredit("batch")}>batch</button>
     </div>
   );
 }
 
-describe("S-02 — Hard block mounts on reload when count >= hard limit", () => {
-  it("count=10 in localStorage → showHardBlock=true on first render", async () => {
+function mount() {
+  render(
+    <AppProviders>
+      <Probe />
+    </AppProviders>,
+  );
+}
+
+describe("S-02 — a reload does not reset the guest gate", () => {
+  it("count=10 survives a reload: refused on the first attempt, dialog raised", async () => {
     localStorage.setItem("datiq.guestTrial", JSON.stringify({
       count: 10, batchCount: 0, sid: "s1",
     }));
-    render(
-      <AppProviders>
-        <Probe />
-      </AppProviders>,
-    );
+    mount();
     await act(async () => { await Promise.resolve(); });
+
+    // The count is restored...
     expect(screen.getByTestId("count").textContent).toBe("10");
+    // ...but no interstitial is thrown at someone who has done nothing yet.
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+
+    // The gate is what carries across the reload.
+    act(() => screen.getByTestId("gateSingle").click());
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
     expect(screen.getByTestId("hardBlockReason").textContent).toBe("single");
   });
 
-  it("count=9 → no hard block (below limit)", async () => {
+  it("count=9 → below the limit, the attempt is allowed", async () => {
     localStorage.setItem("datiq.guestTrial", JSON.stringify({
       count: 9, batchCount: 0, sid: "s1",
     }));
-    render(
-      <AppProviders>
-        <Probe />
-      </AppProviders>,
-    );
+    mount();
     await act(async () => { await Promise.resolve(); });
+    act(() => screen.getByTestId("gateSingle").click());
     expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
   });
 
-  it("batchCount=5 → hard block with reason 'batch'", async () => {
+  it("batchCount=5 survives a reload and refuses with reason 'batch'", async () => {
     localStorage.setItem("datiq.guestTrial", JSON.stringify({
       count: 0, batchCount: 5, sid: "s1",
     }));
-    render(
-      <AppProviders>
-        <Probe />
-      </AppProviders>,
-    );
+    mount();
     await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
+
+    act(() => screen.getByTestId("gateBatch").click());
     expect(screen.getByTestId("showHardBlock").textContent).toBe("true");
     expect(screen.getByTestId("hardBlockReason").textContent).toBe("batch");
+  });
+
+  it("an exhausted batch allowance does not close the single-URL path", async () => {
+    localStorage.setItem("datiq.guestTrial", JSON.stringify({
+      count: 0, batchCount: 5, sid: "s1",
+    }));
+    mount();
+    await act(async () => { await Promise.resolve(); });
+    act(() => screen.getByTestId("gateSingle").click());
+    expect(screen.getByTestId("showHardBlock").textContent).toBe("false");
   });
 });

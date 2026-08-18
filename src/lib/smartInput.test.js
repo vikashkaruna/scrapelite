@@ -5,8 +5,8 @@ import { classifyInput, looksLikeCsv } from "./utils.js";
 
 describe("Q1 — classifyInput: smart auto-detect", () => {
   it("classifies empty input as 'empty'", () => {
-    expect(classifyInput("")).toEqual({ kind: "empty", urls: [] });
-    expect(classifyInput("   \n  ")).toEqual({ kind: "empty", urls: [] });
+    expect(classifyInput("")).toMatchObject({ kind: "empty", urls: [] });
+    expect(classifyInput("   \n  ")).toMatchObject({ kind: "empty", urls: [] });
   });
 
   it("classifies a single URL as 'single'", () => {
@@ -90,5 +90,80 @@ describe("Q1 — looksLikeCsv: pure CSV detection", () => {
 
   it("returns true even when no 'url' column header is present", () => {
     expect(looksLikeCsv("name,website,description\nFoo,foo.com,Hi")).toBe(true);
+  });
+});
+
+// ── "embedded": prose that CONTAINS links ───────────────────────────────────
+//
+// classifyInput's "multi" branch requires valid.length >= tokenCount - 1, i.e.
+// nearly every whitespace token must itself be a URL. So an email, a Slack
+// thread or a markdown list carrying eight links failed that test, fell through
+// to "text", and the whole blob was extracted as ONE pasted document — while
+// `urls` already held the eight links nothing on the text path ever read.
+//
+// "embedded" names that case. It is deliberately NOT auto-routed to batch: a
+// newsletter with ten links is genuinely ambiguous (extract the ten pages, or
+// summarise the newsletter?), so the composer asks.
+
+describe("classifyInput — embedded links in prose", () => {
+  const prose = "Hi team, take a look at https://stripe.com/pricing and also " +
+                "https://linear.app/pricing before Friday. Thanks!";
+
+  it("classifies prose carrying 2+ links as 'embedded', not 'text'", () => {
+    const c = classifyInput(prose);
+    expect(c.kind).toBe("embedded");
+    expect(c.urls).toEqual(["https://stripe.com/pricing", "https://linear.app/pricing"]);
+  });
+
+  it("still classifies a clean list of the same URLs as 'multi'", () => {
+    const c = classifyInput("https://stripe.com/pricing\nhttps://linear.app/pricing");
+    expect(c.kind).toBe("multi");
+  });
+
+  it("leaves prose with a single link as plain text — one link is a citation", () => {
+    expect(classifyInput("As discussed, see https://stripe.com/pricing for the tiers we compared.").kind).toBe("text");
+  });
+
+  it("leaves link-free prose as text", () => {
+    expect(classifyInput("hello world, this is just a sentence with no links at all").kind).toBe("text");
+  });
+
+  it("reports density so callers can tell a link list from prose", () => {
+    expect(classifyInput(prose).density).toBeLessThan(0.5);
+    expect(classifyInput("https://a.com\nhttps://b.com").density).toBe(1);
+  });
+
+  it("leaves HTML on the text path, where its links are parsed properly", () => {
+    // Deliberate. Whitespace tokenising can't see a URL wrapped in markup
+    // (`<a href="x">https://a.com/one</a>` is one unparseable token), but the
+    // text path already handles HTML far better: buildStructureFromText runs it
+    // through parseHtml, producing real headings and real links. Routing HTML
+    // to "embedded" would trade a good parser for a worse one.
+    const html = '<p>See <a href="x">https://a.com/one</a> and https://b.com/two here.</p>';
+    expect(classifyInput(html).kind).toBe("text");
+  });
+
+  it("treats bare URLs in a markdown-ish list as embedded", () => {
+    const md = "Competitors to check:\n- https://a.com/pricing\n- https://b.com/pricing\n- https://c.com/pricing";
+    const c = classifyInput(md);
+    expect(c.kind).toBe("embedded");
+    expect(c.urls).toHaveLength(3);
+  });
+
+  it("strips sentence punctuation off a URL lifted from prose", () => {
+    // "…and Figma at https://figma.com/pricing." must not extract a URL with a
+    // trailing full stop — that scrapes the wrong address.
+    const c = classifyInput("Notion at https://notion.so/pricing, and Figma at https://figma.com/pricing.");
+    expect(c.urls).toEqual(["https://notion.so/pricing", "https://figma.com/pricing"]);
+  });
+
+  it("keeps a legitimate trailing slash", () => {
+    const c = classifyInput("Try https://a.com/docs/ and https://b.com/api/ today.");
+    expect(c.urls).toEqual(["https://a.com/docs/", "https://b.com/api/"]);
+  });
+
+  it("keeps a balanced closing paren but drops an unbalanced one", () => {
+    const c = classifyInput("See https://en.wikipedia.org/wiki/Foo_(bar) and (https://b.com) too.");
+    expect(c.urls).toEqual(["https://en.wikipedia.org/wiki/Foo_(bar)", "https://b.com"]);
   });
 });
