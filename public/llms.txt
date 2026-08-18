@@ -39,7 +39,8 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - **Notion** — push into a database, with property mapping
 - **Slack** — new extractions + change alerts to a channel (Block Kit)
 - **Zapier** — trigger 5,000+ apps on new extractions
-- **Google Sheets** — one-click new sheet, no auth
+- **Google Sheets** — one-click new sheet, no auth, no setup
+All of the above are reachable from a single Push menu on Preview, Dashboard, and Batch results. Export is downloads + clipboard only.
 - **API access** — bearer-token REST API on Business + Agency
 
 ## Plan-level features

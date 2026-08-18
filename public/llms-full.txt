@@ -82,14 +82,18 @@ No code required. Background processing keeps the page responsive. Results persi
 - Pro and above
 
 ### Batch processing
-- Multiple URLs in one run
-- Per-URL status (success / fail / retry)
+- Started from the Home composer — paste a list, import a CSV, or drop one on the box. There is no separate Batch tab.
+- Multiple URLs in one run, 3 extracted in parallel
+- Per-URL status (success / fail / retry), with filter by All / Success / Failed and sorting
+- Run in background — a run survives navigation; progress shows in a dock with live count, current URL, and Cancel
+- Every run has its own link, so results (including failures) reopen after a reload or days later
+- Only successful pages become Dashboard entries, so the run page is where a failed URL and its Retry live
 - CSV bulk export
 - Pro and above
 
 ### Export & integrations
 - **CSV** — comprehensive, every enrichment included (deep-flattened JSON paths)
-- **PDF** — jsPDF report, same complete content
+- **PDF** — formatted report, same complete content
 - **Markdown** / **JSON** — paste straight into a doc or pipe into a script
 - **Google Sheets** — Open-in-Google-Sheets with one click
 - **HubSpot** — push contacts and companies with property mapping
@@ -269,7 +273,7 @@ DatIQ is free to start — 10 extractions per month, no credit card. Paid plans 
 No. DatIQ is zero-code — paste a URL, describe any field you want in plain English, and the AI extracts it. Custom extraction is configurable in the UI without scripting.
 
 **Q5. What formats can I export?**
-CSV (comprehensive — every enrichment included) and PDF (jsPDF report, customizable with white-label templates on Business and Agency plans). Google Sheets export is available on Pro and above. HubSpot and Salesforce integrations are on Business and above.
+Export gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all.
 
 **Q6. Can I schedule recurring extractions?**
 Yes. Scheduled monitoring is included on Pro, Business, and Agency plans. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes.

@@ -33,6 +33,20 @@ await ctx.addInitScript(() => {
       "datiq.onboardingTour.v1",
       JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
     );
+    // The consent banner is a fixed-bottom overlay, so without a stored choice
+    // it sits across the lower ~15% of EVERY shot and buries the thing each
+    // screenshot exists to show. Recording a choice up front suppresses it.
+    // "denied" rather than "granted": it is the privacy-preserving option, and
+    // it also keeps the capture run from firing GA4 page_view hits for a
+    // headless browser walking the whole app.
+    localStorage.setItem(
+      "datiq.consent",
+      JSON.stringify({
+        analytics: "denied",
+        source: "screenshot-capture",
+        at: new Date("2026-01-01T00:00:00Z").toISOString(),
+      })
+    );
   } catch { /* first-party storage unavailable — tour will show, shots may fail */ }
 });
 

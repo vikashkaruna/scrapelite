@@ -15,7 +15,7 @@ import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 const VERSION = "V1.0";
 const SHIPPED = "2026-07";
-const UPDATED = "2026-08-11";
+const UPDATED = "2026-08-18";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
@@ -44,9 +44,13 @@ const FEATURE_GROUPS = [
     icon: "layers-2",
     title: "Batch & multi-URL",
     items: [
-      "/batch page — paste URLs or import a CSV (up to 500 URLs / plan)",
+      "Batch starts from the Home composer — paste a list, import a CSV, or drop one on the box (up to 500 URLs / plan)",
       "Concurrent extraction (3 in parallel) with live progress",
-      "Per-URL content generation toggle (SEO / competitor / social)",
+      "Run in background — a run survives navigation; progress follows you in a dock with live count, current URL, and Cancel",
+      "Per-URL content generation toggle (SEO / competitor / social), set in the composer's Advanced options",
+      "Addressable runs — every batch has its own link, so results reopen after a reload or days later",
+      "Failures are kept with the run, with a per-row reason and Retry",
+      "Filter results by All / Success / Failed, and sort them",
       "Run history with intent + run count + delete per run",
       "Combined export (CSV / PDF / Markdown / JSON) across all successful items",
       "Copy-to-clipboard for CSV / Markdown / JSON (plan-gated same as downloads)",
@@ -64,6 +68,8 @@ const FEATURE_GROUPS = [
       "Email alerts via Resend on detected changes (with diff preview)",
       "Slack alerts via Block Kit webhook (parallel to email)",
       "Manual 'Run now' on /schedules with change detection toast",
+      "Schedules are saved to your account before they can run — create one signed out and DatIQ holds it, prompts sign-in, then saves it for you",
+      "A schedule that isn't saved says 'Not running' instead of advertising a next run it can't honour",
     ],
   },
   {
@@ -76,7 +82,9 @@ const FEATURE_GROUPS = [
       "Batch run history filter (BatchRunsDropdown + active-filter banner)",
       "Search + sort + pagination over extractions",
       "Export ▾ (CSV / PDF / Markdown / JSON) with plan hints",
-      "Selection bar — Generate / Email / Export across multiple rows",
+      "Push ▾ in the toolbar beside Export — both act on your selection, or on everything filtered when nothing is selected",
+      "Inline selection row — Generate / Email / Clear beside the filters",
+      "Browser-only pages are flagged, and signing in moves them onto your account automatically",
       "Delete with confirmation",
       "Per-user owner scoping (signed-in user, or per-browser session for guests)",
     ],
@@ -91,7 +99,7 @@ const FEATURE_GROUPS = [
       "'View Dashboard' CTA after auto-save",
       "AI summary thumbs up/down feedback (with comment)",
       "Shareable public report links (/p/:slug) + /gallery listing",
-      "Open in Google Sheets / Airtable / Notion (adapters in F18 modal)",
+      "Push ▾ — one menu for every destination, including Google Sheets with no setup",
     ],
   },
   {
@@ -138,7 +146,7 @@ const FEATURE_GROUPS = [
     title: "Guest trial",
     items: [
       "3 free extractions (soft prompt every 2; can dismiss and continue)",
-      "10 single-URL / 5 batch hard limit (non-dismissible block)",
+      "10 single-URL / 5 batch hard limit, enforced on every extraction path — never as a page-load interstitial",
       "Bypass prevention: guest counter never cleared on login/logout",
       "GuestTrialBanner between TopBar and page content",
       "Smart paywall — annual discount anchored when the limit is hit",
@@ -158,6 +166,7 @@ const FEATURE_GROUPS = [
       "Credit estimator (pre-flight, disables Run when over the plan cap)",
       "Outcome tiles (6 fast-path picks: summary, contacts, pricing, map, etc.)",
       "Smart multi-input composer (auto-routes single / multi-URL / CSV / raw text)",
+      "Links-in-text detection — a pasted email or thread offers 'Extract all N' or 'Extract as one page' rather than guessing",
       "Outcome tile multi-select with combined prompts",
     ],
   },
@@ -166,7 +175,7 @@ const FEATURE_GROUPS = [
     icon: "book-open",
     title: "Docs & help",
     items: [
-      "Static help site at /help (15 user-guide sections + developer API reference)",
+      "Static help site at /help (16 user-guide sections + developer API reference)",
       "5 persona context chips (Sales, CI, SEO, Research, Recruiter, Founder, VC)",
       "In-app trust strip (Encrypted in transit / Auto-deleted in 30 days / Never used to train AI)",
       "Public AI crawler accessibility (llms.txt, GPTBot/ClaudeBot/PerplexityBot allowlist)",
@@ -181,12 +190,14 @@ const FEATURE_GROUPS = [
     icon: "plug",
     title: "Integrations & sharing",
     items: [
-      "One-click push to HubSpot, Airtable, Notion, Slack, and Zapier from Preview, Dashboard, and Batch results",
-      "Server-stored connections for all five destinations — set up once in /account#integrations, push forever",
+      "One Push ▾ menu on Preview, Dashboard, and Batch results — every destination in one list",
+      "Push destinations: HubSpot, Airtable, Notion, Slack, plus Google Sheets (no setup needed)",
+      "Server-stored connections — set up once in /account#integrations, push forever",
+      "Zapier receives new extractions as a trigger event for 5,000+ apps",
       "Per-provider rich status (token hint, IDs, field map, title column, column count) on /account#integrations",
       "Test / Edit / Disconnect actions on every connected row",
       "Airtable + Notion auto-built field maps; 'Load columns' re-fetches schema for legacy connections",
-      "Open in Google Sheets (one-click, no auth)",
+      "Airtable / Notion field mapping lives behind 'More destination options…' in the Push menu",
       "Shareable public report links (/p/:slug) + /gallery",
       "Email delivery of extractions (multi-recipient)",
       "Slack alerts via Block Kit webhook for schedule changes (long-title-safe)",

@@ -13,11 +13,11 @@
 | | |
 |---|---|
 | **Product** | DatIQ |
-| **Documented version** | **V1.0 production + V1.0+ Integrations** (current staging promotion candidate; one-click push to HubSpot, Airtable, Notion, Slack, Zapier; server-stored connections; Account rich status; Workspace tabs) |
+| **Documented version** | **V1.0 production + V1.0+ Integrations + Home/Batch consolidation** (current staging promotion candidate; one composer as the sole entry point, background runs, addressable batch runs, one Push menu, auth-gated schedule persistence) |
 | **Live site** | https://datiq.app (Netlify project `datiqapp`) |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
 | **Document purpose** | Internal master reference for the product, its screens, and its architecture. Source of truth for the public help split-outs above, onboarding, and support knowledge base. |
-| **Last updated** | 2026-08-11 (staging promotion of the V1.0+ Integrations branch — `Integration-with-outside-ecosystem` → `staging`. Public help was rewritten to match the new flow; full screen-by-screen refresh is the next internal pass.) |
+| **Last updated** | 2026-08-18 (documentation + screenshot refresh for the Home/Batch consolidation on `staging`. All 10 screenshots regenerated; §6.1, §7.1, §7.3, §7.4, §7.5 and §9 rewritten against the shipped UI — §7.1 had still described the four-toggle v2.0 Home. Public help, FAQ, changelog, blog and `llms*.txt` updated to match.) |
 
 ---
 
@@ -224,12 +224,28 @@ These are the principles that guided what got built (and how), reconstructed fro
 A flat, exhaustive list (good for chatbot retrieval). Grouped by area.
 
 ### 6.1 Extraction (input)
-- **URL input** with live validation and normalization (adds scheme if missing).
+
+The **Home composer (`HeroComposer`) is the only entry point** for every job kind — single, batch, and
+scheduled. `/batch` is a run + results surface reached *from* the composer, never a place users go first;
+it is not in the top nav (`Extract` matches `/batch` too).
+
+- **Composer input** with live validation and normalization (adds scheme if missing), classified by
+  `classifyInput` into `single` / `multi` / `csv` / `embedded` / `text`.
+- **`embedded` kind** — prose that *contains* links (email, Slack thread, Markdown list). Deliberately
+  **not auto-routed**: the composer renders an inline chooser ("Extract all N" / "Extract this text as one
+  page") because the intent is genuinely ambiguous. Choosing the links reuses `ingestUrls`, the same path
+  as drag-drop and CSV import. **HTML stays on the `text` path on purpose** — `buildStructureFromText`
+  runs it through `parseHtml`, which beats whitespace tokenising.
 - **Example chips** — `lumio.io`, `stripe.com/pricing`, `notion.so/help`.
-- **Render JavaScript** toggle — waits ~3s for client-side/SPA content to hydrate (Firecrawl `waitFor`).
-- **Map entire domain** toggle — switches to URL discovery instead of single-page scrape.
-- **Contacts & emails** toggle — auto-loads the leadership/board/contact-email prompt.
-- **Custom extraction** toggle — reveals a free-text prompt box + 5 Quick-Action preset chips.
+- **Intent chips** — AI summary / Find contacts / Scrape pricing / Map site / Custom.
+- **`＋` menu** — Import CSV, Add multiple URLs, and **Run in background** (sticky via
+  `datiq.runInBackground`; a dot on `＋` when active). Applies to single and batch alike.
+- **Advanced options** — **Render JavaScript** (waits ~3 s for SPA hydration) and **Generate AI content for
+  each URL** + `CONTENT_FORMATS` picker. Both apply to single *and* batch runs; the content toggle and the
+  CSV detected-column readout were moved here from `/batch`, where they existed only on that screen and so
+  vanished whenever a run started from Home.
+- **Custom extraction panel** — free-text prompt box + 5 Quick-Action preset chips (shown when intent is Custom).
+- **Guest gating** — every extraction entry point calls one `requireGuestCredit(kind)` on the provider.
 
 ### 6.2 Extraction (output, on Preview)
 - **Page identity** — favicon monogram, title, clickable URL, stat counts.
@@ -308,21 +324,21 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 **What's on the screen (top to bottom):**
 
-1. **Eyebrow** — "No code · structured in seconds" with a **v2.0** pill.
-2. **Hero headline** — "Extract & enrich web data in seconds." + a one-paragraph value proposition.
-3. **URL field** — a globe-led input with a primary **Extract** button (label becomes **Map domain** when the map toggle is on). Invalid input shows an inline error and a red field outline.
-4. **Example chips** — `lumio.io`, `stripe.com/pricing`, `notion.so/help`; click to fill the field.
-5. **Scrape-option toggles** (four):
-   - ⚡ **Render JavaScript** — for dynamic/SPA pages (slower).
-   - 🗺️ **Map entire domain** — lists every indexed URL instead of scraping one page.
-   - 👥 **Contacts & emails** — leadership & board.
-   - `</>` **Custom extraction** — ask in plain English (reveals the prompt box).
-6. **Custom-extraction panel** (appears when the Custom toggle is on) — a textarea plus 5 **Quick Action** preset chips that fill the prompt: Find Contact Info, Leadership & Board, Social Links, Company Mission, Pricing & Plans.
-7. **Capability cards** — an 8-card grid (3 v1 + 5 v2) describing everything the product can do.
+1. **Eyebrow** — "No code · structured in seconds" with a **V1.0** pill.
+2. **Hero headline** — "Intelligence from the Web." + a one-paragraph value proposition.
+3. **Common jobs** — a 6-card grid of fast-path outcomes (lead list, pricing, competitor intel, SEO audit, tech stack, job postings).
+4. **Example chips** — `example.com`, `stripe.com/pricing`, `anthropic.com`; click to fill the composer.
+5. **The composer (`HeroComposer`)** — one textarea plus a toolbar: **`＋`** (Import CSV · Add multiple URLs · Run in background), **Batch** toggle, **Schedule** dropdown, and the **Extract** action button whose icon reflects the mode (page / layers / calendar).
+6. **Trust strip** — Encrypted in transit · Auto-deleted in 30 days · Never used to train AI.
+7. **Intent chips** — "What do you want to extract?": AI summary / Find contacts / Scrape pricing / Map site / Custom.
+8. **Custom-extraction panel** (when intent is Custom) — a textarea plus 5 **Quick Action** preset chips: Find Contact Info, Leadership & Board, Social Links, Company Mission, Pricing & Plans.
+9. **Advanced options** (collapsed) — Render JavaScript, Generate AI content for each URL + content-type chips.
+10. **Capability cards**, **template library** (12 recipes), and the **Try-it-now** auto-playing demo.
 
 **Behavior notes:**
 - Map mode ignores per-page options and routes to the `/map` endpoint; a note explains this.
-- Submitting shows a **full-screen 4-step loading animation**, then navigates to Preview.
+- **Multi-URL input routes to `/batch` and runs there** — unless **Run in background** is on, in which case the run starts and *stays* on Home (routing away to say "you can navigate away" would defeat the point).
+- Progress is reported by **one surface**, `ExtractionProgressDock`, for both job kinds. A batch shows a real `completed/total` percentage; the single-extraction stepper is cosmetic pacing, because a lone scrape reports no progress.
 - On failure, you're returned to Home with an error modal offering **Try again** (re-runs the same URL + options).
 
 **Dark mode** (theme is one click in the top bar, and persists):
@@ -372,16 +388,29 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 **What's on the screen:**
 
 1. **Header** — "Your extractions", a count subtitle, and the action cluster:
+   - **Batch runs** dropdown and **Collection** filter,
    - **Table / Card** layout toggle,
-   - **CSV** and **PDF** export buttons,
+   - **Export ▾**, **Push ▾**, **Refresh**,
    - **New extraction** (back to Home).
-2. **Toolbar** — a **smart search** box (matches across title, URL, summary, headings, links) and a count / **selection bar**.
-3. **Table** (default) — columns: select, **Page** (favicon + title + host), **AI summary** (snippet), **Structure** (heading & link counts), **Extracted** (date), and row actions (**View**, **Delete**). Clicking a row opens it in Preview.
+2. **Toolbar** — a **smart search** box (matches across title, URL, summary, headings, links), type filter chips (All / Single / Batch / Scheduled), and an inline selection row.
+3. **Table** (default) — columns: select, **Page** (favicon + title + host), **Type**, **AI summary** (snippet), **Structure** (heading & link counts), **Extracted** (date), and row actions (**Collection**, **View**, **Delete**). Clicking a row opens it in Preview.
 4. **Pager** — appears when results exceed the viewport-fit page size.
 
-**Selection bar** — when you tick one or more rows, the toolbar swaps to: *N selected · Clear · **Generate** · **Send email***.
+**Selection** — ticking rows shows an inline row beside the filters: *N selected · Clear · **Generate** · **Send email***.
 - **Generate** opens the **Content modal** (SEO outline / competitor summary / social posts) for the first selected page.
 - **Send email** opens the **Email modal** (multi-recipient) to send the selected pages.
+
+**The floating selection bar was removed.** It duplicated the page — count / Clear / Generate / Email are the
+inline selection row, and its `Export ▾` was the toolbar's. **Push was the only thing unique to it**, which
+was the only reason it existed. Push moved to the toolbar **between Export and Refresh** and shares Export's
+selection semantics via `exportTargets()` (the selection when there is one, everything filtered otherwise),
+so *"Export all 8"* and *"Push to (8)"* agree. Removed with it: the `SelectionBar` component, `.dash-float-*`
+CSS, and the `float-bar-in` keyframe.
+
+**Local-only extractions.** Signed-out work is saved to `localStorage` but is not durable. Dashboard shows how
+many pages are browser-only, and on sign-in `claimLocalExtractions()` replays them onto the account. A row
+that merely fell back to localStorage again is **not** counted as claimed — otherwise the warning would
+disappear while the data was still browser-only.
 
 **Card view** — the same data as cards (toggle persists):
 
@@ -395,13 +424,29 @@ DatIQ is a 3-screen single-page app with a persistent top navigation bar.
 
 ![DatIQ batch results](assets/screenshots/04-batch.png)
 
-Batch extracts many URLs in one run. Users **paste a list** (one URL per line) or **Import CSV**, choose an
-**intent** (same chips as single extraction), and run. A progress indicator tracks the run; on completion a
-**results table** lists each page with a summary snippet and per-URL status (failed URLs show a reason).
-All successful pages **auto-save to the Dashboard** and are grouped as one batch run. Results can be exported
-(CSV/PDF/Markdown/JSON) via a single **Export ▾** dropdown. The typed list is persisted (draft) so it survives
-refresh and back-navigation; **New batch** clears it. Per-URL extraction counts toward the monthly quota; plans
-cap URLs-per-batch.
+`<h1>` is **Batch extraction** (was "Multi-URL extraction"). This is a **run + results surface, not an entry
+point** — users arrive from the composer, the progress dock, or Dashboard run history. It is **not in the top
+nav**; `Extract` matches `/batch` too.
+
+**The run lives above the router.** `runBatch()` used to be called inside `Batch.jsx`'s component body,
+holding its `AbortController` and progress in that component's state — so **navigating away abandoned the
+run**. `src/components/BatchRunProvider.jsx` now owns it. Post-run persistence moved with it, because a run
+that finishes after the user has navigated away must still save and record itself.
+
+On completion a **results table** lists each page with a summary snippet and per-URL status, with **filter**
+(All / Success / Failed), **sort**, and a per-row **Retry**. All successful pages **auto-save to the
+Dashboard** and are grouped as one batch run. Results export via **Export ▾** (CSV/PDF/Markdown/JSON) and
+send via **Push ▾**.
+
+**Addressable results — `/batch?run=<id>`.** `saveBatchRun` stores **every row including failures**.
+Failures previously lived only in React state, so leaving the page lost the failure list *and* the per-row
+Retry. Dashboard cannot stand in: only successes are saved as extractions, so a failed URL has no row there
+at all. Dashboard's run banner links back when a run had failures. Archived rows carry
+`url/status/error/title` only — enough for the table, filters, sort and Retry, but not heading/link counts;
+the saved pages are on Dashboard and the results view says so.
+
+The typed list is persisted (draft) so it survives refresh and back-navigation; **New batch** clears it.
+Per-URL extraction counts toward the monthly quota; plans cap URLs-per-batch.
 
 ### 7.5 Screen 5 — Schedules (Monitoring) · route `/schedules`
 
@@ -414,6 +459,23 @@ editor sets URL, intent, a **cadence** (presets or a custom frequency · day · 
 detail panel; each supports **Run now** (with change detection), **Edit**, **Pause/Resume**, and **Delete**.
 Automated (hourly) runs detect changes, record them, and fire the alert email + automation webhook; the manual
 **Run now** is client-side and only reports the change on screen.
+
+**Schedules require auth to be real — this was a functional bug.** `saveSchedule` posts to `/api/schedules`;
+a signed-out user got 401, and `schedulerService.shouldFallback` treated 401 as "backend unreachable",
+keeping the schedule in `localStorage`. But what *executes* schedules is
+`netlify/functions/scheduled-runner.js` — hourly, reading Supabase, with no view of a browser's storage.
+**The schedule listed as active, advertised a next run time, and was inert.** The same-named helper in
+`extractionsRepo` lists 401 **correctly**, because an extraction in localStorage still works; that asymmetry
+is now stated in both files, since sharing a function name is what made them look interchangeable.
+
+- 401/403 removed from `schedulerService.shouldFallback`; `saveSchedule` rethrows and rolls the optimistic
+  local write back. Reads (list/delete/toggle) still tolerate auth errors.
+- `ScheduleEditor` stashes the schedule (`lib/pendingSchedule.js`, **sessionStorage** — OAuth navigates the
+  document away and back) and prompts sign-in. A global `PendingScheduleFlush` saves it once a session
+  exists, triggering on *the presence of a stash plus a user*, **not** a signed-out → signed-in transition:
+  an OAuth callback can land with the session already restored, so the transition may never be observed.
+- Any schedule that did degrade to local-only is flagged `_localOnly`; the card says **"Not running" /
+  "Sign in to start this schedule"** instead of a fake next run.
 
 ### 7.6 Modals & system UI
 
@@ -479,7 +541,25 @@ Concrete, step-by-step task recipes (ideal chatbot "how do I…" answers).
 | **PDF** | Same scope | Same complete content as a formatted report | jsPDF, **lazy-loaded** only on click |
 | **Email** | Selected rows | Title, URL, AI summary, heading/link counts per page | Delivery chain: webhook → email API → `mailto` fallback |
 
-**Export scope rule:** if you've selected rows, exports use the selection; otherwise they export everything currently matching the search. Each exported page is **hydrated** with its enrichments from both local cache and Supabase before export, so nothing is missed.
+**Export scope rule:** if you've selected rows, exports use the selection; otherwise they export everything currently matching the search. Implemented once as `exportTargets()` and shared with **Push**, so the two menus can never disagree about scope. Each exported page is **hydrated** with its enrichments from both local cache and Supabase before export, so nothing is missed.
+
+### Export ▾ vs Push ▾ — one affordance each
+
+Destinations used to be reachable two ways with two different lists: the Push menu (HubSpot / Notion /
+Airtable / Slack) and `Export ▾ → Send to →` the `ExportIntegrations` modal (those four **plus Google
+Sheets**) — the shorter list being the more prominent one.
+
+- **Google Sheets is not a push**: nothing to authorise, it downloads a CSV and opens a blank sheet. It is
+  now a row in the Push menu marked *"No setup needed"*, running the same `openInGoogleSheets()` helper, and
+  is deliberately **not** a `PUSH_PROVIDER`.
+- **"Send to" is gone from all three Export dropdowns** (Batch, Dashboard header, Dashboard selection).
+  Export ▾ is downloads + clipboard only.
+- The button is always **"Push"**, never "Push N" — the count belongs in the menu header.
+- `ExportIntegrations` is **not deleted**: its Airtable pane carries the only "Load columns" recovery for an
+  empty `field_map`, which nothing else offers (Account → Integrations has no field mapping). It moved
+  behind an optional **"More destination options…"** link inside the Push menu.
+- `PushIntegrationMenu`'s `compact` prop now has **no caller** (the floating bar was its only one). Kept —
+  it is part of the component's documented API.
 
 ---
 
