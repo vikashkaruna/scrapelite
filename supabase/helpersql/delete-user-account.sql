@@ -83,9 +83,16 @@ begin
     'summary_feedback', 'billing_notice_log', 'billing_identity_links',
     'entitlements', 'invoice_drafts',
     'invoices', 'payment_events', 'subscriptions', 'usage_records',
-    'coupon_redemptions', 'analytics_events'
+    'analytics_events'
   ] loop
-    if to_regclass('public.' || table_name) is not null then
+    if to_regclass('public.' || table_name) is not null
+       and exists (
+         select 1 from pg_attribute a
+         join pg_class c on c.oid = a.attrelid
+         join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'public' and c.relname = table_name
+           and a.attname = 'user_id' and not a.attisdropped
+       ) then
       execute format('delete from public.%I where user_id::text = $1::text', table_name) using target.id;
       get diagnostics row_count = row_count;
       row_counts := row_counts || jsonb_build_object(table_name, row_count);
