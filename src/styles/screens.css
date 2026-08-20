@@ -7524,7 +7524,11 @@
    consent. It auto-hides on its own timer instead (see ConsentBanner.jsx) —
    that's a visual fade, not a recorded decision. See ConsentBanner.jsx. */
 .consent-banner-wrap {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  /* Consent must remain actionable even when the first-visit tour is open.
+     The tour backdrop covers the page, but it must never intercept Allow or
+     Decline; keeping this above .tour-root also makes the relationship
+     explicit instead of depending on DOM order. */
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9100;
   background: var(--surface);
   border-top: 1px solid var(--border);
   box-shadow: 0 -6px 20px -8px rgba(0, 0, 0, .18);

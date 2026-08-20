@@ -48,7 +48,7 @@ function spotlightStyle(anchor) {
   };
 }
 
-export default function OnboardingTour({ forceOpen = false, onClose }) {
+export default function OnboardingTour({ forceOpen = false, onClose, enabled = true }) {
   const [open, setOpen] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [anchor, setAnchor] = useState(null);
@@ -56,21 +56,56 @@ export default function OnboardingTour({ forceOpen = false, onClose }) {
 
   useEffect(() => {
     if (forceOpen) { setOpen(true); return; }
-    if (!isTourCompleted() && !isTourSkipped()) {
+    if (enabled && !isTourCompleted() && !isTourSkipped()) {
       // Auto-start for first-time visitors.
       setOpen(true);
     }
-  }, [forceOpen]);
+  }, [forceOpen, enabled]);
 
   useEffect(() => {
     if (!open) return;
     const step = steps[stepIdx];
     if (!step) return;
-    setAnchor(computeAnchor(step.target, step.placement));
-    // Re-anchor on resize so the spotlight tracks the target.
+    let disposed = false;
+    let attempts = 0;
+    let retryTimer;
+    let resizeObserver;
+
+    // Home's composer and outcome sections render below the app shell. The
+    // old one-shot lookup ran before those nodes existed, leaving later tour
+    // steps with no spotlight and a misleadingly positioned popover. Retry
+    // briefly while React/layout settles, then keep a centered fallback.
+    const locate = () => {
+      if (disposed) return;
+      const next = computeAnchor(step.target, step.placement);
+      setAnchor(next);
+      if (next) {
+        const target = document.querySelector(step.target);
+        if (target && typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => {
+            if (!disposed) setAnchor(computeAnchor(step.target, step.placement));
+          });
+          resizeObserver.observe(target);
+        }
+        return;
+      }
+      if (step.target && attempts < 20) {
+        attempts += 1;
+        retryTimer = window.setTimeout(locate, 50);
+      }
+    };
+
+    locate();
+
+    // Re-anchor on resize so the spotlight tracks responsive layout.
     const onResize = () => setAnchor(computeAnchor(step.target, step.placement));
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      disposed = true;
+      window.clearTimeout(retryTimer);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
   }, [open, stepIdx, steps]);
 
   // Esc closes the tour.
