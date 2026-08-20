@@ -26,6 +26,8 @@
 // holder, and RLS further restricts row visibility). v1.1 should switch to
 // pgcrypto envelope encryption; flagged in INTEGRATIONS.md.
 
+import { protectConnectionFields, revealConnectionSecrets } from "./integrationSecrets.js";
+
 function getServiceDb(env = process.env) {
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const key = env.SUPABASE_SERVICE_KEY;
@@ -63,7 +65,15 @@ export async function getConnection({ userId, provider, db, env, includeSecrets 
   }
   if (!res.ok) return { ok: false, error: `upstream_${res.status}` };
   const rows = await res.json();
-  return { ok: true, connection: Array.isArray(rows) && rows[0] ? rows[0] : null };
+  let connection = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (connection && includeSecrets) {
+    try {
+      connection = revealConnectionSecrets(connection, env);
+    } catch (err) {
+      return { ok: false, error: "credential_decryption_failed", message: err?.message };
+    }
+  }
+  return { ok: true, connection };
 }
 
 /**
@@ -76,11 +86,16 @@ export async function upsertConnection({ userId, provider, fields, db, env } = {
   if (!userId || !provider) return { ok: false, error: "missing_args" };
 
   const allowed = ["access_token", "refresh_token", "scopes", "account_id", "account_label", "expires_at", "config"];
-  const patch = {};
+  let patch = {};
   for (const k of allowed) {
     if (fields && Object.prototype.hasOwnProperty.call(fields, k)) patch[k] = fields[k];
   }
   patch.updated_at = new Date().toISOString();
+  try {
+    patch = protectConnectionFields(patch, env);
+  } catch (err) {
+    return { ok: false, error: "credential_encryption_failed", message: err?.message };
+  }
 
   // 1. Try PATCH first (idempotent update of an existing row)
   const matchQs = new URLSearchParams({

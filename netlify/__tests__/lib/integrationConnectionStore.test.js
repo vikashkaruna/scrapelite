@@ -85,6 +85,7 @@ describe("integrationConnectionStore", () => {
     vi.stubGlobal("fetch", fetchMock);
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_KEY = "service-key";
+    process.env.INTEGRATION_SECRETS_KEY = "test-only-integration-key";
   });
   afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -112,6 +113,8 @@ describe("integrationConnectionStore", () => {
       const r = await getConnection({
         userId: "u1", provider: "hubspot", includeSecrets: true, db: TEST_DB,
       });
+      // This fixture represents a legacy plaintext row; reads remain
+      // compatible while newly-written values are encrypted.
       expect(r.connection.access_token).toBe("secret");
     });
     it("returns null connection when nothing is stored", async () => {
@@ -146,7 +149,7 @@ describe("integrationConnectionStore", () => {
       });
       expect(r.ok).toBe(true);
       expect(state.integration_connections).toHaveLength(1);
-      expect(state.integration_connections[0].access_token).toBe("pat-xxx");
+      expect(state.integration_connections[0].access_token).toMatch(/^enc:v1:/);
     });
     it("updates an existing row (idempotent)", async () => {
       const { mock, state } = makeDb();

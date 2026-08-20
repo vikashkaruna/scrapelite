@@ -48,7 +48,7 @@ export async function resolveSlackWebhook({ userId, overrideUrl } = {}) {
   if (overrideUrl) return overrideUrl;
   if (userId) {
     try {
-      const r = await getConnection({ userId, provider: "slack" });
+      const r = await getConnection({ userId, provider: "slack", includeSecrets: true });
       if (r && r.ok && r.connection && r.connection.config && r.connection.config.webhook_url) {
         return r.connection.config.webhook_url;
       }

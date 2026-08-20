@@ -61,7 +61,7 @@ async function authenticateRequest(event) {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleStatus(userId) {
-  const r = await getConnection({ userId, provider: "notion" });
+  const r = await getConnection({ userId, provider: "notion", includeSecrets: true });
   if (!r.ok) return respond(500, { error: r.error });
   if (!r.connection) return respond(200, { connected: false, provider: "notion" });
   const { access_token, refresh_token, config, ...safe } = r.connection;

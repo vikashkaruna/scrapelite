@@ -23,14 +23,16 @@ import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
 import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
+import { consumeGuestCredit } from "./lib/guestUsage.js";
 
-function respond(statusCode, body) {
+function respond(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   };
@@ -198,6 +200,20 @@ export const handler = async (event) => {
     return respond(400, { error: err.message || "Invalid URL" });
   }
 
+  const guestUsage = await consumeGuestCredit(event, "single");
+  const reply = (statusCode, body) => respond(
+    statusCode,
+    body,
+    guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {},
+  );
+  if (!guestUsage.allowed) {
+    return reply(429, {
+      error: "Guest extraction limit reached. Sign in to continue.",
+      code: guestUsage.reason || "single_limit_reached",
+      remaining: 0,
+    });
+  }
+
   // Subscription gate. Placed AFTER the SSRF guard (never spend a DB round-trip
   // on a request we are about to reject anyway) and BEFORE any provider call.
   //
@@ -207,7 +223,7 @@ export const handler = async (event) => {
   // asymmetry is deliberate and must not be "fixed".
   try {
     const { check } = await requireCapability(event, "extract");
-    if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
+    if (!check.allowed) return reply(DENY_STATUS, denyBody(check));
   } catch (err) {
     console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
   }
@@ -219,7 +235,7 @@ export const handler = async (event) => {
         permittedHosts: process.env.PERMITTED_HOSTS || "",
       });
       if (!compliance.allowed) {
-        return respond(403, {
+        return reply(403, {
           error: compliance.reason,
           _complianceBlocked: true,
           _crawlDelayMs: compliance.crawlDelayMs,
@@ -245,12 +261,12 @@ export const handler = async (event) => {
     if (options.mapMode) {
       const result = await runMapChain(url);
       if (!result.ok) {
-        return respond(502, {
+        return reply(502, {
           error: result.error,
           _providerAttempts: result.attempts,
         });
       }
-      return respond(200, {
+      return reply(200, {
         mapLinks: result.mapLinks,
         source: result.source,
         _providerAttempts: result.attempts,
@@ -269,7 +285,7 @@ export const handler = async (event) => {
       } catch { /* cache miss on any error */ }
     }
     if (cacheHit && cacheHit.result) {
-      return respond(200, {
+      return reply(200, {
         data: cacheHit.result.data,
         source: `${cacheHit.result.source || "cache"} (cached)`,
         _cacheHit: true,
@@ -279,7 +295,7 @@ export const handler = async (event) => {
     // ── Scrape mode: extract page HTML + metadata ────────────────────────────
     const result = await runScrapeChain(url, options);
     if (!result.ok) {
-      return respond(502, {
+      return reply(502, {
         error: result.error,
         _providerAttempts: result.attempts,
       });
@@ -382,8 +398,8 @@ export const handler = async (event) => {
       } catch { /* cache write failure is non-fatal */ }
     }
 
-    return respond(200, responseBody);
+    return reply(200, responseBody);
   } catch (err) {
-    return respond(502, { error: `Scrape chain failed: ${err.message}` });
+    return reply(502, { error: `Scrape chain failed: ${err.message}` });
   }
 };

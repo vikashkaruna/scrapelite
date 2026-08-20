@@ -70,7 +70,7 @@ async function probeAirtable(apiKey) {
 }
 
 async function handleStatus(userId) {
-  const r = await getConnection({ userId, provider: "airtable" });
+  const r = await getConnection({ userId, provider: "airtable", includeSecrets: true });
   if (!r.ok) return respond(500, { error: r.error });
   if (!r.connection) return respond(200, { connected: false, provider: "airtable" });
   const { access_token, refresh_token, config, ...safe } = r.connection;

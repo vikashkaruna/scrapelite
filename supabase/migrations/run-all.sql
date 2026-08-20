@@ -38,6 +38,8 @@
 --   0022  v2 plan: workflow_events / workflow_runs / workflow_subscriptions.
 --   0023  0023_consent.sql
 --   0024  0024_analytics_rls.sql
+--   0025  0025_gallery_curation.sql
+--   0026  Server-authoritative anonymous identity and usage counters.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -2228,6 +2230,123 @@ end $$;
 create index if not exists analytics_events_user_not_null_idx
   on public.analytics_events (user_id)
   where user_id is not null;
+
+
+-- ============================================================
+-- 0025_gallery_curation.sql
+-- ============================================================
+-- 0025_gallery_curation.sql
+-- Persona tagging + a human-verified promotion step for the public gallery
+-- (/gallery, public_reports — see 0007_public_reports.sql).
+--
+-- ── Why ──────────────────────────────────────────────────────────────────
+-- Today anything in public_reports is anon-insertable (0007's "anon insert"
+-- policy is `with check (true)` by design — we never reject a share because
+-- the visitor isn't signed in) and shows up in /gallery immediately. That's
+-- correct for "share my one extraction with a colleague," but it means
+-- /gallery itself is just a feed of whatever anonymous visitors happened to
+-- share, not a curated showcase — there is no way to say "these N reports
+-- are good examples of what a sales / SEO / recruiter persona can do here."
+--
+-- This migration adds that as pure metadata on top of the existing table.
+-- It does NOT touch is_public or any existing RLS policy: curating a report
+-- is a promotion within already-public rows, not a new publish path, and a
+-- report a user shared and later deletes is still governed by the existing
+-- owner-delete policy regardless of whether it was ever curated.
+--
+-- The verification step itself is enforced by netlify/functions/admin-gallery.js
+-- (verifyAdminToken()-gated, same pattern as admin-revenue.js / admin-monitoring.js)
+-- — this migration only adds the columns that record that a human reviewed
+-- the row before curated flipped to true. It cannot itself prove a human
+-- looked; that's the admin function's job, not the schema's.
+
+alter table public.public_reports
+  add column if not exists persona     text,
+  add column if not exists curated     boolean not null default false,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists reviewed_by text;
+
+-- Kept nullable and constrained rather than an enum: the 7 ids live in
+-- src/lib/personaConfig.js (application code, not the DB), and a CHECK that
+-- mirrors them catches a typo in the admin UI without requiring a migration
+-- every time a persona is renamed — update this list alongside personaConfig.js.
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'public_reports_persona_check'
+  ) then
+    alter table public.public_reports
+      add constraint public_reports_persona_check
+      check (persona is null or persona in (
+        'sales', 'competitive-intel', 'seo', 'market-research',
+        'recruiter', 'founder-vc', 'agency'
+      ));
+  end if;
+end $$;
+
+-- /gallery's persona filter reads "curated rows for persona X" — this is
+-- its hot path, so it gets its own partial index rather than relying on the
+-- existing created_at index to filter after the fact.
+create index if not exists public_reports_curated_persona_idx
+  on public.public_reports (persona, created_at desc)
+  where curated = true;
+
+
+-- ============================================================
+-- 0026_guest_identity_usage.sql
+-- ============================================================
+-- Server-authoritative anonymous identity and usage counters.
+-- Raw guest identifiers are never stored; the server stores only a SHA-256 hash.
+
+create table if not exists public.guest_identities (
+  id            uuid primary key default gen_random_uuid(),
+  token_hash    text not null unique,
+  single_count  integer not null default 0 check (single_count >= 0),
+  batch_count   integer not null default 0 check (batch_count >= 0),
+  created_at    timestamptz not null default now(),
+  last_seen_at  timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists guest_identities_last_seen_idx on public.guest_identities (last_seen_at);
+alter table public.guest_identities enable row level security;
+
+create or replace function public.consume_guest_credit(
+  p_token_hash text,
+  p_kind text default 'single',
+  p_single_limit integer default 10,
+  p_batch_limit integer default 5
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare row_guest public.guest_identities; current_count integer; max_count integer;
+begin
+  if p_token_hash is null or length(trim(p_token_hash)) < 32 then
+    return jsonb_build_object('allowed', false, 'reason', 'invalid_guest_identity', 'remaining', 0);
+  end if;
+  insert into public.guest_identities (token_hash) values (p_token_hash) on conflict (token_hash) do nothing;
+  select * into row_guest from public.guest_identities where token_hash = p_token_hash for update;
+  if p_kind = 'batch' then
+    current_count := row_guest.batch_count; max_count := greatest(coalesce(p_batch_limit, 5), 1);
+  else
+    current_count := row_guest.single_count; max_count := greatest(coalesce(p_single_limit, 10), 1);
+  end if;
+  if current_count >= max_count then
+    update public.guest_identities set last_seen_at = now(), updated_at = now() where id = row_guest.id;
+    return jsonb_build_object('allowed', false, 'reason', p_kind || '_limit_reached', 'remaining', 0, 'kind', p_kind);
+  end if;
+  if p_kind = 'batch' then
+    update public.guest_identities set batch_count = batch_count + 1, last_seen_at = now(), updated_at = now() where id = row_guest.id;
+    current_count := row_guest.batch_count + 1;
+  else
+    update public.guest_identities set single_count = single_count + 1, last_seen_at = now(), updated_at = now() where id = row_guest.id;
+    current_count := row_guest.single_count + 1;
+  end if;
+  return jsonb_build_object('allowed', true, 'remaining', greatest(max_count - current_count, 0), 'kind', p_kind);
+end;
+$$;
+
+revoke all on public.guest_identities from anon, authenticated;
+revoke all on function public.consume_guest_credit(text, text, integer, integer) from public, anon, authenticated;
+grant execute on function public.consume_guest_credit(text, text, integer, integer) to service_role;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

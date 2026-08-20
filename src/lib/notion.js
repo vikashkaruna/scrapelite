@@ -29,6 +29,8 @@ const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 const MAX_REQUESTS_PER_PUSH = 25;
 
+import { canonicalSourceUrl, sourceUrlField } from "./urlIdentity.js";
+
 // ── Pure helpers (unit-testable) ─────────────────────────────────────────────
 
 /**
@@ -130,6 +132,40 @@ export function buildNotionPageBody(extraction, { databaseId, schema } = {}) {
   };
 }
 
+export function buildNotionUrlQuery(databaseId, schema, url) {
+  const field = sourceUrlField(schema);
+  const canonical = canonicalSourceUrl(url);
+  if (!databaseId || !canonical) return null;
+  return {
+    url: `${NOTION_API_BASE}/databases/${String(databaseId).replace(/-/g, "")}/query`,
+    body: { page_size: 1, filter: { property: field, url: { equals: canonical } } },
+  };
+}
+
+async function findNotionPage({ apiKey, databaseId, schema, url, fetchFn }) {
+  const query = buildNotionUrlQuery(databaseId, schema, url);
+  if (!query) return { ok: false, error: "A valid source URL is required for deduplication." };
+  const res = await fetchFn(query.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json", "Notion-Version": NOTION_VERSION },
+    body: JSON.stringify(query.body),
+  });
+  if (!res.ok) return { ok: false, error: `Notion deduplication query failed (${res.status}).` };
+  const data = await res.json();
+  return { ok: true, page: data?.results?.[0] || null };
+}
+
+async function updateNotionPage({ apiKey, pageId, properties, fetchFn }) {
+  const res = await fetchFn(`${NOTION_API_BASE}/pages/${encodeURIComponent(pageId)}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json", "Notion-Version": NOTION_VERSION },
+    body: JSON.stringify({ properties }),
+  });
+  if (!res.ok) return { ok: false, error: `Notion update failed (${res.status}).` };
+  const data = await res.json().catch(() => ({}));
+  return { ok: true, id: data?.id || pageId };
+}
+
 /**
  * Validate a Notion config. Secret starts with "secret_" or "ntn_" (new
  * format) per Notion docs. Database ID is a 32-char hex.
@@ -196,6 +232,8 @@ export async function pushToNotion(items, { apiKey, databaseId, schema, fetchFn 
 
   const slice = list.slice(0, MAX_REQUESTS_PER_PUSH);
   let pushed = 0;
+  let created = 0;
+  let updated = 0;
   const failedRecords = [];
 
   for (const item of slice) {
@@ -208,13 +246,18 @@ export async function pushToNotion(items, { apiKey, databaseId, schema, fetchFn 
     }
     let res;
     try {
+      const existing = await findNotionPage({ apiKey, databaseId, schema: schema || defaultNotionSchema(), url: item?.url, fetchFn: f });
+      if (!existing.ok) throw new Error(existing.error);
+      if (existing.page?.id) {
+        const result = await updateNotionPage({ apiKey, pageId: existing.page.id, properties: body.properties, fetchFn: f });
+        if (!result.ok) throw new Error(result.error);
+        updated++;
+        pushed++;
+        continue;
+      }
       res = await f(`${NOTION_API_BASE}/pages`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-          "Notion-Version": NOTION_VERSION,
-        },
+        headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json", "Notion-Version": NOTION_VERSION },
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -231,10 +274,13 @@ export async function pushToNotion(items, { apiKey, databaseId, schema, fetchFn 
       continue;
     }
     pushed++;
+    created++;
   }
   return {
     ok: failedRecords.length === 0,
     pushed,
+    created,
+    updated,
     total: list.length,
     errors: failedRecords.length ? [`${failedRecords.length} page(s) failed`] : [],
     failedRecords,

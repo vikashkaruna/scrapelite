@@ -26,6 +26,8 @@ const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 const MAX_RECORDS_PER_REQUEST = 10;
 const MAX_REQUESTS_PER_PUSH = 10; // hard cap: 100 records per push
 
+import { canonicalSourceUrl, sourceUrlField } from "./urlIdentity.js";
+
 // ── Pure helpers (unit-testable, no fetch) ──────────────────────────────────
 
 /**
@@ -199,6 +201,15 @@ export function buildAirtableRequestUrl(baseId, tableId) {
   return `${AIRTABLE_API_BASE}/${b}/${t}`;
 }
 
+export function buildAirtableDedupUrl(baseId, tableId, fieldMap, sourceUrl) {
+  const canonical = canonicalSourceUrl(sourceUrl);
+  if (!canonical) return null;
+  const field = sourceUrlField(fieldMap);
+  const escaped = canonical.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const formula = `{${field}}=\"${escaped}\"`;
+  return `${buildAirtableRequestUrl(baseId, tableId)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
+}
+
 /**
  * Fetch a table's schema (field list). Hits the Airtable Meta API:
  *   GET /v0/meta/bases/{baseId}/tables/{tableId}
@@ -272,59 +283,63 @@ export async function pushToAirtable(items, { apiKey, baseId, tableId, fieldMap,
   const chunks = chunkForAirtable(list).slice(0, MAX_REQUESTS_PER_PUSH);
   const url = buildAirtableRequestUrl(baseId, tableId);
   let pushed = 0;
+  let created = 0;
+  let updated = 0;
   const failedRecords = [];
   for (const chunk of chunks) {
-    const body = buildAirtableRequestBody(chunk, fieldMap);
-    let res;
-    try {
-      res = await fetchFn(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      failedRecords.push(...chunk.map((it) => ({ url: it?.url, error: err?.message || "network error" })));
-      continue;
-    }
-    if (!res.ok) {
-      let msg = `Airtable ${res.status}`;
-      let unknownFields = [];
+    for (const item of chunk) {
+      const body = buildAirtableRequestBody([item], fieldMap);
+      let res;
       try {
-        const data = await res.json();
-        if (data?.error?.message) msg = `${msg}: ${data.error.message}`;
-        // Airtable's 422 for unknown fields includes the rejected field
-        // names in error.message like: `Unknown field name: "URL"`
-        // We surface them so the user knows exactly which columns to
-        // rename or add in Airtable (and offer a hint to load the
-        // table's actual columns if they haven't yet).
-        if (typeof data?.error?.message === "string") {
-          const matches = data.error.message.match(/"([^"]+)"/g);
-          if (matches) unknownFields = matches.map((s) => s.replace(/"/g, ""));
+        const dedupUrl = buildAirtableDedupUrl(baseId, tableId, fieldMap, item?.url);
+        if (!dedupUrl) throw new Error("A valid source URL is required for deduplication.");
+        const lookup = await fetchFn(dedupUrl, { method: "GET", headers: { Authorization: `Bearer ${apiKey.trim()}` } });
+        if (!lookup.ok) {
+          let message = `Airtable deduplication query failed (${lookup.status}).`;
+          const unknownFields = [];
+          try {
+            const data = await lookup.json();
+            if (data?.error?.message) message += ` ${data.error.message}`;
+            const matches = typeof data?.error?.message === "string" ? data.error.message.match(/"([^"]+)"/g) : null;
+            if (matches) unknownFields.push(...matches.map((s) => s.replace(/"/g, "")));
+          } catch { /* body wasn't JSON */ }
+          if (lookup.status === 422 && unknownFields.length) {
+            message += ` These field names do not exist in the Airtable table; rename your Airtable columns or click Load columns to map them.`;
+          }
+          const error = new Error(message);
+          error.unknownFields = unknownFields;
+          throw error;
         }
-        if (data?.error?.type === "UNKNOWN_FIELD_NAME" && unknownFields.length === 0) {
-          unknownFields = ["(unknown — see error message)"];
+        const matches = await lookup.json();
+        const existing = matches?.records?.[0];
+        if (existing?.id) {
+          res = await fetchFn(`${buildAirtableRequestUrl(baseId, tableId)}/${encodeURIComponent(existing.id)}`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ fields: body.records[0].fields, typecast: true }),
+          });
+          if (!res.ok) throw new Error(`Airtable update failed (${res.status}).`);
+          updated++;
+        } else {
+          res = await fetchFn(url, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) throw new Error(`Airtable create failed (${res.status}).`);
+          created++;
         }
-      } catch { /* body wasn't JSON */ }
-      if (res.status === 422 && unknownFields.length > 0) {
-        msg += ` — these field names don't exist in your Airtable table. ` +
-               `Either rename your Airtable columns to match (e.g. "URL", "Title", "Host", "Summary") or click "Load columns" to map our fields to your columns.`;
+        pushed++;
+      } catch (err) {
+        failedRecords.push({ url: item?.url, error: err?.message || "network error", ...(err?.unknownFields?.length ? { unknownFields: err.unknownFields } : {}) });
       }
-      failedRecords.push(...chunk.map((it) => ({ url: it?.url, error: msg, unknownFields })));
-      continue;
-    }
-    try {
-      const data = await res.json();
-      pushed += Array.isArray(data?.records) ? data.records.length : chunk.length;
-    } catch {
-      pushed += chunk.length;
     }
   }
   return {
     ok: failedRecords.length === 0,
     pushed,
+    created,
+    updated,
     total: list.length,
     errors: failedRecords.length ? [`${failedRecords.length} record(s) failed`] : [],
     failedRecords,
