@@ -143,6 +143,10 @@ export default function AdminGallery() {
     if (filter === "uncurated") return !r.curated;
     return true;
   });
+  const coverage = PERSONAS.map((p) => ({
+    ...p,
+    count: reports.filter((r) => r.curated && r.persona === p.id).length,
+  }));
 
   if (loading) {
     return (
@@ -179,6 +183,15 @@ export default function AdminGallery() {
           <Icon name="alert-circle" size={15} /><span>{error}</span>
         </div>
       )}
+
+      <div className="admin-gallery-coverage" aria-label="Gallery persona coverage">
+        {coverage.map((p) => (
+          <span key={p.id} className={`admin-gallery-coverage-pill${p.count ? " covered" : " missing"}`}>
+            <Icon name={p.count ? "check-circle" : "alert-circle"} size={12} />
+            {p.label}: {p.count}
+          </span>
+        ))}
+      </div>
 
       <div className="admin-gallery-filter-row">
         {[

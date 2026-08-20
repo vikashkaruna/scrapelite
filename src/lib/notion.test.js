@@ -208,13 +208,17 @@ describe("notion (F18)", () => {
     });
 
     it("posts one page per item and aggregates results", async () => {
-      const fetchFn = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "p" }) });
+      const fetchFn = vi.fn().mockImplementation(async (url) =>
+        url.includes("/query")
+          ? { ok: true, status: 200, json: async () => ({ results: [] }) }
+          : { ok: true, status: 200, json: async () => ({ id: "p" }) },
+      );
       const items = [
         { url: "https://a.com", page_title: "A", host: "a.com", ai_summary: "s" },
         { url: "https://b.com", page_title: "B", host: "b.com", ai_summary: "s" },
       ];
       const r = await pushToNotion(items, { ...validConfig, fetchFn });
-      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(fetchFn).toHaveBeenCalledTimes(4); // query + create per item
       expect(r.pushed).toBe(2);
       expect(r.ok).toBe(true);
     });

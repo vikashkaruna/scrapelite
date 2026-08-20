@@ -24,6 +24,8 @@ import { saveExtraction } from "../lib/extractionsRepo.js";
 import { saveEnrichment } from "../lib/enrichmentStore.js";
 import { saveBatchRun, recordBatchItems, makeBatchLabel } from "../lib/batchRunsService.js";
 import { uid } from "../lib/utils.js";
+import { apiClient } from "../lib/apiClient.js";
+import { useAuth } from "./AuthProvider.jsx";
 
 const BatchRunContext = createContext({
   job: null,
@@ -53,6 +55,7 @@ export function BatchRunProvider({ children }) {
   const showToast = useToast();
   const billing = useBilling();
   const guestTrial = useGuestTrial();
+  const { user } = useAuth();
 
   // { status: "running" | "done", completed, total, current, runId, background }
   const [job, setJob] = useState(null);
@@ -79,6 +82,18 @@ export function BatchRunProvider({ children }) {
   const startBatchRun = useCallback(async ({ urls, intent, personaId, renderJs, customPrompt, generateContent, background }) => {
     // Guest gate — same single guard every extraction entry point uses.
     if (guestTrial?.requireGuestCredit?.("batch") === false) return null;
+    if (!user) {
+      try {
+        await apiClient.consumeGuestCredit("batch");
+      } catch (err) {
+        if (err?.status === 429) {
+          showToast("Guest batch limit reached. Sign in to continue.");
+          return null;
+        }
+        // The server deliberately fails open when its usage store is
+        // unavailable; preserve that behavior in the client.
+      }
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -197,7 +212,7 @@ export function BatchRunProvider({ children }) {
       guestTrial?.trackGuestBatchRun?.(1);
       abortRef.current = null;
     }
-  }, [billing, guestTrial, showToast]);
+  }, [billing, guestTrial, showToast, user]);
 
   const viewBatchRun = useCallback(() => {
     if (!job?.runId) return;

@@ -264,7 +264,12 @@ function Shell() {
           Global because OAuth navigates the document away and back. */}
       <PendingScheduleFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
-      <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
+      <OnboardingTour
+        key={tourForceOpen}
+        forceOpen={tourForceOpen > 0}
+        enabled={pathname === "/"}
+        onClose={() => setTourForceOpen(0)}
+      />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
       {/* Non-blocking background-extraction progress dock (replaces the old
           full-screen LoadingScreen). Global so it persists across route changes. */}

@@ -73,13 +73,17 @@
 
   var stored = readStored();
 
-  // ── Consent Mode v2 ───────────────────────────────────────────────────────
-  // Everything that can identify a visitor defaults to DENIED. In that state
-  // Google still receives cookieless, non-identifying pings, so aggregate
-  // traffic is modelled without storing anything on the device — which is what
-  // makes a default-denied posture workable under GDPR and the DPDP Act.
-  // functionality/security storage stay granted: they are not tracking.
-  if (!disabled) {
+  // ── Consent Mode v2 + strict loader ───────────────────────────────────────
+  // Consent Mode can legally send cookieless pings while storage is denied,
+  // but that is surprising when a visitor explicitly declines analytics. The
+  // loader therefore stays completely inactive until consent is granted. This
+  // still applies Consent Mode defaults before gtag.js is injected for the
+  // granted path, and means a decline produces no Google request or cookie.
+  var tagLoaded = false;
+  var consentDefaultSet = false;
+
+  function setConsentDefault() {
+    if (disabled || consentDefaultSet) return;
     gtag("consent", "default", {
       ad_storage: "denied",
       ad_user_data: "denied",
@@ -89,10 +93,13 @@
       security_storage: "granted",
       wait_for_update: 500,
     });
+    consentDefaultSet = true;
+  }
 
-    if (stored && stored.analytics === "granted") {
-      gtag("consent", "update", { analytics_storage: "granted" });
-    }
+  function loadTag() {
+    if (disabled || tagLoaded || readStored()?.analytics !== "granted") return false;
+    setConsentDefault();
+    gtag("consent", "update", { analytics_storage: "granted" });
 
     var s = document.createElement("script");
     s.async = true;
@@ -107,7 +114,13 @@
       // document.title — otherwise every hit records the previous page's title.
       send_page_view: !isSpa,
     });
+    tagLoaded = true;
+    return true;
   }
+
+  // A previously granted choice can activate immediately. No choice and a
+  // stored denial deliberately leave gtag.js unloaded.
+  loadTag();
 
   // ── Public API ────────────────────────────────────────────────────────────
   // src/lib/consentService.js talks to this, so React never touches gtag and
@@ -115,19 +128,37 @@
   window.__datiqConsent = {
     measurementId: MEASUREMENT_ID,
     enabled: !disabled,
+    active: function () { return tagLoaded; },
     get: function () { return readStored(); },
     set: function (choice) {
       if (choice !== "granted" && choice !== "denied") return;
       if (disabled) return;
+      if (choice === "granted") {
+        loadTag();
+      }
       gtag("consent", "update", {
         analytics_storage: choice === "granted" ? "granted" : "denied",
       });
+      if (choice === "denied") {
+        // GA cookies are first-party and can be removed by the page. This is
+        // best-effort; it cannot remove HttpOnly cookies or data already held
+        // by Google, but it prevents continued browser-side identification.
+        document.cookie.split(";").forEach(function (part) {
+          var name = part.split("=")[0].trim();
+          if (/^_ga(?:_|$)/.test(name)) {
+            document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+          }
+        });
+      }
+      window.dispatchEvent(new CustomEvent(
+        choice === "granted" ? "datiq:analytics-enabled" : "datiq:analytics-disabled",
+      ));
     },
     // The GA4 User Deletion API keys on client_id, so we capture it at consent
     // time. Without it a later "erase my analytics data" request has no handle
     // on the Google side. Callback-based because that is gtag's own signature.
     clientId: function (cb) {
-      if (disabled || typeof cb !== "function") { return void (cb && cb(null)); }
+      if (disabled || !tagLoaded || typeof cb !== "function") { return void (cb && cb(null)); }
       try { gtag("get", MEASUREMENT_ID, "client_id", cb); }
       catch (e) { cb(null); }
     },

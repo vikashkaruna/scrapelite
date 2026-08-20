@@ -64,7 +64,7 @@ async function authenticateRequest(event) {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleStatus(userId) {
-  const r = await getConnection({ userId, provider: "slack" });
+  const r = await getConnection({ userId, provider: "slack", includeSecrets: true });
   if (!r.ok) return respond(500, { error: r.error });
   if (!r.connection) {
     return respond(200, {
@@ -190,7 +190,7 @@ async function handleDisconnect(userId) {
 }
 
 async function handleTest(event, userId) {
-  const conn = await getConnection({ userId, provider: "slack" });
+  const conn = await getConnection({ userId, provider: "slack", includeSecrets: true });
   const webhookUrl = conn?.ok && conn.connection?.config?.webhook_url
     || process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) {

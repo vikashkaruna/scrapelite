@@ -39,6 +39,7 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
       readyState: "complete",
       head: { appendChild: (n) => injected.push(n) },
       body: { appendChild: (n) => injected.push(n) },
+      cookie: "",
       getElementById: () => null,
       createElement: (tag) => {
         const node = el();
@@ -54,6 +55,8 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
     Blob: class {},
     navigator: {},
     setTimeout,
+    CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
+    dispatchEvent() {},
   };
   if (runtime !== undefined) sandbox.__DATIQ_RUNTIME__ = runtime;
   sandbox.window = sandbox;
@@ -64,6 +67,7 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
   const scripts = injected.filter((n) => n.tagName === "SCRIPT");
   return {
     sandbox,
+    injected,
     dataLayer: sandbox.dataLayer || [],
     gtagSrc: scripts.map((s) => s._src).filter(Boolean),
     api: sandbox.__datiqConsent,
@@ -80,7 +84,7 @@ describe("analytics.js — measurement id resolution", () => {
   it("falls back to the built-in id when runtime-config has not run", () => {
     // Guards the load ORDER: if runtime-config.js has not executed, the key is
     // absent and we must still measure production rather than go dark.
-    const r = run({ runtime: undefined });
+    const r = run({ runtime: undefined, stored: { analytics: "granted" } });
     expect(r.loaded).toBe(true);
     expect(r.gtagSrc[0]).toContain("G-B0DZLRWG63");
   });
@@ -95,7 +99,7 @@ describe("analytics.js — measurement id resolution", () => {
   });
 
   it("uses a runtime-supplied id when present", () => {
-    const r = run({ runtime: { gaMeasurementId: "G-STAGING1" } });
+    const r = run({ runtime: { gaMeasurementId: "G-STAGING1" }, stored: { analytics: "granted" } });
     expect(r.gtagSrc[0]).toContain("G-STAGING1");
   });
 });
@@ -119,8 +123,14 @@ describe("analytics.js — where it refuses to run", () => {
   });
 
   it("the localhost escape hatch works for ordinary pages", () => {
-    const r = run({ hostname: "localhost", pathname: "/pricing", runtime: { gaDebugLocal: true } });
+    const r = run({ hostname: "localhost", pathname: "/pricing", runtime: { gaDebugLocal: true }, stored: { analytics: "granted" } });
     expect(r.loaded).toBe(true);
+  });
+
+  it("does not load on an ordinary page before an explicit choice", () => {
+    const r = run();
+    expect(r.loaded).toBe(false);
+    expect(r.api.active()).toBe(false);
   });
 });
 
@@ -128,7 +138,7 @@ describe("analytics.js — Consent Mode v2", () => {
   it("pushes the denied default BEFORE gtag.js is injected", () => {
     // Ordering is the whole guarantee. A default that arrives after gtag.js has
     // run is a default that did not apply, and cookies may already be set.
-    const r = run();
+    const r = run({ stored: { analytics: "granted" } });
     const c = calls(r.dataLayer);
     const defaultIdx = c.findIndex((a) => a[0] === "consent" && a[1] === "default");
     const jsIdx = c.findIndex((a) => a[0] === "js");
@@ -137,7 +147,7 @@ describe("analytics.js — Consent Mode v2", () => {
   });
 
   it("denies every identifying storage type by default", () => {
-    const c = calls(run().dataLayer);
+    const c = calls(run({ stored: { analytics: "granted" } }).dataLayer);
     const def = c.find((a) => a[0] === "consent" && a[1] === "default")[2];
     expect(def.analytics_storage).toBe("denied");
     expect(def.ad_storage).toBe("denied");
@@ -160,8 +170,17 @@ describe("analytics.js — Consent Mode v2", () => {
     expect(upd).toBeUndefined();
   });
 
+  it("loads only after the consent bridge receives an Allow choice", () => {
+    const r = run();
+    expect(r.loaded).toBe(false);
+    r.sandbox.localStorage.setItem("datiq.consent", JSON.stringify({ analytics: "granted" }));
+    r.api.set("granted");
+    expect(r.injected.some((node) => (node._src || "").includes("googletagmanager.com"))).toBe(true);
+    expect(r.api.active()).toBe(true);
+  });
+
   it("anonymises IP and never enables ads personalisation", () => {
-    const c = calls(run().dataLayer);
+    const c = calls(run({ stored: { analytics: "granted" } }).dataLayer);
     const cfg = c.find((a) => a[0] === "config");
     expect(cfg[2].anonymize_ip).toBe(true);
   });
@@ -171,13 +190,13 @@ describe("analytics.js — page_view ownership", () => {
   it("leaves page_view to the router on the SPA", () => {
     // usePageView fires it manually after useSeo has set the title. If gtag
     // also sent one, every SPA navigation would be counted twice.
-    const cfg = calls(run({ isSpa: true }).dataLayer).find((a) => a[0] === "config");
+    const cfg = calls(run({ isSpa: true, stored: { analytics: "granted" } }).dataLayer).find((a) => a[0] === "config");
     expect(cfg[2].send_page_view).toBe(false);
   });
 
   it("sends its own page_view on a static page", () => {
     // No router there, so this is the only one that will ever fire.
-    const cfg = calls(run({ isSpa: false }).dataLayer).find((a) => a[0] === "config");
+    const cfg = calls(run({ isSpa: false, stored: { analytics: "granted" } }).dataLayer).find((a) => a[0] === "config");
     expect(cfg[2].send_page_view).toBe(true);
   });
 });

@@ -17,11 +17,10 @@
 // ⚠️ Consequence: "Page changes based on browser history events" must be OFF in
 // the GA4 data stream. With both enabled every SPA navigation is counted twice.
 //
-// ── Why consent is not checked here ───────────────────────────────────────
-// It is enforced one level down, by Consent Mode: with analytics_storage denied
-// gtag sends a cookieless, non-identifying ping and stores nothing. Gating the
-// call here as well would throw away the modelled aggregate traffic that
-// default-denied Consent Mode is specifically designed to preserve.
+// ── Consent boundary ───────────────────────────────────────────────────────
+// The public analytics bridge strictly gates Google Analytics until consent is
+// granted. This hook still records DatIQ's first-party page_view independently,
+// but defers the Google page_view and replays it once the visitor opts in.
 
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
@@ -38,6 +37,7 @@ export function usePageView() {
   // re-renders without the location actually changing (provider state churn,
   // StrictMode's double-invoke in development).
   const lastPath = useRef(null);
+  const lastGooglePath = useRef(null);
 
   useEffect(() => {
     const path = `${location.pathname}${location.search || ""}`;
@@ -71,6 +71,11 @@ export function usePageView() {
     // belt-and-braces for a route that sets its title asynchronously.
     const timer = setTimeout(send, 0);
 
+    // A visitor may grant consent after the initial route has rendered. The
+    // internal DatIQ event is already recorded, but the first Google pageview
+    // must wait until the tag is active and then be sent exactly once.
+    window.addEventListener("datiq:analytics-enabled", sendGoogle);
+
     function send() {
       // Claim it here, at the moment the event goes out — see the note above.
       // Also guards the double-fire case: if two frames somehow both run, the
@@ -81,15 +86,7 @@ export function usePageView() {
       const title = typeof document !== "undefined" ? document.title : "";
       const href = typeof window !== "undefined" ? window.location.href : path;
 
-      try {
-        window.gtag?.("event", "page_view", {
-          page_path: path,
-          page_title: title,
-          page_location: href,
-        });
-      } catch {
-        /* analytics.js absent or blocked — never break navigation over a metric */
-      }
+      sendGoogle({ title, href });
 
       try {
         void lifecycle.pageView({ path, title });
@@ -98,7 +95,30 @@ export function usePageView() {
       }
     }
 
-    return () => clearTimeout(timer);
+    function sendGoogle(details = {}) {
+      const consent = window.__datiqConsent;
+      // In production the bridge is present and strict-gates the tag. The
+      // fallback keeps this hook harmless in tests/builds without analytics.js.
+      if (consent && consent.active && !consent.active()) return;
+      if (path === lastGooglePath.current) return;
+      lastGooglePath.current = path;
+      const googleTitle = details.title || (typeof document !== "undefined" ? document.title : "");
+      const googleHref = details.href || (typeof window !== "undefined" ? window.location.href : path);
+      try {
+        window.gtag?.("event", "page_view", {
+          page_path: path,
+          page_title: googleTitle,
+          page_location: googleHref,
+        });
+      } catch {
+        /* analytics.js absent or blocked — never break navigation over a metric */
+      }
+    }
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("datiq:analytics-enabled", sendGoogle);
+    };
   }, [location.pathname, location.search]);
 }
 

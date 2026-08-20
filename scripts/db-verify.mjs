@@ -77,8 +77,8 @@ grant usage on schema public to anon, authenticated;
 // index. Policy changes are not counted here, so these numbers are unaffected
 // by it; the RLS behaviour itself is asserted separately below.
 const EXPECT = {
-  tables: 38,
-  functions: 13,
+  tables: 39,
+  functions: 14,
   triggers: 5,
   tablesWithoutRls: 0,
 };
@@ -558,6 +558,19 @@ group("0025 gallery curation — persona tagging + review metadata");
   const idx = await one(`select count(*)::int n from pg_indexes
     where tablename = 'public_reports' and indexname = 'public_reports_curated_persona_idx'`);
   eq("the curated+persona partial index exists", idx.n, 1);
+}
+
+// ── 0026 server-side guest identity usage ───────────────────────────────────
+group("0026 guest identity usage — atomic quota");
+{
+  const first = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000000','single',1,5) result`);
+  eq("first guest credit is allowed", first.result.allowed, true);
+  const denied = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000000','single',1,5) result`);
+  eq("second guest credit is denied at the limit", denied.result.allowed, false);
+  const batch = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000001','batch',5,1) result`);
+  eq("batch quota uses its independent counter", batch.result.kind, "batch");
+  const table = await one(`select count(*)::int n from public.guest_identities`);
+  eq("guest identity row is stored without raw cookie", table.n, 2);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

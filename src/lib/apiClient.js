@@ -72,6 +72,10 @@ export const apiClient = {
   extract: (url, options = {}) =>
     request("/extract", "POST", { url, options }),
 
+  /** Reserve one server-side anonymous usage credit (used for batch runs). */
+  consumeGuestCredit: (kind = "single") =>
+    request("/guest-usage", "POST", { kind }),
+
   // ── AI (Anthropic Claude) ──────────────────────────────────────────────────
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
   ai: (payload) => request("/ai", "POST", payload),
