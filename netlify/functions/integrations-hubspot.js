@@ -121,7 +121,7 @@ export const handler = async (event) => {
   try {
     // GET /api/integrations/hubspot/status
     if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-      const r = await getConnection({ userId, provider: "hubspot" });
+      const r = await getConnection({ userId, provider: "hubspot", includeSecrets: true });
       if (!r.ok) return respond(500, { error: r.error });
       if (!r.connection) {
         return respond(200, { connected: false, provider: "hubspot" });
