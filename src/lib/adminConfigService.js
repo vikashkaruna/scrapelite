@@ -93,19 +93,24 @@ export async function extendUserBonus(userId, bonus) {
   return data; // { ok, userId, newBonus }
 }
 
-/**
- * Assign a coupon code (+ optional discount % and plan restriction) to a
- * user via auth metadata. `planId` null/omitted = usable on any plan.
- */
-export async function assignUserCoupon(userId, couponCode, discountPct, planId) {
+/** Issue a user-specific, one-time, non-recurring complimentary plan grant. */
+export async function assignAdminGrantCoupon(userId, { couponCode, planId, validityMonths, claimExpiresAt, reason }) {
   const res = await fetch(USERS_ENDPOINT, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ action: "assign_coupon", userId, couponCode, discountPct, planId: planId || null }),
+    body: JSON.stringify({
+      action: "assign_grant_coupon",
+      userId,
+      couponCode,
+      planId,
+      validityMonths,
+      claimExpiresAt: claimExpiresAt || null,
+      reason,
+    }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Assign coupon failed (${res.status})`);
-  return data; // { ok, userId, couponCode, discountPct, planId }
+  if (!res.ok) throw new Error(data.error || `Issue grant failed (${res.status})`);
+  return data;
 }
 
 /** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */

@@ -89,6 +89,17 @@ describe("computeLifecycle windows", () => {
     const free = { plan_id: "free", status: STATUS.ACTIVE, source: null, period_end: null };
     expect(computeLifecycle(free, at(999 * DAY)).status).toBe(STATUS.ACTIVE);
   });
+
+  it("expires an admin grant at its period end without entering paid dunning", () => {
+    const grant = {
+      plan_id: "pro",
+      status: STATUS.ACTIVE,
+      source: "admin_coupon",
+      period_end: new Date(T0).toISOString(),
+    };
+    expect(computeLifecycle(grant, at(-1000)).status).toBe(STATUS.ACTIVE);
+    expect(computeLifecycle(grant, at(0)).status).toBe(STATUS.GRANT_EXPIRED);
+  });
 });
 
 describe("computeLifecycle takes the STRICTER of stored and computed", () => {
@@ -121,6 +132,25 @@ describe("comp_until (admin grace)", () => {
   it("stops protecting once the comp window closes", () => {
     const comped = paid("pro", { comp_until: new Date(T0 + 10 * DAY).toISOString() });
     expect(can(comped, "extract", ctx({ now: at(11 * DAY) })).allowed).toBe(false);
+  });
+});
+
+describe("admin coupon grant expiry", () => {
+  const grant = {
+    plan_id: "pro",
+    status: STATUS.ACTIVE,
+    source: "admin_coupon",
+    period_end: new Date(T0).toISOString(),
+  };
+
+  it("denies gated work with a dedicated grant-expired code", () => {
+    const result = can(grant, "extract", ctx({ now: at(1) }));
+    expect(result.allowed).toBe(false);
+    expect(result.code).toBe("GRANT_EXPIRED");
+  });
+
+  it("still permits exports after expiry for data portability", () => {
+    expect(can(grant, "export.csv", ctx({ now: at(1) })).allowed).toBe(true);
   });
 });
 

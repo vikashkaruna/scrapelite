@@ -44,6 +44,7 @@ export const CAPS = Object.freeze([
 
 export const STATUS = Object.freeze({
   ACTIVE: "active",
+  GRANT_EXPIRED: "grant_expired",
   SUSPENDED: "suspended",
   DEACTIVATED: "deactivated",
   PURGED: "purged",
@@ -56,7 +57,7 @@ export const PURGE_AFTER_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Severity ordering, so "stricter of stored vs computed" is a max(). */
-const SEVERITY = { active: 0, suspended: 1, deactivated: 2, purged: 3 };
+const SEVERITY = { active: 0, grant_expired: 1, suspended: 1, deactivated: 2, purged: 3 };
 
 /**
  * While suspended or deactivated the user keeps FULL export of their own data,
@@ -126,6 +127,23 @@ export function computeLifecycle(ent, now = new Date()) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
   const stored = ent?.status && SEVERITY[ent.status] != null ? ent.status : STATUS.ACTIVE;
 
+  // Complimentary grants have a hard validity window, but are not paid
+  // subscriptions: once they end, deny product capabilities without sending
+  // renewal notices, suspending schedules through the paid lifecycle, or
+  // entering the 90-day data-purge path.
+  const grantEnd = ent?.source === "admin_coupon" ? toTime(ent.period_end) : null;
+  if (grantEnd && nowMs >= grantEnd && stored === STATUS.ACTIVE) {
+    return {
+      status: STATUS.GRANT_EXPIRED,
+      computed: STATUS.GRANT_EXPIRED,
+      stored,
+      periodEnd: grantEnd,
+      deactivateAt: null,
+      purgeAt: null,
+      daysUntilPurge: null,
+    };
+  }
+
   if (!isLifecycleManaged(ent)) {
     // Not lifecycle-managed: an admin may still have set an explicit status
     // (manual suspension), so honour a stored non-active value, but never
@@ -183,6 +201,9 @@ function fmtDate(ms) {
 export function lifecycleReason(life) {
   const ended = fmtDate(life.periodEnd);
   const purge = fmtDate(life.purgeAt);
+  if (life.status === STATUS.GRANT_EXPIRED) {
+    return `Your complimentary plan grant ended on ${ended}. Apply another grant or choose a paid plan to continue.`;
+  }
   if (life.status === STATUS.PURGED) {
     return "This account's data was removed after 90 days without an active subscription. Choose a plan to start again.";
   }
@@ -219,8 +240,13 @@ export function can(ent, capability, ctx = {}) {
       return deny("PURGED", lifecycleReason(life));
     }
     if (EXPORT_CAPS.has(capability)) return ok(); // data portability, see EXPORT_CAPS
+    const lifecycleCode = life.status === STATUS.GRANT_EXPIRED
+      ? "GRANT_EXPIRED"
+      : life.status === STATUS.DEACTIVATED
+        ? "DEACTIVATED"
+        : "SUSPENDED";
     return deny(
-      life.status === STATUS.DEACTIVATED ? "DEACTIVATED" : "SUSPENDED",
+      lifecycleCode,
       lifecycleReason(life),
     );
   }

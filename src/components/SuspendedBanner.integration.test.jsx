@@ -45,6 +45,8 @@ vi.mock("../lib/billingRepo.js", () => ({
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
   fetchInvoices: vi.fn(() => Promise.resolve([])),
   fetchInvoiceLines: vi.fn(() => Promise.resolve([])),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 vi.mock("../lib/entitlementClient.js", () => entMocks);
 

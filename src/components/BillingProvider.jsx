@@ -12,6 +12,7 @@ import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyServic
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
+import { fetchAdminGrantCoupon, redeemAdminGrantCoupon as redeemAdminGrantCouponRequest } from "../lib/billingRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
 import {
   initiateCheckout, initiateTopupCheckout, hasPayment,
@@ -43,6 +44,7 @@ export function BillingProvider({ children }) {
   // Seeded synchronously from the cache so the first paint already knows the
   // lifecycle state and a suspended user never sees a flash of full access.
   const [entitlementRow, setEntitlementRow] = useState(() => getCachedEntitlement());
+  const [adminGrantCoupon, setAdminGrantCoupon] = useState(null);
 
   // ── Payment progress state (drives PaymentProcessingModal) ──────────────────
   const [paymentStage, setPaymentStage]     = useState(PAYMENT_STAGE.IDLE);
@@ -105,6 +107,15 @@ export function BillingProvider({ children }) {
     loadEntitlement()
       .then((row) => { if (!cancelled) setEntitlementRow(row); })
       .catch(() => { /* offline / unconfigured — plan-only gating still works */ });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAdminGrantCoupon(null);
+    fetchAdminGrantCoupon().then((grant) => {
+      if (!cancelled) setAdminGrantCoupon(grant);
+    });
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -406,15 +417,10 @@ export function BillingProvider({ children }) {
   const applyCoupon = useCallback((code) => {
     setCouponError("");
     setCouponSuccess("");
-    // A coupon an admin assigned to THIS signed-in user (user_metadata.coupon_availed)
-    // is allowed to self-apply even if it's a planId==="manual" coupon — see
-    // validateCoupon's allowManual doc. The bypass activates only when the typed/
-    // clicked code matches the assignment on the authenticated user's own account,
-    // never for an arbitrary discovered code.
-    const meta = user?.user_metadata || {};
-    const isOwnAssigned = meta.coupon_availed && String(meta.coupon_availed).toUpperCase() === String(code).toUpperCase();
-    const validateOpts = isOwnAssigned ? { allowManual: true, assignedPlanId: meta.coupon_plan_id || null } : {};
-    const { valid, reason, coupon } = validateCoupon(code, planId, validateOpts);
+    // Admin grant coupons use redeemAdminGrantCoupon() below. Keeping them out
+    // of this path is what prevents a complimentary plan grant from touching
+    // normal paid checkout or public coupon usage.
+    const { valid, reason, coupon } = validateCoupon(code, planId);
     if (!valid) { setCouponError(reason); return false; }
     incrementCouponUses(code);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
@@ -429,6 +435,30 @@ export function BillingProvider({ children }) {
     );
     return true;
   }, [subscription, planId]);
+
+  const redeemAdminGrant = useCallback(async (code) => {
+    setCouponError("");
+    setCouponSuccess("");
+    try {
+      const result = await redeemAdminGrantCouponRequest(code);
+      setAdminGrantCoupon((current) => ({
+        ...(current || {}),
+        code: result.code,
+        planId: result.plan_id,
+        validityMonths: result.validity_months,
+        status: "redeemed",
+        periodStart: result.period_start,
+        periodEnd: result.period_end,
+        redeemedAt: new Date().toISOString(),
+      }));
+      await refreshEntitlement();
+      setCouponSuccess(`Plan grant applied — ${result.plan_id} is active through ${new Date(result.period_end).toLocaleDateString()}.`);
+      return true;
+    } catch (err) {
+      setCouponError(err.message || "Could not redeem this plan grant.");
+      return false;
+    }
+  }, [refreshEntitlement]);
 
   const removeCoupon = useCallback(() => {
     const sub = { ...subscription, coupon: null, discountPercent: 0 };
@@ -492,7 +522,7 @@ export function BillingProvider({ children }) {
     checkCanBatch, checkCanExtractBatch, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
-    couponError, couponSuccess,
+    couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   }), [
     subscription, plan, planId, bonus, usage,
     currency, rates, setCurrency,
@@ -507,7 +537,7 @@ export function BillingProvider({ children }) {
     checkCanBatch, checkCanExtractBatch, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
-    couponError, couponSuccess,
+    couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   ]);
 
   return (

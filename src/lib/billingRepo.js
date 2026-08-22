@@ -119,3 +119,41 @@ export async function fetchEntitlement() {
     return null;
   }
 }
+
+/**
+ * Read the newest admin-issued grant for the signed-in user. The endpoint is
+ * user-scoped server-side; the browser never queries the assignment table.
+ */
+export async function fetchAdminGrantCoupon() {
+  if (!supabase) return null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+    const res = await fetch("/api/redeem-admin-coupon", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return data.grant ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Redeem a grant coupon for the currently signed-in user. */
+export async function redeemAdminGrantCoupon(code) {
+  if (!supabase) throw new Error("Sign in to redeem a plan grant.");
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Sign in to redeem a plan grant.");
+  const res = await fetch("/api/redeem-admin-coupon", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not redeem this plan grant.");
+  return data;
+}

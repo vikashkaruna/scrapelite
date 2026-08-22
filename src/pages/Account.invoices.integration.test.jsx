@@ -21,6 +21,8 @@ const billingRepoMocks = vi.hoisted(() => ({
   claimBillingSession: vi.fn(() => Promise.resolve({ claimed: true })),
   getAuthUserId: vi.fn(() => Promise.resolve("u1")),
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 const repoMocks = vi.hoisted(() => ({
   fetchUsageFromDb: vi.fn(() => Promise.resolve(null)),

@@ -43,7 +43,9 @@ function CouponRow({ coupon, onEdit, onToggle, onDelete }) {
 }
 
 export default function AdminCoupons() {
-  const [coupons, setCoupons] = useState(getCoupons);
+  // Legacy manual coupons belong to the retired admin-discount flow. Keep them
+  // out of the public catalog; plan grants are issued from Admin › Users.
+  const [coupons, setCoupons] = useState(() => getCoupons().filter((c) => c.planId !== "manual"));
   const [form, setForm] = useState(EMPTY_FORM);
   const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState("");
@@ -103,9 +105,9 @@ export default function AdminCoupons() {
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <div>
-          <h2 className="admin-section-title">Coupons & Discounts</h2>
-          <p className="admin-section-sub">Create and manage promotional codes.</p>
+      <div>
+          <h2 className="admin-section-title">Public coupons & discounts</h2>
+          <p className="admin-section-sub">Manage paid checkout promotions. User-specific plan grants are issued from Admin › Users.</p>
         </div>
         <Button variant="primary" size="sm" icon="plus" onClick={handleNew}>
           New coupon
@@ -152,13 +154,7 @@ export default function AdminCoupons() {
                   <option value="pro">Pro</option>
                   <option value="business">Business</option>
                   <option value="agency">Agency</option>
-                  <option value="manual">Manually Assigned To User(s)</option>
                 </select>
-                {form.planId === "manual" && (
-                  <p className="cf-hint" style={{ marginTop: 5 }}>
-                    This coupon will only appear in the admin user coupon picker — users cannot self-apply it.
-                  </p>
-                )}
               </div>
               <div className="cf-field">
                 <label>Expiry date (optional)</label>

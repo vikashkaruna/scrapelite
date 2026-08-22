@@ -15,6 +15,11 @@
 --
 -- Order is the reverse of the forward migration (drop dependents first).
 
+-- 0027 — user-specific complimentary plan grants
+DROP FUNCTION IF EXISTS public.redeem_admin_coupon(uuid, text);
+DROP FUNCTION IF EXISTS public.create_admin_coupon_assignment(uuid, text, text, integer, timestamptz, text, text);
+DROP TABLE IF EXISTS public.admin_coupon_assignments CASCADE;
+
 -- 0011 — reengagement_log
 DROP TABLE IF EXISTS public.reengagement_log CASCADE;
 
