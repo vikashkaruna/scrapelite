@@ -114,15 +114,14 @@ window.__DATIQ_RUNTIME__ = {
   // inside the JWT, no amount of reading this file revealed it. That cost
   // three debugging sessions across both environments.
   //
-  // It is left EMPTY rather than guessed: `src/lib/config.js` then falls back
-  // to the build-time VITE_SUPABASE_ANON_KEY, making the Netlify env the
-  // single source for staging. To restore the belt-and-braces copy here,
-  // paste the anon key from Supabase → project `aubwooslkkrprdxuiyvj` →
-  // Settings → API. `src/lib/runtimeConfigIdentity.test.js` verifies any
-  // value you put here actually belongs to its project.
+  // The staging key is the public/publishable key for the staging project.
+  // Keeping it here makes branch deploys work even when a Netlify branch
+  // build does not inherit VITE_SUPABASE_ANON_KEY from the UI environment.
+  // `src/lib/runtimeConfigIdentity.test.js` verifies any value here belongs
+  // to its paired project (publishable-format keys are accepted as-is).
   supabaseAnonKey: _isMain
     ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM"
-    : "",
+    : "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG",
   // The OAuth / email-confirmation / password-reset return URL for this
   // branch. The Supabase client passes this as `redirectTo` so the OAuth
   // provider (Google, Microsoft, GitHub) and the Supabase email-link

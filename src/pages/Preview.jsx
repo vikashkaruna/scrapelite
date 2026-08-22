@@ -202,10 +202,11 @@ export default function Preview() {
     if (!current?.id) { showToast("Save the extraction before sharing."); return; }
     setShareOpen(false);
     try {
+      const alreadyHadLocalLink = Boolean(getSharedSlugForId(current.id));
       const { slug, persistedTo } = await shareExtraction(current);
       setSharedSlug(slug);
       // FA1 — count this as a public report (free-tier quota mechanic)
-      recordPublicShare(current.id);
+      if (!alreadyHadLocalLink) recordPublicShare(current.id);
       analytics.exported({ format: "share", source: "preview", persistedTo });
       const msg = persistedTo === "supabase"
         ? "Public link created — works in any browser."
@@ -214,7 +215,9 @@ export default function Preview() {
           : "Public link created locally — configure Supabase to share across browsers.";
       showToast(msg, "check");
     } catch (err) {
-      showToast("Share failed. Please try again.", "alert-triangle");
+      showToast(err?.code === "PUBLIC_PUBLISH_FAILED"
+        ? "Public publish failed — nothing was saved locally. Check Supabase configuration."
+        : "Share failed. Please try again.", "alert-triangle");
       console.warn("[DatIQ] Share failed:", err);
     }
   };
@@ -476,6 +479,16 @@ export default function Preview() {
                 <div className="export-dropdown-menu share-menu">
                   {sharedSlug ? (
                     <>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={handleShare}
+                      >
+                        <Icon name="refresh" size={14} />
+                        <span>
+                          <b>Sync public link</b>
+                          <span className="export-plan-hint">Ensure this link is published to the cloud</span>
+                        </span>
+                      </button>
                       <button
                         className="export-dropdown-item"
                         onClick={() => { handleCopyShareLink(); setShareOpen(false); }}

@@ -17,6 +17,7 @@ import PublicReportArticle from "../../components/PublicReportArticle.jsx";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
+import { buildPublicUrl } from "../../lib/shareService.js";
 
 function timeAgo(iso) {
   if (!iso) return "";
@@ -76,6 +77,16 @@ function ReportRow({ report, onCurated, onUncurated }) {
             <Icon name="globe" size={11} /> {report.url} · {timeAgo(report.created_at)}
             {report.intent ? ` · ${report.intent}` : ""}
           </p>
+          {report.slug && (
+            <a
+              className="admin-gallery-public-link"
+              href={buildPublicUrl(report.slug)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="external" size={11} /> Open public report
+            </a>
+          )}
         </div>
         <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "Hide preview" : "Preview"}
