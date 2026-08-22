@@ -87,21 +87,21 @@ export const PAGE_SEO = {
   },
   "/about": {
     "title": "About DatIQ — the no-code web intelligence platform | DatIQ.app",
-    "description": "DatIQ is a no-code web intelligence platform built on Pillar 0 — Web Intelligence Core. We turn any public URL into structured data: headings, links, contacts, pricing, AI summaries, custom fields. Free to start, no credit card.",
+    "description": "DatIQ turns any public URL into structured, ready-to-use intelligence for sales, research, marketing, recruiting, and operations teams. No code, no setup, free to start.",
     "canonical": "https://datiq.app/about",
     "jsonLd": [
       {
         "@context": "https://schema.org",
         "@type": "AboutPage",
         "name": "About DatIQ",
-        "description": "DatIQ is a no-code web intelligence platform built on Pillar 0 — Web Intelligence Core. We turn any public URL into structured data.",
+        "description": "DatIQ turns public web pages into structured, ready-to-use intelligence for sales, research, marketing, recruiting, and operations teams.",
         "url": "https://datiq.app/about",
         "mainEntity": {
           "@type": "Organization",
           "name": "DatIQ",
           "url": "https://datiq.app",
           "logo": "https://datiq.app/favicon.svg",
-          "description": "DatIQ is a no-code web intelligence platform. Pillar 0 — Web Intelligence Core — is the proven single, batch, and scheduled URL-extraction engine that the whole platform is built on."
+          "description": "DatIQ helps teams find, understand, enrich, and act on public web information without code."
         }
       }
     ]
