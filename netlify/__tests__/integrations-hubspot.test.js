@@ -133,6 +133,7 @@ describe("integrations-hubspot", () => {
       expect(body.connected).toBe(true);
       expect(body.connection.account_label).toBe("ACME");
       expect(body.connection.access_token).toBeUndefined();
+      expect(mockStore.get).toHaveBeenCalledWith({ userId: "u1", provider: "hubspot", includeSecrets: true });
     });
   });
 

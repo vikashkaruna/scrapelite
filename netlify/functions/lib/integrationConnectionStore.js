@@ -21,10 +21,10 @@
 //     unique (user_id, provider)
 //   );
 //
-// SECURITY: `access_token` and `refresh_token` are sensitive. In v1 we store
-// them in plaintext (the only user that can read them is the SERVICE key
-// holder, and RLS further restricts row visibility). v1.1 should switch to
-// pgcrypto envelope encryption; flagged in INTEGRATIONS.md.
+// SECURITY: credential fields are encrypted with a server-only AES-GCM
+// envelope before persistence. Plaintext legacy rows remain readable for
+// migration compatibility, but new and changed credentials fail closed when
+// INTEGRATION_SECRETS_KEY is not configured.
 
 import { protectConnectionFields, revealConnectionSecrets } from "./integrationSecrets.js";
 
@@ -77,7 +77,7 @@ export async function getConnection({ userId, provider, db, env, includeSecrets 
 }
 
 /**
- * Upsert a connection. Sets the secrets only when `includeSecrets` is true.
+ * Upsert a connection. Credential fields are encrypted before persistence.
  * `config` is provider-specific (e.g. Notion Database ID, Airtable Base ID).
  */
 export async function upsertConnection({ userId, provider, fields, db, env } = {}) {
