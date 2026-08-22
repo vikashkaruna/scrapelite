@@ -77,8 +77,8 @@ grant usage on schema public to anon, authenticated;
 // index. Policy changes are not counted here, so these numbers are unaffected
 // by it; the RLS behaviour itself is asserted separately below.
 const EXPECT = {
-  tables: 39,
-  functions: 14,
+  tables: 40,
+  functions: 16,
   triggers: 5,
   tablesWithoutRls: 0,
 };
@@ -571,6 +571,25 @@ group("0026 guest identity usage — atomic quota");
   eq("batch quota uses its independent counter", batch.result.kind, "batch");
   const table = await one(`select count(*)::int n from public.guest_identities`);
   eq("guest identity row is stored without raw cookie", table.n, 2);
+}
+
+// ── 0027 admin coupon grants ───────────────────────────────────────────────
+group("0027 admin coupon grants — user-scoped, one-time redemption");
+{
+  const uid = (await one(`insert into auth.users (email) values ('grant@x.com') returning id`)).id;
+  const created = await one(`select public.create_admin_coupon_assignment(
+    $1, 'GRANT-PRO-1M', 'pro', 1, null, 'admin', 'test grant'
+  ) result`, [uid]);
+  eq("admin grant assignment is created", created.result.code, "GRANT-PRO-1M");
+  eq("admin grant stores its selected plan", created.result.plan_id, "pro");
+  const redeemed = await one(`select public.redeem_admin_coupon($1, 'grant-pro-1m') result`, [uid]);
+  eq("admin grant redemption succeeds", redeemed.result.ok, true);
+  eq("admin grant redemption activates the selected plan", redeemed.result.plan_id, "pro");
+  const ent = await one(`select plan_id, billing_period, source from public.entitlements where user_id = $1`, [uid]);
+  eq("admin grant entitlement is non-recurring", ent.billing_period, "once");
+  eq("admin grant entitlement source is isolated", ent.source, "admin_coupon");
+  const replay = await one(`select public.redeem_admin_coupon($1, 'grant-pro-1m') result`, [uid]);
+  eq("admin grant cannot be redeemed twice", replay.result.code, "GRANT_ALREADY_USED");
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

@@ -253,7 +253,7 @@ export default function Account() {
   const navigate = useNavigate();
   const {
     plan: ctxPlan, planId, usage, bonus, currency, rates,
-    applyCoupon, removeCoupon, couponError, couponSuccess,
+    applyCoupon, redeemAdminGrant, adminGrantCoupon, removeCoupon, couponError, couponSuccess,
     subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
     paymentHistory, dbSubscription, hasPayment,
   } = useBilling();
@@ -433,7 +433,9 @@ export default function Account() {
     if (!couponInput.trim()) return;
     setApplying(true);
     await new Promise((r) => setTimeout(r, 600));
-    applyCoupon(couponInput.trim().toUpperCase());
+    const code = couponInput.trim().toUpperCase();
+    if (adminGrantCoupon?.code === code) await redeemAdminGrant(code);
+    else applyCoupon(code);
     setCouponInput("");
     setApplying(false);
   };
@@ -804,31 +806,28 @@ export default function Account() {
               canManage={canWhiteLabel}
             />
 
-            {/* Your offers — coupon / bonus extractions an admin assigned to
-                THIS account (adminConfigService.assignUserCoupon /
-                extendUserBonus). Read straight off the Supabase auth user's
-                own metadata — no extra API call needed. */}
-            {(user?.user_metadata?.coupon_availed || user?.user_metadata?.bonus_extractions > 0) && (
+            {/* Your offers — a user-specific, one-time complimentary plan grant
+                or bonus extractions. Grant state comes from the authenticated
+                server endpoint, never from editable browser metadata. */}
+            {(adminGrantCoupon || user?.user_metadata?.bonus_extractions > 0) && (
               <div className="card card-pad">
                 <div className="card-section-title"><Icon name="gift" size={15} />Your offers</div>
-                {user?.user_metadata?.coupon_availed && (
+                {adminGrantCoupon && (
                   <div className="my-offer-row">
                     <span className="user-coupon-pill">
-                      {user.user_metadata.coupon_availed}
-                      {user.user_metadata.coupon_discount > 0 && (
-                        <span className="user-coupon-pct"> −{user.user_metadata.coupon_discount}%</span>
-                      )}
+                      {adminGrantCoupon.code}
                     </span>
                     <span className="my-offer-meta">
-                      {user.user_metadata.coupon_plan_id
-                        ? `Valid for ${getEffectivePlanById(user.user_metadata.coupon_plan_id)?.name || user.user_metadata.coupon_plan_id} only`
-                        : "Valid for any plan"}
+                      {getEffectivePlanById(adminGrantCoupon.planId)?.name || adminGrantCoupon.planId}
+                      {adminGrantCoupon.validityMonths ? ` · ${adminGrantCoupon.validityMonths} month${adminGrantCoupon.validityMonths === 1 ? "" : "s"}` : ""}
                     </span>
-                    {subscription.coupon?.code === user.user_metadata.coupon_availed ? (
-                      <span className="my-offer-applied"><Icon name="check-circle" size={13} />Applied</span>
+                    {adminGrantCoupon.status === "redeemed" ? (
+                      <span className="my-offer-applied"><Icon name="check-circle" size={13} />Redeemed</span>
+                    ) : adminGrantCoupon.status === "expired" || adminGrantCoupon.status === "revoked" ? (
+                      <span className="my-offer-meta">{adminGrantCoupon.status}</span>
                     ) : (
-                      <Button variant="secondary" size="sm" onClick={() => applyCoupon(user.user_metadata.coupon_availed)}>
-                        Apply
+                      <Button variant="secondary" size="sm" onClick={() => redeemAdminGrant(adminGrantCoupon.code)}>
+                        Apply grant
                       </Button>
                     )}
                   </div>

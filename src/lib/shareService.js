@@ -108,7 +108,11 @@ export async function shareExtraction(extraction, opts = {}) {
       const { data } = await supabase
         .from(TABLE)
         .select("slug")
-        .eq("id", extraction.id)
+        // public_reports.id is a database-generated UUID. Extraction IDs
+        // created by the local/offline path are intentionally not UUIDs
+        // (e.g. `ex_...`), so the extraction identity lives in the public
+        // projection rather than in the table primary key.
+        .eq("data->>id", String(extraction.id))
         .maybeSingle();
       if (data?.slug) slug = data.slug;
     } catch (err) {
@@ -122,7 +126,11 @@ export async function shareExtraction(extraction, opts = {}) {
   const sessionId = opts.sessionId || (() => { try { return getSessionId(); } catch { return null; } })();
   const userId = opts.userId ?? null;
 
-  // 2. Persist to Supabase (best-effort). Don't fail the share if it errors.
+  // 2. Persist to Supabase. When the app is configured for Supabase, a public
+  // share must not report success while only writing localStorage: that would
+  // create a link that works in this browser but is absent from the database.
+  // The local fallback below is reserved for the deliberately offline/demo
+  // mode where Supabase is not configured at all.
   let persistedTo = "local";
   let supabaseError = null;
   if (isSupabaseEnabled && supabase) {
@@ -137,15 +145,22 @@ export async function shareExtraction(extraction, opts = {}) {
         session_id: sessionId,
         is_public: true,
       };
-      // We don't know the row's primary id without the schema, so include
-      // the extraction's id explicitly. The slug is the unique key.
-      row.id = extraction.id;
+      // Do not send extraction.id as public_reports.id. The table primary
+      // key is a database-generated UUID, while locally-created extraction
+      // IDs are short client IDs such as `ex_...`. The extraction ID is
+      // already preserved inside data for idempotent lookup and auditing.
       const { error } = await supabase.from(TABLE).upsert(row, { onConflict: "slug" });
       if (error) throw error;
       persistedTo = "supabase";
     } catch (err) {
       supabaseError = err;
       if (typeof console !== "undefined") console.warn("[DatIQ share] Supabase persist failed:", err);
+      const publishError = new Error(
+        "Cloud publish failed. Check the Supabase project, anon key, and public_reports permissions.",
+      );
+      publishError.code = "PUBLIC_PUBLISH_FAILED";
+      publishError.cause = err;
+      throw publishError;
     }
   }
 
@@ -208,7 +223,10 @@ export async function unshareExtraction(id) {
 
   if (isSupabaseEnabled && supabase) {
     try {
-      const { error } = await supabase.from(TABLE).delete().eq("id", id);
+      // Match the extraction identity stored in the public projection. Using
+      // public_reports.id here breaks for local IDs that are not UUIDs and
+      // also targets the wrong identifier for server-saved extractions.
+      const { error } = await supabase.from(TABLE).delete().eq("data->>id", String(id));
       if (!error) removed = true;
       else if (typeof console !== "undefined") console.warn("[DatIQ share] Supabase delete failed:", error);
     } catch (err) {

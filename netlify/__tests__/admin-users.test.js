@@ -1,6 +1,6 @@
 // netlify/functions/admin-users.test.js
-// C-28 — GET returns planStart/End/couponAvailed; PATCH assign_coupon writes
-// both auth.users.user_metadata AND coupon_redemptions.
+// C-28 — GET returns planStart/End and PATCH issues a database-backed,
+// user-specific complimentary plan grant.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "crypto";
@@ -135,7 +135,7 @@ describe("admin-users PATCH (C-28)", () => {
     process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
   });
 
-  it("assign_coupon writes auth user_metadata AND coupon_redemptions", async () => {
+  it("assign_grant_coupon verifies the user and calls the grant RPC", async () => {
     const calls = [];
     fetchMock.mockImplementation(async (url, init) => {
       const u = String(url);
@@ -150,8 +150,11 @@ describe("admin-users PATCH (C-28)", () => {
         // Echo a success body (the body is irrelevant — we just need a 2xx)
         return new Response(JSON.stringify({ id: "u1", ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (u.includes("/rest/v1/coupon_redemptions")) {
-        return new Response(JSON.stringify([{ session_id: "u1", coupon_code: "MANUAL50" }]), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (u.includes("/rest/v1/rpc/create_admin_coupon_assignment")) {
+        return new Response(JSON.stringify({
+          id: "g1", code: "MANUAL50", plan_id: "pro", validity_months: 1,
+          status: "assigned", assigned_at: "2026-08-22T00:00:00Z",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     });
@@ -160,39 +163,31 @@ describe("admin-users PATCH (C-28)", () => {
       httpMethod: "PATCH",
       headers: { authorization: `Bearer ${makeAdminToken()}` },
       body: JSON.stringify({
-        action: "assign_coupon",
+        action: "assign_grant_coupon",
         userId: "u1",
         couponCode: "manual50",
-        discountPct: 50,
+        planId: "pro",
+        validityMonths: 1,
+        reason: "goodwill",
       }),
     });
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.body);
     expect(body.ok).toBe(true);
-    expect(body.couponCode).toBe("MANUAL50"); // uppercased
-    expect(body.discountPct).toBe(50);
-
-    // The auth metadata PUT body should include coupon_availed + coupon_discount
-    const putCall = calls.find((c) => c.method === "PUT" && c.url.includes("/auth/v1/admin/users/u1"));
-    expect(putCall).toBeTruthy();
-    const sent = JSON.parse(putCall.body);
-    expect(sent.user_metadata.coupon_availed).toBe("MANUAL50");
-    expect(sent.user_metadata.coupon_discount).toBe(50);
-
-    // The coupon_redemptions POST should also be made (with session_id=userId)
-    const redemptionCall = calls.find((c) => c.url.includes("/rest/v1/coupon_redemptions"));
-    expect(redemptionCall).toBeTruthy();
-    const sent2 = JSON.parse(redemptionCall.body);
-    expect(sent2.coupon_code).toBe("MANUAL50");
-    expect(sent2.session_id).toBe("u1");
+    expect(body.adminGrantCoupon.code).toBe("MANUAL50");
+    expect(body.adminGrantCoupon.planId).toBe("pro");
+    expect(body.adminGrantCoupon.validityMonths).toBe(1);
+    const rpcCall = calls.find((c) => c.url.includes("/rest/v1/rpc/create_admin_coupon_assignment"));
+    expect(rpcCall).toBeTruthy();
+    expect(JSON.parse(rpcCall.body).p_code).toBe("MANUAL50");
   });
 
-  it("assign_coupon without userId or couponCode → 400", async () => {
+  it("assign_grant_coupon without userId or couponCode → 400", async () => {
     const h = await loadHandler();
     const r = await h({
       httpMethod: "PATCH",
       headers: { authorization: `Bearer ${makeAdminToken()}` },
-      body: JSON.stringify({ action: "assign_coupon" }),
+      body: JSON.stringify({ action: "assign_grant_coupon" }),
     });
     expect(r.statusCode).toBe(400);
   });

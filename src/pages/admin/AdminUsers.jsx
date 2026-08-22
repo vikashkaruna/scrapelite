@@ -2,9 +2,9 @@
 // Falls back to empty state (with a notice) when Supabase is not configured.
 import { useState, useEffect, useCallback } from "react";
 import {
-  fetchRealUsers, extendUserBonus, inviteUserByEmail, assignUserCoupon,
+  fetchRealUsers, extendUserBonus, inviteUserByEmail, assignAdminGrantCoupon,
 } from "../../lib/adminConfigService.js";
-import { addAdminUser, getCoupons } from "../../lib/adminService.js";
+import { addAdminUser } from "../../lib/adminService.js";
 import { getEffectivePlanById, getEffectivePlans } from "../../lib/pricingOverrides.js";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
@@ -54,6 +54,17 @@ function CouponPill({ code, discount, planId }) {
   );
 }
 
+function GrantPill({ grant }) {
+  if (!grant) return <span className="user-period-none">—</span>;
+  const plan = getEffectivePlanById(grant.planId);
+  return (
+    <span className="user-coupon-pill" title={`${plan?.name || grant.planId}, ${grant.validityMonths} month grant`}>
+      {grant.code} · {plan?.name || grant.planId}
+      <span className="user-coupon-plan"> · {grant.status}</span>
+    </span>
+  );
+}
+
 function ExtendModal({ user, onClose, onSave, saving }) {
   const [bonus, setBonus] = useState(100);
   return (
@@ -81,29 +92,19 @@ function ExtendModal({ user, onClose, onSave, saving }) {
 }
 
 function CouponModal({ user, onClose, onSave, saving }) {
-  // Only show coupons designated for manual admin assignment (planId === "manual").
-  const allCoupons = getCoupons().filter((c) => c.active && c.planId === "manual");
   const plans = getEffectivePlans().filter((p) => !p.comingSoon && p.price_usd > 0);
-  const [code, setCode]           = useState(user.couponAvailed || "");
-  const [customPct, setCustomPct] = useState(
-    user.couponDiscount != null ? String(user.couponDiscount) : ""
-  );
-  // Which plan this assignment is restricted to — "" means any plan. Distinct
-  // from the coupon's own planId field (always the "manual" sentinel here);
-  // the restriction lives per-assignment so the same catalog coupon can be
-  // given to different users for different plans.
-  const [restrictPlan, setRestrictPlan] = useState(user.couponPlanId || "");
+  const [code, setCode] = useState("");
+  const [planId, setPlanId] = useState(plans[0]?.id || "pro");
+  const [validityMonths, setValidityMonths] = useState(1);
+  const [claimExpiresAt, setClaimExpiresAt] = useState("");
+  const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
-
-  const selected     = allCoupons.find((c) => c.code === code);
-  const effectivePct =
-    customPct !== "" ? Number(customPct) :
-    selected?.type === "percent" ? selected.value : null;
 
   const submit = async () => {
     setErr("");
-    if (!code) { setErr("Please select a coupon."); return; }
-    try { await onSave(user, code, effectivePct, restrictPlan || null); }
+    if (!code.trim()) { setErr("Enter a one-time grant code."); return; }
+    if (!reason.trim()) { setErr("A reason is required for the audit trail."); return; }
+    try { await onSave(user, { couponCode: code, planId, validityMonths: Number(validityMonths), claimExpiresAt, reason }); }
     catch (e) { setErr(e.message); }
   };
 
@@ -115,85 +116,40 @@ function CouponModal({ user, onClose, onSave, saving }) {
           <button className="modal-close" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <p className="modal-sub">
-          Only coupons marked <strong>Manually Assigned To User(s)</strong> appear here.
-          These are silently assigned — the user cannot self-apply them.
+          Issue a one-time complimentary plan grant. The user must apply the code
+          from their own Account page; this does not alter paid checkout.
         </p>
 
         <div className="cf-field">
-          <label>Coupon</label>
-          <select value={code} onChange={(e) => { setCode(e.target.value); setCustomPct(""); }}>
-            <option value="">— Choose coupon —</option>
-            {allCoupons.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code}
-                {c.type === "percent"     ? ` — ${c.value}% off`         : ""}
-                {c.type === "extractions" ? ` — +${c.value} extractions` : ""}
-                {c.planId ? ` (${c.planId} only)` : ""}
-              </option>
-            ))}
-            {allCoupons.length === 0 && (
-              <option value="" disabled>No manual-assign coupons — go to Admin › Coupons and set Restrict to Plan = "Manually Assigned To User(s)"</option>
-            )}
-          </select>
+          <label>One-time grant code</label>
+          <input type="text" placeholder="e.g. ALICE-PRO-1M" value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={24} />
         </div>
 
-        {selected && (
-          <div className="coupon-detail-row">
-            {selected.type === "percent" && (
-              <span className="coupon-detail-badge"><Icon name="percent" size={12} /> {selected.value}% off</span>
-            )}
-            {selected.type === "extractions" && (
-              <span className="coupon-detail-badge"><Icon name="zap" size={12} /> +{selected.value} extractions</span>
-            )}
-            {selected.expiresAt && <span className="coupon-detail-meta">Expires {selected.expiresAt}</span>}
-            {selected.maxUses > 0 && <span className="coupon-detail-meta">{selected.uses}/{selected.maxUses} uses</span>}
-          </div>
-        )}
-
-        {selected && (
+        <div className="cf-row">
           <div className="cf-field">
-            <label>
-              Restrict to plan
-              <span className="cf-label-hint"> (leave as "Any plan" for a general allocation)</span>
-            </label>
-            <select value={restrictPlan} onChange={(e) => setRestrictPlan(e.target.value)}>
-              <option value="">Any plan</option>
-              {plans.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+            <label>Plan granted</label>
+            <select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+              {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-        )}
-
-        {selected?.type === "percent" && (
           <div className="cf-field">
-            <label>
-              Override discount %
-              <span className="cf-label-hint"> (leave blank to use coupon default of {selected.value}%)</span>
-            </label>
-            <div className="price-input-wrap">
-              <input
-                type="number" min="0" max="100" step="1"
-                placeholder={String(selected.value)}
-                value={customPct}
-                onChange={(e) => setCustomPct(e.target.value)}
-              />
-              <span className="price-prefix" style={{ borderLeft: "1.5px solid var(--border)", borderRight: "none" }}>%</span>
-            </div>
+            <label>Validity</label>
+            <select value={validityMonths} onChange={(e) => setValidityMonths(Number(e.target.value))}>
+              {[1, 2, 3, 6, 12, 24].map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"}</option>)}
+            </select>
           </div>
-        )}
-
-        {effectivePct != null && effectivePct > 0 && (
-          <div className="coupon-preview-row">
-            <Icon name="tag" size={13} />
-            <span>
-              This user will receive <strong>{effectivePct}% off</strong>
-              {restrictPlan
-                ? <> on the <strong>{plans.find((p) => p.id === restrictPlan)?.name || restrictPlan}</strong> plan only.</>
-                : " on their next payment, on any plan."}
-            </span>
+        </div>
+        <div className="cf-row">
+          <div className="cf-field">
+            <label>Claim by (optional)</label>
+            <input type="date" value={claimExpiresAt} onChange={(e) => setClaimExpiresAt(e.target.value)} />
           </div>
-        )}
+          <div className="cf-field">
+            <label>Reason</label>
+            <input type="text" placeholder="Customer goodwill" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+        </div>
 
         {err && (
           <div className="admin-ai-notice warn" style={{ marginBottom: 0 }}>
@@ -201,8 +157,8 @@ function CouponModal({ user, onClose, onSave, saving }) {
           </div>
         )}
         <div className="modal-actions">
-          <Button variant="primary" size="sm" icon="tag" disabled={saving || !code} onClick={submit}>
-            {saving ? "Assigning…" : "Assign coupon"}
+          <Button variant="primary" size="sm" icon="tag" disabled={saving || !code || !reason} onClick={submit}>
+            {saving ? "Assigning…" : "Assign grant coupon"}
           </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
         </div>
@@ -339,20 +295,19 @@ export default function AdminUsers() {
     }
   };
 
-  const handleAssignCoupon = async (user, couponCode, discountPct, planId) => {
+  const handleAssignCoupon = async (user, grant) => {
     setCouponSaving(true);
     try {
-      const result = await assignUserCoupon(user.id, couponCode, discountPct, planId);
+      const result = await assignAdminGrantCoupon(user.id, grant);
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id
-            ? { ...u, couponAvailed: result.couponCode, couponDiscount: result.discountPct, couponPlanId: result.planId }
+            ? { ...u, adminGrantCoupon: result.adminGrantCoupon }
             : u
         )
       );
-      const pctLabel = discountPct != null && discountPct > 0 ? ` (${discountPct}% off)` : "";
-      const planLabel = planId ? ` for the ${getEffectivePlanById(planId)?.name || planId} plan` : "";
-      showToast(`Coupon ${result.couponCode}${pctLabel} assigned to ${user.name}${planLabel}.`);
+      const planLabel = getEffectivePlanById(grant.planId)?.name || grant.planId;
+      showToast(`Grant ${result.adminGrantCoupon.code} assigned to ${user.name} (${planLabel}, ${grant.validityMonths} month${grant.validityMonths === 1 ? "" : "s"}).`);
       setCoupon(null);
     } catch (e) {
       throw e; // re-throw so CouponModal displays the error inline
@@ -407,7 +362,7 @@ export default function AdminUsers() {
           <h2 className="admin-section-title">User Management</h2>
           <p className="admin-section-sub">
             {loading ? "Loading…" : `${users.length} registered user${users.length !== 1 ? "s" : ""}`}
-            {!loading && " — track sign-ups, extend limits, assign coupons, send invites."}
+            {!loading && " — track sign-ups, extend limits, issue plan grants, send invites."}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -464,7 +419,7 @@ export default function AdminUsers() {
                 <tr>
                   <th>User</th>
                   <th>Plan</th>
-                  <th>Coupon</th>
+                  <th>Plan grant</th>
                   <th>Plan period</th>
                   <th>Extractions (mo)</th>
                   <th>Bonus</th>
@@ -503,7 +458,7 @@ export default function AdminUsers() {
                         </div>
                       </td>
                       <td><PlanPill planId={u.planId} /></td>
-                      <td><CouponPill code={u.couponAvailed} discount={u.couponDiscount} planId={u.couponPlanId} /></td>
+                      <td><GrantPill grant={u.adminGrantCoupon} /></td>
                       <td><PlanPeriod start={u.planStart} end={u.planEnd} /></td>
                       <td className="user-extractions">
                         {u.extractionsThisMonth > 0

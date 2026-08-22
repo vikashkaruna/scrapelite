@@ -183,9 +183,12 @@ describe("Q8 — shareService: Supabase enabled (cross-browser path)", () => {
     expect(upsertedRow.user_id).toBe("u_1");
     expect(upsertedRow.session_id).toBe("s_1");
     expect(upsertedRow.is_public).toBe(true);
+    // public_reports.id is a database-generated UUID. The extraction's
+    // client id (which may be `ex_...`) belongs inside data, not in id.
+    expect(upsertedRow.id).toBeUndefined();
   });
 
-  it("shareExtraction falls back to local when Supabase throws", async () => {
+  it("fails closed when Supabase is configured but the publish is rejected", async () => {
     supabaseMock.enabled = true;
     const chain = {
       select: vi.fn(() => chain),
@@ -195,11 +198,11 @@ describe("Q8 — shareService: Supabase enabled (cross-browser path)", () => {
       delete: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
     };
     supabaseMock.from.mockImplementation(() => chain);
-    const { slug, persistedTo } = await shareExtraction(sampleExtraction());
-    expect(slug).toMatch(/^[a-z0-9]{8}$/);
-    // Persisted locally even though Supabase errored.
-    expect(persistedTo).toBe("local");
-    expect(getSharedSlugForId("ext_1")).toBe(slug);
+    await expect(shareExtraction(sampleExtraction())).rejects.toMatchObject({
+      code: "PUBLIC_PUBLISH_FAILED",
+    });
+    // A cloud-configured failure must not leave a false local-only share.
+    expect(getSharedSlugForId("ext_1")).toBeNull();
   });
 
   it("re-share looks up the existing slug from Supabase first", async () => {
@@ -280,8 +283,11 @@ describe("Q8 — getPublicBySlug: the cross-browser fix", () => {
   });
 
   it("falls back to localStorage when Supabase errors", async () => {
-    supabaseMock.enabled = true;
+    // Seed the local fallback while Supabase is deliberately disabled, then
+    // simulate the server becoming unavailable on the read path.
+    supabaseMock.enabled = false;
     const { slug } = await shareExtraction(sampleExtraction());
+    supabaseMock.enabled = true;
     // After sharing, simulate Supabase going down on the read path.
     const chain = {
       select: vi.fn(() => chain),

@@ -49,7 +49,12 @@ export default defineConfig({
   webServer: {
     command: "npm run dev -- --host 127.0.0.1 --port 4173 --strictPort",
     url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env.CI,
+    // Do not silently reuse an arbitrary process already listening on 4173.
+    // A stale `vite preview` server does not load the dev-only Netlify-like
+    // routing middleware, so `/compare` stays put and `/vs/*` falls through
+    // to the React 404 page. Opt in only when deliberately sharing a known
+    // compatible dev server.
+    reuseExistingServer: process.env.PW_REUSE_EXISTING_SERVER === "1",
     timeout: 120_000,
     env: testEnv,
   },

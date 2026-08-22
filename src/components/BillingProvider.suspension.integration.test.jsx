@@ -43,6 +43,8 @@ vi.mock("../lib/billingRepo.js", () => ({
   claimBillingSession: vi.fn(() => Promise.resolve({ claimed: true })),
   getAuthUserId: vi.fn(() => Promise.resolve("u1")),
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 vi.mock("../lib/entitlementClient.js", () => entMocks);
 
