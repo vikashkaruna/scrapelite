@@ -301,6 +301,21 @@ export async function patchIntegrationConnection(slug, patch) {
  */
 export async function testIntegrationConnection(slug) {
   try {
+    // Zapier's public `/test` endpoint is for the Zapier private app: it
+    // requires the plaintext per-Zap token in X-Zapier-Token. The Account UI
+    // intentionally never reads that token back after it is minted, so a
+    // browser POST to `/test` cannot be a valid user-side connection check.
+    // Confirm the stored connection through the authenticated status endpoint
+    // instead. This also avoids calling `/test` with POST when Zapier exposes
+    // that endpoint as GET only.
+    if (slug === "zapier") {
+      const status = await getIntegrationStatus(slug);
+      if (!status?.connected) {
+        return { ok: false, error: status?.error || "Zapier is not connected." };
+      }
+      return { ok: true };
+    }
+
     const { ok, body, status } = await authedFetch(`/api/integrations/${slug}/test`, {
       method: "POST",
       body: JSON.stringify({ action: "test" }),
