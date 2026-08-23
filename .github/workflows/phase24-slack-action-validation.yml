@@ -1,0 +1,22 @@
+name: Phase 2 Slack Action Validation
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Send labelled test notification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send Slack Action v3 test notification
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "✅ DatIQ Phase 2 validation: Slack GitHub Action v3 notification path is working. This is a controlled test; no deployment or rollback occurred."
+            }
