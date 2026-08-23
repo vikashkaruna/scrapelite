@@ -129,7 +129,29 @@ Both readiness warnings are pre-existing and unrelated: stale `public/help` scre
 2. **Merge to `staging`** once CI is green — the user's stated sequence is: green tests → approval → staging.
 3. **Watch the staging deploy** and confirm 41/41 functions still report `nodejs24.x` and that `/admin/health` shows the expected runtime.
 4. **Only then**, with explicit approval, merge `staging` → `main`. `main` has deliberately not been touched.
-5. Consider running `npm run test:e2e:visual` — Playwright moved 1.60 → 1.62, and those baselines are per-browser PNGs. Visual specs are **not** in any CI gate, so drift there would be silent. Not run this session.
+5. Decide what to do about the stale visual baselines — see the next section. Not a Phase 5 blocker.
+
+## 🟡 Pre-existing: the visual baselines are stale (NOT caused by this work)
+
+`npm run test:e2e:visual` was run because Playwright moved 1.60 → 1.62 and those baselines are committed per-browser PNGs. **All 11 chromium visual specs fail.** They also fail on the unmodified base commit, so this is pre-existing.
+
+That was confirmed by experiment, not assumed: a detached worktree at `3f863ad` with its own `npm ci` (React 18, react-router-dom 7.18.2, Playwright 1.60.0 — none of this session's changes) was run against the same specs.
+
+| | Baseline PNG | Actually rendered | Diff ratio |
+|---|---|---|---|
+| Base `3f863ad` | 1280×2678 | 1280×**2747** | 0.04 |
+| This branch | 1280×2678 | 1280×**2747** | 0.04 |
+
+**Identical rendering and identical drift on both sides** — the page renders the same before and after React 19 / Router 8. The committed baseline is simply ~69px shorter than what the app now produces, and `maxDiffPixelRatio` is 0.02, so 0.04 fails.
+
+The two runs differ only in *how* they fail: base captured a stable screenshot and failed the pixel comparison, this branch timed out at 5s trying for two consecutive stable frames. That is flakiness in an already-failing test — the page has a late layout shift around the intermediate heights 2683 → 2747 — not a rendering change.
+
+**Baselines were deliberately NOT regenerated.** Doing so inside a runtime migration would bundle an unreviewed visual change into it, and the 69px growth needs a human to confirm the *current* rendering is correct before it is blessed as the new truth. Whoever picks this up should:
+
+1. Look at what grew — the layout shift to 2747px is real and worth understanding before accepting it.
+2. Regenerate with `npx playwright test --update-snapshots` for all three browsers, on macOS (the baselines are `-darwin` suffixed).
+3. Consider fixing the late layout shift, or adding a wait for it, so the specs stop being flaky at the 5s stability window.
+4. Consider whether visual specs should be in a CI gate at all — **they are in none today**, which is exactly why this drifted unnoticed.
 
 ## ⚠️ Local environment issue (not a repo problem)
 

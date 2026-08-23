@@ -290,3 +290,13 @@ The security gate passing with `bypasses: []` is the load-bearing result — it 
 ```bash
 sudo chown -R "$(id -u):$(id -g)" ~/.npm
 ```
+
+## Pre-existing issue found while validating (not caused by Phase 5)
+
+All 11 chromium visual specs (`npm run test:e2e:visual`) fail. They were run because Playwright moved 1.60 → 1.62 and the baselines are committed per-browser PNGs.
+
+**They fail identically on the unmodified base commit.** Verified by running the same specs in a detached worktree at `3f863ad` with its own `npm ci` — React 18, react-router-dom 7.18.2, Playwright 1.60.0. Both sides expect a 1280×2678 baseline and render 1280×**2747**, at the same 0.04 diff ratio against a 0.02 threshold. Rendering is unchanged by React 19 / Router 8; the baseline is simply ~69px stale.
+
+Baselines were deliberately not regenerated here — that would fold an unreviewed visual change into a runtime migration, and the growth should be understood and accepted by a human first. Details and next steps: [`SESSION-HANDOFF-2026-08-23-NODE24-PHASE5.md`](SESSION-HANDOFF-2026-08-23-NODE24-PHASE5.md).
+
+Worth noting for its own sake: **no CI gate runs the visual specs**, which is why this drifted unnoticed.
