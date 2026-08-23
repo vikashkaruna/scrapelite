@@ -21,7 +21,42 @@ Branch: **`claude/node-24-upgrade-phase-5-5d22d9`**, cut from `origin/staging` (
 | `af18096` | Phase 5A — toolchain refresh inside the plan's sanctioned ranges |
 | `1f3ee9c` | Phase 5B — React 19 + react-router 8, plus the a11y regression it exposed |
 
-**Not merged anywhere. `main` untouched. Nothing deployed.**
+Later in the same session, plus `d1ddea1` / `cc69aa0` (docs), validated through [PR #106](https://github.com/vikashkaruna/scrapelite/pull/106) and **fast-forwarded into `staging`** (`3f863ad..cc69aa0`).
+
+**`main` is untouched.** Merging `staging` → `main` remains a separate, explicitly-approved step.
+
+### CI evidence (PR #106)
+
+| Check | Result |
+|---|---|
+| Staging Gate: Test Suites | pass (8m41s) — every step, incl. e2e smoke and security suite |
+| Staging Gate: Vulnerabilities | pass — **with `bypasses: []`** |
+| Staging Gate: Open Issues/Defects | pass |
+| netlify deploy-preview | pass — 41/41 functions `nodejs24.x` |
+
+`Deployed & Smoke Tested` was skipped on the PR by design — it only runs on a push to `staging`, so the merge is what triggers it.
+
+### Staging gate after the merge (run `32622936519`, commit `cc69aa0`) — **all four green**
+
+| Check | Result |
+|---|---|
+| Staging Gate: Test Suites | success |
+| Staging Gate: Vulnerabilities | success — **`bypasses: []`** |
+| Staging Gate: Open Issues/Defects | success |
+| Staging Gate: Deployed & Smoke Tested | **success** |
+
+That last job is the one that matters for the runtime migration: it waited for the Netlify staging deploy to converge, **verified the Functions manifest**, rebuilt the artifact identical to what Netlify published for the commit, and smoke-tested it.
+
+Independently verified against the Netlify API for the staging deploy (`6a8a929c98e4c300086693af`):
+
+- **41/41 functions on `nodejs24.x`**
+- **all five crons still scheduled** — `scheduled-runner` `@hourly`, `billing-lifecycle` `@daily`, `billing-purge` `@daily`, `reengagement` `@daily`, `health-monitor` `@hourly`
+
+The cron check is not a formality. This repo has a documented history of scheduled functions silently un-scheduling with no build error and no runtime error (all four sat unscheduled from R19 until 2026-07-27), so a runtime migration is exactly the kind of change that could drop them.
+
+**`staging.datiq.app` returns 401 and that is correct.** Branch deploys sit behind Netlify's visitor-access gate by design — see `scripts/netlify-edge-access-bypass.mjs`. It is why the gate smoke-tests the build artifact locally instead of probing the URL over the network, and why the bundle-hash comparison in `CLAUDE.md` cannot be run against staging without an SSO bypass. Production (`datiq.app`) returns 200 and is unaffected.
+
+Note on the pre-push hook: on the **first** push of a new branch it reported *"docs-only diff — skipping tests"*, because `origin/<branch>` did not exist yet to diff against. **It validated nothing on that push.** It ran properly (8 gates, 25s, green) on the push to `staging`, where `origin/staging` existed to diff against. **A green hook line on a brand-new branch is not evidence that the gates ran** — read the line, not just its colour.
 
 ## First: Phases 1–4 were verified, not assumed
 
