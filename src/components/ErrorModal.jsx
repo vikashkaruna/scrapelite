@@ -20,7 +20,7 @@ export function useErrorModal() {
 }
 
 // ── Modal UI ──────────────────────────────────────────────────────────────────
-function ErrorModal({ title, message, detail, onClose, onRetry }) {
+function ErrorModal({ title, message, detail, onClose, onRetry, action }) {
   const [showDetail, setShowDetail] = useState(false);
 
   // Trap keyboard: Escape closes, Tab stays inside.
@@ -85,9 +85,18 @@ function ErrorModal({ title, message, detail, onClose, onRetry }) {
         {/* Actions */}
         <div className="error-actions">
           <Button variant="secondary" onClick={onClose}>
-            {onRetry ? "Dismiss" : "Close"}
+            {onRetry || action ? "Dismiss" : "Close"}
           </Button>
-          {onRetry && (
+          {/* A message that tells the user what to do needs a way to do it.
+              The compliance refusal for a signed-out visitor says "sign in and
+              DatIQ can record that" — without this button that was a dead end,
+              since the only control was Close. */}
+          {action && (
+            <Button variant="primary" icon={action.icon || "arrow-right"} onClick={action.onClick}>
+              {action.label}
+            </Button>
+          )}
+          {onRetry && !action && (
             <Button variant="primary" icon="arrow-right" onClick={onRetry}>
               Try again
             </Button>
@@ -116,6 +125,10 @@ export function ErrorModalProvider({ children }) {
       message: override.message || classified.message,
       detail: formatDetail(error),
       onRetry,
+      // { label, icon?, onClick } — a primary action for messages that tell the
+      // user what to do next. Takes the place of "Try again", which is wrong for
+      // anything that cannot succeed on a retry.
+      action: override.action || null,
     });
   }, []);
 
@@ -137,6 +150,12 @@ export function ErrorModalProvider({ children }) {
           title={modal.title}
           message={modal.message}
           detail={modal.detail}
+          action={modal.action ? {
+            ...modal.action,
+            // Close first so the auth modal (or whatever the action opens) is
+            // not stacked underneath this one.
+            onClick: () => { close(); setTimeout(modal.action.onClick, 80); },
+          } : null}
           onClose={close}
           onRetry={handleRetry}
         />

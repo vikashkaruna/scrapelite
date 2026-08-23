@@ -188,6 +188,57 @@ describe("Q8 — shareService: Supabase enabled (cross-browser path)", () => {
     expect(upsertedRow.id).toBeUndefined();
   });
 
+  it("reports the link as LIVE when the write is denied but the row is published", async () => {
+    // The reported bug: creating a public link works, then "Sync public link"
+    // says "Public publish failed — nothing was saved locally. Check Supabase
+    // configuration." An upsert on an existing slug becomes an UPDATE, and the
+    // "owner update" policy in 0007 has two branches that an ANONYMOUS sharer
+    // can never satisfy — user_id is null, and the x-session-id header it
+    // matches on is sent nowhere in this codebase. The row is live throughout;
+    // only the overwrite is refused. Calling that a publish failure is false.
+    supabaseMock.enabled = true;
+    const chain = {
+      select: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      // The pre-write slug lookup finds nothing; the post-failure probe finds
+      // the live row. maybeSingle is called for both, in that order.
+      maybeSingle: vi.fn()
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({ data: { slug: "abc12345" }, error: null }),
+      upsert: vi.fn(async () => ({ data: null, error: { message: "new row violates row-level security policy" } })),
+      delete: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
+    };
+    supabaseMock.from.mockImplementation(() => chain);
+    const res = await shareExtraction(sampleExtraction());
+    expect(res.persistedTo).toBe("supabase");
+    // The distinguishing flag: live, but this browser could not refresh it.
+    expect(res.refreshed).toBe(false);
+  });
+
+  it("still fails when the write is denied AND no published row exists", async () => {
+    // The probe must not turn every denial into a success — a genuine
+    // publish failure has to stay a failure.
+    supabaseMock.enabled = true;
+    const chain = {
+      select: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      upsert: vi.fn(async () => ({ data: null, error: { message: "boom" } })),
+      delete: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
+    };
+    supabaseMock.from.mockImplementation(() => chain);
+    await expect(shareExtraction(sampleExtraction())).rejects.toMatchObject({
+      code: "PUBLIC_PUBLISH_FAILED",
+    });
+  });
+
+  it("reports refreshed:true on an ordinary successful publish", async () => {
+    supabaseMock.enabled = true;
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from());
+    const res = await shareExtraction(sampleExtraction());
+    expect(res.refreshed).toBe(true);
+  });
+
   it("fails closed when Supabase is configured but the publish is rejected", async () => {
     supabaseMock.enabled = true;
     const chain = {

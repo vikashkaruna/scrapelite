@@ -36,7 +36,7 @@ export function ExtractionProvider({ children }) {
   const showError = useErrorModal();
   const showToast = useToast();
   const billing = useBilling();
-  const { user } = useAuth();
+  const { user, openAuth } = useAuth();
   const guestTrial = useGuestTrial();
   const { personaId } = usePersona();
   // Restore the last-viewed extraction so /preview survives a browser reload.
@@ -222,8 +222,17 @@ export function ExtractionProvider({ children }) {
             host: err.host || consentHostOf(url),
             options,
           });
+        } else if (user) {
+          showError(err, COMPLIANCE_ERROR);
         } else {
-          showError(err, user ? COMPLIANCE_ERROR : COMPLIANCE_GUEST_ERROR);
+          // The guest copy says "sign in and DatIQ can record that and
+          // continue". Without an action that was a dead end — the only
+          // control on this modal was Close — so it told the user what to do
+          // and then gave them no way to do it.
+          showError(err, {
+            ...COMPLIANCE_GUEST_ERROR,
+            action: { label: "Sign in", icon: "log-in", onClick: () => openAuth("signin") },
+          });
         }
         return;
       }

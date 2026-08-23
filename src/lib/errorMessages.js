@@ -200,6 +200,12 @@ export function formatDetail(error) {
   const name = error.name && error.name !== "Error" ? error.name : null;
   const msg = error.message || String(error);
   parts.push(name ? `${name}: ${msg}` : msg);
+  // A compliance refusal gets its reason and NOTHING else. The stack here is
+  // apiClient's fetch wrapper — nothing crashed in it — and a minified trace
+  // under a refusal is precisely what made users read a deliberate policy
+  // decision as a crash. Fixing the title and message while still printing a
+  // stack only half-solved that.
+  if (isComplianceError(error)) return parts.join("");
   if (error.stack) {
     const trace = error.stack
       .split("\n")

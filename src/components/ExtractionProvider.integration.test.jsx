@@ -387,12 +387,34 @@ describe("ExtractionProvider.extract — robots.txt refusals are not failures", 
     expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
   });
 
+  it("gives the signed-out user a working way to sign in", async () => {
+    // The copy says "sign in and DatIQ can record that and continue". Without a
+    // button that was a dead end: the only control on this modal was Close, so
+    // it told the user what to do and gave them no way to do it.
+    await runRefusal(complianceError({ consentAvailable: true }));
+    const signIn = screen.getByRole("button", { name: /^sign in$/i });
+    expect(signIn).toBeTruthy();
+  });
+
+  it("does not print a stack trace under the refusal", async () => {
+    // A minified trace under a deliberate policy decision is what made the
+    // refusal read as a crash.
+    await runRefusal(complianceError());
+    const toggle = screen.queryByRole("button", { name: /technical details/i });
+    if (toggle) {
+      toggle.click();
+      expect(document.body.textContent).not.toMatch(/\bat async\b/);
+    }
+  });
+
   it("tells a signed-out user to sign in rather than offering the override", async () => {
     // An anonymous cookie is nobody to attribute a permission claim to, so a
     // guest never sees the attestation dialog even when the server flags the
     // refusal as overridable in principle.
     await runRefusal(complianceError({ consentAvailable: true }));
-    expect(screen.getByText(/sign in/i)).toBeTruthy();
+    // Scoped to the MESSAGE: there is now also a "Sign in" button, so a bare
+    // /sign in/i matches twice.
+    expect(screen.getByText(/sign in and DatIQ can record that/i)).toBeTruthy();
     expect(screen.queryByText(/I confirm I have permission/i)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   classifyError,
   isComplianceError,
+  formatDetail,
   COMPLIANCE_ERROR,
 } from "./errorMessages.js";
 
@@ -103,5 +104,37 @@ describe("isComplianceError", () => {
     e.status = 500;
     expect(isComplianceError(e)).toBe(false);
     expect(isComplianceError(null)).toBe(false);
+  });
+});
+
+describe("formatDetail — a refusal is not a crash report", () => {
+  function complianceErr() {
+    const e = new Error("robots.txt disallows scraping for DatIQBot/1.0 (path=/)");
+    e.code = "robots_disallowed";
+    e.stack = "Error: x\n    at n (apiClient-CGmcN3Hq.js:1:558)\n    at async al (index-Bngwiq7f.js:21:2158)";
+    return e;
+  }
+
+  it("shows the reason and NOTHING else for a compliance refusal", () => {
+    // The stack here belongs to apiClient's fetch wrapper — nothing crashed in
+    // it. Printing a minified trace under a deliberate policy decision is what
+    // made users read the refusal as a crash in the first place; fixing the
+    // title and message while still showing a stack only half-solved it.
+    const detail = formatDetail(complianceErr());
+    expect(detail).toBe("robots.txt disallows scraping for DatIQBot/1.0 (path=/)");
+    expect(detail).not.toMatch(/at /);
+    expect(detail).not.toMatch(/apiClient|index-/);
+  });
+
+  it("still shows a stack for a genuine failure", () => {
+    // Narrowing the rule to refusals must not remove the diagnostics that make
+    // a real fault debuggable.
+    const e = new Error("Failed to fetch");
+    e.stack = "Error: y\n    at fetch (chunk.js:1:1)";
+    expect(formatDetail(e)).toMatch(/at fetch/);
+  });
+
+  it("returns null for no error", () => {
+    expect(formatDetail(null)).toBeNull();
   });
 });

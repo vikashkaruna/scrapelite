@@ -204,20 +204,35 @@ export default function Preview() {
     setShareOpen(false);
     try {
       const alreadyHadLocalLink = Boolean(getSharedSlugForId(current.id));
-      const { slug, persistedTo } = await shareExtraction(current);
+      const { slug, persistedTo, refreshed } = await shareExtraction(current);
       setSharedSlug(slug);
       // FA1 — count this as a public report (free-tier quota mechanic)
       if (!alreadyHadLocalLink) recordPublicShare(current.id);
       analytics.exported({ format: "share", source: "preview", persistedTo });
-      const msg = persistedTo === "supabase"
-        ? "Public link created — works in any browser."
-        : persistedTo === "both"
-          ? "Public link created (local + cloud)."
-          : "Public link created locally — configure Supabase to share across browsers.";
+
+      // Four outcomes, and they are genuinely different things to say. The
+      // verb changes on whether a link already existed, because "created" is
+      // wrong for the Sync action the user reached this from.
+      const verb = alreadyHadLocalLink ? "Public link is live" : "Public link created";
+      let msg;
+      if (persistedTo === "supabase" && refreshed === false) {
+        // Live, but this browser could not overwrite the published copy — see
+        // the RLS note in shareService. Not a failure; the link works.
+        msg = `${verb} — already published. Sign in to update its contents.`;
+      } else if (persistedTo === "supabase" || persistedTo === "both") {
+        msg = `${verb} — works in any browser.`;
+      } else {
+        msg = `${verb} in this browser only. Sign in to make it work everywhere.`;
+      }
       showToast(msg, "check");
     } catch (err) {
+      // Never name Supabase here, and never claim data was lost: the
+      // extraction itself is untouched — only the public link failed. The old
+      // copy ("nothing was saved locally. Check Supabase configuration") told
+      // an end user to debug a vendor they have no relationship with, about a
+      // loss that had not happened.
       showToast(err?.code === "PUBLIC_PUBLISH_FAILED"
-        ? "Public publish failed — nothing was saved locally. Check Supabase configuration."
+        ? "Couldn't create the public link just now. Your extraction is safe — please try again."
         : "Share failed. Please try again.", "alert-triangle");
       console.warn("[DatIQ] Share failed:", err);
     }
