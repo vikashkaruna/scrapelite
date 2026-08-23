@@ -156,13 +156,7 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
           <span>Your plan</span>
         </div>
       )}
-      {/* A coming-soon plan had only a CSS class and a "Notify me" button — no
-          visible label saying why it can't be bought. The badge the docs and
-          the smoke checklist both describe was never actually rendered; the
-          test for it passed only because the words "coming soon" happened to
-          appear elsewhere on the page. */}
-      {isSoon && <div className="plan-badge plan-badge-soon">Coming soon</div>}
-      {!isSoon && plan.badge && <div className="plan-badge">{plan.badge}</div>}
+      {plan.badge && <div className="plan-badge">{plan.badge}</div>}
       <div className="plan-header">
         <div className="plan-name">{plan.name}</div>
         <div className="plan-tagline">{plan.tagline}</div>
