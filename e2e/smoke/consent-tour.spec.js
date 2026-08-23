@@ -1,6 +1,14 @@
 import { expect, test } from "playwright/test";
+import { stubExternalOrigins } from "../support.js";
 
 async function prepareRuntime(page) {
+  // This spec supplies its own runtime-config (it needs a gaMeasurementId), so
+  // it deliberately does NOT call installOfflineMocks. It still has to stub the
+  // third-party font CDN: prepareRuntime does a goto AND a reload, which cost
+  // ~12.5s each where egress is filtered, blowing the 30s budget before the
+  // consent banner is ever clicked. googletagmanager stays real here — the
+  // routes below are what this spec is actually asserting on.
+  await stubExternalOrigins(page);
   await page.route("**/runtime-config.js", async (route) => {
     await route.fulfill({
       contentType: "application/javascript",
