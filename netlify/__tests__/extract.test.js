@@ -599,7 +599,7 @@ describe("extract — robots.txt refusal", () => {
   };
 
   /** Reload the handler with guestUsage + consent mocked so we can observe them. */
-  async function loadWithMocks({ consumeSpy, consentGranted = false, user = null } = {}) {
+  async function loadWithMocks({ consumeSpy, consentGranted = false, consentDegraded = false, user = null } = {}) {
     vi.resetModules();
     vi.doMock("../functions/lib/guestUsage.js", () => ({
       consumeGuestCredit: consumeSpy,
@@ -612,7 +612,7 @@ describe("extract — robots.txt refusal", () => {
     }));
     vi.doMock("../functions/lib/scrapeConsent.js", () => ({
       hasScrapeConsent: vi.fn(async () => ({
-        granted: consentGranted, expiresAt: null, degraded: false,
+        granted: consentGranted, expiresAt: null, degraded: consentDegraded,
       })),
     }));
     // The entitlement gate runs BEFORE compliance (a denied account must cost
@@ -703,6 +703,19 @@ describe("extract — robots.txt refusal", () => {
       }),
     });
     expect(r.statusCode).toBe(403);
+  });
+
+  it("does NOT offer the override when the consent store cannot answer", async () => {
+    // `degraded` means the store is unconfigured, unmigrated or unreachable —
+    // so recording an attestation would fail too. Offering the override there
+    // sends the user into a dialog that can only error: they tick the box, the
+    // POST 502s, and nothing is granted. This is the state the product is in
+    // until 0028_scrape_consent.sql has been applied.
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" }, consentDegraded: true });
+    const body = JSON.parse((await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } })).body);
+    expect(body.code).toBe("robots_disallowed");
+    expect(body.consentAvailable).toBe(false);
   });
 
   it("keeps the refusal standing when the consent lookup THROWS", async () => {

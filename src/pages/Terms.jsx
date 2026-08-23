@@ -23,7 +23,8 @@ const SECTIONS = [
     title: "Acceptable Use",
     items: [
       "You may only use DatIQ to extract data from websites you own, have explicit permission to scrape, or that are publicly accessible and not protected by technical or legal access controls.",
-      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using DatIQ.",
+      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using DatIQ. DatIQ honours robots.txt by default and will decline a request that a site disallows.",
+      "Where a site's robots.txt disallows extraction, DatIQ may permit you to proceed only if you first record a confirmation that you own that site or have the owner's permission. That confirmation is your representation, recorded against your account for one named site at a time. You remain solely responsible for its accuracy and for any extraction it permits, and DatIQ may withdraw it or suspend your access at any time.",
       "You may not use DatIQ to harvest personal data for spam, phishing, identity theft, or any other malicious purpose.",
       "You may not use DatIQ to circumvent authentication, access controls, or rate limits of any website or service.",
       "You may not resell, sublicense, or redistribute access to DatIQ's extraction infrastructure without prior written consent.",

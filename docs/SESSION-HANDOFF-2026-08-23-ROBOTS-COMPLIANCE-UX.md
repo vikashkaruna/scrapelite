@@ -160,15 +160,36 @@ refusal must be hermetic for exactly this reason.
 
 ## 5. Open items for the owner
 
-- 🔴 **Marketing/legal copy — needs sign-off, deliberately not rewritten.**
-  `/blog` and `/vs/*` advertise robots.txt compliance as unconditional. The
-  override makes it "honoured by default, overridable with a recorded
-  attestation". That is a claim change, and probably a Terms line about who
-  carries responsibility for an attested host.
+- ✅ **Terms updated with owner approval.** The audit was smaller than first
+  reported: `/vs/*` carries no robots.txt claim at all (its "Multiple robots" /
+  "Scheduled robots" rows are Browse.ai *bot* features — I had conflated the
+  words), `llms-full.txt` already said "by default", and `/blog`'s bullet
+  attributes robots handling to Firecrawl. Acceptable Use now states that DatIQ
+  honours robots.txt by default and that a refusal is overridable only by a
+  recorded confirmation of ownership or owner permission, per named site, with
+  responsibility resting on the user. Added as **items**, never a new section —
+  `SECTIONS` drives `#section-N` anchors by array index.
+- ⚠️ **Open, and a legal judgement rather than a code one.** Acceptable Use
+  item 1 also permits sites "publicly accessible and not protected by technical
+  or legal access controls". If counsel reads a robots.txt `Disallow` as a
+  technical access control, no attestation should override it and the feature
+  needs revisiting rather than a copy edit.
+- **Two accuracy fixes left unmade, neither a blocker:** the `/blog` bullet
+  credits Firecrawl for robots handling (DatIQ runs its own engine before any
+  provider, and three of the four providers do none), and `llms-full.txt`
+  claims to honour `noindex` — which has never been true. Nothing in the
+  extract path parses a target page's noindex; `seoMeta.js`'s noindex code sets
+  it on DatIQ's own admin pages.
 - **Apply `0028_scrape_consent.sql`** to Supabase before this reaches an
   environment where the override is expected to work. Until then the endpoint
   returns a storage error and the refusal simply stands — which is the safe
   direction.
+- ✅ **`consentAvailable` now respects `degraded`.** The server no longer
+  advertises the override when the consent store cannot answer — unconfigured,
+  unmigrated, or unreachable. Without that, every signed-in user hitting a
+  refusal was offered a dialog that could only error: tick the box, the POST
+  502s, nothing granted. That is the state the product is in until `0028` is
+  applied, so it mattered immediately.
 - **No account-settings UI yet** for reviewing or withdrawing grants.
   `listScrapeConsents` + `revokeScrapeConsent` exist and are tested; nothing
   renders them. Withdrawal is currently API-only.

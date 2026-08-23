@@ -262,7 +262,14 @@ export const handler = async (event) => {
               // `degraded` (we could not read the record) is treated exactly
               // like "no record" — see the fail-closed note in scrapeConsent.js.
               overridden = consent.granted === true;
-              consentAvailable = !overridden;
+              // ...and it also suppresses the OFFER. `degraded` means the
+              // consent store could not answer — unconfigured, unmigrated, or
+              // unreachable — so recording an attestation would fail too.
+              // Advertising the override there sends the user into a dialog
+              // that can only ever error: they tick the box, the POST 502s,
+              // and nothing is granted. Better to show the plain refusal, which
+              // is accurate in every case, than a door that cannot open.
+              consentAvailable = !overridden && !consent.degraded;
             }
           } catch (err) {
             console.warn("[DatIQ] consent lookup errored (refusal stands):", err.message);
