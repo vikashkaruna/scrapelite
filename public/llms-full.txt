@@ -41,11 +41,15 @@ No code required. Background processing keeps the page responsive. Results persi
 - All internal and external links, with text and aria-label
 - Page metadata: title, description, OpenGraph, Twitter Card
 - JavaScript rendering option (via Firecrawl `waitFor: 3000`) for SPAs
-- Honors `robots.txt` and `noindex` by default
+- Honors `robots.txt` by default. The check runs server-side before any page is
+  fetched, identifying as `DatIQBot/1.0`, and honors any published Crawl-delay.
+  A disallowed URL is declined without being requested and without being charged.
+  A signed-in user who records a confirmation that they own a site, or have the
+  owner's permission, can override that refusal for that one site.
 
 ### AI summary
 - Plain-language overview of any page
-- Model: Anthropic Claude (configurable)
+- Model: Google Gemini by default, falling back to Anthropic Claude then OpenAI (configurable per deployment)
 - 2-3 sentence default; longer for rich content
 
 ### Custom extraction
@@ -292,7 +296,7 @@ Yes. Business plans include 3 seats, Agency plans include 5 workspaces. Extra Wo
 DatIQ is India-first and DPDP Act 2023 compliant. SOC 2 Type II is in progress (target Q4 2026). The admin page documents current compliance posture and DPIA templates.
 
 **Q11. What AI model powers DatIQ?**
-DatIQ uses Anthropic Claude for AI enrichment (configurable via env). The default model is optimized for structured extraction tasks. The API is also model-agnostic — you can plug in your own key.
+DatIQ runs AI enrichment through a provider fallback chain — Google Gemini, then Anthropic Claude, then OpenAI — configurable via env. The default model is optimized for structured extraction tasks. The API is also model-agnostic — you can plug in your own key.
 
 **Q12. How do I cancel my subscription?**
 Open Account → Plan → Cancel. You keep access until the end of the billing period, then the account moves to Free. No email hoops, no retention calls.
@@ -346,12 +350,12 @@ DatIQ's differentiation: plain-English custom extraction, built-in AI enrichment
 
 ## 12. Technical Stack
 
-- **Frontend:** Vite 5 + React 18 + React Router 6
+- **Frontend:** Vite 8 + React 19 + React Router 8
 - **Styling:** Tailwind CSS + CSS custom-property design tokens
 - **Icons:** lucide-react
 - **Auth + DB:** Supabase (Postgres + auth)
 - **Extraction:** Firecrawl (`/v1/scrape` + `/v1/map`)
-- **AI enrichment:** Anthropic Claude (configurable)
+- **AI enrichment:** Google Gemini, falling back to Anthropic Claude then OpenAI (configurable)
 - **Serverless:** Netlify Functions (Node.js)
 - **Payments:** Razorpay (India) + Stripe (international)
 - **PDF export:** jsPDF (lazy-loaded, only on export click)

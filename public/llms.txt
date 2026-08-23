@@ -108,4 +108,4 @@ DatIQ is a no-code alternative to Clay (10x cheaper), Browse.ai, Firecrawl, Diff
 DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.
 
 ## Technical
-Built with Vite, React 18, React Router 6, Tailwind CSS, Supabase (auth + DB), Firecrawl (extraction), Anthropic Claude (AI enrichment), Netlify Functions (serverless API proxy), Stripe and Razorpay (payments).
+Built with Vite 8, React 19, React Router 8, Tailwind CSS, Supabase (auth + DB), a scraping fallback chain (Firecrawl, Spider.cloud, Jina AI, direct fetch), an AI fallback chain (Google Gemini, Anthropic Claude, OpenAI), Netlify Functions (serverless API proxy), Stripe and Razorpay (payments).

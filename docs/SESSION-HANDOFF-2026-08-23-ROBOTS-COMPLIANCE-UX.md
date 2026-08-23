@@ -174,12 +174,20 @@ refusal must be hermetic for exactly this reason.
   or legal access controls". If counsel reads a robots.txt `Disallow` as a
   technical access control, no attestation should override it and the feature
   needs revisiting rather than a copy edit.
-- **Two accuracy fixes left unmade, neither a blocker:** the `/blog` bullet
-  credits Firecrawl for robots handling (DatIQ runs its own engine before any
-  provider, and three of the four providers do none), and `llms-full.txt`
-  claims to honour `noindex` — which has never been true. Nothing in the
-  extract path parses a target page's noindex; `seoMeta.js`'s noindex code sets
-  it on DatIQ's own admin pages.
+- ✅ **Both accuracy fixes since made.** `/blog`'s pipeline post credited
+  Firecrawl for robots handling; it now leads with a **Compliance check** step
+  (ours, server-side, before any fetch, as `DatIQBot/1.0`, honouring
+  Crawl-delay) and describes the real Firecrawl → Spider.cloud → Jina AI →
+  direct chain plus the per-host rate limiter. `llms-full.txt` no longer claims
+  to honour `noindex` — it never did.
+- ⚠️ **Scope grew once, on purpose.** Renaming the blog's "Step 2: AI
+  enrichment (Anthropic Claude)" heading forced correcting its body, which
+  exposed the same wrong claim in four more places: the real default chain is
+  Gemini → Anthropic → OpenAI (`DEFAULT_ORDER` in `aiProviders.js`), not
+  Claude. Leaving those to contradict the line just fixed would have been worse
+  than not touching it, so `llms.txt` and `llms-full.txt` were made consistent
+  — and their React 18 / Router 6 / Vite 5 stack claims corrected to 19 / 8 / 8
+  while there.
 - **Apply `0028_scrape_consent.sql`** to Supabase before this reaches an
   environment where the override is expected to work. Until then the endpoint
   returns a storage error and the refusal simply stands — which is the safe
