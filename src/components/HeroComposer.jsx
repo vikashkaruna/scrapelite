@@ -20,6 +20,7 @@ import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useToast } from "./Toast.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
+import { knownDisallowedHost } from "../lib/scrapeConsentService.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
 import { buildSchedule, saveSchedule, SCHEDULE_PRESETS, presetByKey } from "../lib/schedulerService.js";
 
@@ -105,6 +106,13 @@ export default function HeroComposer({
   const urlCount = detectedUrls.length;
   // Raw pasted text can't be scheduled (no URL to re-fetch).
   const canSchedule = classification.kind !== "text" && !embeddedAsText;
+
+  // Pre-flight hint for sites we know disallow every crawler. A HINT ONLY: it
+  // never blocks submission, because robots.txt is fetched live on the server
+  // and is the only thing that decides. Its job is to stop someone learning
+  // that LinkedIn is off-limits by watching a request fail. First match wins —
+  // naming one site is useful, listing six is noise.
+  const disallowedHint = detectedUrls.map(knownDisallowedHost).find(Boolean) || null;
 
   // Reset the chooser whenever the input changes shape, so a previous answer
   // can't silently apply to a completely different paste.
@@ -387,6 +395,20 @@ export default function HeroComposer({
               </button>
             </span>
           )}
+        </div>
+      )}
+
+      {/* Known-blocked host — warn before the request, not after. This is a
+          hint, not a gate: the button stays enabled, because this list can go
+          stale and only the live robots.txt on the server is authoritative. */}
+      {disallowedHint && (
+        <div className="hero-blocked-hint" role="status">
+          <Icon name="shield" size={13} />
+          <span>
+            <b>{disallowedHint.label}</b> blocks automated tools in its robots.txt,
+            and DatIQ honours that — this will be declined. Try the company's own
+            website instead.
+          </span>
         </div>
       )}
 

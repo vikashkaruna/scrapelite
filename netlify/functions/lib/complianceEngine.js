@@ -14,12 +14,19 @@
 //
 // What this module does NOT do (and why):
 //   - No ToS database. CFAA / ToS exposure is a legal risk; the operator
-//     is responsible for the content they scrape. The function surfaces
-//     a `requireConsent` flag in the response so the UI can show a
-//     "I have permission to scrape this site" checkbox.
-//   - No robots.txt enforcement for map mode. Map mode crawls within
-//     a single site and the caller's intent is to enumerate, so we
-//     intentionally skip the compliance check for that one code path.
+//     is responsible for the content they scrape.
+//
+// This module decides ONLY what robots.txt says. It does not know about the
+// signed-in user's recorded attestation ("I have permission to scrape this
+// site") — that override lives in lib/scrapeConsent.js and is applied by the
+// caller, so a refusal here stays a pure reading of the host's own rules.
+//
+// A NOTE ON MAP MODE. The header used to claim map mode was exempt from this
+// check. It never was: extract.js runs checkCompliance before it branches on
+// options.mapMode, so map mode has always been enforced. Enforcement is the
+// behaviour we want — a crawl that enumerates a whole site is the LAST thing
+// that should ignore robots.txt — so the comment was the wrong half, and this
+// is it corrected rather than the code loosened to match it.
 //
 // IMPORTANT: the robots.txt fetch is best-effort. If the fetch fails or
 // the host doesn't serve one, we FAIL OPEN (allow scraping) — this is the
@@ -101,8 +108,19 @@ function parseRobots(text, ua) {
   // back to the * block.
   // Match: a block's agent is a prefix of our UA (case-insensitive).
   // "DatIQBot" matches UA "DatIQBot/1.0".
+  // Match on the PRODUCT TOKEN ("datiqbot"), not the full "datiqbot/1.0".
+  // The old test was `uaLower.startsWith(agent)`, which meant a robots.txt
+  // block addressed to `User-agent: D` — or any other prefix of our name —
+  // captured us and silently replaced the `*` rules we should have obeyed.
+  // Per RFC 9309 the record matches when its value equals our product token,
+  // case-insensitively; we additionally accept the token with a version
+  // suffix so `DatIQBot/1.0` in a robots file still finds us.
   const uaLower = ua.toLowerCase();
-  const matches = (a) => uaLower.startsWith(a.toLowerCase()) || a.toLowerCase() === uaLower;
+  const token = uaLower.split("/")[0];
+  const matches = (a) => {
+    const agent = String(a).toLowerCase().trim();
+    return agent === token || agent === uaLower || agent.split("/")[0] === token;
+  };
   const ourBlock = blocks.find((b) =>
     b.agents.some(matches) && !b.agents.includes("*"),
   );
@@ -189,13 +207,38 @@ export async function loadRobots(origin, ua = "DatIQBot/1.0", options = {}) {
  *     allowed: boolean,
  *     reason: string,           — human-readable explanation
  *     crawlDelayMs: number,     — recommended delay before next request
+ *     code: string,             — STABLE machine-readable verdict, see below
+ *     host: string,             — the host the verdict is about
+ *     path: string,             — pathname + search, echoed VERBATIM
  *   }
+ *
+ * `code` is the field callers should branch on. It exists because the only
+ * thing distinguishing a deliberate policy refusal from a genuine fault used
+ * to be the prose in `reason`, and the client's error classifier matched on
+ * that prose — so a robots.txt refusal fell through every category and was
+ * reported to the user as "Something went wrong. An unexpected error
+ * occurred." Prose is for humans; branch on the code.
+ *
+ *   "allowed"            — scrape it
+ *   "robots_disallowed"  — the host's own robots.txt says no. OVERRIDABLE by a
+ *                          signed-in user's recorded attestation; see
+ *                          lib/scrapeConsent.js. The caller applies that, not
+ *                          this module.
+ *   "host_not_permitted" — the operator's PERMITTED_HOSTS allowlist excludes
+ *                          this host. NOT overridable by a user: it is the
+ *                          operator's decision, not the site's.
+ *   "invalid_url"        — unparseable.
+ *
+ * `reason` is unchanged, byte for byte, so anything still reading it keeps
+ * working.
  */
 export async function checkCompliance(url, opts = {}) {
   const ua = opts.ua || "DatIQBot/1.0";
   const explicitAllowlist = (opts.permittedHosts || "").split(",").map((s) => s.trim()).filter(Boolean);
   const host = hostOf(url);
-  if (!host) return { allowed: false, reason: "invalid URL", crawlDelayMs: 0 };
+  if (!host) {
+    return { allowed: false, reason: "invalid URL", crawlDelayMs: 0, code: "invalid_url", host: "", path: "" };
+  }
 
   if (explicitAllowlist.length > 0) {
     if (!explicitAllowlist.includes(host)) {
@@ -203,6 +246,9 @@ export async function checkCompliance(url, opts = {}) {
         allowed: false,
         reason: `Host ${host} is not on the operator-configured permitted-hosts list`,
         crawlDelayMs: 0,
+        code: "host_not_permitted",
+        host,
+        path: "",
       };
     }
     // Operator explicitly listed this host — bypass robots.txt entirely
@@ -211,11 +257,17 @@ export async function checkCompliance(url, opts = {}) {
       allowed: true,
       reason: `Host ${host} is on the operator permitted-hosts list (bypassing robots.txt)`,
       crawlDelayMs: 0,
+      code: "allowed",
+      host,
+      path: "",
     };
   }
 
   const origin = `${new URL(url).protocol}//${host}`;
   const robots = await loadRobots(origin, ua);
+  // Echoed verbatim into `reason`. Never normalise or shorten it: the path in
+  // the message is how anyone reading a support report knows WHICH url was
+  // refused, and a rewritten path sends them looking for a bug that isn't there.
   const path = new URL(url).pathname + new URL(url).search;
   const allowed = isPathAllowed(robots?.rules || [], path);
   const crawlDelayMs = robots?.crawlDelaySec
@@ -228,6 +280,9 @@ export async function checkCompliance(url, opts = {}) {
       ? "robots.txt permits scraping for DatIQBot/1.0"
       : `robots.txt disallows scraping for DatIQBot/1.0 (path=${path})`,
     crawlDelayMs,
+    code: allowed ? "allowed" : "robots_disallowed",
+    host,
+    path,
   };
 }
 

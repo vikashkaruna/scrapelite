@@ -76,10 +76,14 @@ grant usage on schema public to anon, authenticated;
 // policies that made analytics_events world-readable, and adds one partial
 // index. Policy changes are not counted here, so these numbers are unaffected
 // by it; the RLS behaviour itself is asserted separately below.
+//
+// 0028_scrape_consent.sql adds 2 tables (scrape_consent_records +
+// scrape_consent_audit), 1 function and 1 trigger (the append-only guard on
+// the audit table), taking these to 42 / 17 / 6.
 const EXPECT = {
-  tables: 40,
-  functions: 16,
-  triggers: 5,
+  tables: 42,
+  functions: 17,
+  triggers: 6,
   tablesWithoutRls: 0,
 };
 
@@ -590,6 +594,53 @@ group("0027 admin coupon grants — user-scoped, one-time redemption");
   eq("admin grant entitlement source is isolated", ent.source, "admin_coupon");
   const replay = await one(`select public.redeem_admin_coupon($1, 'grant-pro-1m') result`, [uid]);
   eq("admin grant cannot be redeemed twice", replay.result.code, "GRANT_ALREADY_USED");
+}
+
+// ── 0028 scrape consent ────────────────────────────────────────────────────
+group("0028 scrape consent — per-host attestation, append-only audit");
+{
+  const uid = (await one(`insert into auth.users (email) values ('consent@x.com') returning id`)).id;
+  await db.query(
+    `insert into public.scrape_consent_records (user_id, host, policy_version)
+     values ($1, 'linkedin.com', '2026-08-23')`, [uid]);
+  const row = await one(
+    `select host, expires_at > now() live from public.scrape_consent_records where user_id = $1`, [uid]);
+  eq("attestation is stored for the host", row.host, "linkedin.com");
+  eq("attestation defaults to an unexpired window", row.live, true);
+
+  // One grant per (user, host): re-attesting must renew, never duplicate.
+  let dup = null;
+  try {
+    await db.query(
+      `insert into public.scrape_consent_records (user_id, host, policy_version)
+       values ($1, 'linkedin.com', '2026-08-23')`, [uid]);
+  } catch (err) { dup = err; }
+  eq("a second attestation for the same host is rejected", Boolean(dup), true);
+
+  // The user FK cascades: deleting the account removes the CURRENT state...
+  await db.query(
+    `insert into public.scrape_consent_audit (user_id, host, action, policy_version, source)
+     values ($1, 'linkedin.com', 'granted', '2026-08-23', 'extract_refusal')`, [uid]);
+
+  let upd = null;
+  try {
+    await db.query(`update public.scrape_consent_audit set action = 'withdrawn' where user_id = $1`, [uid]);
+  } catch (err) { upd = err; }
+  eq("scrape_consent_audit rejects UPDATE", Boolean(upd), true);
+
+  let del = null;
+  try {
+    await db.query(`delete from public.scrape_consent_audit where user_id = $1`, [uid]);
+  } catch (err) { del = err; }
+  eq("scrape_consent_audit rejects DELETE", Boolean(del), true);
+
+  // ...while the audit row survives it, because it carries no FK. That is the
+  // whole reason for the missing FK, so assert it rather than trusting it.
+  await db.query(`delete from auth.users where id = $1`, [uid]);
+  const left = await one(`select count(*)::int n from public.scrape_consent_records where user_id = $1`, [uid]);
+  eq("deleting the account clears the current attestation", left.n, 0);
+  const kept = await one(`select count(*)::int n from public.scrape_consent_audit where user_id = $1`, [uid]);
+  eq("the audit row outlives the deleted account", kept.n, 1);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

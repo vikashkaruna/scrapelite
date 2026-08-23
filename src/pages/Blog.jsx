@@ -448,26 +448,30 @@ The persona system is used to feed AI prompts too. A Sales persona extracts cont
     fullContent: `
 Every time you paste a URL into DatIQ and click Extract, a multi-step pipeline runs in milliseconds. Here's how it works.
 
-## Step 1: Extraction (Firecrawl)
+## Step 1: Compliance check
 
-The URL is sent to Firecrawl's /scrape API endpoint. Firecrawl handles:
+Before any page is fetched, DatIQ reads the site's own robots.txt and checks the URL against it as **DatIQBot/1.0**. If the site disallows that path, the extraction is declined then and there — no page is requested, and nothing is charged. Any Crawl-delay the site publishes is honoured too.
+
+This check is ours, and it runs first, whichever fetcher handles the page afterwards.
+
+## Step 2: Extraction (provider chain)
+
+Permitted URLs go to the first available fetcher in a fallback chain — **Firecrawl → Spider.cloud → Jina AI → a direct fetch** — so extraction keeps working when one provider is down or unconfigured. Between them they handle:
 - JavaScript rendering (for React/Vue/Angular SPAs, when enabled)
-- Robots.txt compliance
-- Rate limiting and retry logic
-- Returning clean HTML + metadata
+- Retry logic and clean HTML + metadata
 
-DatIQ requests the page in HTML format, then parses the response to extract headings (H1–H6), links (internal and external), and page metadata.
+DatIQ adds a per-host rate limiter in front of the chain, so one busy account can't hammer someone else's site. DatIQ requests the page in HTML format, then parses the response to extract headings (H1–H6), links (internal and external), and page metadata.
 
-## Step 2: AI enrichment (Anthropic Claude)
+## Step 3: AI enrichment
 
-The extracted content is passed to Claude via the Anthropic messages API. Depending on the extraction options:
+The extracted content is passed to an AI model through a second fallback chain — **Google Gemini → Anthropic Claude → OpenAI** by default, configurable per deployment. Depending on the extraction options:
 - **Summary** — a single paragraph describing the page's purpose and structure
 - **Custom extraction** — a structured JSON object based on the user's plain-English prompt
 - **Contact extraction** — leadership names, titles, and emails
 
-All AI calls route through a Netlify serverless function — the API key never touches the browser.
+All AI calls route through a Netlify serverless function — the API keys never touch the browser.
 
-## Step 3: Persistence (Supabase)
+## Step 4: Persistence (Supabase)
 
 Extraction results are saved to a Supabase PostgreSQL database, keyed by session ID and URL. This powers the Dashboard view, history, and the CSV/PDF export pipeline.
 

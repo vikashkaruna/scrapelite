@@ -11,6 +11,7 @@ import ExtractSimilarCard from "../components/ExtractSimilarCard.jsx";
 import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { isComplianceError } from "../lib/errorMessages.js";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
@@ -298,7 +299,15 @@ export default function Preview() {
       }
     } catch (err) {
       console.error("[DatIQ] Quick enrichment failed:", err);
-      showToast("Enrichment failed — check your connection", "alert-triangle");
+      // Don't blame the connection for a policy refusal. A robots.txt block is
+      // the server declining deliberately, and "check your connection" sends
+      // the user to debug something that is working fine.
+      showToast(
+        isComplianceError(err)
+          ? "This site doesn't allow automated access"
+          : "Enrichment failed — check your connection",
+        "alert-triangle",
+      );
     } finally {
       setRunningKey(null);
     }

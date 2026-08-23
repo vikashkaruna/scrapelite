@@ -59,6 +59,15 @@ async function request(path, method = "GET", body) {
     e.status = res.status;
     e.detail = errData.detail;
     e.useLocalStorage = errData.useLocalStorage === true;
+    // Machine-readable verdict from the server, carried through so callers can
+    // branch on it instead of pattern-matching the prose in `message`. Dropping
+    // these was how a deliberate robots.txt refusal reached classifyError as an
+    // unrecognised string and got reported as "Something went wrong. An
+    // unexpected error occurred." — see src/lib/errorMessages.js.
+    if (errData.code) e.code = errData.code;
+    if (errData.host) e.host = errData.host;
+    if (errData._complianceBlocked === true) e.complianceBlocked = true;
+    if (errData.consentAvailable === true) e.consentAvailable = true;
     if (isHtml) e.edgeAccess = true;
     throw e;
   }
@@ -126,6 +135,23 @@ export const apiClient = {
   /** Delete an extraction by id. */
   deleteExtraction: (id) =>
     request(`/extractions?id=${encodeURIComponent(id)}`, "DELETE"),
+
+  // ── Scrape consent ("I have permission to extract this site") ──────────────
+  // The record behind an override of a robots.txt refusal. The server resolves
+  // the user from the JWT; nothing here names a user, and /api/extract never
+  // accepts a "consented" flag — it re-reads the record itself on every call.
+
+  /** Is there an unexpired attestation for `host`? Omit host to list them all. */
+  getScrapeConsent: (host) =>
+    request(host ? `/scrape-consent?host=${encodeURIComponent(host)}` : "/scrape-consent", "GET"),
+
+  /** Record an attestation. `confirmed` must be true — the server re-checks it. */
+  grantScrapeConsent: (host, source = "extract_refusal") =>
+    request("/scrape-consent", "POST", { host, confirmed: true, source }),
+
+  /** Withdraw it. Consent you cannot revoke is not consent. */
+  revokeScrapeConsent: (host) =>
+    request(`/scrape-consent?host=${encodeURIComponent(host)}`, "DELETE"),
 
   // ── Schedules CRUD (recurring extraction / track-changes) ───────────────────
   /** List all schedules for the current session, newest first. */

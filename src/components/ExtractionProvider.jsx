@@ -21,6 +21,9 @@ import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { usePersona } from "./PersonaProvider.jsx";
 import { uid } from "../lib/utils.js";
+import { isComplianceError, COMPLIANCE_ERROR, COMPLIANCE_GUEST_ERROR } from "../lib/errorMessages.js";
+import { consentHostOf } from "../lib/scrapeConsentService.js";
+import ScrapeConsentModal from "./ScrapeConsentModal.jsx";
 
 const ExtractionContext = createContext(null);
 
@@ -38,6 +41,10 @@ export function ExtractionProvider({ children }) {
   const { personaId } = usePersona();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
+  // Set when a robots.txt refusal is overridable by this signed-in user, so the
+  // attestation dialog can be offered instead of a dead-end error modal.
+  // Shape: { url, host, options }.
+  const [consentPrompt, setConsentPrompt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingUrl, setLoadingUrl] = useState("");
   // Non-blocking background-extraction job that drives the global progress dock.
@@ -187,13 +194,40 @@ export function ExtractionProvider({ children }) {
       console.error("[DatIQ] Extraction failed:", err);
       setLoading(false);
       setJob(null);
-      // A failed attempt still consumed a provider call, so it consumes a guest
-      // credit too. Counting successes only made every failing URL free, which
-      // is a trivially repeatable way to sit at the limit forever.
-      if (!user) guestTrial?.trackGuestExtraction?.(1);
-      // Q11 — analytics: failure
-      analytics.extractionFailed({ url, intent: options.intent || "summary", error: String(err?.message || err) });
+
+      // A compliance refusal is not a failed attempt — the server declined
+      // before contacting any provider, so nothing was spent and nothing is
+      // owed. It gets no guest charge and no "Try again": retrying a policy
+      // decision cannot change it, and the button only teaches people to
+      // hammer a wall. (The server stopped charging for this too; both halves
+      // were double-billing the same refusal.)
+      const compliance = isComplianceError(err);
+      if (!compliance && !user) guestTrial?.trackGuestExtraction?.(1);
+
+      analytics.extractionFailed({
+        url,
+        intent: options.intent || "summary",
+        error: String(err?.message || err),
+        ...(compliance ? { compliance_blocked: true } : {}),
+      });
       navigate("/");
+
+      if (compliance) {
+        // Signed in and overridable → offer the attestation. Otherwise explain
+        // the refusal; a guest is told to sign in, because an anonymous cookie
+        // is nobody to attribute a permission claim to.
+        if (user && err?.consentAvailable) {
+          setConsentPrompt({
+            url,
+            host: err.host || consentHostOf(url),
+            options,
+          });
+        } else {
+          showError(err, user ? COMPLIANCE_ERROR : COMPLIANCE_GUEST_ERROR);
+        }
+        return;
+      }
+
       // Show modal with a "Try again" button that re-submits the same URL + options.
       showError(err, {}, () => extract(lastUrl.current, lastOpts.current));
     }
@@ -348,7 +382,25 @@ export function ExtractionProvider({ children }) {
     save,
     view,
   };
-  return <ExtractionContext.Provider value={value}>{children}</ExtractionContext.Provider>;
+  return (
+    <ExtractionContext.Provider value={value}>
+      {children}
+      {consentPrompt && (
+        <ScrapeConsentModal
+          host={consentPrompt.host}
+          url={consentPrompt.url}
+          onCancel={() => setConsentPrompt(null)}
+          onGranted={() => {
+            const { url, options } = consentPrompt;
+            setConsentPrompt(null);
+            // Re-run the extraction now that the record exists. The server
+            // re-reads it and decides again — this is a retry, not a bypass.
+            extract(url, options);
+          }}
+        />
+      )}
+    </ExtractionContext.Provider>
+  );
 }
 
 // Merge two enrichment maps, keeping the newer entry (by created_at) per key.

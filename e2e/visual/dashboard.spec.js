@@ -6,7 +6,10 @@ import { expect, test } from "playwright/test";
 import { installOfflineMocks } from "../support.js";
 
 test.beforeEach(async ({ page }) => {
-  await installOfflineMocks(page);
+  // Baselines were captured with the Google webfonts applied, so this suite
+  // opts out of the font stub in support.js. Stubbing them here would change
+  // text metrics on every stored screenshot.
+  await installOfflineMocks(page, { externalFonts: "allow" });
 });
 
 test("dashboard empty state", async ({ page }) => {
