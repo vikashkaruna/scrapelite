@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import HeroComposer from "./HeroComposer.jsx";
 import { ExtractionProvider } from "./ExtractionProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -97,7 +97,6 @@ function Tree({ initialValue = "", intent = "summary", customPrompt = "", onCust
   return (
     <MemoryRouter
       initialEntries={["/"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>

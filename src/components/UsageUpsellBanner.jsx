@@ -5,7 +5,7 @@
 // specific headline + CTA that names the paid plan that completes the
 // current task. Default-anchors on the annual price.
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";

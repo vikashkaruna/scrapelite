@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-21  
 **Scope:** GitHub Actions, local development, Netlify builds and Functions, frontend toolchain, database/runtime tooling, payments, and the MV3 browser extension.  
-**Status:** Analysis and plan only; no runtime or dependency changes are included in this document.
+**Status:** **Executed. Phases 1–5 complete as of 2026-08-23.** This document was written as analysis only; the execution record and the two places where reality diverged from the plan are appended at the end, under "Execution record". Read that section before treating any statement above it as current — in particular, the React Router section below is preserved as written but its security premise has since expired.
 
 ## Executive recommendation
 
@@ -141,6 +141,8 @@ Source: [Tailwind compatibility guidance](https://tailwindcss.com/docs/compatibi
 
 ## Separate high-priority React Router security migration
 
+> ⚠️ **Superseded — read this first.** The premise below ("cannot be cleanly resolved while remaining on React 18") was true when written and is no longer true. GHSA-qwww-vcr4-c8h2 was subsequently amended; its affected ranges are `>=7.12.0 <7.18.2` and `>=8.0.0 <8.3.0`, so **react-router 7.18.2 — the version this repo was already pinned to — is the 7.x patch**. `npm audit` reported 0 vulnerabilities before the migration ran. The migration was still carried out (see "Execution record"), but as planned modernization, **not** as a security fix, and it should not be cited as one.
+
 The repository's vulnerability bypass records a React Router advisory that cannot be cleanly resolved while remaining on React 18.
 
 React Router v8 requires:
@@ -206,3 +208,85 @@ Sources:
 
 Use Node 24 LTS as the stable platform baseline. Resolve the GitHub warning first by updating the Node 20-based Actions (`cache` and Slack), then align Netlify build and Functions runtimes. Keep the React Router security migration and major dependency refreshes separate for safer rollback and diagnosis.
 
+
+---
+
+# Execution record
+
+**Executed:** 2026-08-23, on branch `claude/node-24-upgrade-phase-5-5d22d9` (cut from `origin/staging` = `origin/main` = `3f863ad`).
+
+## Phase status
+
+| Phase | State | Evidence |
+|---|---|---|
+| 1 — Runtime source of truth | Complete | `75d0cf4` / `bc79f58`, on `origin/main` and `origin/staging`. `.node-version`=24, `engines.node >=24 <25`, `engines.npm >=11 <12`, `packageManager npm@11.15.0`, both workflows on `node-version-file`. |
+| 2 — Actions warning cleanup | Complete | `actions/cache@v5`, `slackapi/slack-github-action@v3.0.3`. `checkout@v5` / `setup-node@v5` / `manual-approval@v1` unchanged, as planned. |
+| 3 — Netlify staging rollout | Complete, verified | `NODE_VERSION=24` + `AWS_LAMBDA_JS_RUNTIME=nodejs24.x` on the `staging` branch context. |
+| 4 — Production rollout | Complete, verified | Same two values on `production`. All 41 deployed functions report runtime `nodejs24.x` on production, on the staging branch-deploy, and on deploy-previews. |
+| 5 — Ecosystem upgrades | Complete for the sanctioned scope; Stripe and Tailwind deliberately deferred (see below). | Commits `af18096` (5A) and the 5B commit that follows it. |
+
+Phases 3 and 4 were verified against the live Netlify API rather than inferred from the merge history — a merged commit is no evidence at all about platform state, and this is exactly the seam where a phased migration loses work between sessions.
+
+## Deviations from the plan
+
+### 1. The React Router migration was NOT a security fix
+
+The plan, and the vulnerability bypass it cited, both rest on "no patched version exists for React 18." That has since stopped being true. GHSA-qwww-vcr4-c8h2 was amended; its affected ranges are `>=7.12.0 <7.18.2` and `>=8.0.0 <8.3.0`, which makes **react-router 7.18.2 — already the pinned version — the 7.x patch**. `npm audit` reported 0 vulnerabilities before any Phase 5 work began.
+
+The migration was still performed, on the standing maintenance argument (`react-router-dom@7.18.2` is that package's final release; v8 drops it). But it must not be described as remediating an advisory, and the bypass entries were removed because they were obsolete, not because the upgrade earned their removal.
+
+The general lesson is recorded in `.github/gate-bypass/vulnerabilities.json`: a bypass captures a judgement about the world on the day it was written, and advisories get re-scoped. Re-read the advisory before renewing one.
+
+### 2. React 19 silently broke the mobile nav's focus containment
+
+`TopBar.jsx` guarded the closed mobile menu with `inert={!isOpen ? "" : undefined}`. That only ever worked because React 18 did not recognise `inert` and forwarded the empty string as a bare attribute, which HTML reads as true. React 19 recognises `inert` as a boolean prop, so `""` coerces to **false** and the attribute is dropped — restoring the precise bug that line's own comment says it exists to prevent: Tab walking into the offscreen menu.
+
+React only warns about this. **Nothing failed.** The entire suite — 3,640 tests — stayed green while the app shipped a real keyboard-accessibility regression, because no test asserted inertness. It was caught by reading new warnings in the e2e log against the pre-change baseline, not by a red test.
+
+Fixed to `inert={!isOpen}`, and covered by a regression test in `TopBar.integration.test.jsx` that asserts the rendered DOM attribute (not the prop) and was confirmed to fail against the old code before being accepted. A sweep for the same empty-string-as-boolean pattern across every other boolean HTML attribute found no further instances.
+
+### 3. `resolve.dedupe` had to be restated by hand
+
+`@vitejs/plugin-react` 6 stopped adding react and react-dom to `resolve.dedupe` implicitly. `vite.config.js` now says it explicitly. This is inert today (one React resolves in the tree) and exists so a duplicate arriving through a transitive dependency fails visibly rather than as an "invalid hook call" far from its cause.
+
+### 4. `deploy-preview` and generic `branch-deploy` were never pinned
+
+Only `production` and the `staging` branch context carried the runtime variables; the other contexts held empty strings and were getting `nodejs24.x` from Netlify's own default rather than from configuration. Both are now pinned explicitly, so preview builds validate on the same runtime they will ship to instead of tracking a platform default that can move.
+
+## Deferred, with reasons
+
+| Item | Decision |
+|---|---|
+| Stripe 17 → 22 | Deferred. Requires a payment/webhook contract migration, and Stripe is disabled in v1.0 behind `DATIQ_ENABLE_STRIPE` — a major bump buys real risk against no shipped behaviour. Revisit alongside re-enabling Stripe, per `docs/STRIPE-DEFERRAL.md`. |
+| Tailwind 3 → 4 | Deferred. A workflow and config migration, not a version bump, and it works against the locked CSS-token design system. Tailwind is used here for utilities only. |
+| jsdom 25 → 30 | Deferred, as the plan itself advises: test behaviour may change, and it should be evaluated on its own. |
+| lucide-react 0.460 → 1.33 | Not attempted. Outside the plan's scope; a 0.x → 1.x jump risks icon renames across `Icon.jsx`. Its peer range already admits React 19. |
+| `@testing-library/jest-dom` 6 → 7 | Not attempted. Major, outside the plan's scope, and the installed version works against React 19. |
+
+## Validation
+
+Every figure below was measured on Node `v24.16.0` after a clean `npm ci`, and compared against a pre-change baseline captured on the same machine before any dependency moved.
+
+| Gate | Baseline | After Phase 5 |
+|---|---|---|
+| Readiness | 5 pass · 2 warn · 0 fail | 5 pass · 2 warn · 0 fail |
+| Unit | 1,985 / 124 files | 1,985 / 124 files |
+| Contract | 1,346 + 14 skipped / 72 files | 1,346 + 14 skipped / 72 files |
+| Integration | 300 / 41 files | **301** / 41 files (+1 `inert` regression test) |
+| System | 8 / 5 files | 8 / 5 files |
+| Database | 27 migrations · 137 assertions | 27 migrations · 137 assertions |
+| e2e smoke | 118 passed · 1 skipped | 118 passed · 1 skipped |
+| Build | clean | clean |
+| Security / `npm audit` | clean · 0 vulnerabilities | clean · 0 vulnerabilities, **with the bypass list emptied** |
+
+Both readiness warnings are pre-existing and unrelated: stale `public/help` screenshots, and gallery/persona coverage that is runtime-populated and unprovable from source.
+
+The security gate passing with `bypasses: []` is the load-bearing result — it shows the advisory is genuinely resolved rather than suppressed.
+
+## Known local-environment issue (not a repo problem)
+
+`~/.npm/_cacache` contains root-owned entries, so `npm install` and `npm outdated` fail with `EACCES`/`EEXIST` on this machine. Phase 5 worked around it with `npm install --cache <scratch dir>` rather than changing anything system-wide. The permanent fix is the user's to run, because it needs their password:
+
+```bash
+sudo chown -R "$(id -u):$(id -g)" ~/.npm
+```

@@ -2,7 +2,7 @@
 // Stripe: GET params  provider=stripe & session_id=... & plan=...
 // Razorpay: GET params provider=razorpay & plan=... & payment_id=...
 import { useEffect, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { confirmStripeSession, clearPendingPayment } from "../lib/paymentService.js";
 import { logPaymentEvent } from "../lib/paymentRepo.js";

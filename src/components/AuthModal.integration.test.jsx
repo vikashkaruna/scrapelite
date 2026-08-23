@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { PersonaProvider } from "./PersonaProvider.jsx";
@@ -77,7 +77,7 @@ function Shell({ children, authMode = "signin", authError = "" }) {
   // when showAuthModal is true. This means the modal's useState init
   // captures the authMode/authError at the time of open, not at app boot.
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <AuthProvider>
         <PersonaProvider>
           <ModalDriver authMode={authMode} authError={authError} />

@@ -180,7 +180,7 @@ All branches have been merged to main and pushed. Do NOT re-merge them.
 
 ## Tech stack (locked — do NOT change these choices)
 
-- **Vite 5 + React 18 + React Router 6** (v7 future flags set in `main.jsx`)
+- **Vite 8 + React 19 + React Router 8** — router APIs import from `react-router`; the `react-router-dom` package no longer exists and must not be reintroduced. `BrowserRouter` in `main.jsx` deliberately passes **no** `future` prop and **no** `useTransitions`: both old v7 flags are v8 defaults, and `useTransitions={true}` is a different, unevaluated mode (see the comment there).
 - **Tailwind CSS** for utilities only — design system tokens live in CSS custom properties
 - **Design system** — `src/styles/design-system.css` + `src/styles/screens.css`. **NEVER convert to Tailwind classes.**
 - **lucide-react** icons via `src/components/Icon.jsx`. Add new icons there only.

@@ -1,7 +1,7 @@
 // CommandPalette.test.jsx — F10 (mod+K command palette) tests.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import CommandPalette, { filterActions, fuzzyScore } from "./CommandPalette.jsx";
 import { AuthProvider } from "./AuthProvider.jsx";
 

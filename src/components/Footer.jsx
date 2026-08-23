@@ -1,5 +1,5 @@
 // Footer.jsx — simplified footer: socials + legal only.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 
 const LEGAL_LINKS = [

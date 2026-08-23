@@ -2,7 +2,7 @@
 // the same .global-discount-banner chrome Pricing.jsx already uses for its
 // own sale/coupon banners (see screens.css) so this reads as one design
 // language rather than a second banner style.
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { getHeadlineOffer } from "../lib/offersService.js";
 import Icon from "./Icon.jsx";
 

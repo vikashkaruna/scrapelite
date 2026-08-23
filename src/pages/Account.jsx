@@ -1,6 +1,6 @@
 // Account.jsx — V5 billing & usage: plan details, usage, alerts, coupon, payment history.
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
 import { getAlertConfig, saveAlertConfig } from "../lib/alertService.js";

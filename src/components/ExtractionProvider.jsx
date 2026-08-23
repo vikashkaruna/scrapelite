@@ -1,7 +1,7 @@
 // ExtractionProvider.jsx — orchestrates the extract → preview → save flow and
 // shares the "current" extraction across routes.
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { extractStructure } from "../lib/firecrawlService.js";
 import { summarize, categorizeLinks, generateContent, CONTENT_FORMATS } from "../lib/aiService.js";
 import { saveExtraction, updateEnrichments } from "../lib/extractionsRepo.js";

@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { AuthProvider, useAuth } from "../components/AuthProvider.jsx";
 import ResetPassword from "./ResetPassword.jsx";
 
@@ -39,7 +39,7 @@ vi.mock("../lib/apiClient.js", () => ({
 
 function Shell({ initialUser = null }) {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <AuthProvider>
         {/* Seed the user before ResetPassword mounts so it sees a valid session. */}
         <SeedUser user={initialUser} />

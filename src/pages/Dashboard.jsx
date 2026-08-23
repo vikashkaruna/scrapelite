@@ -1,6 +1,6 @@
 // Dashboard.jsx — historical view of saved extractions (route "/dashboard").
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";

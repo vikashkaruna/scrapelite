@@ -3,7 +3,7 @@
 // card renders 4 stat cards, the heading-depth SVG, and the link-category SVG.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
 
 // Stubs to keep the mount cheap and deterministic.
 vi.mock("./Toast.jsx", () => ({

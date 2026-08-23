@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useState } from "react";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import { ExtractionProvider, useExtraction } from "./ExtractionProvider.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -104,7 +104,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>

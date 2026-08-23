@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import AdminCoupons from "./AdminCoupons.jsx";
 import { ToastProvider } from "../../components/Toast.jsx";
 import { ErrorModalProvider } from "../../components/ErrorModal.jsx";
@@ -39,7 +39,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/admin/coupons"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>

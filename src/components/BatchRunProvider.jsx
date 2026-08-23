@@ -14,7 +14,7 @@
 // (ExtractionProgressDock), so there is one progress surface rather than an
 // in-page bar on /batch and a floating dock everywhere else.
 import { createContext, useCallback, useContext, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";

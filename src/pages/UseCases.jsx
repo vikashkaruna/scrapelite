@@ -1,5 +1,5 @@
 // UseCases.jsx — /use-cases — aggregate hub linking to all use-case pages.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useSeo } from "../hooks/useSeo.js";

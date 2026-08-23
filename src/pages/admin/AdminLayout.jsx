@@ -1,6 +1,6 @@
 // AdminLayout.jsx — admin shell with PIN gate + collapsible sidebar navigation.
 import { useState, useEffect } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import {
   isAdminAuthed, adminLogin, adminLogout,
   getAdminLock, recordAdminFailure, clearAdminFailures, ADMIN_MAX_ATTEMPTS,

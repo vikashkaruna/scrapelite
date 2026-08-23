@@ -1,7 +1,7 @@
 // PricingMatrix.test.jsx — F13 (tier × feature comparison) tests.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import PricingMatrix from "./PricingMatrix.jsx";
 
 beforeEach(() => {

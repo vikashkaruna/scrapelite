@@ -3,7 +3,7 @@
 // ⚠️ As in Privacy.jsx, SECTIONS drives the #section-N anchor ids by ARRAY
 // INDEX. Edit in place; appending is safe; inserting or reordering silently
 // repoints every existing deep link.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useSeo } from "../hooks/useSeo.js";

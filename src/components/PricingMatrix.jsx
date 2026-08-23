@@ -16,7 +16,7 @@
 //  - On narrow screens, the table is horizontally scrollable with a sticky
 //    first column (feature name) so labels never disappear off-screen.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "./Icon.jsx";
 import { getEffectivePlans } from "../lib/pricingOverrides.js";
 import { applyGlobalDiscount } from "../lib/pricingOverrides.js";

@@ -2,7 +2,7 @@
 
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
 
 // Gallery listing tests exercise the local/demo feed. Do not let a developer's
 // .env turn these fixtures into real Supabase writes.

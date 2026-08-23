@@ -12,7 +12,7 @@
 // the forgot-password view.
 
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";

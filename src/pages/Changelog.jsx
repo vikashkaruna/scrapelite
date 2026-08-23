@@ -9,7 +9,7 @@
 // than a reverse-chronological journal.
 
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 

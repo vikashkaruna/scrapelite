@@ -13,7 +13,7 @@
 // popup-free. The "Custom schedule…" item routes to /schedules with the current
 // input pre-populated.
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useBatchRun } from "./BatchRunProvider.jsx";

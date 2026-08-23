@@ -2,7 +2,7 @@
 // Also handles the forgot-password request view (in-modal email entry + reset link send).
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useAuth } from "./AuthProvider.jsx";

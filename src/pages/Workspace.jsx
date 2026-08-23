@@ -14,7 +14,7 @@
 // still exists as a backward-compat redirect in App.jsx.
 
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";

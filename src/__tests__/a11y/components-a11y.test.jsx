@@ -14,7 +14,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { axe } from "vitest-axe";
 
 // ── Mocks for provider-bound components ───────────────────────────────────────

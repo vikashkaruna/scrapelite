@@ -6,7 +6,7 @@
 // link (including the ones this page's own TOC hands out, and any that have
 // been shared or indexed). If a new section is genuinely needed, append it.
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";

@@ -1,5 +1,5 @@
 // About.jsx — DatIQ / DatIQ about page.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";

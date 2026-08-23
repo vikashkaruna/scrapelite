@@ -9,7 +9,7 @@
 // user into the real extraction flow on Home.
 
 import { useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { getRouteBySlug } from "../lib/programmaticRoutes.js";
