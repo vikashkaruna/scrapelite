@@ -80,9 +80,13 @@ grant usage on schema public to anon, authenticated;
 // 0028_scrape_consent.sql adds 2 tables (scrape_consent_records +
 // scrape_consent_audit), 1 function and 1 trigger (the append-only guard on
 // the audit table), taking these to 42 / 17 / 6.
+//
+// 0029_referrals.sql adds 2 tables (referral_codes + referral_redemptions) and
+// 2 functions (issue_referral_code + redeem_referral_code), taking these to
+// 44 / 19 / 6. No new trigger.
 const EXPECT = {
-  tables: 42,
-  functions: 17,
+  tables: 44,
+  functions: 19,
   triggers: 6,
   tablesWithoutRls: 0,
 };
@@ -641,6 +645,70 @@ group("0028 scrape consent — per-host attestation, append-only audit");
   eq("deleting the account clears the current attestation", left.n, 0);
   const kept = await one(`select count(*)::int n from public.scrape_consent_audit where user_id = $1`, [uid]);
   eq("the audit row outlives the deleted account", kept.n, 1);
+}
+
+// ── 0029 referrals ─────────────────────────────────────────────────────────
+group("0029 referrals — unique codes, one redemption per account, both sides paid");
+{
+  const alice = (await one(`insert into auth.users (email) values ('alice@x.com') returning id`)).id;
+  const bob   = (await one(`insert into auth.users (email) values ('bob@x.com')   returning id`)).id;
+  const carol = (await one(`insert into auth.users (email) values ('carol@x.com') returning id`)).id;
+
+  const a1 = (await one(`select public.issue_referral_code($1) code`, [alice])).code;
+  eq("a code is 8 characters", a1.length, 8);
+  eq("a code uses only the unambiguous alphabet", /^[A-HJ-NP-Z2-9]{8}$/.test(a1), true);
+
+  // The bug this replaces produced "AAAAAAAA" for every user.
+  const a2 = (await one(`select public.issue_referral_code($1) code`, [alice])).code;
+  eq("issuing twice returns the SAME code (idempotent)", a2, a1);
+  const b1 = (await one(`select public.issue_referral_code($1) code`, [bob])).code;
+  eq("two users get DIFFERENT codes", b1 === a1, false);
+
+  // Uniqueness at scale — 200 codes, no collisions surviving the retry loop.
+  for (let i = 0; i < 200; i++) {
+    await db.query(`insert into auth.users (email) values ($1)`, [`bulk${i}@x.com`]);
+  }
+  const bulk = await db.query(
+    `select public.issue_referral_code(id) code from auth.users where email like 'bulk%@x.com'`);
+  const codes = new Set(bulk.rows.map((r) => r.code));
+  eq("200 issued codes are all distinct", codes.size, 200);
+
+  // Redemption pays BOTH sides. The old client-side path never paid the referrer.
+  const ok = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
+  eq("redemption succeeds", ok.ok, true);
+  const aliceEnt = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
+  const bobEnt   = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [bob]);
+  eq("the referrer is credited", aliceEnt.b, 25);
+  eq("the invitee is credited", bobEnt.b, 25);
+
+  // One per ACCOUNT, ever — the constraint that makes the reward finite.
+  const replay = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
+  eq("the same invitee cannot redeem twice", replay.reason, "already");
+  const c1 = (await one(`select public.issue_referral_code($1) code`, [carol])).code;
+  const other = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, c1])).result;
+  eq("an invitee cannot redeem a SECOND person's code either", other.reason, "already");
+
+  const self = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [carol, c1])).result;
+  eq("self-referral is refused", self.reason, "self");
+  const bad = (await one(`select public.redeem_referral_code($1, 'NOPENOPE', 25) result`, [carol])).result;
+  eq("an unknown code is refused", bad.reason, "invalid");
+
+  // Codes are case- and whitespace-insensitive on the way in.
+  const dave = (await one(`insert into auth.users (email) values ('dave@x.com') returning id`)).id;
+  const lower = (await one(
+    `select public.redeem_referral_code($1, $2, 25) result`, [dave, `  ${a1.toLowerCase()}  `])).result;
+  eq("a lowercased, padded code still redeems", lower.ok, true);
+  const aliceAfter = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
+  eq("the referrer accrues across referrals", aliceAfter.b, 50);
+
+  // The DB refuses a self-referral even if a handler bug ever tried to write one.
+  let selfIns = null;
+  try {
+    await db.query(
+      `insert into public.referral_redemptions (code, referrer_user_id, invitee_user_id, bonus_granted)
+       values ($1, $2, $2, 25)`, [c1, carol]);
+  } catch (err) { selfIns = err; }
+  eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

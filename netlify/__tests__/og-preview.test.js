@@ -18,6 +18,26 @@ afterEach(() => {
 });
 
 async function loadHandler() {
+  // The handler runs every URL through isPublicHttpUrlAsync, which does a REAL
+  // dns.lookup. That is correct in production and wrong in a unit test: under
+  // parallel load the lookup for example.com can exceed the 5s test timeout,
+  // so this suite failed intermittently with a bare "Test timeout of 5000ms"
+  // and no indication that DNS was the cause. Same class of defect as the
+  // font-CDN stall that made the e2e suite flaky.
+  //
+  // The stub keeps the real scheme check and drops only the network part. No
+  // coverage is lost: the SSRF guard has its own suite in publicUrl.test.js,
+  // and nothing in this file asserts on private-IP rejection.
+  vi.doMock("../functions/lib/publicUrl.js", () => ({
+    isPublicHttpUrlAsync: vi.fn(async (u) => {
+      try {
+        const { protocol } = new URL(u);
+        return protocol === "http:" || protocol === "https:";
+      } catch { return false; }
+    }),
+    isPublicHttpUrl: vi.fn(() => true),
+    fetchPublicUrl: vi.fn((...args) => globalThis.fetch(...args)),
+  }));
   const mod = await import("../functions/og-preview.js");
   return mod.handler;
 }

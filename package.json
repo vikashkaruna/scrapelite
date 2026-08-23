@@ -18,7 +18,7 @@
     "test:contract": "vitest run netlify",
     "test:integration": "vitest run 'integration.test'",
     "test:system": "vitest run 'src/__tests__/system'",
-    "test:db": "node scripts/db-verify.mjs",
+    "test:db": "node scripts/db-verify.mjs && npm run verify:referral",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --project=chromium e2e/smoke.spec.js e2e/smoke/",
@@ -39,7 +39,8 @@
     "build:sql": "node scripts/build-run-all.mjs",
     "build:extension": "node scripts/build-extension.mjs",
     "prerender": "node scripts/prerender.mjs",
-    "build:sitemap": "node scripts/build-sitemap.mjs"
+    "build:sitemap": "node scripts/build-sitemap.mjs",
+    "verify:referral": "node scripts/verify-referral-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

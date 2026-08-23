@@ -72,6 +72,7 @@ import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
+import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
@@ -102,34 +103,22 @@ function Shell() {
   // hook itself skips /admin paths rather than relying on not being called.
   usePageView();
 
-  // FA2 — referral ?ref=CODE handler. Redeem the code on first paint, then
-  // strip the param from the URL so the user can't accidentally share it
-  // back to themselves. Toast fires on a successful redemption.
+  // Referral ?ref=CODE handler. The code is STASHED here, never redeemed here:
+  // redemption grants real quota and is signed-in only, so a guest arriving on
+  // an invite link keeps the code until they have an account — which is what
+  // the copy has always described ("when they sign up with your link").
+  // PendingReferralFlush below does the redeeming once a session exists.
+  //
+  // The param is stripped either way, so the URL a user copies out of their
+  // address bar is never someone else's invite link.
   useEffect(() => {
     const ref = searchParams.get("ref");
     if (!ref) return;
-    import("./lib/referralService.js").then(({ redeemReferralCode }) => {
-      const r = redeemReferralCode(ref);
-      if (r.ok) {
-        // We can't call showToast from here without a context; surface the
-        // bonus as a query param flag and let the ReferralBanner pick it up.
-        // Cleaner: write the bonus to localStorage and show a one-shot toast
-        // via the Toast context if we can grab it.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        next.set("ref_redeemed", "1");
-        setSearchParams(next, { replace: true });
-      } else if (r.reason === "self") {
-        // Silently strip self-referrals.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        setSearchParams(next, { replace: true });
-      } else {
-        // Unknown / already redeemed / invalid — just strip and move on.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        setSearchParams(next, { replace: true });
-      }
+    import("./lib/referralService.js").then(({ setPendingReferral }) => {
+      setPendingReferral(ref);
+      const next = new URLSearchParams(searchParams);
+      next.delete("ref");
+      setSearchParams(next, { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -263,6 +252,7 @@ function Shell() {
       {/* Saves a schedule built while signed out, once the user signs in.
           Global because OAuth navigates the document away and back. */}
       <PendingScheduleFlush />
+      <PendingReferralFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}

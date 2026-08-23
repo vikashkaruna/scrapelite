@@ -68,6 +68,10 @@ async function request(path, method = "GET", body) {
     if (errData.host) e.host = errData.host;
     if (errData._complianceBlocked === true) e.complianceBlocked = true;
     if (errData.consentAvailable === true) e.consentAvailable = true;
+    // Referral refusals carry a `reason` (invalid | self | already |
+    // unavailable) whose user-facing wording the SERVER owns, so the two can
+    // never drift into describing the same verdict differently.
+    if (errData.reason) e.reason = errData.reason;
     if (isHtml) e.edgeAccess = true;
     throw e;
   }
@@ -135,6 +139,16 @@ export const apiClient = {
   /** Delete an extraction by id. */
   deleteExtraction: (id) =>
     request(`/extractions?id=${encodeURIComponent(id)}`, "DELETE"),
+
+  // ── Referrals ("invite a friend, you both get 25") ─────────────────────────
+  // Codes are minted server-side and rewards applied server-side; nothing here
+  // names a user or an amount. See netlify/functions/referral.js for why.
+
+  /** This user's invite code plus their referral standing. */
+  getReferral: () => request("/referral", "GET"),
+
+  /** Redeem someone else's code. The server credits both sides atomically. */
+  redeemReferral: (code) => request("/referral", "POST", { code }),
 
   // ── Scrape consent ("I have permission to extract this site") ──────────────
   // The record behind an override of a robots.txt refusal. The server resolves
