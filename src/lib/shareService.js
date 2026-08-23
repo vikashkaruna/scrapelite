@@ -133,6 +133,9 @@ export async function shareExtraction(extraction, opts = {}) {
   // mode where Supabase is not configured at all.
   let persistedTo = "local";
   let supabaseError = null;
+  // false when the row is live but this browser could not overwrite it — see
+  // the RLS note in the catch below. Distinct from a failure: the link works.
+  let refreshed = true;
   if (isSupabaseEnabled && supabase) {
     try {
       const row = {
@@ -155,12 +158,53 @@ export async function shareExtraction(extraction, opts = {}) {
     } catch (err) {
       supabaseError = err;
       if (typeof console !== "undefined") console.warn("[DatIQ share] Supabase persist failed:", err);
-      const publishError = new Error(
-        "Cloud publish failed. Check the Supabase project, anon key, and public_reports permissions.",
-      );
-      publishError.code = "PUBLIC_PUBLISH_FAILED";
-      publishError.cause = err;
-      throw publishError;
+
+      // ── Before calling this a failure, check whether the link actually works ──
+      //
+      // An upsert on an existing slug becomes an UPDATE, which RLS gates behind
+      // the "owner update" policy in 0007_public_reports.sql. That policy has
+      // two branches and NEITHER can be satisfied by an anonymous sharer:
+      //
+      //   user_id::text = auth.uid()::text   → null for an anonymous share
+      //   session_id = …->>'x-session-id'    → the client never sends that
+      //                                        header (it appears nowhere in
+      //                                        this codebase)
+      //
+      // So creating the link succeeds (the INSERT policy is WITH CHECK (true))
+      // and re-publishing it — "Sync public link" — is denied. The link is
+      // live the whole time; only the overwrite is refused.
+      //
+      // ⚠️ Do NOT "fix" this by sending an x-session-id header. The "public
+      // read" policy exposes every column, session_id included, to anyone with
+      // the slug — so header-based ownership would let any reader of a public
+      // report take over and rewrite or delete it. That turns a fail-closed
+      // bug into a real one. See the note in docs/ for the operator options.
+      try {
+        const { data: live } = await supabase
+          .from(TABLE)
+          .select("slug")
+          .eq("slug", slug)
+          .eq("is_public", true)
+          .maybeSingle();
+        if (live?.slug) {
+          // It is published and readable. That is what a public link IS, so
+          // reporting a failure here would be false. The content just could
+          // not be refreshed from this browser.
+          persistedTo = "supabase";
+          refreshed = false;
+        } else {
+          const publishError = new Error("Couldn't publish the public link.");
+          publishError.code = "PUBLIC_PUBLISH_FAILED";
+          publishError.cause = err;
+          throw publishError;
+        }
+      } catch (probeErr) {
+        if (probeErr?.code === "PUBLIC_PUBLISH_FAILED") throw probeErr;
+        const publishError = new Error("Couldn't publish the public link.");
+        publishError.code = "PUBLIC_PUBLISH_FAILED";
+        publishError.cause = err;
+        throw publishError;
+      }
     }
   }
 
@@ -184,7 +228,7 @@ export async function shareExtraction(extraction, opts = {}) {
     writeIndex(index);
   }
 
-  return { slug, persistedTo, supabaseError };
+  return { slug, persistedTo, supabaseError, refreshed };
 }
 
 /** Was the given extraction already shared publicly? (sync) */
