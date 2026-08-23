@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       # 2026-08-12: CI-local-first — cache Playwright's browser binaries so
       # the e2e step doesn't re-download chromium (~200MB) on every run.
@@ -104,7 +104,7 @@ jobs:
       # bust it correctly) and the OS (so Ubuntu/macOS don't share).
       # Saves ~90s on warm cache, ~3min on cold. See docs/CI-LOCAL-FIRST.md.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - name: Audit dependencies (high/critical block)
         run: node scripts/check-vulnerabilities.mjs
@@ -173,7 +173,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
       - name: Check open defects
         run: node scripts/check-open-defects.mjs
         env:
@@ -199,7 +199,7 @@ jobs:
           fetch-depth: 0 # full history for the ancestor check
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
@@ -387,7 +387,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
@@ -495,7 +495,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
@@ -525,14 +525,14 @@ jobs:
 
       - name: Notify on smoke failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v3.0.3
         with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "🚨 DatIQ production smoke FAILED. Auto-rollback executed. Commit: ${{ github.sha }}\nActor: ${{ github.actor }}\nWorkflow: ${{ github.workflow }} #${{ github.run_number }}"
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
 
   # ─────────────────────────────────────────────────────────────────

@@ -197,7 +197,8 @@ hashed form. Until `ADMIN_PIN_HASH` is set, `/admin` accepts the demo PIN `ADMIN
 
 ### 2.3 Build & deploy settings
 
-- **Node version:** 20.x (set in Netlify env: `NODE_VERSION=20`)
+- **Node version:** 24.x (set in Netlify env: `NODE_VERSION=24`)
+- **Functions runtime:** Node 24 (set `AWS_LAMBDA_JS_RUNTIME=nodejs24.x` in Netlify's environment settings; do not add it to `netlify.toml`)
 - **Build cache:** enabled (the second build is much faster)
 - **Auto-deploy:** enabled, on push to `main`
 - **Branch deploys:** optional — enable for `V1.0-Release-Candidate` to smoke-test before

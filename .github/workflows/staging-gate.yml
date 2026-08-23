@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       # 2026-08-12: CI-local-first — cache Playwright's browser binaries so
       # the e2e step doesn't re-download chromium (~200MB) on every run.
@@ -81,7 +81,7 @@ jobs:
       # bust it correctly) and the OS (so Ubuntu/macOS don't share).
       # Saves ~90s on warm cache, ~3min on cold. See docs/CI-LOCAL-FIRST.md.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - name: Audit dependencies (high/critical block)
         run: node scripts/check-vulnerabilities.mjs
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
       # 2026-08-12: this gate keeps failing with
       # `DEPTH_ZERO_SELF_SIGNED_CERT` on api.github.com. The runner's
       # bundled CA store occasionally ships without the full chain
@@ -254,7 +254,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 

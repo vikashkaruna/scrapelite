@@ -11,8 +11,10 @@
 // new RealtimeClient() -> _initializeOptions()), which resolves
 // `options.transport ?? WebSocketFactory.getWebSocketConstructor()`
 // SYNCHRONOUSLY at construction time — not lazily on first `.channel()`
-// call. Netlify Functions run on Node 20, which has no native global
-// WebSocket, so `getWebSocketConstructor()` THROWS:
+// call. The stub remains defensive: server code does not use Realtime, and
+// the regression test intentionally verifies behaviour without a global
+// WebSocket even though Node 24 provides one. Historically,
+// `getWebSocketConstructor()` THREW:
 //   "Node.js 20 detected without native WebSocket support. ..."
 // None of these server-side functions use Realtime (.channel()/.subscribe()
 // are never called — they only use auth.getUser() and REST queries), so the

@@ -30,7 +30,7 @@
 #   4. Runs `./config.sh` non-interactively with your URL + token + name
 #   5. Installs + starts the runner as a launchd (mac) or systemd (linux)
 #      service so it auto-starts on boot and survives logout
-#   6. Installs Node.js 20, npm ci, and Playwright's chromium so the
+#   6. Installs Node.js 24, npm ci, and Playwright's chromium so the
 #      first job doesn't have to
 #
 # Operational notes (after install):
@@ -59,7 +59,7 @@ RUNNER_CFG_TOKEN="${RUNNER_CFG_TOKEN:-}"
 RUNNER_NAME="${RUNNER_NAME:-datiq-runner-01}"
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,datiq,linux,x64}"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner}"
-NODE_VERSION="${NODE_VERSION:-20}"
+NODE_VERSION="${NODE_VERSION:-24}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.55.0}" # match package.json
 
 if [ -z "$RUNNER_CFG_URL" ] || [ -z "$RUNNER_CFG_TOKEN" ]; then
@@ -88,7 +88,8 @@ case "$OS_RAW:$ARCH" in
 esac
 
 # GitHub's runner version. Bump here when upgrading.
-RUNNER_VERSION="${RUNNER_VERSION:-2.319.1}"
+# actions/cache@v5 requires Actions Runner v2.327.1 or newer.
+RUNNER_VERSION="${RUNNER_VERSION:-2.327.1}"
 RUNNER_TARBALL="actions-runner-${PLATFORM}-${RUNNER_VERSION}.${PKG_EXT}"
 RUNNER_SHA_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_TARBALL}.sha256"
 RUNNER_DL_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_TARBALL}"
