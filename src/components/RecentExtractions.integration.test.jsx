@@ -4,7 +4,7 @@
 // user-specific scoping + click → /preview navigation.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
 import userEvent from "@testing-library/user-event";
 
 // Stub Toast + Theme to keep the mount cheap.

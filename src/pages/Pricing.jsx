@@ -1,6 +1,6 @@
 // Pricing.jsx — V6: annual/monthly toggle, USD+INR, Developer+Enterprise tiers.
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,

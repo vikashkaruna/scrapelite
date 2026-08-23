@@ -13,7 +13,7 @@
 // Pure-logic helpers (filter + score) are exported for unit testing.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { resetTour } from "../lib/onboardingTour.js";

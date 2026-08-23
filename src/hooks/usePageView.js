@@ -23,7 +23,7 @@
 // but defers the Google page_view and replays it once the visitor opts in.
 
 import { useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { lifecycle } from "../lib/analyticsService.js";
 
 /** Never send the operator console's paths to a third-party analytics product. */

@@ -8,7 +8,7 @@
 // It is also deliberately calm. The user has not done anything wrong — a
 // payment lapsed — and the two facts that matter most to them are "your data is
 // safe" and "you can still export it".
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";

@@ -14,7 +14,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 const openInGoogleSheets = vi.hoisted(() => vi.fn());
 const getPushProviderStatuses = vi.hoisted(() => vi.fn());
@@ -48,7 +48,7 @@ const ITEMS = [
 
 function renderMenu(props = {}) {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <PushIntegrationMenu items={ITEMS} {...props} />
     </MemoryRouter>,
   );

@@ -30,7 +30,7 @@
 // when the field_map is empty.
 
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useToast } from "./Toast.jsx";

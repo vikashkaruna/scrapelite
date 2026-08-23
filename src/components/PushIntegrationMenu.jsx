@@ -20,7 +20,7 @@
 // back from /account#integrations reflects the new connect state.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Button from "./Button.jsx";
 import Icon from "./Icon.jsx";
 import { useToast } from "./Toast.jsx";

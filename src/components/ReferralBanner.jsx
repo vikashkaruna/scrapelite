@@ -14,7 +14,7 @@
 // This component is pure presentation + a "Copy" button.
 
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router";
 import Icon from "./Icon.jsx";
 import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";

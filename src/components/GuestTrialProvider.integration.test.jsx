@@ -17,7 +17,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { useEffect, useState } from "react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import { GuestTrialProvider, useGuestTrial } from "./GuestTrialProvider.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -83,7 +83,6 @@ function Tree({ userEmail = null }) {
   return (
     <MemoryRouter
       initialEntries={["/"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>

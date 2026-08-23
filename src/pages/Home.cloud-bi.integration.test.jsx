@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
 import Home from "./Home.jsx";
 import { AppProviders } from "../__tests__/harness/AppProviders.jsx";
 

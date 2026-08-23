@@ -1,5 +1,5 @@
 // PaymentCancel.jsx — /payment/cancel — shown when user cancels checkout.
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router";
 import { clearPendingPayment } from "../lib/paymentService.js";
 import { getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { useSeo } from "../hooks/useSeo.js";

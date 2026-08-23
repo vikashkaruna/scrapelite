@@ -7,7 +7,7 @@
 // than against localStorage.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { BillingProvider, useBilling } from "./BillingProvider.jsx";
 import { AuthProvider } from "./AuthProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -72,7 +72,7 @@ function Probe() {
 
 function Tree() {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>

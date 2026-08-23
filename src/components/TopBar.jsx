@@ -1,6 +1,6 @@
 // TopBar.jsx — sticky navigation with brand, route links, theme toggle, auth, and mobile menu.
 import { useState, useRef, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useTheme } from "./ThemeProvider.jsx";
@@ -214,7 +214,16 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
         // from the focus order and from the a11y tree when the mobile menu
         // is closed. Without it, `aria-hidden` only hides content from the
         // a11y tree but Tab still moves into the offscreen buttons.
-        inert={!isOpen ? "" : undefined}
+        //
+        // Pass a real boolean, never `""`. Under React 18 this read
+        // `inert={!isOpen ? "" : undefined}`, because React 18 did not know
+        // `inert` and forwarded the empty string as a bare attribute, which
+        // HTML reads as true. React 19 knows `inert` as a boolean prop, so
+        // `""` now coerces to FALSE and the attribute is dropped entirely —
+        // silently restoring the exact tab-into-the-offscreen-menu bug this
+        // line exists to prevent. React 19 warns about it, but nothing fails:
+        // no test asserts inertness, so the suite stayed green.
+        inert={!isOpen}
       >
         {/* Main links with icon + text */}
         <div className="mobile-nav-section">

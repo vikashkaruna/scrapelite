@@ -5,7 +5,7 @@
 //   • Pause / resume, run-now (single), delete, and edit for every schedule
 //   • Expandable detail showing all parameters + lifecycle (last run, next run, alive-until)
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";

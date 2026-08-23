@@ -6,7 +6,7 @@
 // page keeps the SPA contract (still 200, no server error) while being
 // honest about what happened.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 
 const QUICK_LINKS = [

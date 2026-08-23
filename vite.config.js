@@ -126,6 +126,17 @@ export default defineConfig({
       },
     },
   ],
+  // ── Keep exactly one React copy in the graph ──────────────────────────
+  //
+  // @vitejs/plugin-react 5.x added react and react-dom to `resolve.dedupe`
+  // for you. Version 6 dropped that, so it is stated here instead. The tree
+  // currently resolves a single React, and this is what keeps it that way:
+  // a second copy arriving through a transitive dependency does not fail the
+  // build, it fails at runtime as "invalid hook call" from whichever
+  // component happened to load the other copy — a long way from the cause.
+  resolve: {
+    dedupe: ["react", "react-dom"],
+  },
   test: {
     environment: "jsdom",
     // setup.js handles jsdom polyfills + storage reset between specs.

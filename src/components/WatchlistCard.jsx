@@ -9,7 +9,7 @@
 // show an empty card).
 
 import { useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "./Icon.jsx";
 import {
   summariseWatchlist,

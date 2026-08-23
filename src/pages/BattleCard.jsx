@@ -15,7 +15,7 @@
 // see DatIQ compare them automatically. That IS the comparison product.
 
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useGuestTrial } from "../components/GuestTrialProvider.jsx";

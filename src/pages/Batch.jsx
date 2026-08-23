@@ -2,7 +2,7 @@
 // Supports: paste URLs textarea, CSV file import, progress tracking, and
 // combined export (CSV / PDF / Markdown / JSON).
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";

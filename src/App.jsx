@@ -1,6 +1,6 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
 import { useState, useEffect } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ErrorModalProvider } from "./components/ErrorModal.jsx";

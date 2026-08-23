@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { useEffect } from "react";
 import TopBar from "./TopBar.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
@@ -52,7 +52,7 @@ beforeEach(() => {
 
 function Providers({ children, initialPath = "/" }) {
   return (
-    <MemoryRouter initialEntries={[initialPath]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>
         <ToastProvider>
           <ErrorModalProvider>
@@ -192,6 +192,43 @@ describe("I-25 — TopBar: mobile hamburger", () => {
     // Clicking opens the .mobile-nav (we just check the aria-expanded flips).
     act(() => fireEvent.click(hamburger));
     expect(hamburger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  // Regression guard for the React 19 upgrade (2026-08-23).
+  //
+  // The closed mobile nav is offscreen but still in the DOM, so `aria-hidden`
+  // alone is not enough — Tab would walk into its buttons. `inert` is what
+  // removes the subtree from the focus order.
+  //
+  // TopBar used to pass `inert={!isOpen ? "" : undefined}`, which worked only
+  // because React 18 did not recognise `inert` and forwarded the empty string
+  // as a bare attribute (HTML reads a present boolean attribute as true).
+  // React 19 recognises `inert` as a boolean prop, so `""` coerces to false
+  // and the attribute vanishes. Nothing failed — React only warns — so the
+  // whole suite stayed green while the menu quietly became tabbable again.
+  //
+  // Asserting on the rendered attribute rather than the prop is the point:
+  // it is the DOM, not the JSX, that decides whether focus can enter.
+  it("closed mobile nav is inert, so Tab cannot reach its offscreen buttons", async () => {
+    const { container } = render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const nav = container.querySelector("nav.mobile-nav");
+    expect(nav).toBeTruthy();
+
+    // Closed: the attribute must actually be present in the DOM.
+    expect(nav.hasAttribute("inert")).toBe(true);
+
+    // Open: it must be gone, or the menu the user just opened is unusable.
+    const hamburger = screen.getByRole("button", { name: /open menu/i });
+    act(() => fireEvent.click(hamburger));
+    expect(nav.hasAttribute("inert")).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@
 // for social previews and SEO indexing.
 
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import PublicReportArticle from "../components/PublicReportArticle.jsx";
 import { getPublicBySlug, buildPublicUrl } from "../lib/shareService.js";
