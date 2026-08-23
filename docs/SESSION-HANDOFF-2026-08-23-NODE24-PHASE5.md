@@ -199,3 +199,41 @@ sudo chown -R "$(id -u):$(id -g)" ~/.npm
 ## Branch-naming note
 
 The user referred to the branch as `node-24-upgrade`. That branch exists at `75d0cf4` but is an **ancestor of `origin/staging`** — its work is already merged, and it is ~20 commits behind. Phase 5 was therefore done on `claude/node-24-upgrade-phase-5-5d22d9`, cut from current `origin/staging`, which is the correct base. `node-24-upgrade` was left untouched and can be deleted once Phase 5 lands.
+
+---
+
+# ✅ RELEASED TO PRODUCTION — 2026-08-23
+
+Phase-gate run [`32623540502`](https://github.com/vikashkaruna/scrapelite/actions/runs/32623540502) completed **success** end to end on `main` = `79fdfc4`, via approval issue [#107](https://github.com/vikashkaruna/scrapelite/issues/107).
+
+| Gate job | Result |
+|---|---|
+| Production Gate: Test Suites | success |
+| Production Gate: Vulnerabilities | success — **`bypasses: []`** |
+| Production Gate: Open Issues/Defects | success |
+| Staging Released & Tested | success |
+| Await Manual Approval | success (approved on #107) |
+| Deploy to Production | success |
+| Smoke Test — Production | success |
+| Re-lock Production | success |
+
+**Production re-locked automatically**, so the next release needs a fresh unlock — that is the design, not a leftover.
+
+## Verified live, not just reported by the workflow
+
+The gate saying "deployed" is not the same as production running the new code — this repo has been bitten before by a run that claimed a release which never shipped. So it was checked directly:
+
+- `https://datiq.app` → **HTTP 200**
+- Production deploy `6a8a95dec87af70007076c32` (commit `79fdfc4`) → **41/41 functions `nodejs24.x`**, **all 5 crons scheduled**
+- The final live artifact is a CLI deploy (`6a8a9873f946cc748bbf2b1a`, no `commit_ref` — that is normal for `netlify deploy --prod`), also 41/41 `nodejs24.x` with 5 crons
+- **The live bundle itself was inspected** (`/assets/index-BGxPffpS.js`):
+  - contains `react-router`, and **no `react-router-dom`** → the v8 migration is genuinely live
+  - contains **`inert:!e`** — the minified form of `inert={!isOpen}`, a boolean negation. The pre-fix code would have minified to `inert:e?void 0:""`. **The accessibility fix is live in production.**
+
+Reading the shipped bundle is the only check that distinguishes "the pipeline reported success" from "the fix is actually running", and it is cheap. Do it.
+
+## Still outstanding after this release
+
+1. **The 11 stale visual baselines.** Pre-existing, shipped as-is, proven at the base commit. Worth its own PR — and decide whether the visual specs should gate anything, because today **no CI gate runs them**, which is why they drifted unnoticed.
+2. The `node-24-upgrade` branch (`75d0cf4`) is fully merged and ~20 commits behind; safe to delete.
+3. `~/.npm/_cacache` root-owned entries on the dev machine — the user's `sudo chown` to run.
