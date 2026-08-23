@@ -169,11 +169,18 @@ refusal must be hermetic for exactly this reason.
   recorded confirmation of ownership or owner permission, per named site, with
   responsibility resting on the user. Added as **items**, never a new section —
   `SECTIONS` drives `#section-N` anchors by array index.
-- ⚠️ **Open, and a legal judgement rather than a code one.** Acceptable Use
-  item 1 also permits sites "publicly accessible and not protected by technical
-  or legal access controls". If counsel reads a robots.txt `Disallow` as a
-  technical access control, no attestation should override it and the feature
-  needs revisiting rather than a copy edit.
+- ✅ **The internal tension in Acceptable Use is resolved in the text.** Item 1
+  permitted sites "not protected by technical or legal access controls", which
+  a reader could take to cover a robots.txt `Disallow` — contradicting the
+  override two items below. Item 1 now defines the phrase as measures that
+  restrict access itself (authentication, paywalls, IP/geo blocking, licence
+  terms barring automated access), and a new item states that robots.txt is a
+  request addressed to automated clients rather than an access control. That is
+  the accurate distinction — robots.txt does not prevent access, it asks for
+  restraint — and it leaves the "may not circumvent authentication, access
+  controls, or rate limits" item untouched and still meaningful. Worth
+  counsel's eye before it ships, but the document no longer contradicts
+  itself.
 - ✅ **Both accuracy fixes since made.** `/blog`'s pipeline post credited
   Firecrawl for robots handling; it now leads with a **Compliance check** step
   (ours, server-side, before any fetch, as `DatIQBot/1.0`, honouring
