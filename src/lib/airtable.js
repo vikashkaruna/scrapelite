@@ -11,7 +11,7 @@
 //
 // API shape: https://airtable.com/developers/web/api/rest-api
 //   POST /v0/{baseId}/{tableId}         — create up to 10 records
-//   GET  /v0/meta/bases/{baseId}/tables/{tableId}  — fetch field schema
+//   GET  /v0/meta/bases/{baseId}/tables            — fetch base schema
 //   Authorization: Bearer {apiKey}
 //   Body: { records: [{ fields: {...} }, ...], typecast: true }
 //
@@ -211,8 +211,9 @@ export function buildAirtableDedupUrl(baseId, tableId, fieldMap, sourceUrl) {
 }
 
 /**
- * Fetch a table's schema (field list). Hits the Airtable Meta API:
- *   GET /v0/meta/bases/{baseId}/tables/{tableId}
+ * Fetch a table's schema (field list). Airtable's Meta API only exposes
+ * the schema for a whole base, so we select the requested table locally:
+ *   GET /v0/meta/bases/{baseId}/tables
  * Requires `schema.bases:read` scope on the PAT. If the token doesn't
  * have that scope, the API returns 403 — we surface that as a
  * structured error so the UI can fall back to manual field entry.
@@ -221,7 +222,8 @@ export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (
   if (!fetchFn) return { ok: false, error: "No fetch available (SSR?)" };
   const v = validateAirtableConfig({ apiKey, baseId, tableId });
   if (v.length) return { ok: false, error: v.join(" ") };
-  const url = `${AIRTABLE_API_BASE}/meta/bases/${encodeURIComponent(baseId.trim())}/tables/${encodeURIComponent(tableId.trim())}`;
+  const requestedTableId = tableId.trim();
+  const url = `${AIRTABLE_API_BASE}/meta/bases/${encodeURIComponent(baseId.trim())}/tables`;
   try {
     const res = await fetchFn(url, {
       method: "GET",
@@ -243,10 +245,19 @@ export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (
       return { ok: false, error: msg };
     }
     const data = await res.json();
-    const fields = Array.isArray(data?.fields)
-      ? data.fields.map((f) => ({ name: f.name, type: f.type, id: f.id, description: f.description || "" }))
+    const table = Array.isArray(data?.tables)
+      ? data.tables.find((candidate) => candidate?.id === requestedTableId)
+      : null;
+    if (!table) {
+      return {
+        ok: false,
+        error: "Airtable table was not found in this base — check the Table ID and make sure the token can access the selected Base.",
+      };
+    }
+    const fields = Array.isArray(table.fields)
+      ? table.fields.map((f) => ({ name: f.name, type: f.type, id: f.id, description: f.description || "" }))
       : [];
-    return { ok: true, tableName: data?.name || "", tableId: data?.id || tableId, fields };
+    return { ok: true, tableName: table.name || "", tableId: table.id || requestedTableId, fields };
   } catch (err) {
     return { ok: false, error: err?.message || "network error" };
   }

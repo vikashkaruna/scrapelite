@@ -333,18 +333,27 @@ describe("airtable (F18)", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          id: "tblABCDEFGHIJK",
-          name: "Scrape Results",
-          fields: [
-            { id: "fld1", name: "URL", type: "url" },
-            { id: "fld2", name: "Title", type: "singleLineText" },
-            { id: "fld3", name: "Notes", type: "multilineText" },
+          tables: [
+            {
+              id: "tblOtherTable",
+              name: "Other table",
+              fields: [],
+            },
+            {
+              id: "tblABCDEFGHIJK",
+              name: "Scrape Results",
+              fields: [
+                { id: "fld1", name: "URL", type: "url" },
+                { id: "fld2", name: "Title", type: "singleLineText" },
+                { id: "fld3", name: "Notes", type: "multilineText" },
+              ],
+            },
           ],
         }),
       });
       const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
       expect(fetchFn).toHaveBeenCalledWith(
-        "https://api.airtable.com/v0/meta/bases/appABCDEFGHIJK/tables/tblABCDEFGHIJK",
+        "https://api.airtable.com/v0/meta/bases/appABCDEFGHIJK/tables",
         expect.objectContaining({ method: "GET" }),
       );
       expect(r.ok).toBe(true);
@@ -376,6 +385,17 @@ describe("airtable (F18)", () => {
       const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
       expect(r.ok).toBe(false);
       expect(r.error).toMatch(/Base ID and Table ID/);
+    });
+
+    it("returns an actionable error when the configured table is absent from the base schema", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ tables: [{ id: "tblOtherTable", name: "Other table", fields: [] }] }),
+      });
+      const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/table was not found/i);
     });
 
     it("rejects an invalid config before fetching", async () => {
