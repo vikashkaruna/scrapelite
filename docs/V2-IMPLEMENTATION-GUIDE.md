@@ -33,7 +33,7 @@ Check each item. If any is missing, stop and address it first.
 | 5 | Resend account with `RESEND_API_KEY` | Netlify env has it; domain `datiq.app` is verified in Resend |
 | 6 | Slack workspace with an incoming webhook for `#monitoring` (and `#datiq-support`, `#datiq-alerts` if you want them) | Slack → Apps → Incoming Webhooks → URLs are saved in 1Password |
 | 7 | `RESEND_API_KEY` set in Netlify env | Netlify dashboard → Environment |
-| 8 | You have `git`, `node 20+`, `npm`, and (optionally) `npx n8n` CLI installed | `node -v` shows ≥ 20 |
+| 8 | You have `git`, Node 24, npm 11, and (optionally) `npx n8n` CLI installed | `node -v` shows 24.x |
 | 9 | The 6 pre-existing cron presets (`0 */6 * * *` etc.) in the codebase | They are; see `src/lib/schedulerService.js` SCHEDULE_PRESETS |
 | 10 | The R19 scheduler migration (`scripts/scheduler.sql`) has been applied to your Supabase | `select count(*) from public.scheduled_tasks;` returns a number |
 

@@ -3,8 +3,8 @@
 // Regression test for the 2026-08-13 "Node.js 20 detected without native
 // WebSocket support" bug: @supabase/supabase-js >=2.108 eagerly constructs
 // a RealtimeClient inside createClient(), which synchronously THROWS on
-// any Node runtime without a native global WebSocket (Node <22 — i.e.
-// every Netlify Function) unless a `transport` is supplied. This broke
+// any runtime without a native global WebSocket unless a `transport` is
+// supplied. This broke
 // every Netlify Function that calls createClient(), surfacing to users as
 // "Internal error: Node.js 20 detected..." on every integration connect
 // (Notion, HubSpot, Airtable, Slack, Zapier) and, unnoticed, on every other
@@ -28,11 +28,10 @@ describe("supabaseServerClient — noRealtimeOptions", () => {
     expect(typeof opts.realtime.transport).toBe("function");
   });
 
-  it("does not throw when created under a Node-20-shaped environment (no native WebSocket) — the exact crash Netlify Functions hit", () => {
+  it("does not throw when created without a native WebSocket — the exact historical crash Netlify Functions hit", () => {
     const savedWS = globalThis.WebSocket;
-    // Netlify Functions run on Node 20, which has no native global
-    // WebSocket. Simulate that here regardless of the test runner's own
-    // Node version.
+    // Simulate the historical environment regardless of the test runner's
+    // own Node version.
     // eslint-disable-next-line no-undef
     delete globalThis.WebSocket;
     try {

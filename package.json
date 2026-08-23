@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "description": "DatIQ V1.0 — zero-code web extraction + enrichment. Single URL, batch, schedules, AI summaries, contacts, pricing, custom fields, shareable reports.",
   "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "packageManager": "npm@11.15.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
