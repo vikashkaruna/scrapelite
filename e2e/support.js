@@ -5,7 +5,35 @@
  * persistence intentionally exercises its documented localStorage fallback;
  * no browser test can accidentally consume a real credential or remote quota.
  */
-export async function installOfflineMocks(page) {
+export async function installOfflineMocks(page, options = {}) {
+  // ── Third-party font CDN ───────────────────────────────────────────────────
+  // index.html loads its typefaces from fonts.googleapis.com with a plain
+  // render-blocking <link rel="stylesheet">, so the document's `load` event
+  // waits for that request. Playwright's default navigation wait IS `load`,
+  // which makes EVERY page.goto and page.reload in this suite depend on
+  // Google's CDN being reachable and fast.
+  //
+  // Where egress is filtered, that request is not refused — it hangs and then
+  // resets after ~12.5s. Two navigations in one test then cost ~26s against a
+  // 30s timeout, so tests fail with `page.goto: Test timeout exceeded` and no
+  // assertion ever runs. Measured here: 13.4s to load /batch, of which 12.5s
+  // was this one request; with it stubbed, ~0.9s.
+  //
+  // Stubbing it is squarely this file's stated job — deterministic local
+  // fixtures, no reliance on a remote service. Text and role assertions are
+  // unaffected; the page simply renders in the fallback stack declared beside
+  // the webfont in design-system.css.
+  //
+  // Visual specs pass { externalFonts: "allow" } because their baselines were
+  // captured with the webfonts applied. Changing that here would fold an
+  // unreviewed rendering change into every stored screenshot.
+  if (options.externalFonts !== "allow") {
+    await page.route(/^https:\/\/fonts\.googleapis\.com\//, (route) =>
+      route.fulfill({ status: 200, contentType: "text/css", body: "" }),
+    );
+    await page.route(/^https:\/\/fonts\.gstatic\.com\//, (route) => route.abort());
+  }
+
   // Pre-mark the Q4 onboarding tour as "skipped" before the app boots so the
   // first-time-visitor auto-tour overlay does not intercept pointer events.
   // addInitScript runs on every navigation, before the app's scripts, so the
