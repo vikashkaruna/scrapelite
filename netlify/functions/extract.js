@@ -24,6 +24,8 @@ import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider
 import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
 import { consumeGuestCredit } from "./lib/guestUsage.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 
 function respond(statusCode, body, extraHeaders = {}) {
   return {
@@ -200,6 +202,99 @@ export const handler = async (event) => {
     return respond(400, { error: err.message || "Invalid URL" });
   }
 
+  // Subscription gate. Placed AFTER the SSRF guard (never spend a DB round-trip
+  // on a request we are about to reject anyway) and BEFORE any outbound call at
+  // all — including the robots.txt fetch below. A denied account must cost us
+  // nothing on the wire, which is what entitlement-enforcement.test.js pins.
+  //
+  // Signed-in users only: guests fall through untouched and are still governed
+  // solely by the per-host token bucket below. Fails OPEN when Supabase is
+  // unreachable — see the header of lib/requireEntitlement.js for why that
+  // asymmetry is deliberate and must not be "fixed".
+  //
+  // `respond`, not `reply`: consumeGuestCredit has not run yet, so there is no
+  // cookie to set — and it would return none here anyway, since it short-
+  // circuits for any request carrying an Authorization header.
+  try {
+    const { check } = await requireCapability(event, "extract");
+    if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
+  } catch (err) {
+    console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
+  }
+
+  // FD3: robots.txt compliance. Server-enforced; clients cannot bypass it.
+  //
+  // ⚠️ ORDERING IS LOAD-BEARING: this runs BEFORE consumeGuestCredit. It used
+  // to run after, which meant a guest who pasted three LinkedIn URLs spent
+  // three of their ten free extractions on requests that were refused on
+  // policy grounds before any provider was ever contacted. You do not bill for
+  // work you declined to do. The check needs only the URL, so it costs nothing
+  // to do it first — and it still sits after the SSRF guard, which is the one
+  // ordering that actually matters (never fetch robots.txt from an address we
+  // are about to reject as non-public).
+  //
+  // The refusal is OVERRIDABLE for a signed-in user who has attested that they
+  // have permission for this host — but only from a record we resolve here,
+  // server-side, from their JWT. See lib/scrapeConsent.js.
+  {
+    try {
+      const compliance = await checkCompliance(url, {
+        permittedHosts: process.env.PERMITTED_HOSTS || "",
+      });
+      if (!compliance.allowed) {
+        // Only a robots.txt refusal is overridable. `host_not_permitted` is the
+        // OPERATOR's allowlist decision, not the site's, and a user must not be
+        // able to attest their way past their own operator.
+        //
+        // This resolution has its OWN try/catch, and it must keep it. The outer
+        // catch below fails open on compliance-engine errors, which is right for
+        // "we could not read robots.txt" — but catastrophic here: a throw while
+        // looking up the attestation would fall through to that handler and
+        // allow a scrape the site refused. An error resolving consent means NO
+        // consent, always.
+        let overridden = false;
+        let consentAvailable = false;
+        if (compliance.code === "robots_disallowed") {
+          try {
+            const auth = await authenticateBearer(event, { label: "extract-consent" });
+            if (auth.ok && auth.user?.id) {
+              const consent = await hasScrapeConsent(auth.user.id, compliance.host);
+              // `degraded` (we could not read the record) is treated exactly
+              // like "no record" — see the fail-closed note in scrapeConsent.js.
+              overridden = consent.granted === true;
+              consentAvailable = !overridden;
+            }
+          } catch (err) {
+            console.warn("[DatIQ] consent lookup errored (refusal stands):", err.message);
+            overridden = false;
+            consentAvailable = false;
+          }
+        }
+        if (!overridden) {
+          return respond(403, {
+            error: compliance.reason,
+            code: compliance.code,
+            _complianceBlocked: true,
+            _crawlDelayMs: compliance.crawlDelayMs,
+            host: compliance.host,
+            // Tells the client whether to offer the attestation dialog or ask
+            // the caller to sign in first. Never a permission in itself.
+            consentAvailable,
+          });
+        }
+        console.info(`[DatIQ] robots.txt refusal overridden by recorded attestation for ${compliance.host}`);
+      }
+    } catch (err) {
+      // Fail open on compliance-engine errors.
+      console.warn("[DatIQ] compliance check errored (failing open):", err.message);
+    }
+  }
+
+  // The guest charge. Everything above this line is a gate that can decline
+  // WITHOUT doing any work, so nothing above it may bill. This used to sit
+  // directly under the SSRF guard, which is how a guest pasting three LinkedIn
+  // URLs spent three of their ten free extractions on requests that were
+  // refused on policy grounds before a provider was ever contacted.
   const guestUsage = await consumeGuestCredit(event, "single");
   const reply = (statusCode, body) => respond(
     statusCode,
@@ -212,39 +307,6 @@ export const handler = async (event) => {
       code: guestUsage.reason || "single_limit_reached",
       remaining: 0,
     });
-  }
-
-  // Subscription gate. Placed AFTER the SSRF guard (never spend a DB round-trip
-  // on a request we are about to reject anyway) and BEFORE any provider call.
-  //
-  // Signed-in users only: guests fall through untouched and are still governed
-  // solely by the per-host token bucket below. Fails OPEN when Supabase is
-  // unreachable — see the header of lib/requireEntitlement.js for why that
-  // asymmetry is deliberate and must not be "fixed".
-  try {
-    const { check } = await requireCapability(event, "extract");
-    if (!check.allowed) return reply(DENY_STATUS, denyBody(check));
-  } catch (err) {
-    console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
-  }
-
-  // FD3: robots.txt compliance. This is server-enforced; clients cannot bypass it.
-  {
-    try {
-      const compliance = await checkCompliance(url, {
-        permittedHosts: process.env.PERMITTED_HOSTS || "",
-      });
-      if (!compliance.allowed) {
-        return reply(403, {
-          error: compliance.reason,
-          _complianceBlocked: true,
-          _crawlDelayMs: compliance.crawlDelayMs,
-        });
-      }
-    } catch (err) {
-      // Fail open on compliance-engine errors.
-      console.warn("[DatIQ] compliance check errored (failing open):", err.message);
-    }
   }
 
   // FD3: per-host rate limiter. Wait for a token before any provider call.

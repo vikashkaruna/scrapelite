@@ -149,3 +149,89 @@ describe("checkCompliance (FD3)", () => {
     expect(r.reason).toMatch(/permits/);
   });
 });
+
+// The prose in `reason` is for humans. Callers must branch on `code`, because
+// matching the sentence is exactly what broke: the client's error classifier
+// pattern-matched the message, found nothing, and reported a deliberate
+// refusal as "Something went wrong. An unexpected error occurred."
+describe("checkCompliance — structured verdict", () => {
+  beforeEach(() => { _resetRobotsCacheForTests(); });
+
+  it("codes a robots.txt refusal as robots_disallowed and names the host", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "User-agent: *\nDisallow: /\n",
+    }));
+    const r = await checkCompliance("https://www.linkedin.com/company/anthropic");
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("robots_disallowed");
+    expect(r.host).toBe("www.linkedin.com");
+  });
+
+  it("codes an allowed scrape as allowed", async () => {
+    global.fetch = vi.fn(async () => ({ ok: false, status: 404, text: async () => "" }));
+    const r = await checkCompliance("https://example.com/p");
+    expect(r.code).toBe("allowed");
+  });
+
+  it("codes an operator-allowlist rejection separately from a robots refusal", async () => {
+    // These must stay distinguishable: a user may attest their way past the
+    // SITE's rules, but never past their own operator's allowlist.
+    const r = await checkCompliance("https://x.com/p", { permittedHosts: "y.com" });
+    expect(r.code).toBe("host_not_permitted");
+  });
+
+  it("codes an unparseable URL as invalid_url instead of throwing", async () => {
+    const r = await checkCompliance("not a url");
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("invalid_url");
+  });
+
+  it("echoes the full path verbatim, including the /in/ segment", async () => {
+    // A support report says WHICH url was refused only if the path is the real
+    // one. A truncated or rewritten path sends the next reader hunting a bug
+    // that does not exist.
+    global.fetch = vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "User-agent: *\nDisallow: /\n",
+    }));
+    const r = await checkCompliance("https://www.linkedin.com/in/vikashkaruna");
+    expect(r.path).toBe("/in/vikashkaruna");
+    expect(r.reason).toContain("path=/in/vikashkaruna");
+  });
+
+  it("keeps the query string in the echoed path", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "User-agent: *\nDisallow: /\n",
+    }));
+    const r = await checkCompliance("https://x.com/search?q=hello");
+    expect(r.path).toBe("/search?q=hello");
+  });
+});
+
+describe("parseRobots — user-agent matching is by product token", () => {
+  it("does NOT let a bare prefix like 'D' capture our block", () => {
+    // Regression: matching was `ourUa.startsWith(agent)`, so a record aimed at
+    // some other crawler whose name is a prefix of ours silently replaced the
+    // `*` rules we should have obeyed — quietly making us MORE permissive than
+    // the site asked for.
+    const text = `User-agent: *
+Disallow: /
+
+User-agent: D
+Allow: /
+`;
+    const r = parseRobots(text, "DatIQBot/1.0");
+    expect(isPathAllowed(r.rules, "/anything")).toBe(false);
+  });
+
+  it("still matches our own product token, with or without a version suffix", () => {
+    const bare = parseRobots("User-agent: *\nDisallow: /\n\nUser-agent: DatIQBot\nAllow: /\n", "DatIQBot/1.0");
+    expect(isPathAllowed(bare.rules, "/x")).toBe(true);
+    const versioned = parseRobots("User-agent: *\nDisallow: /\n\nUser-agent: DatIQBot/1.0\nAllow: /\n", "DatIQBot/1.0");
+    expect(isPathAllowed(versioned.rules, "/x")).toBe(true);
+  });
+
+  it("is case-insensitive about our name", () => {
+    const r = parseRobots("User-agent: *\nDisallow: /\n\nUser-agent: datiqbot\nAllow: /\n", "DatIQBot/1.0");
+    expect(isPathAllowed(r.rules, "/x")).toBe(true);
+  });
+});
