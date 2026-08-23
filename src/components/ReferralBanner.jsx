@@ -18,7 +18,8 @@ import { useLocation, useSearchParams } from "react-router";
 import Icon from "./Icon.jsx";
 import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
-import { getMyReferralCode, buildReferralUrl, getReferralBonus } from "../lib/referralService.js";
+import { useAuth } from "./AuthProvider.jsx";
+import { buildReferralUrl, fetchReferralStatus, REFERRAL_BONUS } from "../lib/referralService.js";
 
 const DISMISS_KEY = "datiq.referralDismissedMonth";
 
@@ -35,8 +36,23 @@ export default function ReferralBanner() {
   const [copied, setCopied] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
-  const myCode = useMemo(() => getMyReferralCode(), []);
-  const myUrl = useMemo(() => buildReferralUrl(myCode), [myCode]);
+  const { user } = useAuth();
+  // The code is issued by the server, per account. It is deliberately NOT
+  // derived client-side any more: the old derivation collided to "AAAAAAAA"
+  // for every user, so no referral could ever be attributed. Until the fetch
+  // returns, `status.code` is null and this banner renders nothing rather than
+  // showing a placeholder that isn't a real code.
+  const [status, setStatus] = useState({ code: null, referrals: 0, bonus: 0, degraded: false });
+
+  useEffect(() => {
+    if (!user) { setStatus({ code: null, referrals: 0, bonus: 0, degraded: false }); return; }
+    let alive = true;
+    fetchReferralStatus().then((s) => { if (alive) setStatus(s); });
+    return () => { alive = false; };
+  }, [user]);
+
+  const myCode = status.code;
+  const myUrl = useMemo(() => (myCode ? buildReferralUrl(myCode) : ""), [myCode]);
 
   useEffect(() => {
     try {
@@ -65,6 +81,10 @@ export default function ReferralBanner() {
   const isOver = used >= total;
   if (pct < 90 && !isOver) return null;
   if (dismissed) return null;
+  // No real code → no banner. Signed-out visitors and a store that cannot
+  // answer both land here. Showing an invite link that nobody can be credited
+  // for is worse than showing nothing.
+  if (!myCode) return null;
 
   const handleCopy = async () => {
     try {
@@ -105,9 +125,12 @@ export default function ReferralBanner() {
         <div className="uub-content">
           <span className="uub-title">Out of extractions? Invite a friend, get 25 more.</span>
           <span className="uub-desc">
-            You and your friend both get 25 extra extractions when they sign up with your link.
-            {getReferralBonus() > 0 && (
-              <> You already have <strong>{getReferralBonus()} bonus</strong> extractions.</>
+            You and your friend both get {REFERRAL_BONUS} extra extractions when they sign up with your link.
+            {status.referrals > 0 && (
+              <>{" "}
+                <strong>{status.referrals}</strong>
+                {status.referrals === 1 ? " friend has" : " friends have"} joined so far.
+              </>
             )}
             <span className="referral-code-row">
               <span className="referral-code-pill">

@@ -156,7 +156,13 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
           <span>Your plan</span>
         </div>
       )}
-      {plan.badge && <div className="plan-badge">{plan.badge}</div>}
+      {/* A coming-soon plan had only a CSS class and a "Notify me" button — no
+          visible label saying why it can't be bought. The badge the docs and
+          the smoke checklist both describe was never actually rendered; the
+          test for it passed only because the words "coming soon" happened to
+          appear elsewhere on the page. */}
+      {isSoon && <div className="plan-badge plan-badge-soon">Coming soon</div>}
+      {!isSoon && plan.badge && <div className="plan-badge">{plan.badge}</div>}
       <div className="plan-header">
         <div className="plan-name">{plan.name}</div>
         <div className="plan-tagline">{plan.tagline}</div>
@@ -494,10 +500,11 @@ export default function Pricing() {
         <div className="referral-teaser">
           <div className="referral-teaser-icon"><Icon name="gift" size={22} /></div>
           <div>
-            <div className="referral-teaser-title">Referral program — coming soon</div>
+            <div className="referral-teaser-title">Invite a friend, you both get 25 extractions</div>
             <div className="referral-teaser-desc">
-              Earn 10% lifetime discount for every friend you refer, or a 40% one-time discount on your current plan.
-              <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Get early access →</a>
+              Sign in and share your invite link. When someone creates an account through it,
+              25 extractions are added to their account and 25 to yours — every time.
+              <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Questions? Talk to us →</a>
             </div>
           </div>
         </div>

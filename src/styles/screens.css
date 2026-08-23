@@ -8855,3 +8855,12 @@ body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
   .scm-actions { flex-direction: column-reverse; }
   .scm-actions > * { width: 100%; }
 }
+
+/* "Coming soon" plan badge. Muted rather than accent-coloured: it marks a plan
+   you cannot buy yet, so it must not read as a recommendation the way
+   .plan-badge ("Recommended" / "Best Value") does. */
+.plan-badge-soon {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border-strong);
+}
