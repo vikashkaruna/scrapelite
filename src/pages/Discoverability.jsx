@@ -261,6 +261,7 @@ export default function Discoverability() {
         onRun={run}
         running={running}
         defaultUrl={audit?.target?.url || ""}
+        signedIn={Boolean(user)}
       />
 
       {error && (

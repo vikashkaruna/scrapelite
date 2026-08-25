@@ -373,6 +373,8 @@ can an AI assistant quote it?"**
 
 Open **Discoverability** in the top nav, paste a URL, and press **Run audit**.
 
+![The DatIQ Discoverability screen](assets/screenshots/11-discoverability.png)
+
 ### What it measures
 
 Search has split into three audiences that reward different things, so DatIQ

@@ -159,6 +159,20 @@ async function runAudit() {
   await waitFor(() => expect(screen.getAllByText("78").length).toBeGreaterThan(0));
 }
 
+describe("signed-out visitors are told before they click", () => {
+  it("says audits need an account instead of bouncing them after Run", async () => {
+    authMocks.getSession.mockResolvedValue(null);
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText(/Audits need a free account/i)).toBeInTheDocument();
+  });
+
+  it("does not show that note to a signed-in user", async () => {
+    await renderSignedIn();
+    expect(screen.queryByText(/Audits need a free account/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("empty state", () => {
   it("explains the four pillars before anything has been run", () => {
     render(<Tree />);

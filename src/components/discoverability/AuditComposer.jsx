@@ -18,7 +18,7 @@ const PAGE_TYPE_OPTIONS = [
     .map((p) => ({ id: p.id, label: p.label })),
 ];
 
-export default function AuditComposer({ onRun, running, defaultUrl = "", remaining }) {
+export default function AuditComposer({ onRun, running, defaultUrl = "", remaining, signedIn = true }) {
   const [url, setUrl] = useState(defaultUrl);
   const [advanced, setAdvanced] = useState(false);
   const [profile, setProfile] = useState("balanced");
@@ -78,7 +78,16 @@ export default function AuditComposer({ onRun, running, defaultUrl = "", remaini
           <Icon name={advanced ? "chevron-down" : "chevron-right"} size={14} />
           Advanced options
         </button>
-        {Number.isFinite(remaining) && (
+        {!signedIn ? (
+          // Said BEFORE the click, not after it. Audits are signed-in only, and
+          // the global trial banner above talks about extraction credits — which
+          // are a different allowance and do not apply here. Letting someone
+          // press Run and then bouncing them to a sign-up modal is a worse way
+          // to learn the same fact.
+          <span className="dsc-remaining">
+            Audits need a free account — your history is what makes the second one useful.
+          </span>
+        ) : Number.isFinite(remaining) && (
           <span className="dsc-remaining">
             {remaining} audit{remaining === 1 ? "" : "s"} left this month
           </span>
