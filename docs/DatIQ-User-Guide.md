@@ -21,12 +21,13 @@ Paste a URL (or many), choose what you want, and DatIQ does the rest.
 8. Scheduling & change monitoring
 9. Your Dashboard
 10. Exports & sharing
-11. Plans, usage & billing
-12. Accounts, trial & sign-in
-13. Privacy & your data
-14. FAQ & troubleshooting
-15. Keyboard shortcuts
-16. Glossary
+11. Discoverability — SEO, AEO & GEO audits
+12. Plans, usage & billing
+13. Accounts, trial & sign-in
+14. Privacy & your data
+15. FAQ & troubleshooting
+16. Keyboard shortcuts
+17. Glossary
 
 ---
 
@@ -364,7 +365,152 @@ Public reports can be unshared at any time. Recent public extractions also surfa
 
 ---
 
-## 11. Plans, usage & billing
+## 11. Discoverability — SEO, AEO & GEO audits
+
+Extraction answers *"what is on this page?"*. Discoverability answers a different
+question about a page you usually already own: **"can this page be found, and
+can an AI assistant quote it?"**
+
+Open **Discoverability** in the top nav, paste a URL, and press **Run audit**.
+
+### What it measures
+
+Search has split into three audiences that reward different things, so DatIQ
+scores all three separately and shows you where they disagree.
+
+| Score | Audience | Rewards |
+|---|---|---|
+| **SEO** | Classic search engines | Crawlability, rendering, canonicals, page speed |
+| **AEO** | Answer engines (ChatGPT, Perplexity, AI Overviews) | Concise, answer-first passages that survive being quoted |
+| **GEO** | Generative engines | A clear machine-readable identity, and being cited as the source |
+| **Overall** | All three, weighted | A balanced view when you are not optimising for one in particular |
+
+Underneath those sit four pillars, and every score traces back to them:
+
+- **Answer Clarity** — is there a self-contained answer near the top, and would it still make sense quoted on its own?
+- **Entity Authority** — can a machine tell who published this, and do answer engines already cite you?
+- **Structural Hierarchy** — is the page segmented cleanly enough for a retrieval system to find the right section?
+- **Technical Accessibility** — can bots reach, render and trust the page at all, including the crawlers that feed AI answers?
+
+Open any pillar card to see every individual signal, its weight, and its score.
+
+### "Not measured" is not zero
+
+Some signals need something outside the page — Core Web Vitals come from
+Google's field data, and citation footprint comes from sampling an answer
+engine. When one of those is unavailable, DatIQ marks it **not measured** and
+leaves it out of the score entirely, redistributing its weight across the
+signals it *could* read.
+
+That is why every score shows a **coverage** figure beside it. A 92 built on 70%
+of the signals is not the same as a 92 built on all of them, and you should be
+able to see which one you are looking at.
+
+Some signals are marked **not applicable** instead. A pricing page has no
+step-by-step procedure, so it is never asked for HowTo markup, and it is not
+marked down for the absence.
+
+### Blocking issues
+
+A few problems undermine a page no matter how good the writing is — the page is
+marked `noindex`, AI crawlers are disallowed, the content only appears after
+JavaScript runs. These scale the whole score down rather than costing it a few
+points, and the report shows you the arithmetic: your score before the blockers,
+the multiplier, and the result.
+
+### The fix list
+
+Every finding becomes a prioritised recommendation with:
+
+- **who** does it — content, SEO, engineering, brand or product
+- **how much** it is worth on *your* page, not in general
+- **how hard** it is, and how confident we are the finding is right
+- **something to paste**, where one exists
+
+That last one is the point. Where a fix is a piece of markup or a block of copy,
+DatIQ writes a draft from what your page already contains — FAQ schema built
+from your visible questions, an Organization block carrying your real profile
+links, a corrected heading outline that leaves your wording alone and fixes only
+the nesting.
+
+Anything the audit could not observe appears as a `TODO:` placeholder rather
+than an invention. Fill those in before you publish — a schema block containing a
+made-up founder name is worse than no schema block, because it tends to get
+published without being read.
+
+Sort the queue by owner, accept what you will do, and dismiss what does not
+apply. A dismissal asks for a reason, because three months later a dismissal
+with no reason is indistinguishable from a mis-click.
+
+### Proving the fix worked
+
+An audit is a reading. Two are a direction.
+
+Press **Re-audit** after you have made changes and DatIQ measures the page again
+and compares it against the previous run: what moved, what was resolved, and —
+most importantly — anything **new** that appeared, because a fix that introduces
+a regression is exactly what you want to catch before it compounds.
+
+The comparison only reports a change when both audits actually measured the same
+thing. If Core Web Vitals were unavailable last week and available today, that
+difference is labelled as not comparable rather than being presented as your
+improvement.
+
+The **History** panel plots every audit of that page over time. A gap in the line
+is a run where that score could not be measured — it is drawn as a gap rather
+than a straight line, because joining two points through a reading that never
+happened would show a trend you did not have.
+
+### Watching a page
+
+On Pro and above you can put a page on a schedule — daily, weekly or monthly.
+DatIQ re-audits it in the background and emails you only when something material
+moves: the overall score past a threshold you set, or a new critical issue.
+
+A monitor that emails every week regardless is a monitor nobody reads by week
+four, so it stays quiet when nothing has happened.
+
+### Comparing against competitors
+
+A **benchmark** audits several URLs with the same profile and lines the results
+up side by side, so "why is that page more answer-ready than mine?" becomes a
+question you can answer from evidence rather than intuition.
+
+### Audit allowances
+
+Audits have their own monthly allowance, separate from extraction credits — an
+audit fetches the page twice, checks crawl policy, looks up performance data and
+runs an AI pass, so it costs more than an extraction and gets its own budget.
+
+| Plan | Audits / month |
+|---|---|
+| Free | 3 |
+| Go | 10 |
+| Select | 25 |
+| Pro | 100 |
+| Business | 500 |
+| Agency | 2,000 |
+
+Scheduled monitoring needs Pro or above. Benchmarks need Select or above.
+
+### What it does not promise
+
+Scores describe how discoverable and extractable your page is **today**. They
+are not a prediction of rankings, citations or traffic, and no honest tool can
+give you one. What they do give you is a reproducible measurement, the evidence
+behind it, and a list of things to change — so that when the outcome does move,
+you know what you changed.
+
+### Sites that ask not to be read
+
+DatIQ honours robots.txt. If a site's robots.txt disallows automated access,
+the audit is refused rather than run.
+
+If the site is yours, or you have the owner's permission, you can record that
+once per site and re-run. That confirmation is tied to your account and to that
+exact site, it expires after 180 days, and you can withdraw it at any time.
+
+## 12. Plans, usage & billing
 
 DatIQ offers a free tier plus paid plans for heavier use. Pricing is shown in your local currency where
 supported, with monthly and annual billing (annual saves you money).
@@ -415,7 +561,7 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 ---
 
-## 12. Accounts, trial & sign-in
+## 13. Accounts, trial & sign-in
 
 - **Try without an account** — you can start extracting straight away. A trial banner shows how many free
   single extractions and batch runs remain. DatIQ never interrupts you on arrival: the limit is checked
@@ -432,7 +578,7 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 ---
 
-## 13. Privacy & your data
+## 14. Privacy & your data
 
 - DatIQ extracts only from **publicly accessible** pages you point it at.
 - Your saved extractions are tied to your account (or kept on your device when you use DatIQ without signing in).
@@ -443,7 +589,7 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 > Looking for general questions — pricing, plans, sharing, keyboard shortcuts, what DatIQ can
 > extract? Those all live in one place now: **[the DatIQ FAQ](https://datiq.app/faq)**. This section
@@ -489,7 +635,7 @@ alerts, keyboard shortcuts and what each screen does. If it is still not covered
 
 ---
 
-## 15. Keyboard shortcuts
+## 16. Keyboard shortcuts
 
 DatIQ has power-user shortcuts for fast navigation and common actions. Press <kbd>?</kbd> any time
 to see the full list.
@@ -509,7 +655,7 @@ to see the full list.
 
 ---
 
-## 16. Glossary
+## 17. Glossary
 
 - **Extraction** — one run of DatIQ against a page, producing structured results.
 - **Intent** — what you want from a page (summary, contacts, pricing, map, or custom).

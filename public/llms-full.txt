@@ -113,6 +113,47 @@ No code required. Background processing keeps the page responsive. Results persi
 
 ---
 
+### Discoverability audits (SEO / AEO / GEO)
+
+DatIQ scores a page for three audiences that reward different things, because a
+page can rank well in classic search and never be quoted by an answer engine.
+
+- **SEO** — crawlability, rendering, canonicals, Core Web Vitals
+- **AEO** — answer-first passages an assistant can lift and quote whole
+- **GEO** — machine-readable entity identity and citation footprint
+
+Four pillars sit underneath, each traceable to its individual signals: Answer
+Clarity (30%), Entity Authority (25%), Structural Hierarchy (20%), Technical
+Accessibility (25%).
+
+Blocking failures — a noindex directive, AI crawlers disallowed in robots.txt,
+content that only exists after JavaScript runs — apply a multiplicative penalty
+to every framework score rather than a fixed deduction, and the report shows the
+arithmetic.
+
+Signals that could not be measured (Core Web Vitals when PageSpeed has no field
+data, citation footprint when no answer-engine sampling is configured) are
+EXCLUDED and their weight redistributed, never scored as zero. Every score
+reports its evidence coverage alongside it.
+
+Findings become a prioritised queue with owner, effort, confidence and the score
+this specific page can recover. Where a fix is markup or copy, DatIQ generates a
+draft from the page's own content — FAQPage JSON-LD built from visible
+questions, Organization schema carrying real profile links, 40-60 word answer
+blocks, corrected heading outlines. Anything unobservable is emitted as an
+explicit TODO placeholder rather than invented.
+
+Re-auditing compares against the previous run and reports resolved, remaining
+and newly introduced issues. A delta is only reported when both audits measured
+the same signal.
+
+Audits carry their own monthly allowance, separate from extraction credits:
+Free 3, Go 10, Select 25, Pro 100, Business 500, Agency 2,000. Scheduled
+monitoring requires Pro or above; competitive benchmarks require Select or above.
+
+DatIQ makes no claim that a score predicts rankings, citations or traffic.
+
+
 ## 4. Pricing (as of 2026)
 
 | Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
@@ -262,6 +303,8 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - Integrations directory: https://datiq.app/integrations
 
 ---
+- https://datiq.app/discoverability — SEO / AEO / GEO audit engine (sign-in required)
+- https://datiq.app/help/11-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
 
 ## 8. FAQ (12 questions and answers)
 
@@ -404,6 +447,12 @@ Full contact page: https://datiq.app/contact
 ---
 
 ## 16. Recent releases (2026)
+
+**August 2026 — Discoverability module.** SEO, AEO and GEO audits with a
+four-pillar scoring engine, prioritised fixes with copy-ready implementation
+constructs, re-audit comparison, trend history, scheduled monitoring and
+competitive benchmarks. Unmeasured signals are excluded rather than scored as
+zero, and every score reports its evidence coverage.
 
 ### 2026-08-09 — AEO/GEO/SEO P1 sweep
 - `og-card.jpg` (1376×768) replaces the favicon pixel in `og:image` and `twitter:image` on 19 surfaces

@@ -23,6 +23,10 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - Content generation: SEO outlines, competitive briefs, email drafts from saved pages
 - CSV and PDF export of all data
 - Billing records: every payment issues a numbered, itemized invoice or receipt, emailed as a PDF and available to view, download, or re-send from the Account screen
+- Discoverability audits: score any URL for classic search (SEO), answer engines (AEO) and generative engines (GEO) in one run, across four pillars — Answer Clarity, Entity Authority, Structural Hierarchy, Technical Accessibility
+- Prioritised remediation with copy-ready constructs: FAQPage and Organization JSON-LD generated from the page's own visible content, 40-60 word answer blocks, corrected heading outlines, robots.txt entries for answer-engine crawlers
+- Re-audit and compare: score deltas, resolved vs newly introduced issues, and a trend line per page
+- Scheduled discoverability monitoring and competitive benchmark sets
 
 ## Pricing (as of 2026)
 - Free: 10 extractions/month + 25 trial credits, no credit card
@@ -77,6 +81,8 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Changelog: https://datiq.app/changelog
 - Public gallery of shared reports: https://datiq.app/gallery
 - DMCA takedown process: https://datiq.app/dmca
+- /discoverability — SEO / AEO / GEO audit engine (sign-in required)
+- /help/11-discoverability-seo-aeo-and-geo-audits.html — how the audit engine works
 
 ## Persona landing pages
 - For sales teams: https://datiq.app/for-sales

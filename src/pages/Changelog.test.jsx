@@ -35,10 +35,10 @@ describe("Changelog V1.0", () => {
     expect(screen.getByRole("heading", { name: /What's in DatIQ V1\.0/i })).toBeInTheDocument();
   });
 
-  it("renders all 11 feature groups with at least one item each", () => {
+  it("renders all 12 feature groups with at least one item each", () => {
     const { container } = renderPage();
     const groups = container.querySelectorAll(".cl-group");
-    expect(groups.length).toBe(11);
+    expect(groups.length).toBe(12);
     groups.forEach((g) => {
       const items = g.querySelectorAll(".cl-group-list li");
       expect(items.length).toBeGreaterThanOrEqual(3);
@@ -77,8 +77,8 @@ describe("Changelog V1.0", () => {
     renderPage();
     const toc = screen.getByLabelText("Feature groups");
     const links = within(toc).getAllByRole("link");
-    // 11 groups → 11 TOC links
-    expect(links.length).toBe(11);
+    // 12 groups → 12 TOC links
+    expect(links.length).toBe(12);
     for (const l of links) {
       expect(l.getAttribute("href")).toMatch(/^#feature-/);
     }

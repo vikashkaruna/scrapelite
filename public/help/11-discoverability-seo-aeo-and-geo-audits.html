@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11. Discoverability — SEO, AEO &amp; GEO audits · DatIQ Help</title>
+<!-- Derived from the section's first sentence, which is already computed for
+     the nav cards. Without it these 18 pages had no description at all, so a
+     search result showed whatever fragment Google chose to scrape. -->
+<meta name="description" content="Extraction answers "what is on this page?".">
+<link rel="canonical" href="https://datiq.app/help/11-discoverability-seo-aeo-and-geo-audits.html">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="help.css">
+<!-- Shared consent-aware Google tag. Added HERE rather than to the generated
+     HTML: these 18 pages are output, and an edit to them is erased the next
+     time this script runs. runtime-config.js must precede analytics.js —
+     analytics.js treats a missing gaMeasurementId key as "fall back to the
+     built-in id" and an empty one as "disabled", so loading it first is what
+     keeps non-production traffic out of the production property. -->
+<script src="/runtime-config.js"></script>
+<script src="/analytics.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+    </span>
+    <span class="brand-name">Dat<b>IQ</b> <span class="brand-help">Help</span></span>
+  </a>
+  <div class="topbar-actions">
+    <a class="nav-link" href="/" >← Back to app</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light / dark">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar" aria-label="Help navigation"><div class="side-group"><a class="side-link" href="index.html">Overview</a></div><div class="side-label">Guide</div><div class="side-group"><a class="side-link" href="01-what-datiq-is.html"><span class="side-num">1</span>What DatIQ is</a><a class="side-link" href="02-quick-start-your-first-extraction.html"><span class="side-num">2</span>Quick start — your first extraction</a><a class="side-link" href="03-the-home-composer.html"><span class="side-num">3</span>The Home composer</a><a class="side-link" href="04-what-you-can-extract.html"><span class="side-num">4</span>What you can extract</a><a class="side-link" href="05-reviewing-results-the-preview-screen.html"><span class="side-num">5</span>Reviewing results — the Preview screen</a><a class="side-link" href="06-enrichment-and-content-generation.html"><span class="side-num">6</span>Enrichment &amp; content generation</a><a class="side-link" href="07-batch-extraction.html"><span class="side-num">7</span>Batch extraction</a><a class="side-link" href="08-scheduling-and-change-monitoring.html"><span class="side-num">8</span>Scheduling &amp; change monitoring</a><a class="side-link" href="09-your-dashboard.html"><span class="side-num">9</span>Your Dashboard</a><a class="side-link" href="10-exports-and-sharing.html"><span class="side-num">10</span>Exports &amp; sharing</a><a class="side-link active" href="11-discoverability-seo-aeo-and-geo-audits.html"><span class="side-num">11</span>Discoverability — SEO, AEO &amp; GEO audits</a><a class="side-link" href="12-plans-usage-and-billing.html"><span class="side-num">12</span>Plans, usage &amp; billing</a><a class="side-link" href="13-accounts-trial-and-sign-in.html"><span class="side-num">13</span>Accounts, trial &amp; sign-in</a><a class="side-link" href="14-privacy-and-your-data.html"><span class="side-num">14</span>Privacy &amp; your data</a><a class="side-link" href="15-troubleshooting.html"><span class="side-num">15</span>Troubleshooting</a><a class="side-link" href="16-keyboard-shortcuts.html"><span class="side-num">16</span>Keyboard shortcuts</a><a class="side-link" href="17-glossary.html"><span class="side-num">17</span>Glossary</a></div><div class="side-label">For developers</div><div class="side-group"><a class="side-link" href="developers.html">API reference</a></div></nav>
+  <main class="content">
+    <button class="side-toggle" id="sideToggle" aria-label="Toggle navigation">☰ Contents</button>
+    <article class="doc">
+      <div class="doc-head">
+        <div class="kicker">Section 11</div>
+        <h1>Discoverability — SEO, AEO &amp; GEO audits</h1>
+        <p class="doc-sub">Extraction answers "what is on this page?".</p>
+      </div>
+      <p>Extraction answers <em>"what is on this page?"</em>. Discoverability answers a different question about a page you usually already own: <strong>"can this page be found, and can an AI assistant quote it?"</strong></p><p>Open <strong>Discoverability</strong> in the top nav, paste a URL, and press <strong>Run audit</strong>.</p><h3 id="what-it-measures">What it measures</h3><p>Search has split into three audiences that reward different things, so DatIQ scores all three separately and shows you where they disagree.</p><div class="table-wrap"><table><thead><tr><th>Score</th><th>Audience</th><th>Rewards</th></tr></thead><tbody><tr><td><strong>SEO</strong></td><td>Classic search engines</td><td>Crawlability, rendering, canonicals, page speed</td></tr><tr><td><strong>AEO</strong></td><td>Answer engines (ChatGPT, Perplexity, AI Overviews)</td><td>Concise, answer-first passages that survive being quoted</td></tr><tr><td><strong>GEO</strong></td><td>Generative engines</td><td>A clear machine-readable identity, and being cited as the source</td></tr><tr><td><strong>Overall</strong></td><td>All three, weighted</td><td>A balanced view when you are not optimising for one in particular</td></tr></tbody></table></div><p>Underneath those sit four pillars, and every score traces back to them:</p><ul><li><strong>Answer Clarity</strong> — is there a self-contained answer near the top, and would it still make sense quoted on its own?</li><li><strong>Entity Authority</strong> — can a machine tell who published this, and do answer engines already cite you?</li><li><strong>Structural Hierarchy</strong> — is the page segmented cleanly enough for a retrieval system to find the right section?</li><li><strong>Technical Accessibility</strong> — can bots reach, render and trust the page at all, including the crawlers that feed AI answers?</li></ul><p>Open any pillar card to see every individual signal, its weight, and its score.</p><h3 id="not-measured-is-not-zero">"Not measured" is not zero</h3><p>Some signals need something outside the page — Core Web Vitals come from Google's field data, and citation footprint comes from sampling an answer engine. When one of those is unavailable, DatIQ marks it <strong>not measured</strong> and leaves it out of the score entirely, redistributing its weight across the signals it <em>could</em> read.</p><p>That is why every score shows a <strong>coverage</strong> figure beside it. A 92 built on 70% of the signals is not the same as a 92 built on all of them, and you should be able to see which one you are looking at.</p><p>Some signals are marked <strong>not applicable</strong> instead. A pricing page has no step-by-step procedure, so it is never asked for HowTo markup, and it is not marked down for the absence.</p><h3 id="blocking-issues">Blocking issues</h3><p>A few problems undermine a page no matter how good the writing is — the page is marked <code>noindex</code>, AI crawlers are disallowed, the content only appears after JavaScript runs. These scale the whole score down rather than costing it a few points, and the report shows you the arithmetic: your score before the blockers, the multiplier, and the result.</p><h3 id="the-fix-list">The fix list</h3><p>Every finding becomes a prioritised recommendation with:</p><ul><li><strong>who</strong> does it — content, SEO, engineering, brand or product</li><li><strong>how much</strong> it is worth on <em>your</em> page, not in general</li><li><strong>how hard</strong> it is, and how confident we are the finding is right</li><li><strong>something to paste</strong>, where one exists</li></ul><p>That last one is the point. Where a fix is a piece of markup or a block of copy, DatIQ writes a draft from what your page already contains — FAQ schema built from your visible questions, an Organization block carrying your real profile links, a corrected heading outline that leaves your wording alone and fixes only the nesting.</p><p>Anything the audit could not observe appears as a <code>TODO:</code> placeholder rather than an invention. Fill those in before you publish — a schema block containing a made-up founder name is worse than no schema block, because it tends to get published without being read.</p><p>Sort the queue by owner, accept what you will do, and dismiss what does not apply. A dismissal asks for a reason, because three months later a dismissal with no reason is indistinguishable from a mis-click.</p><h3 id="proving-the-fix-worked">Proving the fix worked</h3><p>An audit is a reading. Two are a direction.</p><p>Press <strong>Re-audit</strong> after you have made changes and DatIQ measures the page again and compares it against the previous run: what moved, what was resolved, and — most importantly — anything <strong>new</strong> that appeared, because a fix that introduces a regression is exactly what you want to catch before it compounds.</p><p>The comparison only reports a change when both audits actually measured the same thing. If Core Web Vitals were unavailable last week and available today, that difference is labelled as not comparable rather than being presented as your improvement.</p><p>The <strong>History</strong> panel plots every audit of that page over time. A gap in the line is a run where that score could not be measured — it is drawn as a gap rather than a straight line, because joining two points through a reading that never happened would show a trend you did not have.</p><h3 id="watching-a-page">Watching a page</h3><p>On Pro and above you can put a page on a schedule — daily, weekly or monthly. DatIQ re-audits it in the background and emails you only when something material moves: the overall score past a threshold you set, or a new critical issue.</p><p>A monitor that emails every week regardless is a monitor nobody reads by week four, so it stays quiet when nothing has happened.</p><h3 id="comparing-against-competitors">Comparing against competitors</h3><p>A <strong>benchmark</strong> audits several URLs with the same profile and lines the results up side by side, so "why is that page more answer-ready than mine?" becomes a question you can answer from evidence rather than intuition.</p><h3 id="audit-allowances">Audit allowances</h3><p>Audits have their own monthly allowance, separate from extraction credits — an audit fetches the page twice, checks crawl policy, looks up performance data and runs an AI pass, so it costs more than an extraction and gets its own budget.</p><div class="table-wrap"><table><thead><tr><th>Plan</th><th>Audits / month</th></tr></thead><tbody><tr><td>Free</td><td>3</td></tr><tr><td>Go</td><td>10</td></tr><tr><td>Select</td><td>25</td></tr><tr><td>Pro</td><td>100</td></tr><tr><td>Business</td><td>500</td></tr><tr><td>Agency</td><td>2,000</td></tr></tbody></table></div><p>Scheduled monitoring needs Pro or above. Benchmarks need Select or above.</p><h3 id="what-it-does-not-promise">What it does not promise</h3><p>Scores describe how discoverable and extractable your page is <strong>today</strong>. They are not a prediction of rankings, citations or traffic, and no honest tool can give you one. What they do give you is a reproducible measurement, the evidence behind it, and a list of things to change — so that when the outcome does move, you know what you changed.</p><h3 id="sites-that-ask-not-to-be-read">Sites that ask not to be read</h3><p>DatIQ honours robots.txt. If a site's robots.txt disallows automated access, the audit is refused rather than run.</p><p>If the site is yours, or you have the owner's permission, you can record that once per site and re-run. That confirmation is tied to your account and to that exact site, it expires after 180 days, and you can withdraw it at any time.</p>
+      <div class="page-nav"><a class="pn-btn" href="10-exports-and-sharing.html"><span class="pn-dir">← Previous</span><span class="pn-title">Exports &amp; sharing</span></a><a class="pn-btn pn-next" href="12-plans-usage-and-billing.html"><span class="pn-dir">Next →</span><span class="pn-title">Plans, usage &amp; billing</span></a></div>
+    </article>
+    <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
+  </main>
+</div>
+<script>
+  (function () {
+    var KEY = "datiq.theme";
+    var root = document.documentElement;
+    try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") root.setAttribute("data-theme", t); } catch (e) {}
+    function setIcon() {
+      var dark = root.getAttribute("data-theme") === "dark";
+      document.getElementById("themeIcon").innerHTML = dark
+        ? '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>'
+        : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    }
+    setIcon();
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var dark = root.getAttribute("data-theme") === "dark";
+      var next = dark ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+      setIcon();
+    });
+    var st = document.getElementById("sideToggle");
+    if (st) st.addEventListener("click", function () { document.body.classList.toggle("nav-open"); });
+  })();
+</script>
+</body>
+</html>
