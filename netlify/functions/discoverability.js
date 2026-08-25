@@ -330,7 +330,17 @@ export const handler = async (event) => {
         if (sub === "answers") return json(200, { direct_answer_blocks: full.result?.evidence_json?.direct_answer_blocks || [], faq_pairs: full.result?.evidence_json?.faq_pairs || [] });
         if (sub === "entities") return json(200, { entity: full.result?.facts_json?.entity || {}, prompt_runs: full.promptRuns });
         if (sub === "technical") return json(200, { technical: full.result?.facts_json?.technical || {} });
-        if (sub === "report") return reportRoute(event, full);
+        if (sub === "report") {
+          // Exports leave the product — a report can be forwarded to a client
+          // or attached to a ticket — so they belong in the trail beside
+          // created / rerun / deleted. Fire-and-forget: recordEvent never
+          // throws, and a lost trail entry must not fail the download.
+          store.recordEvent(userId, {
+            auditId: id, eventType: "exported",
+            payload: { format: (event.queryStringParameters?.format || "markdown").toLowerCase() },
+          });
+          return reportRoute(event, full);
+        }
         if (sub === "compare" && subId) return await compareRoute(userId, full, subId);
       }
       return json(405, { error: "Method not allowed." });

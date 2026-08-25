@@ -488,6 +488,14 @@ describe("report export", () => {
     expect(JSON.parse(j.body).framework_scores.overall).toBe(78);
   });
 
+  it("records the export in the audit trail", async () => {
+    storeMock.recordEvent = vi.fn(async () => {});
+    await call("GET", "audits/a1/report", { query: { format: "csv" } });
+    expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      eventType: "exported", auditId: "a1",
+    }));
+  });
+
   it("annotates the score with its coverage, so a thin audit is not oversold", async () => {
     const res = await call("GET", "audits/a1/report");
     expect(res.body).toMatch(/92\.5% of signals/);
