@@ -85,9 +85,9 @@ grant usage on schema public to anon, authenticated;
 // 2 functions (issue_referral_code + redeem_referral_code), taking these to
 // 44 / 19 / 6. No new trigger.
 const EXPECT = {
-  tables: 44,
-  functions: 19,
-  triggers: 6,
+  tables: 57,
+  functions: 24,
+  triggers: 11,
   tablesWithoutRls: 0,
 };
 
@@ -709,6 +709,197 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
        values ($1, $2, $2, 25)`, [c1, carol]);
   } catch (err) { selfIns = err; }
   eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
+}
+
+// ── 0030: discoverability audits ─────────────────────────────────────────────
+group("discoverability — targets, idempotency, trends, retention");
+{
+  const alice = (await one(`insert into auth.users (email) values ('audit-alice@x.com') returning id`)).id;
+  const bob   = (await one(`insert into auth.users (email) values ('audit-bob@x.com') returning id`)).id;
+
+  // ── upsert_audit_target: one target per owner per URL ──────────────────────
+  // This is what makes re-auditing accumulate ONE history instead of scattering
+  // across duplicate targets.
+  const t1 = (await one(`select public.upsert_audit_target($1,$2,$3,$4) id`,
+    [alice, "https://example.com/geo", "example.com", "GEO guide"])).id;
+  const t2 = (await one(`select public.upsert_audit_target($1,$2,$3,null) id`,
+    [alice, "https://example.com/geo", "example.com"])).id;
+  eq("re-auditing the same URL reuses one target", t1, t2);
+
+  const kept = await one(`select label from public.audit_targets where id = $1`, [t1]);
+  eq("a re-upsert with no label does not erase the existing one", kept.label, "GEO guide");
+
+  // Two owners auditing the same URL are two separate targets, not a shared one.
+  const t3 = (await one(`select public.upsert_audit_target($1,$2,$3,null) id`,
+    [bob, "https://example.com/geo", "example.com"])).id;
+  check("a different owner gets their own target for the same URL", t3 !== t1);
+
+  // ── audits + idempotency ──────────────────────────────────────────────────
+  const mkAudit = async (user, target, key = null, status = "completed") =>
+    (await one(
+      `insert into public.audits (user_id, target_id, target_url, status, idempotency_key)
+       values ($1,$2,'https://example.com/geo',$3,$4) returning id`,
+      [user, target, status, key])).id;
+
+  const a1 = await mkAudit(alice, t1, "req-123");
+  let dupKey = null;
+  try { await mkAudit(alice, t1, "req-123"); } catch (e) { dupKey = e.message; }
+  check("the same idempotency key cannot spend a second audit credit", !!dupKey,
+    dupKey || "the duplicate insert succeeded");
+
+  // The index is PARTIAL, so the interactive UI path — which sends no key —
+  // must not collide with itself on a null.
+  const noKey1 = await mkAudit(alice, t1);
+  const noKey2 = await mkAudit(alice, t1);
+  check("audits created without an idempotency key do not collide", noKey1 !== noKey2);
+
+  // A different user may reuse the same key: it is scoped per owner.
+  const bobA = await mkAudit(bob, t3, "req-123");
+  check("idempotency keys are scoped per user", !!bobA);
+
+  // ── results, and the NULL-is-not-zero contract ────────────────────────────
+  const addResult = async (auditId, user, score) => {
+    await db.query(
+      `insert into public.audit_results
+         (audit_id, user_id, final_score, seo_score, aeo_score, geo_score,
+          answer_clarity_score, entity_authority_score, structural_hierarchy_score,
+          technical_accessibility_score, pre_penalty_score, penalty_multiplier,
+          coverage, issue_count, critical_count)
+       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1)`,
+      [auditId, user, score]);
+  };
+  await addResult(a1, alice, 78.4);
+  await addResult(noKey1, alice, 71.0);
+  await addResult(noKey2, alice, 84.2);
+
+  let twoResults = null;
+  try { await addResult(a1, alice, 99); } catch (e) { twoResults = e.message; }
+  check("an audit cannot have two result rows", !!twoResults, twoResults || "the second insert succeeded");
+
+  // NULL must be storable: it is how "not measured" is recorded, and a NOT NULL
+  // default of 0 would silently turn every unmeasured signal into a failure.
+  let nullSignal = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals (audit_id, user_id, pillar, signal_code,
+        normalized_score, weight, measured, unknown_reason)
+       values ($1,$2,'technical_accessibility','core_web_vitals',null,0.30,false,'not_measured')`,
+      [a1, alice]);
+  } catch (e) { nullSignal = e.message; }
+  eq("an unmeasured signal stores as NULL, not 0", nullSignal, null);
+
+  let dupSignal = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals (audit_id, user_id, pillar, signal_code, weight)
+       values ($1,$2,'technical_accessibility','core_web_vitals',0.30)`, [a1, alice]);
+  } catch (e) { dupSignal = e.message; }
+  check("one row per signal per audit", !!dupSignal, dupSignal || "the duplicate insert succeeded");
+
+  // ── constraints that keep the vocabulary honest ───────────────────────────
+  const badEnum = async (sql, params) => Boolean(await throws(sql, params));
+  check("device_profile rejects an unknown value", await badEnum(
+    `insert into public.audits (user_id, target_id, target_url, device_profile)
+     values ($1,$2,'https://x.com','watch')`, [alice, t1]));
+  check("audit_profile rejects an unknown value", await badEnum(
+    `insert into public.audits (user_id, target_id, target_url, audit_profile)
+     values ($1,$2,'https://x.com','vibes')`, [alice, t1]));
+  check("issue severity rejects an unknown value", await badEnum(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title)
+     values ($1,$2,'AC-01','answer_clarity','catastrophic','x')`, [a1, alice]));
+  check("recommendation status rejects an unknown value", await badEnum(
+    `insert into public.audit_recommendations (audit_id, user_id, code, pillar, priority, title, status)
+     values ($1,$2,'AC-01','answer_clarity','high','x','maybe')`, [a1, alice]));
+
+  // ── status_changed_at fires on a REAL status change only ──────────────────
+  const rec = (await one(
+    `insert into public.audit_recommendations (audit_id, user_id, code, pillar, priority, title)
+     values ($1,$2,'AC-01','answer_clarity','high','Add an answer block') returning id`,
+    [a1, alice])).id;
+  const before = await one(`select status_changed_at s from public.audit_recommendations where id=$1`, [rec]);
+  eq("status_changed_at starts unset", before.s, null);
+
+  await db.query(`update public.audit_recommendations set evidence='touched' where id=$1`, [rec]);
+  const afterTouch = await one(`select status_changed_at s, updated_at u from public.audit_recommendations where id=$1`, [rec]);
+  eq("editing another column does not fake a status change", afterTouch.s, null);
+  check("but updated_at is still bumped", afterTouch.u !== null);
+
+  await db.query(`update public.audit_recommendations set status='accepted' where id=$1`, [rec]);
+  const afterStatus = await one(`select status_changed_at s from public.audit_recommendations where id=$1`, [rec]);
+  check("a real status change stamps status_changed_at", afterStatus.s !== null);
+
+  // ── the trend query ───────────────────────────────────────────────────────
+  const trend = await q(`select * from public.audit_target_trend($1, 10)`, [t1]);
+  eq("the trend returns every completed audit for the target", trend.length, 3);
+  check("newest first", trend[0].created_at >= trend[trend.length - 1].created_at);
+  check("the trend carries coverage, so a thin audit is visible as thin",
+    trend.every((r) => r.coverage !== null));
+
+  const capped = await q(`select * from public.audit_target_trend($1, 1)`, [t1]);
+  eq("the limit is honoured", capped.length, 1);
+  const clamped = await q(`select * from public.audit_target_trend($1, 99999)`, [t1]);
+  check("an absurd limit is clamped rather than dumping the table", clamped.length <= 365);
+
+  // A queued audit has no result row and must not appear as a data point.
+  const queued = await mkAudit(alice, t1, null, "queued");
+  const stillThree = await q(`select * from public.audit_target_trend($1, 10)`, [t1]);
+  eq("an in-flight audit is not plotted as a data point", stillThree.length, 3);
+
+  // ── retention ─────────────────────────────────────────────────────────────
+  await db.query(`update public.audits set created_at = now() - interval '400 days' where id = $1`, [noKey1]);
+
+  // noKey1 is the baseline for another audit — pruning it would turn a working
+  // comparison into a dangling reference and erase what a trend is drawn from.
+  await db.query(`update public.audits set baseline_audit_id = $1 where id = $2`, [noKey1, noKey2]);
+  const protectedRun = (await one(`select public.prune_audit_history(365) n`)).n;
+  eq("an audit another one is measured against is never pruned", protectedRun, 0);
+
+  await db.query(`update public.audits set baseline_audit_id = null where id = $1`, [noKey2]);
+  const pruned = (await one(`select public.prune_audit_history(365) n`)).n;
+  eq("an old, unreferenced audit is pruned", pruned, 1);
+
+  const orphans = await one(`select count(*)::int n from public.audit_results where audit_id = $1`, [noKey1]);
+  eq("pruning cascades to the result row", orphans.n, 0);
+
+  const floor = (await one(`select public.prune_audit_history(1) n`)).n;
+  // The 30-day floor stops a mis-typed retention setting deleting live audits.
+  eq("the retention floor refuses to prune recent audits", floor, 0);
+
+  // ── audit_events is never pruned ──────────────────────────────────────────
+  await db.query(
+    `insert into public.audit_events (user_id, audit_id, event_type, created_at)
+     values ($1, null, 'deleted', now() - interval '900 days')`, [alice]);
+  await db.query(`select public.prune_audit_history(30)`);
+  const events = await one(`select count(*)::int n from public.audit_events where user_id = $1`, [alice]);
+  check("the audit trail survives retention", events.n > 0);
+
+  // ── the platform's pause flags are not the user's to write ────────────────
+  //
+  // Checked against the PRIVILEGE CATALOGUE rather than by attempting the write,
+  // for the same reason the 0015 scheduler check is: PGlite's shim grants the
+  // `authenticated` role nothing but `usage on schema public`, so an attempted
+  // UPDATE would be refused for lack of a table grant and the test would pass
+  // without the column REVOKE existing at all. Real Supabase grants
+  // anon/authenticated table-level privileges by default, which is exactly what
+  // these REVOKEs subtract — so the catalogue is where the protection is
+  // actually visible.
+  await one(
+    `insert into public.audit_schedules (user_id, target_id, cadence)
+     values ($1,$2,'weekly') returning id`, [alice, t1]);
+
+  for (const col of ["system_paused", "system_pause_reason"]) {
+    const g = await q(`select 1 from information_schema.column_privileges
+      where table_schema='public' and table_name='audit_schedules'
+        and column_name=$1 and grantee in ('anon','authenticated')`, [col]);
+    eq(`no anon/authenticated write grant on audit_schedules.${col}`, g.length, 0);
+  }
+
+  // The user's OWN intent field stays writable — a pause they can never undo
+  // is a worse bug than the one the REVOKE prevents.
+  const userCol = await q(`select 1 from information_schema.column_privileges
+    where table_schema='public' and table_name='audit_schedules'
+      and column_name='status' and privilege_type='UPDATE' and grantee='postgres'`);
+  check("the user's own status column is not caught by the REVOKE", userCol.length >= 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

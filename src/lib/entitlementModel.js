@@ -21,6 +21,14 @@ export const CAPS = Object.freeze([
   "extract",
   "extract.batch",
   "batch",
+  // Discoverability audits get their OWN monthly budget rather than debiting
+  // extraction credits. An audit is several fetches, a PageSpeed lookup, a
+  // citation sample and an AI call — materially more expensive than one
+  // extraction — so quietly draining the extraction pool would leave a user who
+  // ran ten audits unable to extract anything and unable to see why.
+  "audit",
+  "audit.benchmark",
+  "audit.schedule",
   "enrich",
   "ai",
   "export.csv",
@@ -324,6 +332,70 @@ export function can(ent, capability, ctx = {}) {
         );
       }
       return ok(effective - urlCount);
+    }
+
+    case "audit": {
+      const count = ctx.auditCount ?? 1;
+      const limit = L.audits === Infinity ? Infinity : (L.audits || 0) + (ctx.bonusAudits || 0);
+      if (limit === Infinity) return ok(Infinity);
+      if (limit <= 0) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Discoverability audits are not included in your plan.",
+          0,
+          "go",
+        );
+      }
+      const used = usage.audits || 0;
+      if (used + count > limit) {
+        return deny(
+          "QUOTA_EXCEEDED",
+          used >= limit
+            ? `You've used all ${limit} discoverability audit${limit === 1 ? "" : "s"} this month.`
+            : `This needs ${count} audits but only ${Math.max(0, limit - used)} remain this month.`,
+          Math.max(0, limit - used),
+        );
+      }
+      return ok(limit - used - count);
+    }
+
+    // A benchmark audits several URLs at once, so it is gated on the audit
+    // quota being able to cover the WHOLE set. Half a competitive comparison
+    // is not a smaller comparison, it is a misleading one.
+    case "audit.benchmark": {
+      const urlCount = ctx.urlCount ?? 2;
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Competitive benchmarks are not included in your plan.", 0, "pro");
+      }
+      // Benchmarking is a paid-plan capability: the free taster exists to show
+      // what a single audit looks like, not to run competitor sets.
+      if (L.audits !== Infinity && L.audits < 25) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Competitive benchmarks are available from the Select plan upward.",
+          0,
+          "select",
+        );
+      }
+      return can(ent, "audit", { ...ctx, auditCount: urlCount });
+    }
+
+    case "audit.schedule": {
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Scheduled monitoring is not included in your plan.", 0, "go");
+      }
+      // Reuses the extraction scheduler's own plan limit: a user who may keep
+      // no schedules at all should not acquire the right to keep them by
+      // pointing them at audits instead.
+      if (!L.scheduled_monitoring) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Scheduled monitoring is not included in your plan.",
+          0,
+          "select",
+        );
+      }
+      return ok(L.scheduled_monitoring);
     }
 
     case "enrich": {

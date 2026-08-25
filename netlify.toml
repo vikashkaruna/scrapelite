@@ -125,6 +125,15 @@
 # Public REST API (v1) is routed to a single function that dispatches on the
 # `splat` query param. The more specific /api/v1/* rule MUST come first so it
 # wins over the catch-all /api/* rule below.
+# The Discoverability module routes internally on the `splat` param, the same
+# pattern api-v1.js uses. This MUST sit above the generic /api/* rule below,
+# because Netlify takes the first matching redirect and the generic one would
+# swallow every sub-path into a function named after the first segment.
+[[redirects]]
+  from = "/api/discoverability/*"
+  to = "/.netlify/functions/discoverability?splat=:splat"
+  status = 200
+
 [[redirects]]
   from = "/api/v1/*"
   to = "/.netlify/functions/api-v1?splat=:splat"
