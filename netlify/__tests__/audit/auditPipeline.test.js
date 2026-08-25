@@ -242,6 +242,85 @@ describe("degradation — the whole reason the scorer distinguishes null from 0"
   });
 });
 
+// ── The bug a real run found, and mocks never would ────────────────────────
+describe("a markdown fragment must never displace a real document", () => {
+  // The scrape chain's later providers do not return the page's HTML. Jina AI
+  // returns MARKDOWN, which scrapeProviders.js converts to a shell of headings
+  // and links — no <head>, so no meta tags, no canonical, no JSON-LD.
+  //
+  // Parsing that as if it were the page made the engine confidently report "no
+  // viewport meta tag" — and apply the mobile-parity penalty — to a page whose
+  // very first meta tag is a viewport. A whole pillar of phantom findings,
+  // delivered with total confidence, which is the worst failure an audit tool
+  // can have because a user cannot tell it apart from a real one.
+  const JINA_FRAGMENT = `<h1>Example Domain</h1> <p>This domain is for use in documentation.</p> <a href="https://iana.org/domains/example">Learn more</a>`;
+  const REAL_DOC = `<!doctype html><html lang="en"><head>
+    <title>Example Domain</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="https://example.com/">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Example","url":"https://example.com","logo":"https://example.com/l.png","sameAs":["https://x.com/example"]}</script>
+    </head><body><h1>Example Domain</h1>
+    <p>This domain is for use in illustrative examples in documents, and you may use it without asking for permission.</p>
+    </body></html>`;
+
+  beforeEach(() => {
+    publicFetch.mockImplementation(async (url) =>
+      String(url).endsWith("/robots.txt") ? htmlResponse("", 404, url) : htmlResponse(REAL_DOC, 200, url));
+    // The chain fell through to a markdown provider.
+    scrapeChain.mockResolvedValue({ ok: true, source: "jina", html: JINA_FRAGMENT });
+  });
+
+  it("parses the raw document, not the fragment", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.facts.technical.viewport).toBe("width=device-width, initial-scale=1");
+    expect(r.facts.technical.canonical_url).toBe("https://example.com/");
+    expect(r.evidence.schema_types).toContain("Organization");
+  });
+
+  it("raises no phantom viewport finding and applies no mobile penalty", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-12");
+    expect(r.penalties.map((p) => p.code)).not.toContain("MOBILE_PARITY_MISSING");
+  });
+
+  it("does not read a lossy conversion as a hydration gap", async () => {
+    // The fragment has far fewer words than the document. That is a CONVERSION
+    // loss, not content hiding behind JavaScript, and reporting it as TA-07
+    // would tell the author to server-render a page that already is.
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-07");
+    expect(r.facts.technical.rendering.rendered_dom_word_count).toBeNull();
+  });
+
+  it("still prefers the rendered DOM when it IS a real document", async () => {
+    // A real headless provider returns a full document with post-JS content.
+    // That must still win — the fix must not throw away rendering.
+    const RENDERED = REAL_DOC.replace("</body>",
+      "<h2>Loaded after hydration</h2><p>Content that only exists once JavaScript has run on this page.</p></body>");
+    scrapeChain.mockResolvedValue({ ok: true, source: "firecrawl", html: RENDERED });
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.evidence.heading_outline.map((h) => h.text)).toContain("Loaded after hydration");
+  });
+
+  it("reports head signals as unmeasured when BOTH sides are fragments", async () => {
+    // Neither source is a document, so the absence of a viewport is OUR blind
+    // spot, not the page's defect. Unmeasured, not a finding — the same rule
+    // the rest of the engine follows.
+    publicFetch.mockImplementation(async (url) =>
+      String(url).endsWith("/robots.txt") ? htmlResponse("", 404, url) : htmlResponse(JINA_FRAGMENT, 200, url));
+    scrapeChain.mockResolvedValue({ ok: true, source: "jina", html: JINA_FRAGMENT });
+
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-12");
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-06");
+    const mobile = r.pillars.technical_accessibility.signals.find((s) => s.code === "mobile_parity");
+    expect(mobile.score).toBeNull();
+    expect(mobile.unknownReason).toBe("not_measured");
+    // …and the thinner evidence shows up honestly as reduced coverage.
+    expect(r.coverage).toBeLessThan(70);
+  });
+});
+
 describe("page-type rule packs", () => {
   it("does not tell a pricing page to add HowTo markup", async () => {
     const pricing = `<html lang="en"><head><title>Pricing | Example</title>

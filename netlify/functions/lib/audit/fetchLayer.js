@@ -36,6 +36,30 @@ export const RAW_FETCH_TIMEOUT_MS = 10_000;
 export const CANONICAL_TIMEOUT_MS = 6_000;
 export const AUDIT_UA = "DatIQBot/1.0 (+https://datiq.app/about; discoverability audit)";
 
+/**
+ * Does this look like a complete HTML document rather than a fragment?
+ *
+ * ⚠️ THIS CHECK IS LOAD-BEARING AND THE REASON IS NOT OBVIOUS.
+ *
+ * The scrape chain's later providers do not return the page's HTML. Jina AI
+ * returns MARKDOWN, which scrapeProviders.js converts to a minimal HTML shell
+ * of headings and links — no <head>, and therefore no meta tags, no canonical,
+ * no viewport, no lang, no JSON-LD.
+ *
+ * Parsing that as if it were the page reports every head-level signal as
+ * missing. On example.com the audit confidently raised "no viewport meta tag"
+ * and applied the mobile-parity penalty to a page whose very first meta tag is
+ * a viewport. A whole pillar's worth of phantom findings, delivered with total
+ * confidence — which is the worst failure an audit tool has, because the user
+ * cannot tell it apart from a real one.
+ *
+ * So a fragment is never allowed to displace a real document.
+ */
+export function looksLikeFullDocument(html) {
+  if (!html || html.length < 40) return false;
+  return /<html[\s>]/i.test(html) || /<head[\s>]/i.test(html) || /<!doctype\s+html/i.test(html);
+}
+
 /** The raw HTML a non-rendering crawler receives. */
 export async function fetchRawHtml(url, opts = {}) {
   const ctrl = new AbortController();
@@ -143,9 +167,31 @@ export async function collectPage(url, opts = {}) {
   const rawHtml = raw.ok ? raw.html : "";
   const renderedHtml = rendered?.ok && rendered.html ? capHtml(rendered.html).html : "";
 
-  // Parse from the rendered DOM where we have one — that is what a reader and a
-  // rendering crawler see, and therefore what the content pillars should judge.
-  const primaryHtml = renderedHtml || rawHtml;
+  const rawIsDocument = looksLikeFullDocument(rawHtml);
+  const renderedIsDocument = looksLikeFullDocument(renderedHtml);
+
+  // Choose what the analysers parse.
+  //
+  // Prefer the rendered DOM — it is what a reader and a rendering crawler see,
+  // and it carries content that only exists after JavaScript. But ONLY when it
+  // is a real document. A markdown-derived fragment from a fallback provider
+  // has no <head>, so parsing it would report every meta tag, the canonical and
+  // all structured data as absent.
+  let primaryHtml;
+  let primarySource;
+  if (renderedIsDocument) {
+    primaryHtml = renderedHtml;
+    primarySource = "rendered";
+  } else if (rawIsDocument) {
+    primaryHtml = rawHtml;
+    primarySource = "raw";
+  } else {
+    // Neither is a full document. Take whichever has more to say and record
+    // that the head-level signals are unreliable, rather than reporting them
+    // as measured absences.
+    primaryHtml = renderedHtml.length > rawHtml.length ? renderedHtml : rawHtml;
+    primarySource = "fragment";
+  }
 
   const rawWordCount = rawHtml ? wordCount(visibleText(rawHtml)) : null;
   const renderedWordCount = renderedHtml ? wordCount(visibleText(renderedHtml)) : null;
@@ -163,12 +209,20 @@ export async function collectPage(url, opts = {}) {
       contentType: raw.contentType || null,
       error: raw.ok ? null : raw.error,
       rawWordCount,
-      // Without a headless provider the "rendered" HTML is the same static
-      // snapshot, so the comparison would be a tautology reading 100. Report
-      // it as unmeasured instead — see the header.
-      renderedWordCount: headless ? renderedWordCount : null,
+      // Two conditions, both required:
+      //   • a headless provider actually ran, otherwise the comparison is a
+      //     tautology between two copies of the same static snapshot
+      //   • the rendered side is a real document, otherwise we would be
+      //     comparing a markdown fragment's word count against a full page and
+      //     reporting a lossy CONVERSION as a hydration gap
+      renderedWordCount: headless && renderedIsDocument ? renderedWordCount : null,
       renderer: headless ? (rendered?.source || null) : null,
       headlessAvailable: headless,
+      primarySource,
+      // False when we only had a fragment to work with. The technical analyser
+      // reads this and reports head-level signals as UNMEASURED rather than as
+      // measured absences — the same rule the rest of the engine follows.
+      headSignalsReliable: primarySource !== "fragment",
       scrapeProvider: rendered?.source || null,
       scrapeAttempts: rendered?.attempts || [],
     },

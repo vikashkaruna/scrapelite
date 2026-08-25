@@ -72,11 +72,14 @@ export function analyseTechnical(parsed, ctx = {}) {
     });
   }
 
-  // Canonical.
+  // Canonical. Skipped entirely when we only had a fragment: a document with no
+  // head cannot be said to be missing a canonical.
   const canonical = meta.canonical || null;
   const requestedUrl = ctx.url || fetchFacts.url || "";
   const canonicalSelf = canonical ? sameUrl(canonical, requestedUrl) : null;
-  if (!canonical) {
+  if (!canonical && fetchFacts.headSignalsReliable === false) {
+    // No finding, no deduction.
+  } else if (!canonical) {
     crawl -= 10;
     issues.push({
       code: "TA-06", signalCode: "crawl_index_eligibility", measuredScore: null,
@@ -186,7 +189,15 @@ export function analyseTechnical(parsed, ctx = {}) {
   }
 
   // ── mobile parity ────────────────────────────────────────────────────────
-  if (!meta.viewport) {
+  //
+  // Head-level signals are only trustworthy when we actually parsed a document
+  // with a head. When the scrape chain could only give us a fragment, the
+  // absence of a viewport tag is OUR blind spot, not the page's defect — so it
+  // is reported as unmeasured rather than as a finding, and no penalty applies.
+  if (fetchFacts.headSignalsReliable === false) {
+    signals.mobile_parity = null;
+    reasons.mobile_parity = "not_measured";
+  } else if (!meta.viewport) {
     signals.mobile_parity = 20;
     penalties.push("MOBILE_PARITY_MISSING");
     issues.push({
@@ -223,6 +234,10 @@ export function analyseTechnical(parsed, ctx = {}) {
       evidence: `${jsonLdErrors.length} JSON-LD block${jsonLdErrors.length === 1 ? "" : "s"} failed to parse and ${jsonLdErrors.length === 1 ? "is" : "are"} being discarded entirely.`,
       details: { errors: jsonLdErrors.slice(0, 3) },
     });
+  } else if (blockCount === 0 && fetchFacts.headSignalsReliable === false) {
+    // JSON-LD lives in the head. Without one, its absence is unmeasured.
+    signals.structured_data_validity = null;
+    reasons.structured_data_validity = "not_measured";
   } else if (blockCount === 0) {
     signals.structured_data_validity = 0;
     // TA-15 ("no structured data at all") is raised by the entity analyser,
