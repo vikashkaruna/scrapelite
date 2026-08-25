@@ -127,6 +127,36 @@ per-host attestation (`lib/scrapeConsent.js`) is the escape hatch.
 
 ---
 
+## 3b. Dependencies — the fix that cannot pay off yet
+
+The BRD lists **dependency** as a required field on every recommendation, and
+`BLOCKER_GATES` in `recommendationModel.js` is why it matters rather than being
+bookkeeping.
+
+On a page whose content only exists after JavaScript runs, adding an answer-first
+block helps no non-rendering crawler at all — the new passage is as invisible as
+everything else until the page is server-rendered. The lift is real, but it is
+**not realisable** while the blocker stands.
+
+So a gated recommendation is marked `blockedBy` and sorts below the work that
+unblocks it, regardless of its own score. The UI says so on the row, and the
+panel reports `estimatedUnblockedLift` beside the total — presenting only the
+total on a blocked page promises work that cannot pay off yet.
+
+Only blockers that genuinely gate downstream work are listed. A broken canonical
+is critical and gates nothing, so it is absent. And the gate is per-PILLAR, not
+blanket: `EA-01` (add Organization JSON-LD) stays unblocked on a shell page,
+because JSON-LD lives in the `<head>` — which a non-rendering crawler does read.
+Gating it would discourage work that pays off immediately.
+
+**This is also why the queue's top item is not always the blocker.** A cheap,
+certain, genuinely-effective fix can legitimately come first: a team can add
+schema this afternoon while re-platforming takes a sprint. What the dependency
+guarantees is narrower and more important — nothing that *depends* on the
+blocker outranks it.
+
+---
+
 ## 4. Failure modes, and which way each fails
 
 | Condition | Behaviour | Why |
@@ -185,6 +215,24 @@ deletion is what an audit trail exists to prevent. Nothing calls
 ---
 
 ## 6. Things that will bite
+
+- **A fragment must never displace a document.** The scrape chain's later
+  providers do not return HTML. Jina returns markdown, which `scrapeProviders.js`
+  converts to a shell of headings and links — no `<head>`, so no meta, no
+  canonical, no JSON-LD. Parsing that as the page made the engine report "no
+  viewport meta tag" on a page whose first meta tag is a viewport. A whole
+  pillar of phantom findings, delivered with total confidence, which is the
+  worst failure an audit tool has. `looksLikeFullDocument()` gates the choice
+  and `headSignalsReliable` turns the remaining blind spot into *unmeasured*
+  rather than a measured absence. **This was found by running the engine against
+  a live page, not by a test.** Mocks agreed with each other.
+
+- **A JavaScript shell is named as one.** `looksLikeJsShell()` recognises a real
+  document that defers its content, so the engine raises `TA-07` ("your content
+  is JavaScript-only") instead of the content analysers each reporting their own
+  half of it as "no H1", "no answer passage", "no headings". An author whose H1
+  is plainly visible in their browser reads the latter and concludes the tool is
+  broken.
 
 - **Signal and issue codes are a public contract.** They travel in the JSON
   payload, in webhook bodies, in stored rows and in every historical diff.

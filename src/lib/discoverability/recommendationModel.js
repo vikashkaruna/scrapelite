@@ -190,16 +190,64 @@ export function buildRecommendation(issueCode, {
 }
 
 /**
+ * Blockers that gate other work, and which pillars they gate.
+ *
+ * The BRD lists **dependency** as a required field on every recommendation, and
+ * this is why it matters rather than being bookkeeping.
+ *
+ * On a page whose content only exists after JavaScript runs, adding an
+ * answer-first block helps no non-rendering crawler at all — the passage is as
+ * invisible as everything else until the page is server-rendered. The content
+ * fix's estimated lift is real, but it is NOT REALISABLE while the blocker
+ * stands, so ranking it above the blocker sends the author to do work that
+ * cannot pay off yet.
+ *
+ * Only blockers that genuinely gate downstream work appear here. A missing
+ * canonical is critical and does not gate anything, so it is absent.
+ */
+export const BLOCKER_GATES = Object.freeze({
+  // Content nobody can see cannot be improved by writing more of it.
+  CONTENT_HYDRATION_ONLY: { code: "TA-07", pillars: ["answer_clarity", "structural_hierarchy"] },
+  // A page asking not to be indexed will not be read, however it is written.
+  NOINDEX: { code: "TA-03", pillars: ["answer_clarity", "structural_hierarchy", "entity_authority"] },
+  // Answer-engine crawlers that are refused cannot be persuaded by better copy.
+  AI_CRAWLER_BLOCKED: { code: "TA-01", pillars: ["answer_clarity", "entity_authority"] },
+});
+
+/**
+ * Mark which recommendations are waiting on an unresolved blocker.
+ *
+ * Mutates nothing; returns a new list with `blockedBy` set where it applies.
+ */
+export function applyDependencies(recs = [], activePenalties = []) {
+  const gates = activePenalties
+    .map((p) => BLOCKER_GATES[p])
+    .filter(Boolean);
+  if (gates.length === 0) return recs;
+
+  return recs.map((r) => {
+    // A blocker is never blocked by itself, or by another blocker's gate.
+    const gate = gates.find((g) => g.code !== r.code && g.pillars.includes(r.pillar));
+    return gate ? { ...r, blockedBy: gate.code } : r;
+  });
+}
+
+/**
  * Rank the queue.
  *
- * Priority leads. Severity breaks ties, so that between two equally-ranked
- * items the more dangerous one surfaces first. The final tiebreak is the issue
- * code, which is arbitrary but STABLE — without it, two runs of the same audit
- * could present the queue in different orders and a user would reasonably
- * conclude the tool was making things up.
+ * Dependencies lead: anything waiting on an unresolved blocker sorts below the
+ * work that unblocks it, regardless of its own score. Then priority. Severity
+ * breaks a priority tie, so between two equally-ranked items the more dangerous
+ * one surfaces first. The final tiebreak is the issue code — arbitrary, but
+ * STABLE, because without it two runs of the same audit could present the queue
+ * in different orders and a user would reasonably conclude the tool was making
+ * things up.
  */
 export function rankRecommendations(recs = []) {
   return [...recs].sort((a, b) => {
+    const aBlocked = a.blockedBy ? 1 : 0;
+    const bBlocked = b.blockedBy ? 1 : 0;
+    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
     if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
     const s = SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity);
     if (s !== 0) return s;
@@ -236,6 +284,21 @@ export function filterByFramework(recs = [], framework) {
 export function estimateTotalLift(recs = []) {
   const total = recs
     .filter((r) => r.status === "open" && Number.isFinite(r.estimatedLift))
+    .reduce((a, r) => a + r.estimatedLift, 0);
+  return Math.round(total * 10) / 10;
+}
+
+/**
+ * The lift available RIGHT NOW — excluding anything waiting on a blocker.
+ *
+ * Reported alongside the total so a user can see the difference between "worth
+ * 12 points eventually" and "worth 4 points until the hydration problem is
+ * fixed". Presenting only the total on a blocked page promises work that
+ * cannot pay off yet.
+ */
+export function estimateUnblockedLift(recs = []) {
+  const total = recs
+    .filter((r) => r.status === "open" && !r.blockedBy && Number.isFinite(r.estimatedLift))
     .reduce((a, r) => a + r.estimatedLift, 0);
   return Math.round(total * 10) / 10;
 }

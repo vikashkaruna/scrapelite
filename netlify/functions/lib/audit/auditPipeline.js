@@ -31,7 +31,7 @@ import { fetchWebVitals, webVitalsAvailable } from "./webVitals.js";
 import { sampleCitations, resolveEngine } from "./citationSampling.js";
 import { evaluatePassage, aiEvaluationEnabled } from "./aiEvaluator.js";
 import { scoreAudit } from "../../../../src/lib/discoverability/scoringModel.js";
-import { buildRecommendation, rankRecommendations, estimateTotalLift }
+import { buildRecommendation, rankRecommendations, estimateTotalLift, estimateUnblockedLift, applyDependencies }
   from "../../../../src/lib/discoverability/recommendationModel.js";
 import { buildConstruct } from "../../../../src/lib/discoverability/constructTemplates.js";
 import { severityTally, ISSUES } from "../../../../src/lib/discoverability/issueCatalog.js";
@@ -256,7 +256,7 @@ export async function runAudit(url, options = {}) {
 
   const facts = constructFacts(parsed, url);
   const recommendations = rankRecommendations(
-    rawIssues
+    applyDependencies(rawIssues
       .filter((i, idx) => rawIssues.findIndex((x) => x.code === i.code) === idx)
       .map((i) => {
         const rec = buildRecommendation(i.code, {
@@ -278,6 +278,7 @@ export async function runAudit(url, options = {}) {
         return rec;
       })
       .filter(Boolean),
+    technical.penalties || []),
   );
 
   // ── 6. report ────────────────────────────────────────────────────────────
@@ -301,6 +302,7 @@ export async function runAudit(url, options = {}) {
     severityTally: severityTally(packedIssues),
     recommendations,
     estimatedTotalLift: estimateTotalLift(recommendations),
+    estimatedUnblockedLift: estimateUnblockedLift(recommendations),
     facts: {
       technical: technical.facts,
       content: { ...answer.facts, ...structure.facts, word_count: parsed.wordCount, truncated: parsed.truncated },

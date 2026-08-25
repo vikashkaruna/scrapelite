@@ -321,6 +321,85 @@ describe("a markdown fragment must never displace a real document", () => {
   });
 });
 
+describe("a JavaScript shell is named as one", () => {
+  // A single-page app serves a real, well-formed document containing a mount
+  // point and a script tag. To a non-rendering crawler it has no headings, no
+  // answer passage and no structure — a real and important finding.
+  //
+  // But without this the content analysers each report their own half of it:
+  // "no H1", "no answer passage", "no headings". An author whose H1 is plainly
+  // visible in their browser reads that and concludes the tool is broken. The
+  // accurate sentence is that half their audience cannot see any of it.
+  const SHELL = `<!doctype html><html lang="en"><head>
+    <title>DatIQ</title><meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="https://example.com/">
+    </head><body><div id="root"></div><script type="module" src="/assets/index.js"></script></body></html>`;
+
+  beforeEach(() => {
+    publicFetch.mockImplementation(async (url) =>
+      String(url).endsWith("/robots.txt") ? htmlResponse("", 404, url) : htmlResponse(SHELL, 200, url));
+    scrapeChain.mockResolvedValue({ ok: true, source: "direct", html: SHELL });
+  });
+
+  it("raises TA-07 as the finding, even with no rendered comparison", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.issues.map((i) => i.code)).toContain("TA-07");
+    expect(r.facts.technical.rendering.js_shell).toBe(true);
+    expect(r.penalties.map((p) => p.code)).toContain("CONTENT_HYDRATION_ONLY");
+  });
+
+  it("ranks it above the content fixes it gates, and marks them blocked", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    const order = r.recommendations.map((x) => x.code);
+
+    // NOT asserted: that TA-07 is globally #1. Adding Organization JSON-LD is
+    // cheap, certain, and genuinely works on a shell page — schema lives in the
+    // <head>, which a non-rendering crawler DOES read. It legitimately comes
+    // first; a team can do it this afternoon while re-platforming takes a sprint.
+    //
+    // What IS asserted is the dependency: a content fix that only renders in
+    // JavaScript cannot pay off until the page renders without it.
+    for (const gated of ["AC-01", "SH-10"]) {
+      if (!order.includes(gated)) continue;
+      expect(order.indexOf("TA-07"), `${gated} must not precede TA-07`)
+        .toBeLessThan(order.indexOf(gated));
+      const rec = r.recommendations.find((x) => x.code === gated);
+      expect(rec.blockedBy).toBe("TA-07");
+    }
+  });
+
+  it("separates the lift available now from the lift waiting on the blocker", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    // Presenting only the total on a blocked page promises work that cannot
+    // pay off yet.
+    expect(r.estimatedUnblockedLift).toBeLessThan(r.estimatedTotalLift);
+    expect(r.estimatedUnblockedLift).toBeGreaterThan(0);
+  });
+
+  it("explains that the content scores reflect the un-rendered view", async () => {
+    const r = await runAudit("https://example.com/", baseOpts);
+    const ta07 = r.issues.find((i) => i.code === "TA-07");
+    expect(ta07.evidence).toMatch(/rendered by JavaScript/i);
+    expect(ta07.evidence).toMatch(/content scores in this audit reflect that view/i);
+  });
+
+  it("does not mistake a genuinely short page for a shell", async () => {
+    const SHORT = `<!doctype html><html lang="en"><head><title>Hi</title>
+      <meta name="viewport" content="width=device-width"></head><body>
+      <h1>A short page</h1>
+      <p>This page is deliberately brief but it is entirely present in the served HTML, with no client-side rendering involved at any point whatsoever.</p>
+      </body></html>`;
+    publicFetch.mockImplementation(async (url) =>
+      String(url).endsWith("/robots.txt") ? htmlResponse("", 404, url) : htmlResponse(SHORT, 200, url));
+    scrapeChain.mockResolvedValue({ ok: true, source: "direct", html: SHORT });
+
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.facts.technical.rendering.js_shell).toBe(false);
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-07");
+    expect(r.penalties.map((p) => p.code)).not.toContain("CONTENT_HYDRATION_ONLY");
+  });
+});
+
 describe("page-type rule packs", () => {
   it("does not tell a pricing page to add HowTo markup", async () => {
     const pricing = `<html lang="en"><head><title>Pricing | Example</title>

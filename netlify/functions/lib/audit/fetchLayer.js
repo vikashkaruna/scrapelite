@@ -55,6 +55,31 @@ export const AUDIT_UA = "DatIQBot/1.0 (+https://datiq.app/about; discoverability
  *
  * So a fragment is never allowed to displace a real document.
  */
+/**
+ * A complete HTML document that defers its content to JavaScript.
+ *
+ * A single-page app serves a real, well-formed document containing a mount
+ * point and a script tag. To a crawler that does not execute JavaScript that
+ * page has no headings, no answer passage and no structure — which is a REAL
+ * finding, and an important one.
+ *
+ * But reporting it as "your page has no H1" is the wrong sentence. The author
+ * can see their H1; what they cannot see is that half their audience cannot.
+ * Detecting the shell lets the engine say the accurate thing — the content is
+ * JavaScript-only — which is both true and actionable.
+ *
+ * Deliberately conservative. It requires a real document, a substantial script
+ * presence, and almost no visible text, so a genuinely short page is not
+ * mistaken for a shell.
+ */
+export function looksLikeJsShell(html, visibleWordCount) {
+  if (!looksLikeFullDocument(html)) return false;
+  if (!Number.isFinite(visibleWordCount) || visibleWordCount > 60) return false;
+  const scripts = (html.match(/<script\b/gi) || []).length;
+  const hasMount = /<div[^>]+id\s*=\s*["']?(root|app|__next|___gatsby)["']?/i.test(html);
+  return scripts >= 1 && (hasMount || scripts >= 3);
+}
+
 export function looksLikeFullDocument(html) {
   if (!html || html.length < 40) return false;
   return /<html[\s>]/i.test(html) || /<head[\s>]/i.test(html) || /<!doctype\s+html/i.test(html);
@@ -194,6 +219,7 @@ export async function collectPage(url, opts = {}) {
   }
 
   const rawWordCount = rawHtml ? wordCount(visibleText(rawHtml)) : null;
+  const rawIsJsShell = looksLikeJsShell(rawHtml, rawWordCount);
   const renderedWordCount = renderedHtml ? wordCount(visibleText(renderedHtml)) : null;
 
   return {
@@ -223,6 +249,12 @@ export async function collectPage(url, opts = {}) {
       // reads this and reports head-level signals as UNMEASURED rather than as
       // measured absences — the same rule the rest of the engine follows.
       headSignalsReliable: primarySource !== "fragment",
+      // A complete document that defers its content to JavaScript. Lets the
+      // technical analyser say "your content is JavaScript-only" instead of
+      // the content analysers each reporting their own half of that as a
+      // separate, confusing defect.
+      rawIsJsShell,
+      parsedRenderedContent: primarySource === "rendered",
       scrapeProvider: rendered?.source || null,
       scrapeAttempts: rendered?.attempts || [],
     },

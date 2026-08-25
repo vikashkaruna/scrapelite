@@ -3,6 +3,7 @@ import {
   estimateLift, computePriorityScore, priorityBand, buildRecommendation,
   rankRecommendations, topRecommendations, groupByOwner, filterByFramework,
   estimateTotalLift, BREADTH_BONUS, EASE_FLOOR, penaltyLift,
+  applyDependencies, estimateUnblockedLift, BLOCKER_GATES,
 } from "./recommendationModel.js";
 import { PENALTIES } from "./scoringModel.js";
 import { ISSUES, ISSUE_CODES, SEVERITIES, OWNERS, FRAMEWORK_SCOPES, severityTally } from "./issueCatalog.js";
@@ -293,5 +294,61 @@ describe("penaltyLift — pricing the blocker, not just the signal", () => {
       const p = ISSUES[code].penalty;
       if (p) expect(Object.keys(PENALTIES), `${code} → ${p}`).toContain(p);
     }
+  });
+});
+
+describe("dependencies — a fix that cannot pay off yet", () => {
+  const shellPage = () => applyDependencies([
+    buildRecommendation("TA-07", { signalCode: "render_completeness", measuredScore: 15 }),
+    buildRecommendation("AC-01", { signalCode: "direct_answer_block", measuredScore: 0 }),
+    buildRecommendation("SH-10", { signalCode: "heading_tree_integrity", measuredScore: 0 }),
+    buildRecommendation("EA-01", { signalCode: "schema_identity_completeness", measuredScore: 0 }),
+  ], ["CONTENT_HYDRATION_ONLY"]);
+
+  it("marks content fixes as waiting on the hydration blocker", () => {
+    const recs = shellPage();
+    expect(recs.find((r) => r.code === "AC-01").blockedBy).toBe("TA-07");
+    expect(recs.find((r) => r.code === "SH-10").blockedBy).toBe("TA-07");
+  });
+
+  it("leaves fixes that DO work on a shell page unblocked", () => {
+    // JSON-LD lives in the <head>, which a non-rendering crawler reads. Adding
+    // Organization schema genuinely works on a shell page, so gating it would
+    // discourage work that pays off immediately.
+    expect(shellPage().find((r) => r.code === "EA-01").blockedBy).toBeUndefined();
+  });
+
+  it("never marks the blocker as blocked by itself", () => {
+    expect(shellPage().find((r) => r.code === "TA-07").blockedBy).toBeUndefined();
+  });
+
+  it("sorts every blocked item below the work that unblocks it", () => {
+    const order = rankRecommendations(shellPage()).map((r) => r.code);
+    expect(order.indexOf("TA-07")).toBeLessThan(order.indexOf("AC-01"));
+    expect(order.indexOf("TA-07")).toBeLessThan(order.indexOf("SH-10"));
+  });
+
+  it("does nothing when no gating blocker is active", () => {
+    const recs = applyDependencies([
+      buildRecommendation("AC-01"), buildRecommendation("SH-10"),
+    ], ["CANONICAL_TARGET_BROKEN"]);
+    // A broken canonical is critical and gates nothing — content work still pays.
+    for (const r of recs) expect(r.blockedBy).toBeUndefined();
+    expect(applyDependencies([buildRecommendation("AC-01")], [])[0].blockedBy).toBeUndefined();
+  });
+
+  it("every gate names a real penalty and a real issue code", () => {
+    for (const [penalty, gate] of Object.entries(BLOCKER_GATES)) {
+      expect(Object.keys(PENALTIES), penalty).toContain(penalty);
+      expect(ISSUE_CODES, gate.code).toContain(gate.code);
+      expect(ISSUES[gate.code].penalty, `${gate.code} must be the issue that RAISES ${penalty}`).toBe(penalty);
+      expect(gate.pillars.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("separates the lift available now from the lift waiting on a blocker", () => {
+    const recs = shellPage().map((r) => ({ ...r, status: "open" }));
+    expect(estimateUnblockedLift(recs)).toBeLessThan(estimateTotalLift(recs));
+    expect(estimateUnblockedLift(recs)).toBeGreaterThan(0);
   });
 });

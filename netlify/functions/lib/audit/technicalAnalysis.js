@@ -146,7 +146,24 @@ export function analyseTechnical(parsed, ctx = {}) {
   signals.render_completeness = renderCompletenessScore({ rawWords, renderedWords });
   const loss = contentLossRatio({ rawWords, renderedWords });
 
-  if (signals.render_completeness === null) {
+  if (signals.render_completeness === null && fetchFacts.rawIsJsShell) {
+    // We could not compare raw against rendered — but we do not need to. The
+    // raw document is a complete page whose content is a mount point and a
+    // script tag, which is the finding itself.
+    //
+    // Raising it HERE matters. Without it the content analysers each report
+    // their own half of the same problem — "no H1", "no answer passage", "no
+    // headings" — and an author looking at a page whose H1 is plainly visible
+    // in their browser concludes the tool is broken. The accurate sentence is
+    // that half their audience cannot see any of it.
+    signals.render_completeness = 15;
+    penalties.push("CONTENT_HYDRATION_ONLY");
+    issues.push({
+      code: "TA-07", signalCode: "render_completeness", measuredScore: 15,
+      evidence: `The served HTML is a complete document containing about ${rawWords} words and a script tag — the content is rendered by JavaScript. Crawlers that do not execute JavaScript, which includes several answer-engine crawlers, see effectively nothing. The content scores in this audit reflect that view.`,
+      details: { rawWords, jsShell: true, headlessConfigured: Boolean(fetchFacts.headlessAvailable) },
+    });
+  } else if (signals.render_completeness === null) {
     reasons.render_completeness = "not_measured";
   } else if (loss !== null && loss >= HYDRATION_ONLY_LOSS) {
     penalties.push("CONTENT_HYDRATION_ONLY");
@@ -273,6 +290,8 @@ export function analyseTechnical(parsed, ctx = {}) {
         source: cwv.source || null,
       } : null,
       rendering: {
+        js_shell: Boolean(fetchFacts.rawIsJsShell),
+        parsed_rendered_content: Boolean(fetchFacts.parsedRenderedContent),
         raw_html_word_count: rawWords ?? null,
         rendered_dom_word_count: renderedWords ?? null,
         content_loss_ratio: loss,

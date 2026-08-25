@@ -148,7 +148,10 @@ export default function RecommendationQueue({
           {shown.map((r) => {
             const resolved = r.status && r.status !== "open";
             return (
-              <li key={r.id || r.code} className={`dsc-rec${resolved ? " dsc-rec-resolved" : ""}`}>
+              <li
+                key={r.id || r.code}
+                className={`dsc-rec${resolved ? " dsc-rec-resolved" : ""}${r.blockedBy && !resolved ? " dsc-rec-blocked-row" : ""}`}
+              >
                 <div className="dsc-rec-main">
                   <span className={`dsc-priority dsc-priority-${r.priority}`}>{r.priority}</span>
                   <div className="dsc-rec-text">
@@ -180,6 +183,16 @@ export default function RecommendationQueue({
                   ))}
                   {resolved && <span className="dsc-rec-status">{STATUS_LABEL[r.status]}</span>}
                 </div>
+
+                {r.blockedBy && !resolved && (
+                  // Without this, a blocked item looks like ordinary work and
+                  // somebody spends an afternoon writing an answer block that
+                  // no non-rendering crawler will ever see.
+                  <p className="dsc-rec-blocked">
+                    <Icon name="alert-circle" size={13} />
+                    Waiting on <strong>{r.blockedBy}</strong> — this fix cannot pay off until that is resolved.
+                  </p>
+                )}
 
                 <ConstructBlock asset={r.implementationAsset} />
 

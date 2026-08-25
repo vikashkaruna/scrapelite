@@ -384,6 +384,13 @@ export default function Discoverability() {
                 Implementing everything open is estimated to recover up to{" "}
                 <strong>{audit.estimatedTotalLift} points</strong>. Signals interact, so
                 treat it as an upper bound rather than a forecast.
+                {Number.isFinite(audit.estimatedUnblockedLift)
+                  && audit.estimatedUnblockedLift < audit.estimatedTotalLift && (
+                  <>
+                    {" "}Only <strong>{audit.estimatedUnblockedLift}</strong> of that is
+                    available right now — the rest is waiting on a blocking issue.
+                  </>
+                )}
               </p>
             )}
             <RecommendationQueue
