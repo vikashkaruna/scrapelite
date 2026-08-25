@@ -8,6 +8,7 @@ const consent = vi.fn();
 const entitlement = vi.fn();
 const auditRun = vi.fn();
 const storeMock = {};
+const dispatchWebhook = vi.fn(async () => ({ delivered: 0, failed: 0, results: [] }));
 
 vi.mock("../../functions/lib/supabaseServerClient.js", () => ({
   authenticateBearer: (...a) => authenticate(...a),
@@ -61,6 +62,12 @@ vi.mock("../../functions/lib/audit/auditStore.js", () =>
 
 
 
+vi.mock("../../functions/lib/audit/webhookDispatch.js", () => ({
+  dispatchAuditEvent: (...a) => dispatchWebhook(...a),
+  buildWebhookPayload: vi.fn(),
+  WEBHOOK_EVENTS: ["audit.completed"],
+}));
+
 const { handler, parsePath, parseAuditOptions, MAX_BENCHMARK_URLS } =
   await import("../../functions/discoverability.js");
 // The REAL plan map. Handing checkCapability a null map makes every request
@@ -96,6 +103,7 @@ beforeEach(() => {
     entitlement: { plan_id: "pro", status: "active" }, planMap: PLAN_BY_ID,
   });
   auditRun.mockResolvedValue({ ...AUDIT_RESULT });
+  dispatchWebhook.mockResolvedValue({ delivered: 0, failed: 0, results: [] });
 });
 
 // Configure the store proxy for a happy path.
@@ -158,6 +166,52 @@ describe("audits are signed-in only", () => {
 });
 
 // ── The gate order, which CLAUDE.md documents as load-bearing ───────────────
+// ── The delegated-identity field must not be reachable from the network ────
+describe("_apiKeyUserId is an in-process channel only", () => {
+  beforeEach(happyStore);
+
+  it("is honoured when the api-v1 router sets it in-process", async () => {
+    authenticate.mockResolvedValue({ ok: false, user: null });   // no JWT at all
+    const res = await handler({
+      httpMethod: "POST",
+      queryStringParameters: { splat: "audits" },
+      headers: {},
+      body: JSON.stringify({ target_url: "https://example.com" }),
+      _apiKeyUserId: "user-from-api-key",
+    });
+    expect(res.statusCode).toBe(201);
+    expect(storeMock.ensureTarget).toHaveBeenCalledWith(
+      "user-from-api-key", expect.any(String), expect.any(String), null,
+    );
+  });
+
+  it("cannot be forged through a header, a query param or the body", async () => {
+    // The claim in the handler's comment, made checkable. Netlify builds the
+    // event from the HTTP request and has no way to set a root-level field, so
+    // none of these three routes may become an identity.
+    authenticate.mockResolvedValue({ ok: false, user: null });
+
+    const attempts = [
+      { headers: { _apiKeyUserId: "victim", "x-apikeyuserid": "victim" } },
+      { queryStringParameters: { splat: "audits", _apiKeyUserId: "victim" } },
+      { body: JSON.stringify({ target_url: "https://example.com", _apiKeyUserId: "victim" }) },
+    ];
+
+    for (const override of attempts) {
+      const res = await handler({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "audits" },
+        headers: {},
+        body: JSON.stringify({ target_url: "https://example.com" }),
+        ...override,
+      });
+      expect(res.statusCode, JSON.stringify(override)).toBe(401);
+      expect(JSON.parse(res.body).code).toBe("AUTH_REQUIRED");
+    }
+    expect(auditRun).not.toHaveBeenCalled();
+  });
+});
+
 describe("gate order — nothing above the quota check may spend a credit", () => {
   beforeEach(happyStore);
 
@@ -229,6 +283,25 @@ describe("gate order — nothing above the quota check may spend a credit", () =
     const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
     expect(res.statusCode).toBe(201);
     expect(auditRun).toHaveBeenCalled();
+  });
+});
+
+describe("webhook notification on completion", () => {
+  beforeEach(happyStore);
+
+  it("notifies subscribers when an audit completes", async () => {
+    await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    expect(dispatchWebhook).toHaveBeenCalledWith("user-1", "audit.completed", expect.objectContaining({
+      audit: expect.objectContaining({ id: "audit-1" }),
+    }));
+  });
+
+  it("does not notify when the audit was never saved", async () => {
+    storeMock.persistResult = vi.fn(async () => ({ ok: false, error: "write failed" }));
+    await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    // Announcing an audit nobody can fetch would send subscribers a link to a
+    // 404. The result still returns to the caller; it just is not broadcast.
+    expect(dispatchWebhook).not.toHaveBeenCalled();
   });
 });
 

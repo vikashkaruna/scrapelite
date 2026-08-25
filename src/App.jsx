@@ -58,6 +58,7 @@ import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
+import Discoverability from "./pages/Discoverability.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import Workspace from "./pages/Workspace.jsx";
 import PublicReport from "./pages/PublicReport.jsx";
@@ -209,6 +210,7 @@ function Shell() {
           <Route path="/collections"                   element={<Navigate to="/workspace?tab=collections" replace />} />
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
+          <Route path="/discoverability"               element={<Discoverability />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />

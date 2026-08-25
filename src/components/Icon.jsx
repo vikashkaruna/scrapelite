@@ -3,6 +3,11 @@
 // icons by name (e.g. <Icon name="bookmark" />), matching the original mockup.
 
 import {
+  ScanSearch,
+  Fingerprint,
+  Radar,
+  SquareCheckBig,
+  CircleSlash,
   Receipt,
   Link,
   ArrowLeft,
@@ -318,6 +323,12 @@ const MAP = {
   activity: Activity,
   server: Server,
   gauge: Gauge,
+  // Discoverability module (/discoverability). `target` already exists above.
+  "scan-search": ScanSearch,
+  fingerprint: Fingerprint,
+  radar: Radar,
+  "square-check-big": SquareCheckBig,
+  "circle-slash": CircleSlash,
 };
 
 

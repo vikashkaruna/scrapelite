@@ -52,6 +52,14 @@
 [functions."health-monitor"]
   schedule = "@hourly"
 
+# Re-audits every page a user is watching and alerts on material score movement.
+# THIS BLOCK is what schedules it — `export const config = { schedule }` inside
+# the function is a v2 feature and is silently ignored for our v1 handlers.
+# Deleting this block un-schedules the job with no build error and no runtime
+# error; it simply never fires again.
+[functions."discoverability-monitor"]
+  schedule = "@daily"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

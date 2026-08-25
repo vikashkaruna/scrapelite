@@ -17,6 +17,20 @@ export function setAuthToken(token) {
   _authToken = token ?? null;
 }
 
+/**
+ * Read the current session token.
+ *
+ * Exported so discoverabilityClient.js shares ONE auth source rather than
+ * subscribing to the session separately. Two modules tracking the same token
+ * is how one of them ends up a session behind and 401s for reasons nobody can
+ * reproduce. The Discoverability module keeps its own client because its
+ * report endpoints return markdown and CSV, which `request()` — which always
+ * calls res.json() — cannot handle.
+ */
+export function getAuthToken() {
+  return _authToken;
+}
+
 async function request(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
   if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;

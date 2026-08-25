@@ -70,6 +70,7 @@ import {
 } from "../../src/lib/discoverability/auditReport.js";
 import { buildConstruct } from "../../src/lib/discoverability/constructTemplates.js";
 import { AUDIT_PROFILES } from "../../src/lib/discoverability/auditProfiles.js";
+import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -224,6 +225,13 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   await store.persistPromptRuns(userId, auditId, result.citationSample || null, options.promptSetId);
   await store.recordEvent(userId, { auditId, eventType: "created", payload: { url: rawUrl, source } });
 
+  // Fire and forget. dispatchAuditEvent swallows its own failures, so a user's
+  // endpoint being down cannot fail an audit that already ran and was already
+  // charged for; the failure lands on the webhook row where they can see it.
+  await dispatchAuditEvent(userId, "audit.completed", {
+    audit: { id: auditId, target_url: rawUrl }, result,
+  });
+
   return { ok: true, statusCode: 201, body: { ...result, auditId, targetId, persisted: true } };
 }
 
@@ -265,9 +273,19 @@ export const handler = async (event) => {
   const path = parsePath(event.queryStringParameters?.splat);
   const method = event.httpMethod;
 
-  const auth = await authenticateBearer(event, { label: "discoverability" });
-  if (!auth.ok || !auth.user) return unauthorized();
-  const userId = auth.user.id;
+  // Two callers, one code path. The SPA presents a Supabase JWT; the public
+  // /api/v1 router has already authenticated an API key and passes the resolved
+  // user through `_apiKeyUserId` on the in-process event. That field cannot
+  // arrive over the network: the /api/discoverability/* redirect builds the
+  // event from the HTTP request, which has no way to set it, and the /api/v1/*
+  // redirect targets api-v1 rather than this function.
+  const delegatedUserId = event._apiKeyUserId || null;
+  let userId = delegatedUserId;
+  if (!userId) {
+    const auth = await authenticateBearer(event, { label: "discoverability" });
+    if (!auth.ok || !auth.user) return unauthorized();
+    userId = auth.user.id;
+  }
 
   let body = {};
   try { body = readBody(event); } catch { return bad("Request body is not valid JSON."); }
