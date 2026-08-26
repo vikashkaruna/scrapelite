@@ -74,6 +74,7 @@ import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
 import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
+import PendingWorkspaceInviteFlush from "./components/PendingWorkspaceInviteFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
@@ -119,6 +120,22 @@ function Shell() {
       setPendingReferral(ref);
       const next = new URLSearchParams(searchParams);
       next.delete("ref");
+      setSearchParams(next, { replace: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Workspace invite ?invite=TOKEN handler — same STASH-here /
+  // REDEEM-in-a-flush-component split as ?ref= above, and for the same
+  // reason: accepting a seat is signed-in only, so a guest arriving on an
+  // invite link keeps the token until they have an account.
+  useEffect(() => {
+    const invite = searchParams.get("invite");
+    if (!invite) return;
+    import("./lib/pendingWorkspaceInvite.js").then(({ setPendingWorkspaceInvite }) => {
+      setPendingWorkspaceInvite(invite);
+      const next = new URLSearchParams(searchParams);
+      next.delete("invite");
       setSearchParams(next, { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,6 +272,7 @@ function Shell() {
           Global because OAuth navigates the document away and back. */}
       <PendingScheduleFlush />
       <PendingReferralFlush />
+      <PendingWorkspaceInviteFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}

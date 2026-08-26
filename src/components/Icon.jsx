@@ -157,6 +157,8 @@ import {
   // Ops monitoring (staging branch)
   Server,
   Gauge,
+  // Team workspaces
+  Lock,
 } from "lucide-react";
 
 const MAP = {
@@ -329,6 +331,7 @@ const MAP = {
   radar: Radar,
   "square-check-big": SquareCheckBig,
   "circle-slash": CircleSlash,
+  lock: Lock,
 };
 
 

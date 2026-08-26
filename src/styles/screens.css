@@ -6572,6 +6572,103 @@
 .ws-foot { margin: 12px 0 0; font-size: .75rem; color: var(--text-2); }
 .ws-usage-card { grid-column: 1 / -1; }
 
+/* Team tab — real multi-user workspaces */
+.ws-team-tab { display: flex; flex-direction: column; gap: 20px; }
+.ws-team-head .eyebrow { color: var(--text-3); }
+.ws-team-title {
+  font-size: clamp(22px, 2.6vw, 28px); font-weight: 800; letter-spacing: -.02em;
+  margin: 6px 0 0; color: var(--text);
+}
+.ws-team-sub { margin: 8px 0 0; color: var(--text-2); font-size: .95em; max-width: 60ch; }
+.ws-team-loading {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-2); font-size: .9rem; padding: 24px 0;
+}
+.ws-team-loading .spin { animation: ws-spin 1s linear infinite; }
+
+.ws-team-switcher { display: flex; flex-wrap: wrap; gap: 8px; }
+.ws-team-switch-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: var(--r-pill, 999px);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); font: inherit; font-weight: 600; font-size: .86rem;
+  cursor: pointer; transition: border-color .14s, color .14s, background .14s;
+}
+.ws-team-switch-btn:hover { color: var(--text); border-color: var(--accent); }
+.ws-team-switch-active { background: var(--accent); border-color: var(--accent); color: var(--accent-on-dark, #fff); }
+.ws-team-seat-count {
+  font-size: .74rem; font-weight: 700; opacity: .8;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  padding: 1px 7px; border-radius: 9px;
+}
+
+.ws-team-create { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ws-team-create input {
+  flex: 1; min-width: 220px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: .9rem;
+}
+.ws-team-create input:focus { outline: none; border-color: var(--accent); }
+.ws-team-create-hint { font-size: .78rem; color: var(--text-3); }
+.ws-team-cap-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-3); font-size: .84rem; margin: 0;
+}
+.ws-team-error {
+  color: var(--danger); font-size: .85rem; margin: 0;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  border-radius: var(--r-sm); padding: 8px 12px;
+}
+.ws-team-upgrade-link { color: var(--accent); font-weight: 700; margin-left: 4px; }
+
+.ws-team-detail { display: flex; flex-direction: column; gap: 16px; }
+.ws-team-members-card, .ws-team-invite-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 18px; box-shadow: var(--shadow-sm);
+}
+.ws-team-card-title { font-size: .92rem; font-weight: 700; margin: 0 0 12px; }
+.ws-team-member-list, .ws-team-invite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ws-team-member-row, .ws-team-invite-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: var(--r-sm);
+}
+.ws-team-member-row:hover, .ws-team-invite-row:hover { background: var(--surface-2); }
+.ws-team-member-email { flex: 1; min-width: 0; font-size: .88rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-team-you { color: var(--text-3); font-weight: 400; }
+.ws-team-invite-meta { font-size: .78rem; color: var(--text-3); }
+.ws-role-badge {
+  font-size: .7rem; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 8px; border-radius: 9px; text-transform: uppercase;
+  background: var(--surface-2); color: var(--text-2);
+}
+.ws-role-owner { background: var(--accent-soft); color: var(--accent); }
+.ws-role-admin { background: color-mix(in srgb, #10b981 16%, transparent); color: #047857; }
+.ws-team-remove-btn {
+  background: transparent; border: 0; color: var(--text-3);
+  font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
+  padding: 4px 8px; border-radius: var(--r-sm);
+}
+.ws-team-remove-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+
+.ws-team-invite-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ws-team-invite-form input { flex: 1; min-width: 200px; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; }
+.ws-team-invite-form select { padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: .88rem; }
+.ws-team-invite-form input:focus, .ws-team-invite-form select:focus { outline: none; border-color: var(--accent); }
+
+.ws-team-invite-link-box {
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--accent-soft); font-size: .82rem; color: var(--text-2);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.ws-team-invite-link-row { display: flex; align-items: center; gap: 8px; }
+.ws-team-invite-link-row code {
+  flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 6px 8px; font-size: .78rem;
+}
+.ws-team-pending-title { font-size: .8rem; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 8px; }
+
 /* Q5 — template library */
 .template-gallery { width: 100%; }
 .template-gallery-head { text-align: center; margin-bottom: 12px; }
