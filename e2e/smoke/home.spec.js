@@ -66,7 +66,7 @@ test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", asy
   await expect(page.getByText(/Use Batch mode/i)).toHaveCount(0);
 });
 
-test("TopBar nav shows Extract / Schedules / Discoverability / Dashboard (in that order)", async ({ page }) => {
+test("TopBar nav shows Extract / Schedules / Discover / Dashboard (in that order)", async ({ page }) => {
   await page.goto("/");
   // mainLinks are buttons in .topbar-desktop-actions.
   // Discoverability was inserted BEFORE Dashboard rather than reordering
@@ -75,7 +75,10 @@ test("TopBar nav shows Extract / Schedules / Discoverability / Dashboard (in tha
   const nav = page.locator(".topbar-desktop-actions .nav-link");
   await expect(nav.nth(0)).toContainText(/Extract/i);
   await expect(nav.nth(1)).toContainText(/Schedules/i);
-  await expect(nav.nth(2)).toContainText(/Discoverability/i);
+  // "Discover", not "Discoverability": the nav label is deliberately the
+  // short form (TopBar.jsx explains why). The route and the page heading
+  // keep the full word, so this must NOT be loosened to match both.
+  await expect(nav.nth(2)).toContainText(/^Discover$/i);
   await expect(nav.nth(3)).toContainText(/Dashboard/i);
 });
 

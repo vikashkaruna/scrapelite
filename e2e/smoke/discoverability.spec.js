@@ -47,7 +47,9 @@ test("is reachable from the top navigation", async ({ page }) => {
   await page.goto("/");
   // The main nav renders BUTTONS that call navigate(), not anchors — see
   // TopBar.jsx. Selecting on a[href] finds nothing.
-  const nav = page.getByRole("button", { name: /Discoverability/i }).first();
+  // The nav label is the short form "Discover"; the page <h1> it leads to is
+  // still "Discoverability".
+  const nav = page.getByRole("button", { name: /^Discover$/i }).first();
   await expect(nav).toBeVisible();
   await nav.click();
   await expect(page).toHaveURL(/\/discoverability/);

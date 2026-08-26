@@ -46,6 +46,7 @@ export const PLANS = [
     },
     features: [
       { label: "10 extractions / month",        included: true },
+      { label: "3 discoverability audits / month",        included: true },
       { label: "Full AI features",              included: true },
       { label: "CSV export",                    included: true },
       { label: "25-extraction trial credit",    included: true },
@@ -86,6 +87,7 @@ export const PLANS = [
     },
     features: [
       { label: "200 extractions / month",          included: true },
+      { label: "10 discoverability audits / month",       included: true },
       { label: "All enrichments",                  included: true },
       { label: "CSV + PDF + Markdown export",      included: true },
       { label: "Email export",                     included: true },
@@ -124,6 +126,7 @@ export const PLANS = [
     },
     features: [
       { label: "500 extractions / month",          included: true },
+      { label: "25 discoverability audits / month",       included: true },
       { label: "All enrichments",                  included: true },
       { label: "CSV + PDF + Markdown export",      included: true },
       { label: "Email export",                     included: true },
@@ -162,6 +165,7 @@ export const PLANS = [
     },
     features: [
       { label: "1,000 extractions / month",        included: true },
+      { label: "100 discoverability audits / month",      included: true },
       { label: "All enrichments",                  included: true },
       { label: "CSV + PDF + Markdown + JSON",      included: true },
       { label: "Email export",                     included: true },
@@ -204,6 +208,7 @@ export const PLANS = [
     },
     features: [
       { label: "10,000 extractions / month",       included: true },
+      { label: "500 discoverability audits / month",      included: true },
       { label: "All enrichments",                  included: true },
       { label: "CSV + PDF + Markdown + JSON",      included: true },
       { label: "Email export",                     included: true },
@@ -244,6 +249,7 @@ export const PLANS = [
     },
     features: [
       { label: "Unlimited extractions",            included: true },
+      { label: "2,000 discoverability audits / month",    included: true },
       { label: "All enrichments",                  included: true },
       { label: "CSV + PDF + Markdown + JSON",      included: true },
       { label: "Email export",                     included: true },
@@ -286,6 +292,7 @@ export const PLANS = [
     },
     features: [
       { label: "10,000 row credits / month",   included: true },
+      { label: "250 discoverability audits / month",      included: true },
       { label: "API access (no UI required)",  included: true },
       { label: "Batch mode (up to 500 URLs)",  included: true },
       { label: "CSV import enrichment",        included: true },

@@ -355,7 +355,20 @@ export default function Discoverability() {
           error={error}
           onRetry={() => lastRequest && run(lastRequest)}
           onAttest={() => showToast("Recording site ownership is available from the extraction screen for this host.")}
-          onUpgrade={() => (user ? (window.location.href = "/pricing") : openAuth("signup"))}
+          // ⚠️ navigate(), NOT window.location.href.
+          //
+          // A hard navigation to /pricing leaves the SPA entirely, and Netlify
+          // serves public/pricing/index.html — the PRERENDERED page — before
+          // the SPA fallback. So the upgrade CTA dropped the user onto a static
+          // snapshot instead of the live Plans & Pricing screen: no billing
+          // context, no current-plan highlight, a full reload, and whatever
+          // staleness the committed snapshot happened to carry.
+          //
+          // The same rule applies to every in-app link to a prerendered route
+          // (/about, /blog, /contact, /privacy, /terms, /integrations,
+          // /gallery, /use-cases/*, /vs/*): inside the app, route through the
+          // router. window.location is for leaving the app.
+          onUpgrade={() => (user ? navigate("/pricing") : openAuth("signup"))}
         />
       )}
 

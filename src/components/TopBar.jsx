@@ -357,7 +357,13 @@ export default function TopBar() {
     // answers a different question ("can this page be found and cited?") about
     // a page the user usually already owns, whereas Extract answers "what is on
     // this page?" about one they usually do not.
-    { to: "/discoverability", label: "Discoverability", icon: "scan-search", match: (p) => p === "/discoverability" },
+    // Labelled "Discover", not "Discoverability". The full word is 15
+    // characters against 7-9 for every sibling, so it dominated the nav and was
+    // the first item to force the tablet breakpoint to compress. The ROUTE, the
+    // page <h1> and every piece of copy stay "Discoverability" — this is the
+    // nav label only, where space is the constraint and the icon plus context
+    // carry the rest of the meaning.
+    { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Collections moved inside /workspace as a tab (2026-08-11) — the
     // top-level "Collections" nav item is removed. Old /collections URLs
