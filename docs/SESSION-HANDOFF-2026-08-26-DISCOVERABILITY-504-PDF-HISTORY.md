@@ -135,10 +135,33 @@ not charged, showing it makes the quota arithmetic legible.
 
 ## 4. ⚠️ Known and NOT fixed — read before running the test gates
 
-**This checkout's `vitest@4.1.10` has no jsdom environment package installed**,
-so **every jsdom test fails** with `Cannot read properties of undefined (reading
-'clear')` in `test/setup.js`. Confirmed **pre-existing** by reverting all changes
-and reproducing identical failures (78 files / 1484 tests).
+**`/Users/vikash/Extracta/node_modules` is STALE relative to `package.json`.**
+Every jsdom test fails with `Cannot read properties of undefined (reading
+'clear')` in `test/setup.js` — **131 files / 2183 tests, all with the identical
+error**, which is what marks it environmental rather than a real failure.
+Confirmed **pre-existing** by reverting every change and reproducing it.
+
+The tree was never reinstalled after the Phase 5A dependency bump:
+
+| package | declared | installed |
+|---|---|---|
+| `@vitejs/plugin-react` | `^6.1.0` | **5.2.0** (a major behind) |
+| `vite` | `^8.2.2` | 8.1.5 |
+| `vitest` | `^4.1.11` | 4.1.10 |
+
+⚠️ An earlier note in this session guessed "no jsdom environment package
+installed". That was wrong — `jsdom@25.0.1` is present and works standalone.
+The cause is the stale tree.
+
+**The fix** (note the cache flag — `~/.npm/_cacache` has root-owned entries on
+this machine, so a plain install fails `EACCES`):
+
+```bash
+npm ci --cache /tmp/npm-cache-datiq     # from /Users/vikash/Extracta
+```
+
+⚠️ `node_modules` is **shared** by the main checkout and all worktrees, so this
+affects every one of them — which is why it was not done unilaterally here.
 
 Consequence: `npm run test:unit`, `npm run test:contract` and the **pre-push
 hook** all fail on this machine regardless of the change. Both commits were
