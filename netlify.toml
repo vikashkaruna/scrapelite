@@ -130,13 +130,23 @@
     Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com; form-action 'self' https://checkout.razorpay.com https://js.stripe.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com https://cdn.razorpay.com https://www.googletagmanager.com; connect-src 'self' https: wss:;"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
-# Public REST API (v1) is routed to a single function that dispatches on the
-# `splat` query param. The more specific /api/v1/* rule MUST come first so it
-# wins over the catch-all /api/* rule below.
-# The Discoverability module routes internally on the `splat` param, the same
-# pattern api-v1.js uses. This MUST sit above the generic /api/* rule below,
-# because Netlify takes the first matching redirect and the generic one would
-# swallow every sub-path into a function named after the first segment.
+# Public REST API (v1) and the Discoverability module both route internally
+# on a sub-path. The more specific /api/v1/* and /api/discoverability/* rules
+# MUST come first so they win over the catch-all /api/* rule below, because
+# Netlify takes the first matching redirect and the generic one would swallow
+# every sub-path into a function named after the first segment.
+#
+# The splat is forwarded as a PATH SEGMENT (`/.netlify/functions/<fn>/:splat`),
+# not a query param (`?splat=:splat`). The query-string form was tried first —
+# both functions' own code comments still describe it, since each handler
+# keeps it as a fallback for api-v1.js's in-process delegation to
+# discoverability.js — but it is the exact form that was already found to
+# silently drop `:splat` on an explicit-prefix wildcard rule in production
+# (see the integrations redirects' comment below, and commit 87f5597): the
+# `*` matched, but the substitution into the query string did not happen,
+# leaving `event.queryStringParameters.splat = ""` and every request 404ing
+# as "Unknown endpoint." Both handlers now resolve the sub-path from
+# event.path when the query is empty, mirroring the integrations fix.
 # ── Help-centre renumbering (Discoverability inserted as section 11) ────────
 # These six pages shifted by one. Their old URLs are in the published sitemap
 # and linked from blog posts, so they are 301'd rather than left to 404 — a
@@ -180,12 +190,13 @@
 
 [[redirects]]
   from = "/api/discoverability/*"
-  to = "/.netlify/functions/discoverability?splat=:splat"
+  to = "/.netlify/functions/discoverability/:splat"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/api/v1/*"
-  to = "/.netlify/functions/api-v1?splat=:splat"
+  to = "/.netlify/functions/api-v1/:splat"
   status = 200
   force = true
 

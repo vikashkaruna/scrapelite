@@ -219,6 +219,57 @@ describe("running an audit", () => {
   });
 });
 
+// ── Sign-in interruption must not lose the request ──────────────────────────
+// Google/Microsoft sign-in is a full-page navigation away and back, which
+// discards every bit of React state the composer held. A signed-out click on
+// Run must survive that round trip: land back on this page with the SAME URL
+// showing and the audit actually run, not a blank box the user has to redo.
+describe("sign-in interruption is resumed, not lost", () => {
+  it("stashes the request instead of calling the API when signed out", async () => {
+    authMocks.getSession.mockResolvedValue(null);
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await submit("https://example.com/geo");
+    expect(api.runAudit).not.toHaveBeenCalled();
+    const stashed = JSON.parse(sessionStorage.getItem("datiq.pendingAudit"));
+    expect(stashed.target_url).toBe("https://example.com/geo");
+  });
+
+  it("does not stash an empty/invalid submission (never opens auth for nothing)", async () => {
+    authMocks.getSession.mockResolvedValue(null);
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: /Run audit/i }));
+    expect(sessionStorage.getItem("datiq.pendingAudit")).toBeNull();
+  });
+
+  it("resumes a stashed request once signed in: runs it AND shows the URL back in the box", async () => {
+    const resumeAudit = {
+      target_url: "https://example.com/geo",
+      audit_profile: "seo", device_profile: "desktop", page_type_hint: null,
+      idempotency_key: "https://example.com/geo|seo|desktop|123",
+    };
+    await renderSignedIn({ pathname: "/discoverability", state: { resumeAudit } });
+    await waitFor(() => expect(api.runAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ target_url: "https://example.com/geo", audit_profile: "seo" }),
+    ));
+    expect(screen.getByLabelText(/URL to audit/i)).toHaveValue("https://example.com/geo");
+  });
+
+  it("does not re-run on a re-render once the resume has been consumed", async () => {
+    const resumeAudit = {
+      target_url: "https://example.com/geo",
+      audit_profile: "balanced", device_profile: "mobile", page_type_hint: null,
+      idempotency_key: "k1",
+    };
+    await renderSignedIn({ pathname: "/discoverability", state: { resumeAudit } });
+    await waitFor(() => expect(api.runAudit).toHaveBeenCalledTimes(1));
+    // A second settle tick must not fire it again (StrictMode-style re-run guard).
+    await act(async () => { await Promise.resolve(); });
+    expect(api.runAudit).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ── The central honesty property, on screen ────────────────────────────────
 describe("unmeasured is never zero", () => {
   it("labels an unmeasured signal rather than scoring it", async () => {

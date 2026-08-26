@@ -59,6 +59,24 @@ export function parsePath(splat) {
     .filter(Boolean);
 }
 
+const FN_NAME = "/.netlify/functions/api-v1";
+
+/**
+ * Resolve the sub-path from event.queryStringParameters.splat, falling back
+ * to the event.path tail when the query param is empty. See the matching
+ * helper in discoverability.js for the full story: the query-string form of
+ * Netlify's `:splat` substitution was already found to be unreliable on an
+ * explicit-prefix wildcard rule — the same shape this route uses — so
+ * netlify.toml now forwards the splat as a path segment instead, and this is
+ * the fallback that actually resolves it for a real HTTP request.
+ */
+function resolveSplat(event) {
+  const fromQuery = event.queryStringParameters?.splat || "";
+  if (fromQuery) return fromQuery;
+  const p = event.path || "";
+  return p.startsWith(FN_NAME) ? p.slice(FN_NAME.length).replace(/^\/+/, "") : "";
+}
+
 function badRequest(message, extra = {}) {
   return errorResponse(400, "invalid_request", message, extra);
 }
@@ -699,8 +717,7 @@ async function handleDiscoverability(event, auth, path) {
 // ── Router ─────────────────────────────────────────────────────────────────
 
 export async function routeApiV1(event, auth) {
-  const splat = event.queryStringParameters?.splat || "";
-  const path = parsePath(splat);
+  const path = parsePath(resolveSplat(event));
   const method = event.httpMethod;
 
   // /v1/extractions
@@ -786,7 +803,7 @@ export const handler = async (event) => {
   }
 
   // 2. Health check (unauthenticated)
-  const path = parsePath(event.queryStringParameters?.splat);
+  const path = parsePath(resolveSplat(event));
   if (path.length === 1 && path[0] === "_health") {
     return okResponse(200, { ok: true, version: "v1", ts: new Date().toISOString() });
   }

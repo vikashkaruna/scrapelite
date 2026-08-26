@@ -102,6 +102,33 @@ export function parsePath(splat) {
   return String(splat).split("/").map((s) => decodeURIComponent(s)).filter(Boolean);
 }
 
+const FN_NAME = "/.netlify/functions/discoverability";
+
+/**
+ * Resolve the sub-path from TWO sources, in priority order:
+ *
+ *   1. event.queryStringParameters.splat — either the netlify.toml redirect's
+ *      `:splat` substituted into a query string, or (for /api/v1/audits/*)
+ *      api-v1.js's in-process delegation, which sets this explicitly and
+ *      never goes through Netlify's redirect engine at all.
+ *   2. event.path tail — the real HTTP request path. This is what actually
+ *      carries the sub-path now: netlify.toml forwards it as a PATH SEGMENT
+ *      (`/.netlify/functions/discoverability/:splat`), not a query param,
+ *      because the query-string form of `:splat` was already found to be
+ *      unreliable on an explicit-prefix wildcard rule — the exact failure
+ *      that once 404'd every integrations provider with "Unknown endpoint"
+ *      equivalents (see netlify.toml's comment on those redirects, and
+ *      commit 87f5597). Source 1 is tried first only because api-v1.js's
+ *      delegation needs it; a real HTTP request never populates it and
+ *      always resolves through source 2.
+ */
+function resolveSplat(event) {
+  const fromQuery = event.queryStringParameters?.splat || "";
+  if (fromQuery) return fromQuery;
+  const p = event.path || "";
+  return p.startsWith(FN_NAME) ? p.slice(FN_NAME.length).replace(/^\/+/, "") : "";
+}
+
 function readBody(event) {
   if (!event.body) return {};
   const raw = event.isBase64Encoded
@@ -270,7 +297,7 @@ export function parseAuditOptions(body = {}) {
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
 
-  const path = parsePath(event.queryStringParameters?.splat);
+  const path = parsePath(resolveSplat(event));
   const method = event.httpMethod;
 
   // Two callers, one code path. The SPA presents a Supabase JWT; the public
