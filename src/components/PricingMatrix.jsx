@@ -56,6 +56,19 @@ const FEATURE_ROWS = [
   { key: "enrichments",    group: "Usage",       label: "Enrichments per extraction",  render: (p) => fmtNum(p.limits?.enrichments_per_extraction) },
   { key: "batch",          group: "Usage",       label: "Batch mode (URLs per run)",   render: (p) => fmtNum(p.limits?.batch_max_urls) },
   { key: "monitoring",     group: "Usage",       label: "Scheduled monitoring",        render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
+  // ── Discoverability ─────────────────────────────────────────────────────
+  // These limits have existed in pricingConfig since the module shipped
+  // (free 3 · go 10 · select 25 · pro 100 · business 500 · agency 2000) but
+  // appeared NOWHERE on /pricing. So the quota wall said "You've used all 3
+  // discoverability audits this month → See plans", and the page it sent
+  // people to never mentioned discoverability at all — the one number they
+  // had gone there to compare.
+  { key: "audits",         group: "Discoverability", label: "Discoverability audits (per month)", render: (p) => fmtNum(p.limits?.audits) },
+  // Benchmarks gate on the audit allowance rather than a flag of their own:
+  // a competitive set is several full audits, so entitlementModel requires an
+  // allowance of at least 25 (`audit.benchmark`). Mirrored here rather than
+  // re-derived, so the table cannot drift from what the server enforces.
+  { key: "benchmarks",     group: "Discoverability", label: "Competitive benchmarks",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
   { key: "csv",            group: "Exports",     label: "CSV export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("csv")) },
   { key: "pdf",            group: "Exports",     label: "PDF export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("pdf")) },
   { key: "markdown",       group: "Exports",     label: "Markdown export",             render: (p) => fmtBool((p.limits?.exports || []).includes("markdown")) },

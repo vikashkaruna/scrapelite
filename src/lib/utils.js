@@ -331,6 +331,25 @@ function triggerDownload(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/**
+ * Download a string the caller has already rendered.
+ *
+ * csvDownload / markdownDownload / jsonDownload all take EXTRACTION ROWS and
+ * build the document themselves. The Discoverability reports arrive from the
+ * server already rendered — the server owns that formatting so an exported
+ * report and the screen it came from can never disagree — so they need a helper
+ * that takes finished text rather than rows to format.
+ *
+ * @param {string} content
+ * @param {string} filename
+ * @param {string} mime
+ */
+export function downloadTextFile(content, filename, mime = "text/plain;charset=utf-8;") {
+  const blob = new Blob([String(content ?? "")], { type: mime });
+  triggerDownload(blob, filename);
+  return { name: filename, blob };
+}
+
 // Download one or more extractions as a single CSV (all capabilities included).
 export function csvDownload(items) {
   const list = Array.isArray(items) ? items : [items];
@@ -411,6 +430,36 @@ async function writeViaExecCommand(text) {
   }
   ta.remove();
   return ok;
+}
+
+/**
+ * Write a raw string to the clipboard.
+ *
+ * The two-path fallback (navigator.clipboard, then execCommand) is shared with
+ * copyToClipboard rather than duplicated: some browsers reject a clipboard
+ * write outside a user gesture or in an unfocused window, and a second copy of
+ * that handling is a second copy to keep working.
+ *
+ * copyToClipboard() takes EXTRACTION ROWS and a format. This takes text that is
+ * already text — a generated JSON-LD block, a markdown answer block — which is
+ * what the Discoverability constructs are.
+ *
+ * @returns {Promise<boolean>} whether the text reached the clipboard
+ */
+export async function copyTextToClipboard(text) {
+  const str = String(text ?? "");
+  if (!str) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(str);
+      return true;
+    } catch (err) {
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] clipboard.writeText failed, trying execCommand:", err);
+      }
+    }
+  }
+  return Boolean(await writeViaExecCommand(str));
 }
 
 export async function copyToClipboard(items, format = "csv") {

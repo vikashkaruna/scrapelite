@@ -36,7 +36,15 @@ export default function GuestTrialBanner() {
       <div className="guest-trial-bar-inner">
         <span className="gtb-text">
           <Icon name={atAnyLimit ? "alert-triangle" : "flask"} size={13} />
-          {message}
+          {/* The message is wrapped so it is ONE flex item.
+              `.gtb-text` is a flex container, and a flex container makes a
+              separate item out of every child — including each bare text node
+              between the <b> counts. Unwrapped, "Trial mode —", "10",
+              "extractions ·", "5" and "batch runs remaining." became five
+              independently-wrapping boxes, which on a narrow viewport shattered
+              the sentence into a column of fragments with the numbers orphaned
+              from the words they count. */}
+          <span className="gtb-message">{message}</span>
         </span>
         <button className="gtb-cta" onClick={() => openAuth("signup")}>
           {atAnyLimit ? "Create free account" : "Sign up free"} →

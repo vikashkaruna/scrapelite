@@ -22,9 +22,14 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the five platform jobs", () => {
+  it("registers the six platform jobs", () => {
+    // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
+    // is the REALITY: adding a job here does not schedule it, and scheduling one
+    // without adding it here means it runs unmonitored. Both halves have to be
+    // edited together, and this assertion is what forces the second one.
     expect(JOB_IDS).toEqual([
-      "scheduled-runner", "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
+      "scheduled-runner", "discoverability-monitor", "reengagement",
+      "billing-lifecycle", "billing-purge", "health-monitor",
     ]);
   });
 

@@ -143,6 +143,18 @@ try {
     else skip("07-dashboard-cards.png", "Card-view button not found");
   });
 
+  // ── Discoverability (SEO / AEO / GEO audits) ───────────────────────────────
+  // The empty state, deliberately: running a real audit here would fire live
+  // network calls against a third-party page and produce a screenshot whose
+  // numbers change every time it is regenerated.
+  await safe("11-discoverability.png", async () => {
+    await go("/discoverability");
+    await sleep(700);
+    const adv = page.getByRole("button", { name: /Advanced options/i });
+    if (await adv.count()) { await adv.click(); await sleep(400); }
+    await shot("11-discoverability.png");
+  });
+
   // ── Pricing ────────────────────────────────────────────────────────────────
   await safe("08-pricing.png", async () => {
     await go("/pricing");

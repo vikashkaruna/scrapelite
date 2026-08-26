@@ -88,11 +88,31 @@ export function takeToken(url, options = {}) {
  * Wait until a token is available, then take it. Uses setTimeout under the
  * hood. Resolves with the same shape as takeToken().
  */
+/**
+ * Wait for a token.
+ *
+ * ⚠️ With no `maxWaitMs` this polls FOREVER. That is survivable for a caller
+ * with no deadline, but inside a serverless function it is a way to be killed:
+ * the bucket is per-host and lives in the warm container, so a second request
+ * for a host whose tokens are already spent simply blocks until the platform
+ * times the function out — which the caller then reports as a 5xx it cannot
+ * explain. `maxWaitMs` is how a caller on a deadline opts out of that.
+ *
+ * Giving up is reported (`allowed: false`, `timedOut: true`), never thrown, so
+ * the caller decides whether to proceed unthrottled or decline. Politeness that
+ * takes the whole product down is not politeness.
+ */
 export function takeTokenBlocking(url, options = {}) {
+  const maxWaitMs = Number.isFinite(options.maxWaitMs) ? options.maxWaitMs : null;
+  const startedAt = Date.now();
   return new Promise((resolve) => {
     const tryOnce = () => {
       const r = takeToken(url, options);
       if (r.allowed) return resolve(r);
+      const waited = Date.now() - startedAt;
+      if (maxWaitMs !== null && waited + Math.min(r.waitMs, 2000) >= maxWaitMs) {
+        return resolve({ ...r, allowed: false, timedOut: true, waitedMs: waited });
+      }
       setTimeout(tryOnce, Math.min(r.waitMs, 2000));
     };
     tryOnce();

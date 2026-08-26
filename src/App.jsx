@@ -58,6 +58,7 @@ import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
+import Discoverability from "./pages/Discoverability.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import Workspace from "./pages/Workspace.jsx";
 import PublicReport from "./pages/PublicReport.jsx";
@@ -73,6 +74,8 @@ import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
 import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
+import PendingWorkspaceInviteFlush from "./components/PendingWorkspaceInviteFlush.jsx";
+import PendingAuditFlush from "./components/PendingAuditFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
@@ -118,6 +121,22 @@ function Shell() {
       setPendingReferral(ref);
       const next = new URLSearchParams(searchParams);
       next.delete("ref");
+      setSearchParams(next, { replace: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Workspace invite ?invite=TOKEN handler — same STASH-here /
+  // REDEEM-in-a-flush-component split as ?ref= above, and for the same
+  // reason: accepting a seat is signed-in only, so a guest arriving on an
+  // invite link keeps the token until they have an account.
+  useEffect(() => {
+    const invite = searchParams.get("invite");
+    if (!invite) return;
+    import("./lib/pendingWorkspaceInvite.js").then(({ setPendingWorkspaceInvite }) => {
+      setPendingWorkspaceInvite(invite);
+      const next = new URLSearchParams(searchParams);
+      next.delete("invite");
       setSearchParams(next, { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,6 +228,7 @@ function Shell() {
           <Route path="/collections"                   element={<Navigate to="/workspace?tab=collections" replace />} />
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
+          <Route path="/discoverability"               element={<Discoverability />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />
@@ -253,6 +273,8 @@ function Shell() {
           Global because OAuth navigates the document away and back. */}
       <PendingScheduleFlush />
       <PendingReferralFlush />
+      <PendingWorkspaceInviteFlush />
+      <PendingAuditFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}
