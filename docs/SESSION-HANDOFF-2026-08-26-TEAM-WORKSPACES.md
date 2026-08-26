@@ -184,3 +184,112 @@ checking the staging project's Site URL isn't itself defaulted to
 `staging.datiq.app`, or (c) GitHub OAuth's known, accepted limitation
 (single callback URL, pinned to production — not a bug, a scope decision
 if branch-deploy GitHub sign-in is ever wanted).
+
+---
+
+## 3. Two real bugs fixed, later the same day — shipped, merged to `staging`
+
+The OAuth investigation above was interrupted by two concrete, reproducible
+bug reports on `/discoverability` itself, both fixed and shipped.
+
+### 3a. "Unknown endpoint" on every audit run
+
+Running an audit against a real URL (e.g. `https://datiq.app`) returned
+*"Something went wrong / Unknown endpoint"* — every time, and "Try again"
+reproduced it exactly, which was the tell: a routing failure, not a
+transient one.
+
+**Root cause:** `netlify.toml` forwarded `/api/discoverability/*` and
+`/api/v1/*`'s sub-path as a **query param** (`?splat=:splat`). That exact
+substitution was already found to silently fail on an **explicit-prefix
+wildcard rule** in production once before — it's what broke every
+integrations provider (HubSpot, Notion, Airtable, Slack, Zapier), fixed in
+commit `87f5597` by switching to path-based forwarding
+(`/.netlify/functions/<fn>/:splat`) plus a path-based fallback in each
+handler. `discoverability.js` and `api-v1.js` use the identical rule shape
+(`from = "/api/discoverability/*"`, a fixed prefix + wildcard — not the
+"generic wildcard router path" the original bug report says still worked)
+and never received that fix. Result: `event.queryStringParameters.splat`
+comes back empty on a real request, `parsePath` returns `[]`, routing falls
+through every branch to the "Unknown endpoint" 404.
+
+**Fix:** both redirects now forward the splat as a path segment
+(`to = "/.netlify/functions/discoverability/:splat"`), matching the
+integrations fix exactly, and both `discoverability.js` and `api-v1.js`
+gained a `resolveSplat(event)` helper that tries the query param first
+(still needed — `api-v1.js`'s in-process delegation into
+`discoverability.js` sets it directly, bypassing Netlify's redirect engine
+entirely) and falls back to parsing `event.path`'s tail when it's empty.
+
+New tests in `netlify/__tests__/audit/discoverability-api.test.js` and
+`netlify/__tests__/api-v1.test.js` construct an event exactly the way a
+real post-fix request looks (`queryStringParameters: {}`, `path:
+"/.netlify/functions/<fn>/<sub-path>"`) and assert the route resolves.
+**Confirmed to fail against the pre-fix code** (via a temporary `git
+stash` of just the fix, re-run, then restored) before being accepted.
+
+### 3b. Sign-in interruption loses the screen and the URL
+
+Clicking Run audit while signed out correctly opened the auth modal — but
+after completing sign-in, the user did not land back on `/discoverability`,
+and the URL they had typed was gone.
+
+**Root cause:** Google/Microsoft sign-in is a full-page navigation away
+(to the provider) and back, which discards every bit of React state —
+including `AuditComposer`'s local `url` field. `run()` simply called
+`openAuth("signup")` and returned, keeping nothing. Separately, the OAuth
+`redirectTo` is just the app's origin (`window.location.origin`), never a
+specific path, so even a successful round trip could land the user
+anywhere, not necessarily back on `/discoverability`.
+
+**Fix, mirroring the referral/workspace-invite pattern exactly:**
+- `run()` now stashes the full request (`target_url` + advanced options)
+  to sessionStorage via a new `src/lib/pendingAudit.js` before opening
+  auth — sessionStorage survives the OAuth round trip that component state
+  doesn't.
+- A new global `PendingAuditFlush.jsx`, mounted in Shell next to
+  `PendingReferralFlush`/`PendingWorkspaceInviteFlush`, watches for a
+  session and, once one exists, navigates to `/discoverability` with the
+  stashed request in router `state` — regardless of which page the OAuth
+  callback actually landed on.
+- `Discoverability.jsx` has ONE resume effect keyed on
+  `location.state?.resumeAudit`, guarded against double-firing. It covers
+  both interruption paths identically: the OAuth full-navigation case
+  (fresh mount, state arrives via the flush component's navigate) and the
+  in-page email/password-modal case (component never unmounts, `user`
+  flips true, the SAME flush component still does the navigate — this
+  page was already mounted, so React Router just delivers new state to it)
+  — there is no separate code path for "which auth method was used".
+- `AuditComposer` gained `defaultProfile`/`defaultDevice`/`defaultPageType`
+  alongside the existing `defaultUrl`, and the call site now passes a
+  `key` that only changes on a resume (`"composer"` otherwise) — forcing a
+  remount so the composer picks up the resumed request rather than
+  starting blank. A normal run never changes the key, so typing, Advanced
+  options etc. behave exactly as before.
+
+New tests in `src/pages/Discoverability.integration.test.jsx`: the request
+is stashed and the API is never called while signed out; an empty
+submission never stashes anything; a resumed request both calls the API
+AND shows its URL back in the input; the resume cannot double-fire on a
+re-render. **Confirmed to fail against the pre-fix code** the same way —
+3 of the 4 new tests failed pre-fix (the 4th asserts a property that was
+already true, by design, and correctly stayed passing on both sides).
+
+**Verified:** `npm test` **256 files / 4016 passed / 14 skipped / 0
+failed** (+8 over the team-workspaces baseline above), db unchanged (no
+schema touched — **31 migrations / 215 + 17 assertions, 0 failed**),
+`npm run build` clean, readiness **5 pass / 2 warn / 0 fail** (same
+pre-existing warns), security clean, e2e smoke **125 passed / 1 skipped /
+0 failed** (unchanged). A live browser check confirmed the client-side
+behaviour directly (auth modal opens, sessionStorage stash captured
+correctly) — full end-to-end verification of the routing fix against a
+real deployed backend wasn't possible in this sandbox (no live Netlify
+Functions server, no Supabase), so that half rests on the test suite
+reproducing the exact reported symptom plus the proven precedent from the
+integrations fix, not a live network trace.
+
+Merged to `staging` the same way as the team-workspaces merge above: push
+the branch, merge into `staging` via an isolated temporary worktree (this
+worktree's own checkout untouched throughout), independently re-verify the
+merged tree (fresh install, full suite, db-verify, build, readiness,
+security — not just trusted from the merge), then push. `main` untouched.
