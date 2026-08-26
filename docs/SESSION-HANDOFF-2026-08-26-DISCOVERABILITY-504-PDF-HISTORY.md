@@ -1,8 +1,21 @@
-# Session handoff — 2026-08-26 — Discoverability: the 504, PDF export, audit history
+# Session handoff — 2026-08-26 — Discoverability: the 504, PDF export, audit history, pricing tiers
 
 **Branch:** `claude/audit-storage-error-003fa6` → merged to `staging` (fast-forward).
-**`main` was NOT touched**, per explicit instruction.
-**Commits:** `7d8d0cf` (the 504) and `1b497fb` (PDF, history, rendering fixes).
+**`main` was NOT touched**, per explicit instruction — it remains at `069df45`.
+
+| Commit | What |
+|---|---|
+| `7d8d0cf` | the 504: a wall-clock budget, concurrent citation prompts, a bounded AI chain |
+| `1b497fb` | PDF export, audit history, the re-audit 504, three rendering bugs |
+| `e5cbb1c` | session record |
+| `b1d52c5` | correct the cause of the failing test gates (stale `node_modules`) |
+| `34afe52` | 🔴 regenerate all 22 prerendered pages — every marketing route was serving 404'd CSS and JS |
+| `fa2651f` | record the stale-prerender outage and the gate that was bypassed |
+| `0e367a9` | discoverability pricing tiers, nav label → "Discover", "See plans" stays in the SPA |
+
+**Read §4 first** — the local test gates cannot pass on this machine until the
+dependency tree is reinstalled, and that is what made `--no-verify` routine and
+let §4b ship.
 
 ---
 
@@ -225,7 +238,72 @@ npm run prerender            # regenerate, then COMMIT the 22 files
 npm run prerender -- --check # 22 rendered · 0 stale · 0 failed
 ```
 
+---
 
+## 5. Pricing tiers, the nav label, and the CTA that left the SPA
+
+Three reported items, all on the path a user walks when they hit the audit wall.
+
+### 5.1 The discoverability tiers were nowhere on /pricing
+
+The per-plan allowances have existed in `pricingConfig.js` since the module
+shipped, and the server has enforced them all along:
+
+| Free | Go | Select | Pro | Business | Agency | Developer |
+|---|---|---|---|---|---|---|
+| 3 | 10 | 25 | 100 | 500 | 2,000 | 250 |
+
+But **nothing on `/pricing` mentioned discoverability** — not the plan cards,
+not the comparison matrix. So the wall said *"You've used all 3 discoverability
+audits this month → See plans"* and sent people to a page that never named the
+feature they had gone there to buy.
+
+Added a **Discoverability** group to `PricingMatrix` (audits per month, plus
+competitive benchmarks) and an allowance line to all seven plan cards.
+
+⚠️ The benchmark row is **derived from the audit allowance**, not a flag of its
+own, mirroring `entitlementModel`'s `audit.benchmark` rule (a set is several
+full audits, so it needs `>= 25`). Derived in one place so the table cannot
+drift from what the server enforces. If that rule changes, change both.
+
+⚠️ **The plan-card feature lists are hand-written strings, NOT derived from
+`limits.audits`.** The matrix updates itself when an allowance changes; the card
+line will not. Deriving it is a worthwhile follow-up — left alone here to keep
+the change reviewable.
+
+### 5.2 "See plans" left the SPA and landed on the static snapshot
+
+`onUpgrade` used `window.location.href = "/pricing"`. That is a hard navigation
+out of the app, and **Netlify serves `public/pricing/index.html` — the
+PRERENDERED page — ahead of the SPA fallback.** So the upgrade CTA dropped the
+user onto a static snapshot: full reload, no billing context, no current-plan
+highlight, and whatever staleness the committed snapshot carried.
+
+This **compounded §4b rather than duplicating it**: the CTA reliably sent people
+to the one page most likely to be stale. Fixing only the staleness would have
+left a worse-but-working static page; fixing only the navigation would have left
+the other 21 routes broken.
+
+Now `navigate("/pricing")`. **Rule: inside the app, route through the router;
+`window.location` is for LEAVING the app.** This applies to every prerendered
+route — `/about`, `/blog`, `/contact`, `/privacy`, `/terms`, `/integrations`,
+`/gallery`, `/use-cases/*`, `/vs/*`. The only remaining hard navigation in
+`src/` is `/dmca.html`, a genuine static file.
+
+### 5.3 The nav label is "Discover"
+
+"Discoverability" is 15 characters against 7-9 for every sibling; it dominated
+the bar and was first to force the tablet breakpoint to compress. Now 99px, in
+line with its 91-113px neighbours.
+
+⚠️ **The route, the page `<h1>`, the matrix group header and every piece of copy
+keep the full word.** Only the nav label is short. The two e2e specs that
+asserted it are anchored (`/^Discover$/`) so they cannot silently pass on the
+long form.
+
+---
+
+## 6. Open items for the operator
 
 - [ ] **Raise the Netlify function timeout to 26s** (Site configuration →
       Functions) and set **`AUDIT_BUDGET_MS=20000`**. The default is **8000**,
@@ -243,7 +321,7 @@ npm run prerender -- --check # 22 rendered · 0 stale · 0 failed
 
 ---
 
-## 6. Traps worth carrying forward
+## 7. Traps worth carrying forward
 
 - **A serial fallback chain costs the SUM of its members, not the slowest.**
   Fine for extraction, which races no deadline; fatal for anything inside a
@@ -256,5 +334,11 @@ npm run prerender -- --check # 22 rendered · 0 stale · 0 failed
   `.preview-grid` and `.sd-row`.
 - **A sticky cell must paint its own background.** `inherit` on a `<td>` gives
   you the row's, which is usually transparent.
+- **A generated-and-committed artefact goes stale silently.** `public/<route>/index.html`
+  is the example here; `public/help/` and `run-all.sql` are the same shape. The
+  only thing standing between them and a broken production page is a gate — so
+  never `--no-verify` past one without reading what else it checks.
+- **In-app navigation to a prerendered route must use the router.** A
+  `window.location.href` to `/pricing` serves the static snapshot, not the app.
 - **`git worktree list` before assuming a branch is free.** `staging` was not
   checked out anywhere, which is what made the fast-forward possible from here.
