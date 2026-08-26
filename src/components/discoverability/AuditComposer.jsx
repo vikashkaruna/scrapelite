@@ -18,12 +18,15 @@ const PAGE_TYPE_OPTIONS = [
     .map((p) => ({ id: p.id, label: p.label })),
 ];
 
-export default function AuditComposer({ onRun, running, defaultUrl = "", remaining, signedIn = true }) {
+export default function AuditComposer({
+  onRun, running, defaultUrl = "", remaining, signedIn = true,
+  defaultProfile = "balanced", defaultDevice = "mobile", defaultPageType = "",
+}) {
   const [url, setUrl] = useState(defaultUrl);
   const [advanced, setAdvanced] = useState(false);
-  const [profile, setProfile] = useState("balanced");
-  const [device, setDevice] = useState("mobile");
-  const [pageType, setPageType] = useState("");
+  const [profile, setProfile] = useState(defaultProfile);
+  const [device, setDevice] = useState(defaultDevice);
+  const [pageType, setPageType] = useState(defaultPageType);
   const [error, setError] = useState("");
 
   function submit(e) {

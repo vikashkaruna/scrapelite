@@ -75,6 +75,7 @@ import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
 import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
 import PendingWorkspaceInviteFlush from "./components/PendingWorkspaceInviteFlush.jsx";
+import PendingAuditFlush from "./components/PendingAuditFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
@@ -273,6 +274,7 @@ function Shell() {
       <PendingScheduleFlush />
       <PendingReferralFlush />
       <PendingWorkspaceInviteFlush />
+      <PendingAuditFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}

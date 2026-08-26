@@ -17,14 +17,15 @@
 // mean the same page reported two different numbers depending on where you were
 // standing.
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSearchParams, useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import AuditComposer from "../components/discoverability/AuditComposer.jsx";
+import { setPendingAudit } from "../lib/pendingAudit.js";
 import ScoreTiles, { PillarGrid, PenaltyBanner } from "../components/discoverability/ScoreTiles.jsx";
 import IssueMatrix, { IssueList } from "../components/discoverability/IssueMatrix.jsx";
 import RecommendationQueue from "../components/discoverability/RecommendationQueue.jsx";
@@ -72,6 +73,8 @@ export default function Discoverability() {
   const showToast = useToast();
   const { user, openAuth } = useAuth();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [audit, setAudit] = useState(null);
   const [diff, setDiff] = useState(null);
@@ -85,6 +88,11 @@ export default function Discoverability() {
   const [busyRec, setBusyRec] = useState(null);
   const [series, setSeries] = useState(["overall"]);
   const [lastRequest, setLastRequest] = useState(null);
+  // Set once, when a sign-in interruption is resumed (see the effect below):
+  // forces AuditComposer to remount with the resumed URL/options showing,
+  // rather than the blank fields a fresh mount would otherwise have.
+  const [resumedRequest, setResumedRequest] = useState(null);
+  const resumeConsumedRef = useRef(false);
 
   useSeo({
     title: "Discoverability audit — SEO, AEO and GEO scoring | DatIQ",
@@ -133,7 +141,16 @@ export default function Discoverability() {
 
   // ── Run ──────────────────────────────────────────────────────────────────
   const run = useCallback(async (payload) => {
-    if (!user) { openAuth("signup"); return; }
+    if (!user) {
+      // Google/Microsoft sign-in is a full-page navigation away and back,
+      // which discards every bit of React state — including whatever the
+      // composer's URL field held. Stash the request so PendingAuditFlush
+      // can hand it back once a session exists, regardless of which page
+      // the OAuth round trip actually lands on.
+      setPendingAudit(payload);
+      openAuth("signup");
+      return;
+    }
     setRunning(true);
     setError(null);
     setDiff(null);
@@ -156,6 +173,26 @@ export default function Discoverability() {
       setRunning(false);
     }
   }, [user, openAuth, setParams, loadTrend, showToast]);
+
+  // ── Resume an audit interrupted by sign-in ──────────────────────────────
+  // PendingAuditFlush navigates here with the stashed request once a session
+  // exists, whether that's because OAuth bounced through a full page reload
+  // or because the user just finished the in-page email/password modal.
+  // Either way this component sees a fresh `location.state`, so ONE effect
+  // covers both — the whole point being that where and how the interruption
+  // happened doesn't matter, only that the request gets finished.
+  useEffect(() => {
+    const resume = location.state?.resumeAudit;
+    if (!resume || !user || resumeConsumedRef.current) return;
+    resumeConsumedRef.current = true;
+    setResumedRequest(resume);
+    // Clear the router state so a page refresh or the browser back button
+    // can't redeliver the same stale request.
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    showToast("Signed in — running your audit…", "check");
+    run(resume);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, user]);
 
   const rerun = useCallback(async () => {
     if (!audit?.auditId) return;
@@ -258,9 +295,17 @@ export default function Discoverability() {
       </header>
 
       <AuditComposer
+        // Forces a remount — and so a fresh read of the default* props below —
+        // only when resuming an interrupted request. A normal run never
+        // changes this key, so typing, Advanced options, etc. behave exactly
+        // as before; only the auth-interrupt-then-resume path forces a reset.
+        key={resumedRequest ? `resumed-${resumedRequest.idempotency_key}` : "composer"}
         onRun={run}
         running={running}
-        defaultUrl={audit?.target?.url || ""}
+        defaultUrl={resumedRequest?.target_url || audit?.target?.url || ""}
+        defaultProfile={resumedRequest?.audit_profile || "balanced"}
+        defaultDevice={resumedRequest?.device_profile || "mobile"}
+        defaultPageType={resumedRequest?.page_type_hint || ""}
         signedIn={Boolean(user)}
       />
 
