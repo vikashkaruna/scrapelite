@@ -84,9 +84,17 @@ grant usage on schema public to anon, authenticated;
 // 0029_referrals.sql adds 2 tables (referral_codes + referral_redemptions) and
 // 2 functions (issue_referral_code + redeem_referral_code), taking these to
 // 44 / 19 / 6. No new trigger.
+//
+// 0030_discoverability_audits.sql adds 13 tables, 5 functions and 5 triggers,
+// taking these to 57 / 24 / 11.
+//
+// 0031_team_workspaces.sql adds 3 tables (workspaces, workspace_members,
+// workspace_invites) and 4 functions (create_workspace,
+// create_workspace_invite, accept_workspace_invite, remove_workspace_member),
+// taking these to 60 / 28 / 11. No new trigger.
 const EXPECT = {
-  tables: 57,
-  functions: 24,
+  tables: 60,
+  functions: 28,
   triggers: 11,
   tablesWithoutRls: 0,
 };
@@ -900,6 +908,92 @@ group("discoverability — targets, idempotency, trends, retention");
     where table_schema='public' and table_name='audit_schedules'
       and column_name='status' and privilege_type='UPDATE' and grantee='postgres'`);
   check("the user's own status column is not caught by the REVOKE", userCol.length >= 0);
+}
+
+// ── 0031: team workspaces ─────────────────────────────────────────────────────
+group("team workspaces — create, invite, accept, remove");
+{
+  const owner  = (await one(`insert into auth.users (email) values ('ws-owner@x.com') returning id`)).id;
+  const mem    = (await one(`insert into auth.users (email) values ('ws-member@x.com') returning id`)).id;
+  const other  = (await one(`insert into auth.users (email) values ('ws-other@x.com') returning id`)).id;
+  const rando  = (await one(`insert into auth.users (email) values ('ws-rando@x.com') returning id`)).id;
+
+  // ── create_workspace: owner membership lands atomically ──────────────────
+  const wsId = (await one(`select public.create_workspace($1, 'Acme Team') id`, [owner])).id;
+  check("create_workspace returns an id", !!wsId);
+
+  const ownerRow = await one(
+    `select role from public.workspace_members where workspace_id=$1 and user_id=$2`,
+    [wsId, owner]);
+  eq("the owner is a member with role='owner' immediately", ownerRow?.role, "owner");
+
+  const blankId = (await one(`select public.create_workspace($1, '   ') id`, [owner])).id;
+  const blankName = (await one(`select name from public.workspaces where id=$1`, [blankId])).name;
+  eq("a blank name falls back to a default rather than storing empty", blankName, "My workspace");
+
+  // ── create_workspace_invite: role-gated, deduped ──────────────────────────
+  const notAuthed = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "nobody@x.com", "member", rando]);
+  eq("a non-member cannot mint an invite", notAuthed.v.ok, false);
+  eq("...and the reason says so", notAuthed.v.reason, "not_authorized");
+
+  const invited = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "MEM@x.com", "member", owner]);
+  check("the owner can invite, and gets a token back", invited.v.ok === true && !!invited.v.token);
+
+  const dupe = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "mem@x.com", "member", owner]);
+  eq("re-inviting the same pending address is refused, not duplicated", dupe.v.reason, "already_invited");
+
+  // ── accept_workspace_invite: email-bound, idempotent ──────────────────────
+  const wrongEmail = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, other, "someone-else@x.com"]);
+  eq("accepting with a different email than the invite is refused", wrongEmail.v.reason, "email_mismatch");
+
+  const accepted = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, mem, "mem@x.com"]);
+  check("the invited email accepts and lands in the workspace",
+    accepted.v.ok === true && accepted.v.workspaceId === wsId);
+
+  const memberRow = await one(
+    `select role from public.workspace_members where workspace_id=$1 and user_id=$2`,
+    [wsId, mem]);
+  eq("the accepted member carries the role the invite specified", memberRow?.role, "member");
+
+  const seatCount = await one(`select count(*)::int c from public.workspace_members where workspace_id=$1`, [wsId]);
+  eq("seat count includes the owner", seatCount.c, 2);
+
+  const reaccept = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, mem, "mem@x.com"]);
+  eq("accepting an already-accepted token is refused, not silently re-applied", reaccept.v.reason, "already_accepted");
+
+  const bogusToken = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    ["not-a-real-token", rando, "rando@x.com"]);
+  eq("an unknown token is refused", bogusToken.v.reason, "invalid");
+
+  // ── remove_workspace_member: role rules ───────────────────────────────────
+  const ownerLeaves = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, owner, owner]);
+  eq("the owner cannot remove themselves", ownerLeaves.v.reason, "owner_cannot_leave");
+
+  const memberRemovesOwner = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, mem, owner]);
+  eq("a member cannot remove the owner", memberRemovesOwner.v.reason, "cannot_remove_owner");
+
+  const outsiderActs = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, rando, mem]);
+  eq("someone with no membership row cannot remove anyone", outsiderActs.v.reason, "not_authorized");
+
+  const selfLeave = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, mem, mem]);
+  check("a plain member can remove themselves (leave)", selfLeave.v.ok === true);
+
+  const stillGone = await one(
+    `select 1 as x from public.workspace_members where workspace_id=$1 and user_id=$2`, [wsId, mem]);
+  eq("...and the membership row is actually gone", stillGone, undefined);
+
+  // ── RLS: no anon/authenticated access to any of the three tables ─────────
+  for (const t of ["workspaces", "workspace_members", "workspace_invites"]) {
+    const pol = await q(
+      `select policyname from pg_policies where tablename=$1 and policyname != 'service full access'`, [t]);
+    eq(`${t} has no policy beyond the service-role one`, pol.length, 0);
+  }
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
