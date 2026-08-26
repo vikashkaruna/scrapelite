@@ -33,6 +33,7 @@ import TrendChart from "../components/discoverability/TrendChart.jsx";
 import {
   Panel, HeadingTreePanel, SchemaPanel, AnswerPanel, EntityPanel, TechnicalPanel,
 } from "../components/discoverability/EvidencePanels.jsx";
+import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 
@@ -101,6 +102,13 @@ export default function Discoverability() {
   });
 
   const auditId = params.get("audit");
+  // `?view=history` rather than a /discoverability/history sub-route: the
+  // private-prefix invariant (PRIVATE_PREFIXES, the X-Robots-Tag header in
+  // netlify.toml, robots.txt and the inline guard in index.html) already
+  // covers this exact path, and netlify.toml's header rule is an EXACT match
+  // that a sub-path would silently escape, leaving an audit-history screen
+  // indexable. A query param needs none of those four touched.
+  const showHistory = params.get("view") === "history";
 
   // ── Load an audit named in the URL ───────────────────────────────────────
   const loadAudit = useCallback(async (id) => {
@@ -244,7 +252,20 @@ export default function Discoverability() {
     if (!audit?.auditId) return;
     try {
       const slug = (hostOf(audit.target?.url) || "audit").replace(/[^a-z0-9]+/gi, "-");
-      if (format === "markdown") {
+      if (format === "pdf") {
+        // Rendered from the audit already in state — the very object this
+        // screen is displaying — so the PDF cannot disagree with what the user
+        // is looking at when they press the button.
+        //
+        // Deliberately NOT from `reportJson`: that endpoint reshapes the
+        // payload for API consumers (`framework_scores.overall` rather than
+        // `finalScore`, `stage_errors` rather than `stageErrors`), so feeding
+        // it to the renderer would print "not measured" for every score.
+        //
+        // jsPDF is ~350KB and is lazy-loaded on the click. Never static-import.
+        const { downloadAuditPdf } = await import("../lib/discoverability/auditPdf.js");
+        downloadAuditPdf(audit, { includeConstructs: true });
+      } else if (format === "markdown") {
         const md = await discoverability.reportMarkdown(audit.auditId, { constructs: true });
         downloadTextFile(md, `discoverability-${slug}.md`, "text/markdown;charset=utf-8;");
       } else if (format === "csv") {
@@ -278,8 +299,18 @@ export default function Discoverability() {
             get the fixes, already written.
           </p>
         </div>
-        {audit && (
-          <div className="dsc-header-actions">
+        <div className="dsc-header-actions">
+          {user && !showHistory && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setParams({ view: "history" })}
+            >
+              <Icon name="clock" size={14} /> History
+            </Button>
+          )}
+          {audit && (
+            <>
             <Button size="sm" variant="secondary" onClick={rerun} loading={running}>
               <Icon name="rotate-cw" size={14} /> Re-audit
             </Button>
@@ -287,13 +318,23 @@ export default function Discoverability() {
               <Button size="sm" variant="ghost" onClick={() => exportReport("markdown")}>
                 <Icon name="file-text" size={14} /> Report
               </Button>
+              <Button size="sm" variant="ghost" onClick={() => exportReport("pdf")}>PDF</Button>
               <Button size="sm" variant="ghost" onClick={() => exportReport("csv")}>CSV</Button>
               <Button size="sm" variant="ghost" onClick={() => exportReport("json")}>JSON</Button>
             </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </header>
 
+      {showHistory ? (
+        <AuditHistory
+          currentAuditId={audit?.auditId || null}
+          onClose={() => setParams(audit?.auditId ? { audit: audit.auditId } : {})}
+          onOpen={(id) => setParams({ audit: id })}
+        />
+      ) : (
+      <>
       <AuditComposer
         // Forces a remount — and so a fresh read of the default* props below —
         // only when resuming an interrupted request. A normal run never
@@ -491,6 +532,8 @@ export default function Discoverability() {
       )}
 
       {!audit && !running && !error && <EmptyState />}
+      </>
+      )}
     </div>
   );
 }

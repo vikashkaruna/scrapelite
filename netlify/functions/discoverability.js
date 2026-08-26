@@ -58,6 +58,7 @@ import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
+import { createDeadline, budgetFromEnv } from "./lib/audit/deadline.js";
 import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
@@ -163,6 +164,20 @@ export const MAX_BENCHMARK_URLS = 10;
  * were two steps each caller wired itself, and four paths drifted.
  */
 async function executeAudit({ event, userId, rawUrl, options = {}, resolved, source = "ui" }) {
+  // ── The budget covers the WHOLE REQUEST, not just the pipeline ───────────
+  //
+  // It is created here rather than inside runAudit because a large share of the
+  // wall clock is spent before the pipeline is even entered — the robots.txt
+  // fetch in checkCompliance, the consent lookup, the rate limiter's wait, two
+  // Supabase writes — and afterwards, persisting the result and dispatching the
+  // webhook. A budget that starts when the pipeline starts leaves all of that
+  // unaccounted for, so the pipeline can finish inside its own budget and the
+  // REQUEST still overrun and 504.
+  //
+  // runAudit then receives what is LEFT, so the gates above genuinely come out
+  // of the same allowance instead of being additional to it.
+  const deadline = createDeadline(budgetFromEnv(process.env));
+
   // ── SSRF ─────────────────────────────────────────────────────────────────
   if (!(await isPublicHttpUrlAsync(rawUrl))) {
     return { ok: false, statusCode: 400, body: { error: "That URL is not a public web address.", code: "INVALID_URL" } };
@@ -203,10 +218,25 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   }
 
   // ── rate limit, per host, after every gate that can decline for free ─────
-  // Same call shape as extract.js: the limiter is always on, and a failure in
-  // the limiter itself is warned about and never fatal.
+  // Same call shape as extract.js, with one difference that matters here: the
+  // wait is BOUNDED. The bucket is per-host and survives in the warm container,
+  // so re-auditing a URL asks the same host's bucket for another token moments
+  // after the previous audit spent one — and an unbounded wait there blocks
+  // until the platform kills the function, which is reported to the user as an
+  // unexplained 504 on exactly the "run it again" path.
+  //
+  // At most a quarter of the budget is spent being polite. Past that we proceed
+  // rather than decline: the audit makes few requests, the host is nearly
+  // always the user's own, and throttling that takes the product down is not
+  // throttling. A failure in the limiter itself is warned about, never fatal.
   try {
-    await takeTokenBlocking(rawUrl, configFromEnv());
+    const token = await takeTokenBlocking(rawUrl, {
+      ...configFromEnv(),
+      maxWaitMs: Math.max(0, Math.floor(deadline.remaining() * 0.25)),
+    });
+    if (token?.timedOut) {
+      console.warn(`[DatIQ] audit rate limiter gave up after ${token.waitedMs}ms for ${token.host}; proceeding`);
+    }
   } catch (err) {
     console.warn("[DatIQ] audit rate limiter errored (continuing):", err?.message);
   }
@@ -237,6 +267,8 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   let result;
   try {
     result = await runAudit(rawUrl, {
+      // What is LEFT after the gates above, not a fresh allowance.
+      deadline,
       deviceProfile: options.deviceProfile,
       auditProfile: options.auditProfile,
       pageTypeHint: options.pageTypeHint,

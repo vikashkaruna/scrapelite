@@ -2313,10 +2313,17 @@
   padding: 14px 12px;
   text-align: center;
   vertical-align: top;
+  z-index: 2;                 /* above the pinned body column (z-index 1) */
 }
 .pricing-matrix-table thead th.pm-feature-col {
   text-align: left; font-weight: 700; font-size: .78em;
   text-transform: uppercase; letter-spacing: .04em; color: var(--text-3);
+  /* The corner cell pins in BOTH directions. It inherited `top: 0` from the
+     rule above but no `left`, and a sticky element with no inset on an axis
+     simply does not stick on it — so the header's feature column scrolled away
+     while the body's stayed, leaving the columns visibly misaligned. */
+  left: 0;
+  z-index: 3;                 /* above both the header row and the pinned column */
 }
 .pm-plan-name { font-size: 1.05em; font-weight: 700; }
 .pm-plan-price {
@@ -2341,8 +2348,20 @@
   text-align: left; font-weight: 500; color: var(--text);
   padding: 11px 14px; min-width: 200px;
   position: sticky; left: 0;
-  background: inherit;
+  /* ⚠️ OPAQUE, never `inherit`.
+     `background: inherit` on a <td> resolves to the <tr>'s background, and the
+     row is transparent — so the pinned column was see-through and the plan
+     columns scrolled visibly THROUGH the feature names. On a narrow viewport,
+     where this table is 754px inside a 335px scroller, that turned the whole
+     matrix into overlapping unreadable text. A sticky cell must paint its own
+     background or it does not cover what slides beneath it. */
+  background: var(--surface);
   z-index: 1;
+}
+/* Hover has to be re-applied to the pinned cell, because it can no longer
+   inherit the row's hover background. */
+.pricing-matrix-table tbody tr:not(.pm-group-row):hover .pm-feature-name {
+  background: var(--surface-2);
 }
 .pm-feature-cta { font-weight: 600; color: var(--text-2); }
 .pm-cell {
@@ -5593,6 +5612,10 @@
   flex: 1;
   min-width: 0;
 }
+/* The sentence is a single flex item, so it wraps as prose rather than the
+   flex container breaking it into one box per text node. See the comment in
+   GuestTrialBanner.jsx — without this the numbers separate from the words. */
+.gtb-message { min-width: 0; }
 .gtb-cta {
   background: rgba(0,0,0,.22);
   border: 1px solid rgba(255,255,255,.45);
@@ -9288,4 +9311,80 @@ html.dark .dsc-page {
 .dsc-rec-blocked {
   display: flex; align-items: center; gap: 6px;
   margin: 9px 0 0; font-size: 12px; color: var(--dsc-warn);
+}
+
+/* ── Discoverability: full audit history (?view=history) ─────────────────── */
+/* Distinct from `.dsc-history`, which is the per-target list inside a report.
+   This is the account-wide list, reachable without running an audit first. */
+.dsc-history-page { margin-top: 18px; }
+.dsc-history-page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.dsc-history-page-head h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.dsc-history-page-sub { margin: 0; color: var(--text-2); font-size: .88rem; max-width: 56ch; }
+.dsc-history-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dsc-history-search {
+  padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: .86rem;
+  min-width: 0; width: min(240px, 100%);
+}
+.dsc-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+/* ⚠️ The <li> is the GRID ITEM, and a grid item's default `min-width: auto`
+   refuses to shrink below its content. Without this the row sized itself to
+   the longest URL (467px inside a 335px column), pushing the right-hand meta
+   off-screen and defeating the ellipsis below. Same trap already documented
+   for `.preview-grid` and `.sd-row`. */
+.dsc-history-list > li { min-width: 0; }
+.dsc-history-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px 13px; text-align: left; font: inherit;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.dsc-history-row:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-2); }
+.dsc-history-row:disabled { opacity: .6; cursor: not-allowed; }
+.dsc-history-row.is-current { border-color: var(--accent); background: var(--accent-soft); }
+.dsc-history-score-badge {
+  flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums;
+  background: var(--surface-2); color: var(--text-2);
+}
+.dsc-history-score-badge.band-good { background: color-mix(in srgb, #16a34a 16%, transparent); color: #16a34a; }
+.dsc-history-score-badge.band-fair { background: color-mix(in srgb, #d97706 18%, transparent); color: #b45309; }
+.dsc-history-score-badge.band-poor { background: color-mix(in srgb, #dc2626 15%, transparent); color: #dc2626; }
+/* min-width:0 so a long URL ellipsises instead of forcing the row wider than
+   its container — the same flex trap `.preview-grid` and `.sd-row` hit. */
+.dsc-history-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dsc-history-url { font-weight: 600; font-size: .92rem; color: var(--text); }
+.dsc-history-path {
+  font-size: .76rem; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* A flex child needs min-width:0 for text-overflow to have anything to
+     clip against; at `auto` it sizes to the full string and never ellipsises. */
+  min-width: 0;
+}
+.dsc-history-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: .74rem; color: var(--text-3); flex-shrink: 0;
+}
+.dsc-history-crit { color: #dc2626; font-weight: 700; }
+.dsc-history-failed { color: #dc2626; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dsc-history-running { color: var(--accent); font-weight: 700; }
+.dsc-history-profile { text-transform: capitalize; }
+.dsc-history-when { font-variant-numeric: tabular-nums; }
+.dsc-history-empty {
+  text-align: center; padding: 44px 20px; color: var(--text-2);
+  border: 1px dashed var(--border); border-radius: var(--r-md);
+}
+.dsc-history-empty p { margin: 8px 0 0; font-size: .9rem; }
+.dsc-history-loading { color: var(--text-3); font-size: .86rem; padding: 12px 2px; }
+.dsc-history-more { display: flex; justify-content: center; margin-top: 14px; }
+
+@media (max-width: 620px) {
+  .dsc-history-row { flex-wrap: wrap; }
+  .dsc-history-meta { width: 100%; padding-left: 52px; }
+  .dsc-history-search { width: 100%; }
 }
