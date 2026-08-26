@@ -145,6 +145,42 @@ describe("routing", () => {
     expect(res.statusCode).toBe(404);
   });
 
+  // Regression: netlify.toml used to forward the sub-path as a QUERY PARAM
+  // (`?splat=:splat`). That substitution was already found to silently drop
+  // the value on an explicit-prefix wildcard rule in production — the exact
+  // failure that once 404'd every integrations provider (commit 87f5597).
+  // This is the same shape of rule, so the redirect now forwards the splat
+  // as a PATH SEGMENT instead, and the handler must resolve it from
+  // event.path when the query param is empty — which is exactly what a real
+  // request looks like once that redirect form is live.
+  it("resolves the route from event.path when the query param is empty (the production redirect bug)", async () => {
+    storeMock.listAudits = vi.fn(async () => []);
+    const res = await handler({
+      httpMethod: "GET",
+      // No `splat` in the query — this is what the OLD `?splat=:splat`
+      // redirect form produced when Netlify's substitution silently failed.
+      queryStringParameters: {},
+      path: "/.netlify/functions/discoverability/audits",
+      headers: { authorization: "Bearer token" },
+      body: null,
+    });
+    expect(res.statusCode).not.toBe(404);
+    expect(parse(res)).toEqual({ audits: [] });
+  });
+
+  it("still resolves via the query param when present (api-v1.js's in-process delegation)", async () => {
+    storeMock.listAudits = vi.fn(async () => []);
+    const res = await handler({
+      httpMethod: "GET",
+      queryStringParameters: { splat: "audits" },
+      // No real event.path — this is what api-v1.js's manually-built inner
+      // event looks like; it must not depend on the path fallback.
+      headers: { authorization: "Bearer token" },
+      body: null,
+    });
+    expect(res.statusCode).not.toBe(404);
+  });
+
   it("rejects a malformed JSON body before doing any work", async () => {
     const res = await handler({
       httpMethod: "POST", queryStringParameters: { splat: "audits" },

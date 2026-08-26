@@ -212,6 +212,35 @@ describe("api-v1 router", () => {
       expect(body.version).toBe("v1");
       expect(authenticateApiRequest).not.toHaveBeenCalled();
     });
+
+    // Regression: netlify.toml used to forward the sub-path as a QUERY PARAM
+    // (`?splat=:splat`), and that substitution was already found to silently
+    // drop the value on an explicit-prefix wildcard rule in production —
+    // the same shape /api/v1/* uses (see the integrations redirects'
+    // comment in netlify.toml, and commit 87f5597). The redirect now
+    // forwards the splat as a path segment instead, and both the health
+    // check's own path resolution and routeApiV1's must fall back to
+    // event.path when the query param is empty.
+    it("resolves /v1/_health from event.path when the query param is empty", async () => {
+      const r = await handler(baseEvent({
+        queryStringParameters: {},
+        path: "/.netlify/functions/api-v1/_health",
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+    });
+
+    it("resolves a real route from event.path too, not just the health check", async () => {
+      const db = makeDbStore({ extractions: [] });
+      globalThis.fetch = db.fetch;
+      authenticateApiRequest.mockResolvedValue({ ok: true, auth: validAuth });
+      const r = await handler(baseEvent({
+        queryStringParameters: {},
+        path: "/.netlify/functions/api-v1/extractions",
+      }));
+      expect(r.statusCode).not.toBe(404);
+    });
   });
 
   describe("auth", () => {
