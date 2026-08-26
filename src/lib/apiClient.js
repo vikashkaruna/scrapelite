@@ -17,6 +17,20 @@ export function setAuthToken(token) {
   _authToken = token ?? null;
 }
 
+/**
+ * Read the current session token.
+ *
+ * Exported so discoverabilityClient.js shares ONE auth source rather than
+ * subscribing to the session separately. Two modules tracking the same token
+ * is how one of them ends up a session behind and 401s for reasons nobody can
+ * reproduce. The Discoverability module keeps its own client because its
+ * report endpoints return markdown and CSV, which `request()` — which always
+ * calls res.json() — cannot handle.
+ */
+export function getAuthToken() {
+  return _authToken;
+}
+
 async function request(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
   if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
@@ -149,6 +163,37 @@ export const apiClient = {
 
   /** Redeem someone else's code. The server credits both sides atomically. */
   redeemReferral: (code) => request("/referral", "POST", { code }),
+
+  // ── Team workspaces ──────────────────────────────────────────────────────
+  // A workspace membership is a real, billable seat gated by
+  // entitlementModel.js's workspace.create / workspace.team_seats — the
+  // server decides eligibility, this just calls the endpoint. See
+  // netlify/functions/workspaces.js.
+
+  /** My workspaces, plus whether the plan allows creating another. */
+  listWorkspaces: () => request("/workspaces", "GET"),
+
+  /** One workspace's members and (for owner/admin) pending invites. */
+  getWorkspace: (workspaceId) =>
+    request(`/workspaces?workspaceId=${encodeURIComponent(workspaceId)}`, "GET"),
+
+  /** Create a workspace owned by the signed-in user. */
+  createWorkspace: (name) => request("/workspaces", "POST", { action: "create", name }),
+
+  /** Invite `email` into `workspaceId`, as `role` ('member' or 'admin'). */
+  inviteToWorkspace: (workspaceId, email, role = "member") =>
+    request("/workspaces", "POST", { action: "invite", workspaceId, email, role }),
+
+  /** Accept an invite token as the signed-in user. */
+  acceptWorkspaceInvite: (token) => request("/workspaces", "POST", { action: "accept", token }),
+
+  /** Remove a member, or leave (targetUserId === your own id). */
+  removeWorkspaceMember: (workspaceId, targetUserId) =>
+    request("/workspaces", "POST", { action: "remove", workspaceId, targetUserId }),
+
+  /** Revoke a still-pending invite. */
+  revokeWorkspaceInvite: (workspaceId, inviteId) =>
+    request("/workspaces", "POST", { action: "revoke_invite", workspaceId, inviteId }),
 
   // ── Scrape consent ("I have permission to extract this site") ──────────────
   // The record behind an override of a robots.txt refusal. The server resolves

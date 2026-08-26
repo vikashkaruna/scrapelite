@@ -85,7 +85,11 @@ const CONFIG = {
   personaSource: "src/lib/personaConfig.js",
   changelogSource: "src/pages/Changelog.jsx",
   blogSource: "src/pages/Blog.jsx",
-  helpBillingPage: "public/help/11-plans-usage-and-billing.html",
+  // Resolved by SLUG, not by number. The help pages are numbered by their
+  // position in DatIQ-User-Guide.md, so inserting a section renumbers every
+  // page after it — and a hardcoded number turns that into a silent WARN that
+  // reads "pricing source missing" when the only thing that moved was a digit.
+  helpBillingPageSlug: "plans-usage-and-billing",
   helpIndex: "public/help/index.html",
   helpMarkdown: ["docs/DatIQ-User-Guide.md", "docs/DatIQ-Developer-API.md"],
   screenshotsDir: "docs/assets/screenshots",
@@ -302,10 +306,26 @@ function checkVersion() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Find the billing help page by slug rather than by its number.
+ *
+ * The generator names pages "<NN>-<slug>.html" from the "## N." headings in the
+ * user guide, so inserting a section shifts every page after it. Matching on
+ * the slug means this check survives that; matching on the number made it
+ * report "pricing source missing" the first time a section was inserted.
+ */
+function helpBillingPage() {
+  const dir = "public/help";
+  if (!existsSync(join(ROOT, dir))) return join(dir, `11-${CONFIG.helpBillingPageSlug}.html`);
+  const hit = readdirSync(join(ROOT, dir))
+    .find((f) => f.endsWith(`-${CONFIG.helpBillingPageSlug}.html`));
+  return hit ? join(dir, hit) : join(dir, `11-${CONFIG.helpBillingPageSlug}.html`);
+}
+
 // Check 6 — Pricing coherence (WARN)
 // ─────────────────────────────────────────────────────────────────────────────
 function checkPricing() {
-  if (!existsSync(abs(CONFIG.pricingSource)) || !existsSync(abs(CONFIG.helpBillingPage))) {
+  if (!existsSync(abs(CONFIG.pricingSource)) || !existsSync(abs(helpBillingPage()))) {
     record("Pricing coherence", "WARN", "Pricing source or help billing page missing — verify manually.");
     return;
   }
@@ -316,7 +336,7 @@ function checkPricing() {
     .filter((m) => !/comingSoon:\s*true/.test(src.slice(m.index, m.index + 400)))
     .map((m) => m[1]);
   const uniq = [...new Set(names)].filter((n) => !["Free"].includes(n));
-  const billing = read(CONFIG.helpBillingPage);
+  const billing = read(helpBillingPage());
   const missing = uniq.filter((n) => !billing.includes(n));
   record("Pricing coherence", missing.length ? "WARN" : "PASS",
     missing.length

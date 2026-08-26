@@ -31,6 +31,7 @@ export const PLANS = [
     trialCredit: 25,
     limits: {
       extractions: 10,
+      audits: 3,
       enrichments_per_extraction: Infinity,
       exports: ["csv"],
       email_export: false,
@@ -70,6 +71,7 @@ export const PLANS = [
     highlight: false,
     limits: {
       extractions: 200,
+      audits: 10,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown"],
       email_export: true,
@@ -107,6 +109,7 @@ export const PLANS = [
     highlight: false,
     limits: {
       extractions: 500,
+      audits: 25,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown"],
       email_export: true,
@@ -144,6 +147,7 @@ export const PLANS = [
     highlight: true,
     limits: {
       extractions: 1000,
+      audits: 100,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown", "json"],
       email_export: true,
@@ -181,6 +185,7 @@ export const PLANS = [
     highlight: false,
     limits: {
       extractions: 10000,
+      audits: 500,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown", "json"],
       email_export: true,
@@ -224,6 +229,7 @@ export const PLANS = [
     highlight: false,
     limits: {
       extractions: Infinity,
+      audits: 2000,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown", "json"],
       email_export: true,
@@ -265,6 +271,7 @@ export const PLANS = [
     comingSoon: true,
     limits: {
       extractions: 10000,
+      audits: 250,
       enrichments_per_extraction: Infinity,
       exports: ["csv", "pdf", "markdown", "json", "jsonl"],
       email_export: true,

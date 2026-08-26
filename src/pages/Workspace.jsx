@@ -29,6 +29,7 @@ import {
 import { useSeo } from "../hooks/useSeo.js";
 import WatchlistCard from "../components/WatchlistCard.jsx";
 import CollectionsTab from "../components/workspace/CollectionsTab.jsx";
+import TeamTab from "../components/workspace/TeamTab.jsx";
 
 function timeAgo(iso) {
   if (!iso) return "—";
@@ -58,6 +59,7 @@ const TABS = [
   { key: "overview",    label: "Overview",    icon: "layout-grid" },
   { key: "collections", label: "Collections", icon: "folder" },
   { key: "schedules",   label: "Schedules",   icon: "calendar-clock" },
+  { key: "team",        label: "Team",        icon: "users" },
 ];
 
 function parseTab(raw) {
@@ -214,6 +216,12 @@ export default function Workspace() {
               schedulesLoading={schedulesLoading}
               onSwitchToOverview={() => setTab("overview")}
             />
+          </div>
+        )}
+
+        {tab === "team" && (
+          <div role="tabpanel" id="ws-panel-team" aria-labelledby="ws-tab-team" tabIndex={0}>
+            <TeamTab />
           </div>
         )}
       </div>

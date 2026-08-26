@@ -43,6 +43,22 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "discoverability-monitor",
+    label: "Discoverability monitor",
+    schedule: "@daily",
+    cron: "0 0 * * *",
+    expectedIntervalMs: 24 * 60 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Re-audits every page a user is watching, compares the result against the previous run, " +
+      "and alerts when the overall score moves past that schedule's threshold or a new critical " +
+      "issue appears.",
+    destructive: false,
+    // Safe by hand: each schedule advances its own next_run_at, so a manual run
+    // re-audits what is due and then falls back to its cadence.
+    manualRunAllowed: true,
+  },
+  {
     id: "reengagement",
     label: "Re-engagement digest",
     schedule: "@daily",

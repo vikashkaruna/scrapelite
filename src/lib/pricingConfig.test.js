@@ -28,9 +28,24 @@ const ALLOWED_LIMIT_KEYS = new Set([
   "priority_support",
   "workspaces",
   "batch_max_urls",
+  // Discoverability audits carry their own monthly budget rather than debiting
+  // extraction credits — an audit is several fetches, a PageSpeed lookup, a
+  // citation sample and an AI call.
+  "audits",
 ]);
 
 const ALLOWED_EXPORT_FORMATS = new Set(["csv", "pdf", "markdown", "json", "jsonl"]);
+
+/**
+ * Every plan must declare an audit quota.
+ *
+ * The stronger half of the guard above. Registering the key only stops an
+ * unknown one appearing; this stops a NEW plan shipping without one, which
+ * would read as `undefined`, fall through `(L.audits || 0)` to zero, and deny
+ * Discoverability to that plan's customers with a "not included in your plan"
+ * message nobody wrote.
+ */
+const AUDIT_QUOTA_REQUIRED = true;
 
 describe("PLANS schema (U-12)", () => {
   it("every plan has the required fields and valid limit values", () => {
@@ -42,6 +57,12 @@ describe("PLANS schema (U-12)", () => {
       expect(typeof p.price_usd_annual, `${p.id}.price_usd_annual must be a number`).toBe("number");
       expect(typeof p.price_inr, `${p.id}.price_inr must be a number`).toBe("number");
       expect(typeof p.price_inr_annual, `${p.id}.price_inr_annual must be a number`).toBe("number");
+      // Every plan declares an audit quota. See AUDIT_QUOTA_REQUIRED.
+      if (AUDIT_QUOTA_REQUIRED) {
+        expect(typeof p.limits.audits, `plan ${p.id} is missing an audits limit`).toBe("number");
+        expect(p.limits.audits, `plan ${p.id} has a negative audits limit`).toBeGreaterThanOrEqual(0);
+      }
+
       // Limits — every limit key is from the allowed set
       for (const key of Object.keys(p.limits)) {
         expect(ALLOWED_LIMIT_KEYS.has(key), `plan ${p.id} has unknown limit ${key}`).toBe(true);

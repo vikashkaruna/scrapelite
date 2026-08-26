@@ -179,6 +179,64 @@ GET /v1/batches/{id}
 Returns the **Batch object**. When `status` is `completed`, `results` holds one entry per URL (each with its own
 status and, on success, an embedded Extraction).
 
+### Discoverability audits
+
+Score a page for classic search (SEO), answer engines (AEO) and generative
+engines (GEO), and get the prioritised fixes.
+
+```http
+POST   /v1/audits                          # run an audit
+GET    /v1/audits                          # list your audits
+GET    /v1/audits/{id}                     # status and summary
+GET    /v1/audits/{id}/results             # the full payload
+GET    /v1/audits/{id}/report              # markdown, csv or json
+POST   /v1/audits/{id}/rerun               # re-run, measured against this one
+DELETE /v1/audits/{id}
+GET    /v1/audits/{id}/compare/{baseline}  # what changed between two audits
+GET    /v1/audits/{id}/recommendations
+GET    /v1/audits/{id}/headings
+GET    /v1/audits/{id}/schema
+GET    /v1/audits/{id}/answers
+GET    /v1/audits/{id}/entities
+GET    /v1/audits/{id}/technical
+POST   /v1/recommendations/{id}/accept
+POST   /v1/recommendations/{id}/dismiss    # a reason is required
+GET    /v1/targets                         # pages you have audited
+GET    /v1/targets/{id}/history
+GET    /v1/targets/{id}/trends             # time series for charting
+POST   /v1/benchmarks                      # audit several URLs and compare
+GET    /v1/benchmarks/{id}
+```
+
+**Create body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `target_url` | string | yes | The page to audit. |
+| `device_profile` | string | no | `mobile` (default) or `desktop`. |
+| `audit_profile` | string | no | `balanced` (default), `seo`, `aeo` or `geo`. Selects which score leads the report; all four are always computed the same way. |
+| `page_type_hint` | string | no | `article`, `faq`, `howto`, `pricing`, `product`, `docs`. Decides which checks apply. Detected automatically when omitted. |
+| `baseline_audit_id` | string | no | An earlier audit to compare against. |
+| `idempotency_key` | string | no | Strongly recommended. A repeated request returns the original audit instead of spending a second credit. |
+| `prompt_sample_set_id` | string | no | A saved prompt set for citation sampling. |
+| `tags` | string[] | no | Up to 10 labels. |
+
+Returns an **Audit object**. Audits have their own monthly allowance, separate
+from extraction credits.
+
+**Report formats**
+
+```http
+GET /v1/audits/{id}/report?format=markdown&constructs=1
+GET /v1/audits/{id}/report?format=csv&rows=recommendations
+GET /v1/audits/{id}/report?format=json
+```
+
+`markdown` and `csv` return text rather than JSON. `constructs=1` embeds the
+copy-ready implementation assets in the markdown report.
+
+---
+
 ### Schedules
 
 Create and manage recurring extractions that watch a page and report changes.
@@ -287,6 +345,103 @@ is `pricing` or `contacts`, the relevant structured data appears under `enrichme
 
 `status` is one of `queued`, `running`, `completed`. Each result's `status` is `succeeded` or `failed`
 (failed entries include an `error` message).
+
+### Audit object
+
+```json
+{
+  "audit_id": "aud_01K123ABCXYZ",
+  "target": {
+    "url": "https://example.com/guide/what-is-geo",
+    "page_type": "article",
+    "device_profile": "mobile",
+    "audit_profile": "balanced"
+  },
+  "framework_scores": { "overall": 78.4, "seo": 75.2, "aeo": 82.1, "geo": 77.3 },
+  "coverage": 92.5,
+  "pillar_scores": {
+    "answer_clarity": {
+      "score": 84.0,
+      "weight": 0.30,
+      "coverage": 100,
+      "signals": {
+        "direct_answer_block": 100,
+        "conciseness": 88,
+        "passage_independence": 79,
+        "question_headings": 70,
+        "extractable_formatting": 82
+      }
+    },
+    "technical_accessibility": {
+      "score": 76.0,
+      "weight": 0.25,
+      "coverage": 70,
+      "signals": {
+        "crawl_index_eligibility": 90,
+        "render_completeness": 70,
+        "core_web_vitals": null,
+        "mobile_parity": 100,
+        "structured_data_validity": 78
+      }
+    }
+  },
+  "penalties": [
+    {
+      "code": "AI_CRAWLER_PARTIAL_BLOCK",
+      "severity": "medium",
+      "penalty_factor": 0.05,
+      "description": "One or more AI crawlers appear blocked in robots directives."
+    }
+  ],
+  "score_math": { "pre_penalty_total": 82.5, "penalty_multiplier": 0.95, "final_score": 78.4 },
+  "issues": [
+    {
+      "code": "SH-06",
+      "pillar": "structural_hierarchy",
+      "severity": "high",
+      "frameworks": ["aeo", "seo"],
+      "title": "Visible FAQs carry no FAQPage schema",
+      "evidence": "6 visible question-and-answer pairs carry no FAQPage markup."
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "rec_901",
+      "code": "SH-06",
+      "priority": "high",
+      "priority_score": 58.4,
+      "owner": "seo",
+      "frameworks": ["aeo", "seo"],
+      "title": "Add FAQPage JSON-LD whose wording matches the visible questions and answers exactly.",
+      "rationale": "The content is already there; the markup is what makes it eligible for direct extraction.",
+      "estimated_lift": 4.8,
+      "implementation_asset": {
+        "type": "jsonld",
+        "format": "html",
+        "label": "FAQPage schema",
+        "body": "<script type=\"application/ld+json\">{ ... }</script>"
+      },
+      "status": "open"
+    }
+  ],
+  "stage_errors": []
+}
+```
+
+**`null` is not `0`.** A signal that reads `null` was not measured — the
+external service was unavailable, or the check does not apply to this page
+type. It is EXCLUDED from its pillar and its weight is redistributed across the
+signals that were measured, rather than being scored as a failure.
+
+That is what `coverage` reports: the share of intended evidence this audit
+actually gathered. A score of 92 built on 70% coverage is not the same as a 92
+built on all of it, and your code should treat them differently. `stage_errors`
+lists what could not be gathered and why.
+
+`penalties` are multiplicative and apply to every framework score, not only the
+overall one. `score_math` shows the arithmetic.
+
+---
 
 ### Schedule object
 

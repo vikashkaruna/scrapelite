@@ -52,6 +52,14 @@
 [functions."health-monitor"]
   schedule = "@hourly"
 
+# Re-audits every page a user is watching and alerts on material score movement.
+# THIS BLOCK is what schedules it — `export const config = { schedule }` inside
+# the function is a v2 feature and is silently ignored for our v1 handlers.
+# Deleting this block un-schedules the job with no build error and no runtime
+# error; it simply never fires again.
+[functions."discoverability-monitor"]
+  schedule = "@daily"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env
@@ -125,6 +133,56 @@
 # Public REST API (v1) is routed to a single function that dispatches on the
 # `splat` query param. The more specific /api/v1/* rule MUST come first so it
 # wins over the catch-all /api/* rule below.
+# The Discoverability module routes internally on the `splat` param, the same
+# pattern api-v1.js uses. This MUST sit above the generic /api/* rule below,
+# because Netlify takes the first matching redirect and the generic one would
+# swallow every sub-path into a function named after the first segment.
+# ── Help-centre renumbering (Discoverability inserted as section 11) ────────
+# These six pages shifted by one. Their old URLs are in the published sitemap
+# and linked from blog posts, so they are 301'd rather than left to 404 — a
+# module about discoverability that broke its own indexed URLs would be a poor
+# advertisement for it.
+[[redirects]]
+  from = "/help/11-plans-usage-and-billing.html"
+  to = "/help/12-plans-usage-and-billing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/12-accounts-trial-and-sign-in.html"
+  to = "/help/13-accounts-trial-and-sign-in.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/13-privacy-and-your-data.html"
+  to = "/help/14-privacy-and-your-data.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/14-troubleshooting.html"
+  to = "/help/15-troubleshooting.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/15-keyboard-shortcuts.html"
+  to = "/help/16-keyboard-shortcuts.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/16-glossary.html"
+  to = "/help/17-glossary.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/api/discoverability/*"
+  to = "/.netlify/functions/discoverability?splat=:splat"
+  status = 200
+
 [[redirects]]
   from = "/api/v1/*"
   to = "/.netlify/functions/api-v1?splat=:splat"
@@ -236,7 +294,7 @@
 # one URL moved.
 [[redirects]]
   from = "/help/14-faq-and-troubleshooting.html"
-  to = "/help/14-troubleshooting.html"
+  to = "/help/15-troubleshooting.html"
   status = 301
   force = true
 
@@ -326,6 +384,10 @@
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]
   for = "/schedules"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/discoverability"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]

@@ -31,7 +31,15 @@ import { can, computeLifecycle } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
-function getServiceDb() {
+/**
+ * The service-key PostgREST connection.
+ *
+ * Exported so lib/audit/auditStore.js uses THIS definition rather than keeping
+ * its own copy. Two copies of the env-var precedence (SUPABASE_URL then
+ * VITE_SUPABASE_URL) is exactly the drift that leaves one module working and
+ * the other silently degraded on a deploy where only one variable is set.
+ */
+export function getServiceDb() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return null;

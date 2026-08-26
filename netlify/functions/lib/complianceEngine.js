@@ -199,6 +199,99 @@ export async function loadRobots(origin, ua = "DatIQBot/1.0", options = {}) {
   }
 }
 
+// ── Public: multi-agent robots evaluation (discoverability audits) ──────────
+//
+// The audit engine needs a different question answered than extract.js does.
+// extract.js asks "may WE fetch this?" for one UA. An audit asks "which of the
+// twelve answer-engine crawlers may fetch this?", because uneven access is
+// itself a finding (issue TA-02).
+//
+// ⚠️ This deliberately does NOT go through loadRobots(). That function caches
+// by HOST while storing rules parsed for ONE user-agent, so calling it twelve
+// times with twelve agents would leave the extract path's cache holding
+// whichever agent happened to run last — silently answering "may DatIQBot
+// fetch this?" with GPTBot's rules. A separate raw-text cache keeps the two
+// questions apart while still using the SAME parser, so the RFC 9309
+// product-token matching fixed in parseRobots can never drift between them.
+
+const robotsTextCache = new Map();
+const ROBOTS_TEXT_TTL_MS = 10 * 60_000;
+
+export function _resetRobotsTextCacheForTests() {
+  robotsTextCache.clear();
+}
+
+/**
+ * Fetch a host's robots.txt as raw text.
+ *
+ * @returns {Promise<{ text: string|null, status: number|null, error: string|null, fetched: boolean }>}
+ *
+ * `text: null` with no error means the host has no robots.txt, which is a
+ * PERMISSIVE condition and must not be reported as a block. `error` set means
+ * we could not find out — which is issue TA-16, "crawl policy is unknown",
+ * and is reported as unknown rather than scored as a failure.
+ */
+export async function fetchRobotsText(origin, options = {}) {
+  const host = hostOf(origin);
+  if (!host) return { text: null, status: null, error: "invalid origin", fetched: false };
+
+  const now = Date.now();
+  const cached = robotsTextCache.get(host);
+  if (cached && cached.expiresAt > now) return { ...cached.value, fetched: false };
+
+  const robotsUrl = `${origin.replace(/\/$/, "")}/robots.txt`;
+  let value;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), options.timeoutMs || ROBOTS_TIMEOUT_MS);
+    const res = await fetchPublicUrl(robotsUrl, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (res.status === 404 || res.status === 410) {
+      // No robots.txt at all. Everything is permitted — the honest reading.
+      value = { text: null, status: res.status, error: null };
+    } else if (!res.ok) {
+      value = { text: null, status: res.status, error: `http ${res.status}` };
+    } else {
+      value = { text: await res.text(), status: res.status, error: null };
+    }
+  } catch (err) {
+    value = { text: null, status: null, error: err?.message || "fetch failed" };
+  }
+
+  robotsTextCache.set(host, { value, expiresAt: now + ROBOTS_TEXT_TTL_MS });
+  return { ...value, fetched: true };
+}
+
+/**
+ * Evaluate one robots.txt against several user-agents at once.
+ *
+ * @param {string|null} robotsText  raw file, or null when the host serves none
+ * @param {string[]} agents         product tokens, e.g. ["GPTBot","ClaudeBot"]
+ * @param {string} path             pathname (+search) being audited
+ * @returns {Record<string, boolean|null>} agent → allowed. `null` means the
+ *          policy could not be read, which the audit reports as unknown rather
+ *          than scoring as a block — the same "not checked is never down" rule
+ *          the ops dashboard follows.
+ */
+export function evaluateAgentAccess(robotsText, agents = [], path = "/") {
+  const out = {};
+  for (const agent of agents) {
+    if (robotsText === null || robotsText === undefined) {
+      // No robots.txt is PERMISSIVE. An unreadable one is UNKNOWN. The caller
+      // distinguishes them by whether fetchRobotsText reported an error.
+      out[agent] = true;
+      continue;
+    }
+    try {
+      const parsed = parseRobots(robotsText, agent);
+      out[agent] = isPathAllowed(parsed.rules, path);
+    } catch {
+      out[agent] = null;
+    }
+  }
+  return out;
+}
+
 // ── Public: top-level check used by extract.js ───────────────────────────────
 /**
  * Check whether scraping `url` with our UA is permitted by the host's
@@ -286,4 +379,4 @@ export async function checkCompliance(url, opts = {}) {
   };
 }
 
-export const _internal = { ROBOTS_TTL_MS, ROBOTS_TIMEOUT_MS, DEFAULT_CRAWL_DELAY_MS, parseRobots, isPathAllowed };
+export const _internal = { ROBOTS_TTL_MS, ROBOTS_TIMEOUT_MS, DEFAULT_CRAWL_DELAY_MS, ROBOTS_TEXT_TTL_MS, parseRobots, isPathAllowed };

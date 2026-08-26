@@ -15,7 +15,7 @@ import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 const VERSION = "V1.0";
 const SHIPPED = "2026-07";
-const UPDATED = "2026-08-18";
+const UPDATED = "2026-08-26";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
@@ -54,6 +54,24 @@ const FEATURE_GROUPS = [
       "Run history with intent + run count + delete per run",
       "Combined export (CSV / PDF / Markdown / JSON) across all successful items",
       "Copy-to-clipboard for CSV / Markdown / JSON (plan-gated same as downloads)",
+    ],
+  },
+  {
+    id: "discoverability",
+    icon: "scan-search",
+    title: "Discoverability — SEO, AEO & GEO",
+    items: [
+      "Audit any page for classic search (SEO), answer engines (AEO) and generative engines (GEO) — three scores, one run",
+      "Four-pillar model: Answer Clarity, Entity Authority, Structural Hierarchy, Technical Accessibility, each traceable to its individual signals",
+      "Blocking issues scale the whole score and show their arithmetic — your score before them, the multiplier, the result",
+      "Unmeasured signals are excluded and their weight redistributed, never scored as zero; every score carries its evidence coverage",
+      "Prioritised fix queue with owner, effort, confidence and the lift this page can actually recover",
+      "Copy-ready constructs: FAQ and Organization JSON-LD built from your visible content, answer blocks, corrected heading outlines, robots.txt",
+      "Evidence panels: heading tree, schema inventory, extracted answer preview, entity and citation footprint, crawler access",
+      "Re-audit and compare — resolved, remaining, and anything new a fix introduced",
+      "Trend chart across every audit of a page, drawing gaps where a score could not be measured",
+      "Scheduled monitoring (Pro+) that emails only on material movement, and competitive benchmarks (Select+)",
+      "Markdown, CSV and JSON report exports, plus a signed webhook on completion",
     ],
   },
   {

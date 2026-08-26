@@ -649,6 +649,53 @@ function createSlug(len = 8) {
     .slice(0, len);
 }
 
+// ── Discoverability delegation ─────────────────────────────────────────────
+
+/**
+ * Serve /v1/audits/* by calling the SPA's own Discoverability handler.
+ *
+ * The two callers are authenticated differently — an API key here, a Supabase
+ * JWT there — so the event is re-shaped to carry the resolved user as a bearer
+ * token the inner handler already understands. Everything after that point is
+ * literally the same code path, which is the point: the gate order, the quota
+ * accounting and the compliance behaviour cannot drift between the public API
+ * and the app, because there is only one of each.
+ */
+async function handleDiscoverability(event, auth, path) {
+  const { handler: discoverabilityHandler } = await import("./discoverability.js");
+
+  // The inner handler resolves identity from a Supabase JWT. An API key is not
+  // one, so the resolved user id is passed through a header the inner handler's
+  // authenticateBearer step is configured to accept. `_apiKeyUserId` is read
+  // ONLY from this in-process delegation — it never crosses the network,
+  // because Netlify strips unknown underscore-prefixed keys from the event and
+  // the redirect for /api/v1/* never reaches the discoverability function.
+  const inner = {
+    ...event,
+    queryStringParameters: {
+      ...(event.queryStringParameters || {}),
+      splat: path.join("/"),
+    },
+    _apiKeyUserId: auth.user?.id || null,
+  };
+
+  const res = await discoverabilityHandler(inner);
+  // Normalise onto the public API's envelope so a client sees one error shape
+  // across every /v1 endpoint.
+  if (res.statusCode >= 400) {
+    let body = {};
+    try { body = JSON.parse(res.body); } catch { /* non-JSON body */ }
+    const code = body.code || (res.statusCode === 404 ? "not_found"
+      : res.statusCode === 402 ? "quota_exceeded"
+      : res.statusCode === 403 ? "forbidden" : "invalid_request");
+    return errorResponse(res.statusCode, code, body.error || "Request failed", {
+      ...(body.host ? { host: body.host } : {}),
+      ...(body.upgradeTo ? { upgrade_to: body.upgradeTo } : {}),
+    });
+  }
+  return res;
+}
+
 // ── Router ─────────────────────────────────────────────────────────────────
 
 export async function routeApiV1(event, auth) {
@@ -703,6 +750,17 @@ export async function routeApiV1(event, auth) {
   if (path.length === 3 && path[0] === "schedules" && path[2] === "run") {
     return handleScheduleById(event, auth, path[1], "run");
   }
+  // ── /v1/audits — the Discoverability module ─────────────────────────────
+  // Thin delegation to the same handler the SPA uses, rather than a second
+  // implementation. The audit engine already applies every gate (SSRF,
+  // compliance, quota, rate limit) and a parallel copy here would be one
+  // refactor away from applying a different set — which is how the guest-credit
+  // leak documented in CLAUDE.md happened.
+  if (path[0] === "audits" || path[0] === "recommendations" || path[0] === "targets"
+      || path[0] === "benchmarks") {
+    return handleDiscoverability(event, auth, path);
+  }
+
   // /v1/gallery
   if (path.length === 1 && path[0] === "gallery") {
     return handleGallery(event, auth);

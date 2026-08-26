@@ -353,6 +353,11 @@ export default function TopBar() {
     // composer and from Dashboard's batch-run history.
     { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
     { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
+    // Discoverability is its own entry rather than a tab inside Extract: it
+    // answers a different question ("can this page be found and cited?") about
+    // a page the user usually already owns, whereas Extract answers "what is on
+    // this page?" about one they usually do not.
+    { to: "/discoverability", label: "Discoverability", icon: "scan-search", match: (p) => p === "/discoverability" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Collections moved inside /workspace as a tab (2026-08-11) — the
     // top-level "Collections" nav item is removed. Old /collections URLs
