@@ -48,6 +48,10 @@ export const CAPS = Object.freeze([
   // plan's feature set; the seat cap is enforced at invite time, not here.
   "workspace.extra",
   "workspace.team_seats",
+  // Whether the user may create ANOTHER workspace at all — checked at
+  // create-workspace time, before workspace.team_seats or workspace.extra
+  // ever come into play (a workspace has to exist before it can have seats).
+  "workspace.create",
 ]);
 
 export const STATUS = Object.freeze({
@@ -464,6 +468,27 @@ export function can(ent, capability, ctx = {}) {
             "business",
           );
 
+    // How many workspaces this user may OWN, total. Free/Go/Select/Pro/
+    // Developer all ship `workspaces: 1` (their one default workspace,
+    // created automatically); Agency ships `workspaces: 5`. Each purchased
+    // "Extra Workspace" bundle (ctx.workspacesPurchased) adds one more on
+    // top of the plan's base allotment, on any plan — see the bundle's own
+    // description in pricingConfig.js ("adds a fully-featured client
+    // workspace... capped at your plan's team-seats limit"), which is a
+    // capacity add-on, not a plan requirement.
+    case "workspace.create": {
+      const cap = (L.workspaces || 1) + (ctx.workspacesPurchased || 0);
+      const owned = ctx.workspacesOwned ?? 0;
+      return owned < cap
+        ? ok(cap - owned)
+        : deny(
+            "QUOTA_EXCEEDED",
+            `You've reached your plan's workspace limit (${cap}). Add an Extra Workspace or upgrade to create another.`,
+            0,
+            planId === "agency" ? null : "agency",
+          );
+    }
+
     // Workspace add-on: only meaningful when the user has actually
     // purchased extra workspaces. The cap is consulted when the user
     // tries to INVITE a member into an extra workspace — invite
@@ -489,14 +514,27 @@ export function can(ent, capability, ctx = {}) {
       // Business, that's 3; on Agency it's 5; etc. Extra workspaces
       // never expand this — they inherit it.
       const cap = L.team_seats || 0;
-      return cap > 0
-        ? ok(cap - (ctx.seatsUsed || 0))
-        : deny(
-            "NOT_IN_PLAN",
-            "Your plan does not include team seats. Upgrade to invite members into your workspace.",
-            0,
-            "select",
-          );
+      if (cap <= 0) {
+        return deny(
+          "NOT_IN_PLAN",
+          "Your plan does not include team seats. Upgrade to invite members into your workspace.",
+          0,
+          "select",
+        );
+      }
+      const remaining = cap - (ctx.seatsUsed || 0);
+      // cap>0 alone is not "there is room" — a workspace already at its cap
+      // (seatsUsed === cap, or over it if the cap shrank after a downgrade)
+      // must still be denied, or an invite silently overfills the workspace.
+      if (remaining <= 0) {
+        return deny(
+          "QUOTA_EXCEEDED",
+          `This workspace is at its seat limit (${cap}). Remove a member or upgrade for more seats.`,
+          0,
+          "agency",
+        );
+      }
+      return ok(remaining);
     }
 
     // Not plan-gated today; listed so suspension still blocks them and so the

@@ -372,6 +372,46 @@ describe("workspace.team_seats cap (bounded by the PARENT plan's team_seats)", (
     const r = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 1 }));
     expect(r.remaining).toBe(2);
   });
+
+  it("denies once the workspace is AT its seat cap — cap>0 alone is not room", () => {
+    // Regression: the original implementation returned ok(cap - seatsUsed)
+    // unconditionally whenever cap > 0, so a workspace already full (or over
+    // its cap after a downgrade) was reported as allowed with remaining <= 0.
+    // Nothing called this capability until the workspaces feature landed, so
+    // the bug was latent rather than caught by a live caller.
+    const atCap = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 3 }));
+    expect(atCap.allowed).toBe(false);
+    expect(atCap.code).toBe("QUOTA_EXCEEDED");
+
+    const overCap = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 4 }));
+    expect(overCap.allowed).toBe(false);
+  });
+});
+
+describe("workspace.create cap (how many workspaces this user may OWN)", () => {
+  it("base plans allow exactly 1 (their default workspace)", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 0 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
+
+  it("denies creating a second workspace on a plan capped at 1", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 1 }));
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("QUOTA_EXCEEDED");
+  });
+
+  it("Agency's base allotment is 5", () => {
+    const r = can(activeEntitlement("agency"), "workspace.create", ctx({ workspacesOwned: 4 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
+
+  it("a purchased Extra Workspace bundle raises the cap by 1, on any plan", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 1, workspacesPurchased: 1 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
 });
 
 describe("workspaceAddonFeaturesForPlan — feature parity helper", () => {
