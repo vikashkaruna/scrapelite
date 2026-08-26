@@ -50,7 +50,7 @@ async function scrapeFirecrawl(url, options, apiKey) {
     payload.jsonOptions = { prompt: options.customPrompt };
   }
 
-  const { signal, clear } = abortAfter(TIMEOUT_MS);
+  const { signal, clear } = abortAfter(options.timeoutMs || TIMEOUT_MS);
   try {
     const res = await fetch(`${FIRECRAWL_BASE}/scrape`, {
       method: "POST",
@@ -84,7 +84,7 @@ async function scrapeFirecrawl(url, options, apiKey) {
 }
 
 async function scrapeSpider(url, options, apiKey) {
-  const { signal, clear } = abortAfter(TIMEOUT_MS);
+  const { signal, clear } = abortAfter(options.timeoutMs || TIMEOUT_MS);
   try {
     const res = await fetch(`${SPIDER_BASE}/scrape`, {
       method: "POST",
@@ -126,7 +126,7 @@ async function scrapeJina(url, options, apiKey) {
   // Hint to Jina to wait for JS rendering when requested (best-effort)
   if (options.renderJs) headers["X-Wait-For-Selector"] = "body";
 
-  const { signal, clear } = abortAfter(TIMEOUT_MS);
+  const { signal, clear } = abortAfter(options.timeoutMs || TIMEOUT_MS);
   try {
     const res = await fetch(`${JINA_BASE}/${encodeURIComponent(url)}`, { headers, signal });
     clear();
@@ -150,7 +150,7 @@ async function scrapeJina(url, options, apiKey) {
 }
 
 async function scrapeDirect(url, _options, _apiKey) {
-  const { signal, clear } = abortAfter(TIMEOUT_MS);
+  const { signal, clear } = abortAfter(_options?.timeoutMs || TIMEOUT_MS);
   try {
     const res = await fetchPublicUrl(url, {
       headers: {
@@ -331,9 +331,24 @@ export async function runScrapeChain(url, options = {}) {
   const chain = resolveOrder();
   const attempts = [];
 
+  // The chain is a SERIAL fallback, so its cost is the SUM of the providers it
+  // tries, not the slowest one: four providers at the 20s ceiling is 80s of
+  // wall clock. That is fine for extraction, which is not racing a deadline,
+  // but the discoverability audit is — so a caller may pass `deadlineAt` (an
+  // epoch ms) and the chain stops walking once there is no time left to hear
+  // an answer, instead of burning the rest of the audit's budget on providers
+  // whose replies would arrive after the function has already been killed.
+  const deadlineAt = Number.isFinite(options.deadlineAt) ? options.deadlineAt : null;
+  const outOfTime = () => deadlineAt !== null && Date.now() >= deadlineAt;
+
   for (const providerKey of chain) {
     const p = SCRAPE_PROVIDERS[providerKey];
     const apiKey = keyFor(providerKey);
+
+    if (outOfTime()) {
+      attempts.push({ provider: providerKey, skipped: "deadline" });
+      continue;
+    }
 
     if (p.requiresKey && !apiKey) {
       attempts.push({ provider: providerKey, skipped: "no-key" });
@@ -341,7 +356,11 @@ export async function runScrapeChain(url, options = {}) {
     }
 
     try {
-      const result = await p.scrape(url, options, apiKey);
+      // Never let one provider outlive the whole budget.
+      const perCall = deadlineAt !== null
+        ? { ...options, timeoutMs: Math.max(0, Math.min(options.timeoutMs || TIMEOUT_MS, deadlineAt - Date.now())) }
+        : options;
+      const result = await p.scrape(url, perCall, apiKey);
       if (result.ok && result.html) {
         return { ...result, attempts };
       }

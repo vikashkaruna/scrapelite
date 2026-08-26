@@ -91,9 +91,14 @@ export function estimateSentiment(text, brand) {
   return Math.max(0, Math.min(1, 0.5 + (pos - neg) / (2 * (pos + neg))));
 }
 
-async function askPerplexity(prompt, env, fetchImpl) {
+async function askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs } = {}) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), SAMPLE_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || SAMPLE_TIMEOUT_MS);
+  // The audit's own budget can cut a prompt short before its per-call timeout.
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
   try {
     const res = await fetchImpl(PERPLEXITY_ENDPOINT, {
       method: "POST",
@@ -122,11 +127,15 @@ async function askPerplexity(prompt, env, fetchImpl) {
   }
 }
 
-async function askAiChain(prompt) {
+async function askAiChain(prompt, { signal } = {}) {
+  // The signal matters more here than anywhere else in the pipeline: runChain
+  // walks up to three providers in series and, before it learned to take one,
+  // had no timeout at ANY layer. This is the default engine whenever no
+  // Perplexity key is set, so the common configuration was the unbounded one.
   const r = await runChain([{
     role: "user",
     content: `${prompt}\n\nAnswer in under 150 words. Name specific companies, products or sources where you know of them. If you do not know of any, say so plainly rather than guessing.`,
-  }], 400);
+  }], 400, { signal });
   if (!r.ok) return { ok: false, error: r.error || "AI chain unavailable" };
   return { ok: true, text: r.text, citations: [] };
 }
@@ -141,6 +150,9 @@ async function askAiChain(prompt) {
 export async function sampleCitations({
   brand = "", host = "", topic = "", prompts = null,
   env = process.env, engine = null, fetchImpl = fetch, maxPrompts = MAX_PROMPTS_PER_AUDIT,
+  // The audit's wall-clock budget, if it has one. `signal` cuts every in-flight
+  // prompt short together; `timeoutMs` lowers the per-call ceiling to fit.
+  signal = null, timeoutMs = null,
 } = {}) {
   const chosen = resolveEngine(env, engine);
   if (!chosen) return null;
@@ -149,14 +161,33 @@ export async function sampleCitations({
     .slice(0, maxPrompts);
   if (list.length === 0) return null;
 
+  // ── The prompts run CONCURRENTLY ─────────────────────────────────────────
+  //
+  // They were awaited one at a time in a `for` loop, which made this stage cost
+  // the SUM of its prompts rather than the slowest of them: five default
+  // prompts at a 15s ceiling each is 75 seconds of wall clock, against a
+  // function that is killed at 10. Measured, not inferred — the five requests
+  // went out at t+0.1s, t+15.1s, t+30.1s, t+45.1s and t+60.1s.
+  //
+  // Nothing about the sampling needs an ordering: each prompt is independent,
+  // every result is reduced by counting, and `runs` is rebuilt in list order
+  // below so the stored evidence is unchanged. This alone takes the stage from
+  // 75s to ~15s.
+  const settled = await Promise.all(list.map(async (prompt) => {
+    try {
+      const r = chosen === "perplexity"
+        ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs })
+        : await askAiChain(prompt, { signal });
+      return { prompt, r };
+    } catch (err) {
+      return { prompt, r: { ok: false, error: err?.message || "sampling threw" } };
+    }
+  }));
+
   const runs = [];
   let failures = 0;
 
-  for (const prompt of list) {
-    const r = chosen === "perplexity"
-      ? await askPerplexity(prompt, env, fetchImpl)
-      : await askAiChain(prompt);
-
+  for (const { prompt, r } of settled) {
     if (!r.ok) { failures += 1; runs.push({ prompt, error: r.error, mention: null, citation: null }); continue; }
 
     const mention = mentionsBrand(r.text, brand);

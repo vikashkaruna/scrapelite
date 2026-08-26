@@ -43,6 +43,7 @@ vi.mock("../../functions/lib/audit/auditPipeline.js", () => ({
 // names up front — a Proxy factory returns a module with no declared exports
 // and every call fails with "No <name> export is defined on the mock".
 const STORE_EXPORTS = [
+  "ABANDONED_AUDIT_MS",
   "countAuditsThisMonth", "createAudit", "deleteAudit", "ensureTarget",
   "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
   "listAudits", "listTargets", "markAuditFailed", "monthStart",

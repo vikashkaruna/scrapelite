@@ -49,7 +49,7 @@ export function extractJson(text) {
  *
  * @returns {Promise<null|{passageIndependence, intentAlignment, notes}>}
  */
-export async function evaluatePassage({ answerText = "", heading = "", title = "", h1 = "", baseline = {} } = {}) {
+export async function evaluatePassage({ answerText = "", heading = "", title = "", h1 = "", baseline = {}, signal = null } = {}) {
   if (!answerText || answerText.length < 40) return null;
 
   const prompt = [
@@ -73,7 +73,7 @@ export async function evaluatePassage({ answerText = "", heading = "", title = "
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300);
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed) return null;
@@ -113,7 +113,7 @@ export async function suggestQuestionHeadings({ headings = [], topic = "" } = {}
   ].filter(Boolean).join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 500);
+    const r = await runChain([{ role: "user", content: prompt }], 500, { signal });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed || !Array.isArray(parsed.headings)) return null;
@@ -153,7 +153,7 @@ export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) 
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300);
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal });
     if (!r.ok) return null;
     const text = String(r.text || "").trim();
     // The model reporting insufficiency is a SUCCESS: it means it declined to

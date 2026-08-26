@@ -17,6 +17,15 @@ import { getServiceDb } from "../requireEntitlement.js";
 
 const SELECT_ALL = "select=*";
 
+/**
+ * Past this, a still-`running` audit is abandoned rather than in flight.
+ *
+ * Comfortably above the largest audit budget the platform permits (a Netlify
+ * function is killed at 26s at the very most), so a genuinely concurrent run is
+ * never mistaken for a crashed one and cannot be used to slip past the quota.
+ */
+export const ABANDONED_AUDIT_MS = 5 * 60 * 1000;
+
 function db() {
   return getServiceDb();
 }
@@ -69,9 +78,27 @@ export async function countAuditsThisMonth(userId, now = Date.now()) {
   const conn = db();
   if (!conn) return { count: 0, degraded: true };
   try {
+    // ── Abandoned runs do not count ──────────────────────────────────────
+    //
+    // The audit row is opened BEFORE the work starts, so a run that never
+    // reached `persistResult` or `markAuditFailed` — because the function was
+    // killed mid-flight, which is exactly what the 504 was — stays `running`
+    // for ever. `status != failed` then counts it against the user's month,
+    // permanently, for work that produced nothing.
+    //
+    // That inverts this module's own charging rule ("a failed audit does not
+    // count: we charge for work we did, and our own failures are free"), and
+    // it compounds: each retry of a timing-out audit cost another credit.
+    //
+    // A `running` row older than any audit could possibly take is not in
+    // flight, it is abandoned. Recent ones still count, so genuinely
+    // concurrent runs cannot be used to slip past the quota.
+    const staleCutoff = new Date(now - ABANDONED_AUDIT_MS).toISOString();
     const res = await fetch(
       `${conn.base}/audits?user_id=eq.${encodeURIComponent(userId)}` +
-      `&created_at=gte.${encodeURIComponent(monthStart(now))}&status=neq.failed&select=id`,
+      `&created_at=gte.${encodeURIComponent(monthStart(now))}&status=neq.failed` +
+      `&or=(status.neq.running,created_at.gte.${encodeURIComponent(staleCutoff)})` +
+      `&select=id`,
       { headers: { ...conn.headers, Prefer: "count=exact", Range: "0-0" } },
     );
     if (!res.ok) return { count: 0, degraded: true };
@@ -93,19 +120,43 @@ export async function findByIdempotencyKey(userId, key) {
   return r.ok && Array.isArray(r.data) && r.data[0] ? r.data[0] : null;
 }
 
-/** Get-or-create the target for a URL, via the migration's RPC. */
+/**
+ * Get-or-create the target for a URL, via the migration's RPC.
+ *
+ * Every failure branch logs its real cause before degrading to `null`. Unlike
+ * `rest()` (whose callers get `{error, status}` back), this function talks to
+ * `fetch` directly and used to swallow that detail completely — the caller,
+ * and the user, only ever saw a bare "Audit storage is unavailable", with
+ * nothing in the Netlify function logs to tell "SUPABASE_URL/KEY unset" apart
+ * from "migration 0030 not applied" (the RPC doesn't exist -> 404) apart from
+ * "the service key belongs to a different project than the URL" (401 — the
+ * exact key/ref mismatch class documented for the anon key elsewhere in this
+ * codebase) apart from a transient network blip. That is the same
+ * "guess-deploy-report" trap the `[discoverability] Unknown endpoint` logger
+ * below exists to avoid for routing; this is the same fix for storage.
+ */
 export async function ensureTarget(userId, canonicalUrl, host, label = null) {
   const conn = db();
-  if (!conn) return null;
+  if (!conn) {
+    console.error("[discoverability] ensureTarget: Supabase is not configured — SUPABASE_URL / SUPABASE_SERVICE_KEY missing for this context");
+    return null;
+  }
   try {
     const res = await fetch(`${conn.base}/rpc/upsert_audit_target`, {
       method: "POST",
       headers: conn.headers,
       body: JSON.stringify({ p_user_id: userId, p_url: canonicalUrl, p_host: host, p_label: label }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error(`[discoverability] ensureTarget: upsert_audit_target rejected (HTTP ${res.status})`, {
+        host, status: res.status, detail: detail.slice(0, 500),
+      });
+      return null;
+    }
     return await res.json();
-  } catch {
+  } catch (err) {
+    console.error("[discoverability] ensureTarget: request failed", { host, message: err?.message });
     return null;
   }
 }

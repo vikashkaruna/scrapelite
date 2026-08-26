@@ -119,7 +119,7 @@ export async function fetchRawHtml(url, opts = {}) {
 }
 
 /** Is the canonical target actually reachable? Drives TA-05 and its penalty. */
-export async function checkCanonicalTarget(canonicalUrl, requestedUrl) {
+export async function checkCanonicalTarget(canonicalUrl, requestedUrl, opts = {}) {
   if (!canonicalUrl) return null;
   let absolute;
   try { absolute = new URL(canonicalUrl, requestedUrl).toString(); } catch { return null; }
@@ -130,7 +130,7 @@ export async function checkCanonicalTarget(canonicalUrl, requestedUrl) {
   if (!(await isPublicHttpUrlAsync(absolute))) return null;
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), CANONICAL_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || CANONICAL_TIMEOUT_MS);
   try {
     const res = await fetchPublicUrl(absolute, {
       method: "HEAD", signal: ctrl.signal, redirect: "follow",
@@ -180,10 +180,20 @@ export async function collectPage(url, opts = {}) {
   const env = opts.env || process.env;
   const headless = isHeadlessAvailable(env);
 
+  // The audit's wall-clock budget, when it has one. These three run
+  // concurrently, so this stage costs the slowest of them — but the scrape
+  // chain is itself a serial fallback over four providers, so without a
+  // deadline it alone can reach 80s against a function killed at 10.
+  const deadline = opts.deadline || null;
+  const slice = deadline ? deadline.sliceFor(RAW_FETCH_TIMEOUT_MS) : RAW_FETCH_TIMEOUT_MS;
+  const deadlineAt = deadline ? Date.now() + slice : null;
+  const chainOpts = { ...(headless ? { renderJs: true } : {}) };
+  if (deadlineAt !== null) chainOpts.deadlineAt = deadlineAt;
+
   const [raw, rendered, crawler] = await Promise.all([
-    fetchRawHtml(url, opts),
+    fetchRawHtml(url, { ...opts, timeoutMs: opts.timeoutMs || slice }),
     // renderJs only helps where an upstream provider can actually honour it.
-    runScrapeChain(url, headless ? { renderJs: true } : {}).catch((err) => ({
+    runScrapeChain(url, chainOpts).catch((err) => ({
       ok: false, error: err?.message || "scrape chain threw",
     })),
     checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false })),

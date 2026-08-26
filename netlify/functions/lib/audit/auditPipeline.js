@@ -22,14 +22,15 @@
 // API, the scheduled monitor and the test suite without a Supabase in sight.
 
 import { parsePage, findSchema } from "./htmlParse.js";
-import { collectPage, checkCanonicalTarget } from "./fetchLayer.js";
+import { collectPage, checkCanonicalTarget, CANONICAL_TIMEOUT_MS } from "./fetchLayer.js";
 import { analyseAnswerClarity } from "./answerAnalysis.js";
 import { analyseStructure } from "./structureAnalysis.js";
 import { analyseEntityAuthority } from "./entityAnalysis.js";
 import { analyseTechnical } from "./technicalAnalysis.js";
-import { fetchWebVitals, webVitalsAvailable } from "./webVitals.js";
+import { fetchWebVitals, webVitalsAvailable, PSI_TIMEOUT_MS } from "./webVitals.js";
 import { sampleCitations, resolveEngine } from "./citationSampling.js";
 import { evaluatePassage, aiEvaluationEnabled } from "./aiEvaluator.js";
+import { createDeadline, budgetFromEnv } from "./deadline.js";
 import { scoreAudit } from "../../../../src/lib/discoverability/scoringModel.js";
 import { buildRecommendation, rankRecommendations, estimateTotalLift, estimateUnblockedLift, applyDependencies }
   from "../../../../src/lib/discoverability/recommendationModel.js";
@@ -114,8 +115,16 @@ export async function runAudit(url, options = {}) {
   const stageErrors = [];
   const startedAt = now;
 
+  // ── The wall-clock budget ────────────────────────────────────────────────
+  // Every stage below is bounded by what is LEFT of this, not just by its own
+  // timeout. Without it the per-call timeouts compose additively across the
+  // serial stages and the whole audit reaches ~155s against a function that is
+  // killed at 10-26s — which is what produced `POST /audits failed (504)`.
+  // See deadline.js for the measurements.
+  const deadline = options.deadline || createDeadline(options.budgetMs ?? budgetFromEnv(env));
+
   // ── 1 + 2. fetch and render, concurrently ────────────────────────────────
-  const collected = await collectPage(url, { env });
+  const collected = await collectPage(url, { env, deadline });
   if (!collected.ok) {
     // No HTML at all. This is a completed audit reporting an unreachable page,
     // not a failed job — the technical facts we DID gather (status, robots) are
@@ -153,29 +162,66 @@ export async function runAudit(url, options = {}) {
   try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { /* unparseable */ }
   const brand = org?.name || parsed.meta?.title?.split(/[|\-—]/).pop()?.trim() || host;
 
-  const wantVitals = !options.skipWebVitals && webVitalsAvailable(env);
-  const wantCitations = !options.skipCitations && Boolean(resolveEngine(env, options.citationEngine));
-  const wantAi = !options.skipAi && aiEvaluationEnabled(env);
+  // These four are independent and run concurrently, so this stage costs the
+  // slowest of them. Each is handed the time that is actually LEFT — and a
+  // stage with no room is not started at all.
+  //
+  // Running out of time is just another reason a signal could not be measured,
+  // so a skipped stage becomes `null` exactly like a rate-limited PageSpeed:
+  // its weight redistributes (rule 1.1) and `coverage` reports the thinness.
+  // A thin audit that says it is thin beats a 504 that says nothing.
+  const budgetLeft = deadline.remaining();
+  const vitalsSlice = deadline.sliceFor(PSI_TIMEOUT_MS);
+  const citationBudget = deadline.signalFor(deadline.remaining());
+  const aiBudget = deadline.signalFor(deadline.remaining());
+  const canonicalSlice = deadline.sliceFor(CANONICAL_TIMEOUT_MS);
+
+  const wantVitals = !options.skipWebVitals && webVitalsAvailable(env) && vitalsSlice > 0;
+  const wantCitations = !options.skipCitations
+    && Boolean(resolveEngine(env, options.citationEngine)) && Boolean(citationBudget);
+  const wantAi = !options.skipAi && aiEvaluationEnabled(env) && Boolean(aiBudget);
   const answerText = parsed.passages?.[0]?.text || "";
+
+  // A budget can be allocated and then not used, because the stage was skipped
+  // for a different reason (`skipCitations`, no engine configured). Release the
+  // timer rather than leaving it pending — the `.finally()` handlers below only
+  // run for the stages that actually started.
+  if (!wantCitations) citationBudget?.clear();
+  if (!wantAi) aiBudget?.clear();
+
+  const outOfTime = [];
+  if (!options.skipWebVitals && webVitalsAvailable(env) && !wantVitals) outOfTime.push("core_web_vitals");
+  if (!options.skipCitations && resolveEngine(env, options.citationEngine) && !wantCitations) outOfTime.push("citation_footprint");
+  if (!options.skipAi && aiEvaluationEnabled(env) && !wantAi) outOfTime.push("passage_independence");
+  for (const signal of outOfTime) {
+    stageErrors.push({
+      stage: "audit.score", signal,
+      error: `skipped: ${Math.round(budgetLeft)}ms of the ${deadline.totalMs}ms audit budget remained`,
+    });
+  }
 
   const [vitalsResult, citationResult, aiResult, canonicalStatus] = await Promise.all([
     wantVitals
-      ? fetchWebVitals(url, { env, strategy: deviceProfile }).catch(() => null)
+      ? fetchWebVitals(url, { env, strategy: deviceProfile, timeoutMs: vitalsSlice }).catch(() => null)
       : Promise.resolve(null),
     wantCitations
       ? sampleCitations({
           brand, host, topic: parsed.headingStats?.h1Text || parsed.meta?.title || "",
           prompts: options.prompts, env, engine: options.citationEngine,
-        }).catch(() => null)
+          signal: citationBudget.signal, timeoutMs: citationBudget.ms,
+        }).catch(() => null).finally(() => citationBudget.clear())
       : Promise.resolve(null),
     wantAi
       ? evaluatePassage({
           answerText,
           heading: parsed.passages?.[0]?.heading || "",
           title: parsed.meta?.title || "", h1: parsed.headingStats?.h1Text || "",
-        }).catch(() => null)
+          signal: aiBudget.signal,
+        }).catch(() => null).finally(() => aiBudget.clear())
       : Promise.resolve(null),
-    checkCanonicalTarget(parsed.meta?.canonical, url).catch(() => null),
+    canonicalSlice > 0
+      ? checkCanonicalTarget(parsed.meta?.canonical, url, { timeoutMs: canonicalSlice }).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   // `unavailable` distinguishes "we asked and got nothing" from "we never asked".

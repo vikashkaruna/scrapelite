@@ -171,6 +171,51 @@ blocker outranks it.
 | Persist fails after the run | result returned, `persisted: false` | The work was done and charged for; discarding it is worse. Saying nothing is worse still. |
 | Webhook endpoint down | recorded on the row | Never fails an audit that already ran. |
 | robots.txt unreadable | `TA-16`, crawler access `unknown` | Not a block. "Not checked is never down." |
+| Audit budget exhausted | remaining evidence `null`, `stageErrors` says `skipped: …` | Running out of TIME is just another reason a signal could not be measured. Rule 1.1 applies unchanged. |
+
+---
+
+## 4b. The wall-clock budget — why it exists
+
+`deadline.js`. The pipeline had per-call timeouts but no notion of the
+**platform's** limit, and those timeouts compose **additively** wherever the
+work is serial. Measured against an environment where every third party is
+merely SLOW rather than down:
+
+| Stage | Why it cost that | Measured |
+|---|---|---|
+| `collectPage` | scrape chain is a serial fallback: 4 providers × 20s | **80s** |
+| `sampleCitations` | 5 default prompts `await`ed in a `for` loop × 15s | **75s** |
+| `evaluatePassage` | `runChain` had no timeout at **any** layer | unbounded |
+
+A Netlify synchronous function is killed at **10s** (26s is the paid ceiling),
+so the audit could not finish. The client saw `POST /audits failed (504)` and —
+because the audit row is opened *before* the run and quota counts every row that
+is not `failed` — **the user was charged for it, and again on every retry**.
+
+Three changes, in order of how much they bought:
+
+1. **Citation prompts run concurrently.** They are independent and reduced by
+   counting, so nothing needed the ordering. 75s → ~15s. `runs` is still
+   rebuilt in prompt order, so stored evidence is byte-identical.
+2. **A budget threaded through every optional stage.** Each is handed the time
+   that is actually left; one with no room is not started, and is recorded as
+   unmeasured. The scrape chain stops walking providers once the budget is gone.
+3. **`runChain` accepts an `AbortSignal`.** Optional, so `/api/ai` and
+   `extract.js` are unchanged — but a caller on a deadline must pass one, or a
+   single slow provider holds the whole chain open indefinitely.
+
+⚠️ **A healthy page never touches any of this** — it audits in well under a
+second, and the deadline only engages when something upstream is slow. If audits
+start reporting `skipped:` stage errors, the budget is too tight for the
+environment, not the other way round: raise the function timeout and
+`AUDIT_BUDGET_MS` together.
+
+⚠️ **`ABANDONED_AUDIT_MS` in `auditStore.js` is the other half of the charging
+fix.** A `running` row older than 5 minutes cannot be in flight — no audit can
+outlive a 26s function — so it is a crashed run and is excluded from the monthly
+count. Recent `running` rows still count, so concurrent audits cannot be used to
+slip past the quota.
 
 ---
 
@@ -182,6 +227,7 @@ All optional; every one degrades to a smaller audit rather than a failure.
 
 | Variable | Effect if unset |
 |---|---|
+| `AUDIT_BUDGET_MS` | Total wall clock one audit may occupy. Defaults to **8000**, sized for Netlify's **stock 10s** function timeout. Raise the function's timeout to 26s (Site configuration → Functions) and set this to `20000` for fuller evidence. See §4b. |
 | `PAGESPEED_API_KEY` | PSI still works keyless at low volume; on exhaustion CWV reads `not measured` |
 | `DISABLE_PAGESPEED=1` | CWV never attempted |
 | `PERPLEXITY_API_KEY` | Citation sampling falls back to the AI chain, flagged `live: false` in the UI |

@@ -46,8 +46,9 @@ function keyFor(provider) {
 
 // ── Adapters ─────────────────────────────────────────────────────────────────────
 
-async function callAnthropic(messages, model, maxTokens, apiKey) {
+async function callAnthropic(messages, model, maxTokens, apiKey, { signal } = {}) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
+    signal,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -63,8 +64,9 @@ async function callAnthropic(messages, model, maxTokens, apiKey) {
 }
 
 // OpenAI chat-completions. (OpenRouter — if re-added later — is wire-compatible.)
-async function callOpenAI(messages, model, maxTokens, apiKey) {
+async function callOpenAI(messages, model, maxTokens, apiKey, { signal } = {}) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
@@ -76,7 +78,7 @@ async function callOpenAI(messages, model, maxTokens, apiKey) {
 }
 
 // Google Gemini generateContent. Anthropic-style messages → Gemini `contents`.
-async function callGemini(messages, model, maxTokens, apiKey) {
+async function callGemini(messages, model, maxTokens, apiKey, { signal } = {}) {
   const contents = [];
   let systemText = "";
   for (const m of messages) {
@@ -91,7 +93,7 @@ async function callGemini(messages, model, maxTokens, apiKey) {
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    { signal, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
   );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, status: res.status, error: data?.error?.message || `HTTP ${res.status}` };
@@ -184,7 +186,17 @@ export const SUPABASE_CONFIGURED = () =>
  * Run the fallback chain. Returns the first successful provider's normalized text.
  * @returns {Promise<{ ok, provider?, model?, text?, attempts, error? }>}
  */
-export async function runChain(messages, clientMaxTokens) {
+/**
+ * @param {Array}  messages
+ * @param {number} [clientMaxTokens]
+ * @param {{signal?: AbortSignal}} [opts]
+ *   `signal` bounds the WHOLE chain, not one provider. Optional and unset by
+ *   default, so /api/ai and extract.js are unchanged — but the chain walks up
+ *   to three providers in series with no timeout of its own at any layer, so
+ *   any caller working to a deadline (the discoverability audit) must pass one
+ *   or it can be held open indefinitely by a single slow provider.
+ */
+export async function runChain(messages, clientMaxTokens, opts = {}) {
   const cfg = await loadAiConfig();
   const requested = Number(clientMaxTokens);
   const maxTokens = Number.isFinite(requested) && requested > 0
@@ -194,12 +206,16 @@ export async function runChain(messages, clientMaxTokens) {
 
   for (const provider of cfg.order) {
     if (cfg.enabled[provider] === false) continue;
+    // Once the caller's deadline has fired, the remaining providers cannot
+    // answer in time either. Trying them anyway spends the budget of whatever
+    // runs after this chain, for a result that will be discarded.
+    if (opts.signal?.aborted) { attempts.push({ provider, skipped: "deadline" }); continue; }
     const apiKey = keyFor(provider);
     if (!apiKey) { attempts.push({ provider, skipped: "no-key" }); continue; }
 
     const model = cfg.models[provider] || DEFAULT_MODELS[provider];
     try {
-      const r = await ADAPTERS[provider](messages, model, maxTokens, apiKey);
+      const r = await ADAPTERS[provider](messages, model, maxTokens, apiKey, { signal: opts.signal });
       if (r.ok && r.text) return { ok: true, provider, model, text: r.text, attempts };
       attempts.push({ provider, status: r.status, error: r.error || "empty response" });
     } catch (err) {
