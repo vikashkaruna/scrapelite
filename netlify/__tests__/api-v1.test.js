@@ -241,6 +241,24 @@ describe("api-v1 router", () => {
       }));
       expect(r.statusCode).not.toBe(404);
     });
+
+    // Regression: the first fix assumed event.path always carries the
+    // destination form (/.netlify/functions/api-v1/...). Deployed to
+    // staging, discoverability.js's identical assumption still 404'd
+    // "Unknown endpoint" — event.path's real shape for this rewrite may be
+    // the ORIGINAL request path instead. Unlike discoverability.js, the
+    // function name (api-v1, hyphen) and the route (/api/v1/, slash) are
+    // different literal strings, so this needs its OWN marker for the
+    // original-request-path shape, not just the destination one.
+    it("resolves from event.path when it's the ORIGINAL request path (/api/v1/...), not the function's destination path", async () => {
+      const r = await handler(baseEvent({
+        queryStringParameters: {},
+        path: "/api/v1/_health",
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+    });
   });
 
   describe("auth", () => {
