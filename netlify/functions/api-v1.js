@@ -59,22 +59,30 @@ export function parsePath(splat) {
     .filter(Boolean);
 }
 
-const FN_NAME = "/.netlify/functions/api-v1";
-
 /**
  * Resolve the sub-path from event.queryStringParameters.splat, falling back
- * to the event.path tail when the query param is empty. See the matching
- * helper in discoverability.js for the full story: the query-string form of
+ * to event.path when the query param is empty. See the matching helper in
+ * discoverability.js for the full story: the query-string form of
  * Netlify's `:splat` substitution was already found to be unreliable on an
  * explicit-prefix wildcard rule — the same shape this route uses — so
- * netlify.toml now forwards the splat as a path segment instead, and this is
- * the fallback that actually resolves it for a real HTTP request.
+ * netlify.toml now forwards the splat as a path segment instead.
+ *
+ * Two markers, not one: the function is named `api-v1` (hyphen), but the
+ * public route is `/api/v1/*` (slash) — a DIFFERENT string — so unlike
+ * discoverability.js (where the function name and the route segment are
+ * the identical literal "discoverability"), this can't rely on a single
+ * marker matching both the destination-path and original-request-path
+ * shapes event.path might actually be. Try both explicitly.
  */
 function resolveSplat(event) {
   const fromQuery = event.queryStringParameters?.splat || "";
   if (fromQuery) return fromQuery;
   const p = event.path || "";
-  return p.startsWith(FN_NAME) ? p.slice(FN_NAME.length).replace(/^\/+/, "") : "";
+  for (const marker of ["/api-v1/", "/api/v1/"]) {
+    const idx = p.lastIndexOf(marker);
+    if (idx !== -1) return p.slice(idx + marker.length);
+  }
+  return "";
 }
 
 function badRequest(message, extra = {}) {
@@ -783,6 +791,14 @@ export async function routeApiV1(event, auth) {
     return handleGallery(event, auth);
   }
 
+  // Diagnostic only — never triggered on a successful route match. See
+  // discoverability.js's matching log for why: resolveSplat's marker search
+  // already had to learn a second event.path shape once; this is what tells
+  // us directly if a third one is ever needed.
+  console.error("[api-v1] No such endpoint — routing could not resolve a sub-path", {
+    method, rawPath: event.path, rawQuerySplat: event.queryStringParameters?.splat,
+    resolvedSplat: resolveSplat(event), parsedPath: path,
+  });
   return errorResponse(404, "not_found", `No such endpoint: /${path.join("/")} (${method})`);
 }
 

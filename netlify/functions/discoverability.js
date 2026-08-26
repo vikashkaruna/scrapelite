@@ -102,8 +102,6 @@ export function parsePath(splat) {
   return String(splat).split("/").map((s) => decodeURIComponent(s)).filter(Boolean);
 }
 
-const FN_NAME = "/.netlify/functions/discoverability";
-
 /**
  * Resolve the sub-path from TWO sources, in priority order:
  *
@@ -111,22 +109,36 @@ const FN_NAME = "/.netlify/functions/discoverability";
  *      `:splat` substituted into a query string, or (for /api/v1/audits/*)
  *      api-v1.js's in-process delegation, which sets this explicitly and
  *      never goes through Netlify's redirect engine at all.
- *   2. event.path tail — the real HTTP request path. This is what actually
- *      carries the sub-path now: netlify.toml forwards it as a PATH SEGMENT
- *      (`/.netlify/functions/discoverability/:splat`), not a query param,
- *      because the query-string form of `:splat` was already found to be
- *      unreliable on an explicit-prefix wildcard rule — the exact failure
- *      that once 404'd every integrations provider with "Unknown endpoint"
- *      equivalents (see netlify.toml's comment on those redirects, and
- *      commit 87f5597). Source 1 is tried first only because api-v1.js's
- *      delegation needs it; a real HTTP request never populates it and
- *      always resolves through source 2.
+ *   2. event.path — the real HTTP request path. netlify.toml forwards the
+ *      sub-path as a PATH SEGMENT (`/.netlify/functions/discoverability/:splat`),
+ *      not a query param, because the query-string form of `:splat` was
+ *      already found to be unreliable on an explicit-prefix wildcard rule —
+ *      the exact failure that once 404'd every integrations provider with
+ *      "Unknown endpoint" equivalents (see netlify.toml's comment on those
+ *      redirects, and commit 87f5597).
+ *
+ *      ⚠️ event.path's PREFIX is not something to hardcode a single exact
+ *      match against. An assumed `/.netlify/functions/discoverability`
+ *      prefix (matching the integrations fix's own pattern) was deployed
+ *      and STILL 404'd "Unknown endpoint" on staging — Netlify's actual
+ *      value for a 200 rewrite is not reliably one fixed shape across
+ *      redirect configurations, and this codebase has no live-staging
+ *      trace to pin it down further than "some prefix, then a
+ *      'discoverability' segment, then the real sub-path". So: find the
+ *      LAST '/discoverability/' segment marker in the path, wherever it
+ *      falls, and take everything after it. This resolves correctly
+ *      whether event.path is the destination form
+ *      (/.netlify/functions/discoverability/audits), the original request
+ *      form (/api/discoverability/audits), or anything else that still
+ *      contains that literal segment immediately before the real sub-path.
  */
 function resolveSplat(event) {
   const fromQuery = event.queryStringParameters?.splat || "";
   if (fromQuery) return fromQuery;
   const p = event.path || "";
-  return p.startsWith(FN_NAME) ? p.slice(FN_NAME.length).replace(/^\/+/, "") : "";
+  const marker = "/discoverability/";
+  const idx = p.lastIndexOf(marker);
+  return idx === -1 ? "" : p.slice(idx + marker.length);
 }
 
 function readBody(event) {
@@ -424,6 +436,15 @@ export const handler = async (event) => {
     // ── /profiles — static reference data for the UI ────────────────────────
     if (root === "profiles" && method === "GET") return json(200, { profiles: AUDIT_PROFILES });
 
+    // Diagnostic only — never triggered on a successful route match, so this
+    // costs nothing when routing works. If resolveSplat's marker search ever
+    // needs a third `event.path` shape, this is what tells us which one
+    // instead of another guess-deploy-report cycle (see resolveSplat's own
+    // comment for the first two shapes it already had to learn to handle).
+    console.error("[discoverability] Unknown endpoint — routing could not resolve a sub-path", {
+      method, rawPath: event.path, rawQuerySplat: event.queryStringParameters?.splat,
+      resolvedSplat: resolveSplat(event), parsedPath: path,
+    });
     return notFound("Unknown endpoint.");
   } catch (err) {
     return json(500, { error: "Unexpected server error.", detail: err?.message });

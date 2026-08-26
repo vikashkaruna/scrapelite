@@ -168,6 +168,27 @@ describe("routing", () => {
     expect(parse(res)).toEqual({ audits: [] });
   });
 
+  // Regression: the FIRST fix for this bug assumed event.path always carries
+  // the destination form (/.netlify/functions/discoverability/...), matching
+  // the integrations fix's own pattern. Deployed to staging, it STILL 404'd
+  // "Unknown endpoint" — event.path's actual shape for this rewrite is not
+  // reliably one fixed thing, and was quite possibly the ORIGINAL request
+  // path instead (/api/discoverability/...). resolveSplat now anchors on
+  // the "/discoverability/" segment wherever it falls, not a hardcoded
+  // prefix, so it must resolve correctly under BOTH shapes.
+  it("resolves the route when event.path is the ORIGINAL request path, not the function's destination path", async () => {
+    storeMock.listAudits = vi.fn(async () => []);
+    const res = await handler({
+      httpMethod: "GET",
+      queryStringParameters: {},
+      path: "/api/discoverability/audits",
+      headers: { authorization: "Bearer token" },
+      body: null,
+    });
+    expect(res.statusCode).not.toBe(404);
+    expect(parse(res)).toEqual({ audits: [] });
+  });
+
   it("still resolves via the query param when present (api-v1.js's in-process delegation)", async () => {
     storeMock.listAudits = vi.fn(async () => []);
     const res = await handler({
