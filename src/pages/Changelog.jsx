@@ -15,7 +15,7 @@ import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 const VERSION = "V1.0";
 const SHIPPED = "2026-07";
-const UPDATED = "2026-08-26";
+const UPDATED = "2026-08-27";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
@@ -57,6 +57,18 @@ const FEATURE_GROUPS = [
     ],
   },
   {
+    id: "account-control",
+    icon: "shield",
+    title: "Account control",
+    items: [
+      "Freeze your account — stops everything that consumes your allowance for you and every team member, while reading and exporting keep working",
+      "Freezing does not pause billing, and the screen says so before you do it",
+      "Pause a single team member instead of the whole account; a paused member keeps their seat and their read access",
+      "Delete your account, scheduled 30 days out and cancellable at any point in that window — nothing disappears the moment you click",
+      "Plan & usage now shows your discoverability allowance separately, and which role consumed what",
+    ],
+  },
+  {
     id: "discoverability",
     icon: "scan-search",
     title: "Discoverability — SEO, AEO & GEO",
@@ -71,7 +83,11 @@ const FEATURE_GROUPS = [
       "Re-audit and compare — resolved, remaining, and anything new a fix introduced",
       "Trend chart across every audit of a page, drawing gaps where a score could not be measured",
       "Scheduled monitoring (Pro+) that emails only on material movement, and competitive benchmarks (Select+)",
-      "Markdown, CSV and JSON report exports, plus a signed webhook on completion",
+      "Every report opens with the page it audited and a written summary of what the scores mean",
+      "Pillars expand independently, so two can be compared side by side",
+      "Markdown, PDF, CSV and JSON exports — each carrying the whole report: summary, pillars, every signal, penalties, evidence and the comparison against your last audit",
+      "Create a monitor from the Schedules screen or from Workspace, and see your audits and monitors on the Workspace Discoverability tab",
+      "Signed webhook on completion",
     ],
   },
   {

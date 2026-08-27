@@ -107,6 +107,10 @@ no separate "Batch" screen to go to first; paste what you have and DatIQ works o
 - **＋** — the options menu: **Import CSV** (upload a list of URLs), **Add multiple URLs** (switch the box to
   a multi-line list), and **Run in background** (see below). A dot on the ＋ means background mode is on.
 - **Batch** — force batch mode for multiple URLs.
+- **Discover** — shown when the box holds exactly one URL. Takes that page to the **Discoverability** screen
+  with the URL already filled in, so you can score it for search, answer engines and generative engines
+  without retyping it. It does not start the audit — you pick the profile, device and page type and press the
+  button yourself, so an audit is never spent on settings you did not choose.
 - **Schedule** — arm a recurring cadence (e.g. *Daily*) so the extraction repeats automatically. Choose **Custom schedule…** to open the full scheduling screen.
 - **Extract** — the action button. Its icon reflects the mode: a single page, a batch (layers), or a scheduled run (calendar).
 
@@ -242,6 +246,22 @@ for watching a competitor's pricing, a careers page, or any page that matters.
 
 ![DatIQ schedules screen](assets/screenshots/05-schedules.png)
 
+**Two kinds of scheduled job live here.** When you create one, pick **What to run**:
+
+| | What it watches | How often | What triggers an alert |
+|---|---|---|---|
+| **Extraction** | The page's content | Hourly to monthly, or a custom cadence | The content changed since the last check |
+| **Discoverability** | The page's four scores | Daily, weekly or monthly | The overall score moved by more than your threshold — **or a new critical issue appeared, whatever the threshold is set to** |
+
+A discoverability monitor asks you for the **audit profile** (which of the four views leads the report), the
+**device** to audit as, and an **alert threshold in points**. All four scores are always calculated whichever
+profile you choose — the profile only picks which one leads, so your scores never depend on the setting you
+happened to pick.
+
+> **Schedules are no longer in the top navigation.** You reach this screen from the composer's **Schedule**
+> menu, from **Workspace**, from your Dashboard's run history, or from **Schedules & monitors** in your
+> account menu. Nothing was removed — the page and every link to it still work.
+
 > **Scheduling needs an account.** Recurring runs happen on DatIQ's servers, not in your browser — so a
 > schedule has to be saved to your account before anything can run it. If you create one while signed out,
 > DatIQ **holds onto it and prompts you to sign in**, then saves it for you automatically the moment you do.
@@ -372,6 +392,8 @@ question about a page you usually already own: **"can this page be found, and
 can an AI assistant quote it?"**
 
 Open **Discoverability** in the top nav, paste a URL, and press **Run audit**.
+You can also paste a URL into the Home composer and press **Discover**, which
+carries it straight here.
 
 ![The DatIQ Discoverability screen](assets/screenshots/11-discoverability.png)
 
@@ -463,6 +485,42 @@ is a run where that score could not be measured — it is drawn as a gap rather
 than a straight line, because joining two points through a reading that never
 happened would show a trend you did not have.
 
+### Reading a report
+
+Every report opens with the **page it is about** — the full URL, when the audit
+ran, and the profile, device and page type it ran under — followed by a short
+**written summary** of what the numbers mean. The summary names the findings that
+matter rather than restating the scores, so somebody who reads only the first
+paragraph still knows what was concluded.
+
+It is written once, the first time the report is opened, and then kept with the
+audit — so it travels into every export and does not change between readings.
+Occasionally it is unavailable; the report says so, and the findings below it are
+unaffected.
+
+Below the summary, each of the four pillars can be **expanded independently** to
+show the signals underneath it and what each one scored. Opening a second pillar
+does not close the first, so two can be compared side by side.
+
+### Exporting a report
+
+Four formats, from the buttons at the top of the report. All four contain the
+**whole** report — the summary, the four framework scores with their coverage,
+every pillar and every signal, the blocking penalties, the full issue and fix
+lists, the evidence (technical facts, which answer-engine crawlers are allowed,
+the heading outline, the citation sample) and the comparison against your last
+audit if there is one.
+
+| Format | Best for |
+|---|---|
+| **Report** (Markdown) | Pasting into a ticket, a doc or a pull request |
+| **PDF** | Sending to a client or attaching to a report |
+| **CSV** | Spreadsheet work — one file with the scores, signals, issues and fixes stacked as sections |
+| **JSON** | Feeding another tool |
+
+The PDF also carries the **copy-ready assets** — the schema blocks and answer
+blocks the fix list generates — so it is usable on its own.
+
 ### Watching a page
 
 On Pro and above you can put a page on a schedule — daily, weekly or monthly.
@@ -471,6 +529,11 @@ moves: the overall score past a threshold you set, or a new critical issue.
 
 A monitor that emails every week regardless is a monitor nobody reads by week
 four, so it stays quiet when nothing has happened.
+
+Create one from **Schedules** (choose **Discoverability** under *What to run*),
+or from **Workspace → Schedule discoverability**. Your monitors are listed on the
+Schedules screen alongside your extraction schedules, and on the
+**Discoverability** tab of your Workspace.
 
 ### Comparing against competitors
 
@@ -560,6 +623,39 @@ disappearing:
 You are emailed at each stage, and again before anything is removed, so a lapse is never silent.
 Scheduled monitoring **pauses** while a plan is lapsed and **resumes automatically** when you renew —
 schedules you paused yourself stay paused. Renewing at any stage puts everything back.
+
+### What you have used
+
+Alongside your plan, the Account screen shows:
+
+- **Discoverability** — audits used and remaining this month (audits have their **own** monthly allowance
+  and do not come out of your extraction credits), how many distinct pages you have audited, how many
+  monitors are running, and your average score across them.
+- **Usage by role** — which persona was in use when each unit was spent, so on a team plan you can see
+  which role is consuming the allowance. This started being recorded recently, so a month from before then
+  says so rather than showing zeros.
+
+### Freezing your account
+
+**Freeze** stops everything that consumes your allowance — extractions, enrichments and discoverability
+audits — for you and every team member. Reading and exporting keep working, so nothing becomes unreachable,
+and you can unfreeze at any time.
+
+> **Freezing does not pause billing.** Your subscription continues to be charged for the period you are on.
+> Freezing is a way to stop *usage*, not a way to stop *paying*. To stop paying, change or cancel your plan.
+
+You can also **pause a single team member** from **Workspace → Team** instead of freezing the whole account.
+A paused member keeps read and export access and keeps their seat — pausing is not a way to free up a seat.
+The workspace owner cannot be paused by anybody, including themselves.
+
+### Deleting your account
+
+**Delete account** removes your account and everything in it — extractions, audits, schedules, workspaces
+and team members. You confirm by typing `DELETE`.
+
+Deletion is **scheduled 30 days out, not immediate**. During those 30 days your account is frozen, nothing
+is charged for usage, you can still read and export your data, and **you can cancel at any point** and go
+straight back to normal. Invoices are retained after deletion, because we are required to keep them.
 
 ---
 
