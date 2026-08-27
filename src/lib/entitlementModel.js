@@ -263,6 +263,42 @@ export function can(ent, capability, ctx = {}) {
     );
   }
 
+  // ── 1b. Account freeze / member pause ─────────────────────────────────────
+  //
+  // A SEPARATE AXIS from `status`, deliberately. `status = 'suspended'` is the
+  // BILLING lifecycle — it starts dunning and a day-90 purge countdown, and it
+  // means "this account has lapsed". A freeze means the opposite: "keep
+  // charging me, keep my data, just stop anyone consuming units". Modelling one
+  // as the other would enrol a paying customer in a dunning sequence and start
+  // a deletion clock on data they explicitly asked to keep.
+  //
+  // Same shape as scheduled_tasks.system_paused vs .status: one column records
+  // the USER's intent, another the PLATFORM's, and neither is mistakable for
+  // the other.
+  //
+  // Sits AFTER the lifecycle gate because a purged account is past caring about
+  // a freeze, and BEFORE the plan lookup because a frozen account's plan is
+  // irrelevant to the answer.
+  //
+  // It reuses the EXPORT_CAPS carve-out above rather than inventing a second
+  // one: read and export stay available, which is exactly the "view-only until
+  // unfrozen" behaviour the feature promises. `ctx.memberPaused` carries the
+  // per-seat version of the same rule for a workspace member.
+  const frozen = Boolean(ent?.frozen_at);
+  const paused = Boolean(ctx.memberPaused);
+  if (frozen || paused) {
+    if (EXPORT_CAPS.has(capability)) return ok();
+    const deleting = Boolean(ent?.deletion_requested_at);
+    return deny(
+      paused ? "MEMBER_PAUSED" : deleting ? "DELETION_PENDING" : "FROZEN",
+      paused
+        ? "Your seat in this workspace is paused. You can still read and export; ask an owner or admin to resume it."
+        : deleting
+          ? "This account is scheduled for deletion. You can still read and export your data. Cancel the deletion in Account to start working again."
+          : "This account is frozen. You can still read and export your data — unfreeze it in Account to run extractions, enrichments and audits again.",
+    );
+  }
+
   // ── 2. Plan lookup — STRICT. No silent fallback to Free. ───────────────────
   const planId = ent?.plan_id || "free";
   const plan = ctx.planMap?.[planId];
