@@ -22,6 +22,7 @@ import {
   createWorkspace,
   inviteToWorkspace,
   removeWorkspaceMember,
+  setWorkspaceMemberPaused,
   revokeWorkspaceInvite,
 } from "../../lib/workspacesService.js";
 import { timeAgo } from "../../lib/utils.js";
@@ -144,6 +145,26 @@ export default function TeamTab() {
     }
   };
 
+  /**
+   * Pause or resume one member's seat.
+   *
+   * NOT a removal, and the confirmation copy has to say so — "pause" next to
+   * "remove" in a member list reads as a milder removal unless it is spelled
+   * out. A paused member keeps read and export access, keeps their seat, and
+   * keeps everything attributed to them.
+   */
+  const handlePause = async (targetUserId, label, paused) => {
+    if (paused && !window.confirm(
+      `Pause ${label}?\n\n` +
+      "They will not be able to run extractions, enrichments or discoverability " +
+      "audits. They keep read and export access, and their seat is still theirs.",
+    )) return;
+    const r = await setWorkspaceMemberPaused(selectedId, targetUserId, paused);
+    if (!r.ok) { showToast(r.error || "Couldn't do that.", "alert-circle"); return; }
+    showToast(paused ? `${label} paused.` : `${label} resumed.`, "check");
+    await loadDetail(selectedId);
+  };
+
   const handleRevoke = async (inviteId, email) => {
     const r = await revokeWorkspaceInvite(selectedId, inviteId);
     if (!r.ok) { showToast(r.error || "Couldn't revoke that invite.", "alert-circle"); return; }
@@ -250,6 +271,27 @@ export default function TeamTab() {
                         {m.userId === user?.id && <span className="ws-team-you"> (you)</span>}
                       </span>
                       <RoleBadge role={m.role} />
+                      {/* A paused seat is stated, not implied by a greyed-out
+                          row: the member is still here and still counted, and
+                          somebody looking at the list needs to know why their
+                          colleague's extractions are failing. */}
+                      {m.pausedAt && <span className="ws-team-paused-badge">Paused</span>}
+                      {/* Pause is available to owners/admins for anyone who is
+                          not the owner, and to a member for themselves. The
+                          OWNER can never be paused, by anybody including
+                          themselves — an owner locked out of their own
+                          workspace has no way back in. Enforced in SQL too. */}
+                      {m.role !== "owner" &&
+                       ((canManage && !(detail.myRole === "admin" && m.role === "admin" && m.userId !== user?.id))
+                        || m.userId === user?.id) ? (
+                        <button
+                          type="button"
+                          className="ws-team-pause-btn"
+                          onClick={() => handlePause(m.userId, m.email || "this member", !m.pausedAt)}
+                        >
+                          {m.pausedAt ? "Resume" : "Pause"}
+                        </button>
+                      ) : null}
                       {(canManage && m.role !== "owner" && !(detail.myRole === "admin" && m.role === "admin")) ||
                       m.userId === user?.id ? (
                         <button

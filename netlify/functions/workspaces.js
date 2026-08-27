@@ -29,6 +29,7 @@ import {
   inviteToWorkspace,
   acceptWorkspaceInvite,
   removeWorkspaceMember,
+  setWorkspaceMemberPaused,
   listWorkspaceMembers,
   listPendingInvites,
   revokeInvite,
@@ -53,6 +54,11 @@ const REASON_COPY = {
   email_mismatch: "That invite was sent to a different email address than your account's.",
   owner_cannot_leave: "The workspace owner can't leave. Transfer ownership or delete the workspace instead.",
   cannot_remove_owner: "The workspace owner can't be removed.",
+  // An owner who could be paused could pause themselves and then be unable to
+  // unpause themselves — the workspace would need support to recover. Same
+  // reasoning as owner_cannot_leave above.
+  cannot_pause_owner: "The workspace owner can't be paused.",
+  not_found: "That person isn't a member of this workspace.",
   unavailable: "Workspaces are temporarily unavailable. Please try again shortly.",
 };
 
@@ -160,6 +166,24 @@ export const handler = async (event) => {
       const result = await removeWorkspaceMember(workspaceId, userId, targetUserId);
       if (!result.ok) return refusal(result.reason, result.reason === "unavailable" ? 503 : 409);
       return respond(200, { ok: true });
+    }
+
+    if (action === "set_member_paused") {
+      // Pausing a seat stops everything that consumes account units for that
+      // person while leaving read and export intact — the workspace-scoped
+      // sibling of an account freeze. It is NOT a removal: the seat is still
+      // theirs and still counts against team_seats.
+      //
+      // Every rule is enforced in SQL (0032), not here, so a second caller
+      // cannot get a different answer: the owner is unpausable by anybody
+      // including themselves, and an admin cannot pause a peer.
+      const { workspaceId, targetUserId, paused } = body;
+      if (!workspaceId || !targetUserId) {
+        return respond(400, { error: "workspaceId and targetUserId are required" });
+      }
+      const result = await setWorkspaceMemberPaused(workspaceId, userId, targetUserId, paused);
+      if (!result.ok) return refusal(result.reason, result.reason === "unavailable" ? 503 : 409);
+      return respond(200, { ok: true, paused: Boolean(paused) });
     }
 
     if (action === "revoke_invite") {

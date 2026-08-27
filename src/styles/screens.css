@@ -9438,3 +9438,65 @@ html.dark .dsc-page {
   .dsc-history-meta { width: 100%; padding-left: 52px; }
   .dsc-history-search { width: 100%; }
 }
+
+
+/* ── Danger zone (Account) ───────────────────────────────────────────────────
+   Visually separated from everything above it. The border and the heading do
+   the work: this is not a card you skim past on the way to something else. */
+.danger-zone {
+  margin-top: 28px;
+  border-color: color-mix(in srgb, var(--danger, #dc2626) 34%, var(--border));
+}
+.danger-zone-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 4px; font-size: 15px; font-weight: 700;
+  color: var(--danger, #dc2626);
+}
+.danger-row {
+  display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap;
+  padding: 16px 0; border-top: 1px solid var(--border);
+}
+.danger-row:first-of-type { border-top: none; }
+.danger-row-body { flex: 1 1 320px; min-width: 0; }
+.danger-row-head { font-weight: 650; font-size: 14px; margin-bottom: 4px; }
+.danger-row-desc {
+  margin: 0 0 6px; font-size: 12.8px; line-height: 1.6; color: var(--text-2);
+}
+.danger-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* An active state — frozen, or a deletion pending — is tinted so the panel
+   reads as a status rather than as a set of controls. */
+.danger-row-active {
+  background: color-mix(in srgb, var(--warn, #d97706) 8%, transparent);
+  border-radius: var(--r-md); padding: 16px; margin-top: 8px;
+}
+.danger-row-destructive .danger-row-head { color: var(--danger, #dc2626); }
+
+.danger-confirm { margin-top: 10px; }
+.danger-confirm-label { display: block; font-size: 12.4px; color: var(--text-2); margin-bottom: 5px; }
+.danger-confirm-input {
+  width: 100%; max-width: 260px; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+  letter-spacing: .06em;
+}
+.danger-confirm-input:focus { outline: 2px solid var(--danger, #dc2626); outline-offset: 1px; }
+
+
+/* ── Paused workspace seat ───────────────────────────────────────────────────
+   Stated, not implied by a greyed-out row. Somebody looking at the member list
+   needs to know why their colleague's extractions are failing, and a paused
+   member is still present and still counted — pausing is not a removal. */
+.ws-team-paused-badge {
+  font-size: .68em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--warn, #d97706) 16%, transparent);
+  color: var(--warn, #b45309);
+  white-space: nowrap;
+}
+.ws-team-pause-btn {
+  background: none; border: none; padding: 4px 6px; cursor: pointer;
+  font-size: .82em; font-weight: 600; color: var(--text-3);
+  border-radius: var(--r-sm);
+}
+.ws-team-pause-btn:hover { color: var(--warn, #b45309); background: var(--surface-2); }

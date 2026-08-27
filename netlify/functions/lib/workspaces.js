@@ -241,6 +241,42 @@ export async function removeWorkspaceMember(workspaceId, actorId, targetUserId, 
 }
 
 /**
+ * Pause or resume one member's seat.
+ *
+ * The workspace-scoped sibling of an account freeze: a paused member keeps read
+ * and export access and loses everything that consumes account units. It is NOT
+ * a removal — the seat is still theirs, still counted against team_seats, and
+ * the history attributed to them is untouched.
+ *
+ * Every rule lives in the SQL function (0032), not here: the owner can never be
+ * paused by anybody including themselves, and an admin cannot pause a peer.
+ * This wrapper reports what the database decided, the same split as
+ * removeWorkspaceMember above.
+ */
+export async function setWorkspaceMemberPaused(
+  workspaceId, actorId, targetUserId, paused, env = process.env,
+) {
+  if (!workspaceId || !actorId || !targetUserId) {
+    return { ok: false, reason: "invalid", degraded: false };
+  }
+  const db = serviceDb(env);
+  if (!db) return { ok: false, reason: "unavailable", degraded: true };
+  try {
+    const verdict = await rpc(db, "set_workspace_member_paused", {
+      p_workspace_id: workspaceId,
+      p_actor: actorId,
+      p_target_user: targetUserId,
+      p_paused: Boolean(paused),
+    });
+    if (verdict === "ok") return { ok: true, degraded: false };
+    return { ok: false, reason: verdict || "not_authorized", degraded: false };
+  } catch (err) {
+    console.error("[DatIQ] set_workspace_member_paused failed:", err.message);
+    return { ok: false, reason: "unavailable", degraded: true };
+  }
+}
+
+/**
  * Members of one workspace, for the settings page. Returns
  * { members: [{userId,email,role,createdAt}], degraded }.
  */
@@ -252,13 +288,16 @@ export async function listWorkspaceMembers(workspaceId, env = process.env) {
   try {
     const rows = await rest(
       db,
-      `/workspace_members?select=user_id,role,created_at,users:user_id(email)&workspace_id=eq.${workspaceId}&order=created_at.asc`,
+      `/workspace_members?select=user_id,role,created_at,paused_at,users:user_id(email)&workspace_id=eq.${workspaceId}&order=created_at.asc`,
     );
     const members = (rows || []).map((r) => ({
       userId: r.user_id,
       email: r.users?.email || null,
       role: r.role,
       createdAt: r.created_at,
+      // A paused seat is still a seat — it counts, and the member keeps read
+      // and export access. Pausing is not a cheaper removal.
+      pausedAt: r.paused_at || null,
     }));
     return { members, degraded: false };
   } catch (err) {
@@ -268,12 +307,13 @@ export async function listWorkspaceMembers(workspaceId, env = process.env) {
     try {
       const rows = await rest(
         db,
-        `/workspace_members?select=user_id,role,created_at&workspace_id=eq.${workspaceId}&order=created_at.asc`,
+        `/workspace_members?select=user_id,role,created_at,paused_at&workspace_id=eq.${workspaceId}&order=created_at.asc`,
       );
       const members = (rows || []).map((r) => ({
         userId: r.user_id,
         email: null,
         role: r.role,
+        pausedAt: r.paused_at || null,
         createdAt: r.created_at,
       }));
       return { members, degraded: false };
