@@ -144,6 +144,15 @@ export function renderAuditPdf(audit, { includeConstructs = false, diff = null }
       { size: 8.4, ink: MUTED, gap: 2 });
   }
 
+  // ── Executive summary ────────────────────────────────────────────────────
+  // First thing after the scores. A PDF gets forwarded and read by somebody who
+  // was not in the room, so the sentence that says what the numbers mean is
+  // worth more here than anywhere else in the product.
+  if (audit?.summary) {
+    heading("Summary");
+    para(String(audit.summary).replace(/\s+/g, " ").trim(), { size: 9.8, gap: 8 });
+  }
+
   // ── Penalties ────────────────────────────────────────────────────────────
   // The blocker layer is multiplicative and can halve a score. Printing the
   // final number without saying a penalty was applied makes the arithmetic

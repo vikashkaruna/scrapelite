@@ -95,6 +95,17 @@ export function buildMarkdownReport(audit, options = {}) {
     out.push("");
   }
 
+  // ── executive summary ────────────────────────────────────────────────────
+  // Placed after the scores and before the findings: a reader who stops here
+  // should still know what the report concluded. Rendered as a blockquote so it
+  // is visibly editorial — the numbers above it are measured, this is written.
+  if (audit.summary) {
+    out.push(`## Summary`);
+    out.push("");
+    out.push(`> ${String(audit.summary).replace(/\n+/g, " ").trim()}`);
+    out.push("");
+  }
+
   // ── issues ───────────────────────────────────────────────────────────────
   const issues = audit.issues || [];
   out.push(`## Issues (${issues.length})`);
@@ -359,6 +370,8 @@ export function toJsonPayload(audit) {
       overall: audit.finalScore, seo: audit.seoScore, aeo: audit.aeoScore, geo: audit.geoScore,
     },
     coverage: audit.coverage,
+    summary: audit.summary || null,
+    summary_model: audit.summaryModel || null,
     pillar_scores: Object.fromEntries(
       PILLAR_IDS.map((p) => [p, {
         score: audit.pillars?.[p]?.score ?? null,

@@ -263,3 +263,47 @@ describe("Markdown — the baseline every other format is measured against", () 
     }
   });
 });
+
+
+// ── The executive summary reaches every format ──────────────────────────────
+// Generated once, on first report view, and cached on the audit — so the PDF
+// and the markdown cannot end up describing the same run differently, which is
+// exactly what generating it per format would guarantee.
+describe("executive summary — carried by every export", () => {
+  const withSummary = () => ({
+    ...auditFixture(),
+    summary: "The pricing page scores 61 overall. Answer clarity is the binding constraint: no passage stands alone, so answer engines have nothing to quote.",
+    summaryModel: "gemini",
+  });
+
+  it("markdown opens the findings with it", () => {
+    const md = buildMarkdownReport(withSummary());
+    expect(md).toContain("## Summary");
+    expect(md).toMatch(/Answer clarity is the binding constraint/);
+    // Before the findings, after the scores: a reader who stops here should
+    // still know what the report concluded.
+    expect(md.indexOf("## Summary")).toBeLessThan(md.indexOf("## Issues"));
+    expect(md.indexOf("## Scores")).toBeLessThan(md.indexOf("## Summary"));
+  });
+
+  it("the PDF prints it", () => {
+    const t = pdfText(renderAuditPdf(withSummary(), {}));
+    expect(t).toContain("Summary");
+    expect(t).toMatch(/binding constraint/);
+  });
+
+  it("JSON carries it, with the model that wrote it", () => {
+    // Six months later "which model wrote this" is a question with an answer.
+    const p = toJsonPayload(withSummary());
+    expect(p.summary).toMatch(/binding constraint/);
+    expect(p.summary_model).toBe("gemini");
+  });
+
+  it("every format omits the section entirely when there is no summary", () => {
+    // An empty "Summary" heading is worse than none — it reads as a failure.
+    const a = auditFixture();
+    expect(buildMarkdownReport(a)).not.toContain("## Summary");
+    expect(toJsonPayload(a).summary).toBeNull();
+    expect(pdfText(renderAuditPdf(a, {}))).not.toContain("Summary");
+  });
+});

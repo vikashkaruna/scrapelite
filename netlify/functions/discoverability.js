@@ -63,6 +63,7 @@ import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
 import { runAudit } from "./lib/audit/auditPipeline.js";
+import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
 import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend } from "../../src/lib/discoverability/auditDiff.js";
@@ -417,6 +418,11 @@ export const handler = async (event) => {
         }
         if (sub === "compare" && subId) return await compareRoute(userId, full, subId);
       }
+      if (method === "POST" && id && sub === "summary") {
+        const full = await store.getAuditFull(userId, id);
+        if (!full) return notFound("Audit not found.");
+        return await summaryRoute(userId, id, full);
+      }
       return json(405, { error: "Method not allowed." });
     }
 
@@ -544,6 +550,50 @@ async function compareRoute(userId, currentFull, baselineId) {
     baseline: { audit_id: baselineFull.audit.id, created_at: baselineFull.audit.created_at },
     current: { audit_id: currentFull.audit.id, created_at: currentFull.audit.created_at },
     diff,
+  });
+}
+
+/**
+ * Generate the audit's executive summary, once, and cache it.
+ *
+ * ── LAZY, NOT PART OF THE AUDIT RUN ────────────────────────────────────────
+ * AUDIT_BUDGET_MS defaults to 8000ms against Netlify's stock 10s function
+ * timeout, and the 504 this module shipped in August came from precisely this
+ * shape of mistake: per-call timeouts that composed additively with no notion
+ * of the platform's limit. An extra model call inside runAudit would re-create
+ * it. So the summary is generated on FIRST REPORT VIEW and stored, which costs
+ * the audit path nothing and costs the reader one round trip, once.
+ *
+ * ── IT IS OPTIONAL, IN BOTH DIRECTIONS ─────────────────────────────────────
+ * If the model is unavailable this returns 200 with `summary: null`, not an
+ * error: the report header degrades to the deterministic facts, which are the
+ * part that matters. And if the cache write fails, the summary is still
+ * returned — it just gets regenerated next time.
+ */
+async function summaryRoute(userId, auditId, full) {
+  const audit = rehydrate(full);
+  if (!audit) return notFound("Audit not found.");
+
+  // Already have one. Idempotent by design: a reader refreshing the report
+  // must not spend another model call, and two readers of the same audit must
+  // see the same words.
+  if (audit.summary) {
+    return json(200, { summary: audit.summary, model: audit.summaryModel, cached: true });
+  }
+
+  const result = await summariseAudit(audit);
+  if (!result?.summary) {
+    return json(200, { summary: null, cached: false, unavailable: true });
+  }
+
+  const saved = await store.saveAuditSummary(userId, auditId, {
+    summary: result.summary, model: result.provider,
+  });
+  return json(200, {
+    summary: result.summary,
+    model: result.provider,
+    cached: false,
+    persisted: saved.ok,
   });
 }
 
@@ -858,6 +908,12 @@ export function rehydrate(full) {
       implementationAsset: x.implementation_asset_json, status: x.status,
     })),
     estimatedTotalLift: num(r.estimated_total_lift),
+    // Cached on first report view (see the /summary route). Carried here so it
+    // reaches the markdown, the PDF and the JSON from the same place the scores
+    // do — generating it per format would let them disagree about the same run.
+    summary: r.summary_md || null,
+    summaryModel: r.summary_model || null,
+    summaryGeneratedAt: r.summary_generated_at || null,
     facts: r.facts_json || {},
     evidence: r.evidence_json || {},
     meta: { startedAt: full.audit.started_at || full.audit.created_at, engine: r.engine_json || {} },

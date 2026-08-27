@@ -34,6 +34,7 @@ import {
   Panel, HeadingTreePanel, SchemaPanel, AnswerPanel, EntityPanel, TechnicalPanel,
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
+import AuditHeader from "../components/discoverability/AuditHeader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 
@@ -464,6 +465,11 @@ export default function Discoverability() {
               </div>
             </div>
           )}
+
+          {/* Which page this report is about, and what it says — above the
+              scores, because a wall of numbers with no subject is what opening
+              an audit from History used to produce. */}
+          <AuditHeader audit={audit} />
 
           <ScoreTiles
             audit={audit}

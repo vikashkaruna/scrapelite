@@ -106,6 +106,14 @@ export const discoverability = {
     reqText(`/audits/${encodeURIComponent(id)}/report?format=csv&rows=${encodeURIComponent(rows)}`),
   reportJson: (id) => req(`/audits/${encodeURIComponent(id)}/report?format=json`),
 
+  /**
+   * The audit's executive summary. Generated on first call and cached, so this
+   * is safe to call on every report view — a second caller gets the stored one.
+   * Resolves with `summary: null` when the model is unavailable; the header
+   * degrades to the deterministic facts rather than showing an error.
+   */
+  summary: (id) => req(`/audits/${encodeURIComponent(id)}/summary`, "POST", {}),
+
   // ── Recommendations ──────────────────────────────────────────────────────
   recommendations: (id) => req(`/audits/${encodeURIComponent(id)}/recommendations`),
   accept: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/accept`, "POST", {}),
