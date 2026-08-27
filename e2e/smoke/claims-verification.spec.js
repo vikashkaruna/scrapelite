@@ -99,14 +99,23 @@ test("CLAIM: Home page shows the 6 outcome tiles above the hero", async ({ page 
   await expect(tiles).toHaveCount(6);
 });
 
-test("CLAIM: Home page shows the template gallery with 10-15 templates", async ({ page }) => {
+test("CLAIM: Home page offers a template gallery, collapsed by default", async ({ page }) => {
   await page.goto("/");
-  // Scroll to the gallery
-  await page.locator(".template-gallery").scrollIntoViewIfNeeded();
-  const cards = page.locator(".template-card");
-  const count = await cards.count();
+  const gallery = page.locator(".template-gallery");
+  await gallery.scrollIntoViewIfNeeded();
+
+  // Collapsed on arrival. The grid is 15+ cards and sat permanently open under
+  // the hero, so the homepage asked a first-time visitor to read a catalogue
+  // before they had decided to do anything. The FILTERS stay visible — they are
+  // the cheap signal about what the product covers.
+  await expect(page.locator(".template-card")).toHaveCount(0);
+  await expect(gallery.getByRole("tab", { name: /^All$/ })).toBeVisible();
+
+  // And the whole library is one click away.
+  await gallery.getByRole("button", { name: /Browse \d+ recipes/i }).click();
+  const count = await page.locator(".template-card").count();
   expect(count).toBeGreaterThanOrEqual(10);
-  expect(count).toBeLessThanOrEqual(15);
+  expect(count).toBeLessThanOrEqual(20);
 });
 
 test("CLAIM: Workspace route exists and renders for signed-in users", async ({ page }) => {

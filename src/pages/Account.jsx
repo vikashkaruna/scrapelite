@@ -21,6 +21,10 @@ import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
+import DangerZone from "../components/DangerZone.jsx";
+import DiscoverabilityStats from "../components/DiscoverabilityStats.jsx";
+import PersonaUsage from "../components/PersonaUsage.jsx";
+import { fetchAccountState } from "../lib/accountStateService.js";
 
 // ── Integrations catalog ─────────────────────────────────────────────────
 // One row per provider; status is fetched from /api/integrations/{slug}/status.
@@ -279,6 +283,18 @@ export default function Account() {
   const [invoices, setInvoices]             = useState([]);
   const [invoicesLoading, setInvoicesLoad]  = useState(true);
   const [openInvoice, setOpenInvoice]       = useState(null);
+
+  // ── Account state (freeze / pending deletion) ───────────────────────────
+  // Read once on mount and then owned locally: every mutation returns the new
+  // state, so there is no reason to re-fetch and no window where the panel
+  // shows something the last action already changed.
+  const [accountState, setAccountState] = useState({ available: false });
+  useEffect(() => {
+    if (!user) { setAccountState({ available: false }); return; }
+    let alive = true;
+    fetchAccountState().then((s) => { if (alive) setAccountState(s); });
+    return () => { alive = false; };
+  }, [user]);
 
   // ── Integrations state ──────────────────────────────────────────────────
   // Map of provider slug → full server status object (connected, account_label,
@@ -787,6 +803,14 @@ export default function Account() {
                 </div>
               )}
             </div>
+
+            {/* ── Danger zone ──────────────────────────────────────────────
+                Last in the left column, below everything routine, and only for
+                a signed-in account. Its position is the point: the two actions
+                in it are the only ones on this page you cannot casually undo,
+                so nothing should be able to lead you into them on the way to
+                something else. */}
+            {user && <DangerZone state={accountState} onChange={setAccountState} />}
           </div>
 
           {/* Right column */}
@@ -869,6 +893,17 @@ export default function Account() {
                 </div>
               )}
             </div>
+
+            {/* ── Discoverability ─────────────────────────────────────────
+                Its own card because audits have their OWN monthly budget
+                rather than debiting extraction credits — folding them into
+                the extraction counter would misreport both. */}
+            {user && <DiscoverabilityStats auditLimit={plan.limits?.audits ?? 0} />}
+
+            {/* ── Usage by role ───────────────────────────────────────────
+                A breakdown OF the totals below, computed from the same record
+                so the two can never disagree about the month. */}
+            {user && <PersonaUsage usage={usage} />}
 
             {/* Quick stats */}
             <div className="card card-pad account-stats">

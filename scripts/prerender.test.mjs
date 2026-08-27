@@ -12,9 +12,12 @@
 // No browser is launched here — the server is exercised directly over HTTP.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { serveDist, forcedShellPaths, normalizeHtml, BANNER } from "./prerender.mjs";
 import { prerenderableRoutes, generatedFileFor, REACT_OWNED, STATIC_OWNED } from "./site-routes.mjs";
 
@@ -134,13 +137,30 @@ describe("prerender — output stability", () => {
 });
 
 describe("prerender — route registry agreement", () => {
-  it("the homepage is excluded", () => {
-    // public/index.html would be copied over dist/index.html by Vite.
-    expect(prerenderableRoutes().map((r) => r.path)).not.toContain("/");
+  it("the homepage IS prerendered", () => {
+    // It used to be excluded, because its output file would have been
+    // public/index.html and Vite copies public/ over the build output. The
+    // clobber risk was real; excluding the route was the wrong remedy. It left
+    // the site's highest-priority URL serving `<div id="root"></div>` and
+    // nothing else to every crawler that does not run JavaScript.
+    expect(prerenderableRoutes().map((r) => r.path)).toContain("/");
   });
 
-  it("generatedFileFor throws for the homepage rather than returning a clobbering path", () => {
-    expect(() => generatedFileFor("/")).toThrow(/homepage/i);
+  it("routes the homepage away from public/index.html", () => {
+    expect(generatedFileFor("/")).toBe("home/index.html");
+  });
+
+  it("still throws rather than returning a clobbering path", () => {
+    // THE invariant that survives the change: nothing may ever write
+    // public/index.html, because that replaces Vite's entry point with a
+    // snapshot of itself.
+    expect(() => generatedFileFor("")).toThrow(/overwrite Vite/);
+    expect(() => generatedFileFor("///")).toThrow(/overwrite Vite/);
+  });
+
+  it("forces the homepage rewrite so a real dist/index.html cannot win", () => {
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    expect(toml).toMatch(/to = "\/home\/index\.html"[\s\S]{0,60}force = true/);
   });
 
   it("maps routes to nested index.html files", () => {
@@ -148,8 +168,52 @@ describe("prerender — route registry agreement", () => {
     expect(generatedFileFor("/use-cases/seo-audit")).toBe("use-cases/seo-audit/index.html");
   });
 
-  it("every React-owned route except the homepage is prerendered", () => {
+  it("every React-owned route is prerendered", () => {
+    // Nothing is opted out any more. If a route ever needs to be, it must say
+    // why here — a silently unprerendered public route is invisible to every
+    // crawler that does not execute JavaScript.
     const skipped = REACT_OWNED.filter((r) => r.prerender === false).map((r) => r.path);
-    expect(skipped).toEqual(["/"]);
+    expect(skipped).toEqual([]);
+  });
+});
+
+// ── `vite preview` must route like Netlify ──────────────────────────────────
+// The Staging Gate cannot probe staging.datiq.app (it is behind Netlify's
+// visitor-access gate), so it smoke-tests `vite preview` of the same commit
+// instead — on the stated grounds that it is "the identical artifact Netlify
+// would publish".
+//
+// The ARTIFACT was identical. The ROUTING was not. Vite's preview server does
+// no directory-index resolution, so `/pricing` fell through to the SPA shell
+// while Netlify serves dist/pricing/index.html for it — and the smoke assertion
+// that the prerendered document is served failed in CI for a reason that does
+// not exist in production. The tempting fix was to weaken the assertion, which
+// would have removed the check from the only place it runs.
+describe("vite preview — Netlify-like routing", () => {
+  const config = readFileSync(join(ROOT, "vite.config.js"), "utf8");
+  const workflow = readFileSync(join(ROOT, ".github", "workflows", "staging-gate.yml"), "utf8");
+
+  it("has a preview-server plugin, not only a dev-server one", () => {
+    // `apply: "serve"` on the dev plugin does NOT cover preview; it needs its
+    // own configurePreviewServer hook.
+    expect(config).toMatch(/configurePreviewServer/);
+  });
+
+  it("applies the forced homepage rewrite", () => {
+    // netlify.toml rewrites `/` to the prerendered homepage with force, because
+    // dist/index.html is a real file that would otherwise win.
+    const plugin = config.slice(config.indexOf("datiq-netlify-like-preview"));
+    expect(plugin).toMatch(/"home", "index\.html"/);
+  });
+
+  it("resolves a directory index for an extensionless path", () => {
+    const plugin = config.slice(config.indexOf("datiq-netlify-like-preview"));
+    expect(plugin).toMatch(/!url\.includes\("\."\)/);
+    expect(plugin).toMatch(/"index\.html"\);/);
+  });
+
+  it("the gate's local smoke no longer opts out of the prerender check", () => {
+    // Opting out deleted the assertion in the one environment it runs in.
+    expect(workflow).not.toMatch(/SMOKE_SKIP_PRERENDER=1 node scripts\/smoke-prod\.mjs/);
   });
 });

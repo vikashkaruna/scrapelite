@@ -66,20 +66,35 @@ test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", asy
   await expect(page.getByText(/Use Batch mode/i)).toHaveCount(0);
 });
 
-test("TopBar nav shows Extract / Schedules / Discover / Dashboard (in that order)", async ({ page }) => {
+test("TopBar nav shows Extract / Discover / Dashboard (in that order)", async ({ page }) => {
   await page.goto("/");
   // mainLinks are buttons in .topbar-desktop-actions.
-  // Discoverability was inserted BEFORE Dashboard rather than reordering
-  // anything: Extract and Schedules keep their positions, and Dashboard — the
-  // "look at what you made" screen — stays last of the four.
+  // Discoverability sits BEFORE Dashboard: Extract leads, and Dashboard — the
+  // "look at what you made" screen — stays last.
   const nav = page.locator(".topbar-desktop-actions .nav-link");
   await expect(nav.nth(0)).toContainText(/Extract/i);
-  await expect(nav.nth(1)).toContainText(/Schedules/i);
   // "Discover", not "Discoverability": the nav label is deliberately the
   // short form (TopBar.jsx explains why). The route and the page heading
   // keep the full word, so this must NOT be loosened to match both.
-  await expect(nav.nth(2)).toContainText(/^Discover$/i);
-  await expect(nav.nth(3)).toContainText(/Dashboard/i);
+  await expect(nav.nth(1)).toContainText(/^Discover$/i);
+  await expect(nav.nth(2)).toContainText(/Dashboard/i);
+});
+
+test("TopBar has no Schedules nav item — it lives in the user menu", async ({ page }) => {
+  await page.goto("/");
+  // Removed for the same reason Batch was: every place a person forms the
+  // intent to schedule something already offers the door (the Home composer's
+  // cadence dropdown, Workspace, Dashboard's run history). A fifth primary
+  // entry competed for space while duplicating routes reached from context.
+  // The /schedules route is unchanged — only the nav item is gone.
+  const nav = page.locator(".topbar-desktop-actions .nav-link");
+  await expect(nav.filter({ hasText: /^\s*Schedules\s*$/i })).toHaveCount(0);
+});
+
+test("/schedules is still reachable directly", async ({ page }) => {
+  // Removing the nav item must not strand the route.
+  const res = await page.goto("/schedules");
+  expect(res.status()).toBeLessThan(400);
 });
 
 test("TopBar has no Batch nav item — Extract is the only entry point", async ({ page }) => {

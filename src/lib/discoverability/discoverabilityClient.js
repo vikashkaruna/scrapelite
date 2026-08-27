@@ -101,9 +101,18 @@ export const discoverability = {
   // ── Reports ──────────────────────────────────────────────────────────────
   reportMarkdown: (id, { constructs = false } = {}) =>
     reqText(`/audits/${encodeURIComponent(id)}/report?format=markdown${constructs ? "&constructs=1" : ""}`),
-  reportCsv: (id, rows = "recommendations") =>
+  /** rows: "all" | "scores" | "signals" | "issues" | "recommendations". */
+  reportCsv: (id, rows = "all") =>
     reqText(`/audits/${encodeURIComponent(id)}/report?format=csv&rows=${encodeURIComponent(rows)}`),
   reportJson: (id) => req(`/audits/${encodeURIComponent(id)}/report?format=json`),
+
+  /**
+   * The audit's executive summary. Generated on first call and cached, so this
+   * is safe to call on every report view — a second caller gets the stored one.
+   * Resolves with `summary: null` when the model is unavailable; the header
+   * degrades to the deterministic facts rather than showing an error.
+   */
+  summary: (id) => req(`/audits/${encodeURIComponent(id)}/summary`, "POST", {}),
 
   // ── Recommendations ──────────────────────────────────────────────────────
   recommendations: (id) => req(`/audits/${encodeURIComponent(id)}/recommendations`),

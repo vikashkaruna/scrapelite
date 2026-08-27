@@ -160,6 +160,39 @@ async function loadSchedules(limit = 200) {
   }
 }
 
+/**
+ * Discoverability monitors (audit_schedules), for the same dashboard.
+ *
+ * A SEPARATE table from scheduled_tasks with a separate daily runner — see the
+ * comment in migration 0030 on why they were deliberately not folded together.
+ * They are surfaced here because an operator asking "what is scheduled on this
+ * platform?" means both, and a monitoring dashboard that can only see half the
+ * scheduled work is the R19 failure in miniature: no error anywhere, and
+ * something silently unwatched.
+ *
+ * Returns [] rather than throwing: the extraction schedules beside them must
+ * still render if this table is unreachable.
+ */
+async function loadAuditMonitors(limit = 200) {
+  const d = db();
+  if (!d) return [];
+  try {
+    const n = Math.max(1, Math.min(500, Number(limit) || 200));
+    const res = await fetchWithTimeout(
+      `${d.base}/audit_schedules?select=id,user_id,name,cadence,device_profile,audit_profile,` +
+        `status,system_paused,system_pause_reason,alert_email,last_run_at,last_audit_id,` +
+        `next_run_at,created_at,audit_targets(canonical_url,host)` +
+        `&order=updated_at.desc&limit=${n}`,
+      { headers: d.headers },
+    );
+    if (!res.ok) return [];
+    const rows = await res.json().catch(() => []);
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 async function writeAudit({ actor, action, target, reason, detail }) {
   const d = db();
   if (!d) return false;
@@ -232,10 +265,11 @@ function indexRuns(runs) {
 }
 
 async function buildSnapshot() {
-  const [enabledMap, runs, scheduleRows, audit] = await Promise.all([
+  const [enabledMap, runs, scheduleRows, monitorRows, audit] = await Promise.all([
     jobEnabledMap(),
     listRecentRuns(200),
     loadSchedules(200),
+    loadAuditMonitors(200),
     recentAudit(25),
   ]);
 
@@ -295,7 +329,10 @@ async function buildSnapshot() {
   // to the service role. On the failure path the schedules still come back
   // with `userId` only — the UI must show that.
   const userEmails = await loadUserEmails(
-    Array.from(new Set(schedules.map((s) => s.userId).filter(Boolean))),
+    Array.from(new Set([
+      ...schedules.map((s) => s.userId),
+      ...monitorRows.map((m) => m.user_id),
+    ].filter(Boolean))),
   );
 
   return {
@@ -312,6 +349,26 @@ async function buildSnapshot() {
       user: s.userId ? (userEmails.get(s.userId) || { email: "", createdAt: "" }) : null,
     })),
     scheduleSummary: summarizeSchedules(schedules),
+    // Discoverability monitors, shaped like the schedules beside them so the
+    // dashboard can render one list. `kind` is what tells them apart — an
+    // operator needs to know which runner owns a row before they stop it.
+    auditMonitors: monitorRows.map((m) => ({
+      id: m.id,
+      kind: "discoverability",
+      userId: m.user_id || null,
+      label: m.name || m.audit_targets?.host || "",
+      target: m.audit_targets?.canonical_url || "",
+      cadence: m.cadence,
+      profile: m.audit_profile,
+      device: m.device_profile,
+      status: m.status,
+      systemPaused: Boolean(m.system_paused),
+      systemPauseReason: m.system_pause_reason || null,
+      lastRunAt: m.last_run_at || null,
+      nextRunAt: m.next_run_at || null,
+      lastAuditId: m.last_audit_id || null,
+      user: m.user_id ? (userEmails.get(m.user_id) || { email: "", createdAt: "" }) : null,
+    })),
     audit,
     envFlags,
     // Operator-facing "where am I" context. Same shape as admin-health so

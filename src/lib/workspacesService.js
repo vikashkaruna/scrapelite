@@ -143,6 +143,26 @@ export async function removeWorkspaceMember(workspaceId, targetUserId) {
 }
 
 /** Revoke a still-pending invite. Returns { ok, error? }. */
+/**
+ * Pause or resume one member's seat.
+ *
+ * A paused member keeps read and export access and loses everything that
+ * consumes account units. The seat is still theirs and still counts — this is
+ * not a cheaper removal, and the UI must not present it as one.
+ */
+export async function setWorkspaceMemberPaused(workspaceId, targetUserId, paused) {
+  try {
+    await apiClient.setWorkspaceMemberPaused(workspaceId, targetUserId, paused);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err?.reason || null,
+      error: err?.message || "Couldn't do that. Please try again.",
+    };
+  }
+}
+
 export async function revokeWorkspaceInvite(workspaceId, inviteId) {
   try {
     await apiClient.revokeWorkspaceInvite(workspaceId, inviteId);

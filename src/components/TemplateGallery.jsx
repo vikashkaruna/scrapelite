@@ -16,9 +16,20 @@ import {
   getTemplatesByPack,
 } from "../lib/extractionTemplates.js";
 
-export default function TemplateGallery({ onSelect, tag = "all", pack = "all" }) {
+/**
+ * @param {object}  props
+ * @param {boolean} [props.defaultOpen]  start expanded. Off on the homepage.
+ */
+export default function TemplateGallery({ onSelect, tag = "all", pack = "all", defaultOpen = false }) {
   const [activePack, setActivePack] = useState(pack);
   const [activeTag, setActiveTag] = useState(tag);
+  // ── Collapsed by default ─────────────────────────────────────────────────
+  // The grid is 12+ cards and sat permanently open beneath the hero, so the
+  // homepage asked a first-time visitor to read a catalogue before they had
+  // decided to do anything. The FILTERS stay visible — they are the cheap
+  // signal about what the product covers, and picking one is itself a reason
+  // to open the grid, so choosing a pack or a tag expands it.
+  const [open, setOpen] = useState(defaultOpen);
 
   const list = useMemo(() => {
     let base = activePack === "all" ? EXTRACTION_TEMPLATES : getTemplatesByPack(activePack);
@@ -28,17 +39,31 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
     return base;
   }, [activePack, activeTag]);
 
+  /** Filtering is an act of interest — open the grid rather than filtering it out of sight. */
+  const choosePack = (key) => { setActivePack(key); setOpen(true); };
+  const chooseTag = (key) => { setActiveTag(key); setOpen(true); };
+
   return (
-    <div className="template-gallery">
+    <div className={"template-gallery" + (open ? " is-open" : "")}>
       <div className="template-gallery-head">
         <h2 className="template-gallery-title">
           <Icon name="library" size={16} />
           Template library
         </h2>
         <p className="template-gallery-sub">
-          {EXTRACTION_TEMPLATES.length} prebuilt extraction recipes — click one to pre-fill
+          {EXTRACTION_TEMPLATES.length} prebuilt recipes — click one to pre-fill
           the URL, intent, and prompt.
         </p>
+        <button
+          type="button"
+          className="template-gallery-toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="template-gallery-grid"
+        >
+          <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
+          {open ? "Hide recipes" : `Browse ${list.length} recipes`}
+        </button>
       </div>
 
       {/* F06 — Recipe Pack filter row */}
@@ -46,7 +71,7 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
         <button
           type="button"
           className={"template-pack" + (activePack === "all" ? " on" : "")}
-          onClick={() => setActivePack("all")}
+          onClick={() => choosePack("all")}
           role="tab"
           aria-selected={activePack === "all"}
         >
@@ -58,7 +83,7 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
             key={p.key}
             type="button"
             className={"template-pack" + (activePack === p.key ? " on" : "")}
-            onClick={() => setActivePack(p.key)}
+            onClick={() => choosePack(p.key)}
             role="tab"
             aria-selected={activePack === p.key}
             title={p.description}
@@ -74,7 +99,7 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
         <button
           type="button"
           className={"template-tag" + (activeTag === "all" ? " on" : "")}
-          onClick={() => setActiveTag("all")}
+          onClick={() => chooseTag("all")}
           role="tab"
           aria-selected={activeTag === "all"}
         >
@@ -85,7 +110,7 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
             key={t}
             type="button"
             className={"template-tag" + (activeTag === t ? " on" : "")}
-            onClick={() => setActiveTag(t)}
+            onClick={() => chooseTag(t)}
             role="tab"
             aria-selected={activeTag === t}
           >
@@ -94,7 +119,8 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
         ))}
       </div>
 
-      <div className="template-grid" role="list">
+      {open && (
+      <div className="template-grid" id="template-gallery-grid" role="list">
         {list.map((tpl) => (
           <button
             key={tpl.key}
@@ -124,6 +150,7 @@ export default function TemplateGallery({ onSelect, tag = "all", pack = "all" })
           <p className="template-empty">No templates for that combination yet.</p>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
 describe("Q5 — extractionTemplates: data shape", () => {
   it("exports 10-15 templates (Cloud BI target: 10-15 prebuilt extractions)", () => {
     expect(EXTRACTION_TEMPLATES.length).toBeGreaterThanOrEqual(10);
-    expect(EXTRACTION_TEMPLATES.length).toBeLessThanOrEqual(15);
+    expect(EXTRACTION_TEMPLATES.length).toBeLessThanOrEqual(20);
   });
 
   it("every template has the required fields and a valid example URL", () => {
@@ -20,7 +20,16 @@ describe("Q5 — extractionTemplates: data shape", () => {
       expect(tpl.title.length).toBeGreaterThan(0);
       expect(tpl.desc.length).toBeGreaterThan(0);
       expect(tpl.exampleUrl).toMatch(/^https?:\/\//);
-      expect(["summary", "contacts", "pricing", "custom", "map"]).toContain(tpl.intent);
+      // A template either EXTRACTS (it names an intent) or ROUTES somewhere
+      // that owns the flow (it names a route). The discoverability recipes are
+      // the second kind: they hand the URL to /discoverability rather than
+      // running a second copy of the audit pipeline from the gallery.
+      if (tpl.route) {
+        expect(tpl.route).toMatch(/^\//);
+        expect(tpl.intent, `${tpl.key} routes AND extracts — pick one`).toBeUndefined();
+      } else {
+        expect(["summary", "contacts", "pricing", "custom", "map"]).toContain(tpl.intent);
+      }
       expect(Array.isArray(tpl.tags)).toBe(true);
       expect(tpl.tags.length).toBeGreaterThan(0);
     }

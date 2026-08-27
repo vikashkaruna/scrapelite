@@ -43,10 +43,25 @@ describe("static SEO audit", () => {
 
   it("no page other than the homepage canonicalises to the homepage", () => {
     // THE defect, asserted against the shipped bytes.
+    //
+    // `home/index.html` is the ONE legitimate exception: it IS the homepage.
+    // It lives at that path only because public/index.html would be copied over
+    // dist/index.html and destroy Vite's entry point, and netlify.toml serves it
+    // at `/` with a forced 200 rewrite. Its canonical pointing at
+    // https://datiq.app/ is therefore correct — and is also what stops /home
+    // becoming a duplicate in the index.
+    const HOMEPAGE_OUTPUT = "home/index.html";
     const wrong = pages
+      .filter((p) => p.rel !== HOMEPAGE_OUTPUT)
       .filter((p) => canonicalOf(p.html) === "https://datiq.app/")
       .map((p) => p.rel);
     expect(wrong).toEqual([]);
+
+    // And the exception must actually be the homepage, not a stray file that
+    // happened to be named that.
+    const home = pages.find((p) => p.rel === HOMEPAGE_OUTPUT);
+    expect(home, "public/home/index.html is missing — run npm run prerender").toBeTruthy();
+    expect(canonicalOf(home.html)).toBe("https://datiq.app/");
   });
 
   it("every canonical is an absolute production URL", () => {

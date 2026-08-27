@@ -23,6 +23,10 @@ const api = vi.hoisted(() => ({
   trends: vi.fn(), history: vi.fn(), accept: vi.fn(), dismiss: vi.fn(),
   markDone: vi.fn(), reopen: vi.fn(), reportMarkdown: vi.fn(),
   reportCsv: vi.fn(), reportJson: vi.fn(),
+  // Called by AuditHeader on first view. Default: no summary available, so the
+  // header degrades to the identity block and every existing assertion below
+  // keeps testing what it was written to test.
+  summary: vi.fn(async () => ({ summary: null, unavailable: true })),
 }));
 
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn(), getAuthToken: () => "tok" }));

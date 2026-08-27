@@ -4,6 +4,8 @@
 // public report page and gallery. Idempotent — re-setting the same
 // content updates in place rather than appending duplicates.
 
+import { breadcrumbFor } from "./pageSeo.js";
+
 const META_NAMES = [
   "description",
   "og:title",
@@ -28,6 +30,7 @@ const NOINDEX_NEUTRAL_DESC  = "Restricted area.";
  * Callers used to build canonical/og:url from `window.location.origin`. That is
  * wrong in two environments that matter: under scripts/prerender.mjs the origin
  * is http://localhost:4319, so the committed HTML would ship a localhost
+
  * canonical to production; and on a branch deploy it would canonicalise to the
  * preview host, inviting Google to index the preview instead of the real site.
  *
@@ -98,6 +101,39 @@ export function setMeta({ title, description, url, image, type = "article" }) {
     if (title)       setMetaTag("name", "twitter:title", title);
     if (description) setMetaTag("name", "twitter:description", description);
   }
+
+  // ── BreadcrumbList (SH-09) ────────────────────────────────────────────────
+  // useSeo() does the same thing for the pages that use IT. This is the second
+  // of the two SEO mechanisms in the app, and it covers exactly the nine pages
+  // the first one misses — /changelog, /gallery, /vs/battlecard and all six
+  // programmatic routes. Adding it to only one of the two would have left a
+  // hole shaped like whichever pages happened to use the other helper, which is
+  // how the missing-canonical bug above survived as long as it did.
+  if (url) applyBreadcrumb(url);
+}
+
+/**
+ * Write (or replace) this page's BreadcrumbList, derived from its own URL.
+ *
+ * Tagged with a data attribute so a second call replaces rather than appends —
+ * a page asserting two different positions in the site hierarchy is worse than
+ * one asserting none.
+ */
+function applyBreadcrumb(url) {
+  if (typeof document === "undefined") return;
+  let path = null;
+  try { path = new URL(url, "https://datiq.app").pathname; } catch { return; }
+  const crumb = breadcrumbFor(path);
+  const existing = document.head.querySelector('script[data-datiq-breadcrumb]');
+  if (!crumb) {
+    if (existing) existing.parentNode.removeChild(existing);
+    return;
+  }
+  const el = existing || document.createElement("script");
+  el.type = "application/ld+json";
+  el.setAttribute("data-datiq-breadcrumb", "1");
+  el.textContent = JSON.stringify(crumb);
+  if (!existing) document.head.appendChild(el);
 }
 
 /**

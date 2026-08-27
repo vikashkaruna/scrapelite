@@ -34,8 +34,34 @@ import {
   Panel, HeadingTreePanel, SchemaPanel, AnswerPanel, EntityPanel, TechnicalPanel,
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
+import AuditHeader from "../components/discoverability/AuditHeader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
+
+/**
+ * Which pillar cards the reader has open, for this browsing session only.
+ *
+ * Every access is wrapped: sessionStorage throws outright in some embedded and
+ * privacy-hardened contexts, and a pillar card refusing to remember its state
+ * is never worth taking the report down for.
+ */
+const OPEN_PILLARS_KEY = "datiq.dsc.openPillars";
+
+export function readOpenPillars() {
+  try {
+    const raw = sessionStorage.getItem(OPEN_PILLARS_KEY);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeOpenPillars(set) {
+  try {
+    sessionStorage.setItem(OPEN_PILLARS_KEY, JSON.stringify([...set]));
+  } catch { /* not worth surfacing */ }
+}
 
 const FRAMEWORK_TABS = [
   { id: "overall", label: "Overview" },
@@ -84,7 +110,20 @@ export default function Discoverability() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("overall");
-  const [expandedPillar, setExpandedPillar] = useState(null);
+  // A Set, so pillars expand independently — see PillarGrid. Persisted to
+  // sessionStorage because the commonest next action after reading a pillar is
+  // "Re-audit", and having every card slam shut on the new result is exactly
+  // the moment you wanted them open. sessionStorage, not localStorage: this is
+  // a reading position within one sitting, not a preference.
+  const [expandedPillars, setExpandedPillars] = useState(readOpenPillars);
+  const togglePillar = useCallback((id) => {
+    setExpandedPillars((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      writeOpenPillars(next);
+      return next;
+    });
+  }, []);
   const [matrixCell, setMatrixCell] = useState(null);
   const [busyRec, setBusyRec] = useState(null);
   const [series, setSeries] = useState(["overall"]);
@@ -167,7 +206,9 @@ export default function Discoverability() {
       const data = await discoverability.runAudit(payload);
       setAudit(data);
       setMatrixCell(null);
-      setExpandedPillar(null);
+      // Deliberately NOT clearing expandedPillars: which pillars the reader has
+      // open is their choice, and a new run against the same page is precisely
+      // when they want to keep looking at the same ones.
       if (data.auditId) setParams({ audit: data.auditId }, { replace: true });
       if (data.targetId) await loadTrend(data.targetId);
       if (data.persisted === false) {
@@ -201,6 +242,32 @@ export default function Discoverability() {
     run(resume);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, user]);
+
+  // ── Arrive from elsewhere in the app with a URL already in hand ─────────
+  // The Home composer and Workspace's quick actions hand a URL over rather
+  // than running an audit themselves — one implementation of quota, compliance
+  // refusals and the signed-in rule, in one place. This is the receiving end.
+  //
+  // Separate from the resume effect above on purpose: that one finishes a
+  // request the user already made and was interrupted mid-way, so it runs
+  // immediately and says so. This one is a HAND-OFF — the user has not yet
+  // chosen a profile, a device or a page type — so it prefills the composer and
+  // lets them press the button. Auto-running would spend an audit credit on
+  // defaults they never saw, which is the kind of surprise a quota makes
+  // expensive.
+  const handoffConsumedRef = useRef(false);
+  useEffect(() => {
+    const url = location.state?.auditUrl;
+    if (!url || handoffConsumedRef.current) return;
+    handoffConsumedRef.current = true;
+    setResumedRequest({
+      target_url: url,
+      audit_profile: location.state?.auditProfile || "balanced",
+      idempotency_key: `handoff-${url}`,
+    });
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const rerun = useCallback(async () => {
     if (!audit?.auditId) return;
@@ -263,8 +330,10 @@ export default function Discoverability() {
         // it to the renderer would print "not measured" for every score.
         //
         // jsPDF is ~350KB and is lazy-loaded on the click. Never static-import.
+        // `diff` travels with it: the comparison against the baseline is on
+        // screen, so it belongs in the artefact that gets forwarded.
         const { downloadAuditPdf } = await import("../lib/discoverability/auditPdf.js");
-        downloadAuditPdf(audit, { includeConstructs: true });
+        downloadAuditPdf(audit, { includeConstructs: true, diff });
       } else if (format === "markdown") {
         const md = await discoverability.reportMarkdown(audit.auditId, { constructs: true });
         downloadTextFile(md, `discoverability-${slug}.md`, "text/markdown;charset=utf-8;");
@@ -279,7 +348,7 @@ export default function Discoverability() {
     } catch (err) {
       showToast(err.message || "Could not build the report");
     }
-  }, [audit, showToast]);
+  }, [audit, diff, showToast]);
 
   const issues = audit?.issues || [];
   const filteredIssueCount = useMemo(() => {
@@ -397,6 +466,11 @@ export default function Discoverability() {
             </div>
           )}
 
+          {/* Which page this report is about, and what it says — above the
+              scores, because a wall of numbers with no subject is what opening
+              an audit from History used to produce. */}
+          <AuditHeader audit={audit} />
+
           <ScoreTiles
             audit={audit}
             diff={diff}
@@ -435,8 +509,8 @@ export default function Discoverability() {
           <PillarGrid
             audit={audit}
             diff={diff}
-            expandedPillar={expandedPillar}
-            onTogglePillar={setExpandedPillar}
+            expandedPillars={expandedPillars}
+            onTogglePillar={togglePillar}
           />
 
           <div className="dsc-grid-2">
