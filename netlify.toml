@@ -324,6 +324,47 @@
   status = 301
   force = true
 
+# ── Homepage: serve the PRERENDERED document ─────────────────────────────────
+# Every other public route gets its prerendered HTML for free, because Vite
+# copies public/<route>/index.html into dist/ and a real file beats the
+# non-forced SPA fallback below. `/` cannot use that mechanism: its output file
+# would be public/index.html, which would be copied over dist/index.html and
+# destroy the app's entry point. So it renders to public/home/index.html and is
+# rewritten here.
+#
+# ⚠️ `force = true` is REQUIRED, and it is the one rule above that needs it.
+# dist/index.html is a real file at `/`, so without force it wins and the
+# rewrite silently does nothing — the exact failure this is fixing.
+#
+# Why it matters: the shell's entire <body> is `<div id="root"></div>`. A
+# discoverability audit of https://datiq.app on 2026-08-26 measured 10 rendered
+# words, no H1 and no headings on the site's highest-priority URL, scoring
+# AEO 25.4. Googlebot renders JavaScript eventually; GPTBot, ClaudeBot,
+# PerplexityBot and CCBot largely do not.
+#
+# Humans are unaffected: this is the same artefact /pricing already serves —
+# real HTML that boots React over itself.
+[[redirects]]
+  from = "/"
+  to = "/home/index.html"
+  status = 200
+  force = true
+
+# /home is an implementation detail, not a URL. It 301s for humans; the
+# X-Robots-Tag below covers crawlers; and the generated file's own canonical is
+# https://datiq.app/, so it cannot become a duplicate in the index either way.
+# Netlify matches paths exactly, so this does NOT intercept /home/index.html.
+[[redirects]]
+  from = "/home"
+  to = "/"
+  status = 301
+  force = true
+
+[[headers]]
+  for = "/home/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
 # ── SPA fallback ──────────────────────────────────────────────────────────────
 # React Router: serve index.html for all routes so direct /preview and
 # /dashboard URLs work instead of returning a 404.

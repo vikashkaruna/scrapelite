@@ -168,6 +168,84 @@ export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) 
 }
 
 /** Is the AI layer even worth attempting? */
+/**
+ * A short executive summary of a whole audit.
+ *
+ * ── IT SUMMARISES, IT DOES NOT SCORE ───────────────────────────────────────
+ * Every number in the prompt is already computed and already stored. The model
+ * is given them and asked to say what they MEAN — it cannot move a score, and
+ * nothing downstream reads this back as data. That keeps rule 2 of this module
+ * intact (it refines, it does not replace) while letting the report open with a
+ * sentence rather than with four numbers.
+ *
+ * ── WHY IT IS NOT PART OF THE AUDIT RUN ────────────────────────────────────
+ * AUDIT_BUDGET_MS defaults to 8000ms against Netlify's 10s function timeout,
+ * and the 504 this module's own history records came from exactly this: per-call
+ * timeouts composing additively with no notion of the platform's limit. This is
+ * called lazily on first report view instead, and the result is cached on
+ * audit_results, so it costs the audit path nothing.
+ *
+ * Returns null on any failure, like everything else here — a report with no
+ * summary is a report; a report that failed to load is not.
+ */
+export async function summariseAudit(audit, { signal = null } = {}) {
+  if (!audit) return null;
+
+  const pillars = Object.entries(audit.pillars || {})
+    .map(([id, p]) => `${id}: ${p?.score ?? "not measured"}`)
+    .join(", ");
+  const issues = (audit.issues || [])
+    .filter((i) => i.severity === "critical" || i.severity === "high")
+    .slice(0, 6)
+    .map((i) => `${i.code} (${i.severity}): ${i.title}`)
+    .join("\n");
+  const fixes = (audit.recommendations || [])
+    .slice(0, 3)
+    .map((r, i) => `${i + 1}. ${r.title}${Number.isFinite(r.estimatedLift) ? ` (+${r.estimatedLift} pts)` : ""}`)
+    .join("\n");
+
+  const prompt = [
+    "You are writing the opening paragraph of a technical report for a busy executive.",
+    "Reply with ONLY the paragraph. No preamble, no heading, no bullet points, no markdown.",
+    "",
+    `URL: ${audit.target?.url || "(unknown)"}`,
+    `Page type: ${audit.target?.page_type_label || audit.target?.page_type || "page"}`,
+    `Overall ${audit.finalScore ?? "?"} / 100 — SEO ${audit.seoScore ?? "?"}, AEO ${audit.aeoScore ?? "?"}, GEO ${audit.geoScore ?? "?"}`,
+    `Evidence coverage: ${audit.coverage ?? "?"}%`,
+    `Pillars — ${pillars}`,
+    "",
+    issues ? `Most severe findings:\n${issues}` : "No critical or high-severity findings.",
+    "",
+    fixes ? `Top recommended fixes:\n${fixes}` : "",
+    "",
+    "Write 50-90 words. Rules:",
+    "- Open by naming the page and what it is, then the headline verdict.",
+    "- Name the two or three findings that actually matter. Do not list everything.",
+    "- Executive register: crisp, declarative, no hedging, no marketing adjectives.",
+    "- The detailed report follows, so do NOT explain how to fix anything.",
+    audit.coverage != null && audit.coverage < 70
+      ? "- Coverage is below 70%, so say the evidence is thin and the scores are provisional."
+      : "",
+    "- Never invent a number. Use only the figures above.",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const r = await runChain([{ role: "user", content: prompt }], 400, { signal });
+    if (!r.ok || !r.text) return null;
+    // Strip anything that looks like a heading or a list the model added
+    // despite being asked not to — the header renders this as one paragraph.
+    const text = String(r.text)
+      .replace(/^\s*#{1,6}\s.*$/gm, "")
+      .replace(/^\s*[-*]\s+/gm, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length < 40) return null;
+    return { summary: text.slice(0, 1200), provider: r.provider };
+  } catch {
+    return null;
+  }
+}
+
 export function aiEvaluationEnabled(env = process.env) {
   if (env.DISABLE_AUDIT_AI === "1") return false;
   return Boolean(env.GEMINI_API_KEY || env.AI_API_KEY || env.OPENAI_API_KEY);

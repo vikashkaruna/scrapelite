@@ -191,6 +191,13 @@ export const apiClient = {
   removeWorkspaceMember: (workspaceId, targetUserId) =>
     request("/workspaces", "POST", { action: "remove", workspaceId, targetUserId }),
 
+  /**
+   * Pause or resume one member's seat. Not a removal — the seat is still
+   * theirs and still counts against the plan's team_seats.
+   */
+  setWorkspaceMemberPaused: (workspaceId, targetUserId, paused) =>
+    request("/workspaces", "POST", { action: "set_member_paused", workspaceId, targetUserId, paused }),
+
   /** Revoke a still-pending invite. */
   revokeWorkspaceInvite: (workspaceId, inviteId) =>
     request("/workspaces", "POST", { action: "revoke_invite", workspaceId, inviteId }),

@@ -12,8 +12,8 @@
 // reason: a 92 built on 40% of the evidence is not a 92, and the person reading
 // the PDF three weeks later has no other way to know.
 
-import { PILLAR_IDS, pillarLabel } from "./signalRegistry.js";
-import { FRAMEWORKS, scoreBand } from "./scoringModel.js";
+import { PILLAR_IDS, pillarLabel, signalLabel } from "./signalRegistry.js";
+import { FRAMEWORKS, scoreBand, PENALTIES } from "./scoringModel.js";
 import { SEVERITIES } from "./issueCatalog.js";
 
 const fmt = (n) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? "not measured" : String(n));
@@ -67,7 +67,10 @@ export function buildMarkdownReport(audit, options = {}) {
     out.push(`These scale the whole score down, because they undermine discovery regardless of content quality. The score before them was **${fmt(audit.scoreMath?.prePenaltyTotal)}**.`);
     out.push("");
     for (const p of audit.penalties) {
-      out.push(`- **${p.label}** (−${Math.round(p.factor * 100)}%) — ${p.description}`);
+      // Same fallback rule as the signal labels: degrade to the code, never
+      // to `undefined`. A penalty read back from a stored engine_json written
+      // by an older build may not carry one.
+      out.push(`- **${p.label || PENALTIES[p.code]?.label || p.code}** (−${Math.round(p.factor * 100)}%) — ${p.description || ""}`);
     }
     out.push("");
   }
@@ -84,8 +87,22 @@ export function buildMarkdownReport(audit, options = {}) {
     out.push(`|---|---|---|---|`);
     for (const s of p.signals || []) {
       const note = s.measured ? "" : (s.applicable === false ? "not applicable to this page type" : "not measured");
-      out.push(`| ${s.label} | ${fmt(s.score)} | ${Math.round(s.weight * 100)}% | ${note} |`);
+      // Fall back to the code, never to `undefined`. A stored audit whose
+      // rehydrator forgot the label once printed "| undefined | 0 | 25% |"
+      // for every signal in a report that gets forwarded to clients.
+      out.push(`| ${s.label || signalLabel(s.code) || s.code} | ${fmt(s.score)} | ${Math.round(s.weight * 100)}% | ${note} |`);
     }
+    out.push("");
+  }
+
+  // ── executive summary ────────────────────────────────────────────────────
+  // Placed after the scores and before the findings: a reader who stops here
+  // should still know what the report concluded. Rendered as a blockquote so it
+  // is visibly editorial — the numbers above it are measured, this is written.
+  if (audit.summary) {
+    out.push(`## Summary`);
+    out.push("");
+    out.push(`> ${String(audit.summary).replace(/\n+/g, " ").trim()}`);
     out.push("");
   }
 
@@ -260,6 +277,74 @@ export function recommendationsToCsv(audit) {
   return toCsv(rows);
 }
 
+/**
+ * Every signal, with its pillar, weight and measured state.
+ *
+ * The scores CSV and this one exist because "export the report as CSV" used to
+ * mean "export EITHER the issues OR the recommendations, chosen by a query
+ * parameter nobody sees" — so the pillar arithmetic, which is the part a
+ * spreadsheet is actually good at, was the one thing you could not get out.
+ */
+export function signalsToCsv(audit) {
+  const rows = [["pillar", "pillar_score", "signal_code", "signal", "weight_pct", "score", "state"]];
+  for (const id of PILLAR_IDS) {
+    const p = audit?.pillars?.[id];
+    if (!p) continue;
+    for (const s of p.signals || []) {
+      rows.push([
+        pillarLabel(id),
+        p.score ?? "",
+        s.code,
+        s.label || signalLabel(s.code) || s.code,
+        Math.round((s.weight || 0) * 100),
+        // Deliberately BLANK, never 0, for an unmeasured signal. A 0 in a
+        // spreadsheet gets averaged; a blank does not. That distinction is the
+        // whole coverage model, and it has to survive the export.
+        s.measured ? (s.score ?? "") : "",
+        s.measured ? "measured" : (s.applicable === false ? "not_applicable" : "not_measured"),
+      ]);
+    }
+  }
+  return toCsv(rows);
+}
+
+/** The score summary: four framework views plus the four pillars. */
+export function scoresToCsv(audit) {
+  const rows = [["view", "kind", "score", "coverage_pct", "weight_pct"]];
+  for (const f of FRAMEWORKS) {
+    rows.push([
+      f, "framework",
+      audit?.frameworks?.[f]?.score ?? "",
+      audit?.frameworks?.[f]?.coverage ?? audit?.coverage ?? "",
+      "",
+    ]);
+  }
+  for (const id of PILLAR_IDS) {
+    const p = audit?.pillars?.[id];
+    if (!p) continue;
+    rows.push([pillarLabel(id), "pillar", p.score ?? "", p.coverage ?? "", Math.round((p.weight || 0) * 100)]);
+  }
+  return toCsv(rows);
+}
+
+/**
+ * Every section in one file.
+ *
+ * CSV has no notion of sections, so this stacks them with a blank line and a
+ * `# name` marker between — the convention spreadsheet users already expect and
+ * every importer tolerates. It exists because the single commonest thing anyone
+ * wants is "the whole report", and making them download four files to get it is
+ * how a report ends up forwarded incomplete.
+ */
+export function bundleToCsv(audit) {
+  return [
+    "# scores", scoresToCsv(audit),
+    "# signals", signalsToCsv(audit),
+    "# issues", issuesToCsv(audit),
+    "# recommendations", recommendationsToCsv(audit),
+  ].join("\n");
+}
+
 function toCsv(rows) {
   return rows
     .map((r) => r.map((cell) => {
@@ -285,13 +370,37 @@ export function toJsonPayload(audit) {
       overall: audit.finalScore, seo: audit.seoScore, aeo: audit.aeoScore, geo: audit.geoScore,
     },
     coverage: audit.coverage,
+    summary: audit.summary || null,
+    summary_model: audit.summaryModel || null,
     pillar_scores: Object.fromEntries(
       PILLAR_IDS.map((p) => [p, {
         score: audit.pillars?.[p]?.score ?? null,
         weight: audit.pillars?.[p]?.weight ?? null,
         coverage: audit.pillars?.[p]?.coverage ?? null,
+        // Kept as `{code: score}` — it is a PUBLIC CONTRACT and consumers index
+        // it directly. The richer per-signal view is a SIBLING key below rather
+        // than a change of shape here, so an existing integration keeps working.
         signals: Object.fromEntries((audit.pillars?.[p]?.signals || []).map((s) => [s.code, s.score])),
       }]),
+    ),
+    // Added alongside pillar_scores, not inside it. `signals` above cannot say
+    // whether a null means "could not measure" or "does not apply to this page
+    // type", and collapsing those two is the one thing the whole scoring model
+    // exists to avoid.
+    signal_detail: PILLAR_IDS.flatMap((p) =>
+      (audit.pillars?.[p]?.signals || []).map((s) => ({
+        pillar: p,
+        code: s.code,
+        label: s.label || signalLabel(s.code) || s.code,
+        weight: s.weight ?? null,
+        score: s.measured ? (s.score ?? null) : null,
+        measured: Boolean(s.measured),
+        applicable: s.applicable !== false,
+        unknown_reason: s.measured ? null : (s.unknownReason || "not_measured"),
+      })),
+    ),
+    bands: Object.fromEntries(
+      FRAMEWORKS.map((f) => [f, scoreBand(audit.frameworks?.[f]?.score ?? null).label]),
     ),
     penalties: (audit.penalties || []).map((p) => ({
       code: p.code, severity: p.severity, penalty_factor: p.factor, description: p.description,
@@ -301,6 +410,36 @@ export function toJsonPayload(audit) {
     entity_facts: audit.facts?.entity || {},
     issues: audit.issues || [],
     recommendations: audit.recommendations || [],
+    // Everything the on-screen report shows that the payload used to omit. The
+    // JSON export is what an API consumer archives, so a section visible in the
+    // UI but absent here means their archive is not the report they read.
+    evidence: {
+      heading_outline: audit.evidence?.heading_outline || [],
+      direct_answer_blocks: audit.evidence?.direct_answer_blocks || [],
+      faq_pairs: audit.evidence?.faq_pairs || [],
+      schema_types: audit.evidence?.schema_types || [],
+      ai_notes: audit.evidence?.ai_notes || null,
+    },
+    // The copy-ready assets, carried as data rather than as prose. `body` is the
+    // field every template emits — see constructTemplates.js.
+    implementation_assets: (audit.recommendations || [])
+      .filter((r) => r.implementationAsset?.body)
+      .map((r) => ({
+        code: r.code,
+        label: r.implementationAsset.label || null,
+        format: r.implementationAsset.format || null,
+        body: r.implementationAsset.body,
+        has_placeholders: /TODO:/.test(r.implementationAsset.body),
+      })),
+    prompt_runs: (audit.promptRuns || []).map((run) => ({
+      engine: run.engine_name ?? run.engine ?? null,
+      live: run.live ?? null,
+      prompt: run.prompt ?? null,
+      mention_detected: run.mention_detected ?? null,
+      citation_detected: run.citation_detected ?? null,
+      cited_domains: run.cited_domains_json || [],
+      sentiment_score: run.sentiment_score ?? null,
+    })),
     score_math: audit.scoreMath || null,
     engine: audit.meta?.engine || null,
     stage_errors: audit.stageErrors || [],

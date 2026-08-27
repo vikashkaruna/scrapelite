@@ -30,6 +30,7 @@ import { useSeo } from "../hooks/useSeo.js";
 import WatchlistCard from "../components/WatchlistCard.jsx";
 import CollectionsTab from "../components/workspace/CollectionsTab.jsx";
 import TeamTab from "../components/workspace/TeamTab.jsx";
+import DiscoverabilityTab from "../components/workspace/DiscoverabilityTab.jsx";
 
 function timeAgo(iso) {
   if (!iso) return "—";
@@ -40,9 +41,12 @@ function timeAgo(iso) {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-function QuickLink({ to, icon, title, desc }) {
+function QuickLink({ to, icon, title, desc, state }) {
   return (
-    <Link to={to} className="ws-quick">
+    // `state` lets a quick action arrive at a screen with intent — e.g. opening
+    // the schedule editor already set to Discoverability — rather than dropping
+    // the user on the page and asking them to find the control again.
+    <Link to={to} state={state} className="ws-quick">
       <span className="ws-quick-icon" aria-hidden="true">
         <Icon name={icon} size={18} />
       </span>
@@ -59,6 +63,7 @@ const TABS = [
   { key: "overview",    label: "Overview",    icon: "layout-grid" },
   { key: "collections", label: "Collections", icon: "folder" },
   { key: "schedules",   label: "Schedules",   icon: "calendar-clock" },
+  { key: "discoverability", label: "Discoverability", icon: "scan-search" },
   { key: "team",        label: "Team",        icon: "users" },
 ];
 
@@ -219,6 +224,12 @@ export default function Workspace() {
           </div>
         )}
 
+        {tab === "discoverability" && (
+          <div role="tabpanel" id="ws-panel-discoverability" aria-labelledby="ws-tab-discoverability" tabIndex={0}>
+            <DiscoverabilityTab />
+          </div>
+        )}
+
         {tab === "team" && (
           <div role="tabpanel" id="ws-panel-team" aria-labelledby="ws-tab-team" tabIndex={0}>
             <TeamTab />
@@ -250,6 +261,14 @@ function OverviewTab({
           <QuickLink to="/batch"     icon="layers"     title="Batch run"      desc="Extract many URLs in parallel" />
           <QuickLink to="/dashboard" icon="layout-list" title="Dashboard"      desc="Browse your saved extractions" />
           <QuickLink to="/schedules" icon="calendar"   title="Schedules"      desc="Recurring monitoring & alerts" />
+          {/* Both DOORS into discoverability, not implementations of it. The
+              audit flow lives on one screen; these hand off to it, the same way
+              the Home composer's Discover button does. */}
+          <QuickLink to="/discoverability" icon="scan-search" title="Run discoverability"
+                     desc="Score a page for search, answer and generative engines" />
+          <QuickLink to="/schedules" icon="repeat" title="Schedule discoverability"
+                     desc="Re-audit a page on a cadence and alert on score movement"
+                     state={{ openEditor: true, draftSchedule: { jobKind: "discoverability" } }} />
           <QuickLink to="/account"   icon="user"       title="Account & billing" desc="Plan, usage, payment history" />
         </div>
       </section>

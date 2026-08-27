@@ -328,6 +328,33 @@ export async function getAuditFull(userId, auditId) {
   };
 }
 
+/**
+ * Cache an audit's executive summary.
+ *
+ * Written once, on first report view, and then travels with the audit into
+ * every export — so the PDF and the markdown cannot end up describing the same
+ * run differently, which is what generating it per format would guarantee.
+ *
+ * Never throws: a summary that could not be cached is a summary that gets
+ * regenerated next time, not a report that fails to load.
+ */
+export async function saveAuditSummary(userId, auditId, { summary, model }) {
+  if (!userId || !auditId || !summary) return { ok: false };
+  const r = await rest(
+    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        summary_md: String(summary).slice(0, 4000),
+        summary_model: model ? String(model).slice(0, 80) : null,
+        summary_generated_at: new Date().toISOString(),
+      }),
+    },
+  );
+  return { ok: Boolean(r.ok) };
+}
+
 export async function listAudits(userId, { limit = 25, offset = 0, targetId = null, status = null } = {}) {
   const params = [
     `user_id=eq.${encodeURIComponent(userId)}`,

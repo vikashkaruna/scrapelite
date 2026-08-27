@@ -66,12 +66,45 @@ describe("page ownership — React-owned routes", () => {
     expect(wrong).toEqual([]);
   });
 
-  it("the homepage is never prerendered", () => {
-    // public/index.html would be copied over dist/index.html by Vite, replacing
-    // the app's entry point with a snapshot of itself.
-    expect(prerenderableRoutes().some((r) => r.path === "/")).toBe(false);
+  it("the homepage IS prerendered, but never to public/index.html", () => {
+    // The homepage used to be excluded from prerendering entirely, on the
+    // grounds that its output file would clobber Vite's entry point. The
+    // clobber risk is real and is still guarded below; the exclusion was the
+    // wrong remedy. It left the site's highest-priority URL serving
+    // `<div id="root"></div>` and nothing else — 10 rendered words, no H1, no
+    // headings — to every crawler that does not execute JavaScript, which is
+    // most answer-engine crawlers.
+    expect(prerenderableRoutes().some((r) => r.path === "/")).toBe(true);
+    expect(generatedFileFor("/")).toBe("home/index.html");
+  });
+
+  it("still refuses to write public/index.html", () => {
+    // THE invariant. Vite copies public/ verbatim over the build output, so
+    // public/index.html would replace dist/index.html — the app's entry point —
+    // with a snapshot of itself. A route that would derive that filename must
+    // fail loudly rather than return it.
     expect(existsSync(join(PUBLIC, "index.html"))).toBe(false);
-    expect(() => generatedFileFor("/")).toThrow();
+    expect(() => generatedFileFor("")).toThrow(/overwrite Vite/);
+    expect(() => generatedFileFor("///")).toThrow(/overwrite Vite/);
+  });
+
+  it("serves the homepage's generated file at / with a FORCED rewrite", () => {
+    // dist/index.html is a real file at `/`, and real files beat non-forced
+    // redirects — that is exactly what makes the SPA fallback work for the
+    // other routes. So without `force` this rewrite silently does nothing and
+    // the bare shell keeps being served, with no error anywhere.
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    const rule = toml.match(/\[\[redirects\]\]\s*\n\s*from = "\/"\s*\n\s*to = "\/home\/index\.html"\s*\n\s*status = 200\s*\n\s*force = true/);
+    expect(rule, "netlify.toml must rewrite / to /home/index.html with status 200 and force").not.toBeNull();
+  });
+
+  it("noindexes the /home helper path", () => {
+    // It is an implementation detail, not a URL. The generated file's own
+    // canonical points at https://datiq.app/ as well, so it cannot become a
+    // duplicate in the index either way.
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    expect(toml).toMatch(/for = "\/home\/\*"/);
+    expect(toml).toMatch(/X-Robots-Tag = "noindex, nofollow"/);
   });
 });
 

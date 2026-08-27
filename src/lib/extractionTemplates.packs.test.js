@@ -11,9 +11,9 @@ import {
 } from "./extractionTemplates.js";
 
 describe("Recipe Packs (F06)", () => {
-  it("defines the 3 expected packs", () => {
+  it("defines the 4 expected packs", () => {
     const keys = getAllPackKeys();
-    expect(keys).toEqual(["sales", "ci", "seo"]);
+    expect(keys).toEqual(["sales", "ci", "discoverability", "seo"]);
   });
 
   it("each pack has a label, description, icon, color, and at least 3 templates", () => {

@@ -69,3 +69,36 @@ test("the help guide for it is published", async ({ page }) => {
   await expect(page.getByText(/Answer Clarity/i).first()).toBeVisible();
   await expect(page.getByText(/not measured/i).first()).toBeVisible();
 });
+
+// ── The Discover door on the Home composer ─────────────────────────────────
+// A DOOR, not a second implementation. It hands the pasted URL to
+// /discoverability rather than auditing anything itself — duplicating even a
+// thin version of the flow would mean two entry points that must keep telling
+// the same story about quota, compliance refusals and the signed-in rule, which
+// is exactly how the guest-credit leak happened.
+test("the Home composer offers Discover for a single URL, and it navigates", async ({ page }) => {
+  await page.goto("/");
+  const composer = page.locator(".hero-composer");
+  await composer.locator("textarea, input[type=text]").first().fill("https://example.com/pricing");
+
+  // Scoped to the composer: the top nav also has a "Discover" item, and an
+  // unscoped match would silently pass by clicking the nav — testing the
+  // navigation we did not write instead of the button we did.
+  const discover = composer.getByRole("button", { name: /^Discover$/i });
+  await expect(discover).toBeVisible();
+  await discover.click();
+
+  await expect(page).toHaveURL(/\/discoverability/);
+  await expect(page.getByRole("heading", { name: /Discoverability/i, level: 1 })).toBeVisible();
+  // Prefilled, NOT auto-run: the user has not chosen a profile, device or page
+  // type, and auto-running would spend an audit credit on defaults they never
+  // saw. The button is theirs to press.
+  await expect(page.getByLabel(/URL to audit/i)).toHaveValue(/example\.com\/pricing/);
+});
+
+test("Discover is not offered for pasted text — there is no URL to audit", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".hero-composer").locator("textarea, input[type=text]").first()
+    .fill("just some prose with no link in it at all");
+  await expect(page.locator(".hero-composer").getByRole("button", { name: /^Discover$/i })).toHaveCount(0);
+});

@@ -48,6 +48,7 @@ const STORE_EXPORTS = [
   "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
   "listAudits", "listTargets", "markAuditFailed", "monthStart",
   "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
+  "saveAuditSummary",
   "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
   "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
   "getPromptSet", "deletePromptSet", "createWebhook", "listWebhooks",
@@ -63,6 +64,10 @@ vi.mock("../../functions/lib/audit/auditStore.js", () =>
 
 
 
+const summarise = vi.fn();
+vi.mock("../../functions/lib/audit/aiEvaluator.js", () => ({
+  summariseAudit: (...a) => summarise(...a),
+}));
 vi.mock("../../functions/lib/audit/webhookDispatch.js", () => ({
   dispatchAuditEvent: (...a) => dispatchWebhook(...a),
   buildWebhookPayload: vi.fn(),
@@ -557,5 +562,98 @@ describe("report export", () => {
   it("annotates the score with its coverage, so a thin audit is not oversold", async () => {
     const res = await call("GET", "audits/a1/report");
     expect(res.body).toMatch(/92\.5% of signals/);
+  });
+});
+
+// ── POST /audits/{id}/summary ───────────────────────────────────────────────
+// The executive summary is generated LAZILY, on first report view, and cached.
+//
+// It is deliberately NOT part of the audit run: AUDIT_BUDGET_MS defaults to
+// 8000ms against Netlify's stock 10s timeout, and the 504 this module shipped
+// in August came from exactly this shape of mistake — per-call timeouts
+// composing additively with no notion of the platform's limit.
+describe("POST /audits/{id}/summary", () => {
+  /** A stored audit whose result may or may not already carry a summary. */
+  const fullWith = (summary = null) => ({
+    audit: { id: "audit-1", target_url: "https://example.com/pricing", page_type: "pricing",
+             device_profile: "mobile", audit_profile: "balanced", created_at: "2026-08-27T00:00:00Z" },
+    result: {
+      final_score: 61, seo_score: 64, aeo_score: 55, geo_score: 58, coverage: 84,
+      answer_clarity_score: 40, entity_authority_score: 60,
+      structural_hierarchy_score: 30, technical_accessibility_score: 90,
+      penalty_multiplier: 1, engine_json: {}, facts_json: {}, evidence_json: {},
+      summary_md: summary, summary_model: summary ? "gemini" : null,
+    },
+    signals: [], issues: [], recommendations: [], promptRuns: [],
+  });
+
+  beforeEach(() => {
+    happyStore();
+    summarise.mockReset();
+    storeMock.saveAuditSummary = vi.fn(async () => ({ ok: true }));
+  });
+
+  it("generates and caches when there is no summary yet", async () => {
+    storeMock.getAuditFull = vi.fn(async () => fullWith(null));
+    summarise.mockResolvedValue({ summary: "A clear verdict about this page.", provider: "gemini" });
+
+    const res = await call("POST", "audits/audit-1/summary", { body: {} });
+    expect(res.statusCode).toBe(200);
+    const b = parse(res);
+    expect(b.summary).toBe("A clear verdict about this page.");
+    expect(b.cached).toBe(false);
+    expect(storeMock.saveAuditSummary).toHaveBeenCalledWith("user-1", "audit-1",
+      expect.objectContaining({ summary: "A clear verdict about this page.", model: "gemini" }));
+  });
+
+  it("returns the CACHED summary without spending another model call", async () => {
+    // A reader refreshing the report must not pay for it twice, and two readers
+    // of the same audit must see the same words.
+    storeMock.getAuditFull = vi.fn(async () => fullWith("Already written."));
+    const res = await call("POST", "audits/audit-1/summary", { body: {} });
+    expect(parse(res).cached).toBe(true);
+    expect(parse(res).summary).toBe("Already written.");
+    expect(summarise).not.toHaveBeenCalled();
+    expect(storeMock.saveAuditSummary).not.toHaveBeenCalled();
+  });
+
+  it("reports 200 with a null summary when the model is unavailable", async () => {
+    // Not an error. A report with no summary is a report; the header degrades
+    // to the deterministic facts, which are the part that matters.
+    storeMock.getAuditFull = vi.fn(async () => fullWith(null));
+    summarise.mockResolvedValue(null);
+    const res = await call("POST", "audits/audit-1/summary", { body: {} });
+    expect(res.statusCode).toBe(200);
+    expect(parse(res).summary).toBeNull();
+    expect(parse(res).unavailable).toBe(true);
+    expect(storeMock.saveAuditSummary).not.toHaveBeenCalled();
+  });
+
+  it("still returns the summary when the cache write fails", async () => {
+    // A summary that could not be stored gets regenerated next time; refusing
+    // to show it would be losing work we already paid for.
+    storeMock.getAuditFull = vi.fn(async () => fullWith(null));
+    summarise.mockResolvedValue({ summary: "Generated but unsaved.", provider: "openai" });
+    storeMock.saveAuditSummary = vi.fn(async () => ({ ok: false }));
+    const res = await call("POST", "audits/audit-1/summary", { body: {} });
+    expect(res.statusCode).toBe(200);
+    expect(parse(res).summary).toBe("Generated but unsaved.");
+    expect(parse(res).persisted).toBe(false);
+  });
+
+  it("404s another user's audit rather than 403", async () => {
+    // A 403 confirms the id is real, which is how an id space gets enumerated.
+    storeMock.getAuditFull = vi.fn(async () => null);
+    const res = await call("POST", "audits/someone-elses/summary", { body: {} });
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toMatch(/forbidden|not yours/i);
+  });
+
+  it("scopes the read and the write by the caller's user id", async () => {
+    storeMock.getAuditFull = vi.fn(async () => fullWith(null));
+    summarise.mockResolvedValue({ summary: "x".repeat(60), provider: "gemini" });
+    await call("POST", "audits/abc/summary", { body: {} });
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc");
+    expect(storeMock.saveAuditSummary).toHaveBeenCalledWith("user-1", "abc", expect.anything());
   });
 });

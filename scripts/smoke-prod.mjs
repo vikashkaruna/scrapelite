@@ -199,12 +199,23 @@ export async function runSmoke(baseUrl, opts = {}) {
   log(`\n[smoke] ${baseUrl}  (timeout ${TIMEOUT_MS}ms / probe)\n`);
 
   // 1. SPA routes ──────────────────────────────────────────────────────────
-  await probe("GET / (home contains brand)", async () => {
+  await probe("GET / (home serves rendered content, not the shell)", async () => {
     const res = await get("/");
     assertOk(res, "GET /");
     const body = await res.text();
     if (!/DatIQ|Extract/i.test(body)) {
       throw new Error('home body missing "DatIQ" or "Extract" — likely a 502/404 page from SPA fallback');
+    }
+    // The homepage is prerendered to public/home/index.html and served at `/`
+    // by a FORCED rewrite in netlify.toml. Without the force, dist/index.html —
+    // a real file — wins and the bare shell is served instead, with no error
+    // anywhere. The brand check above cannot see that: the shell's <title> and
+    // meta contain "DatIQ" too. Only rendered structure separates the two.
+    //
+    // SMOKE_SKIP_PRERENDER=1 for a plain `vite preview`, which serves dist/
+    // directly and applies no netlify.toml rules.
+    if (process.env.SMOKE_SKIP_PRERENDER !== "1" && !/<h1[\s>]/i.test(body)) {
+      throw new Error("/ served no <h1> — the prerendered homepage is not being served (forced rewrite missing?)");
     }
   });
 
@@ -212,8 +223,17 @@ export async function runSmoke(baseUrl, opts = {}) {
     assertOk(await get("/dashboard"), "GET /dashboard");
   });
 
-  await probe("GET /pricing (SPA fallback)", async () => {
-    assertOk(await get("/pricing"), "GET /pricing");
+  await probe("GET /pricing (prerendered document, not the bare shell)", async () => {
+    const res = await get("/pricing");
+    assertOk(res, "GET /pricing");
+    const body = await res.text();
+    // ⚠️ This used to assert only a 200, which the SPA fallback satisfies with
+    // an empty shell. So NOTHING in the whole CI chain would have noticed if
+    // the prerendered pages stopped being served and every marketing route
+    // silently degraded to `<div id="root"></div>` for crawlers.
+    if (!/<h1[\s>]/i.test(body)) {
+      throw new Error("/pricing served no <h1> — the prerendered document is not being served (bare SPA shell?)");
+    }
   });
 
   await probe("GET /batch (SPA fallback)", async () => {
