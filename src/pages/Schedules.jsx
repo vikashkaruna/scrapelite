@@ -26,6 +26,7 @@ import { saveScheduledExtraction } from "../lib/extractionsRepo.js";
 import { recordScheduledItem } from "../lib/batchRunsService.js";
 import { hostOf, timeAgo, fmtDate } from "../lib/utils.js";
 import { useSeo } from "../hooks/useSeo.js";
+import { discoverability } from "../lib/discoverability/discoverabilityClient.js";
 
 const STATUS_META = {
   changed:   { icon: "alert-circle",   label: "Changed",   cls: "sch-status-changed" },
@@ -131,6 +132,76 @@ function ScheduleCard({ schedule, expanded, onExpand, onToggle, onDelete, onRunN
   );
 }
 
+/**
+ * One discoverability monitor.
+ *
+ * Deliberately a different card from ScheduleCard rather than a variant of it:
+ * the two describe different things (a content hash vs four scores), have
+ * different controls, and live in different tables. Making one component serve
+ * both would mean a stream of `if (isAudit)` branches inside every row.
+ */
+function MonitorCard({ monitor, onToggle, onDelete, onOpen }) {
+  const url = monitor.audit_targets?.canonical_url || monitor.target_url || "";
+  const paused = monitor.status === "paused";
+  // The PLATFORM's pause, which a user cannot lift — the column is REVOKEd
+  // from clients. Saying which kind of pause this is matters: "resume" that
+  // silently does nothing is worse than a disabled button with a reason.
+  const systemPaused = Boolean(monitor.system_paused);
+
+  return (
+    <div className={"sch-card card" + (paused || systemPaused ? " sch-card-paused" : "")}>
+      <div className="sch-card-main">
+        <div className="sch-card-icon"><Icon name="scan-search" size={17} /></div>
+        <div className="sch-card-body">
+          <div className="sch-card-title-row">
+            <span className="sch-card-title">{monitor.name || hostOf(url) || url}</span>
+            <span className="sch-kind-badge">Discoverability</span>
+            {systemPaused ? (
+              <span className="sch-card-status sch-status-paused">Paused by DatIQ</span>
+            ) : paused ? (
+              <span className="sch-card-status sch-status-paused">Paused</span>
+            ) : (
+              <span className="sch-card-status sch-status-active">Active</span>
+            )}
+          </div>
+          <div className="sch-card-meta">
+            <span className="sch-card-url" title={url}>{url}</span>
+            <span className="sch-summary-dot">·</span>
+            <span>{monitor.cadence}</span>
+            <span className="sch-summary-dot">·</span>
+            <span>{monitor.audit_profile} · {monitor.device_profile}</span>
+          </div>
+          {systemPaused && monitor.system_pause_reason && (
+            <p className="sch-card-note">
+              <Icon name="info" size={12} /> {monitor.system_pause_reason === "compliance"
+                ? "This site's robots.txt now disallows us, so the monitor was stopped."
+                : monitor.system_pause_reason}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="sch-card-actions">
+        {monitor.last_audit_id && (
+          <button className="sch-action" onClick={() => onOpen(monitor.last_audit_id)} title="Open the latest report">
+            <Icon name="external-link" size={15} />
+          </button>
+        )}
+        <button
+          className="sch-action"
+          onClick={onToggle}
+          disabled={systemPaused}
+          title={systemPaused ? "Paused by DatIQ — this cannot be resumed from here." : paused ? "Resume" : "Pause"}
+        >
+          <Icon name={paused ? "play" : "pause"} size={15} />
+        </button>
+        <button className="sch-action sch-action-danger" onClick={onDelete} title="Delete">
+          <Icon name="trash" size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Schedules() {
   useSeo({
     title: "DatIQ Schedules — recurring extractions and change monitoring | DatIQ.app",
@@ -147,6 +218,24 @@ export default function Schedules() {
   const [expandedId, setExpandedId] = useState(null);
   const [editor, setEditor] = useState(null); // { draft } | { existing }
   const [highlightId, setHighlightId] = useState(null);
+  // ── Discoverability monitors ──────────────────────────────────────────────
+  // A separate list from a separate table (audit_schedules) run by a separate
+  // cron. They are listed here, and only here, because the USER question is the
+  // same — "keep watching this page for me" — and a second scheduling screen is
+  // the thing this release removes elsewhere rather than adds.
+  //
+  // Held apart in state rather than merged into `items`: everything downstream
+  // of `items` (toggle, delete, run-now, the local cache) speaks to
+  // schedulerService, and teaching it to sometimes mean something else is how
+  // two things end up sharing a name and neither behaving predictably.
+  const [monitors, setMonitors] = useState([]);
+  const loadMonitors = useCallback(() => {
+    discoverability.listSchedules()
+      .then((r) => setMonitors(r?.schedules || []))
+      // Signed out, or the module is unavailable: show no monitors rather than
+      // an error. The extraction schedules on this page are unaffected.
+      .catch(() => setMonitors([]));
+  }, []);
 
   // Handle hand-off from Home (preset arm → highlight; custom → open editor).
   useEffect(() => {
@@ -164,6 +253,7 @@ export default function Schedules() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { listSchedules().then(setItems).catch(() => {}); }, []);
+  useEffect(() => { loadMonitors(); }, [loadMonitors]);
 
   const refresh = useCallback(() => setItems(listSchedulesLocal()), []);
 
@@ -209,9 +299,35 @@ export default function Schedules() {
     setEditor(null);
     refresh();
     listSchedules().then(setItems).catch(() => {});
+    loadMonitors();
+  };
+
+  const onDeleteMonitor = async (id) => {
+    try {
+      await discoverability.deleteSchedule(id);
+      showToast("Monitor deleted", "trash");
+    } catch (err) {
+      showToast(err?.message || "Couldn't delete that monitor.");
+    }
+    loadMonitors();
+  };
+
+  const onToggleMonitor = async (m) => {
+    // `status` is the USER's intent. `system_paused` is the platform's, and it
+    // is column-REVOKEd from clients — a monitor an operator paused must not be
+    // resumable from here. Migration 0030 enforces that; this only ever writes
+    // the user's own axis.
+    const next = m.status === "paused" ? "active" : "paused";
+    try {
+      await discoverability.updateSchedule(m.id, { status: next });
+    } catch (err) {
+      showToast(err?.message || "Couldn't update that monitor.");
+    }
+    loadMonitors();
   };
 
   const active = items.filter((s) => s.status === "active");
+  const activeMonitors = monitors.filter((m) => m.status === "active" && !m.system_paused);
 
   return (
     <div className="page fade">
@@ -243,7 +359,28 @@ export default function Schedules() {
           />
         )}
 
-        {items.length === 0 && !editor ? (
+        {monitors.length > 0 && (
+          <>
+            <div className="sch-summary">
+              <span><strong>{activeMonitors.length}</strong> active</span>
+              <span className="sch-summary-dot">·</span>
+              <span><strong>{monitors.length}</strong> discoverability monitor{monitors.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="sch-list">
+              {monitors.map((m) => (
+                <MonitorCard
+                  key={m.id}
+                  monitor={m}
+                  onToggle={() => onToggleMonitor(m)}
+                  onDelete={() => onDeleteMonitor(m.id)}
+                  onOpen={(auditId) => navigate(`/discoverability?audit=${encodeURIComponent(auditId)}`)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {items.length === 0 && !editor && monitors.length === 0 ? (
           <div className="sch-empty card">
             <div className="sch-empty-icon"><Icon name="calendar-clock" size={30} /></div>
             <h3>No schedules yet</h3>

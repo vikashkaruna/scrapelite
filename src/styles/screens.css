@@ -9531,3 +9531,21 @@ html.dark .dsc-page {
 }
 .dsc-audit-summary-loading,
 .dsc-audit-summary-muted { color: var(--text-3); display: flex; align-items: center; gap: 7px; }
+
+
+/* ── Discoverability monitors on /schedules ──────────────────────────────────
+   Badged rather than styled differently: they sit in the same list as
+   extraction schedules because the user question is the same, but a reader has
+   to be able to tell at a glance which kind of job a row is. */
+.sch-kind-badge {
+  font-size: .66em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.sch-card-note {
+  margin: 6px 0 0; font-size: 12px; color: var(--text-3);
+  display: flex; align-items: center; gap: 6px;
+}
+.sch-action:disabled { opacity: .4; cursor: not-allowed; }

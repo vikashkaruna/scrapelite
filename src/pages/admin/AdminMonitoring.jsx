@@ -681,6 +681,77 @@ export default function AdminMonitoring() {
         )}
       </div>
 
+      {/* ── Discoverability monitors ─────────────────────────────────────
+          A SEPARATE table (audit_schedules) with a SEPARATE daily runner
+          (discoverability-monitor). Listed here because an operator asking
+          "what is scheduled on this platform?" means both, and a monitoring
+          dashboard that can only see half the scheduled work is the R19
+          failure in miniature: nothing errors, and something is silently
+          unwatched.
+
+          Read-only for now, deliberately. Pausing one needs the same
+          reason-dialog + ops_audit_log path the extraction schedules have,
+          and shipping a control that writes no audit row would be worse than
+          shipping no control — this section exists so the work is VISIBLE. */}
+      {!!data?.auditMonitors?.length && (
+        <div className="admin-general-group card card-pad">
+          <div className="admin-general-group-head">
+            <Icon name="scan-search" size={18} />
+            <div>
+              <h3 className="admin-general-group-title">Discoverability monitors</h3>
+              <p className="admin-general-group-desc">
+                From <code>audit_schedules</code>, fired daily by <code>discoverability-monitor</code> —
+                a different table and a different cron from the extraction schedules above
+                ({data.auditMonitors.length} total). Read-only here: pausing one needs the same
+                reason-and-audit-log path as above, which is a follow-up.
+              </p>
+            </div>
+          </div>
+
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>Monitor</th><th>Owner</th><th>Target</th>
+                  <th>Cadence</th><th>State</th><th>Last run</th><th>Next run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.auditMonitors.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <div className="ops-sched-label">{m.label || "(unnamed)"}</div>
+                      <div className="ops-sched-id">{m.profile} · {m.device}</div>
+                    </td>
+                    <td>
+                      <div>{m.user?.email || "—"}</div>
+                      <div className="ops-sched-id">{m.userId || ""}</div>
+                    </td>
+                    <td className="ops-sched-target" title={m.target}>{m.target || "—"}</td>
+                    <td>{m.cadence}</td>
+                    <td>
+                      {/* The platform's pause and the user's are different
+                          facts and are never collapsed into one word. */}
+                      {m.systemPaused ? (
+                        <span className="ops-pill ops-pill-warn" title={m.systemPauseReason || ""}>
+                          System paused
+                        </span>
+                      ) : m.status === "paused" ? (
+                        <span className="ops-pill">User paused</span>
+                      ) : (
+                        <span className="ops-pill ops-pill-ok">Active</span>
+                      )}
+                    </td>
+                    <td>{m.lastRunAt ? formatRelative(m.lastRunAt) : "never"}</td>
+                    <td>{m.nextRunAt ? formatRelative(m.nextRunAt) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Audit trail ─────────────────────────────────────────────────── */}
       {!!data?.audit?.length && (
         <div className="admin-general-group card card-pad">
