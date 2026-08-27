@@ -173,3 +173,22 @@ describe("pre-push hook — a new branch is still gated", () => {
     expect(hook).toMatch(/the installed hook differs from scripts\/pre-push\.sh/);
   });
 });
+
+describe("pre-push hook — deleting a branch is not a code change", () => {
+  const hook = _read(resolve(__dirname, "..", "scripts", "pre-push.sh"), "utf8");
+
+  it("skips the suites when the ref is being deleted", () => {
+    // `git push --delete` sends an all-zero local_sha. There is no tree to
+    // test, so running the suites proves nothing about the operation — it just
+    // makes deleting a merged branch take 30 seconds and lets an unrelated
+    // flake block a cleanup. Which is how people acquire the --no-verify habit,
+    // and that habit is how a real gate gets bypassed later.
+    expect(hook).toMatch(/PUSHING_CONTENT/);
+    expect(hook).toMatch(/no content to test/);
+  });
+
+  it("detects the all-zero sha by pattern, not by string length", () => {
+    // A 40-char and a 64-char (SHA-256) all-zero sha must both count.
+    expect(hook).toMatch(/\*\[!0\]\*\)/);
+  });
+});

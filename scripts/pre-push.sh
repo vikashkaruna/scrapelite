@@ -64,13 +64,30 @@ fi
 REMOTE="${PREPUSH_REMOTE:-origin}"
 # Use the first positional arg as the remote name, second as the URL,
 # and the rest as refs (git's pre-push contract).
+PUSHING_CONTENT=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   : "${remote_ref:=}"
   if [ -z "${remote_ref:-}" ]; then continue; fi
+  # ── A DELETION PUSHES NO CONTENT ───────────────────────────────────────
+  # `git push --delete` (and `git push origin :branch`) sends an all-zero
+  # local_sha. There is no tree to test, so running the suites proves nothing
+  # about the operation — it just makes deleting a merged branch take 30
+  # seconds and, worse, lets an unrelated flake block a cleanup. Skip it, and
+  # say why, rather than leaving people reaching for --no-verify: a habit of
+  # bypassing this hook is how a real gate gets bypassed later.
+  case "$local_sha" in
+    *[!0]*) PUSHING_CONTENT=1 ;;
+    *)      : ;;   # all zeros → this ref is being deleted
+  esac
   # Convert refs/heads/staging → staging
   UPSTREAM="${remote_ref#refs/heads/}"
   break
 done
+
+if [ "${PREPUSH_SAW_REFS:-1}" = "1" ] && [ -n "${UPSTREAM:-}" ] && [ "$PUSHING_CONTENT" = "0" ]; then
+  printf '\033[32m✓ pre-push:\033[0m deleting %s — no content to test.\n' "$UPSTREAM"
+  exit 0
+fi
 
 # When run outside a `git push` (e.g. executed directly for testing) the
 # read loop yields nothing — fall back to the configured upstream.
