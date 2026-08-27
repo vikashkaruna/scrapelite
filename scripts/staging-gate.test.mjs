@@ -126,3 +126,50 @@ describe("staging gate — deploy convergence", () => {
     }
   });
 });
+
+// ── The pre-push hook's first-push hole ─────────────────────────────────────
+// A guard test in this file rather than its own, because it is the same class
+// of defect as the one above: a gate that reports green without having run.
+import { readFileSync as _read } from "node:fs";
+
+describe("pre-push hook — a new branch is still gated", () => {
+  const hook = _read(resolve(__dirname, "..", "scripts", "pre-push.sh"), "utf8");
+
+  it("does not diff a brand-new branch against its own last commit", () => {
+    // On a first push `origin/<branch>` does not exist. Falling back to HEAD~1
+    // diffed the branch against its own last commit — and if that commit only
+    // touched docs (which, for a branch ending in a CLAUDE.md or handoff
+    // update, it usually does), the docs-only skip fired and the ENTIRE branch
+    // was pushed with no gate run, under a green "✓ pre-push" line.
+    expect(hook).not.toMatch(/merge-base HEAD "\$REMOTE\/\$UPSTREAM" 2>\/dev\/null \|\| echo HEAD~1/);
+  });
+
+  it("falls back to the integration branch instead", () => {
+    expect(hook).toMatch(/PREPUSH_BASE_BRANCH/);
+    expect(hook).toMatch(/git rev-parse --verify --quiet "\$REMOTE\/\$UPSTREAM"/);
+  });
+
+  it("runs everything rather than skipping when no base can be found at all", () => {
+    // A fresh clone with no remote branches. Skipping on a diff we could not
+    // compute is the same failure wearing a different hat.
+    expect(hook).toMatch(/CHANGED_FILES="\$\(git ls-files\)"/);
+  });
+
+  it("keeps the prerender gate outside the PREPUSH_FORCE block", () => {
+    // PREPUSH_FORCE exists to make MORE checks run. It used to switch this one
+    // off, which is exactly backwards.
+    const forceBlock = hook.slice(
+      hook.indexOf('if [ "${PREPUSH_FORCE:-0}" != "1" ]'),
+      hook.indexOf("# ── Prerender staleness gate"),
+    );
+    expect(forceBlock).not.toMatch(/prerendered pages are stale/);
+    expect(hook).toMatch(/PREPUSH_SKIP_PRERENDER/);
+  });
+
+  it("checks that the installed hook is not stale", () => {
+    // .git/hooks/pre-push is a COPY. Nothing re-copies it when this file
+    // changes, so a rotted hook silently stops running whichever gates were
+    // added after it was installed.
+    expect(hook).toMatch(/the installed hook differs from scripts\/pre-push\.sh/);
+  });
+});

@@ -78,6 +78,8 @@ if [ -z "${UPSTREAM:-}" ]; then
   UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null | sed "s|.*/||" || echo "")"
 fi
 UPSTREAM="${UPSTREAM:-staging}"
+# The integration branch a new feature branch is measured against.
+PREPUSH_BASE_BRANCH="${PREPUSH_BASE_BRANCH:-staging}"
 
 # ── What this push changes ─────────────────────────────────────────────
 # Computed unconditionally: both gates below read it, and the prerender
@@ -88,8 +90,36 @@ if [ -n "${UPSTREAM:-}" ]; then
   # Fetch the upstream ref into a temp rev so we can diff even if it's
   # not local. `git fetch` is silent on no-op.
   git fetch --quiet "$REMOTE" "$UPSTREAM" 2>/dev/null || true
-  DIFF_BASE="$(git merge-base HEAD "$REMOTE/$UPSTREAM" 2>/dev/null || echo HEAD~1)"
-  CHANGED_FILES="$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null || true)"
+
+  # ⚠️ ON A BRANCH'S FIRST PUSH, `$REMOTE/$UPSTREAM` DOES NOT EXIST YET.
+  #
+  # This used to fall back to HEAD~1, so a brand-new branch was diffed against
+  # its own last commit. If that commit happened to touch only docs — which,
+  # for a branch ending in a CLAUDE.md or handoff update, it usually does — the
+  # docs-only skip fired and the ENTIRE branch was pushed with no gate run at
+  # all, under a green "✓ pre-push" line. That is worse than no hook: it reads
+  # as evidence the suites passed.
+  #
+  # So: when the upstream ref is missing, diff against the INTEGRATION BRANCH
+  # instead. A new branch's real diff is everything it adds on top of staging,
+  # which is exactly what is about to be reviewed and merged.
+  if git rev-parse --verify --quiet "$REMOTE/$UPSTREAM" >/dev/null; then
+    DIFF_BASE="$(git merge-base HEAD "$REMOTE/$UPSTREAM" 2>/dev/null || echo "")"
+  else
+    git fetch --quiet "$REMOTE" "$PREPUSH_BASE_BRANCH" 2>/dev/null || true
+    DIFF_BASE="$(git merge-base HEAD "$REMOTE/$PREPUSH_BASE_BRANCH" 2>/dev/null || echo "")"
+    if [ -n "$DIFF_BASE" ]; then
+      printf '\033[2m  pre-push: %s/%s does not exist yet — diffing against %s/%s\033[0m\n' \
+        "$REMOTE" "$UPSTREAM" "$REMOTE" "$PREPUSH_BASE_BRANCH"
+    fi
+  fi
+  # Still nothing to compare against (a fresh clone with no remote branches at
+  # all): run everything rather than skip on a diff we could not compute.
+  if [ -z "$DIFF_BASE" ]; then
+    CHANGED_FILES="$(git ls-files)"
+  else
+    CHANGED_FILES="$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null || git ls-files)"
+  fi
 fi
 
 # ── Smart skip: docs-only diff ─────────────────────────────────────────
