@@ -11,7 +11,7 @@
   "packageManager": "npm@11.15.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/sync-prerender-assets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:unit": "vitest run src scripts --exclude '**/*.integration.test.*' --exclude '**/__tests__/system/**'",
@@ -41,7 +41,8 @@
     "prerender": "node scripts/prerender.mjs",
     "check:prerender": "node scripts/check-prerender-assets.mjs",
     "build:sitemap": "node scripts/build-sitemap.mjs",
-    "verify:referral": "node scripts/verify-referral-e2e.mjs"
+    "verify:referral": "node scripts/verify-referral-e2e.mjs",
+    "sync:prerender": "node scripts/sync-prerender-assets.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
