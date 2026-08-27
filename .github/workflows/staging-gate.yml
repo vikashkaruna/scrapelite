@@ -423,11 +423,14 @@ jobs:
             sleep 1
           done
 
-          # SMOKE_SKIP_PRERENDER=1: `vite preview` serves dist/ directly and
-          # applies no netlify.toml rules, so the FORCED rewrite that serves the
-          # prerendered homepage at `/` cannot fire here. /pricing is unaffected —
-          # its generated file is a real path in dist/ and is served normally, so
-          # that probe still proves the prerendered documents were built.
-          SMOKE_SKIP_API=1 SMOKE_SKIP_PRERENDER=1 node scripts/smoke-prod.mjs "http://localhost:4319"
+          # No SMOKE_SKIP_PRERENDER here, deliberately. `vite preview` used to do
+          # no directory-index resolution and apply no netlify.toml rules, so a
+          # prerendered-document assertion could not hold — the first version of
+          # this step opted out of it, which deleted the check in the one place
+          # it actually runs. vite.config.js's `datiq-netlify-like-preview`
+          # plugin now applies the two rules that decide which bytes a URL gets
+          # (the forced `/` rewrite and directory-index lookup), so the preview
+          # routes like production and the assertion is real here.
+          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
         env:
           NODE_OPTIONS: --dns-result-order=ipv4first

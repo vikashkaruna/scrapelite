@@ -176,3 +176,44 @@ describe("prerender — route registry agreement", () => {
     expect(skipped).toEqual([]);
   });
 });
+
+// ── `vite preview` must route like Netlify ──────────────────────────────────
+// The Staging Gate cannot probe staging.datiq.app (it is behind Netlify's
+// visitor-access gate), so it smoke-tests `vite preview` of the same commit
+// instead — on the stated grounds that it is "the identical artifact Netlify
+// would publish".
+//
+// The ARTIFACT was identical. The ROUTING was not. Vite's preview server does
+// no directory-index resolution, so `/pricing` fell through to the SPA shell
+// while Netlify serves dist/pricing/index.html for it — and the smoke assertion
+// that the prerendered document is served failed in CI for a reason that does
+// not exist in production. The tempting fix was to weaken the assertion, which
+// would have removed the check from the only place it runs.
+describe("vite preview — Netlify-like routing", () => {
+  const config = readFileSync(join(ROOT, "vite.config.js"), "utf8");
+  const workflow = readFileSync(join(ROOT, ".github", "workflows", "staging-gate.yml"), "utf8");
+
+  it("has a preview-server plugin, not only a dev-server one", () => {
+    // `apply: "serve"` on the dev plugin does NOT cover preview; it needs its
+    // own configurePreviewServer hook.
+    expect(config).toMatch(/configurePreviewServer/);
+  });
+
+  it("applies the forced homepage rewrite", () => {
+    // netlify.toml rewrites `/` to the prerendered homepage with force, because
+    // dist/index.html is a real file that would otherwise win.
+    const plugin = config.slice(config.indexOf("datiq-netlify-like-preview"));
+    expect(plugin).toMatch(/"home", "index\.html"/);
+  });
+
+  it("resolves a directory index for an extensionless path", () => {
+    const plugin = config.slice(config.indexOf("datiq-netlify-like-preview"));
+    expect(plugin).toMatch(/!url\.includes\("\."\)/);
+    expect(plugin).toMatch(/"index\.html"\);/);
+  });
+
+  it("the gate's local smoke no longer opts out of the prerender check", () => {
+    // Opting out deleted the assertion in the one environment it runs in.
+    expect(workflow).not.toMatch(/SMOKE_SKIP_PRERENDER=1 node scripts\/smoke-prod\.mjs/);
+  });
+});
