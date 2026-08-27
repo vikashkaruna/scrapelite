@@ -1,7 +1,22 @@
 # Session handoff — UI/UX and discoverability improvement (2026-08-27)
 
 Branch: `UI-UX-and-discoverability-improvement`, cut from `origin/staging` (`24985b0`).
-**Not merged.** `staging` and `main` untouched, per instruction.
+**Pushed. NOT merged.** `staging` and `main` untouched.
+
+## ▶ Where to pick this up
+
+The owner asked to **review the branch locally before it goes to staging**. So:
+
+* **Do not merge anything** until they say so.
+* When they do: `staging` first, confirm the Staging Gate is green **on its own
+  fix** (this branch changes that workflow, and its first genuine run IS the
+  merge — nothing else can exercise it), then `main`.
+* ⚠️ **Before `main`: apply migration `0032` to the production Supabase project.**
+  It has only ever run against WASM Postgres via `npm run test:db`, which has no
+  GoTrue, no PostgREST and shimmed Supabase roles.
+
+17 commits · 116 files · +7,383 / −301. Every gate green at
+`0f32c80` (the pre-push hook ran them for real on the last push).
 
 ---
 
@@ -53,6 +68,24 @@ and the hook now warns when the installed copy has drifted.
 The prerender gate also lived INSIDE the `PREPUSH_FORCE` block, so
 `PREPUSH_FORCE=1` — a flag whose purpose is to make MORE checks run — silently
 switched it off.
+
+### Two more holes, both found by watching the hook report success
+
+**A brand-new branch was pushed with NO gate run at all.** On a first push
+`origin/<branch>` does not exist, so the diff base fell back to `HEAD~1` and the
+branch was compared against its own last commit. If that commit touched only
+docs — which, for a branch ending in a CLAUDE.md or handoff update, it almost
+always does — the docs-only skip fired and the whole branch went out under a
+green tick. Measured on this branch: **1 file / 0 non-docs** under the old logic,
+**116 files / 108 non-docs** under the new one. CLAUDE.md had carried this as a
+known trap for weeks; it is now fixed rather than documented.
+
+**Deleting a branch ran the whole suite.** `git push --delete` sends an all-zero
+`local_sha` — no tree, nothing to test. Three concurrent deletes contended for
+resources, reported failures, and the deletions were refused. The obvious
+workaround is `--no-verify`, and that is precisely the habit this repo has an
+incident about: **a hook that fires where it cannot usefully check is a hook
+people learn to bypass where it can.** It now skips deletions and says so.
 
 ### `scripts/check-prerender-assets.mjs` — the gate that cannot cry wolf
 
@@ -202,14 +235,31 @@ deliberately — this repo has a documented history of parallel sessions.
 `workflow-implementation-and-optimization` is **not** really ahead: its one extra
 commit is a byte-identical duplicate of one already on staging.
 
+**Remote branches are now exactly the four asked for**, plus this working branch:
+
+```
+origin/main
+origin/staging
+origin/Integration-with-outside-ecosystem
+origin/workflow-implementation-and-optimization
+origin/UI-UX-and-discoverability-improvement   ← this branch
+```
+
+`origin/AI-era-discoverability-intelligence`, `origin/claude/audit-storage-error-003fa6`
+and `origin/claude/datiq-discoverability-module-542c4a` were re-verified contained
+in `origin/staging` immediately before deletion and are gone. SHAs are in the
+cleanup doc; `git branch <name> <sha>` restores any of them.
+
 ---
 
 ## Open items
 
 1. **`PAGESPEED_API_KEY`** — unset, so Core Web Vitals read "not measured".
-2. **Remote branch deletion** — deferred until this merges, so cleanup and
-   release are not entangled.
-3. **Four worktree-held branches** — see the cleanup doc.
+2. **Four worktree-held branches** — `node-24-upgrade` (the MAIN checkout),
+   `AI-era-discoverability-intelligence`, `claude/audit-storage-error-003fa6`
+   and `claude/datiq-discoverability-module-542c4a` still exist LOCALLY because
+   each is the checked-out branch of a live worktree. Their remote counterparts
+   are deleted. See the cleanup doc for the two-line fix per worktree.
 4. **Admin monitor controls** — `/admin/monitoring` lists discoverability
    monitors read-only. Pausing one needs the same mandatory-reason +
    `ops_audit_log` path the extraction schedules have; a control that writes no
