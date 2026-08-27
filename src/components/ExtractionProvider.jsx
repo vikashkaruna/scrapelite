@@ -41,6 +41,12 @@ export function ExtractionProvider({ children }) {
   const { personaId } = usePersona();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
+  // A mirror of `current` that async work can read AFTER its await. The value
+  // captured in a closure is a SNAPSHOT: anything that resolves later and
+  // commits that snapshot silently reverts every commit made while it was in
+  // flight. That is not hypothetical — it is what deleted a Quick enrichment
+  // tab a second after the "ready" toast (see the auto-save below).
+  const currentRef = useRef(current);
   // Set when a robots.txt refusal is overridable by this signed-in user, so the
   // attestation dialog can be offered instead of a dead-end error modal.
   // Shape: { url, host, options }.
@@ -68,8 +74,61 @@ export function ExtractionProvider({ children }) {
 
   // Set `current` and mirror it to localStorage (so a reload restores the page).
   const commitCurrent = (next) => {
+    currentRef.current = next;
     setCurrent(next);
     saveCurrent(next);
+  };
+
+  // The extraction `current` holds right now — for async callers that have
+  // awaited since they last looked. Falls back to a bare { url } so a
+  // capability run against a URL we are not currently showing still has
+  // somewhere to attach.
+  const latestCurrentFor = (url) => {
+    const latest = currentRef.current;
+    return latest && latest.url === url ? latest : { url };
+  };
+
+  // ── Enrichment sync queue ───────────────────────────────────────────────────
+  //
+  // A capability run while the extraction's own auto-save is still in flight
+  // has an id but no server row yet, so `updateEnrichments` would PATCH a row
+  // that does not exist. The old code just skipped the sync: the tab was
+  // written to localStorage, rendered correctly in this browser for ever, and
+  // was simply ABSENT on the user's other devices — with nothing on screen to
+  // say so, for a tab they had spent a credit on.
+  //
+  // Park it instead, keyed by extraction id, and flush when the save lands.
+  // Bounded by design: each save's settle handler removes its own key, and the
+  // value is the COMPLETE enrichments map (not a delta), so re-parking is a
+  // last-write-wins overwrite rather than a growing list.
+  const pendingEnrichSync = useRef(new Map());
+
+  const sendEnrichments = (id, enrichments) => {
+    if (!id || !enrichments || Object.keys(enrichments).length === 0) return;
+    // Signed-out users 401 here and degrade to localStorage inside the repo.
+    // That is the correct end state, not a failure to retry: a guest row has
+    // no `user_id`, so there is no account for the server to attach it to.
+    updateEnrichments(id, enrichments).catch((err) =>
+      console.warn("[DatIQ] Enrichment sync failed:", err),
+    );
+  };
+
+  // Sync now if the row exists; otherwise hold it for the save's settle.
+  const syncOrQueueEnrichments = (target, enrichments) => {
+    if (!target?.id) return; // nothing to attach to at all
+    if (target._saved) sendEnrichments(target.id, enrichments);
+    else pendingEnrichSync.current.set(target.id, enrichments);
+  };
+
+  // Called once per auto-save, whichever way it went. `persisted` false means
+  // no row was written (rejected, or refused by the saved-searches cap), so
+  // the parked map is dropped rather than PATCHed at nothing — it survives in
+  // localStorage, which is the honest outcome for a row that does not exist.
+  const settlePendingEnrichSync = (id, persisted) => {
+    const parked = pendingEnrichSync.current.get(id);
+    if (parked === undefined) return;
+    pendingEnrichSync.current.delete(id);
+    if (persisted) sendEnrichments(id, parked);
   };
 
   // Run Firecrawl + AI, then route to the preview screen.
@@ -171,11 +230,36 @@ export function ExtractionProvider({ children }) {
       // Auto-save to database (fire-and-forget); marks the extraction as saved
       // so Preview shows "View Dashboard" instead of "Save to Dashboard".
       saveExtraction(result)
-        .then(() => {
-          commitCurrent({ ...result, _saved: true });
+        .then((saved) => {
+          const persisted = saved?._saved !== false;
+          // Flush BEFORE the `current` guard below: an enrichment parked
+          // against this id belongs to this row whether or not the user is
+          // still looking at it.
+          settlePendingEnrichSync(result.id, persisted);
+          // Merge onto whatever `current` is NOW — never re-commit the
+          // `result` snapshot taken above. This is a real network round trip
+          // (owner lookup, then POST /api/extractions, then a Supabase
+          // insert), and the user is already on /preview while it runs. Any
+          // Quick enrichment they start inside that window commits its tab
+          // first; re-committing the snapshot deleted that tab a second after
+          // its own "ready" toast, which is exactly the "run says success but
+          // nothing is displayed" report.
+          const latest = currentRef.current;
+          // A save that lands after the user has opened a DIFFERENT extraction
+          // must not stamp this one's flag onto that one.
+          if (!latest || latest.id !== result.id) return;
+          // Honour the repo's own verdict rather than assuming success: a save
+          // refused by the free saved-searches cap comes back `_saved: false`,
+          // and claiming otherwise offers "View Dashboard" for a row that was
+          // never written, then syncs enrichments against a missing id.
+          commitCurrent({ ...latest, _saved: persisted });
           analytics.saved({ url, intent: props.intent });
         })
-        .catch((err) => console.warn("[DatIQ] Auto-save failed:", err));
+        .catch((err) => {
+          // No row was written, so nothing parked against it can be synced.
+          settlePendingEnrichSync(result.id, false);
+          console.warn("[DatIQ] Auto-save failed:", err);
+        });
       // Completion handling: if the user is still on the page they launched
       // from, take them straight to the result (the expected flow). If they've
       // navigated elsewhere, DON'T yank them — leave a "done" dock with a
@@ -279,16 +363,18 @@ export function ExtractionProvider({ children }) {
     saveEnrichment(url, entry); // local cache (keyed by URL)
     billing?.trackEnrichment?.(url);
     if (!user) guestTrial?.trackGuestExtraction?.(1);
-    const base = current && current.url === url ? current : { url };
+    // Read `current` AFTER the await, not the closure's copy from before it:
+    // the extraction's own auto-save resolves in this same window, and
+    // committing the pre-await copy threw away the `_saved` flag it had just
+    // set — after which no later tab ever syncs to Supabase, with nothing
+    // visible to explain why.
+    const base = latestCurrentFor(url);
     const nextEnrichments = { ...(base.enrichments || {}), [preset.key]: entry };
     commitCurrent({ ...base, enrichments: nextEnrichments });
-    // If this extraction is already saved, sync the full map to the backend so
-    // the tabs persist in Supabase (and across devices). Fire-and-forget.
-    if (base._saved && base.id) {
-      updateEnrichments(base.id, nextEnrichments).catch((err) =>
-        console.warn("[DatIQ] Enrichment sync failed:", err),
-      );
-    }
+    // Sync the full map to the backend so the tabs persist in Supabase (and
+    // across devices). Fire-and-forget, and queued when the row's own save has
+    // not landed yet.
+    syncOrQueueEnrichments(base, nextEnrichments);
     return entry;
   });
 
@@ -333,13 +419,13 @@ export function ExtractionProvider({ children }) {
     // Content generations also count against the AI enrichment quota so a
     // single user can't loop "SEO outline" 1000× to exhaust the budget.
     billing?.trackEnrichment?.(url);
-    const nextEnrichments = { ...(base.enrichments || {}), [format.key]: entry };
-    commitCurrent({ ...base, enrichments: nextEnrichments });
-    if (base._saved && base.id) {
-      updateEnrichments(base.id, nextEnrichments).catch((err) =>
-        console.warn("[DatIQ] Content enrichment sync failed:", err),
-      );
-    }
+    // Same rule as enrich(): commit onto the post-await `current`, since the
+    // auto-save (or another capability) can have landed while the model was
+    // generating.
+    const target = latestCurrentFor(url);
+    const nextEnrichments = { ...(target.enrichments || {}), [format.key]: entry };
+    commitCurrent({ ...target, enrichments: nextEnrichments });
+    syncOrQueueEnrichments(target, nextEnrichments);
     return entry;
   });
 
