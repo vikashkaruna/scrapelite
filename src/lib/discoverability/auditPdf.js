@@ -19,6 +19,7 @@
 
 import { jsPDF } from "jspdf";
 import { toPdfSafe } from "../invoicePdf.js";
+import { PILLAR_IDS, pillarLabel, signalLabel } from "./signalRegistry.js";
 
 const MARGIN = 44;
 const RULE = [226, 232, 240];
@@ -43,9 +44,10 @@ const scoreText = (v) => { const x = n1(v); return x === null ? "not measured" :
  * @param {object} audit  the rehydrated audit (same shape buildMarkdownReport takes)
  * @param {object} [opts]
  * @param {boolean} [opts.includeConstructs]  append the copy-ready assets
+ * @param {object}  [opts.diff]  comparison against the baseline audit, if any
  * @returns {jsPDF}
  */
-export function renderAuditPdf(audit, { includeConstructs = false } = {}) {
+export function renderAuditPdf(audit, { includeConstructs = false, diff = null } = {}) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
@@ -142,6 +144,74 @@ export function renderAuditPdf(audit, { includeConstructs = false } = {}) {
       { size: 8.4, ink: MUTED, gap: 2 });
   }
 
+  // ── Penalties ────────────────────────────────────────────────────────────
+  // The blocker layer is multiplicative and can halve a score. Printing the
+  // final number without saying a penalty was applied makes the arithmetic
+  // unreproducible for whoever reads this months later.
+  const penalties = audit?.penalties || [];
+  if (penalties.length) {
+    heading("Blocking penalties");
+    para("These are applied as a multiplier AFTER the pillar scores are combined. Fixing them is what unlocks the rest.",
+      { size: 8.6, ink: MUTED });
+    for (const pen of penalties) {
+      room(24);
+      pdf.setFont("helvetica", "bold").setFontSize(9.2); setInk(SEVERITY_INK.critical);
+      pdf.text(toPdfSafe(`${pen.label || pen.code}  -${Math.round((pen.factor || 0) * 100)}%`), MARGIN, y);
+      y += 11;
+      if (pen.description) para(pen.description, { size: 8.6, ink: MUTED, indent: 14, gap: 6 });
+    }
+    const mult = n1(audit?.penaltyMultiplier);
+    const pre = n1(audit?.scoreMath?.prePenaltyTotal);
+    if (mult !== null && pre !== null) {
+      para(`Before penalties ${pre}  x  ${mult}  =  ${scoreText(audit?.finalScore)}`,
+        { size: 8.6, ink: MUTED });
+    }
+  }
+
+  // ── Pillars ──────────────────────────────────────────────────────────────
+  // The four pillar scores and every signal underneath them. This is the part
+  // that makes a score explainable rather than merely reported, and it was
+  // missing from the PDF entirely — so the one artefact that gets forwarded to
+  // a client and read without the app was also the one that could not answer
+  // "why is this number what it is".
+  const pillars = audit?.pillars || {};
+  if (PILLAR_IDS.some((id) => pillars[id])) {
+    heading("Pillar breakdown");
+    for (const id of PILLAR_IDS) {
+      const pil = pillars[id];
+      if (!pil) continue;
+      room(30);
+      pdf.setFont("helvetica", "bold").setFontSize(10); setInk(INK);
+      pdf.text(toPdfSafe(pillarLabel(id)), MARGIN, y);
+      pdf.setFont("helvetica", "bold").setFontSize(10);
+      pdf.text(toPdfSafe(scoreText(pil.score)), MARGIN + 220, y, { align: "right" });
+      pdf.setFont("helvetica", "normal").setFontSize(8.2); setInk(MUTED);
+      const cov = n1(pil.coverage);
+      pdf.text(toPdfSafe([
+        `weight ${Math.round((pil.weight || 0) * 100)}%`,
+        cov === null ? null : `coverage ${cov}%`,
+      ].filter(Boolean).join("   |   ")), MARGIN + 236, y);
+      y += 14;
+
+      for (const sig of pil.signals || []) {
+        room(12);
+        pdf.setFont("helvetica", "normal").setFontSize(8.4); setInk(INK);
+        pdf.text(toPdfSafe(sig.label || signalLabel(sig.code) || sig.code), MARGIN + 14, y);
+        pdf.setFontSize(8.2); setInk(MUTED);
+        pdf.text(toPdfSafe(`${Math.round((sig.weight || 0) * 100)}%`), MARGIN + 250, y, { align: "right" });
+        // `unknown` is never `0`. An unmeasured or not-applicable signal says
+        // so in words; printing a 0 here would be a different claim entirely.
+        const cell = sig.measured
+          ? scoreText(sig.score)
+          : (sig.applicable === false ? "not applicable to this page type" : "not measured");
+        setInk(sig.measured ? INK : MUTED);
+        pdf.text(toPdfSafe(cell), MARGIN + 266, y);
+        y += 10.5;
+      }
+      y += 8;
+    }
+  }
+
   // ── Issues ───────────────────────────────────────────────────────────────
   const issues = audit?.issues || [];
   heading(`Issues (${issues.length})`);
@@ -195,9 +265,127 @@ export function renderAuditPdf(audit, { includeConstructs = false } = {}) {
     });
   }
 
+  // ── Evidence ─────────────────────────────────────────────────────────────
+  // The same facts the markdown report prints, in the same order, because a
+  // PDF that disagrees with the CSV somebody exported ten seconds earlier is a
+  // support ticket nobody can reproduce.
+  const tech = audit?.facts?.technical || {};
+  const outline = audit?.evidence?.heading_outline || [];
+  const access = tech.ai_crawler_access;
+  const sample = audit?.facts?.entity?.ai_citation_sample;
+
+  if (Object.keys(tech).length || outline.length || access || sample) {
+    heading("Evidence");
+
+    const cwv = tech.core_web_vitals || {};
+    const rend = tech.rendering || {};
+    const rows = [
+      ["HTTP status", tech.http_status ?? "-"],
+      ["Indexable", tech.indexable === undefined ? "-" : tech.indexable ? "yes" : "no"],
+      ["Canonical", tech.canonical_url || "not declared"],
+      ["LCP", cwv.lcp_seconds != null ? `${cwv.lcp_seconds}s` : "not measured"],
+      ["INP", cwv.inp_ms != null ? `${cwv.inp_ms}ms` : "not measured"],
+      ["CLS", cwv.cls != null ? String(cwv.cls) : "not measured"],
+      ["Raw / rendered words",
+        `${rend.raw_html_word_count ?? "-"} / ${rend.rendered_dom_word_count ?? "not measured"}`],
+    ];
+    for (const [k, v] of rows) {
+      room(12);
+      pdf.setFont("helvetica", "normal").setFontSize(8.6); setInk(MUTED);
+      pdf.text(toPdfSafe(k), MARGIN, y);
+      setInk(INK);
+      pdf.text(toPdfSafe(String(v)), MARGIN + 150, y);
+      y += 11;
+    }
+    y += 8;
+
+    if (access && Object.keys(access).length) {
+      room(24);
+      pdf.setFont("helvetica", "bold").setFontSize(9.2); setInk(INK);
+      pdf.text(toPdfSafe("Answer-engine crawler access"), MARGIN, y);
+      y += 13;
+      // A blocked answer-engine crawler is the finding most likely to be the
+      // whole story, so it is printed in the danger ink rather than listed flat.
+      for (const [agent, allowed] of Object.entries(access)) {
+        room(11);
+        pdf.setFont("helvetica", "normal").setFontSize(8.4);
+        setInk(allowed === false ? SEVERITY_INK.critical : MUTED);
+        pdf.text(toPdfSafe(`${agent}: ${allowed === null ? "unknown" : allowed ? "allowed" : "BLOCKED"}`),
+          MARGIN + 14, y);
+        y += 10;
+      }
+      y += 8;
+    }
+
+    if (outline.length) {
+      room(24);
+      pdf.setFont("helvetica", "bold").setFontSize(9.2); setInk(INK);
+      pdf.text(toPdfSafe("Heading outline"), MARGIN, y);
+      y += 13;
+      for (const h of outline) {
+        room(10.5);
+        pdf.setFont("courier", "normal").setFontSize(7.8); setInk(MUTED);
+        pdf.text(toPdfSafe(`${"  ".repeat(Math.max(0, (h.level || 1) - 1))}H${h.level} ${h.text || "(empty)"}`),
+          MARGIN + 14, y);
+        y += 9.6;
+      }
+      y += 8;
+    }
+
+    if (sample) {
+      room(30);
+      pdf.setFont("helvetica", "bold").setFontSize(9.2); setInk(INK);
+      pdf.text(toPdfSafe("Citation footprint"), MARGIN, y);
+      y += 13;
+      para(`Sampled with ${sample.engine} across ${sample.prompt_count} prompts: ${sample.mentions} mention${sample.mentions === 1 ? "" : "s"}, ${sample.citations} citation${sample.citations === 1 ? "" : "s"}.`,
+        { size: 8.6, indent: 14, gap: 4 });
+      if (!sample.live) {
+        // The single most important caveat in the whole report, and the one a
+        // reader is most likely to act on wrongly if it is missing.
+        para("These samples come from a language model's recall rather than a live answer engine with web retrieval. They indicate how well known the brand is, not whether it is being cited in live answers today.",
+          { size: 8.2, ink: SEVERITY_INK.medium, indent: 14, gap: 6 });
+      }
+    }
+  }
+
+  // ── Change since the last audit ───────────────────────────────────────────
+  if (diff) {
+    heading("Change since the last audit");
+    if (diff.headline) para(diff.headline, { size: 9.2 });
+    for (const [label, key] of [["Overall", "overall"], ["SEO", "seo"], ["AEO", "aeo"], ["GEO", "geo"]]) {
+      const d = diff.frameworks?.[key];
+      if (!d) continue;
+      room(12);
+      pdf.setFont("helvetica", "normal").setFontSize(8.6); setInk(MUTED);
+      pdf.text(toPdfSafe(label), MARGIN, y);
+      setInk(INK);
+      pdf.text(toPdfSafe(`${scoreText(d.before)}  ->  ${scoreText(d.after)}`), MARGIN + 90, y);
+      // An incomparable pair prints WHY, never a fabricated delta. Two audits
+      // taken at different coverage are not a movement.
+      setInk(d.comparable ? (d.change > 0 ? [21, 128, 61] : SEVERITY_INK.high) : MUTED);
+      pdf.text(toPdfSafe(d.comparable ? (d.change > 0 ? `+${n1(d.change)}` : String(n1(d.change))) : String(d.reason || "not comparable")),
+        MARGIN + 220, y);
+      y += 11;
+    }
+    y += 8;
+    if (diff.issues?.resolved?.length) {
+      para(`Resolved: ${diff.issues.resolved.map((i) => i.code).join(", ")}`, { size: 8.6, ink: MUTED });
+    }
+    if (diff.issues?.introduced?.length) {
+      para(`New since the baseline: ${diff.issues.introduced.map((i) => i.code).join(", ")}`,
+        { size: 8.6, ink: SEVERITY_INK.high });
+    }
+    for (const c of diff.caveats || []) para(c, { size: 8.2, ink: MUTED, gap: 3 });
+  }
+
   // ── Copy-ready constructs ────────────────────────────────────────────────
   if (includeConstructs) {
-    const withAssets = recs.filter((r) => r.implementationAsset?.content);
+    // ⚠️ `body`, not `content`. Every template in constructTemplates.js emits
+    // { label, body, format }, and both the markdown report and the UI read
+    // `.body`. This filter looked for `.content`, so it always matched nothing
+    // and the "Ready-to-paste assets" section has never once rendered — the
+    // section most likely to be the reason somebody exported a PDF at all.
+    const withAssets = recs.filter((r) => r.implementationAsset?.body);
     if (withAssets.length) {
       heading("Ready-to-paste assets");
       para("Anything the audit could not observe is left as an explicit TODO. Review before publishing - a generated block with an invented value is worse than no block at all.",
@@ -207,8 +395,13 @@ export function renderAuditPdf(audit, { includeConstructs = false } = {}) {
         pdf.setFont("helvetica", "bold").setFontSize(9); setInk(INK);
         pdf.text(toPdfSafe(rec.title || rec.code), MARGIN, y);
         y += 12;
+        if (rec.implementationAsset.label) {
+          pdf.setFont("helvetica", "normal").setFontSize(8); setInk(MUTED);
+          pdf.text(toPdfSafe(rec.implementationAsset.label), MARGIN + 12, y);
+          y += 11;
+        }
         pdf.setFont("courier", "normal").setFontSize(7.6); setInk(INK);
-        for (const line of pdf.splitTextToSize(toPdfSafe(rec.implementationAsset.content), contentW - 12)) {
+        for (const line of pdf.splitTextToSize(toPdfSafe(rec.implementationAsset.body), contentW - 12)) {
           room(10);
           pdf.text(line, MARGIN + 12, y);
           y += 9.2;

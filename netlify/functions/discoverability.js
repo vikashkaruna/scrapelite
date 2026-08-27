@@ -68,9 +68,12 @@ import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend } from "../../src/lib/discoverability/auditDiff.js";
 import {
   buildMarkdownReport, issuesToCsv, recommendationsToCsv, toJsonPayload,
+  signalsToCsv, scoresToCsv, bundleToCsv,
 } from "../../src/lib/discoverability/auditReport.js";
 import { buildConstruct } from "../../src/lib/discoverability/constructTemplates.js";
-import { AUDIT_PROFILES } from "../../src/lib/discoverability/auditProfiles.js";
+import { AUDIT_PROFILES, packFor } from "../../src/lib/discoverability/auditProfiles.js";
+import { scorePillar, scoreFramework } from "../../src/lib/discoverability/scoringModel.js";
+import { PILLAR_IDS, PILLARS } from "../../src/lib/discoverability/signalRegistry.js";
 import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
 
 const CORS = {
@@ -549,7 +552,19 @@ function reportRoute(event, full) {
   const audit = rehydrate(full);
   if (format === "json") return json(200, toJsonPayload(audit));
   if (format === "csv") {
-    const which = event.queryStringParameters?.rows === "issues" ? issuesToCsv : recommendationsToCsv;
+    // `rows` selects a section. Default stays `recommendations` — it is what
+    // every existing caller gets today and this is a public API surface — but
+    // `all` is what the UI now offers, because the commonest thing anyone wants
+    // is the whole report and making them download four files to get it is how
+    // a report ends up forwarded incomplete.
+    const CSV_ROWS = {
+      issues: issuesToCsv,
+      recommendations: recommendationsToCsv,
+      signals: signalsToCsv,
+      scores: scoresToCsv,
+      all: bundleToCsv,
+    };
+    const which = CSV_ROWS[event.queryStringParameters?.rows] || recommendationsToCsv;
     return text(200, which(audit), "text/csv; charset=utf-8");
   }
   return text(200, buildMarkdownReport(audit, {
@@ -750,25 +765,56 @@ async function scheduleRoute(event, userId, method, id, body) {
 export function rehydrate(full) {
   if (!full?.result) return null;
   const r = full.result;
-  const pillars = {};
-  for (const s of full.signals || []) {
-    (pillars[s.pillar] ||= { score: null, signals: [] }).signals.push({
-      code: s.signal_code,
-      score: s.normalized_score === null ? null : Number(s.normalized_score),
-      weight: Number(s.weight),
-      measured: s.measured,
-      unknownReason: s.unknown_reason,
-      applicable: s.unknown_reason !== "not_applicable",
-    });
+
+  // ── REBUILD THE PILLARS THROUGH scorePillar(), NOT BY HAND ───────────────
+  //
+  // This used to construct each signal object inline, and it quietly omitted
+  // three fields the in-memory pipeline puts there: `label`, and each pillar's
+  // `coverage` and `weight`. `audit_signals` stores only `signal_code` — which
+  // is right, because codes are the public contract and a stored label would
+  // freeze today's wording into every historical row — so nothing downstream
+  // could recover them.
+  //
+  // The result was that a FRESH audit rendered correctly and a STORED one did
+  // not, which is the worst shape a bug can take: it never reproduces while you
+  // are looking at it. The exported markdown printed `| undefined | 0 | 25% |`
+  // for every signal in every pillar, the pillar accordion showed blank signal
+  // names on any audit reopened from history, and toJsonPayload emitted
+  // pillar_scores[*].coverage as null.
+  //
+  // Feeding the stored per-signal values back through the SAME pure function
+  // the pipeline used is what makes fresh and rehydrated audits identical by
+  // construction rather than by two lists of fields agreeing. It also restores
+  // registry declaration order — getAuditFull returns rows sorted
+  // signal_code.asc, so a reopened audit listed its signals alphabetically
+  // while a fresh one listed them in the order the pillar defines.
+  //
+  // The STORED pillar scores stay authoritative: they are what was persisted,
+  // what the trend chart plots, and what a historical diff compares against.
+  // Only the derived presentation fields are recomputed.
+  const values = {};
+  const reasons = {};
+  for (const row of full.signals || []) {
+    values[row.signal_code] = row.normalized_score === null ? null : Number(row.normalized_score);
+    if (row.unknown_reason) reasons[row.signal_code] = row.unknown_reason;
   }
-  const map = {
+
+  const storedPillarScore = {
     answer_clarity: r.answer_clarity_score,
     entity_authority: r.entity_authority_score,
     structural_hierarchy: r.structural_hierarchy_score,
     technical_accessibility: r.technical_accessibility_score,
   };
-  for (const [k, v] of Object.entries(map)) {
-    pillars[k] = { ...(pillars[k] || { signals: [] }), score: v === null ? null : Number(v) };
+
+  const pillars = {};
+  for (const pillar of PILLAR_IDS) {
+    const rebuilt = scorePillar(pillar, values, reasons);
+    const stored = storedPillarScore[pillar];
+    pillars[pillar] = {
+      ...rebuilt,
+      weight: PILLARS[pillar].weight,
+      score: stored === null || stored === undefined ? rebuilt.score : Number(stored),
+    };
   }
 
   return {
@@ -776,14 +822,24 @@ export function rehydrate(full) {
     target: {
       url: full.audit.target_url, page_type: full.audit.page_type,
       device_profile: full.audit.device_profile, audit_profile: full.audit.audit_profile,
+      // The pipeline puts the human label here (auditPipeline.js:341). Without
+      // it every export printed the raw enum — "page" instead of "General page".
+      page_type_label: packFor(full.audit.page_type).label,
     },
     finalScore: num(r.final_score), seoScore: num(r.seo_score),
     aeoScore: num(r.aeo_score), geoScore: num(r.geo_score),
     headlineFramework: r.headline_framework,
     coverage: num(r.coverage),
+    // Coverage travels WITH each framework score. A framework-weighted coverage
+    // is not the same number for all four views — a missing technical signal
+    // costs the tech-heavy SEO view more than the answer-heavy AEO view — and
+    // dropping it here is what left CoverageNote blank on every reopened audit.
+    // Recomputed with scoreFramework(), the same function the pipeline uses.
     frameworks: {
-      overall: { score: num(r.final_score) }, seo: { score: num(r.seo_score) },
-      aeo: { score: num(r.aeo_score) }, geo: { score: num(r.geo_score) },
+      overall: { score: num(r.final_score), coverage: scoreFramework("overall", pillars).coverage },
+      seo: { score: num(r.seo_score), coverage: scoreFramework("seo", pillars).coverage },
+      aeo: { score: num(r.aeo_score), coverage: scoreFramework("aeo", pillars).coverage },
+      geo: { score: num(r.geo_score), coverage: scoreFramework("geo", pillars).coverage },
     },
     pillars,
     penalties: r.engine_json?.penalties || [],

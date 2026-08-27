@@ -9,7 +9,7 @@
 
 import Icon from "../Icon.jsx";
 import { scoreBand } from "../../lib/discoverability/scoringModel.js";
-import { PILLARS, PILLAR_IDS } from "../../lib/discoverability/signalRegistry.js";
+import { PILLARS, PILLAR_IDS, signalLabel } from "../../lib/discoverability/signalRegistry.js";
 
 const FRAMEWORK_META = {
   overall: { label: "Overall", icon: "gauge", hint: "All four pillars, weighted for balanced discoverability." },
@@ -158,7 +158,9 @@ export function PillarCard({ pillarId, pillar, diff, expanded, onToggle }) {
               : "Could not be measured in this audit";
             return (
               <li key={s.code} className="dsc-signal-row">
-                <span className="dsc-signal-name">{s.label}</span>
+                {/* Fall back to the code rather than rendering an empty span —
+                    a reopened audit once showed a column of blank signal names. */}
+                <span className="dsc-signal-name">{s.label || signalLabel(s.code) || s.code}</span>
                 <span className="dsc-signal-weight">{Math.round(s.weight * 100)}%</span>
                 {s.measured ? (
                   <>
@@ -179,7 +181,21 @@ export function PillarCard({ pillarId, pillar, diff, expanded, onToggle }) {
   );
 }
 
-export function PillarGrid({ audit, diff, expandedPillar, onTogglePillar }) {
+/**
+ * The four pillar cards.
+ *
+ * ── INDEPENDENTLY EXPANDABLE, NOT AN ACCORDION ─────────────────────────────
+ * `expandedPillars` is a Set, not a single id. It used to be one nullable
+ * string, which made opening any pillar close the one you were already reading
+ * — so comparing "Answer Clarity" against "Structural Hierarchy", which is the
+ * single most common reason to open one at all, was impossible without
+ * scrolling back and re-opening.
+ *
+ * A card closes only when the reader closes it.
+ */
+export function PillarGrid({ audit, diff, expandedPillars, onTogglePillar }) {
+  const isOpen = (id) =>
+    expandedPillars instanceof Set ? expandedPillars.has(id) : expandedPillars === id;
   return (
     <div className="dsc-pillar-grid">
       {PILLAR_IDS.map((id) => (
@@ -188,8 +204,8 @@ export function PillarGrid({ audit, diff, expandedPillar, onTogglePillar }) {
           pillarId={id}
           pillar={audit?.pillars?.[id]}
           diff={diff}
-          expanded={expandedPillar === id}
-          onToggle={() => onTogglePillar(expandedPillar === id ? null : id)}
+          expanded={isOpen(id)}
+          onToggle={() => onTogglePillar(id)}
         />
       ))}
     </div>

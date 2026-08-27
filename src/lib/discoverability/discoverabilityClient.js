@@ -101,7 +101,8 @@ export const discoverability = {
   // ── Reports ──────────────────────────────────────────────────────────────
   reportMarkdown: (id, { constructs = false } = {}) =>
     reqText(`/audits/${encodeURIComponent(id)}/report?format=markdown${constructs ? "&constructs=1" : ""}`),
-  reportCsv: (id, rows = "recommendations") =>
+  /** rows: "all" | "scores" | "signals" | "issues" | "recommendations". */
+  reportCsv: (id, rows = "all") =>
     reqText(`/audits/${encodeURIComponent(id)}/report?format=csv&rows=${encodeURIComponent(rows)}`),
   reportJson: (id) => req(`/audits/${encodeURIComponent(id)}/report?format=json`),
 
