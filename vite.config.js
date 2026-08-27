@@ -89,6 +89,60 @@ export default defineConfig({
         });
       },
     },
+    // ── Make `vite preview` route like Netlify too ────────────────────────
+    //
+    // The plugin above only covers the DEV server: `apply: "serve"` does not
+    // include preview. That gap had teeth.
+    //
+    // The Staging Gate's local smoke step exists because staging.datiq.app is
+    // behind Netlify's visitor-access gate and cannot be probed anonymously, so
+    // it builds the commit and smoke-tests `vite preview` instead — on the
+    // stated grounds that it is "the identical artifact Netlify would publish".
+    // The ARTIFACT is identical. The ROUTING was not: Vite's preview server does
+    // no directory-index resolution, so `/pricing` fell through to the SPA shell
+    // while Netlify serves dist/pricing/index.html for it. A smoke test asserting
+    // the prerendered document is served therefore failed in CI for a reason that
+    // does not exist in production — and the tempting fix, weakening the
+    // assertion, would have deleted the check in the one place it runs.
+    //
+    // So preview now applies the two rules that decide which bytes a URL gets:
+    // the forced `/` -> /home/index.html rewrite, and directory-index lookup.
+    // Everything else (the 301s) is already baked into the built output.
+    {
+      name: "datiq-netlify-like-preview",
+      apply: "serve",
+      async configurePreviewServer(server) {
+        const { readFileSync, existsSync, statSync } = await import("node:fs");
+        const { join, resolve } = await import("node:path");
+        const DIST = resolve(process.cwd(), "dist");
+
+        server.middlewares.use((req, res, next) => {
+          const url = (req.url || "/").split("?")[0];
+
+          const send = (file) => {
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(readFileSync(file));
+          };
+
+          // netlify.toml rewrites `/` to the prerendered homepage with
+          // status 200 and `force = true`. Without force, dist/index.html —
+          // a real file — wins; the same is true here.
+          if (url === "/") {
+            const home = join(DIST, "home", "index.html");
+            if (existsSync(home)) return send(home);
+          }
+
+          // Directory index: /pricing -> dist/pricing/index.html. Netlify does
+          // this; Vite does not, and that difference is the whole bug.
+          if (url !== "/" && !url.includes(".")) {
+            const candidate = join(DIST, url.replace(/^\/+/, "").replace(/\/+$/, ""), "index.html");
+            if (existsSync(candidate) && statSync(candidate).isFile()) return send(candidate);
+          }
+
+          next();
+        });
+      },
+    },
     // The Vite proxy middleware logs ECONNREFUSED stack traces to
     // Vite's logger for every request when the proxy target
     // (Netlify Functions dev server on :9999) is unreachable — exactly
