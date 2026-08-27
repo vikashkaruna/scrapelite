@@ -3,8 +3,9 @@
 ## The production deploy died on a package published 27 minutes earlier
 
 **Branch:** `claude/netlify-deploy-version-error-2a72ca` (cut from `origin/staging` @ `0aba153`)
-**Merged to:** `staging`
-**`main`:** untouched
+**Merged to:** `staging` — fast-forward `0aba153` → **`bc13cc5`**
+**`main`:** untouched at `550905e`
+**Staging Gate on `bc13cc5`:** all four checks green — Test Suites · Vulnerabilities · Open Issues/Defects · **Deployed & Smoke Tested**
 
 ---
 
@@ -183,6 +184,8 @@ asserts nothing is worse than no test.*
 | `netlify --version` | `netlify-cli/27.1.2` |
 | `netlify deploy --help` | exit 0 |
 | `phase-gate.yml` | parses; step order verified |
+| pre-push hook | **all gates green in 56s, nothing bypassed** |
+| Staging Gate (`bc13cc5`) | **4 / 4 green**, including Deployed & Smoke Tested |
 
 `npm run test:prepush` exits **0** end to end. Nothing was bypassed.
 
