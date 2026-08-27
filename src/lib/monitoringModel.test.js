@@ -475,3 +475,40 @@ describe("presentation helpers (M-10)", () => {
     expect(formatRelative("not-a-date", NOW)).toBe("never");
   });
 });
+
+// ── Expiry (regression) ─────────────────────────────────────────────────────
+// deriveScheduleStatus read `data.endsAt || data.runUntil`, and no schedule has
+// ever carried either: buildSchedule() persists `expiresAt`. So EXPIRED was
+// unreachable and the admin dashboard's "Expired" filter always matched
+// nothing, whatever was in the table — a filter that silently lies is worse
+// than no filter, because it is read as evidence.
+describe("deriveScheduleStatus — expiry", () => {
+  const past = new Date(Date.now() - 86400000).toISOString();
+  const future = new Date(Date.now() + 86400000).toISOString();
+
+  it("reads the field schedules actually persist (expiresAt)", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { expiresAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("does not expire one whose end date is still ahead", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { expiresAt: future } }).state)
+      .toBe(SCHEDULE_STATE.ACTIVE);
+  });
+
+  it("still honours the older field names", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { endsAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+    expect(deriveScheduleStatus({ status: "active", data: { runUntil: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("expiry outranks a pause — a stopped schedule that has also ended is ended", () => {
+    expect(deriveScheduleStatus({ status: "paused", system_paused: true, data: { expiresAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("a schedule with no end date never expires", () => {
+    expect(deriveScheduleStatus({ status: "active", data: {} }).state).toBe(SCHEDULE_STATE.ACTIVE);
+  });
+});

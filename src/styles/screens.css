@@ -1619,6 +1619,44 @@
   display: flex; align-items: center; gap: 12px; margin-top: 20px;
   font-size: .86em;
 }
+
+/* ── Answer-first block (AC-01) ──────────────────────────────────────────────
+   The passage answer engines quote. Styled to read as a definition rather than
+   as marketing body copy: slightly larger than the surrounding text, an accent
+   rule on the leading edge, and a measure that keeps it to a few lines so it
+   stays visibly a single self-contained statement. */
+.home-answer-block {
+  margin: 18px 0 0;
+  padding: 0 0 0 16px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  max-width: 62ch;
+  font-size: clamp(14.5px, 1.6vw, 17px);
+  line-height: 1.65;
+  color: var(--text-1);
+  font-weight: 450;
+}
+
+/* Section headings. The page previously had one H1 and one H3 and nothing
+   else, so it was a single undifferentiated chunk to any retrieval system. */
+.home-section-h {
+  width: 100%;
+  max-width: 1080px;
+  margin: 40px 0 4px;
+  font-size: clamp(19px, 2.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--text-1);
+}
+
+/* Visible freshness date (EA-06). Quiet by design — it is a trust signal, not
+   a headline, and it must not compete with the content it dates. */
+.home-updated {
+  margin-top: 36px;
+  font-size: .82em;
+  color: var(--text-3);
+}
+.home-updated a { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; }
+.home-updated a:hover { color: var(--accent); }
 .feature-cell-highlight { border-color: color-mix(in srgb, var(--accent) 36%, var(--border)); }
 .feature-tag {
   font-size: .7em; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
@@ -6700,6 +6738,18 @@
   font-size: 1.05rem; font-weight: 800; margin: 0;
 }
 .template-gallery-sub { color: var(--text-2); font-size: .85rem; margin: 4px 0 0; }
+
+/* Collapse toggle. Sits in the gallery head beside the subtitle so the control
+   is where the reader already is when they decide whether to look. */
+.template-gallery-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 6px 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: .82em; font-weight: 600; color: var(--text-2);
+  cursor: pointer; transition: border-color .15s, color .15s;
+}
+.template-gallery-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .template-tags {
   display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
   margin-bottom: 14px;
@@ -9387,4 +9437,168 @@ html.dark .dsc-page {
   .dsc-history-row { flex-wrap: wrap; }
   .dsc-history-meta { width: 100%; padding-left: 52px; }
   .dsc-history-search { width: 100%; }
+}
+
+
+/* ── Danger zone (Account) ───────────────────────────────────────────────────
+   Visually separated from everything above it. The border and the heading do
+   the work: this is not a card you skim past on the way to something else. */
+.danger-zone {
+  margin-top: 28px;
+  border-color: color-mix(in srgb, var(--danger, #dc2626) 34%, var(--border));
+}
+.danger-zone-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 4px; font-size: 15px; font-weight: 700;
+  color: var(--danger, #dc2626);
+}
+.danger-row {
+  display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap;
+  padding: 16px 0; border-top: 1px solid var(--border);
+}
+.danger-row:first-of-type { border-top: none; }
+.danger-row-body { flex: 1 1 320px; min-width: 0; }
+.danger-row-head { font-weight: 650; font-size: 14px; margin-bottom: 4px; }
+.danger-row-desc {
+  margin: 0 0 6px; font-size: 12.8px; line-height: 1.6; color: var(--text-2);
+}
+.danger-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* An active state — frozen, or a deletion pending — is tinted so the panel
+   reads as a status rather than as a set of controls. */
+.danger-row-active {
+  background: color-mix(in srgb, var(--warn, #d97706) 8%, transparent);
+  border-radius: var(--r-md); padding: 16px; margin-top: 8px;
+}
+.danger-row-destructive .danger-row-head { color: var(--danger, #dc2626); }
+
+.danger-confirm { margin-top: 10px; }
+.danger-confirm-label { display: block; font-size: 12.4px; color: var(--text-2); margin-bottom: 5px; }
+.danger-confirm-input {
+  width: 100%; max-width: 260px; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+  letter-spacing: .06em;
+}
+.danger-confirm-input:focus { outline: 2px solid var(--danger, #dc2626); outline-offset: 1px; }
+
+
+/* ── Paused workspace seat ───────────────────────────────────────────────────
+   Stated, not implied by a greyed-out row. Somebody looking at the member list
+   needs to know why their colleague's extractions are failing, and a paused
+   member is still present and still counted — pausing is not a removal. */
+.ws-team-paused-badge {
+  font-size: .68em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--warn, #d97706) 16%, transparent);
+  color: var(--warn, #b45309);
+  white-space: nowrap;
+}
+.ws-team-pause-btn {
+  background: none; border: none; padding: 4px 6px; cursor: pointer;
+  font-size: .82em; font-weight: 600; color: var(--text-3);
+  border-radius: var(--r-sm);
+}
+.ws-team-pause-btn:hover { color: var(--warn, #b45309); background: var(--surface-2); }
+
+
+/* ── Audit header (Discoverability) ──────────────────────────────────────────
+   The subject of the report. Sits above the scores because a wall of numbers
+   with no subject is what opening an audit from History used to produce. */
+.dsc-audit-header {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 14px;
+}
+.dsc-audit-header-id { display: flex; align-items: flex-start; gap: 11px; }
+.dsc-audit-header-url { min-width: 0; flex: 1; }
+.dsc-audit-header-url a {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 14.5px; font-weight: 650; color: var(--text-1);
+  text-decoration: none; word-break: break-all; line-height: 1.35;
+}
+.dsc-audit-header-url a:hover { color: var(--accent); text-decoration: underline; }
+.dsc-audit-header-facts {
+  margin-top: 3px; font-size: 11.8px; color: var(--text-3);
+  text-transform: capitalize;
+}
+/* The summary is prose, not a stat. Given a comfortable measure and separated
+   by a rule so it reads as a paragraph somebody wrote rather than as a caption. */
+.dsc-audit-summary {
+  margin: 12px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13.4px; line-height: 1.62; color: var(--text-1);
+  max-width: 78ch;
+}
+.dsc-audit-summary-loading,
+.dsc-audit-summary-muted { color: var(--text-3); display: flex; align-items: center; gap: 7px; }
+
+
+/* ── Discoverability monitors on /schedules ──────────────────────────────────
+   Badged rather than styled differently: they sit in the same list as
+   extraction schedules because the user question is the same, but a reader has
+   to be able to tell at a glance which kind of job a row is. */
+.sch-kind-badge {
+  font-size: .66em; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.sch-card-note {
+  margin: 6px 0 0; font-size: 12px; color: var(--text-3);
+  display: flex; align-items: center; gap: 6px;
+}
+.sch-action:disabled { opacity: .4; cursor: not-allowed; }
+
+
+/* ── Usage by role (Account) ─────────────────────────────────────────────────
+   A breakdown of the totals below it, so the rows are visually subordinate to
+   the Quick stats card rather than competing with it. */
+.astat-persona-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.astat-persona-row:last-child { border-bottom: none; }
+.astat-persona-head { display: flex; align-items: center; gap: 8px; }
+.astat-persona-head .astat-label { flex: 1; min-width: 0; }
+.astat-persona-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.astat-persona-detail {
+  margin-top: 3px; padding-left: 16px;
+  font-size: 11.6px; color: var(--text-3);
+}
+.astat-note {
+  margin: 6px 0 0; font-size: 12.2px; line-height: 1.55; color: var(--text-3);
+  display: flex; align-items: center; gap: 7px;
+}
+
+
+/* ── Workspace discoverability tab ───────────────────────────────────────────
+   A portfolio view: worst pages first, score on the right where the eye lands
+   last after reading the URL. */
+.ws-dsc-list { display: flex; flex-direction: column; gap: 8px; }
+.ws-dsc-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 14px; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  transition: border-color .15s;
+}
+a.ws-dsc-row:hover { border-color: var(--accent); }
+.ws-dsc-row-static { cursor: default; }
+.ws-dsc-body { flex: 1; min-width: 0; }
+.ws-dsc-host { font-weight: 600; font-size: 13.5px; }
+.ws-dsc-path {
+  font-size: 11.6px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-dsc-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 11.4px; color: var(--text-3); text-align: right;
+}
+.ws-dsc-critical { color: var(--dsc-danger, #dc2626); font-weight: 600; }
+.ws-dsc-score {
+  font-size: 19px; font-weight: 800; letter-spacing: -.02em;
+  min-width: 34px; text-align: right;
+}
+.ws-empty-note { font-size: 13px; color: var(--text-2); margin: 0; }
+
+@media (max-width: 620px) {
+  .ws-dsc-row { flex-wrap: wrap; }
+  .ws-dsc-meta { width: 100%; justify-content: flex-start; text-align: left; }
 }

@@ -350,7 +350,13 @@ export function deriveScheduleStatus(row, now = new Date()) {
   const data = row?.data || {};
   const userPaused = row?.status === "paused";
   const systemPaused = row?.system_paused === true;
-  const endsAt = data.endsAt || data.runUntil || null;
+  // ⚠️ `expiresAt` is the field schedulerService.buildSchedule() actually
+  // persists — see its shape there. This read `endsAt || runUntil`, neither of
+  // which any schedule has ever carried, so deriveScheduleStatus could never
+  // return EXPIRED and the admin dashboard's "Expired" filter was dead: it
+  // always matched nothing, whatever was in the table. The other two names are
+  // kept as fallbacks in case an older row used them.
+  const endsAt = data.expiresAt || data.endsAt || data.runUntil || null;
   const expired = !!endsAt && Date.parse(endsAt) < now.getTime();
 
   let state = SCHEDULE_STATE.ACTIVE;

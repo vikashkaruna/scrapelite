@@ -12,9 +12,12 @@
 // No browser is launched here — the server is exercised directly over HTTP.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { serveDist, forcedShellPaths, normalizeHtml, BANNER } from "./prerender.mjs";
 import { prerenderableRoutes, generatedFileFor, REACT_OWNED, STATIC_OWNED } from "./site-routes.mjs";
 
@@ -134,13 +137,30 @@ describe("prerender — output stability", () => {
 });
 
 describe("prerender — route registry agreement", () => {
-  it("the homepage is excluded", () => {
-    // public/index.html would be copied over dist/index.html by Vite.
-    expect(prerenderableRoutes().map((r) => r.path)).not.toContain("/");
+  it("the homepage IS prerendered", () => {
+    // It used to be excluded, because its output file would have been
+    // public/index.html and Vite copies public/ over the build output. The
+    // clobber risk was real; excluding the route was the wrong remedy. It left
+    // the site's highest-priority URL serving `<div id="root"></div>` and
+    // nothing else to every crawler that does not run JavaScript.
+    expect(prerenderableRoutes().map((r) => r.path)).toContain("/");
   });
 
-  it("generatedFileFor throws for the homepage rather than returning a clobbering path", () => {
-    expect(() => generatedFileFor("/")).toThrow(/homepage/i);
+  it("routes the homepage away from public/index.html", () => {
+    expect(generatedFileFor("/")).toBe("home/index.html");
+  });
+
+  it("still throws rather than returning a clobbering path", () => {
+    // THE invariant that survives the change: nothing may ever write
+    // public/index.html, because that replaces Vite's entry point with a
+    // snapshot of itself.
+    expect(() => generatedFileFor("")).toThrow(/overwrite Vite/);
+    expect(() => generatedFileFor("///")).toThrow(/overwrite Vite/);
+  });
+
+  it("forces the homepage rewrite so a real dist/index.html cannot win", () => {
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    expect(toml).toMatch(/to = "\/home\/index\.html"[\s\S]{0,60}force = true/);
   });
 
   it("maps routes to nested index.html files", () => {
@@ -148,8 +168,11 @@ describe("prerender — route registry agreement", () => {
     expect(generatedFileFor("/use-cases/seo-audit")).toBe("use-cases/seo-audit/index.html");
   });
 
-  it("every React-owned route except the homepage is prerendered", () => {
+  it("every React-owned route is prerendered", () => {
+    // Nothing is opted out any more. If a route ever needs to be, it must say
+    // why here — a silently unprerendered public route is invisible to every
+    // crawler that does not execute JavaScript.
     const skipped = REACT_OWNED.filter((r) => r.prerender === false).map((r) => r.path);
-    expect(skipped).toEqual(["/"]);
+    expect(skipped).toEqual([]);
   });
 });

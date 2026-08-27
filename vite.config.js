@@ -1,6 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { configDefaults } from "vitest/config";
+import { execFileSync } from "node:child_process";
+
+/**
+ * The committer date of HEAD, as YYYY-MM-DD.
+ *
+ * Returns null rather than guessing when git is unavailable (a tarball build,
+ * a sandbox with no .git). A wrong "last updated" date is worse than none:
+ * `dateModified` is a claim, and an inaccurate one is the exact problem the
+ * date is there to solve.
+ */
+function lastCommitDate() {
+  try {
+    return execFileSync("git", ["log", "-1", "--format=%cs"], { encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 // https://vite.dev/config
 export default defineConfig({
@@ -126,6 +143,27 @@ export default defineConfig({
       },
     },
   ],
+  // ── Content freshness date, stamped from git ──────────────────────────
+  //
+  // A discoverability audit flagged EA-06: no published or last-updated date is
+  // visible to a reader, and undated content is treated as worse than openly
+  // old content because nobody can tell whether it is stale.
+  //
+  // ⚠️ It is the COMMIT date, deliberately, not the build date.
+  //
+  // The marketing pages are prerendered into committed HTML, and
+  // `npm run prerender -- --check` re-renders and diffs against those bytes. A
+  // build timestamp changes on every run, so every check would report all 23
+  // pages stale — a gate that always fails is a gate that gets bypassed, which
+  // is precisely how the prerendered output went stale twice already.
+  //
+  // The commit date is stable for a given commit, so a re-render of unchanged
+  // sources is byte-identical, and it is also the more honest number: it is
+  // when the content actually last changed.
+  define: {
+    __CONTENT_DATE__: JSON.stringify(lastCommitDate()),
+  },
+
   // ── Keep exactly one React copy in the graph ──────────────────────────
   //
   // @vitejs/plugin-react 5.x added react and react-dom to `resolve.dedupe`

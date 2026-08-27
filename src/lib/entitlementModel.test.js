@@ -453,3 +453,74 @@ describe("workspaceAddonFeaturesForPlan — feature parity helper", () => {
     expect(planMap.business.limits.exports).not.toContain("mutated");
   });
 });
+
+// ── Account freeze / member pause ───────────────────────────────────────────
+// A SEPARATE AXIS from `status`, and these tests exist mainly to keep it that
+// way. `status = 'suspended'` is the billing lifecycle: it starts dunning and a
+// day-90 purge countdown and means "this account has lapsed". A freeze means
+// the opposite — "keep charging me, keep my data, just stop anyone consuming
+// units". Collapsing the two would enrol a paying customer in a dunning
+// sequence and start a deletion clock on data they explicitly asked to keep.
+describe("can() — frozen accounts and paused seats", () => {
+  const active = { plan_id: "pro", status: "active", source: "payment",
+                   period_end: new Date(Date.now() + 20 * 86400000).toISOString() };
+
+  const UNIT_CAPS = ["extract", "enrich", "audit", "batch", "ai"];
+
+  it("denies every unit-consuming capability while frozen", () => {
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    for (const cap of UNIT_CAPS) {
+      const v = can(frozen, cap, { planMap, usage: { extractions: 0, enrichments: {} } });
+      expect(v.allowed, `${cap} was allowed on a frozen account`).toBe(false);
+      expect(v.code).toBe("FROZEN");
+    }
+  });
+
+  it("still allows every export — this is 'view-only', not 'locked out'", () => {
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    for (const cap of ["export.csv", "export.pdf", "export.markdown", "export.json", "export.email"]) {
+      expect(can(frozen, cap, { planMap }).allowed, `${cap} was denied on a frozen account`).toBe(true);
+    }
+  });
+
+  it("does not confuse a freeze with a lapse", () => {
+    // The billing status is untouched, so nothing downstream should read a
+    // freeze as a reason to dun or to purge.
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    expect(computeLifecycle(frozen).status).toBe("active");
+  });
+
+  it("a normal active account is unaffected", () => {
+    expect(can(active, "extract", { planMap, usage: { extractions: 0, enrichments: {} } }).allowed).toBe(true);
+  });
+
+  it("reports a pending deletion distinctly from a plain freeze", () => {
+    // Different remedy, so different code: one is "unfreeze", the other is
+    // "cancel the deletion". Telling somebody to unfreeze an account that is
+    // scheduled for deletion sends them to a button that will refuse them.
+    const deleting = {
+      ...active,
+      frozen_at: new Date().toISOString(),
+      deletion_requested_at: new Date().toISOString(),
+    };
+    const v = can(deleting, "extract", { planMap, usage: { extractions: 0, enrichments: {} } });
+    expect(v.allowed).toBe(false);
+    expect(v.code).toBe("DELETION_PENDING");
+    expect(v.reason).toMatch(/cancel the deletion/i);
+  });
+
+  it("a paused workspace seat is denied the same capabilities", () => {
+    for (const cap of UNIT_CAPS) {
+      const v = can(active, cap, { planMap, memberPaused: true, usage: { extractions: 0, enrichments: {} } });
+      expect(v.allowed, `${cap} was allowed on a paused seat`).toBe(false);
+      expect(v.code).toBe("MEMBER_PAUSED");
+    }
+    expect(can(active, "export.csv", { planMap, memberPaused: true }).allowed).toBe(true);
+  });
+
+  it("a purged account outranks a freeze", () => {
+    // Nothing is recoverable from purged, so the freeze is not the story.
+    const purged = { ...active, status: "purged", frozen_at: new Date().toISOString() };
+    expect(can(purged, "export.csv", { planMap }).code).toBe("PURGED");
+  });
+});

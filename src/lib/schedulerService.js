@@ -253,7 +253,15 @@ export async function saveSchedule(schedule) {
     // Q11 — analytics: monitor / schedule created (only on first save, not updates)
     try {
       const { lifecycle: analytics } = await import("./analyticsService.js");
-      analytics.monitorCreated({ url: schedule.url, cadence: schedule.cadenceKey, name: schedule.name });
+      // ⚠️ `target` and `label`, not `url` and `name`. buildSchedule() has never
+      // produced the latter two, so every monitor_created event ever sent
+      // carried url: undefined and name: undefined — the event fired, and told
+      // us nothing about which monitor it was.
+      analytics.monitorCreated({
+        url: Array.isArray(schedule.target) ? schedule.target[0] : schedule.target,
+        cadence: schedule.cadenceKey,
+        name: schedule.label,
+      });
     } catch { /* analytics is best-effort */ }
     // Cap at MAX_SCHEDULES — reject the 51st.
     if (list.length >= MAX_SCHEDULES) {

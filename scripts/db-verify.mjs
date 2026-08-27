@@ -92,9 +92,15 @@ grant usage on schema public to anon, authenticated;
 // workspace_invites) and 4 functions (create_workspace,
 // create_workspace_invite, accept_workspace_invite, remove_workspace_member),
 // taking these to 60 / 28 / 11. No new trigger.
+//
+// 0032_account_state_and_audit_summary.sql adds NO tables — it is additive
+// columns on entitlements, workspace_members and audit_results — plus 4
+// functions (set_account_frozen, request_account_deletion,
+// cancel_account_deletion, set_workspace_member_paused), taking these to
+// 60 / 32 / 11. No new trigger.
 const EXPECT = {
   tables: 60,
-  functions: 28,
+  functions: 32,
   triggers: 11,
   tablesWithoutRls: 0,
 };
@@ -994,6 +1000,143 @@ group("team workspaces — create, invite, accept, remove");
       `select policyname from pg_policies where tablename=$1 and policyname != 'service full access'`, [t]);
     eq(`${t} has no policy beyond the service-role one`, pol.length, 0);
   }
+}
+
+// ── 0032: account freeze, deletion request, member pause ─────────────────────
+group("account state — freeze is not suspension, deletion is not a delete");
+{
+  const u = (await one(`insert into auth.users (email) values ('freeze@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'pro','active','payment', now() + interval '20 days')`, [u]);
+
+  // ── freeze ────────────────────────────────────────────────────────────────
+  const r1 = await one(`select public.set_account_frozen($1, true, 'user requested') v`, [u]);
+  eq("freezing an account succeeds", r1.v, "ok");
+
+  const e1 = await one(`select frozen_at, status, deletion_purge_after, last_notice_kind
+                          from public.entitlements where user_id=$1`, [u]);
+  check("frozen_at is set", !!e1.frozen_at);
+  // THE assertion this whole design exists for. Reusing `status='suspended'`
+  // would enrol a paying customer in the dunning sequence and start the day-90
+  // purge countdown on data they explicitly asked to keep.
+  eq("a freeze does NOT touch the billing lifecycle status", e1.status, "active");
+  eq("...and starts no purge clock", e1.deletion_purge_after, null);
+  eq("...and queues no dunning notice", e1.last_notice_kind, null);
+
+  const before = e1.frozen_at;
+  await q(`select public.set_account_frozen($1, true, 'again')`, [u]);
+  const e2 = await one(`select frozen_at from public.entitlements where user_id=$1`, [u]);
+  eq("re-freezing does not move frozen_at, so 'frozen since' stays true",
+     String(e2.frozen_at), String(before));
+
+  eq("unfreezing succeeds", (await one(`select public.set_account_frozen($1, false) v`, [u])).v, "ok");
+  eq("...and clears frozen_at",
+     (await one(`select frozen_at from public.entitlements where user_id=$1`, [u])).frozen_at, null);
+
+  eq("freezing an unknown user reports not_found",
+     (await one(`select public.set_account_frozen($1, true) v`,
+       ["00000000-0000-0000-0000-000000000000"])).v, "not_found");
+
+  // ── deletion request ──────────────────────────────────────────────────────
+  const after = (await one(`select public.request_account_deletion($1, 30) v`, [u])).v;
+  check("requesting deletion returns a purge date", !!after);
+
+  const e3 = await one(`select frozen_at, frozen_reason, deletion_requested_at,
+                               deletion_purge_after, status
+                          from public.entitlements where user_id=$1`, [u]);
+  check("requesting deletion freezes immediately", !!e3.frozen_at);
+  eq("...and records why", e3.frozen_reason, "deletion_requested");
+  check("...and records the request time", !!e3.deletion_requested_at);
+  // Nothing in 0032 deletes anything. billing-purge.js is the one destructive
+  // path, and it keeps its five interlocks.
+  eq("...and does NOT change the billing status", e3.status, "active");
+  const stillThere = await one(`select count(*)::int n from public.entitlements where user_id=$1`, [u]);
+  eq("...and deletes nothing", stillThere.n, 1);
+
+  const gap = (new Date(e3.deletion_purge_after) - new Date(e3.deletion_requested_at)) / 86400000;
+  check(`the grace period is ~30 days (got ${gap.toFixed(1)})`, gap > 29 && gap < 31);
+
+  // A caller must not be able to opt out of the grace period.
+  const u2 = (await one(`insert into auth.users (email) values ('freeze2@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id) values ($1)`, [u2]);
+  const zero = (await one(`select public.request_account_deletion($1, 0) v`, [u2])).v;
+  const gap2 = (new Date(zero) - Date.now()) / 86400000;
+  check(`a 0-day grace period is clamped to at least 1 day (got ${gap2.toFixed(2)})`, gap2 > 0.5);
+
+  // An account awaiting deletion must not be quietly unfrozen — that would
+  // leave it consuming units with a purge date sitting on it.
+  eq("an account awaiting deletion cannot simply be unfrozen",
+     (await one(`select public.set_account_frozen($1, false) v`, [u])).v, "deletion_pending");
+
+  eq("cancelling the deletion succeeds",
+     (await one(`select public.cancel_account_deletion($1) v`, [u])).v, "ok");
+  const e4 = await one(`select frozen_at, deletion_requested_at, deletion_purge_after
+                          from public.entitlements where user_id=$1`, [u]);
+  eq("...and clears the request", e4.deletion_requested_at, null);
+  eq("...and clears the purge date", e4.deletion_purge_after, null);
+  eq("...and lifts the freeze it imposed", e4.frozen_at, null);
+  eq("cancelling when nothing is pending says so",
+     (await one(`select public.cancel_account_deletion($1) v`, [u])).v, "not_pending");
+
+  // A freeze the user set for their OWN reasons must survive a deletion
+  // request being cancelled — cancel must only undo what it caused.
+  await q(`select public.set_account_frozen($1, true, 'holiday')`, [u]);
+  await q(`select public.request_account_deletion($1, 30)`, [u]);
+  await q(`select public.cancel_account_deletion($1)`, [u]);
+  const e5 = await one(`select frozen_at, frozen_reason from public.entitlements where user_id=$1`, [u]);
+  check("a pre-existing freeze survives cancelling a deletion", !!e5.frozen_at);
+  eq("...with its original reason intact", e5.frozen_reason, "holiday");
+}
+
+group("workspace members — per-seat pause");
+{
+  const owner = (await one(`insert into auth.users (email) values ('p-owner@x.com') returning id`)).id;
+  const admin = (await one(`insert into auth.users (email) values ('p-admin@x.com') returning id`)).id;
+  const mem   = (await one(`insert into auth.users (email) values ('p-mem@x.com') returning id`)).id;
+  const rando = (await one(`insert into auth.users (email) values ('p-rando@x.com') returning id`)).id;
+
+  const ws = (await one(`select public.create_workspace($1, 'Pause Co') id`, [owner])).id;
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'admin')`, [ws, admin]);
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'member')`, [ws, mem]);
+
+  eq("a non-member cannot pause anyone",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, rando, mem])).v, "forbidden");
+
+  eq("an owner can pause a member",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, mem])).v, "ok");
+  check("...and paused_at is set",
+     !!(await one(`select paused_at from public.workspace_members where workspace_id=$1 and user_id=$2`, [ws, mem])).paused_at);
+
+  // A paused seat is still a seat. Pausing is not a cheaper removal.
+  const seats = await one(`select count(*)::int n from public.workspace_members where workspace_id=$1`, [ws]);
+  eq("a paused member still occupies a seat — pausing is not a cheaper removal", seats.n, 3);
+
+  eq("the OWNER can never be paused — not even by themselves",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, owner])).v,
+     "cannot_pause_owner");
+
+  // Self-pause is allowed for a non-owner: "I am away, do not bill units to me"
+  // is a legitimate thing for a member or admin to say about themselves.
+  eq("an admin may pause THEMSELVES", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, admin, admin])).v, "ok");
+  await q(`select public.set_workspace_member_paused($1,$2,$3,false)`, [ws, admin, admin]);
+
+  // But not a peer — mirroring the removal rule in 0031, so two admins cannot
+  // lock each other out in a loop.
+  const admin2 = (await one(`insert into auth.users (email) values ('p-admin2@x.com') returning id`)).id;
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'admin')`, [ws, admin2]);
+  eq("an admin cannot pause ANOTHER admin", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, admin, admin2])).v, "forbidden");
+  eq("...but the owner can", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, admin2])).v, "ok");
+
+  eq("pausing somebody who is not a member reports not_found",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, rando])).v, "not_found");
+
+  eq("unpausing succeeds",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,false) v`, [ws, owner, mem])).v, "ok");
+  eq("...and clears paused_at",
+     (await one(`select paused_at from public.workspace_members where workspace_id=$1 and user_id=$2`, [ws, mem])).paused_at, null);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

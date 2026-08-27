@@ -285,3 +285,103 @@ describe("workspaces — misc", () => {
     expect(r.statusCode).toBe(405);
   });
 });
+
+// ── POST set_member_paused ──────────────────────────────────────────────────
+// Pausing a seat is the workspace-scoped sibling of an account freeze: the
+// member keeps read and export access and loses everything that consumes
+// account units. The properties worth pinning are the same as `remove`:
+// identity comes from the JWT, and a refusal reaches the client as the reason
+// the DATABASE gave rather than as a generic 500.
+describe("workspaces — POST set_member_paused", () => {
+  const pauseBody = (extra = {}) => JSON.stringify({
+    action: "set_member_paused", workspaceId: "ws-1", targetUserId: "target-1", paused: true, ...extra,
+  });
+
+  it("pauses a member", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("rpc/set_workspace_member_paused")) return jsonRes("ok");
+      return jsonRes({});
+    });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: AUTH, body: pauseBody() });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.body).paused).toBe(true);
+  });
+
+  it("passes the AUTHENTICATED user as the actor, never a body-supplied one", async () => {
+    // A caller that could name its own actor could pause anybody in a
+    // workspace they have no role in. Same class of bug as verify-payment.js
+    // once trusting a client-supplied planId.
+    let sentActor = null;
+    fetchMock.mockImplementation(async (url, init) => {
+      const u = String(url);
+      if (u.includes("rpc/set_workspace_member_paused")) {
+        sentActor = JSON.parse(init.body).p_actor;
+        return jsonRes("ok");
+      }
+      return jsonRes({});
+    });
+    const h = await loadHandler({ id: "real-user", email: "real@x.com" });
+    await h({
+      httpMethod: "POST", headers: AUTH,
+      body: pauseBody({ actorId: "impostor", p_actor: "impostor", userId: "impostor" }),
+    });
+    expect(sentActor).toBe("real-user");
+  });
+
+  it("surfaces cannot_pause_owner as the database's own reason", async () => {
+    // The owner can never be paused, by anybody including themselves — an
+    // owner locked out of their own workspace has no way back in.
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("rpc/set_workspace_member_paused")) return jsonRes("cannot_pause_owner");
+      return jsonRes({});
+    });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: AUTH, body: pauseBody() });
+    expect(r.statusCode).toBe(409);
+    const body = JSON.parse(r.body);
+    expect(body.reason).toBe("cannot_pause_owner");
+    expect(body.error).toMatch(/owner can't be paused/i);
+  });
+
+  it("surfaces a forbidden verdict rather than a generic failure", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("rpc/set_workspace_member_paused")) return jsonRes("forbidden");
+      return jsonRes({});
+    });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: AUTH, body: pauseBody() });
+    expect(r.statusCode).toBe(409);
+    expect(JSON.parse(r.body).reason).toBe("forbidden");
+  });
+
+  it("requires both ids", async () => {
+    const h = await loadHandler();
+    for (const body of [
+      { action: "set_member_paused", targetUserId: "t" },
+      { action: "set_member_paused", workspaceId: "ws-1" },
+    ]) {
+      const r = await h({ httpMethod: "POST", headers: AUTH, body: JSON.stringify(body) });
+      expect(r.statusCode).toBe(400);
+    }
+  });
+
+  it("resumes as well as pauses", async () => {
+    let sentPaused = null;
+    fetchMock.mockImplementation(async (url, init) => {
+      const u = String(url);
+      if (u.includes("rpc/set_workspace_member_paused")) {
+        sentPaused = JSON.parse(init.body).p_paused;
+        return jsonRes("ok");
+      }
+      return jsonRes({});
+    });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: AUTH, body: pauseBody({ paused: false }) });
+    expect(r.statusCode).toBe(200);
+    expect(sentPaused).toBe(false);
+  });
+});

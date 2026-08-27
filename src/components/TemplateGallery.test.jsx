@@ -10,8 +10,8 @@ import {
 } from "../lib/extractionTemplates.js";
 
 describe("Q5 — TemplateGallery: prebuilt extraction recipes", () => {
-  it("renders a card for every template by default", () => {
-    render(<TemplateGallery onSelect={() => {}} />);
+  it("renders a card for every template when open", () => {
+    render(<TemplateGallery onSelect={() => {}} defaultOpen />);
     expect(screen.getAllByRole("listitem").length).toBe(EXTRACTION_TEMPLATES.length);
   });
 
@@ -48,7 +48,7 @@ describe("Q5 — TemplateGallery: prebuilt extraction recipes", () => {
 
   it("clicking a card calls onSelect with the template", () => {
     const onSelect = vi.fn();
-    render(<TemplateGallery onSelect={onSelect} />);
+    render(<TemplateGallery onSelect={onSelect} defaultOpen />);
     const first = screen.getByText(EXTRACTION_TEMPLATES[0].title).closest("button");
     fireEvent.click(first);
     expect(onSelect).toHaveBeenCalledWith(
@@ -57,14 +57,14 @@ describe("Q5 — TemplateGallery: prebuilt extraction recipes", () => {
   });
 
   it("shows the example hostname in each card", () => {
-    render(<TemplateGallery onSelect={() => {}} />);
+    render(<TemplateGallery onSelect={() => {}} defaultOpen />);
     const first = EXTRACTION_TEMPLATES[0];
     const host = new URL(first.exampleUrl).hostname;
     expect(screen.getAllByText(host).length).toBeGreaterThan(0);
   });
 
   it("shows an empty-state message when no templates match the tag", () => {
-    render(<TemplateGallery onSelect={() => {}} tag="__no-such-tag__" />);
+    render(<TemplateGallery onSelect={() => {}} defaultOpen tag="__no-such-tag__" />);
     expect(screen.getByText(/No templates for that combination yet\./i)).toBeInTheDocument();
   });
 });
@@ -114,5 +114,51 @@ describe("F06 — Recipe Packs in TemplateGallery", () => {
     fireEvent.click(within(packList).getByRole("tab", { name: /CI Pack/i }));
     fireEvent.click(within(packList).getByRole("tab", { name: /All recipes/i }));
     expect(screen.getAllByRole("listitem").length).toBe(EXTRACTION_TEMPLATES.length);
+  });
+});
+
+
+// ── Collapsed by default (homepage clutter) ─────────────────────────────────
+// The grid is 12+ cards and sat permanently open beneath the hero, so the
+// homepage asked a first-time visitor to read a catalogue before they had
+// decided to do anything. The FILTERS stay visible: they are the cheap signal
+// about what the product covers.
+describe("TemplateGallery — collapsed by default", () => {
+  it("hides the card grid until asked", () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+  });
+
+  it("still shows the filters while collapsed", () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+    expect(screen.getAllByRole("tablist").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("says how many recipes are behind the toggle", () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+    expect(screen.getByRole("button", { name: new RegExp(`Browse ${EXTRACTION_TEMPLATES.length} recipes`, "i") }))
+      .toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens on the toggle", () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Browse \d+ recipes/i }));
+    expect(screen.getAllByRole("listitem").length).toBe(EXTRACTION_TEMPLATES.length);
+    expect(screen.getByRole("button", { name: /Hide recipes/i })).toBeInTheDocument();
+  });
+
+  it("opens when a pack filter is chosen", () => {
+    // Choosing a filter is an act of interest. Filtering a hidden grid would
+    // be a control with no visible effect.
+    render(<TemplateGallery onSelect={() => {}} />);
+    const packTab = screen.getByRole("tab", { name: new RegExp(RECIPE_PACKS[0].label, "i") });
+    fireEvent.click(packTab);
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+
+  it("opens when a tag filter is chosen", () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${TEMPLATE_TAGS[0]}$`) }));
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
   });
 });

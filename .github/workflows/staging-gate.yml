@@ -107,6 +107,15 @@ jobs:
       - name: Production build
         run: npm run build
 
+      # Straight after the build, while dist/ is fresh. The committed static
+      # pages under public/<route>/index.html reference content-hashed assets;
+      # if the sources have moved since they were generated, every one of them
+      # is pointing at a bundle that no longer exists. That shipped twice —
+      # see scripts/check-prerender-assets.mjs for both incidents and for why
+      # this is a filesystem check rather than a re-render.
+      - name: Prerendered pages reference assets this build produces
+        run: npm run check:prerender
+
       - name: Install Playwright browsers
         # `--with-deps` re-runs apt on every run (idempotent on warm cache)
         # but the actual browser download hits the cache above. When the
@@ -228,11 +237,14 @@ jobs:
     # therefore ALWAYS fail, telling you nothing about the deploy itself.
     #
     # This job verifies the SAME commit's deploy two other ways instead:
-    #   1. "Wait for Netlify staging deploy to converge" — as before, PLUS a
-    #      check that the deploy's Functions manifest (returned by the same
-    #      Netlify API call, no network access to the gated host required)
-    #      contains every function this app depends on. Catches "functions
-    #      failed to bundle" without needing to reach the gated URL.
+    #   1. "Wait for a ready staging deploy that contains this commit" — asks
+    #      the Netlify API whether any HEALTHY staging deploy has shipped this
+    #      commit's content, by ANCESTRY rather than SHA equality (see the long
+    #      comment on the step for the run this distinction fixed), PLUS a check
+    #      that the matched deploy's Functions manifest (returned by the same
+    #      API call, no network access to the gated host required) contains
+    #      every function this app depends on. Catches "functions failed to
+    #      bundle" without needing to reach the gated URL.
     #   2. "Local smoke test" — builds this exact commit and runs
     #      `vite preview` locally, then points scripts/smoke-prod.mjs at that
     #      LOCAL server instead of the network. It is the identical artifact
@@ -252,43 +264,80 @@ jobs:
       url: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history: the convergence check below asks whether a deployed
+          # commit CONTAINS this one, and `git merge-base` cannot answer that
+          # from the shallow clone actions/checkout takes by default.
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
-      - name: Wait for Netlify staging deploy to converge (+ verify Functions manifest)
+      - name: Wait for a ready staging deploy that contains this commit (+ verify Functions manifest)
         run: |
           set -euo pipefail
-          echo "Waiting for the staging branch deploy to converge on $GITHUB_SHA..."
+          echo "Looking for a ready staging deploy containing $GITHUB_SHA..."
 
-          # A single imperfect poll must not kill the whole wait. The Netlify
-          # API can answer with something that is not an array of deploy
-          # objects — an error envelope ({"message":"Not Found"}), a bare
-          # number, an HTML error page from a proxy, or an empty body on a
-          # blip. Feeding any of those to `jq '.[] | select(.branch)'` makes jq
-          # exit non-zero ("Cannot index number with string \"branch\"") and,
-          # under `set -e`, fails the step on what is really a transient blip.
+          # ── WHY THIS IS AN ANCESTRY CHECK AND NOT A SHA COMPARISON ───────────
           #
-          # Hardening:
-          #   * `curl -fsS`     — HTTP >= 400 yields no body to misparse
-          #   * `|| true`       — a failed poll is non-fatal; we retry
-          #   * `if type=="array"` — a non-array body can no longer crash jq
-          # We poll to a real timeout instead of dying on the first bad answer.
+          # This step used to require the NEWEST staging deploy's commit_ref to
+          # EQUAL $GITHUB_SHA. That is unsatisfiable the moment staging moves,
+          # and it is not a transient failure — it can never recover, because
+          # the newest deploy only ever gets newer.
           #
-          # Functions this app cannot run without — same list `npm run
-          # readiness` and the contract-test suite guard the source of. Keep
-          # in sync if a new critical function is added.
+          # Run 32995206476 is the worked example. It gated c4330e8. By the time
+          # it ran, staging was at 24985b0 and Netlify had published THAT. All 30
+          # attempts printed `latest_staging=24985b0 state=ready` and the step
+          # failed — even though 24985b0 is a DESCENDANT of c4330e8 and therefore
+          # contains every byte of it. A newer deploy containing the commit under
+          # test is a strictly stronger result than the one being demanded.
+          #
+          # The structural cause is an asymmetry worth knowing about: 24985b0 was
+          # docs-only, so it matched this workflow's `paths-ignore` and started NO
+          # GitHub run. `concurrency: cancel-in-progress` therefore had nothing to
+          # cancel, and the doomed c4330e8 run was never superseded. Netlify has no
+          # paths-ignore and deployed it regardless. Expect that to recur; the fix
+          # is for the check to tolerate it, not for the pushes to stop.
+          #
+          # So the question this asks is "has a healthy staging deploy shipped my
+          # commit's content?", answered with `git merge-base --is-ancestor`.
+          # Deliberately ONE-directional, unlike phase-gate.yml's check: this
+          # workflow runs ON staging, so a deploy that is an ANCESTOR of the commit
+          # under test is an OLDER deploy and proves nothing about this push.
+          #
+          # It also scans EVERY ready staging deploy rather than only the newest —
+          # the one we want may have been pushed off `.[0]` by a later build.
+          #
+          # A single imperfect poll must not kill the whole wait. The Netlify API
+          # can answer with something that is not an array of deploy objects — an
+          # error envelope ({"message":"Not Found"}), a bare number, an HTML error
+          # page from a proxy, or an empty body on a blip. Feeding any of those to
+          # jq makes it exit non-zero and, under `set -e`, fails the step on what
+          # is really a transient blip. Hardening: `curl -fsS` (HTTP >= 400 yields
+          # no body to misparse), `|| true` (a failed poll is non-fatal), and an
+          # `if type=="array"` guard so a non-array body cannot crash jq.
+          #
+          # Functions this app cannot run without — same list `npm run readiness`
+          # and the contract-test suite guard the source of. Keep in sync if a new
+          # critical function is added.
           EXPECTED_FUNCTIONS="extract extractions ai admin-auth admin-monitoring admin-health billing-lifecycle billing-purge scheduled-runner health-monitor payment-webhook create-checkout verify-payment"
 
           for i in $(seq 1 30); do
             RESP=$(curl -fsS \
               -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy" \
+              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=50&context=branch-deploy" \
               2>/dev/null || true)
 
-            LATEST_SHA=$(printf '%s' "$RESP" | jq -r '
+            # Every READY staging deploy, newest first, de-duplicated.
+            READY_SHAS=$(printf '%s' "$RESP" | jq -r '
+              if type == "array"
+              then [.[] | select(type == "object" and .branch == "staging" and .state == "ready")
+                        | .commit_ref // empty] | unique | .[]
+              else empty end' 2>/dev/null || true)
+
+            NEWEST=$(printf '%s' "$RESP" | jq -r '
               if type == "array"
               then ([.[] | select(type == "object" and .branch == "staging")] | .[0].commit_ref // "unknown")
               else "unknown" end' 2>/dev/null || echo "unknown")
@@ -297,13 +346,32 @@ jobs:
               then ([.[] | select(type == "object" and .branch == "staging")] | .[0].state // "unknown")
               else "unknown" end' 2>/dev/null || echo "unknown")
 
-            echo "  attempt $i/30: latest_staging=$LATEST_SHA state=$STATE"
-            if [ "$LATEST_SHA" = "$GITHUB_SHA" ] && [ "$STATE" = "ready" ]; then
-              echo "  ✓ staging deploy is live on $GITHUB_SHA"
+            echo "  attempt $i/30: newest_staging=$NEWEST state=$STATE ready=$(printf '%s' "$READY_SHAS" | tr '\n' ' ')"
 
-              FUNCS=$(printf '%s' "$RESP" | jq -r '
-                ([.[] | select(type == "object" and .branch == "staging")] | .[0].available_functions // [])
-                | map(.n) | .[]')
+            MATCH=""
+            REL=""
+            for SHA in $READY_SHAS; do
+              # A deploy of a commit this clone has never heard of tells us
+              # nothing; skip it rather than letting merge-base error out.
+              git cat-file -e "${SHA}^{commit}" 2>/dev/null || continue
+              if [ "$SHA" = "$GITHUB_SHA" ]; then
+                MATCH="$SHA"; REL="this exact commit is deployed"; break
+              fi
+              if git merge-base --is-ancestor "$GITHUB_SHA" "$SHA"; then
+                MATCH="$SHA"; REL="a newer staging deploy contains this commit"; break
+              fi
+            done
+
+            if [ -n "$MATCH" ]; then
+              echo "  ✓ matched ready staging deploy $MATCH — $REL"
+
+              # Read the manifest off the MATCHED deploy, not off .[0]. Checking
+              # the newest deploy's functions would be verifying something other
+              # than the artifact we just decided proves this commit shipped.
+              FUNCS=$(printf '%s' "$RESP" | jq -r --arg sha "$MATCH" '
+                ([.[] | select(type == "object" and .branch == "staging"
+                               and .state == "ready" and .commit_ref == $sha)]
+                 | .[0].available_functions // []) | map(.n) | .[]')
               MISSING=""
               for f in $EXPECTED_FUNCTIONS; do
                 echo "$FUNCS" | grep -qx "$f" || MISSING="$MISSING $f"
@@ -315,13 +383,17 @@ jobs:
               echo "  ✓ all expected functions are present in the deploy manifest"
               exit 0
             fi
-            if [ "$STATE" = "error" ]; then
-              echo "  ✗ Netlify reports the staging deploy FAILED — not waiting out the timeout"
+
+            # Only fail fast when the FAILED deploy is the one we are waiting for.
+            # A newer unrelated build erroring is not this commit's problem, and
+            # treating it as one was how a red gate could be inherited.
+            if [ "$STATE" = "error" ] && [ "$NEWEST" = "$GITHUB_SHA" ]; then
+              echo "  ✗ Netlify reports the staging deploy of $GITHUB_SHA FAILED — not waiting out the timeout"
               exit 1
             fi
             sleep 10
           done
-          echo "✗ staging did not converge in 5 minutes"
+          echo "✗ no ready staging deploy contained $GITHUB_SHA within 5 minutes"
           exit 1
 
       - name: Build (identical to what Netlify publishes for this commit)
@@ -351,6 +423,11 @@ jobs:
             sleep 1
           done
 
-          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
+          # SMOKE_SKIP_PRERENDER=1: `vite preview` serves dist/ directly and
+          # applies no netlify.toml rules, so the FORCED rewrite that serves the
+          # prerendered homepage at `/` cannot fire here. /pricing is unaffected —
+          # its generated file is a real path in dist/ and is served normally, so
+          # that probe still proves the prerendered documents were built.
+          SMOKE_SKIP_API=1 SMOKE_SKIP_PRERENDER=1 node scripts/smoke-prod.mjs "http://localhost:4319"
         env:
           NODE_OPTIONS: --dns-result-order=ipv4first
