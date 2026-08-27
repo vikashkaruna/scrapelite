@@ -322,6 +322,16 @@ export default function Home() {
 
   // Q5 — template card click → pre-fill composer
   const handleTemplateSelect = useCallback((tpl) => {
+    // A template may name a DESTINATION rather than an extraction. The
+    // discoverability recipes do: they hand the URL to /discoverability with
+    // the profile pre-selected, exactly as the composer's Discover button does,
+    // rather than running a second copy of the audit flow from here.
+    if (tpl.route) {
+      navigate(tpl.route, {
+        state: { auditUrl: tpl.exampleUrl, auditProfile: tpl.auditProfile || "balanced" },
+      });
+      return;
+    }
     setUrl(tpl.exampleUrl);
     setTouched(false);
     setPreview(null);
@@ -332,7 +342,7 @@ export default function Home() {
       setCustomPrompt("");
     }
     document.querySelector(".hero-composer, .intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
+  }, [navigate]);
 
   // ── Copy for hero section ─────────────────────────────────────────────
   // Primary tagline is "Intelligence from the Web." — sleek, single-statement,

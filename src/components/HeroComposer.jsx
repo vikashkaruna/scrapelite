@@ -106,6 +106,10 @@ export default function HeroComposer({
   const urlCount = detectedUrls.length;
   // Raw pasted text can't be scheduled (no URL to re-fetch).
   const canSchedule = classification.kind !== "text" && !embeddedAsText;
+  // Discoverability audits exactly one page, so it needs one resolvable URL.
+  // A batch of 40 is not a discoverability request; the benchmark flow on
+  // /discoverability is, and that is a different screen.
+  const canDiscover = detectedUrls.length === 1 && !embeddedAsText;
 
   // Pre-flight hint for sites we know disallow every crawler. A HINT ONLY: it
   // never blocks submission, because robots.txt is fetched live on the server
@@ -316,6 +320,21 @@ export default function HeroComposer({
       return;
     }
     navigate("/schedules", { state: { draftSchedule: { ...draft, cadenceKey: presetKey || undefined }, openEditor: true } });
+  }
+
+  /**
+   * Hand the pasted URL to /discoverability with the run armed.
+   *
+   * Router state, not a query string: the URL is the user's, not ours to put in
+   * our own address bar, and /discoverability is a private prefix whose noindex
+   * rules are an exact path match. `navigate`, never window.location — a hard
+   * navigation would drop the SPA and, for any prerendered route, land on a
+   * static snapshot instead of the app.
+   */
+  function goDiscover() {
+    const target = detectedUrls[0];
+    if (!target) return;
+    navigate("/discoverability", { state: { auditUrl: normalizeUrl(target), autorun: true } });
   };
 
   // Enter submits in single mode; batch mode keeps Enter for newlines.
@@ -512,6 +531,34 @@ export default function HeroComposer({
             <Icon name={batchMode ? "toggle-right" : "toggle-left"} size={16} />
             Batch
           </button>
+
+          {/* ── Discover ──────────────────────────────────────────────────
+              A DOOR, not a second implementation.
+
+              Discoverability answers a different question about a page than
+              Extract does — "can this be found and cited?" rather than "what is
+              on it?" — but people arrive at the composer with a URL already
+              pasted, and that is the moment the question occurs to them.
+
+              So this hands the URL to /discoverability with the run armed and
+              does no auditing itself. Duplicating even a thin version of the
+              audit flow here would mean two entry points that must be kept
+              telling the same story about quota, compliance refusals and the
+              signed-in requirement — which is exactly how the guest-credit leak
+              happened when four extraction paths each wired their own check.
+
+              Hidden for raw pasted text: there is no URL to audit. */}
+          {canDiscover && (
+            <button
+              type="button"
+              className="hero-chip-btn"
+              onClick={goDiscover}
+              title="Discoverability — score this page for search, answer engines and generative engines"
+            >
+              <Icon name="scan-search" size={16} />
+              Discover
+            </button>
+          )}
 
           {/* Schedule (preset cadence — works for a single URL or a batch) */}
           {canSchedule && (

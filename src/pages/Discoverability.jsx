@@ -242,6 +242,32 @@ export default function Discoverability() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, user]);
 
+  // ── Arrive from elsewhere in the app with a URL already in hand ─────────
+  // The Home composer and Workspace's quick actions hand a URL over rather
+  // than running an audit themselves — one implementation of quota, compliance
+  // refusals and the signed-in rule, in one place. This is the receiving end.
+  //
+  // Separate from the resume effect above on purpose: that one finishes a
+  // request the user already made and was interrupted mid-way, so it runs
+  // immediately and says so. This one is a HAND-OFF — the user has not yet
+  // chosen a profile, a device or a page type — so it prefills the composer and
+  // lets them press the button. Auto-running would spend an audit credit on
+  // defaults they never saw, which is the kind of surprise a quota makes
+  // expensive.
+  const handoffConsumedRef = useRef(false);
+  useEffect(() => {
+    const url = location.state?.auditUrl;
+    if (!url || handoffConsumedRef.current) return;
+    handoffConsumedRef.current = true;
+    setResumedRequest({
+      target_url: url,
+      audit_profile: location.state?.auditProfile || "balanced",
+      idempotency_key: `handoff-${url}`,
+    });
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
   const rerun = useCallback(async () => {
     if (!audit?.auditId) return;
     setRunning(true);

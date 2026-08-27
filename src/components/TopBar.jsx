@@ -95,7 +95,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -160,6 +160,18 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
               <div className="nav-dropdown-divider" />
             </>
           )}
+          {/* Schedules lives here rather than in the primary nav. It is a
+              signed-in destination people reach from wherever they formed the
+              intent — the Home composer, Workspace, Dashboard's run history —
+              so it does not need to compete with the four primary verbs for
+              space. This is the "I know it exists, where was it" path. */}
+          {user && (
+            <button className="nav-dropdown-item" role="menuitem"
+              onClick={() => { setOpen(false); onSchedules(); }}>
+              <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
+              Schedules &amp; monitors
+            </button>
+          )}
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onAccount(); }}>
             <span className="nav-dd-icon"><Icon name="user" size={14} /></span>
@@ -192,7 +204,7 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
 
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
-                     onAccount, onSwitchRole, onSignOut, onSignIn }) {
+                     onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [exploreOpen, setExploreOpen] = useState(false);
 
   // Close panel on navigation
@@ -292,6 +304,12 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                   <span style={{ color: persona.color, fontSize: ".86em", fontWeight: 650 }}>{persona.label}</span>
                 </div>
               )}
+              {user && (
+                <button className="mobile-nav-item" onClick={() => { onSchedules(); onClose(); }}>
+                  <span className="mobile-nav-icon"><Icon name="calendar-clock" size={17} /></span>
+                  Schedules &amp; monitors
+                </button>
+              )}
               <button className="mobile-nav-item" onClick={() => { onAccount(); onClose(); }}>
                 <span className="mobile-nav-icon"><Icon name="user" size={17} /></span>
                 Account &amp; Usage
@@ -352,7 +370,13 @@ export default function TopBar() {
     // route still exists — it's the run + results surface, reached from the
     // composer and from Dashboard's batch-run history.
     { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
-    { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
+    // Schedules is deliberately NOT a nav item. Every place a person forms the
+    // intent to schedule something already offers the door: the Home composer's
+    // cadence dropdown, Workspace's Schedules tab and quick actions, Dashboard's
+    // run history, and the Explore menu. A fifth entry competed with the four
+    // primary verbs for the widest breakpoint's worth of space while duplicating
+    // routes the user reaches from where they already are. The /schedules route
+    // is unchanged and every existing link still works.
     // Discoverability is its own entry rather than a tab inside Extract: it
     // answers a different question ("can this page be found and cited?") about
     // a page the user usually already owns, whereas Extract answers "what is on
@@ -433,6 +457,7 @@ export default function TopBar() {
             <UserDropdown
               user={user} persona={persona}
               onAccount={() => navigate("/account")}
+              onSchedules={() => navigate("/schedules")}
               onSwitchRole={handleSwitchRole}
               onSignOut={handleSignOut}
               onSignIn={() => openAuth("signin")}
@@ -471,6 +496,7 @@ export default function TopBar() {
         persona={persona}
         user={user}
         onAccount={() => navigate("/account")}
+        onSchedules={() => navigate("/schedules")}
         onSwitchRole={handleSwitchRole}
         onSignOut={handleSignOut}
         onSignIn={(mode) => openAuth(mode || "signin")}

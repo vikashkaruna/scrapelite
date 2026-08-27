@@ -6738,6 +6738,18 @@
   font-size: 1.05rem; font-weight: 800; margin: 0;
 }
 .template-gallery-sub { color: var(--text-2); font-size: .85rem; margin: 4px 0 0; }
+
+/* Collapse toggle. Sits in the gallery head beside the subtitle so the control
+   is where the reader already is when they decide whether to look. */
+.template-gallery-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 6px 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: .82em; font-weight: 600; color: var(--text-2);
+  cursor: pointer; transition: border-color .15s, color .15s;
+}
+.template-gallery-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .template-tags {
   display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
   margin-bottom: 14px;
