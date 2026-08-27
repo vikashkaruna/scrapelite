@@ -56,6 +56,35 @@ const CARD_TO_INTENT = {
   content:  null,
 };
 
+/**
+ * The content freshness date, stamped from the last commit at build time (see
+ * vite.config.js). `null` when git was unavailable — an absent date is better
+ * than an invented one, since dateModified is a claim.
+ */
+const CONTENT_DATE = typeof __CONTENT_DATE__ === "string" ? __CONTENT_DATE__ : null;
+
+/**
+ * A named author, because anonymous content is systematically treated as
+ * lower-trust and trust decides which of several correct sources gets cited.
+ *
+ * ⚠️ An ORGANIZATION, not a Person, and that is a deliberate accuracy call.
+ * The obvious move is a Person block naming a founder, and the audit guidance
+ * even suggests one — but the visible attribution on /about is the COMPANY,
+ * Axiom Minds Private Limited, with a company LinkedIn. Schema that names an
+ * individual the page never shows is markup describing something a reader
+ * cannot see, which is the SH-07 defect this product exists to report, aimed at
+ * ourselves.
+ *
+ * Every value below is copied from the founder block on /about. If that block
+ * changes to name a person, change this to a Person and keep them matching.
+ */
+const AUTHOR_SCHEMA = {
+  "@type": "Organization",
+  name: "Axiom Minds Private Limited",
+  url: "https://axiomminds.ai",
+  sameAs: ["https://www.linkedin.com/company/axiom-minds/"],
+};
+
 const ALL_FEATURES = [
   { key: "headings", icon: "list-tree", title: "Heading structure", desc: "Full H1–H6 outline, in order" },
   { key: "links",    icon: "link",      title: "Every link",        desc: "Internal & external, deduped" },
@@ -85,6 +114,33 @@ export default function Home() {
     description:
       "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
     canonical: "https://datiq.app/",
+    // EA-04 (no named author) and EA-06 (no visible date) — both raised by a
+    // discoverability audit of this very page. Anonymous, undated content is
+    // systematically treated as lower-trust, and trust is what decides which of
+    // several correct sources gets cited.
+    //
+    // `dateModified` is stamped from the last commit at build time (see
+    // vite.config.js) rather than hand-typed, because a hand-typed date is a
+    // claim that silently stops being true.
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: "DatIQ: The Unified Web Intelligence Platform",
+        url: "https://datiq.app/",
+        description:
+          "Paste any public URL and get headings, links, contacts, pricing and an AI summary in seconds — one page, a batch, or a scheduled run.",
+        inLanguage: "en",
+        ...(CONTENT_DATE ? { dateModified: CONTENT_DATE } : {}),
+        author: AUTHOR_SCHEMA,
+        publisher: {
+          "@type": "Organization",
+          name: "DatIQ",
+          url: "https://datiq.app",
+          logo: "https://datiq.app/favicon.svg",
+        },
+      },
+    ],
   });
   const { personaId, userName, resetOnboarding } = usePersona();
   const billing = useBilling();
@@ -357,6 +413,30 @@ export default function Home() {
           }}
         >
           {subtext}
+        </p>
+
+        {/* ── Answer-first block (AC-01) ────────────────────────────────────
+            A discoverability audit of this page found no passage that is a
+            self-contained answer of even 15 words, so answer engines had
+            nothing to lift even when the page ranked — they quote a passage,
+            not a page.
+
+            Rules this paragraph obeys, and must keep obeying:
+              * 40-60 words, and it names its subject explicitly. It has to
+                still make sense when quoted alone, with no page around it.
+              * It never opens with "this", "it" or "as mentioned above".
+              * It sits ABOVE the fold and above any narrative build-up.
+            Persona copy is deliberately NOT substituted in: a passage that
+            changes per visitor is not a stable thing to be cited. */}
+        <p
+          className="rise home-answer-block"
+          style={{ animationDelay: ".14s" }}
+        >
+          DatIQ is a zero-code web intelligence platform that turns any public
+          URL into structured data. Paste a link and DatIQ returns headings,
+          links, contacts, pricing and an AI summary in seconds — for one page,
+          a batch of up to 500, or a scheduled run that alerts you when the
+          page changes.
         </p>
 
         {/* Persona hero stat */}
@@ -646,6 +726,16 @@ export default function Home() {
         </div>
 
         {/* ── Capabilities grid (clickable cards) ───────────────────────── */}
+        {/* SH-10 / AC-07. The page had a single H1 and one H3, so the whole
+            document was one undifferentiated chunk with nothing retrievable on
+            its own — and no heading was phrased as a question a reader would
+            actually type. Question headings are how a retrieval system matches
+            a section to a query; a statement heading forces it to infer the
+            match. These are real section labels, not keyword bait: each one
+            names what the section below it genuinely answers. */}
+        <h2 className="home-section-h rise" style={{ animationDelay: ".25s" }}>
+          What can DatIQ extract from a page?
+        </h2>
         <div className="rise home-features" style={{ animationDelay: ".26s" }}>
           {ALL_FEATURES.map((f) => {
             const isHighlighted  = persona && persona.featuresHighlight?.includes(f.key);
@@ -720,14 +810,21 @@ export default function Home() {
           })}
         </div>
 
-        {/* Q5 — Template library */}
-        <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
-          <TemplateGallery onSelect={handleTemplateSelect} />
-
-        {/* Q1 (alt) — Interactive Try-an-Example demo, shown above the gallery */}
+        {/* Q1 (alt) — Interactive Try-an-Example demo.
+            Previously this wrapper was nested INSIDE the template-gallery
+            wrapper while its comment claimed it rendered above — it rendered
+            after, inside someone else's box. Now a sibling, in the order the
+            comment always described. */}
         <div className="rise" style={{ animationDelay: ".27s", width: "100%", maxWidth: 1080, marginTop: 32 }}>
           <TryExampleDemo />
         </div>
+
+        {/* Q5 — Template library */}
+        <h2 className="home-section-h rise" style={{ animationDelay: ".275s" }}>
+          Which extraction should I start with?
+        </h2>
+        <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 8 }}>
+          <TemplateGallery onSelect={handleTemplateSelect} />
         </div>
 
         {/* Social proof */}
@@ -747,6 +844,28 @@ export default function Home() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* ── Visible freshness date (EA-06) ───────────────────────────────
+            Undated content is treated as worse than openly old content,
+            because a reader cannot tell whether it is stale. The date has to
+            be VISIBLE, not only in dateModified — markup describing something
+            a reader cannot see is the defect this product reports on others.
+
+            Stamped from the last commit at build time, never hand-typed: a
+            hand-typed date is a claim that silently stops being true. Rendered
+            only when we actually have one. */}
+        {CONTENT_DATE && (
+          <p className="home-updated rise" style={{ animationDelay: ".31s" }}>
+            Last updated{" "}
+            <time dateTime={CONTENT_DATE}>
+              {new Date(`${CONTENT_DATE}T00:00:00Z`).toLocaleDateString("en-GB", {
+                day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+              })}
+            </time>
+            {" · "}
+            <a href="/about">About DatIQ</a>
+          </p>
         )}
 
         {/* Persona footer */}

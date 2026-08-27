@@ -636,6 +636,54 @@ export const PAGE_SEO = {
  * Look up a page's SEO block. Returns undefined for an unknown path, which
  * useSeo() handles by leaving the document head alone.
  */
+/**
+ * Human labels for path segments, where the slug alone reads badly.
+ * Anything absent is title-cased from the slug.
+ */
+const SEGMENT_LABELS = {
+  "use-cases": "Use cases",
+  "vs": "Compare",
+  "for-sales": "For sales",
+  "for-seo": "For SEO",
+  "for-ci": "For competitive intelligence",
+  "seo-audit": "SEO audit",
+  "faq": "FAQ",
+};
+
+const titleCase = (slug) =>
+  slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+/**
+ * BreadcrumbList JSON-LD for a path.
+ *
+ * Added because a discoverability audit raised SH-09 — no BreadcrumbList places
+ * the page within the site, so a machine has to infer topical context. Built
+ * from the URL rather than hand-written per page, so it cannot drift out of
+ * sync with the routes, and it mirrors the navigation path a reader actually
+ * walks rather than an idealised site map.
+ *
+ * Returns null for the homepage: a breadcrumb whose only item is the page
+ * itself describes nothing.
+ */
+export function breadcrumbFor(path) {
+  if (!path || path === "/") return null;
+  const segments = path.replace(/^\/+/, "").replace(/\/+$/, "").split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+
+  const items = [{ "@type": "ListItem", position: 1, name: "Home", item: "https://datiq.app/" }];
+  let acc = "";
+  segments.forEach((seg, i) => {
+    acc += `/${seg}`;
+    items.push({
+      "@type": "ListItem",
+      position: i + 2,
+      name: SEGMENT_LABELS[seg] || titleCase(seg),
+      item: `https://datiq.app${acc}`,
+    });
+  });
+  return { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: items };
+}
+
 export function seoFor(path) {
   return PAGE_SEO[path];
 }

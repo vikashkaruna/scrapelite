@@ -127,3 +127,38 @@ describe("seoMeta: /admin noindex signal", () => {
     expect(document.head.querySelectorAll('meta[name="robots"]').length).toBe(1);
   });
 });
+
+// ── BreadcrumbList (SH-09) ──────────────────────────────────────────────────
+// setMeta() is the SECOND of two SEO mechanisms in the app; useSeo() is the
+// other. Nine pages use only this one — /changelog, /gallery, /vs/battlecard
+// and all six programmatic routes — so a breadcrumb added to useSeo alone left
+// a hole shaped like exactly those pages. That is the same hole the missing
+// canonical sat in for as long as it did.
+//
+// It is also the test that would have caught this being wired up wrong: the
+// import initially landed INSIDE a JSDoc block, so the module still loaded
+// cleanly and only threw when setMeta was actually called.
+describe("setMeta — breadcrumbs", () => {
+  it("writes a BreadcrumbList derived from the page's own URL", () => {
+    setMeta({ title: "t", description: "d", url: "https://datiq.app/use-cases/seo-audit" });
+    const el = document.head.querySelector('script[data-datiq-breadcrumb]');
+    expect(el).toBeTruthy();
+    const bc = JSON.parse(el.textContent);
+    expect(bc["@type"]).toBe("BreadcrumbList");
+    expect(bc.itemListElement.map((i) => i.name)).toEqual(["Home", "Use cases", "SEO audit"]);
+    expect(bc.itemListElement.at(-1).item).toBe("https://datiq.app/use-cases/seo-audit");
+  });
+
+  it("replaces rather than appends on a second call", () => {
+    setMeta({ title: "a", url: "https://datiq.app/changelog" });
+    setMeta({ title: "b", url: "https://datiq.app/gallery" });
+    const all = document.head.querySelectorAll('script[data-datiq-breadcrumb]');
+    expect(all.length).toBe(1);
+    expect(JSON.parse(all[0].textContent).itemListElement.at(-1).name).toBe("Gallery");
+  });
+
+  it("writes none for the site root", () => {
+    setMeta({ title: "home", url: "https://datiq.app/" });
+    expect(document.head.querySelector('script[data-datiq-breadcrumb]')).toBeNull();
+  });
+});

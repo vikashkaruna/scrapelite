@@ -264,6 +264,14 @@ if (isMain) {
   }
 
   console.log(`\n[prerender] ${ok.length} rendered · ${changed} ${CHECK ? "stale" : "written"} · ${failed.length} failed`);
+  if (!CHECK && changed > 0) {
+    // ⚠️ dist/ is now ONE GENERATION BEHIND. Vite copies public/ into dist/ at
+    // BUILD time, and this script writes public/ AFTER its build — so
+    // dist/<route>/index.html still holds the previous render and references
+    // the previous asset hashes. Netlify is unaffected (it builds from the
+    // COMMITTED public/), but serving dist/ locally right now tests stale HTML.
+    console.log("           dist/ is stale until the next `npm run build` — rebuild before serving it locally.");
+  }
   for (const f of failed) console.log(`  ✗ ${f.route} — ${f.error}`);
   for (const w of wrongCanonical) console.log(`  ✗ ${w.route} — canonical is ${w.canonical}`);
   for (const n of noCanonical) console.log(`  ✗ ${n.route} — no canonical`);
