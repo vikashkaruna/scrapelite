@@ -241,6 +241,9 @@ export default function Schedules() {
   useEffect(() => {
     const st = location.state || {};
     if (st.openEditor && st.draftSchedule) {
+      // The draft may name a jobKind ("discoverability") as well as a target —
+      // ScheduleEditor seeds its kind selector from it, so a quick action can
+      // land the user on the right form rather than on the right page.
       setEditor({ draft: st.draftSchedule });
     }
     if (st.highlightId) {

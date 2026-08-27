@@ -22,6 +22,8 @@ import { fetchInvoices } from "../lib/billingRepo.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
 import DangerZone from "../components/DangerZone.jsx";
+import DiscoverabilityStats from "../components/DiscoverabilityStats.jsx";
+import PersonaUsage from "../components/PersonaUsage.jsx";
 import { fetchAccountState } from "../lib/accountStateService.js";
 
 // ── Integrations catalog ─────────────────────────────────────────────────
@@ -891,6 +893,17 @@ export default function Account() {
                 </div>
               )}
             </div>
+
+            {/* ── Discoverability ─────────────────────────────────────────
+                Its own card because audits have their OWN monthly budget
+                rather than debiting extraction credits — folding them into
+                the extraction counter would misreport both. */}
+            {user && <DiscoverabilityStats auditLimit={plan.limits?.audits ?? 0} />}
+
+            {/* ── Usage by role ───────────────────────────────────────────
+                A breakdown OF the totals below, computed from the same record
+                so the two can never disagree about the month. */}
+            {user && <PersonaUsage usage={usage} />}
 
             {/* Quick stats */}
             <div className="card card-pad account-stats">

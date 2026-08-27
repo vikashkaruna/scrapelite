@@ -50,7 +50,13 @@ export function applyTrialCredit(planId) {
 export function readUsage() {
   const raw = ls(USAGE_KEY) ?? {};
   const mk = monthKey();
-  return raw[mk] ?? { month: mk, extractions: 0, enrichments: {}, batchRuns: 0, contentGenerations: 0 };
+  // `byPersona` is additive and always defaulted, so a record written before it
+  // existed reads back without it and every caller still works. Historic months
+  // genuinely have no persona breakdown — that is a fact about the past, and the
+  // UI says so rather than showing a misleading zero.
+  const rec = raw[mk] ?? { month: mk, extractions: 0, enrichments: {}, batchRuns: 0, contentGenerations: 0 };
+  if (!rec.byPersona) rec.byPersona = {};
+  return rec;
 }
 
 function writeUsage(usage) {
@@ -61,30 +67,94 @@ function writeUsage(usage) {
   lsSet(USAGE_KEY, raw);
 }
 
-export function incrementExtractions(count = 1) {
+/**
+ * Attribute usage to the persona that was active when it happened.
+ *
+ * ── WHY THIS IS TRACKED AT ALL ─────────────────────────────────────────────
+ * Persona has always shaped what the product SHOWS — examples, quick actions,
+ * prompt framing — but nothing recorded which one was in use when a unit was
+ * spent. So "which of my team's roles is consuming the plan?" had no answer,
+ * on a product that sells team seats.
+ *
+ * ── WHY IT IS A NESTED MAP AND NOT A SECOND RECORD ─────────────────────────
+ * The totals stay exactly where they were. `byPersona` is a breakdown OF them,
+ * so the two can never disagree about the month — the failure mode a parallel
+ * counter always eventually reaches, and the same reason audits are counted
+ * from their rows rather than from a counter column.
+ *
+ * `null` persona is recorded under `__none__` rather than dropped: work done
+ * before anyone picked a role is still work, and silently omitting it would
+ * make the breakdown fail to add up to the total.
+ */
+/**
+ * The persona in effect right now.
+ *
+ * Resolved HERE rather than threaded through every caller, deliberately. Four
+ * separate call sites increment usage (extractions, enrichments, batch runs,
+ * content generations) and a fifth is arriving for audits; asking each to
+ * remember to pass the persona is exactly the shape of the guest-credit leak,
+ * where checking and blocking were two steps each caller wired itself and four
+ * of them drifted. One read, one place, and a new counter is attributed
+ * correctly without its author having to know this exists.
+ *
+ * Reads PersonaProvider's own key. Wrapped: storage throws outright in some
+ * privacy-hardened contexts, and losing a usage COUNT because a breakdown could
+ * not be attributed would be a bad trade.
+ */
+function activePersonaId() {
+  try {
+    // PersonaProvider writes the id as a RAW string (see its read/write
+    // helpers) — not JSON. Parsing it would be wrong for every real value.
+    return localStorage.getItem("datiq.persona") || null;
+  } catch {
+    return null;
+  }
+}
+
+function bumpPersona(usage, personaId, field, count) {
+  const key = personaId || activePersonaId() || "__none__";
+  const row = usage.byPersona[key] || { extractions: 0, enrichments: 0, batchRuns: 0, contentGenerations: 0, audits: 0 };
+  row[field] = (row[field] || 0) + count;
+  usage.byPersona[key] = row;
+}
+
+/** Audits have their own monthly budget server-side; this is the local view. */
+export function incrementAudits(count = 1, personaId = null) {
   const u = readUsage();
-  u.extractions += count;
+  u.audits = (u.audits || 0) + count;
+  bumpPersona(u, personaId, "audits", count);
   writeUsage(u);
   return { ...u };
 }
 
-export function incrementEnrichments(url) {
+export function incrementExtractions(count = 1, personaId = null) {
+  const u = readUsage();
+  u.extractions += count;
+  bumpPersona(u, personaId, "extractions", count);
+  writeUsage(u);
+  return { ...u };
+}
+
+export function incrementEnrichments(url, personaId = null) {
   const u = readUsage();
   const key = url || "__global__";
   u.enrichments[key] = (u.enrichments[key] ?? 0) + 1;
+  bumpPersona(u, personaId, "enrichments", 1);
   writeUsage(u);
   return { ...u };
 }
 
-export function incrementBatchRuns(count = 1) {
+export function incrementBatchRuns(count = 1, personaId = null) {
   const u = readUsage();
+  bumpPersona(u, personaId, "batchRuns", count);
   u.batchRuns = (u.batchRuns ?? 0) + count;
   writeUsage(u);
   return { ...u };
 }
 
-export function incrementContentGenerations(count = 1) {
+export function incrementContentGenerations(count = 1, personaId = null) {
   const u = readUsage();
+  bumpPersona(u, personaId, "contentGenerations", count);
   u.contentGenerations = (u.contentGenerations ?? 0) + count;
   writeUsage(u);
   return { ...u };
