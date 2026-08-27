@@ -423,6 +423,11 @@ jobs:
             sleep 1
           done
 
-          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
+          # SMOKE_SKIP_PRERENDER=1: `vite preview` serves dist/ directly and
+          # applies no netlify.toml rules, so the FORCED rewrite that serves the
+          # prerendered homepage at `/` cannot fire here. /pricing is unaffected —
+          # its generated file is a real path in dist/ and is served normally, so
+          # that probe still proves the prerendered documents were built.
+          SMOKE_SKIP_API=1 SMOKE_SKIP_PRERENDER=1 node scripts/smoke-prod.mjs "http://localhost:4319"
         env:
           NODE_OPTIONS: --dns-result-order=ipv4first
