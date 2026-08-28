@@ -1,6 +1,24 @@
 // netlify/functions/lib/complianceEngine.test.js — FD3 (robots.txt parser + check).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// checkCompliance's robots.txt fetch goes through publicUrl.js's
+// fetchPublicUrl(), not global.fetch directly — fetchPublicUrl does its own
+// real DNS resolution as an SSRF guard before ever calling fetch. Every test
+// below mocks `global.fetch`, which never intercepts that DNS step, so
+// linkedin.com (used deliberately as a real-world robots.txt fixture) hit
+// real DNS in CI. That is not merely slow: loadRobots fails OPEN on a
+// network error, so a slow/unreachable resolution silently INVERTS the
+// refusal these tests assert — the exact trap already documented and fixed
+// in extract.test.js's LinkedIn suite. Same fix here: mock publicUrl.js so
+// fetchPublicUrl is a thin pass-through to the test's own mocked
+// global.fetch, with no real network involved at any layer.
+vi.mock("../../functions/lib/publicUrl.js", () => ({
+  isPublicHttpUrlAsync: vi.fn(async () => true),
+  isPublicHttpUrl: vi.fn(() => true),
+  fetchPublicUrl: vi.fn((...args) => globalThis.fetch(...args)),
+}));
+
 import { _internal, isPathAllowed, checkCompliance, _resetRobotsCacheForTests } from "../../functions/lib/complianceEngine.js";
 
 const { parseRobots, DEFAULT_CRAWL_DELAY_MS } = _internal;

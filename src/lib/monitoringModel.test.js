@@ -64,10 +64,12 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
     expect(jobById("nope")).toBeNull();
   });
 
-  it("carries the known reengagement defect as an explicit caveat", () => {
-    // Documented in CLAUDE.md: the query 400s and the error is swallowed, so a
-    // green run row would otherwise be a lie.
-    expect(jobById("reengagement").caveat).toMatch(/silent no-op/i);
+  it("reengagement carries no caveat — the user_id/email-resolution fix closed it", () => {
+    // Was: selected a user_email column scheduled_tasks never had, the query
+    // 400'd and the error was swallowed, so a green run row was a lie. Fixed
+    // by reading user_id (the column that actually exists) and resolving the
+    // email via the Supabase Auth Admin API, same as admin-users.js.
+    expect(jobById("reengagement").caveat).toBeUndefined();
   });
 });
 

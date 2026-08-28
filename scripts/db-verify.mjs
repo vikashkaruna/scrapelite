@@ -1056,6 +1056,35 @@ group("account state — freeze is not suspension, deletion is not a delete");
   const gap = (new Date(e3.deletion_purge_after) - new Date(e3.deletion_requested_at)) / 86400000;
   check(`the grace period is ~30 days (got ${gap.toFixed(1)})`, gap > 29 && gap < 31);
 
+  // ── 0033: the purge date can never land before an active paid plan's own
+  // period_end, even though the flat grace period alone would compute an
+  // earlier date. Deliberately a LONG period_end (60 days) so this can only
+  // pass if the plan-aware GREATEST() branch actually ran, not the flat
+  // grace-period branch every other case in this block exercises.
+  const uPaid = (await one(`insert into auth.users (email) values ('paid-deletion@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'business','active','payment', now() + interval '60 days')`, [uPaid]);
+  const paidAfter = (await one(`select public.request_account_deletion($1, 30) v`, [uPaid])).v;
+  const ePaid = await one(`select period_end from public.entitlements where user_id=$1`, [uPaid]);
+  const purgeVsPeriodEndMs = new Date(paidAfter) - new Date(ePaid.period_end);
+  check("an active paid plan's purge date is not before its own period_end",
+    Math.abs(purgeVsPeriodEndMs) < 5_000); // same instant, modulo query latency
+  const purgeVsFlatGraceDays = (new Date(paidAfter) - Date.now()) / 86400000;
+  check(`...and lands well past the flat 30-day grace (got ${purgeVsFlatGraceDays.toFixed(1)}d)`,
+    purgeVsFlatGraceDays > 55);
+
+  // The reverse case: an active paid plan whose period is already ending
+  // SOONER than the grace window still gets the full grace period, same as a
+  // free account — nobody loses the "I changed my mind" window just because
+  // their plan happened to be expiring anyway.
+  const uPaidSoon = (await one(`insert into auth.users (email) values ('paid-deletion-soon@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'select','active','payment', now() + interval '2 days')`, [uPaidSoon]);
+  const soonAfter = (await one(`select public.request_account_deletion($1, 30) v`, [uPaidSoon])).v;
+  const soonGap = (new Date(soonAfter) - Date.now()) / 86400000;
+  check(`a plan expiring sooner than the grace window still gets the full ~30 days (got ${soonGap.toFixed(1)}d)`,
+    soonGap > 29 && soonGap < 31);
+
   // A caller must not be able to opt out of the grace period.
   const u2 = (await one(`insert into auth.users (email) values ('freeze2@x.com') returning id`)).id;
   await q(`insert into public.entitlements (user_id) values ($1)`, [u2]);
@@ -1137,6 +1166,26 @@ group("workspace members — per-seat pause");
      (await one(`select public.set_workspace_member_paused($1,$2,$3,false) v`, [ws, owner, mem])).v, "ok");
   eq("...and clears paused_at",
      (await one(`select paused_at from public.workspace_members where workspace_id=$1 and user_id=$2`, [ws, mem])).paused_at, null);
+}
+
+// ── 0034: usage_records/usage_alerts locked — no anon or authenticated access ─
+group("usage RLS — no client-reachable policy left on usage_records/usage_alerts");
+{
+  // 0001 gave both tables `anon full access` (using(true) with check(true)).
+  // 0034 drops it once usage-sync.js (service key) became the only write
+  // path. Neither table has ANY other policy, so after the drop the correct
+  // state is zero policies at all — RLS enabled + no policy denies anon and
+  // authenticated outright, while the service role bypasses RLS regardless.
+  for (const t of ["usage_records", "usage_alerts"]) {
+    const pol = await q(`select policyname from pg_policies where tablename=$1`, [t]);
+    eq(`${t} has no RLS policy left (anon/authenticated fully denied)`, pol.length, 0);
+  }
+
+  const grants = await q(`
+    select grantee, privilege_type from information_schema.role_table_grants
+     where table_schema='public' and table_name in ('usage_records','usage_alerts')
+       and grantee in ('anon','authenticated')`);
+  eq("no anon/authenticated table-level GRANT survives on either table", grants.length, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

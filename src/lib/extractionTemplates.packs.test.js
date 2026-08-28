@@ -11,9 +11,9 @@ import {
 } from "./extractionTemplates.js";
 
 describe("Recipe Packs (F06)", () => {
-  it("defines the 4 expected packs", () => {
+  it("defines the 5 expected packs", () => {
     const keys = getAllPackKeys();
-    expect(keys).toEqual(["sales", "ci", "discoverability", "seo"]);
+    expect(keys).toEqual(["sales", "ci", "discoverability", "seo", "research"]);
   });
 
   it("each pack has a label, description, icon, color, and at least 3 templates", () => {
@@ -81,6 +81,14 @@ describe("Recipe Packs (F06)", () => {
     expect(keys).toContain("seo-audit");
     expect(keys).toContain("news-article");
     expect(keys).toContain("github-repo");
+  });
+
+  it("Research Pack includes job-board, tech-stack, news-article", () => {
+    const research = getTemplatesByPack("research");
+    const keys = research.map((t) => t.key);
+    expect(keys).toContain("job-board");
+    expect(keys).toContain("tech-stack");
+    expect(keys).toContain("news-article");
   });
 
   it("every pack contains 3–6 templates (sized for fast consumption)", () => {

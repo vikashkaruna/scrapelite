@@ -42,6 +42,26 @@ export function daysUntil(iso, now = Date.now()) {
   return Math.max(0, Math.ceil((t - now) / 86400000));
 }
 
+const DEFAULT_GRACE_DAYS = 30;
+
+/**
+ * Preview of the purge date a `request_account_deletion` call would compute
+ * — see supabase/migrations/0033_deletion_period_end_gate.sql, which this
+ * mirrors exactly (GREATEST(period_end, now + grace) for an active paid
+ * plan; flat now + grace otherwise). Display-only: the server recomputes the
+ * real value on confirm, this just lets the copy tell the truth BEFORE the
+ * user commits to anything.
+ */
+export function previewDeletionDate(state, now = Date.now(), graceDays = DEFAULT_GRACE_DAYS) {
+  const graceEnd = now + graceDays * 86400000;
+  const hasActivePaidPlan = state?.planId && state.planId !== "free" && state.status === "active";
+  const periodEndMs = state?.periodEnd ? new Date(state.periodEnd).getTime() : NaN;
+  if (hasActivePaidPlan && Number.isFinite(periodEndMs)) {
+    return new Date(Math.max(periodEndMs, graceEnd)).toISOString();
+  }
+  return new Date(graceEnd).toISOString();
+}
+
 export default function DangerZone({ state, onChange }) {
   const showToast = useToast();
   const [busy, setBusy] = useState(null);
@@ -53,6 +73,11 @@ export default function DangerZone({ state, onChange }) {
   const frozen = Boolean(state.frozen);
   const deleting = Boolean(state.deletionRequestedAt);
   const daysLeft = daysUntil(state.deletionPurgeAfter);
+  const hasActivePaidPlan = Boolean(state.planId) && state.planId !== "free" && state.status === "active";
+  const previewPurgeAt = previewDeletionDate(state);
+  const planLabel = hasActivePaidPlan
+    ? state.planId.charAt(0).toUpperCase() + state.planId.slice(1)
+    : null;
 
   async function run(label, fn) {
     setBusy(label);
@@ -141,13 +166,29 @@ export default function DangerZone({ state, onChange }) {
               <div className="danger-row-head">Delete this account</div>
               <p className="danger-row-desc">
                 Permanently deletes your account and everything in it — extractions,
-                audits, schedules, workspaces and team members. Scheduled 30 days
-                out, and cancellable at any point in that window. Invoices are kept,
-                because we are required to keep them.
+                audits, schedules, workspaces and team members. Cancellable any time
+                before the date below. Invoices are kept, because we are required to
+                keep them.
               </p>
+              {hasActivePaidPlan ? (
+                <p className="danger-row-desc">
+                  Your <b>{planLabel}</b> plan is active until{" "}
+                  <b>{formatDate(state.periodEnd)}</b>. If you delete your account
+                  now, it will remain active until then and be permanently removed
+                  on <b>{formatDate(previewPurgeAt)}</b>.
+                </p>
+              ) : (
+                <p className="danger-row-desc">
+                  Scheduled for <b>{formatDate(previewPurgeAt)}</b> ({DEFAULT_GRACE_DAYS} days out).
+                </p>
+              )}
 
               {showDelete && (
                 <div className="danger-confirm">
+                  <p className="danger-row-desc">
+                    Your account will be deleted on <b>{formatDate(previewPurgeAt)}</b>.
+                    You can cancel any time before then from this page.
+                  </p>
                   <label className="danger-confirm-label" htmlFor="danger-confirm-input">
                     Type <b>{DELETE_CONFIRMATION}</b> to confirm
                   </label>

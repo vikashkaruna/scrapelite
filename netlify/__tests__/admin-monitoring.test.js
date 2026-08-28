@@ -180,10 +180,10 @@ describe("admin-monitoring GET (AM-02)", () => {
     expect(purge.manualRunAllowed).toBe(false);
   });
 
-  it("surfaces the known reengagement caveat next to its status", async () => {
+  it("reengagement's success status is trustworthy again — no caveat attached", async () => {
     wireReads({ runs: [run("reengagement", "success", 60)] });
     const b = body(await handler(authed()));
-    expect(b.jobs.find((j) => j.id === "reengagement").caveat).toMatch(/silent no-op/i);
+    expect(b.jobs.find((j) => j.id === "reengagement").caveat).toBeFalsy();
   });
 
   it("reports a stopped job as stopped, with its provenance", async () => {

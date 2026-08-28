@@ -50,7 +50,7 @@ export async function getAccountState(userId, env = process.env) {
   try {
     const res = await fetch(
       `${db.base}/entitlements?user_id=eq.${encodeURIComponent(userId)}` +
-      "&select=frozen_at,frozen_reason,deletion_requested_at,deletion_purge_after,status,plan_id&limit=1",
+      "&select=frozen_at,frozen_reason,deletion_requested_at,deletion_purge_after,status,plan_id,period_end&limit=1",
       { headers: db.headers },
     );
     if (!res.ok) return { available: false };
@@ -64,6 +64,10 @@ export async function getAccountState(userId, env = process.env) {
       deletionPurgeAfter: row?.deletion_purge_after || null,
       status: row?.status || "active",
       planId: row?.plan_id || "free",
+      // For DangerZone.jsx's plan-aware deletion message — see 0033's
+      // request_account_deletion, which uses this same column to keep an
+      // active paid plan from being purged before its period actually ends.
+      periodEnd: row?.period_end || null,
     };
   } catch {
     return { available: false };

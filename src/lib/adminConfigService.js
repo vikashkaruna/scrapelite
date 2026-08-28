@@ -30,6 +30,38 @@ export async function saveAiConfig(config) {
   return data;
 }
 
+// ── Coupons (checkout-facing sync) ───────────────────────────────────────────
+// See netlify/functions/admin-coupons-config.js for why this exists: saveCoupon
+// in adminService.js only ever wrote to the admin's own localStorage, so a
+// coupon created in /admin/coupons could never actually be redeemed at
+// checkout. AdminCoupons.jsx calls saveCouponsConfig() after every local
+// mutation with the FULL current percent-type coupon set (see its
+// buildCouponsSyncPayload helper) — this endpoint replaces the whole stored
+// value, it does not merge one code in.
+
+const COUPONS_ENDPOINT = "/api/admin-coupons-config";
+
+/** What checkout will actually see: static table merged with pricing_config. */
+export async function getCouponsConfig() {
+  const res = await fetch(COUPONS_ENDPOINT, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+  });
+  if (!res.ok) throw new Error(`Failed to load coupon sync state (${res.status})`);
+  return res.json(); // { ok, coupons, persisted }
+}
+
+/** Replace the checkout-facing coupon map. `coupons` is {CODE: {value,planId,expiresAt,active,maxUses}}. */
+export async function saveCouponsConfig(coupons) {
+  const res = await fetch(COUPONS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ coupons }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+  return data;
+}
+
 // ── General / global settings ────────────────────────────────────────────────
 
 const GENERAL_ENDPOINT = "/api/admin-general-config";

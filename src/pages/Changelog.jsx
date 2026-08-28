@@ -13,7 +13,7 @@ import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
-const VERSION = "V1.0";
+const VERSION = "V" + (typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0");
 const SHIPPED = "2026-07";
 const UPDATED = "2026-08-27";
 

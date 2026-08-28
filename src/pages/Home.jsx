@@ -351,9 +351,13 @@ export default function Home() {
   // squeeze the positioning into the H1.
   const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
   const headline = persona ? persona.tagline : "Intelligence from the Web.";
-  const subtext  = persona
-    ? persona.subtitle
-    : "Paste any URL to pull a page's headings, links and an instant AI summary — then go further: extract any field in plain English, map an entire domain, or surface leadership contacts & emails.";
+  // Only persona-specific subtitles render below the headline now. The
+  // default (no persona) copy used to repeat here almost verbatim what the
+  // answer-first block below it says — two paragraphs saying the same thing
+  // back to back — so the generic subtext was removed and the answer block
+  // (which is the one held to the AEO citability rules) is the only copy
+  // left for a first-time, no-persona visitor.
+  const subtext  = persona ? persona.subtitle : null;
   const greeting = userName ? `Hi ${userName} —` : null;
 
   const DEFAULT_QUICK_CONTEXTS = [
@@ -381,7 +385,6 @@ export default function Home() {
           <Icon name="sparkles" size={14} />
           {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
           {eyebrow}
-          {!persona && <span className="v2-pill">V1.0</span>}
         </div>
 
         {/* Headline */}
@@ -412,18 +415,20 @@ export default function Home() {
           )}
         </h1>
 
-        {/* Subtext */}
-        <p
-          className="rise"
-          style={{
-            animationDelay: ".12s",
-            fontSize: "clamp(15px, 1.8vw, 19px)",
-            color: "var(--text-2)", maxWidth: "58ch",
-            margin: "20px 0 0", lineHeight: 1.6, fontWeight: 450,
-          }}
-        >
-          {subtext}
-        </p>
+        {/* Subtext — persona-specific only; see the comment above `subtext`. */}
+        {subtext && (
+          <p
+            className="rise"
+            style={{
+              animationDelay: ".12s",
+              fontSize: "clamp(15px, 1.8vw, 19px)",
+              color: "var(--text-2)", maxWidth: "58ch",
+              margin: "20px 0 0", lineHeight: 1.6, fontWeight: 450,
+            }}
+          >
+            {subtext}
+          </p>
+        )}
 
         {/* ── Answer-first block (AC-01) ────────────────────────────────────
             A discoverability audit of this page found no passage that is a

@@ -62,11 +62,20 @@ export function describeFailure(code) {
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
 
-  const auth = await authenticateBearer(event.headers?.authorization || event.headers?.Authorization);
-  if (!auth?.userId) {
-    return json(401, { error: "Sign in to manage your account.", code: "AUTH_REQUIRED" });
+  // Was calling authenticateBearer(<header string>) — the helper takes the
+  // FULL event object and reads the header itself (event.headers.authorization),
+  // so a bare string always resolved to an empty header and this endpoint
+  // 401'd unconditionally for every signed-in user. fetchAccountState() on the
+  // client treats any non-OK response as {available:false} by design (never
+  // throws), so DangerZone.jsx's own `if (!state?.available) return null`
+  // silently rendered nothing — no error anywhere, the whole section just
+  // never appeared. Every other function in this directory already calls
+  // authenticateBearer(event, {label}) correctly; this was the one outlier.
+  const auth = await authenticateBearer(event, { label: "account-state" });
+  if (!auth.ok) {
+    return json(auth.status, { ...auth.body, code: "AUTH_REQUIRED" });
   }
-  const userId = auth.userId;
+  const userId = auth.user.id;
 
   if (event.httpMethod === "GET") {
     return json(200, { state: await getAccountState(userId) });

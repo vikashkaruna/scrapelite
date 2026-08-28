@@ -12,6 +12,7 @@
 import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
 import { incrementPublicExtractions, decrementPublicExtractions } from "./publicQuota.js";
+import { getAuthToken } from "./apiClient.js";
 
 const TABLE = "public_reports";
 const LS_INDEX = "datiq.publicGallery";
@@ -92,7 +93,10 @@ function safeUserId() {
  * to localStorage. If both fail, throws.
  *
  * @param {object} extraction - { id, title, url, ai_summary, custom_extraction, ... }
- * @param {object} [opts] - { userId?: string, sessionId?: string }
+ * @param {object} [opts] - { sessionId?: string }. The owning user id (for a
+ *   signed-in sharer) is resolved server-side from the caller's own JWT via
+ *   getAuthToken(), never accepted from this parameter — see
+ *   netlify/functions/public-reports.js.
  * @returns {Promise<{slug: string, persistedTo: 'supabase'|'local'|'both'}>}
  */
 export async function shareExtraction(extraction, opts = {}) {
@@ -124,87 +128,58 @@ export async function shareExtraction(extraction, opts = {}) {
 
   const pub = projectPublic(extraction, slug);
   const sessionId = opts.sessionId || (() => { try { return getSessionId(); } catch { return null; } })();
-  const userId = opts.userId ?? null;
 
-  // 2. Persist to Supabase. When the app is configured for Supabase, a public
-  // share must not report success while only writing localStorage: that would
-  // create a link that works in this browser but is absent from the database.
-  // The local fallback below is reserved for the deliberately offline/demo
-  // mode where Supabase is not configured at all.
+  // 2. Persist server-side via public-reports.js (service key). When the app
+  // is configured for Supabase, a public share must not report success while
+  // only writing localStorage: that would create a link that works in this
+  // browser but is absent from the database. The local fallback below is
+  // reserved for the deliberately offline/demo mode where Supabase is not
+  // configured at all.
+  //
+  // The write used to go straight to Supabase from the browser with the anon
+  // key, which meant re-publishing an EXISTING slug (an UPDATE) was denied by
+  // RLS for every anonymous sharer — see netlify/functions/public-reports.js's
+  // header comment for the full story. That function now does this ownership
+  // check server-side and reports refreshed:false rather than throwing when a
+  // caller isn't the original sharer, so this call is a straight request/
+  // response with no client-side probe-and-guess needed.
   let persistedTo = "local";
   let supabaseError = null;
-  // false when the row is live but this browser could not overwrite it — see
-  // the RLS note in the catch below. Distinct from a failure: the link works.
   let refreshed = true;
-  if (isSupabaseEnabled && supabase) {
+  if (isSupabaseEnabled) {
     try {
-      const row = {
-        slug,
-        title: pub.title,
-        url: pub.url,
-        intent: pub.intent,
-        data: pub,
-        user_id: userId,
-        session_id: sessionId,
-        is_public: true,
-      };
-      // Do not send extraction.id as public_reports.id. The table primary
-      // key is a database-generated UUID, while locally-created extraction
-      // IDs are short client IDs such as `ex_...`. The extraction ID is
-      // already preserved inside data for idempotent lookup and auditing.
-      const { error } = await supabase.from(TABLE).upsert(row, { onConflict: "slug" });
-      if (error) throw error;
-      persistedTo = "supabase";
-    } catch (err) {
-      supabaseError = err;
-      if (typeof console !== "undefined") console.warn("[DatIQ share] Supabase persist failed:", err);
-
-      // ── Before calling this a failure, check whether the link actually works ──
-      //
-      // An upsert on an existing slug becomes an UPDATE, which RLS gates behind
-      // the "owner update" policy in 0007_public_reports.sql. That policy has
-      // two branches and NEITHER can be satisfied by an anonymous sharer:
-      //
-      //   user_id::text = auth.uid()::text   → null for an anonymous share
-      //   session_id = …->>'x-session-id'    → the client never sends that
-      //                                        header (it appears nowhere in
-      //                                        this codebase)
-      //
-      // So creating the link succeeds (the INSERT policy is WITH CHECK (true))
-      // and re-publishing it — "Sync public link" — is denied. The link is
-      // live the whole time; only the overwrite is refused.
-      //
-      // ⚠️ Do NOT "fix" this by sending an x-session-id header. The "public
-      // read" policy exposes every column, session_id included, to anyone with
-      // the slug — so header-based ownership would let any reader of a public
-      // report take over and rewrite or delete it. That turns a fail-closed
-      // bug into a real one. See the note in docs/ for the operator options.
-      try {
-        const { data: live } = await supabase
-          .from(TABLE)
-          .select("slug")
-          .eq("slug", slug)
-          .eq("is_public", true)
-          .maybeSingle();
-        if (live?.slug) {
-          // It is published and readable. That is what a public link IS, so
-          // reporting a failure here would be false. The content just could
-          // not be refreshed from this browser.
-          persistedTo = "supabase";
-          refreshed = false;
-        } else {
-          const publishError = new Error("Couldn't publish the public link.");
-          publishError.code = "PUBLIC_PUBLISH_FAILED";
-          publishError.cause = err;
-          throw publishError;
-        }
-      } catch (probeErr) {
-        if (probeErr?.code === "PUBLIC_PUBLISH_FAILED") throw probeErr;
-        const publishError = new Error("Couldn't publish the public link.");
+      const authToken = getAuthToken();
+      const res = await fetch("/api/public-reports", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          slug,
+          title: pub.title,
+          url: pub.url,
+          intent: pub.intent,
+          data: pub,
+          sessionId,
+        }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok || !result?.ok) {
+        const publishError = new Error(result?.error || "Couldn't publish the public link.");
         publishError.code = "PUBLIC_PUBLISH_FAILED";
-        publishError.cause = err;
         throw publishError;
       }
+      persistedTo = "supabase";
+      refreshed = result.refreshed !== false;
+    } catch (err) {
+      supabaseError = err;
+      if (typeof console !== "undefined") console.warn("[DatIQ share] persist failed:", err);
+      if (err?.code === "PUBLIC_PUBLISH_FAILED") throw err;
+      const publishError = new Error("Couldn't publish the public link.");
+      publishError.code = "PUBLIC_PUBLISH_FAILED";
+      publishError.cause = err;
+      throw publishError;
     }
   }
 

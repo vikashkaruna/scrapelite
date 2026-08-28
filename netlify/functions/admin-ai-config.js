@@ -11,7 +11,7 @@
 // SUPABASE_SERVICE_KEY); without it, GET still returns effective defaults and
 // POST reports persisted:false so the admin UI can warn.
 
-import { loadAiConfig, keyPresence, PROVIDER_META, SUPABASE_CONFIGURED } from "./lib/aiProviders.js";
+import { loadAiConfig, keyPresence, PROVIDER_META, PILLAR_KEYS, SUPABASE_CONFIGURED } from "./lib/aiProviders.js";
 import { verifyAdminToken, bearerFromEvent } from "./lib/adminToken.js";
 
 const HEADERS = {
@@ -25,9 +25,13 @@ const HEADERS = {
 const respond = (statusCode, body) => ({ statusCode, headers: HEADERS, body: JSON.stringify(body) });
 
 const VALID = new Set(Object.keys(PROVIDER_META));
+const VALID_PILLARS = new Set(PILLAR_KEYS);
 
-// Keep only known providers / sane values before persisting.
-function sanitize(input) {
+// Keep only known providers / sane values before persisting. Shared between
+// the top-level (default/global) chain and each pillar override, since both
+// are the same {order, models, enabled} shape.
+function sanitizeChain(input) {
+  if (!input || typeof input !== "object") return {};
   const order = Array.isArray(input.order)
     ? input.order.map((s) => String(s).toLowerCase()).filter((p) => VALID.has(p))
     : [];
@@ -41,8 +45,28 @@ function sanitize(input) {
   if (order.length) out.order = order;
   if (Object.keys(models).length) out.models = models;
   if (Object.keys(enabled).length) out.enabled = enabled;
+  return out;
+}
+
+// Keep only known providers / sane values before persisting.
+function sanitize(input) {
+  const out = sanitizeChain(input);
   const mt = Number(input.maxTokens);
   if (mt > 0) out.maxTokens = Math.min(8192, Math.round(mt));
+
+  // Pillar keys are restricted to VALID_PILLARS (PILLAR_KEYS in
+  // aiProviders.js) — an arbitrary key here would silently do nothing (no
+  // caller ever passes it to runChain's `pillar` option), so rejecting it up
+  // front is better than storing a config nobody reads.
+  if (input.pillars && typeof input.pillars === "object") {
+    const pillars = {};
+    for (const key of Object.keys(input.pillars)) {
+      if (!VALID_PILLARS.has(key)) continue;
+      const chain = sanitizeChain(input.pillars[key]);
+      if (Object.keys(chain).length) pillars[key] = chain;
+    }
+    if (Object.keys(pillars).length) out.pillars = pillars;
+  }
   return out;
 }
 
@@ -88,7 +112,7 @@ export const handler = async (event) => {
     try { body = JSON.parse(event.body || "{}"); } catch { return respond(400, { ok: false, error: "Invalid JSON" }); }
 
     const value = sanitize(body);
-    if (!value.order && !value.models && !value.enabled && !value.maxTokens) {
+    if (!value.order && !value.models && !value.enabled && !value.maxTokens && !value.pillars) {
       return respond(400, { ok: false, error: "Nothing valid to save." });
     }
 
