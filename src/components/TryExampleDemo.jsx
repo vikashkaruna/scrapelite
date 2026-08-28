@@ -19,6 +19,19 @@ const REDUCED_MOTION = typeof window !== "undefined"
 const TYPE_SPEED_MS = REDUCED_MOTION ? 0 : 28;
 const REVEAL_DELAY_MS = REDUCED_MOTION ? 0 : 350;
 
+// Auto-play once per browser, same idea as onboardingTour.js's "seen before"
+// flag. The section itself makes no real API call — it types into a mock
+// composer and reveals canned data — but re-running the scripted 5-second
+// sequence on every visit to Home is wasted motion for a returning user.
+// The "Replay" button stays available for anyone who wants to see it again.
+const SEEN_KEY = "datiq.tryDemoSeen";
+function hasSeenDemo() {
+  try { return localStorage.getItem(SEEN_KEY) === "1"; } catch { return false; }
+}
+function markDemoSeen() {
+  try { localStorage.setItem(SEEN_KEY, "1"); } catch { /* unavailable */ }
+}
+
 function makeSteps() {
   return [
     { id: "type",   label: "Type a URL" },
@@ -31,13 +44,18 @@ function makeSteps() {
 
 export default function TryExampleDemo() {
   const steps = useMemo(makeSteps, []);
-  const [stepIdx, setStepIdx] = useState(0);
-  const [typed, setTyped] = useState("");
-  const [intentPicked, setIntentPicked] = useState(false);
+  // A returning visitor starts already at the finished state — the existing
+  // `stepIdx >= steps.length` guard in the auto-advance effect below then
+  // simply never fires, so the sequence doesn't re-run. Manually clicking
+  // "Replay" still resets stepIdx to 0 and plays it, same as before.
+  const [alreadySeen] = useState(hasSeenDemo);
+  const [stepIdx, setStepIdx] = useState(() => (alreadySeen ? steps.length : 0));
+  const [typed, setTyped] = useState(() => (alreadySeen ? DEMO_URL : ""));
+  const [intentPicked, setIntentPicked] = useState(alreadySeen);
   const [extracting, setExtracting] = useState(false);
-  const [extracted, setExtracted] = useState(false);
-  const [summaryShown, setSummaryShown] = useState(false);
-  const [headingsShown, setHeadingsShown] = useState(false);
+  const [extracted, setExtracted] = useState(alreadySeen);
+  const [summaryShown, setSummaryShown] = useState(alreadySeen);
+  const [headingsShown, setHeadingsShown] = useState(alreadySeen);
   const [paused, setPaused] = useState(false);
   const timerRef = useRef(null);
 
@@ -80,6 +98,14 @@ export default function TryExampleDemo() {
 
     return () => { if (cleanup) cleanup(); };
   }, [stepIdx, paused, steps]);
+
+  // Mark seen once the sequence reaches its end — whether that's a real
+  // completed play-through or (for a returning visitor) the already-finished
+  // initial state above. Idempotent, so re-firing on the initial render is
+  // harmless.
+  useEffect(() => {
+    if (stepIdx >= steps.length) markDemoSeen();
+  }, [stepIdx, steps.length]);
 
   // Reset on unmount.
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);

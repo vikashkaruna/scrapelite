@@ -11,7 +11,7 @@
 // message and a "Request a new link" CTA that opens the auth modal in
 // the forgot-password view.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -29,7 +29,7 @@ export default function ResetPassword() {
     robots: "noindex, nofollow",
   });
   const navigate = useNavigate();
-  const { user, openAuth } = useAuth();
+  const { user, authLoading, openAuth } = useAuth();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -38,16 +38,14 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // The Supabase client picks up the recovery token from the URL hash on
-  // mount and fires a SIGNED_IN event. The AuthProvider reflects this as
-  // `user` becoming non-null. We wait for that to know we have a valid
-  // recovery session.
-  const [recoveryChecked, setRecoveryChecked] = useState(false);
-  useEffect(() => {
-    // Give the AuthProvider a beat to read the URL hash + call getSession.
-    const t = setTimeout(() => setRecoveryChecked(true), 250);
-    return () => clearTimeout(t);
-  }, []);
+  // The Supabase client picks up the recovery code/token from the URL on
+  // mount (a real network exchange, not instant) and fires a SIGNED_IN /
+  // PASSWORD_RECOVERY event. The AuthProvider reflects this as `user`
+  // becoming non-null. `authLoading` is AuthProvider's own signal for "the
+  // initial getSession() attempt — including that exchange — has settled",
+  // so we key off that instead of a fixed timer that could fire before a
+  // slower exchange finishes.
+  const recoveryChecked = !authLoading;
 
   // If after checking we still have no user → the link is bad.
   const linkLooksBad = recoveryChecked && !user;
@@ -126,9 +124,11 @@ export default function ResetPassword() {
             </div>
             <h1 className="reset-pw-title">This reset link isn't valid</h1>
             <p className="reset-pw-sub">
-              The link may have already been used, or it has expired (links are good
-              for 1 hour). Request a fresh reset link from the sign-in screen and we'll
-              send you a new one.
+              This usually means one of two things: the link has already been used or
+              has expired (links are good for 1 hour), or it was opened in a different
+              browser or device than the one you requested it from — reset links only
+              work in their original browser. Request a fresh link from the sign-in
+              screen and open it from the same browser you're signed in with now.
             </p>
             <Button
               variant="primary"

@@ -108,7 +108,12 @@ export function AuthProvider({ children }) {
       // hash was issued for is not the project the client is configured
       // with — see NETLIFY-ENVIRONMENTS.md §6). Tell the user something
       // instead of leaving them on what looks like a working but empty page.
-      if (signInDetected && !s) {
+      // /reset-password owns its own recovery-link error UI (see ResetPassword.jsx)
+      // and is a better fit for a failed recovery exchange than this generic,
+      // OAuth-project-mismatch-flavored message — showing both stacks two
+      // uncoordinated error surfaces on one failure. Let that page be the only
+      // one that reports it.
+      if (signInDetected && !s && window.location.pathname !== "/reset-password") {
         setAuthError(
           "Sign-in completed but we couldn't start your session. " +
             "This usually means the site is pointing at a different sign-in " +

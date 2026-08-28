@@ -172,6 +172,36 @@ export function buildCouponsSyncPayload(coupons = getCoupons()) {
   return out;
 }
 
+/**
+ * Real server-side coupon status check — see netlify/functions/validate-coupon.js.
+ * Used by BillingProvider.applyCoupon() so "Apply" can report an accurate
+ * exhausted/expired/active verdict instead of the purely local, per-browser
+ * check below (which has no way to see real usage from other sessions).
+ *
+ * Returns `{ found, active, expired, exhausted, planId, type, value }` for a
+ * coupon the server recognizes, or `null` when the server doesn't have this
+ * code (fall back to `validateCoupon` below — covers extraction-bonus and
+ * manual-assign coupons, which are deliberately local-only) or the request
+ * itself failed (network/offline — same fallback, consistent with this
+ * codebase's fail-open-on-infra posture; the real money gate at checkout is
+ * unaffected either way).
+ */
+export async function checkCouponServer(code) {
+  try {
+    const res = await fetch(`${FUNCTIONS}/validate-coupon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data || !data.found) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export function incrementCouponUses(code) {
   const coupons = getCoupons();
   const coupon = coupons.find((c) => c.code.toUpperCase() === code.toUpperCase());

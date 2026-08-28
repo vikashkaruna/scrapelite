@@ -1,4 +1,7 @@
-// src/lib/onboardingTour.test.js — Q4 tour pure-logic tests.
+// src/lib/onboardingTour.test.js — onboarding tour pure-logic tests.
+//
+// Covers both registered tours ("home", "discoverability") sharing the same
+// read/write/progress logic but independent localStorage flags.
 
 import { describe, expect, it, beforeEach } from "vitest";
 import {
@@ -11,9 +14,10 @@ beforeEach(() => {
   try { localStorage.clear(); } catch {}
 });
 
-describe("Q4 — onboardingTour: pure logic", () => {
-  it("getTourSteps returns 7 steps (added the 'modes' step in F15 follow-up)", () => {
-    expect(getTourSteps()).toHaveLength(7);
+describe("onboardingTour — home tour (default)", () => {
+  it("getTourSteps defaults to the home tour with 8 steps", () => {
+    expect(getTourSteps()).toHaveLength(8);
+    expect(getTourSteps("home")).toBe(getTourSteps());
   });
 
   it("the modes step enumerates 5 quick actions and 6 outcome tiles", () => {
@@ -24,7 +28,16 @@ describe("Q4 — onboardingTour: pure logic", () => {
     expect(modes.body).toMatch(/Quick actions \(5\)/i);
   });
 
-  it("each step has a key, title, body, target, and placement", () => {
+  it("covers Discoverability and Schedules/Workspace/Push, not just the pre-2026-08 feature set", () => {
+    const steps = getTourSteps();
+    const bodies = steps.map((s) => s.body).join(" ");
+    expect(bodies).toMatch(/discover/i);
+    expect(bodies).toMatch(/schedule/i);
+    expect(bodies).toMatch(/workspace/i);
+    expect(bodies).toMatch(/push/i);
+  });
+
+  it("each step has a key, title, body, and a valid placement", () => {
     for (const s of getTourSteps()) {
       expect(s.key).toBeTypeOf("string");
       expect(s.title).toBeTypeOf("string");
@@ -59,10 +72,52 @@ describe("Q4 — onboardingTour: pure logic", () => {
     expect(isTourSkipped()).toBe(false);
   });
 
+  it("persists under the pre-existing storage key so completed/skipped users aren't re-prompted", () => {
+    markCompleted();
+    expect(localStorage.getItem("datiq.onboardingTour.v1")).toContain("completedAt");
+  });
+});
+
+describe("onboardingTour — discoverability tour", () => {
+  it("has its own step list, independent of the home tour", () => {
+    const steps = getTourSteps("discoverability");
+    expect(steps.length).toBeGreaterThan(0);
+    expect(steps).not.toBe(getTourSteps("home"));
+    expect(steps.some((s) => s.target === ".dsc-composer")).toBe(true);
+    expect(steps.some((s) => s.target === ".dsc-intro-grid")).toBe(true);
+  });
+
+  it("tracks completed/skipped separately from the home tour", () => {
+    markCompleted("home");
+    expect(isTourCompleted("home")).toBe(true);
+    expect(isTourCompleted("discoverability")).toBe(false);
+    expect(shouldAutoStart("discoverability")).toBe(true);
+
+    markSkipped("discoverability");
+    expect(isTourSkipped("discoverability")).toBe(true);
+    expect(isTourSkipped("home")).toBe(false);
+  });
+
+  it("persists under its own storage key", () => {
+    markCompleted("discoverability");
+    expect(localStorage.getItem("datiq.discoverabilityTour.v1")).toContain("completedAt");
+    expect(localStorage.getItem("datiq.onboardingTour.v1")).toBeNull();
+  });
+
+  it("resetTour only clears the tour it's given", () => {
+    markCompleted("home");
+    markCompleted("discoverability");
+    resetTour("discoverability");
+    expect(isTourCompleted("home")).toBe(true);
+    expect(isTourCompleted("discoverability")).toBe(false);
+  });
+});
+
+describe("onboardingTour — shared step-navigation helpers", () => {
   it("nextStep clamps to the last index", () => {
-    expect(nextStep(0, 7)).toBe(1);
-    expect(nextStep(6, 7)).toBe(6);
-    expect(nextStep(10, 7)).toBe(6);
+    expect(nextStep(0, 8)).toBe(1);
+    expect(nextStep(7, 8)).toBe(7);
+    expect(nextStep(10, 8)).toBe(7);
   });
 
   it("prevStep clamps to 0", () => {
@@ -72,8 +127,8 @@ describe("Q4 — onboardingTour: pure logic", () => {
   });
 
   it("progressFraction computes a 0..1 ratio", () => {
-    expect(progressFraction(0, 7)).toBeCloseTo(1 / 7, 5);
-    expect(progressFraction(6, 7)).toBe(1);
+    expect(progressFraction(0, 8)).toBeCloseTo(1 / 8, 5);
+    expect(progressFraction(7, 8)).toBe(1);
     expect(progressFraction(0, 1)).toBe(1);
   });
 });

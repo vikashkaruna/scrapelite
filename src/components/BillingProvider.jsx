@@ -10,7 +10,7 @@ import { can, computeLifecycle } from "../lib/entitlementModel.js";
 import { clearEntitlementCache, getCachedEntitlement, loadEntitlement } from "../lib/entitlementClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
-import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
+import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { fetchAdminGrantCoupon, redeemAdminGrantCoupon as redeemAdminGrantCouponRequest } from "../lib/billingRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
@@ -429,15 +429,53 @@ export function BillingProvider({ children }) {
     writeSubscription(sub);
   }, [subscription]);
 
-  const applyCoupon = useCallback((code) => {
+  const applyCoupon = useCallback(async (code) => {
     setCouponError("");
     setCouponSuccess("");
     // Admin grant coupons use redeemAdminGrantCoupon() below. Keeping them out
     // of this path is what prevents a complimentary plan grant from touching
     // normal paid checkout or public coupon usage.
-    const { valid, reason, coupon } = validateCoupon(code, planId);
+    const trimmed = String(code || "").trim();
+    if (!trimmed) { setCouponError("Enter a coupon code."); return false; }
+
+    // Prefer the server's real verdict — same source of truth checkout uses
+    // (lib/pricingSource.js), including the actual redemption count, which a
+    // purely local check has no way to see. Falls back to the local check
+    // below only for coupon types the server doesn't track (extraction-bonus,
+    // manual-assign) or if the request itself fails.
+    const serverInfo = await checkCouponServer(trimmed);
+    if (serverInfo) {
+      if (!serverInfo.active) { setCouponError("This coupon has been deactivated."); return false; }
+      if (serverInfo.expired) { setCouponError("This coupon has expired."); return false; }
+      if (serverInfo.exhausted) { setCouponError("This coupon has reached its usage limit."); return false; }
+
+      const restrictTo = serverInfo.planId || null;
+      const restrictedPlan = restrictTo ? planMap[restrictTo] : null;
+      const restrictedLabel = restrictedPlan?.name || restrictTo;
+
+      const sub = { ...subscription, coupon: { code: trimmed.toUpperCase(), appliedAt: new Date().toISOString() } };
+      sub.discountPercent = serverInfo.value;
+      setSubscription(sub);
+      writeSubscription(sub);
+
+      if (restrictTo && restrictTo === planId) {
+        // Already on the exact plan this coupon restricts to — applying it
+        // now can't discount an upgrade that doesn't exist, so say so instead
+        // of the generic "on your next upgrade" line, which would be untrue.
+        setCouponSuccess(
+          `This coupon is for the ${restrictedLabel} plan, which you're already on — it won't discount a different plan.`
+        );
+      } else if (restrictTo) {
+        setCouponSuccess(`Coupon applied — ${serverInfo.value}% off when you upgrade to ${restrictedLabel}.`);
+      } else {
+        setCouponSuccess(`Coupon applied — ${serverInfo.value}% discount on your next upgrade.`);
+      }
+      return true;
+    }
+
+    const { valid, reason, coupon } = validateCoupon(trimmed, planId);
     if (!valid) { setCouponError(reason); return false; }
-    incrementCouponUses(code);
+    incrementCouponUses(trimmed);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
     if (coupon.type === "extractions") sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
     if (coupon.type === "percent")     sub.discountPercent  = coupon.value;
@@ -449,7 +487,7 @@ export function BillingProvider({ children }) {
         : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
     );
     return true;
-  }, [subscription, planId]);
+  }, [subscription, planId, planMap]);
 
   const redeemAdminGrant = useCallback(async (code) => {
     setCouponError("");
