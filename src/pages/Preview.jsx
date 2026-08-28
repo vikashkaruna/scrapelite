@@ -14,7 +14,7 @@ import { useToast } from "../components/Toast.jsx";
 import { isComplianceError } from "../lib/errorMessages.js";
 import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { useBilling } from "../components/BillingProvider.jsx";
-import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
+import { resolveTemplateUserId, readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
 import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl, recordPublicShare, recordPublicUnshare } from "../lib/shareService.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
@@ -406,7 +406,7 @@ export default function Preview() {
 
   const onDownloadCsv = () => {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
-    csvDownload([data]);
+    csvDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to CSV", "download");
   };
   const onOpenInSheets = () => {
@@ -416,12 +416,12 @@ export default function Preview() {
   };
   const onDownloadMarkdown = () => {
     if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
-    markdownDownload([data]);
+    markdownDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to Markdown", "file-code");
   };
   const onDownloadJson = () => {
     if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
-    jsonDownload([data]);
+    jsonDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to JSON", "file-json");
   };
   const onDownloadPdf = async () => {
@@ -439,7 +439,7 @@ export default function Preview() {
         const tplRes = await readTemplate({ userId: resolveTemplateUserId() });
         if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
       } catch { /* swallow — plain PDF is fine */ }
-      extractionsToPdf([data], { template });
+      extractionsToPdf([data], { template, brandKit: readBrandKit() });
       showToast("Exported to PDF", "file");
     } catch (err) {
       if (/dynamically imported/i.test(err?.message || "")) {

@@ -69,7 +69,7 @@ import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend } from "../../src/lib/discoverability/auditDiff.js";
 import {
   buildMarkdownReport, issuesToCsv, recommendationsToCsv, toJsonPayload,
-  signalsToCsv, scoresToCsv, bundleToCsv,
+  signalsToCsv, scoresToCsv, bundleToCsv, brandCsv,
 } from "../../src/lib/discoverability/auditReport.js";
 import { buildConstruct } from "../../src/lib/discoverability/constructTemplates.js";
 import { AUDIT_PROFILES, packFor } from "../../src/lib/discoverability/auditProfiles.js";
@@ -615,7 +615,7 @@ function reportRoute(event, full) {
       all: bundleToCsv,
     };
     const which = CSV_ROWS[event.queryStringParameters?.rows] || recommendationsToCsv;
-    return text(200, which(audit), "text/csv; charset=utf-8");
+    return text(200, brandCsv(which(audit), audit), "text/csv; charset=utf-8");
   }
   return text(200, buildMarkdownReport(audit, {
     includeConstructs: event.queryStringParameters?.constructs === "1",

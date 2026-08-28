@@ -21,6 +21,7 @@ import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, csvDownload, markdownDownload, jsonDownload, copyToClipboard, uid } from "../lib/utils.js";
+import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { hostOf, snippet } from "../lib/utils.js";
 import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
@@ -564,7 +565,7 @@ export default function Batch() {
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
     if (!successResults.length) return;
-    csvDownload(successResults);
+    csvDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to CSV`, "download");
   };
 
@@ -574,7 +575,7 @@ export default function Batch() {
       return;
     }
     if (!successResults.length) return;
-    markdownDownload(successResults);
+    markdownDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to Markdown`, "file-code");
   };
 
@@ -584,7 +585,7 @@ export default function Batch() {
       return;
     }
     if (!successResults.length) return;
-    jsonDownload(successResults);
+    jsonDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to JSON`, "file-json");
   };
 
@@ -596,7 +597,18 @@ export default function Batch() {
     if (!successResults.length) return;
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
-      extractionsToPdf(successResults);
+      // White-label PDF (Business + Agency) — Dashboard's and Preview's PDF
+      // export both load the user's template; this one never did, so a
+      // batch-exported PDF silently dropped back to plain DatIQ branding
+      // even for a plan that pays for white-label. Same fallback-on-failure
+      // behavior as those two: a bad template must never fail the export.
+      let template = null;
+      try {
+        const { readTemplate, resolveTemplateUserId } = await import("../lib/whiteLabelTemplate.js");
+        const tplRes = await readTemplate({ userId: resolveTemplateUserId({ user }) });
+        if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
+      } catch { /* plain PDF is fine */ }
+      extractionsToPdf(successResults, { template, brandKit: readBrandKit() });
       showToast(`Exported ${successResults.length} pages to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);

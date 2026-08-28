@@ -159,6 +159,8 @@ import {
   Gauge,
   // Team workspaces
   Lock,
+  // Export branding — Brand Kit
+  Palette,
 } from "lucide-react";
 
 const MAP = {
@@ -332,6 +334,7 @@ const MAP = {
   "square-check-big": SquareCheckBig,
   "circle-slash": CircleSlash,
   lock: Lock,
+  palette: Palette,
 };
 
 

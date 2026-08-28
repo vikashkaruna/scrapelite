@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
   runAudit: vi.fn(), getResults: vi.fn(), rerun: vi.fn(), compare: vi.fn(),
   trends: vi.fn(), history: vi.fn(), accept: vi.fn(), dismiss: vi.fn(),
   markDone: vi.fn(), reopen: vi.fn(), reportMarkdown: vi.fn(),
-  reportCsv: vi.fn(), reportJson: vi.fn(),
+  reportCsv: vi.fn(), reportJson: vi.fn(), emailReport: vi.fn(async () => ({ ok: true, sent: true })),
   // Called by AuditHeader on first view. Default: no summary available, so the
   // header degrades to the identity block and every existing assertion below
   // keeps testing what it was written to test.
@@ -476,5 +476,21 @@ describe("an unreachable page still reports what it could gather", () => {
     await submit("https://gone.example.com");
     expect(await screen.findByText(/This page could not be fetched/i)).toBeInTheDocument();
     expect(screen.getByText(/does not return a 200/)).toBeInTheDocument();
+  });
+});
+
+describe("email report — a wholly new capability, no email feature existed here before", () => {
+  it("emails the PDF report and confirms to the signed-in account's own address", async () => {
+    await runAudit();
+    fireEvent.click(screen.getByRole("button", { name: /email/i }));
+    await waitFor(() => expect(api.emailReport).toHaveBeenCalledWith("aud_1", { format: "pdf", brandKit: null }));
+    expect(await screen.findByText(/report emailed to a@b\.com/i)).toBeInTheDocument();
+  });
+
+  it("shows the server's own error message when the send fails", async () => {
+    api.emailReport.mockRejectedValue(new Error("Could not send the email."));
+    await runAudit();
+    fireEvent.click(screen.getByRole("button", { name: /email/i }));
+    expect(await screen.findByText(/Could not send the email\./i)).toBeInTheDocument();
   });
 });

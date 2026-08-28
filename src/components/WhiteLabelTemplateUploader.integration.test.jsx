@@ -75,7 +75,9 @@ describe("WhiteLabelTemplateUploader", () => {
 
   it("accepts a valid PDF, persists it, and shows the current-template panel", async () => {
     render(<WhiteLabelTemplateUploader canManage={true} />);
-    const input = document.querySelector("input[type=file]");
+    // Two file inputs exist now (Brand Kit logo + the PDF template) — scope
+    // to the PDF one specifically.
+    const input = document.querySelector('input[type=file][accept="application/pdf"]');
     await act(async () => {
       fireEvent.change(input, { target: { files: [pdfFile({ name: "brand.pdf" })] } });
       // Let the queueMicrotask in FakeFileReader run.
@@ -92,7 +94,7 @@ describe("WhiteLabelTemplateUploader", () => {
 
   it("rejects a file with the wrong MIME type and surfaces an inline error", async () => {
     render(<WhiteLabelTemplateUploader canManage={true} />);
-    const input = document.querySelector("input[type=file]");
+    const input = document.querySelector('input[type=file][accept="application/pdf"]');
     const bad = { name: "x.html", type: "text/html", size: 10,
       slice: () => ({ arrayBuffer: async () => new ArrayBuffer(0) }),
       arrayBuffer: async () => new ArrayBuffer(0),

@@ -541,7 +541,7 @@ describe("report export", () => {
   it("defaults to markdown", async () => {
     const res = await call("GET", "audits/a1/report");
     expect(res.headers["Content-Type"]).toMatch(/text\/markdown/);
-    expect(res.body).toMatch(/# Discoverability audit/);
+    expect(res.body).toMatch(/# DatIQ Discoverability Audit/);
   });
 
   it("serves CSV and JSON on request", async () => {
