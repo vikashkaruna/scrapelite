@@ -51,7 +51,12 @@ export function describeFailure(code) {
     case "not_pending":
       return "There is no pending deletion to cancel.";
     case "not_found":
-      return "We could not find a billing record for this account.";
+      // Reachable only if the authenticated user_id doesn't correspond to a
+      // real account at all — see supabase/migrations/0035, which bootstraps
+      // a default entitlements row for any real signed-in user (billing
+      // history or not) before freezing/deleting, so this is no longer what
+      // a free user with no purchase history sees.
+      return "We could not find this account. Try signing in again.";
     case "unavailable":
       return "Account settings are temporarily unavailable. Nothing was changed.";
     default:

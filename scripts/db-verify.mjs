@@ -1117,6 +1117,43 @@ group("account state — freeze is not suspension, deletion is not a delete");
   eq("...with its original reason intact", e5.frozen_reason, "holiday");
 }
 
+// ── 0035: a real free user with NO entitlements row (the overwhelmingly common
+// case — a row is only ever created by a billing event: claim, referral, or
+// admin coupon grant) must still be able to freeze or delete their own
+// account. Reproduces the live bug: "we could not find a billing record for
+// this account" on an action that has nothing to do with billing history.
+group("account state — freeze/delete bootstrap a missing entitlements row");
+{
+  const noRow = (await one(`insert into auth.users (email) values ('no-billing-row@x.com') returning id`)).id;
+  const preCheck = await one(`select count(*)::int n from public.entitlements where user_id=$1`, [noRow]);
+  eq("sanity: this user really has no entitlements row yet", preCheck.n, 0);
+
+  eq("freezing a free user with no billing history succeeds",
+     (await one(`select public.set_account_frozen($1, true, 'user requested') v`, [noRow])).v, "ok");
+  const bootstrapped = await one(
+    `select plan_id, status, frozen_at from public.entitlements where user_id=$1`, [noRow]);
+  eq("...bootstraps the table's own default plan", bootstrapped.plan_id, "free");
+  eq("...and default status", bootstrapped.status, "active");
+  check("...and actually freezes", !!bootstrapped.frozen_at);
+
+  eq("unfreezing the same user succeeds",
+     (await one(`select public.set_account_frozen($1, false) v`, [noRow])).v, "ok");
+
+  const noRow2 = (await one(`insert into auth.users (email) values ('no-billing-row-2@x.com') returning id`)).id;
+  const delAfter = (await one(`select public.request_account_deletion($1, 30) v`, [noRow2])).v;
+  check("requesting deletion for a free user with no billing history returns a purge date", !!delAfter);
+  const row2 = await one(`select plan_id, status from public.entitlements where user_id=$1`, [noRow2]);
+  eq("...bootstrapping deletion also lands on the table's own defaults", row2.plan_id, "free");
+  eq("...and default status", row2.status, "active");
+
+  // A user_id that is not a real auth.users row at all must still fail —
+  // the bootstrap insert's FK violation is caught and reported the same way
+  // as before this fix (see the "freezing an unknown user" case above).
+  const ghost = "00000000-0000-0000-0000-0000000000ff";
+  eq("requesting deletion for a nonexistent user still returns nothing",
+     (await one(`select public.request_account_deletion($1, 30) v`, [ghost])).v, null);
+}
+
 group("workspace members — per-seat pause");
 {
   const owner = (await one(`insert into auth.users (email) values ('p-owner@x.com') returning id`)).id;
