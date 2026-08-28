@@ -19,6 +19,7 @@
 
 import { jsPDF } from "jspdf";
 import { toPdfSafe } from "../invoicePdf.js";
+import { buildBrandingContext, brandingPdfHeader, brandingPdfFooter } from "../exportBranding.js";
 import { PILLAR_IDS, pillarLabel, signalLabel } from "./signalRegistry.js";
 
 const MARGIN = 44;
@@ -45,14 +46,24 @@ const scoreText = (v) => { const x = n1(v); return x === null ? "not measured" :
  * @param {object} [opts]
  * @param {boolean} [opts.includeConstructs]  append the copy-ready assets
  * @param {object}  [opts.diff]  comparison against the baseline audit, if any
+ * @param {string}  [opts.generatedAt]  ISO timestamp; defaults to now
+ * @param {object|null} [opts.brandKit]  Phase 2 Brand Kit — see whiteLabelTemplate.js
  * @returns {jsPDF}
  */
-export function renderAuditPdf(audit, { includeConstructs = false, diff = null } = {}) {
+export function renderAuditPdf(audit, { includeConstructs = false, diff = null, generatedAt = null, brandKit = null } = {}) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const contentW = pageW - MARGIN * 2;
-  let y = MARGIN;
+
+  const url = audit?.target?.url || audit?.url || "";
+  const ctx = buildBrandingContext({
+    kind: "discoverability",
+    sourceUrls: url,
+    generatedAt: generatedAt || new Date().toISOString(),
+    brandKit,
+  });
+  let y = brandingPdfHeader(pdf, ctx, { toPdfSafe });
 
   const room = (h) => {
     if (y + h > pageH - MARGIN - 18) { pdf.addPage(); y = MARGIN; return true; }
@@ -85,15 +96,6 @@ export function renderAuditPdf(audit, { includeConstructs = false, diff = null }
     }
     y += gap;
   };
-
-  // ── Title block ──────────────────────────────────────────────────────────
-  const url = audit?.target?.url || audit?.url || "";
-  pdf.setFont("helvetica", "bold").setFontSize(19);
-  setInk(INK); text("Discoverability report", MARGIN);
-  y += 22;
-  pdf.setFont("helvetica", "normal").setFontSize(10.5);
-  setInk(ACCENT); text(url, MARGIN);
-  y += 15;
 
   const created = audit?.created_at || audit?.meta?.startedAt;
   const stamp = created ? new Date(created).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "";
@@ -424,10 +426,7 @@ export function renderAuditPdf(audit, { includeConstructs = false, diff = null }
   const total = pdf.internal.getNumberOfPages();
   for (let p = 1; p <= total; p += 1) {
     pdf.setPage(p);
-    pdf.setFont("helvetica", "normal").setFontSize(7.6);
-    pdf.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-    pdf.text(toPdfSafe(`DatIQ discoverability - ${url}`), MARGIN, pageH - 22);
-    pdf.text(`${p} / ${total}`, pageW - MARGIN, pageH - 22, { align: "right" });
+    brandingPdfFooter(pdf, ctx, p, total, { toPdfSafe });
   }
 
   return pdf;
@@ -443,4 +442,9 @@ export function auditPdfFilename(audit) {
 
 export function downloadAuditPdf(audit, opts = {}) {
   renderAuditPdf(audit, opts).save(auditPdfFilename(audit));
+}
+
+/** Server: raw bytes for an email attachment (see report-email.js). */
+export function auditPdfBuffer(audit, opts = {}) {
+  return renderAuditPdf(audit, opts).output("arraybuffer");
 }

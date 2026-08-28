@@ -11,6 +11,8 @@
 
 import { jsPDF } from "jspdf";
 import { hostOf, pathOf, fmtDate, flattenJson } from "./utils.js";
+import { buildBrandingContext, brandingPdfHeader, brandingPdfFooter } from "./exportBranding.js";
+import { toPdfSafe } from "./invoicePdf.js";
 
 const MARGIN = 48; // pt
 const LINE = 14; // base line height
@@ -52,25 +54,36 @@ function paintTemplateBackground(doc, templateBytes) {
 }
 
 /**
- * Build the jsPDF document for one or more extractions, without saving it.
+ * Build the jsPDF document for one or more extractions. Shared by the
+ * browser download (extractionsToPdf) and the Node/email attachment path
+ * (extractionsPdfBuffer) — one render path, not two, same reasoning as
+ * invoicePdf.js's renderInvoicePdf().
  *
- * Split out so the SAME layout code runs in both runtimes — the browser
- * download button and the server's email-attachment path — the way
- * invoicePdf.js's renderInvoicePdf() does. Two renderers would inevitably
- * drift, and a PDF that disagrees with the emailed copy is a support problem.
+ * @param {object|object[]} items
+ * @param {object} [opts]
+ * @param {Uint8Array} [opts.template]  legacy full-page white-label background
+ * @param {string} [opts.generatedAt]   ISO timestamp; defaults to now
+ * @param {object|null} [opts.brandKit] Phase 2 Brand Kit — see whiteLabelTemplate.js
  */
-export function buildExtractionsPdf(items, { template = null } = {}) {
+export function buildExtractionsPdf(items, { template = null, generatedAt = null, brandKit = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const contentW = pageW - MARGIN * 2;
-  let y = MARGIN;
 
   // Paint the template on the first page before any body text lands, so
   // every page (including the one we add at idx > 0 below) carries the
   // same brand background.
   if (template) paintTemplateBackground(doc, template);
+
+  const ctx = buildBrandingContext({
+    kind: list.length > 1 ? "batch" : "extraction",
+    sourceUrls: list.map((e) => e.url).filter(Boolean),
+    generatedAt: generatedAt || new Date().toISOString(),
+    brandKit,
+  });
+  let y = brandingPdfHeader(doc, ctx, { toPdfSafe });
 
   // Move down by `h`, adding a page if we'd run off the bottom.
   const advance = (h) => {
@@ -175,10 +188,18 @@ export function buildExtractionsPdf(items, { template = null } = {}) {
     }
   });
 
+  // Footer on every page — once at the end, over the finished page count,
+  // same pattern discoverability/auditPdf.js already uses.
+  const total = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= total; p += 1) {
+    doc.setPage(p);
+    brandingPdfFooter(doc, ctx, p, total, { toPdfSafe });
+  }
+
   return doc;
 }
 
-/** Filename used for both the browser download and the email attachment. */
+/** `datiq-<host>-<id>-export.pdf` (or `-N-pages` for a multi-item export) — used for both the browser download and the email attachment. */
 export function extractionsPdfFilename(items) {
   const list = Array.isArray(items) ? items : [items];
   return list.length === 1
@@ -186,9 +207,10 @@ export function extractionsPdfFilename(items) {
     : `datiq-export-${list.length}-pages.pdf`;
 }
 
-/** Browser: trigger a download. Signature/behaviour unchanged for existing call sites. */
+/** Browser: trigger a download. */
 export function extractionsToPdf(items, opts = {}) {
-  buildExtractionsPdf(items, opts).save(extractionsPdfFilename(items));
+  const doc = buildExtractionsPdf(items, opts);
+  doc.save(extractionsPdfFilename(items));
 }
 
 /** Server: raw bytes for an email attachment. */

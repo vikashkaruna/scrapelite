@@ -15,7 +15,7 @@ import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useBilling } from "../components/BillingProvider.jsx";
-import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
+import { resolveTemplateUserId, readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { useToast } from "../components/Toast.jsx";
 import { useErrorModal } from "../components/ErrorModal.jsx";
 import { LOAD_ERROR, DELETE_ERROR } from "../lib/errorMessages.js";
@@ -697,7 +697,7 @@ export default function Dashboard() {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
-    csvDownload(targets);
+    csvDownload(targets, { brandKit: readBrandKit() });
     analytics.exported({ format: "csv", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to CSV`, "download");
   };
@@ -718,7 +718,7 @@ export default function Dashboard() {
         const tplRes = await readTemplate({ userId: resolveTemplateUserId() });
         if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
       } catch { /* plain PDF is fine */ }
-      extractionsToPdf(targets, { template });
+      extractionsToPdf(targets, { template, brandKit: readBrandKit() });
       analytics.exported({ format: "pdf", count: targets.length, source: "dashboard" });
       showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to PDF`, "file");
     } catch (err) {
@@ -735,7 +735,7 @@ export default function Dashboard() {
     if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
-    markdownDownload(targets);
+    markdownDownload(targets, { brandKit: readBrandKit() });
     analytics.exported({ format: "markdown", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to Markdown`, "file-code");
   };
@@ -744,7 +744,7 @@ export default function Dashboard() {
     if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
-    jsonDownload(targets);
+    jsonDownload(targets, { brandKit: readBrandKit() });
     analytics.exported({ format: "json", count: targets.length, source: "dashboard" });
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to JSON`, "file-json");
   };

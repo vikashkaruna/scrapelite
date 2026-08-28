@@ -278,9 +278,18 @@ function Shell() {
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}
+        tourId="home"
         forceOpen={tourForceOpen > 0}
         enabled={pathname === "/"}
         onClose={() => setTourForceOpen(0)}
+      />
+      {/* Separate tour, separate localStorage flag — a first-time visitor to
+          Discoverability gets walked through it independently of whether
+          they've seen (or skipped) the Home tour. No replay hotkey wired to
+          this one yet; forceOpen stays false so it only auto-starts once. */}
+      <OnboardingTour
+        tourId="discoverability"
+        enabled={pathname === "/discoverability"}
       />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
       {/* Non-blocking background-extraction progress dock (replaces the old

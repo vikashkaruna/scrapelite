@@ -95,7 +95,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -160,11 +160,19 @@ function UserDropdown({ user, persona, onAccount, onSchedules, onSwitchRole, onS
               <div className="nav-dropdown-divider" />
             </>
           )}
-          {/* Schedules lives here rather than in the primary nav. It is a
-              signed-in destination people reach from wherever they formed the
-              intent — the Home composer, Workspace, Dashboard's run history —
-              so it does not need to compete with the four primary verbs for
-              space. This is the "I know it exists, where was it" path. */}
+          {/* Workspace and Schedules both live here rather than in the
+              primary nav. Both are signed-in destinations people reach from
+              wherever they formed the intent — the Home composer, a persona
+              switch, Dashboard's run history — so neither needs to compete
+              with the four primary verbs for space. This is the "I know it
+              exists, where was it" path. */}
+          {user && (
+            <button className="nav-dropdown-item" role="menuitem"
+              onClick={() => { setOpen(false); onWorkspace(); }}>
+              <span className="nav-dd-icon"><Icon name="layout-grid" size={14} /></span>
+              Workspace
+            </button>
+          )}
           {user && (
             <button className="nav-dropdown-item" role="menuitem"
               onClick={() => { setOpen(false); onSchedules(); }}>
@@ -204,7 +212,7 @@ function UserDropdown({ user, persona, onAccount, onSchedules, onSwitchRole, onS
 
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
-                     onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
+                     onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [exploreOpen, setExploreOpen] = useState(false);
 
   // Close panel on navigation
@@ -305,6 +313,12 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                 </div>
               )}
               {user && (
+                <button className="mobile-nav-item" onClick={() => { onWorkspace(); onClose(); }}>
+                  <span className="mobile-nav-icon"><Icon name="layout-grid" size={17} /></span>
+                  Workspace
+                </button>
+              )}
+              {user && (
                 <button className="mobile-nav-item" onClick={() => { onSchedules(); onClose(); }}>
                   <span className="mobile-nav-icon"><Icon name="calendar-clock" size={17} /></span>
                   Schedules &amp; monitors
@@ -389,10 +403,14 @@ export default function TopBar() {
     // carry the rest of the meaning.
     { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
-    // Collections moved inside /workspace as a tab (2026-08-11) — the
-    // top-level "Collections" nav item is removed. Old /collections URLs
-    // still work via the redirect in App.jsx.
-    ...(user ? [{ to: "/workspace", label: "Workspace", icon: "layout-grid", match: (p) => p === "/workspace" }] : []),
+    // Workspace moved into the signed-in user menu (2026-08-28), same
+    // reasoning already applied to Schedules below: it's a destination people
+    // reach with intent already formed (a persona switch, a team's shared
+    // view), not one that needs to compete with the primary verbs for the
+    // widest breakpoint's worth of nav space. Listed above "Schedules &
+    // monitors" in that menu. Collections moved inside /workspace as a tab
+    // (2026-08-11) — old /collections URLs still work via the redirect in
+    // App.jsx.
   ];
 
   async function handleSignOut() {
@@ -456,6 +474,7 @@ export default function TopBar() {
           {user ? (
             <UserDropdown
               user={user} persona={persona}
+              onWorkspace={() => navigate("/workspace")}
               onAccount={() => navigate("/account")}
               onSchedules={() => navigate("/schedules")}
               onSwitchRole={handleSwitchRole}
@@ -495,6 +514,7 @@ export default function TopBar() {
         isExploreActive={isExploreActive}
         persona={persona}
         user={user}
+        onWorkspace={() => navigate("/workspace")}
         onAccount={() => navigate("/account")}
         onSchedules={() => navigate("/schedules")}
         onSwitchRole={handleSwitchRole}

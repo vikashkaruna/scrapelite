@@ -152,7 +152,28 @@ export const discoverability = {
   deleteSchedule: (id) => req(`/schedules/${encodeURIComponent(id)}`, "DELETE"),
 
   profiles: () => req("/profiles"),
+
+  /**
+   * Email this audit report to yourself, with the file actually attached —
+   * see netlify/functions/report-email.js. Not under BASE ("/api/discoverability")
+   * since it's shared with extraction/batch reports; the recipient is always
+   * the signed-in account's own email, resolved server-side, never something
+   * this call can specify.
+   */
+  emailReport: (auditId, { format = "pdf", brandKit = null } = {}) =>
+    emailReport({ kind: "discoverability", auditId, format, brandKit }),
 };
+
+async function emailReport(payload) {
+  const res = await fetch("/api/report-email", {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    credentials: "same-origin",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await throwFromResponse(res, "POST", "/report-email");
+  return res.json();
+}
 
 /**
  * Turn a rejection into copy a person can act on.

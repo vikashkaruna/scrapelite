@@ -278,3 +278,71 @@ describe("I-49 — TopBar: 'Switch persona' label (Q8)", () => {
     expect(screen.getByTestId("location").textContent).toBe("/onboarding");
   });
 });
+
+describe("Workspace moved into the signed-in user menu (2026-08-28)", () => {
+  it("is absent from the primary desktop nav links", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    const primaryNav = document.querySelector(".nav-links");
+    expect(primaryNav.textContent).not.toMatch(/workspace/i);
+  });
+
+  it("appears in the user dropdown, listed above 'Schedules & monitors'", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    const items = Array.from(desktopMenu.querySelectorAll(".nav-dropdown-item")).map((b) => b.textContent);
+    const workspaceIdx = items.findIndex((t) => /^workspace$/i.test(t.trim()));
+    const schedulesIdx = items.findIndex((t) => /schedules.*monitors/i.test(t));
+    expect(workspaceIdx).toBeGreaterThanOrEqual(0);
+    expect(schedulesIdx).toBeGreaterThanOrEqual(0);
+    expect(workspaceIdx).toBeLessThan(schedulesIdx);
+  });
+
+  it("clicking Workspace in the user dropdown navigates to /workspace", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    const workspaceBtn = Array.from(desktopMenu.querySelectorAll("button")).find(
+      (b) => /^workspace$/i.test(b.textContent.trim()),
+    );
+    act(() => fireEvent.click(workspaceBtn));
+    expect(screen.getByTestId("location").textContent).toBe("/workspace");
+  });
+
+  it("appears in the mobile nav's user section, above 'Schedules & monitors'", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    const mobileItems = Array.from(document.querySelectorAll(".mobile-nav .mobile-nav-item")).map((b) => b.textContent);
+    const workspaceIdx = mobileItems.findIndex((t) => /^workspace$/i.test(t.trim()));
+    const schedulesIdx = mobileItems.findIndex((t) => /schedules.*monitors/i.test(t));
+    expect(workspaceIdx).toBeGreaterThanOrEqual(0);
+    expect(schedulesIdx).toBeGreaterThanOrEqual(0);
+    expect(workspaceIdx).toBeLessThan(schedulesIdx);
+  });
+});

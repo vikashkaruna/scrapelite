@@ -1,4 +1,8 @@
-// src/components/OnboardingTour.test.jsx — Q4 tour overlay tests.
+// src/components/OnboardingTour.test.jsx — tour overlay UI tests.
+//
+// Covers the default ("home") tour's mechanics plus the `tourId` prop that
+// lets a second, independent tour (e.g. "discoverability") be mounted with
+// its own step list and its own completed/skipped flag.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
@@ -7,10 +11,11 @@ import OnboardingTour from "./OnboardingTour.jsx";
 
 beforeEach(() => {
   try { localStorage.clear(); } catch {}
-  tourLib.resetTour();
+  tourLib.resetTour("home");
+  tourLib.resetTour("discoverability");
 });
 
-describe("Q4 — OnboardingTour: overlay UI", () => {
+describe("OnboardingTour — home tour (default tourId)", () => {
   it("does not render when no forceOpen + tour already completed", () => {
     tourLib.markCompleted();
     const { container } = render(<OnboardingTour />);
@@ -62,17 +67,18 @@ describe("Q4 — OnboardingTour: overlay UI", () => {
 
   it("the last step's button label is 'Finish'", () => {
     render(<OnboardingTour forceOpen />);
-    // 7 steps now (added the 'modes' step)
-    for (let i = 0; i < 6; i++) {
+    const total = tourLib.getTourSteps().length;
+    for (let i = 0; i < total - 1; i++) {
       fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     }
-    expect(screen.getByText(/Step 7 of/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`Step ${total} of`))).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Finish/i })).toBeInTheDocument();
   });
 
   it("Finish marks the tour as completed", () => {
     render(<OnboardingTour forceOpen />);
-    for (let i = 0; i < 6; i++) {
+    const total = tourLib.getTourSteps().length;
+    for (let i = 0; i < total - 1; i++) {
       fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     }
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
@@ -81,8 +87,7 @@ describe("Q4 — OnboardingTour: overlay UI", () => {
 
   it("the modes step enumerates the 5 quick actions and 6 outcome tiles", () => {
     render(<OnboardingTour forceOpen />);
-    // Step 1 -> 2 -> 3 -> 4 (modes)
-    fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+    // Step 1 -> 2 -> 3 (modes)
     fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
     expect(screen.getByText(/12 extraction modes/i)).toBeInTheDocument();
@@ -95,5 +100,36 @@ describe("Q4 — OnboardingTour: overlay UI", () => {
     render(<OnboardingTour forceOpen onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: /Skip tour/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OnboardingTour — discoverability tour (tourId prop)", () => {
+  it("renders its own first step, independent of the home tour's content", () => {
+    render(<OnboardingTour tourId="discoverability" forceOpen />);
+    expect(screen.getByText(/Score how discoverable/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Welcome to DatIQ/i)).toBeNull();
+  });
+
+  it("auto-starts on its own route independently of the home tour's completed state", () => {
+    tourLib.markCompleted("home");
+    render(<OnboardingTour tourId="discoverability" enabled />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("Finish marks only the discoverability tour completed, not home", () => {
+    render(<OnboardingTour tourId="discoverability" forceOpen />);
+    const total = tourLib.getTourSteps("discoverability").length;
+    for (let i = 0; i < total - 1; i++) {
+      fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
+    expect(tourLib.isTourCompleted("discoverability")).toBe(true);
+    expect(tourLib.isTourCompleted("home")).toBe(false);
+  });
+
+  it("does not auto-start once already completed", () => {
+    tourLib.markCompleted("discoverability");
+    render(<OnboardingTour tourId="discoverability" enabled />);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

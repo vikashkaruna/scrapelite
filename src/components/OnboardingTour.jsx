@@ -48,19 +48,19 @@ function spotlightStyle(anchor) {
   };
 }
 
-export default function OnboardingTour({ forceOpen = false, onClose, enabled = true }) {
+export default function OnboardingTour({ tourId = "home", forceOpen = false, onClose, enabled = true }) {
   const [open, setOpen] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [anchor, setAnchor] = useState(null);
-  const steps = getTourSteps();
+  const steps = getTourSteps(tourId);
 
   useEffect(() => {
     if (forceOpen) { setOpen(true); return; }
-    if (enabled && !isTourCompleted() && !isTourSkipped()) {
+    if (enabled && !isTourCompleted(tourId) && !isTourSkipped(tourId)) {
       // Auto-start for first-time visitors.
       setOpen(true);
     }
-  }, [forceOpen, enabled]);
+  }, [forceOpen, enabled, tourId]);
 
   useEffect(() => {
     if (!open) return;
@@ -131,12 +131,12 @@ export default function OnboardingTour({ forceOpen = false, onClose, enabled = t
     setStepIdx(prevStep(stepIdx));
   }
   function handleFinish() {
-    markCompleted();
+    markCompleted(tourId);
     setOpen(false);
     onClose?.();
   }
   function handleSkip() {
-    markSkipped();
+    markSkipped(tourId);
     setOpen(false);
     onClose?.();
   }

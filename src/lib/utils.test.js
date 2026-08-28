@@ -182,7 +182,7 @@ describe("Markdown export (U-01)", () => {
       },
     ];
     const md = extractionsToMarkdown(items);
-    expect(md).toMatch(/^# DatIQ Export/);
+    expect(md).toMatch(/^# DatIQ Extraction Report/);
     expect(md).toMatch(/## 1\. Example Pricing/);
     expect(md).toMatch(/\*\*URL:\*\* <https:\/\/example\.com\/pricing>/);
     expect(md).toMatch(/### AI Summary/);
@@ -194,7 +194,7 @@ describe("Markdown export (U-01)", () => {
       url: "https://example.com",
       page_title: "Single",
     });
-    expect(md).toMatch(/^# DatIQ Export/);
+    expect(md).toMatch(/^# DatIQ Extraction Report/);
     expect(md).toMatch(/## 1\. Single/);
   });
 });

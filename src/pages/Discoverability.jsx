@@ -37,6 +37,7 @@ import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
+import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
 /**
  * Which pillar cards the reader has open, for this browsing session only.
@@ -333,7 +334,7 @@ export default function Discoverability() {
         // `diff` travels with it: the comparison against the baseline is on
         // screen, so it belongs in the artefact that gets forwarded.
         const { downloadAuditPdf } = await import("../lib/discoverability/auditPdf.js");
-        downloadAuditPdf(audit, { includeConstructs: true, diff });
+        downloadAuditPdf(audit, { includeConstructs: true, diff, brandKit: readBrandKit() });
       } else if (format === "markdown") {
         const md = await discoverability.reportMarkdown(audit.auditId, { constructs: true });
         downloadTextFile(md, `discoverability-${slug}.md`, "text/markdown;charset=utf-8;");
@@ -349,6 +350,24 @@ export default function Discoverability() {
       showToast(err.message || "Could not build the report");
     }
   }, [audit, diff, showToast]);
+
+  // ── Email report — new capability, no email feature existed on this page
+  // before. Always sent to the signed-in account's own email (resolved
+  // server-side, see report-email.js) with the PDF actually attached, the
+  // same real-branding-plus-real-attachment treatment invoices already get.
+  const [emailingReport, setEmailingReport] = useState(false);
+  const emailReport = useCallback(async () => {
+    if (!audit?.auditId || emailingReport) return;
+    setEmailingReport(true);
+    try {
+      await discoverability.emailReport(audit.auditId, { format: "pdf", brandKit: readBrandKit() });
+      showToast(`Report emailed to ${user?.email || "your account"}`, "check");
+    } catch (err) {
+      showToast(err.message || "Could not email the report");
+    } finally {
+      setEmailingReport(false);
+    }
+  }, [audit, emailingReport, user, showToast]);
 
   const issues = audit?.issues || [];
   const filteredIssueCount = useMemo(() => {
@@ -390,6 +409,10 @@ export default function Discoverability() {
               <Button size="sm" variant="ghost" onClick={() => exportReport("pdf")}>PDF</Button>
               <Button size="sm" variant="ghost" onClick={() => exportReport("csv")}>CSV</Button>
               <Button size="sm" variant="ghost" onClick={() => exportReport("json")}>JSON</Button>
+              <Button size="sm" variant="ghost" onClick={emailReport} loading={emailingReport}
+                title={`Email the PDF report to ${user?.email || "your account"}`}>
+                <Icon name="mail" size={14} /> Email
+              </Button>
             </div>
             </>
           )}

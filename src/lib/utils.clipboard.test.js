@@ -37,7 +37,7 @@ describe("F01 — buildClipboardPayload", () => {
   it("produces Markdown text containing the URL heading", () => {
     const { text, mime } = buildClipboardPayload(SAMPLE, "markdown");
     expect(mime).toBe("text/markdown");
-    expect(text).toMatch(/^# DatIQ Export/m);
+    expect(text).toMatch(/^# DatIQ Extraction Report/m);
     expect(text).toContain("stripe.com");
   });
 
