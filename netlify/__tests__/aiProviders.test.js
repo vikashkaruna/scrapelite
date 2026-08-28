@@ -3,7 +3,7 @@
 // 502 when all fail. C-06 also tested: per-provider model from config.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ORDER, loadAiConfig, runChain } from "../functions/lib/aiProviders.js";
+import { DEFAULT_ORDER, loadAiConfig, runChain, resolvePillarChain, resolveProvider } from "../functions/lib/aiProviders.js";
 
 /**
  * Stub the global `fetch` (Node 18+ built-in) so the chain's adapter
@@ -227,5 +227,97 @@ describe("loadAiConfig (C-06)", () => {
     const { loadAiConfig } = await load();
     const cfg = await loadAiConfig();
     expect(cfg.order).toEqual(["anthropic", "gemini"]);
+  });
+});
+
+describe("per-pillar chain overrides (discoverability / citation sampling)", () => {
+  it("resolvePillarChain falls back to the global chain when no override exists", async () => {
+    const { loadAiConfig, resolvePillarChain: rpc } = await load();
+    const cfg = await loadAiConfig();
+    const resolved = rpc(cfg, "discoverability");
+    expect(resolved.order).toEqual(cfg.order);
+    expect(resolved.models).toEqual(cfg.models);
+    expect(resolved.enabled).toEqual(cfg.enabled);
+  });
+
+  it("resolvePillarChain merges a partial override field-by-field, not all-or-nothing", async () => {
+    const { loadAiConfig, resolvePillarChain: rpc } = await load();
+    const cfg = await loadAiConfig();
+    cfg.pillars = { discoverability: { order: ["perplexity", "gemini"] } }; // no models/enabled override
+    const resolved = rpc(cfg, "discoverability");
+    expect(resolved.order).toEqual(["perplexity", "gemini"]);
+    // models/enabled fell back to the global maps untouched
+    expect(resolved.models).toEqual(cfg.models);
+    expect(resolved.enabled).toEqual(cfg.enabled);
+  });
+
+  it("runChain honours a pillar's own order over the global default", async () => {
+    process.env.GEMINI_API_KEY = "gem-key";
+    process.env.PERPLEXITY_API_KEY = "px-key";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([{
+            value: {
+              order: ["gemini"],
+              pillars: { discoverability: { order: ["perplexity"] } },
+            },
+          }]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: "px-answer" } }] }), { status: 200 }),
+      );
+    const { runChain } = await load();
+    const r = await runChain([{ role: "user", content: "hi" }], 300, { pillar: "discoverability" });
+    expect(r.ok).toBe(true);
+    expect(r.provider).toBe("perplexity");
+    expect(r.text).toBe("px-answer");
+  });
+
+  it("runChain with no pillar option is unaffected by a pillar override", async () => {
+    process.env.GEMINI_API_KEY = "gem-key";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([{
+            value: {
+              order: ["gemini"],
+              pillars: { discoverability: { order: ["perplexity"] } },
+            },
+          }]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "gem-answer" }] } }] }), { status: 200 }),
+      );
+    const { runChain } = await load();
+    const r = await runChain([{ role: "user", content: "hi" }]);
+    expect(r.ok).toBe(true);
+    expect(r.provider).toBe("gemini");
+  });
+
+  it("resolveProvider returns the pillar-resolved model and key presence for a provider", async () => {
+    process.env.PERPLEXITY_API_KEY = "px-key";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([{
+          value: { pillars: { discoverability: { models: { perplexity: "sonar-pro" } } } },
+        }]),
+        { status: 200 },
+      ),
+    );
+    const { resolveProvider: rp } = await load();
+    const info = await rp("perplexity", "discoverability");
+    expect(info.model).toBe("sonar-pro");
+    expect(info.apiKey).toBe("px-key");
   });
 });

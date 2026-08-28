@@ -39,13 +39,71 @@ const DEFAULT_MAX = 50;
 // Tables purged, in dependency order. Anything not listed here is retained by
 // default — a new user-content table must be added deliberately, which is the
 // safe direction for an omission.
+//
+// ⚠️ countRows()/deleteRows() below filter on a plain `user_id=eq.<id>` REST
+// query, so every table here MUST have a `user_id` column that actually
+// belongs to the purged account. A table with a differently-named or
+// multi-owner FK cannot go on this list without also changing that query —
+// see RETAIN_TABLES for the four tables from migrations 0029-0031 that don't
+// fit that shape and were deliberately left off rather than silently
+// mismatched (netlify/__tests__/audit/purge-table-parity.test.js is the check
+// that would have caught this list going stale the way it did the first time:
+// migrations 0029-0031 added 18 user-content tables and none were listed
+// here until this pass).
 const PURGE_TABLES = [
   "extractions",
   "scheduled_tasks",
   "analytics_events",
   "summary_feedback",
   "public_reports",
+  // ── 0029 referrals ──
+  "referral_codes",           // user_id is the primary key
+  // ── 0030 discoverability audits (user_id on every one of these) ──
+  "audit_targets",
+  "audits",
+  "audit_results",
+  "audit_signals",
+  "audit_issues",
+  "audit_recommendations",
+  "audit_prompt_sets",
+  "audit_prompt_runs",
+  "audit_benchmarks",
+  "audit_benchmark_members",
+  "audit_schedules",
+  "audit_webhooks",
+  // ── 0031 team workspaces ──
+  // Only the purged user's OWN membership row — never the workspace itself
+  // (see RETAIN_TABLES: a workspace is shared, so deleting it would destroy
+  // other members' data over one member's purge).
+  "workspace_members",
 ];
+
+// User-scoped tables from 0029-0031 deliberately NOT auto-purged, and why.
+// purge-table-parity.test.js asserts every table those three migrations
+// introduced is in exactly one of PURGE_TABLES or this list — so a table can
+// go unhandled only by a reviewed, deliberate decision, never by omission.
+export const RETAIN_TABLES = {
+  referral_redemptions:
+    "no plain `user_id` column (referrer_user_id / invitee_user_id instead) — " +
+    "the current user_id=eq.<id> delete query cannot target it correctly, and " +
+    "it is also the REFERRER's evidence of an earned bonus, not only the " +
+    "purged user's own content. Needs a dedicated two-sided delete, not a " +
+    "one-line addition to this array.",
+  audit_events:
+    "user_id is nullable with ON DELETE SET NULL, the same anonymize-not-" +
+    "cascade shape as ops_audit_log — this is an audit-trail log, not user " +
+    "content, and this codebase's standing rule is that audit trails are " +
+    "never pruned by an automated job.",
+  workspaces:
+    "owned via `owner_id`, not `user_id`, and shared with other members. " +
+    "Deleting it on the owner's purge would destroy every OTHER member's " +
+    "workspace data too — needs an ownership-transfer or orphan-workspace " +
+    "policy decided on purpose, not a blanket delete.",
+  workspace_invites:
+    "owned via `invited_by`, not `user_id`, and expires on its own 14-day " +
+    "clock — cleanup belongs with that expiry, not with a user_id-scoped " +
+    "content purge.",
+};
 
 function sb() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";

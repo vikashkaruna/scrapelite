@@ -153,6 +153,25 @@ export function validateCoupon(code, currentPlanId, opts = {}) {
   return { valid: true, coupon };
 }
 
+/**
+ * Reduce the full local coupon list (id/type/uses/createdAt and all) down to
+ * the checkout-relevant subset admin-coupons-config.js expects: percent-type,
+ * non-manual coupons only, keyed by code. See that function's header comment
+ * for why "extractions" coupons and planId:"manual" coupons are excluded —
+ * neither is ever redeemed through checkout.
+ */
+export function buildCouponsSyncPayload(coupons = getCoupons()) {
+  const out = {};
+  for (const c of coupons) {
+    if (c.type !== "percent" || c.planId === "manual" || !c.code) continue;
+    out[String(c.code).toUpperCase()] = {
+      value: c.value, planId: c.planId || null, expiresAt: c.expiresAt || null,
+      active: c.active !== false, maxUses: c.maxUses || 0,
+    };
+  }
+  return out;
+}
+
 export function incrementCouponUses(code) {
   const coupons = getCoupons();
   const coupon = coupons.find((c) => c.code.toUpperCase() === code.toUpperCase());

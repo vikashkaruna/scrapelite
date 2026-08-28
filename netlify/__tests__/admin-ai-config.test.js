@@ -174,6 +174,50 @@ describe("admin-ai-config POST (C-25)", () => {
     });
     expect(captured.value.order).toEqual(["gemini", "anthropic"]);
   });
+
+  it("persists a pillar override (e.g. discoverability) alongside the default chain", async () => {
+    process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    let captured = null;
+    fetchMock.mockImplementationOnce(async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response("", { status: 200 });
+    });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify({
+        order: ["gemini", "anthropic"],
+        pillars: { discoverability: { order: ["perplexity", "gemini"], models: { perplexity: "sonar-pro" } } },
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    expect(captured.value.pillars.discoverability.order).toEqual(["perplexity", "gemini"]);
+    expect(captured.value.pillars.discoverability.models.perplexity).toBe("sonar-pro");
+  });
+
+  it("rejects an unknown pillar key rather than storing it unread", async () => {
+    process.env.ADMIN_TOKEN_SECRET = TEST_SECRET;
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    let captured = null;
+    fetchMock.mockImplementationOnce(async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response("", { status: 200 });
+    });
+    const h = await loadHandler();
+    await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify({
+        order: ["gemini"],
+        pillars: { "made-up-pillar": { order: ["gemini"] } },
+      }),
+    });
+    expect(captured.value.pillars).toBeUndefined();
+  });
 });
 
 describe("admin-ai-config — method handling", () => {

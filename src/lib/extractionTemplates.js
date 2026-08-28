@@ -228,6 +228,14 @@ export const RECIPE_PACKS = [
     color: "#0d9488",
     templateKeys: ["saas-pricing", "producthunt-launch", "seo-audit", "news-article", "github-repo"],
   },
+  {
+    key: "research",
+    label: "Research Pack",
+    description: "Dig into a company or market before you write a word. Job postings, launches, product pages, tech stack, and press coverage in one pass.",
+    icon: "book-open",
+    color: "#0369a1",
+    templateKeys: ["job-board", "producthunt-launch", "shopify-product", "tech-stack", "news-article", "github-repo"],
+  },
 ];
 
 export const TEMPLATE_TAGS = Array.from(

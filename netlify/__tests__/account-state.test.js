@@ -29,7 +29,15 @@ const call = (method, body, headers = { authorization: "Bearer t" }) =>
   handler({ httpMethod: method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
 
 beforeEach(() => {
-  authenticate.mockResolvedValue({ userId: "user-1" });
+  // This is authenticateBearer's REAL return shape ({ok, user, client}) — see
+  // lib/supabaseServerClient.js. A prior version of this mock used {userId},
+  // which is what the pre-fix account-state.js incorrectly expected after
+  // passing authenticateBearer a bare header string instead of the full
+  // event object; the mock matching the bug's own wrong contract is exactly
+  // why this suite stayed green while /api/account-state 401'd on every real
+  // request. Mocking to the ACTUAL shared-helper contract is what would have
+  // caught it.
+  authenticate.mockResolvedValue({ ok: true, user: { id: "user-1" }, client: {} });
   state.mockResolvedValue({ available: true, frozen: false });
   setFrozen.mockResolvedValue({ ok: true });
   requestDeletion.mockResolvedValue({ ok: true, purgeAfter: "2026-09-26T00:00:00Z", graceDays: 30 });
@@ -38,10 +46,21 @@ beforeEach(() => {
 
 describe("account-state — authentication", () => {
   it("refuses an anonymous caller", async () => {
-    authenticate.mockResolvedValue(null);
+    authenticate.mockResolvedValue({ ok: false, status: 401, body: { error: "Authentication required" } });
     const res = await call("GET");
     expect(res.statusCode).toBe(401);
     expect(JSON.parse(res.body).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("calls authenticateBearer with the full event object, not just a header string", async () => {
+    // The regression this whole file exists to catch: passing a bare string
+    // instead of `event` makes the shared helper read `.headers` off a
+    // string (always undefined), so it 401s unconditionally regardless of
+    // whether the caller's JWT is valid.
+    await call("GET");
+    const [arg] = authenticate.mock.calls.at(-1);
+    expect(typeof arg).toBe("object");
+    expect(arg.headers).toBeTruthy();
   });
 
   it("resolves the user from the JWT, never from the body", async () => {

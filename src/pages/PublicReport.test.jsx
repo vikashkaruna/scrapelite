@@ -2,7 +2,7 @@
 // Verifies the cross-browser fix: a slug from a "different browser" (empty
 // localStorage) is still found via the Supabase path (mocked here).
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 
@@ -14,7 +14,9 @@ const supabaseMock = {
 };
 vi.mock("../lib/supabaseClient.js", () => ({
   get supabase() { return supabaseMock.enabled ? supabaseMock : null; },
-  isSupabaseEnabled: () => supabaseMock.enabled,
+  // Real export is a plain boolean — see shareService.test.js's own note on
+  // this same mock shape.
+  get isSupabaseEnabled() { return supabaseMock.enabled; },
 }));
 
 import PublicReport from "./PublicReport.jsx";
@@ -25,6 +27,16 @@ beforeEach(() => {
   _resetShareForTests();
   supabaseMock.from.mockReset();
   supabaseMock.from.mockImplementation(() => defaultSupabaseChain());
+  // shareExtraction's write path now POSTs to public-reports.js — see
+  // shareService.test.js's mockPublishFetch for the reasoning.
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ ok: true, slug: body.slug, refreshed: true }), { status: 200 });
+  }));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 // Build a Supabase chain that returns the row we want for the requested slug.

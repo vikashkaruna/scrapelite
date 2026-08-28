@@ -22,7 +22,13 @@
 // then drops out of the Entity Authority pillar and the other four re-weight.
 // An unsampled brand is UNKNOWN, never uncited.
 
-import { runChain } from "../aiProviders.js";
+import { runChain, resolveProvider } from "../aiProviders.js";
+
+// "discoverability" is the pillar key this module's runChain()/resolveProvider()
+// calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
+// Both the ai-chain fallback and the Perplexity model id below resolve through
+// that one shared, admin-configurable config now, instead of a raw env read.
+const PILLAR = "discoverability";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
 const SAMPLE_TIMEOUT_MS = 15_000;
@@ -91,7 +97,7 @@ export function estimateSentiment(text, brand) {
   return Math.max(0, Math.min(1, 0.5 + (pos - neg) / (2 * (pos + neg))));
 }
 
-async function askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs } = {}) {
+async function askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs, model } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs || SAMPLE_TIMEOUT_MS);
   // The audit's own budget can cut a prompt short before its per-call timeout.
@@ -107,7 +113,7 @@ async function askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs } = {})
         Authorization: `Bearer ${env.PERPLEXITY_API_KEY}`,
       },
       body: JSON.stringify({
-        model: env.PERPLEXITY_MODEL || "sonar",
+        model,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 500,
       }),
@@ -135,7 +141,7 @@ async function askAiChain(prompt, { signal } = {}) {
   const r = await runChain([{
     role: "user",
     content: `${prompt}\n\nAnswer in under 150 words. Name specific companies, products or sources where you know of them. If you do not know of any, say so plainly rather than guessing.`,
-  }], 400, { signal });
+  }], 400, { signal, pillar: PILLAR });
   if (!r.ok) return { ok: false, error: r.error || "AI chain unavailable" };
   return { ok: true, text: r.text, citations: [] };
 }
@@ -161,6 +167,15 @@ export async function sampleCitations({
     .slice(0, maxPrompts);
   if (list.length === 0) return null;
 
+  // Resolved once per sampling run, not once per prompt: the model id comes
+  // from the shared, admin-configurable chain config (/admin/ai's
+  // "Discoverability & citation sampling" pillar) rather than a hardcoded
+  // literal — this is the one place a Perplexity model id used to be
+  // duplicated outside DEFAULT_MODELS in aiProviders.js.
+  const perplexityModel = chosen === "perplexity"
+    ? (await resolveProvider("perplexity", PILLAR)).model
+    : null;
+
   // ── The prompts run CONCURRENTLY ─────────────────────────────────────────
   //
   // They were awaited one at a time in a `for` loop, which made this stage cost
@@ -176,7 +191,7 @@ export async function sampleCitations({
   const settled = await Promise.all(list.map(async (prompt) => {
     try {
       const r = chosen === "perplexity"
-        ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs })
+        ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs, model: perplexityModel })
         : await askAiChain(prompt, { signal });
       return { prompt, r };
     } catch (err) {

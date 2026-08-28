@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { configDefaults } from "vitest/config";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /**
  * The committer date of HEAD, as YYYY-MM-DD.
@@ -216,6 +218,14 @@ export default defineConfig({
   // when the content actually last changed.
   define: {
     __CONTENT_DATE__: JSON.stringify(lastCommitDate()),
+    // Single source of truth for the version shown on /about — see
+    // package.json's `version` field and scripts/bump-version.mjs. Nothing
+    // else in the UI should read this; the eyebrow/footer version tags this
+    // define replaced were decorative and confused people into thinking a
+    // clickable "V1.0" was a link to release notes on every page.
+    __APP_VERSION__: JSON.stringify(
+      JSON.parse(readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8")).version,
+    ),
   },
 
   // ── Keep exactly one React copy in the graph ──────────────────────────

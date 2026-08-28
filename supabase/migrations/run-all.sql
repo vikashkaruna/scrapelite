@@ -46,6 +46,9 @@
 --   0030  0030_discoverability_audits.sql
 --   0031  0031_team_workspaces.sql
 --   0032  0032_account_state_and_audit_summary.sql
+--   0033  0033_deletion_period_end_gate.sql
+--   0034  0034_usage_rls.sql — lock down usage_records and usage_alerts.
+--   0035  0035_account_state_bootstrap_entitlements.sql
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -3992,6 +3995,268 @@ alter table public.audit_results
 
 comment on column public.audit_results.summary_md is
   'AI executive summary, generated lazily on first report view and cached. Optional: a missing summary degrades the report header to deterministic facts.';
+
+
+-- ============================================================
+-- 0033_deletion_period_end_gate.sql
+-- ============================================================
+-- 0033_deletion_period_end_gate.sql
+-- Extends request_account_deletion (0032) so an account on an active PAID
+-- plan is never purged before the period they already paid for actually
+-- ends.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WHY THIS EXISTS
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 0032 always set `deletion_purge_after = now() + grace_days` (30 by
+-- default), regardless of plan. That is correct for a free account, but for
+-- someone on an active paid plan it could purge them mid-period — deleting an
+-- account (and the data they were paying to keep) before the service they
+-- already bought was even over.
+--
+-- v1.0 has no real recurring/auto-renewing billing (one-time Razorpay Orders
+-- only — see docs/RECURRING-BILLING-DEFERRAL.md), so there is no "cancel your
+-- subscription first" step to build here: nothing auto-renews, so there is
+-- nothing to cancel. The only thing that can be computed today is "when does
+-- the period they already paid for end", and that is `entitlements.period_end`
+-- — set once at purchase, unaffected by anything in this migration.
+--
+-- The rule: for `plan_id <> 'free' and status = 'active'`, the purge date is
+-- `GREATEST(period_end, now() + grace_days)` — whichever is LATER. That means:
+--   * an account with months left on its plan is not purged early — the
+--     account stays active until period_end, THEN the grace clock (already
+--     elapsed by then) lets billing-purge.js act on the very next sweep;
+--   * an account whose period is about to end (or already has) still gets
+--     the full grace_days window, exactly as a free account would, so nobody
+--     loses the "I changed my mind" recovery period just because their plan
+--     happened to be expiring anyway.
+-- Free-plan and non-active accounts are UNCHANGED — flat `now() + grace_days`,
+-- same as 0032.
+--
+-- account-state.js's GET response now also returns planId/periodEnd (already
+-- sitting in `entitlements`, nothing new to compute) so DangerZone.jsx can
+-- show the applicable message before the user ever clicks confirm, and the
+-- confirmation screen restates the actual computed date.
+--
+-- billing-purge.js is UNCHANGED by this migration — it already only acts once
+-- `deletion_purge_after` is in the past, so a later date computed here is
+-- automatically respected with no cron change needed.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create or replace function public.request_account_deletion(
+  p_user_id uuid, p_grace_days integer default 30
+) returns timestamptz language plpgsql security definer set search_path = public as $$
+declare
+  v_after      timestamptz;
+  v_grace_end  timestamptz;
+  v_plan_id    text;
+  v_status     text;
+  v_period_end timestamptz;
+begin
+  if p_user_id is null then return null; end if;
+
+  select plan_id, status, period_end
+    into v_plan_id, v_status, v_period_end
+    from public.entitlements
+   where user_id = p_user_id;
+
+  if not found then return null; end if;
+
+  -- Clamped: a 0-day grace period is an immediate irreversible delete wearing
+  -- this function's name, and the whole point of the grace period is that no
+  -- caller can opt out of it.
+  v_grace_end := now() + make_interval(days => greatest(1, least(coalesce(p_grace_days, 30), 90)));
+
+  v_after := case
+    when v_plan_id is not null and v_plan_id <> 'free' and v_status = 'active' and v_period_end is not null
+      then greatest(v_period_end, v_grace_end)
+    else v_grace_end
+  end;
+
+  update public.entitlements
+     set deletion_requested_at = coalesce(deletion_requested_at, now()),
+         deletion_purge_after  = coalesce(deletion_purge_after, v_after),
+         frozen_at             = coalesce(frozen_at, now()),
+         frozen_reason         = coalesce(frozen_reason, 'deletion_requested'),
+         version               = version + 1,
+         updated_at            = now()
+   where user_id = p_user_id;
+
+  select deletion_purge_after into v_after from public.entitlements where user_id = p_user_id;
+  return v_after;
+end; $$;
+
+
+-- ============================================================
+-- 0034_usage_rls.sql
+-- ============================================================
+-- 0034_usage_rls.sql — lock down usage_records and usage_alerts.
+--
+-- 0014_billing_rls.sql locked subscriptions/payment_events but deliberately
+-- left these two tables on their original `anon full access` policy from
+-- 0001_core_tables_and_billing.sql, with a comment explaining exactly why:
+-- locking them would break guest usage sync, which wrote directly to
+-- Supabase with the anon key from src/lib/usageRepo.js, and that write path
+-- needed to move behind a server function FIRST.
+--
+-- netlify/functions/usage-sync.js is that function (service key only).
+-- usageRepo.js now calls it instead of the Supabase client directly. This
+-- migration is the second half: with no browser code left holding the anon
+-- key to talk to these tables, the anon-full-access policy can finally go.
+--
+-- ── WHY THIS ISN'T THE subscriptions/payment_events PATTERN ─────────────────
+-- Those two lock to `auth.uid() = user_id` — an authenticated SELECT-own
+-- policy. `usage_records` DOES carry a `user_id` column too (0012_billing_
+-- identity.sql backfills it from session_id via stamp_user_id_from_session),
+-- but `usage_alerts` never got one — both tables are primarily keyed on
+-- `session_id`, a client-generated identifier that exists for guests too,
+-- who have no `auth.uid()` to match against.
+--
+-- Rather than give the two tables asymmetric policies (one authenticated-
+-- readable, one not), both go straight to service-key-only, same as the
+-- 0029/0030/0031 pattern (referrals, discoverability, workspaces): every
+-- read and write goes through a Netlify function (usage-sync.js), never a
+-- direct anon or authenticated Supabase query. usage-sync.js already serves
+-- every read this app makes, guest or signed-in, so no client code loses
+-- anything it could do a moment ago.
+--
+-- End state: no anon or authenticated policy on either table at all. Every
+-- access goes through usage-sync.js (browser reads/writes for the current
+-- session) or admin-revenue.js (server-side aggregation, already uses the
+-- service key and was never affected by this gap).
+
+drop policy if exists "anon full access" on public.usage_records;
+drop policy if exists "anon full access" on public.usage_alerts;
+
+revoke all on public.usage_records from anon;
+revoke all on public.usage_records from authenticated;
+revoke all on public.usage_alerts  from anon;
+revoke all on public.usage_alerts  from authenticated;
+
+notify pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0035_account_state_bootstrap_entitlements.sql
+-- ============================================================
+-- 0035_account_state_bootstrap_entitlements.sql
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- BUG: freezing or deleting a free account failed with "we could not find a
+-- billing record for this account" — reported live, reproduced below.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- `entitlements` only ever gets a row for a user through a billing event:
+-- claiming a paid session (0012's merge_entitlement_from_subscriptions), a
+-- referral bonus (0029), or an admin coupon grant (0027). A user who signs up
+-- and never buys anything, is never referred, and never receives a coupon has
+-- NO entitlements row at all — which on the free plan is the overwhelmingly
+-- common case, not an edge case.
+--
+-- `set_account_frozen` and `request_account_deletion` (0032, refined by 0033)
+-- both do a plain `UPDATE ... WHERE user_id = p_user_id` and report
+-- `not_found` when zero rows match. For a real signed-in user with no billing
+-- history, that `not_found` became account-state.js's "we could not find a
+-- billing record for this account" — a billing-shaped error surfacing from an
+-- action (freeze / delete-my-own-account) that has nothing to do with billing
+-- history. Every free user who never triggered one of the three row-creating
+-- events was silently unable to freeze OR delete their own account.
+--
+-- FIX: both functions now bootstrap a default row (`plan_id='free',
+-- status='active'` — the table's own column defaults, nothing invented here)
+-- for the target user before acting, so freeze/delete work for every real
+-- signed-in user regardless of billing history. A `p_user_id` that is not a
+-- real `auth.users` row at all still reports `not_found` — the bootstrap
+-- insert hits entitlements' FK on `auth.users` and that violation is caught
+-- and reported the same way as before this migration, so the existing
+-- "freezing an unknown user" contract in scripts/db-verify.mjs is unchanged.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create or replace function public.set_account_frozen(
+  p_user_id uuid, p_frozen boolean, p_reason text default null, p_actor uuid default null
+) returns text language plpgsql security definer set search_path = public as $$
+begin
+  if p_user_id is null then return 'invalid'; end if;
+
+  begin
+    insert into public.entitlements (user_id) values (p_user_id)
+      on conflict (user_id) do nothing;
+  exception when foreign_key_violation then
+    return 'not_found';
+  end;
+
+  if p_frozen then
+    update public.entitlements
+       set frozen_at     = coalesce(frozen_at, now()),
+           frozen_by     = coalesce(p_actor, p_user_id),
+           frozen_reason = coalesce(p_reason, frozen_reason),
+           version       = version + 1,
+           updated_at    = now()
+     where user_id = p_user_id;
+  else
+    -- ⚠️ An account awaiting deletion may NOT simply be unfrozen. The freeze is
+    -- part of that state; lifting it alone would leave an account consuming
+    -- units while a purge date sits on it. Cancelling the deletion is what
+    -- unfreezes, and that is a different, deliberate call.
+    if exists (select 1 from public.entitlements
+                where user_id = p_user_id and deletion_requested_at is not null) then
+      return 'deletion_pending';
+    end if;
+    update public.entitlements
+       set frozen_at = null, frozen_by = null, frozen_reason = null,
+           version = version + 1, updated_at = now()
+     where user_id = p_user_id;
+  end if;
+
+  return 'ok';
+end; $$;
+
+create or replace function public.request_account_deletion(
+  p_user_id uuid, p_grace_days integer default 30
+) returns timestamptz language plpgsql security definer set search_path = public as $$
+declare
+  v_after      timestamptz;
+  v_grace_end  timestamptz;
+  v_plan_id    text;
+  v_status     text;
+  v_period_end timestamptz;
+begin
+  if p_user_id is null then return null; end if;
+
+  begin
+    insert into public.entitlements (user_id) values (p_user_id)
+      on conflict (user_id) do nothing;
+  exception when foreign_key_violation then
+    return null;
+  end;
+
+  select plan_id, status, period_end
+    into v_plan_id, v_status, v_period_end
+    from public.entitlements
+   where user_id = p_user_id;
+
+  -- Clamped: a 0-day grace period is an immediate irreversible delete wearing
+  -- this function's name, and the whole point of the grace period is that no
+  -- caller can opt out of it.
+  v_grace_end := now() + make_interval(days => greatest(1, least(coalesce(p_grace_days, 30), 90)));
+
+  v_after := case
+    when v_plan_id is not null and v_plan_id <> 'free' and v_status = 'active' and v_period_end is not null
+      then greatest(v_period_end, v_grace_end)
+    else v_grace_end
+  end;
+
+  update public.entitlements
+     set deletion_requested_at = coalesce(deletion_requested_at, now()),
+         deletion_purge_after  = coalesce(deletion_purge_after, v_after),
+         frozen_at             = coalesce(frozen_at, now()),
+         frozen_reason         = coalesce(frozen_reason, 'deletion_requested'),
+         version               = version + 1,
+         updated_at            = now()
+   where user_id = p_user_id;
+
+  select deletion_purge_after into v_after from public.entitlements where user_id = p_user_id;
+  return v_after;
+end; $$;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

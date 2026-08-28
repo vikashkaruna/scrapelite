@@ -41,7 +41,23 @@ Two gated pipelines protect releases:
    works on a **private repo on the GitHub Free plan** — see the free-plan section
    below. `deploy-production` runs only after this passes.
 6. **Post-deploy smoke + auto-rollback** — `scripts/smoke-prod.mjs https://datiq.app`;
-   any failure triggers `netlify-cli rollback` to the last good deploy and a Slack alert.
+   any failure restores the newest earlier *ready* production deploy through the
+   Netlify REST API (`restoreSiteDeploy`), asserts that `published_deploy` actually
+   moved, and fires a Slack alert.
+
+   > This step used to run `netlify-cli rollback`. **There is no such command** —
+   > netlify-cli exits 2 with the generic help text — so the safety net never
+   > worked. Fixed 2026-08-28; see `scripts/deploy-toolchain.test.mjs`.
+
+### Deploy toolchain
+
+The Netlify CLI used by `deploy-production` is pinned by a **committed lockfile** in
+[`tools/netlify-cli/`](../tools/netlify-cli/README.md), not fetched with
+`npx --yes netlify-cli`. On 2026-08-27 a release that had passed every gate died at
+the deploy step because `@netlify/dev@5.0.4` — published 27 minutes earlier —
+required `@netlify/ai@^1.0.1`, which has never existed. Pinning the top-level
+version alone would not have helped; the break came through a floating transitive
+range. Read that README before bumping the version.
 
 ## Bypass policy (both gates)
 

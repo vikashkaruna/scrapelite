@@ -2,6 +2,32 @@
 // Each category has a test regex, a user-facing title, and a plain-English message.
 // Keeps technical jargon out of the UI while preserving the real error for devs.
 
+import { ACCOUNT_BLOCKED_CODES } from "./entitlementModel.js";
+
+/** True when the server refused because the ACCOUNT is blocked — frozen,
+ *  scheduled for deletion, suspended/deactivated/purged, or a paused seat —
+ *  as opposed to a plan or quota limit. See entitlementModel.js's
+ *  ACCOUNT_BLOCKED_CODES for why the distinction matters. */
+export function isAccountBlockedError(error) {
+  return Boolean(error) && ACCOUNT_BLOCKED_CODES.has(error.code);
+}
+
+const ACCOUNT_BLOCKED_TITLES = {
+  FROZEN: "This account is frozen",
+  DELETION_PENDING: "This account is scheduled for deletion",
+  MEMBER_PAUSED: "Your seat is paused",
+  SUSPENDED: "Your subscription has ended",
+  DEACTIVATED: "Your account is deactivated",
+  GRANT_EXPIRED: "Your plan grant has ended",
+  PURGED: "This account's data was removed",
+};
+
+/** Falls back to a neutral title for any future code added to the set
+ *  without a matching title — never lets an unmapped code crash the modal. */
+export function accountBlockedTitle(code) {
+  return ACCOUNT_BLOCKED_TITLES[code] || "Account access is limited";
+}
+
 export const CATEGORIES = [
   // FIRST on purpose. A robots.txt refusal is not a fault — it is DatIQ doing
   // what it says on the tin — and it must never fall through to the generic
@@ -114,6 +140,19 @@ const DEFAULT = {
  * and code are what they mean.
  */
 export function classifyError(error) {
+  // Checked FIRST, on `code` rather than message text, same reasoning as the
+  // compliance check below: an account block (frozen / scheduled for deletion
+  // / suspended / a paused seat) is a deliberate decision, not a fault, and it
+  // must never fall through to "Something went wrong. An unexpected error
+  // occurred" — that is exactly what turned a plain, actionable server
+  // message ("Cancel the deletion in Account to start working again") into a
+  // reported crash. The server already wrote the right words for the exact
+  // situation the user is in; use them as-is rather than picking one static
+  // string for every code.
+  if (isAccountBlockedError(error)) {
+    return { title: accountBlockedTitle(error.code), message: String(error.message || DEFAULT.message) };
+  }
+
   const msg = String(error?.message || error || "").toLowerCase();
   for (const cat of CATEGORIES) {
     if (cat.test.test(msg)) return { title: cat.title, message: cat.message };
@@ -200,12 +239,14 @@ export function formatDetail(error) {
   const name = error.name && error.name !== "Error" ? error.name : null;
   const msg = error.message || String(error);
   parts.push(name ? `${name}: ${msg}` : msg);
-  // A compliance refusal gets its reason and NOTHING else. The stack here is
-  // apiClient's fetch wrapper — nothing crashed in it — and a minified trace
-  // under a refusal is precisely what made users read a deliberate policy
-  // decision as a crash. Fixing the title and message while still printing a
-  // stack only half-solved that.
-  if (isComplianceError(error)) return parts.join("");
+  // A compliance refusal — or an account block — gets its reason and NOTHING
+  // else. The stack here is apiClient's fetch wrapper — nothing crashed in it
+  // — and a minified trace under a refusal is precisely what made users read
+  // a deliberate policy decision as a crash. Fixing the title and message
+  // while still printing a stack only half-solved that. This is the literal
+  // bug reported live: "This account is scheduled for deletion..." followed
+  // by three lines of minified stack frames under "technical details".
+  if (isComplianceError(error) || isAccountBlockedError(error)) return parts.join("");
   if (error.stack) {
     const trace = error.stack
       .split("\n")

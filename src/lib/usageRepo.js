@@ -1,9 +1,18 @@
-// usageRepo.js — Supabase sync layer for usage records.
-// localStorage is the primary store; Supabase is synced asynchronously.
-// Falls back silently when Supabase isn't configured.
+// usageRepo.js — sync layer for usage records.
+// localStorage is the primary store; the server is synced asynchronously via
+// /api/usage-sync, never Supabase directly.
+//
+// This used to call the Supabase JS client directly from the browser with the
+// anon key — for every visitor, guest or signed-in, since this whole
+// subsystem is keyed on a client-generated session_id, not user_id. That was
+// only possible because usage_records/usage_alerts carried an `anon full
+// access` RLS policy, which let anyone holding the public anon key read or
+// write EVERY session's row, not just their own. Routed through
+// netlify/functions/usage-sync.js (service key only) so 0034_usage_rls.sql
+// could lock the table down without breaking guest sync — see that
+// function's header comment for the full reasoning.
 
-import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
-
+const ENDPOINT = "/api/usage-sync";
 const SESSION_KEY = "datiq.sessionId";
 
 export function getSessionId() {
@@ -19,42 +28,34 @@ export function getSessionId() {
   } catch { return "anonymous"; }
 }
 
-// Upsert this month's usage to Supabase.
+// Upsert this month's usage to the server.
 export async function syncUsageToDb(usage, planId) {
-  if (!isSupabaseEnabled || !supabase) return;
   const sessionId = getSessionId();
   try {
-    await supabase
-      .from("usage_records")
-      .upsert(
-        {
-          session_id:  sessionId,
-          month:       usage.month,
-          extractions: usage.extractions,
-          enrichments: Object.values(usage.enrichments ?? {}).reduce((s, v) => s + v, 0),
-          plan_id:     planId,
-          updated_at:  new Date().toISOString(),
-        },
-        { onConflict: "session_id,month" }
-      );
+    await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        month: usage.month,
+        extractions: usage.extractions,
+        enrichments: Object.values(usage.enrichments ?? {}).reduce((s, v) => s + v, 0),
+        planId,
+      }),
+    });
   } catch (err) {
     console.warn("[DatIQ] Usage DB sync failed:", err?.message ?? err);
   }
 }
 
-// Fetch this month's usage from Supabase (used on first load to hydrate state).
+// Fetch this month's usage from the server (used on first load to hydrate state).
 export async function fetchUsageFromDb(month) {
-  if (!isSupabaseEnabled || !supabase) return null;
   const sessionId = getSessionId();
   try {
-    const { data, error } = await supabase
-      .from("usage_records")
-      .select("*")
-      .eq("session_id", sessionId)
-      .eq("month", month)
-      .maybeSingle();
-    if (error) return null;
-    return data;
+    const res = await fetch(`${ENDPOINT}?sessionId=${encodeURIComponent(sessionId)}&month=${encodeURIComponent(month)}`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data?.ok ? data.row : null;
   } catch {
     return null;
   }
@@ -62,36 +63,21 @@ export async function fetchUsageFromDb(month) {
 
 // ── Alert preferences ─────────────────────────────────────────────────────────
 export async function syncAlertsToDb(alertConfig) {
-  if (!isSupabaseEnabled || !supabase || !alertConfig.email) return;
+  if (!alertConfig.email) return;
   const sessionId = getSessionId();
   try {
-    await supabase
-      .from("usage_alerts")
-      .upsert(
-        {
-          session_id:   sessionId,
-          email:        alertConfig.email,
-          thresholds:   alertConfig.thresholds ?? [80, 95],
-          enabled:      alertConfig.enabled ?? true,
-        },
-        { onConflict: "session_id" }
-      );
+    await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "alert",
+        sessionId,
+        email: alertConfig.email,
+        thresholds: alertConfig.thresholds ?? [80, 95],
+        enabled: alertConfig.enabled ?? true,
+      }),
+    });
   } catch (err) {
     console.warn("[DatIQ] Alert config sync failed:", err?.message ?? err);
-  }
-}
-
-// ── Admin: all users' usage (for the admin revenue dashboard) ─────────────────
-export async function fetchAllUsageFromDb(month) {
-  if (!isSupabaseEnabled || !supabase) return null;
-  try {
-    const { data, error } = await supabase
-      .from("usage_records")
-      .select("*")
-      .eq("month", month);
-    if (error) return null;
-    return data;
-  } catch {
-    return null;
   }
 }

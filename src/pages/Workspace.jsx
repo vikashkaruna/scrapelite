@@ -63,7 +63,7 @@ const TABS = [
   { key: "overview",    label: "Overview",    icon: "layout-grid" },
   { key: "collections", label: "Collections", icon: "folder" },
   { key: "schedules",   label: "Schedules",   icon: "calendar-clock" },
-  { key: "discoverability", label: "Discoverability", icon: "scan-search" },
+  { key: "discoverability", label: "Discovery", icon: "scan-search" },
   { key: "team",        label: "Team",        icon: "users" },
 ];
 

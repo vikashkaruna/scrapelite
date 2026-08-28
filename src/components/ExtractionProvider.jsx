@@ -23,6 +23,7 @@ import { usePersona } from "./PersonaProvider.jsx";
 import { uid } from "../lib/utils.js";
 import { isComplianceError, COMPLIANCE_ERROR, COMPLIANCE_GUEST_ERROR } from "../lib/errorMessages.js";
 import { consentHostOf } from "../lib/scrapeConsentService.js";
+import { isAccountBlocked } from "../lib/entitlementModel.js";
 import ScrapeConsentModal from "./ScrapeConsentModal.jsx";
 
 const ExtractionContext = createContext(null);
@@ -136,8 +137,17 @@ export function ExtractionProvider({ children }) {
     // Enforce plan limits before starting
     const limitCheck = billing?.checkCanExtract?.();
     if (limitCheck && !limitCheck.allowed) {
-      showToast?.(limitCheck.reason + " Upgrade your plan to continue.");
-      navigate("/pricing");
+      // A frozen / deletion-pending / suspended account isn't a plan-limit
+      // problem — "Upgrade your plan to continue" is nonsensical advice for
+      // someone who needs to unfreeze or cancel a deletion, and the fix lives
+      // in Account, not Pricing.
+      if (isAccountBlocked(limitCheck.code)) {
+        showToast?.(limitCheck.reason);
+        navigate("/account");
+      } else {
+        showToast?.(limitCheck.reason + " Upgrade your plan to continue.");
+        navigate("/pricing");
+      }
       return;
     }
 
@@ -318,6 +328,18 @@ export function ExtractionProvider({ children }) {
             action: { label: "Sign in", icon: "log-in", onClick: () => openAuth("signin") },
           });
         }
+        return;
+      }
+
+      // A server-side account block (frozen / deletion-pending / suspended /
+      // paused seat) reaching this catch means the client-side pre-flight
+      // above was stale or bypassed — the account changed state since the
+      // entitlement cache was last read. It is the same "not a fault" shape
+      // as a compliance refusal: retrying cannot succeed until the user acts
+      // in Account, so no "Try again" button, and classifyError renders the
+      // server's own precise message instead of falling to a generic default.
+      if (isAccountBlocked(err?.code)) {
+        showError(err);
         return;
       }
 

@@ -49,10 +49,10 @@ export default function Footer() {
             className="footer-version-tag"
             href="/changelog"
             onClick={(e) => { e.preventDefault(); navigate("/changelog"); }}
-            aria-label="DatIQ V1.0 — what's new"
-            title="See what's in DatIQ V1.0"
+            aria-label="DatIQ changelog — what's new"
+            title="See what's new in DatIQ"
           >
-            V1.0
+            Changelog
           </a>
         </span>
 

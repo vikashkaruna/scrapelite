@@ -73,7 +73,7 @@ export async function evaluatePassage({ answerText = "", heading = "", title = "
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300, { signal });
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability" });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed) return null;
@@ -113,7 +113,7 @@ export async function suggestQuestionHeadings({ headings = [], topic = "" } = {}
   ].filter(Boolean).join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 500, { signal });
+    const r = await runChain([{ role: "user", content: prompt }], 500, { signal, pillar: "discoverability" });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed || !Array.isArray(parsed.headings)) return null;
@@ -153,7 +153,7 @@ export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) 
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300, { signal });
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability" });
     if (!r.ok) return null;
     const text = String(r.text || "").trim();
     // The model reporting insufficiency is a SUCCESS: it means it declined to
@@ -230,7 +230,7 @@ export async function summariseAudit(audit, { signal = null } = {}) {
   ].filter(Boolean).join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 400, { signal });
+    const r = await runChain([{ role: "user", content: prompt }], 400, { signal, pillar: "discoverability" });
     if (!r.ok || !r.text) return null;
     // Strip anything that looks like a heading or a list the model added
     // despite being asked not to — the header renders this as one paragraph.

@@ -69,13 +69,6 @@ export const AUTOMATION_JOBS = [
       "Daily digest + win-back email to users who have gone quiet.",
     destructive: false,
     manualRunAllowed: true,
-    // Surfaced verbatim on the dashboard. See the note in CLAUDE.md: this cron
-    // selects a user_email column that 0004_scheduler.sql never creates, the
-    // query 400s, and the error is swallowed — so it is a silent no-op whatever
-    // its run log says. Monitoring that lies by omission is worse than none.
-    caveat:
-      "Known defect: queries a user_email column that does not exist, so it is a " +
-      "silent no-op in production. A 'success' run here does not mean mail was sent.",
   },
   {
     id: "billing-lifecycle",

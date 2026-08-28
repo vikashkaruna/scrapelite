@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import DangerZone, { daysUntil } from "./DangerZone.jsx";
+import DangerZone, { daysUntil, previewDeletionDate } from "./DangerZone.jsx";
 import { ToastProvider } from "./Toast.jsx";
 
 const freeze = vi.fn();
@@ -113,7 +113,28 @@ describe("DangerZone — deletion", () => {
 
   it("says deletion is scheduled and cancellable, not instant", () => {
     draw();
-    expect(screen.getByText(/Scheduled 30 days out, and cancellable/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cancellable any time before the date below/i)).toBeInTheDocument();
+    expect(screen.getByText(/30 days out/i)).toBeInTheDocument();
+  });
+
+  it("shows a plan-aware message for an active paid plan, not the flat grace-only line", () => {
+    // 0033_deletion_period_end_gate.sql: an active paid plan is never purged
+    // before its own period_end. The UI has to say this BEFORE the user
+    // confirms, or "deleted on so-and-so date" is a promise the copy never
+    // actually makes until after the fact.
+    const paid = {
+      available: true, frozen: false, planId: "business", status: "active",
+      periodEnd: new Date(Date.now() + 60 * 86400000).toISOString(),
+    };
+    const { container } = draw(paid);
+    expect(container.textContent).toMatch(/Your Business plan is active until/i);
+    expect(screen.queryByText(/^Scheduled for/i)).toBeNull();
+  });
+
+  it("a free-plan account still gets the flat grace-period line, no plan mention", () => {
+    draw({ available: true, frozen: false, planId: "free", status: "active" });
+    expect(screen.getByText(/30 days out/i)).toBeInTheDocument();
+    expect(screen.queryByText(/plan is active until/i)).toBeNull();
   });
 
   it("says invoices are kept", () => {
@@ -163,5 +184,32 @@ describe("daysUntil", () => {
   it("returns null for a missing or unparseable date", () => {
     expect(daysUntil(null)).toBeNull();
     expect(daysUntil("not a date")).toBeNull();
+  });
+});
+
+describe("previewDeletionDate — mirrors 0033_deletion_period_end_gate.sql", () => {
+  const NOW = new Date("2026-08-28T00:00:00Z").getTime();
+
+  it("free plan: flat 30-day grace from now", () => {
+    const preview = previewDeletionDate({ planId: "free", status: "active" }, NOW);
+    expect(preview).toBe(new Date(NOW + 30 * 86400000).toISOString());
+  });
+
+  it("active paid plan with a period_end further out than the grace window: uses period_end", () => {
+    const periodEnd = new Date(NOW + 60 * 86400000).toISOString();
+    const preview = previewDeletionDate({ planId: "business", status: "active", periodEnd }, NOW);
+    expect(preview).toBe(periodEnd);
+  });
+
+  it("active paid plan whose period_end is sooner than the grace window: still gets the full grace", () => {
+    const periodEnd = new Date(NOW + 2 * 86400000).toISOString();
+    const preview = previewDeletionDate({ planId: "select", status: "active", periodEnd }, NOW);
+    expect(preview).toBe(new Date(NOW + 30 * 86400000).toISOString());
+  });
+
+  it("a paid but non-active (suspended/expired) plan falls back to the flat grace", () => {
+    const periodEnd = new Date(NOW + 90 * 86400000).toISOString();
+    const preview = previewDeletionDate({ planId: "pro", status: "suspended", periodEnd }, NOW);
+    expect(preview).toBe(new Date(NOW + 30 * 86400000).toISOString());
   });
 });

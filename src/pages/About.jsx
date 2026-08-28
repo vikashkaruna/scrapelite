@@ -252,6 +252,13 @@ export default function About() {
                 <Icon name="linkedin" size={15} />
                 linkedin.com/company/axiom-minds/
               </a>
+              {/* The one place in the app that shows a release number. Reads
+                  package.json via vite.config.js's __APP_VERSION__ define, the
+                  same source scripts/bump-version.mjs writes to — one number,
+                  one place it's shown. */}
+              <p className="about-version-tag">
+                DatIQ v{typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0"}
+              </p>
             </div>
           </div>
         </div>
