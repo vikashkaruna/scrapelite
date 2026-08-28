@@ -621,6 +621,18 @@
   display: grid; place-items: center;
   background: var(--accent-soft); color: var(--accent-on-soft);
 }
+.email-format-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 4px;
+}
+.email-format-label {
+  font-size: .82em; font-weight: 650; color: var(--text-2); flex-shrink: 0;
+}
+.email-format-select {
+  flex: 1; padding: 9px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: .9em; cursor: pointer;
+}
 .email-field { padding: 0 8px 0 14px; }
 .email-field .field-input { padding: 13px 0; font-size: 1em; }
 .email-help {
@@ -1061,6 +1073,17 @@
   box-shadow: var(--shadow-lg);
   padding: 4px;
   z-index: 50;
+}
+/* Rendered via a portal to document.body (see CollectionPicker.jsx) so it
+   escapes any ancestor overflow:hidden — notably the Dashboard table's
+   .table-wrap, which clips a plain in-flow menu invisible. Positioned by
+   inline style (top/left, position:fixed); `right` and `top` from .cp-menu
+   above must not also apply, or the browser stretches the box from `left`
+   all the way to the viewport's right edge. */
+.cp-menu-portal {
+  right: auto; top: auto;
+  width: 220px;
+  z-index: 2000;
 }
 .cp-item {
   display: flex; align-items: center; gap: 7px;

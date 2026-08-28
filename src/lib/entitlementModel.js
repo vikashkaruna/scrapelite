@@ -39,6 +39,10 @@ export const CAPS = Object.freeze([
   "schedules",
   "integrations",
   "webhooks",
+  // Entitlement flag only — no shipping product yet. Gates the /pricing and
+  // /account "Browser extension" line so the plan matrix and the entitlement
+  // model can never disagree about who it's promised to.
+  "browser_extension",
   // New in 2026-08-02: Business and Agency both ship with white-label PDF +
   // priority support. These caps are how the rest of the app finds out
   // (PDF export, template uploader, support contact routing, badge rendering).
@@ -487,9 +491,9 @@ export function can(ent, capability, ctx = {}) {
         ? ok(L.scheduled_monitoring)
         : deny(
             "NOT_IN_PLAN",
-            "Scheduled monitoring is not available on your current plan. Upgrade to Pro to schedule recurring runs.",
+            "Scheduled monitoring is not available on your current plan. Upgrade to Select to schedule recurring runs.",
             0,
-            "pro",
+            "select",
           );
 
     // White-label PDF: Business (2026-08-02) and Agency. The flag is what
@@ -592,9 +596,35 @@ export function can(ent, capability, ctx = {}) {
     // Not plan-gated today; listed so suspension still blocks them and so the
     // capability names exist before PR3 wires the UI.
     case "ai":
-    case "integrations":
     case "webhooks":
       return ok();
+
+    // Push integrations (HubSpot, Notion, Airtable, Slack). Free and Go are
+    // taster tiers; Google Sheets stays available to everyone regardless —
+    // it needs no connection and is not gated through this capability at all
+    // (see PushIntegrationMenu's SHEETS_ROW, which is clientSide and never
+    // calls checkCanIntegrations).
+    case "integrations":
+      return L.integrations
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Push integrations (HubSpot, Notion, Airtable, Slack) are available from the Select plan upward.",
+            0,
+            "select",
+          );
+
+    // Entitlement flag only — see the CAPS comment. Same taster-tier split as
+    // integrations: Free and Go don't get it, Select and up do.
+    case "browser_extension":
+      return L.browser_extension
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "The DatIQ browser extension is available from the Select plan upward.",
+            0,
+            "select",
+          );
 
     default:
       return deny("UNKNOWN_CAPABILITY", `Unknown capability: ${capability}`);

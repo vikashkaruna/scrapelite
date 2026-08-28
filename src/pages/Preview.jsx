@@ -26,6 +26,8 @@ import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/li
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
 import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import EmailModal from "../components/EmailModal.jsx";
+import { apiClient } from "../lib/apiClient.js";
 import { useSeo } from "../hooks/useSeo.js";
 
 function HeadingRow({ h }) {
@@ -165,11 +167,12 @@ export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
   const { current, enrich, enrichWithContent } = useExtraction();
-  const { checkCanExport } = useBilling();
+  const { checkCanExport, checkCanEmail } = useBilling();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharedSlug, setSharedSlug] = useState(() => current?.id ? getSharedSlugForId(current.id) : null);
   const downloadRef = useRef(null);
@@ -415,17 +418,17 @@ export default function Preview() {
     showToast("CSV downloaded. Upload it to the Google Sheet that just opened (File → Import → Upload).", "sheet");
   };
   const onDownloadMarkdown = () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
     markdownDownload([data]);
     showToast("Exported to Markdown", "file-code");
   };
   const onDownloadJson = () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
     jsonDownload([data]);
     showToast("Exported to JSON", "file-json");
   };
   const onDownloadPdf = async () => {
-    if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher."); return; }
+    if (!checkCanExport("pdf")) { showToast("PDF export requires the Go plan or higher."); return; }
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
       // White-label PDF: Business & Agency users can upload a branded template
@@ -464,13 +467,13 @@ export default function Preview() {
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyMarkdown = async () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
     const out = await copyToClipboard([data], "markdown");
     if (out.ok) showToast("Markdown copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyJson = async () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
     const out = await copyToClipboard([data], "json");
     if (out.ok) showToast("JSON copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
@@ -482,6 +485,15 @@ export default function Preview() {
     }
     showToast("Extraction deleted", "trash");
     navigate("/");
+  };
+
+  const handleSendEmail = async (emails, format) => {
+    if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
+    const res = await apiClient.sendExportEmail({ to: emails, items: [data], format });
+    setEmailOpen(false);
+    showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");
+    return res;
   };
 
   return (
@@ -575,34 +587,46 @@ export default function Preview() {
                   <div className="export-dropdown-section">
                     <div className="export-dropdown-section-label">Download</div>
                     <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
-                      <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="download" size={14} /> <span><b>CSV</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
-                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">All plans · downloads CSV + opens new Sheet</span></span>
+                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">Downloads CSV + opens new Sheet</span></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
-                      <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="file" size={14} /> <span><b>PDF</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="file-code" size={14} /> <span><b>Markdown</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadJson(); setDownloadOpen(false); }}>
-                      <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+                      <Icon name="file-json" size={14} /> <span><b>JSON</b></span>
                     </button>
                   </div>
                   <div className="export-dropdown-section">
                     <div className="export-dropdown-section-label">Copy to clipboard</div>
                     <button className="export-dropdown-item" onClick={() => { onCopySummary(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy summary</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy summary</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyCsv(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyJson(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b></span>
+                    </button>
+                  </div>
+                  <div className="export-dropdown-section">
+                    <button
+                      className="export-dropdown-item"
+                      onClick={() => {
+                        if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setDownloadOpen(false); return; }
+                        setEmailOpen(true);
+                        setDownloadOpen(false);
+                      }}
+                    >
+                      <Icon name="mail" size={14} /> <span><b>Email…</b></span>
                     </button>
                   </div>
                 </div>
@@ -933,6 +957,15 @@ export default function Preview() {
             ))}
         </div>
       </div>
+      {emailOpen && (
+        <EmailModal
+          items={[data]}
+          hint="Sent as a real attached file — pick a format below."
+          formats={["csv", "pdf", "markdown", "json"].filter(checkCanExport)}
+          onSend={handleSendEmail}
+          onClose={() => setEmailOpen(false)}
+        />
+      )}
     </div>
   );
 }

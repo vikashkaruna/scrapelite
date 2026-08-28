@@ -51,7 +51,15 @@ function paintTemplateBackground(doc, templateBytes) {
   }
 }
 
-export function extractionsToPdf(items, { template = null } = {}) {
+/**
+ * Build the jsPDF document for one or more extractions, without saving it.
+ *
+ * Split out so the SAME layout code runs in both runtimes — the browser
+ * download button and the server's email-attachment path — the way
+ * invoicePdf.js's renderInvoicePdf() does. Two renderers would inevitably
+ * drift, and a PDF that disagrees with the emailed copy is a support problem.
+ */
+export function buildExtractionsPdf(items, { template = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -167,9 +175,23 @@ export function extractionsToPdf(items, { template = null } = {}) {
     }
   });
 
-  const name =
-    list.length === 1
-      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.pdf`
-      : `datiq-export-${list.length}-pages.pdf`;
-  doc.save(name);
+  return doc;
+}
+
+/** Filename used for both the browser download and the email attachment. */
+export function extractionsPdfFilename(items) {
+  const list = Array.isArray(items) ? items : [items];
+  return list.length === 1
+    ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.pdf`
+    : `datiq-export-${list.length}-pages.pdf`;
+}
+
+/** Browser: trigger a download. Signature/behaviour unchanged for existing call sites. */
+export function extractionsToPdf(items, opts = {}) {
+  buildExtractionsPdf(items, opts).save(extractionsPdfFilename(items));
+}
+
+/** Server: raw bytes for an email attachment. */
+export function extractionsPdfBuffer(items, opts = {}) {
+  return buildExtractionsPdf(items, opts).output("arraybuffer");
 }

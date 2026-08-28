@@ -802,6 +802,24 @@ export default function Account() {
                   <Icon name="info" size={13} /> Sign in to manage integrations.
                 </div>
               )}
+              {/* Entitlement flag only — no shipping extension yet (see
+                  entitlementModel.js "browser_extension"). Shown only to
+                  plans that carry the flag (Select and up) so it reads as
+                  "coming to your plan", not a generic teaser everyone sees. */}
+              {plan?.limits?.browser_extension && (
+                <div className="int-row" style={{ marginTop: 8 }}>
+                  <div className="int-row-icon">
+                    <Icon name="puzzle" size={18} />
+                  </div>
+                  <div className="int-row-meta">
+                    <div className="int-row-name">Browser extension</div>
+                    <div className="int-row-status">
+                      <span className="int-row-status-dot" />
+                      Coming soon — included on your plan once it ships
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ── Danger zone ──────────────────────────────────────────────

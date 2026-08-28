@@ -44,11 +44,13 @@ export function pickRecommendedPlan(ctx = {}) {
     else if (urls > 20) planId = "select";  // Select = up to 50 URLs/run
     else if (urls > 5) planId = "go";       // Go = up to 20 URLs/run
   } else if (ctx.kind === "export") {
-    if (ctx.format === "json") planId = "pro";      // JSON export = Pro+
+    if (ctx.format === "json") planId = "go";       // JSON export = Go+
     else if (ctx.format === "pdf" || ctx.format === "markdown") planId = "go"; // PDF/MD = Go+
-    else planId = "pro";
+    else planId = "go";
   } else if (ctx.kind === "schedule") {
-    planId = "pro"; // Scheduled monitoring first appears on Pro (Go/Select are both 0)
+    planId = "select"; // Scheduled monitoring first appears on Select (Go is 0)
+  } else if (ctx.kind === "integrations") {
+    planId = "select"; // Push integrations first appear on Select (Free/Go are excluded)
   } else if (ctx.kind === "api") {
     planId = "business"; // API access = Business+
   } else if (ctx.kind === "batch_runs") {

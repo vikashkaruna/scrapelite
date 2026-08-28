@@ -151,6 +151,21 @@ export async function requireCapability(event, capability, ctx = {}) {
   return { resolved, check: checkCapability(resolved, capability, ctx) };
 }
 
+/**
+ * Same decision as requireCapability, for a caller that has ALREADY
+ * authenticated the request and knows the user id — skips the second
+ * authenticateBearer() round trip that requireCapability(event, ...) would
+ * otherwise do internally. Used by handlers (e.g. the integrations-* push
+ * endpoints) whose top-level dispatcher already resolved `userId` before
+ * routing to the specific action.
+ */
+export async function requireCapabilityForUser(userId, capability, ctx = {}) {
+  if (!userId) return { check: { allowed: true, reason: null, code: null, remaining: Infinity } };
+  const { row, degraded } = await fetchEntitlement(userId);
+  const resolved = { planMap: PLAN_BY_ID, userId, guest: false, entitlement: row, degraded };
+  return { resolved, check: checkCapability(resolved, capability, ctx) };
+}
+
 /** HTTP status for a denied capability. See denyBody for why 402. */
 export const DENY_STATUS = 402;
 

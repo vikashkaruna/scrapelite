@@ -1,0 +1,223 @@
+// netlify/functions/export-email.js — POST /api/export-email
+//
+// Emails one or more saved extractions as a real file attachment (CSV / PDF /
+// Markdown / JSON), via Resend, styled like the invoice emails.
+//
+// Replaces the old client-side flow in src/lib/emailService.js, which handed
+// off to a webhook or a mailto: draft — no server, no attachment, no
+// branding, and no plan enforcement (the client-side checkCanEmail() gate
+// was the only check, and it is trivially bypassed by calling the API
+// directly). This endpoint re-checks BOTH `export.email` and `export.<fmt>`
+// server-side, mirroring the exact capability names entitlementModel.js
+// already uses for downloads, so emailing a format can never be more
+// permissive than downloading it.
+//
+// Auth: signed-in only, unconditionally (unlike most capability checks in
+// this codebase, which fail open for guests per requireEntitlement.js's
+// documented "guests are not covered here" rule). This endpoint sends mail
+// to an ARBITRARY, client-supplied recipient list — failing open for an
+// unauthenticated caller would make it a free spam relay. Every plan that
+// has email_export=true already requires an account (Free is the only
+// email_export=false plan and has no seats to abuse), so this costs no
+// legitimate user anything.
+//
+// SENDER: EXPORT_EMAIL_FROM, its own env var, per the one-var-per-sender
+// rule in CLAUDE.md — a new email TYPE gets a new var, never a fallback
+// chain onto an existing sender's identity.
+
+import { extractionsToCsv, extractionsToMarkdown, extractionsToJson, isValidEmail, hostOf } from "../../src/lib/utils.js";
+import { extractionsPdfBuffer, extractionsPdfFilename } from "../../src/lib/pdfExport.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
+
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const REPLY_TO = "hello@datiq.app";
+const MAX_ITEMS = 200; // matches the largest batch tier (Agency, 500) with headroom trimmed for mail size
+const MAX_RECIPIENTS = 10;
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function respond(statusCode, body) {
+  return {
+    statusCode,
+    headers: { "Content-Type": "application/json", ...CORS },
+    body: JSON.stringify(body),
+  };
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const FORMAT_META = {
+  csv: { label: "CSV", mime: "text/csv", ext: "csv" },
+  markdown: { label: "Markdown", mime: "text/markdown", ext: "md" },
+  json: { label: "JSON", mime: "application/json", ext: "json" },
+  pdf: { label: "PDF", mime: "application/pdf", ext: "pdf" },
+};
+
+/** Build the file content for the given format. PDF returns a Buffer; the rest return strings. */
+function buildAttachment(format, items) {
+  switch (format) {
+    case "csv":
+      return { content: extractionsToCsv(items), filename: filenameFor(items, "csv") };
+    case "markdown":
+      return { content: extractionsToMarkdown(items), filename: filenameFor(items, "md") };
+    case "json":
+      return { content: extractionsToJson(items), filename: filenameFor(items, "json") };
+    case "pdf":
+      return { content: Buffer.from(extractionsPdfBuffer(items)), filename: extractionsPdfFilename(items) };
+    default:
+      return null;
+  }
+}
+
+function filenameFor(items, ext) {
+  return items.length === 1
+    ? `datiq-${hostOf(items[0].url)}-${items[0].id || "export"}.${ext}`
+    : `datiq-export-${items.length}-pages.${ext}`;
+}
+
+/** HTML body. Mirrors the house style used by invoiceEmail.js: 560px, brand header, bordered body. */
+function exportEmailHtml({ items, format }) {
+  const meta = FORMAT_META[format];
+  const rows = items
+    .slice(0, 25)
+    .map(
+      (it) => `<tr>
+        <td style="padding:6px 0;color:#20222c;font-size:13px">${escapeHtml(it.page_title || hostOf(it.url))}</td>
+        <td style="padding:6px 0;color:#6e7484;font-size:12px" align="right">${escapeHtml(hostOf(it.url))}</td>
+      </tr>`,
+    )
+    .join("");
+  const more = items.length > 25 ? `<p style="margin:8px 0 0;font-size:12px;color:#9aa0af">+ ${items.length - 25} more, included in the attached file.</p>` : "";
+
+  return `<!doctype html><html><body style="margin:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#4f46e5;border-radius:12px 12px 0 0;padding:20px 24px">
+      <div style="color:#fff;font-size:18px;font-weight:700">DatIQ</div>
+      <div style="color:#c7d2fe;font-size:12px">Intelligence from every URL</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e1e3e9;border-top:none;border-radius:0 0 12px 12px;padding:24px">
+      <h1 style="margin:0 0 4px;font-size:17px;color:#20222c">${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label}</h1>
+      <p style="margin:0 0 18px;font-size:13px;color:#6e7484">
+        Shared from DatIQ. The full data is attached as a ${meta.label} file — here's what's inside:
+      </p>
+      <table width="100%" style="border-collapse:collapse">${rows}</table>
+      ${more}
+      <p style="margin:20px 0 0;font-size:11px;color:#9aa0af;line-height:1.6">
+        This file was generated from your DatIQ extractions. If you weren't expecting it, you can ignore this email.
+      </p>
+    </div>
+    <p style="text-align:center;color:#9aa0af;font-size:11px;margin-top:16px">
+      Questions? Just reply to this email.
+    </p>
+  </div></body></html>`;
+}
+
+function exportEmailText({ items, format }) {
+  const meta = FORMAT_META[format];
+  return [
+    `${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label} — shared from DatIQ`,
+    "",
+    ...items.slice(0, 25).map((it) => `- ${it.page_title || hostOf(it.url)}  (${hostOf(it.url)})`),
+    items.length > 25 ? `\n+ ${items.length - 25} more, included in the attached file.` : "",
+  ].join("\n");
+}
+
+export const handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
+  if (event.httpMethod !== "POST") return respond(405, { error: "Method not allowed" });
+
+  const auth = await authenticateBearer(event, { label: "export-email" });
+  if (!auth.ok) return respond(auth.status || 401, auth.body || { error: "Authentication required" });
+  const userId = auth.user.id;
+
+  let body;
+  try {
+    body = event.body ? JSON.parse(event.body) : {};
+  } catch {
+    return respond(400, { error: "Invalid JSON body" });
+  }
+
+  const format = body?.format;
+  if (!FORMAT_META[format]) {
+    return respond(400, { error: `format must be one of: ${Object.keys(FORMAT_META).join(", ")}` });
+  }
+
+  const items = Array.isArray(body?.items) ? body.items.filter((x) => x && typeof x === "object") : [];
+  if (items.length === 0) return respond(400, { error: "items must be a non-empty array" });
+  if (items.length > MAX_ITEMS) {
+    return respond(400, { error: `A single email can carry at most ${MAX_ITEMS} extractions. Split into multiple sends.` });
+  }
+
+  const rawRecipients = Array.isArray(body?.to) ? body.to : typeof body?.to === "string" ? [body.to] : [];
+  const to = [...new Set(rawRecipients.map((r) => String(r).trim()).filter(Boolean))];
+  if (to.length === 0) return respond(400, { error: "At least one recipient email is required" });
+  if (to.length > MAX_RECIPIENTS) return respond(400, { error: `At most ${MAX_RECIPIENTS} recipients per send.` });
+  const invalid = to.filter((r) => !isValidEmail(r));
+  if (invalid.length) return respond(400, { error: `Invalid email address: ${invalid[0]}` });
+
+  // Server-side mirror of checkCanEmail() + checkCanExport(format) — a client
+  // that skips the UI and POSTs directly must still be refused exactly the
+  // same way a direct download would be.
+  const [emailCheck, formatCheck] = await Promise.all([
+    requireCapabilityForUser(userId, "export.email"),
+    requireCapabilityForUser(userId, `export.${format}`),
+  ]);
+  if (!emailCheck.check.allowed) return respond(DENY_STATUS, denyBody(emailCheck.check));
+  if (!formatCheck.check.allowed) return respond(DENY_STATUS, denyBody(formatCheck.check));
+
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return respond(503, { error: "Email is not configured (RESEND_API_KEY missing)." });
+
+  let attachment;
+  try {
+    attachment = buildAttachment(format, items);
+  } catch (err) {
+    console.error("[export-email] build attachment failed:", err?.message);
+    return respond(500, { error: "Couldn't build the export file. Please try again." });
+  }
+  const content = Buffer.isBuffer(attachment.content)
+    ? attachment.content.toString("base64")
+    : Buffer.from(attachment.content, "utf8").toString("base64");
+
+  const from = process.env.EXPORT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
+  const meta = FORMAT_META[format];
+
+  try {
+    const res = await fetch(RESEND_ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to,
+        reply_to: REPLY_TO,
+        subject: `DatIQ — ${items.length} extraction${items.length === 1 ? "" : "s"} (${meta.label})`,
+        html: exportEmailHtml({ items, format }),
+        text: exportEmailText({ items, format }),
+        attachments: [{ filename: attachment.filename, content }],
+        tags: [{ name: "stream", value: "export" }],
+      }),
+    });
+    if (!res.ok) {
+      // Deliberately do NOT echo the response body — it can contain the key.
+      console.error(`[export-email] Resend HTTP ${res.status}`);
+      return respond(502, { error: `Email delivery failed (Resend HTTP ${res.status}).` });
+    }
+  } catch (err) {
+    console.error("[export-email] threw:", err?.message);
+    return respond(502, { error: "Email delivery failed. Please try again." });
+  }
+
+  return respond(200, { ok: true, sent: to.length, format, count: items.length });
+};

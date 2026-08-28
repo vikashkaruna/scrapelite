@@ -159,6 +159,7 @@ import {
   Gauge,
   // Team workspaces
   Lock,
+  Puzzle,
 } from "lucide-react";
 
 const MAP = {
@@ -332,6 +333,7 @@ const MAP = {
   "square-check-big": SquareCheckBig,
   "circle-slash": CircleSlash,
   lock: Lock,
+  puzzle: Puzzle,
 };
 
 

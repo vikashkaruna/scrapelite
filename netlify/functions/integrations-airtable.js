@@ -24,6 +24,7 @@ import {
   autoMapAirtableFields,
 } from "../../src/lib/airtable.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -274,6 +275,10 @@ async function handleDisconnect(userId) {
 }
 
 async function handlePush(event, userId) {
+  // Server-side mirror of the client's checkCanIntegrations gate (Select and
+  // up) — a client that skips the UI and POSTs directly must still be refused.
+  const { check } = await requireCapabilityForUser(userId, "integrations");
+  if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
   const body = await readJsonBody(event);
   const items = Array.isArray(body?.items) ? body.items : null;
   if (!items || items.length === 0) return respond(400, { error: "'items' must be a non-empty array." });

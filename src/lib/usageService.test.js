@@ -117,10 +117,14 @@ describe("canExport / canEmailExport (U-22)", () => {
     expect(canExport("free", "csv")).toBe(true);
   });
 
-  it("Select plan: markdown is allowed, JSON is not", () => {
+  it("Select plan: markdown, JSON and PDF are all allowed (every paid plan now ships every format)", () => {
     expect(canExport("select", "markdown")).toBe(true);
-    expect(canExport("select", "json")).toBe(false);
+    expect(canExport("select", "json")).toBe(true);
     expect(canExport("select", "pdf")).toBe(true);
+  });
+
+  it("Free plan: JSON is not allowed (still CSV-only)", () => {
+    expect(canExport("free", "json")).toBe(false);
   });
 
   it("canEmailExport reflects plan's email_export limit", () => {

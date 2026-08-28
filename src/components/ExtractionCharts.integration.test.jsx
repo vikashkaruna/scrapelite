@@ -19,7 +19,7 @@ vi.mock("./ExtractionProvider.jsx", () => ({
   ExtractionProvider: ({ children }) => children,
 }));
 vi.mock("./BillingProvider.jsx", () => ({
-  useBilling: () => ({ checkCanExport: () => true }),
+  useBilling: () => ({ checkCanExport: () => true, checkCanIntegrations: () => true }),
   BillingProvider: ({ children }) => children,
 }));
 vi.mock("./Icon.jsx", () => ({

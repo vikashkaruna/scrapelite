@@ -258,18 +258,30 @@ describe("active accounts fall through to plan limits", () => {
     expect(r.reason).toMatch(/batch limit|not available/i);
   });
 
-  it("blocks scheduled monitoring below Pro and points at Pro", () => {
+  it("blocks scheduled monitoring below Select and points at Select", () => {
     const free = can(activeEntitlement("free"), "schedules", ctx());
     expect(free.allowed).toBe(false);
-    expect(free.upgradeTo).toBe("pro");
-    expect(can(activeEntitlement("pro"), "schedules", ctx()).allowed).toBe(true);
+    expect(free.upgradeTo).toBe("select");
+    expect(can(activeEntitlement("go"), "schedules", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "schedules", ctx()).allowed).toBe(true);
   });
 
   it("gates export formats by plan", () => {
     expect(can(activeEntitlement("free"), "export.pdf", ctx()).allowed).toBe(false);
     expect(can(activeEntitlement("free"), "export.csv", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("free"), "export.json", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "export.json", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(true);
     expect(can(activeEntitlement("pro"), "export.json", ctx()).allowed).toBe(true);
+  });
+
+  it("gates push integrations and the browser extension flag by plan (Select and up; Free/Go excluded)", () => {
+    expect(can(activeEntitlement("free"), "integrations", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "integrations", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "integrations", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("free"), "browser_extension", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "browser_extension", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "browser_extension", ctx()).allowed).toBe(true);
   });
 });
 

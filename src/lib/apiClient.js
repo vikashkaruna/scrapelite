@@ -154,6 +154,14 @@ export const apiClient = {
   deleteExtraction: (id) =>
     request(`/extractions?id=${encodeURIComponent(id)}`, "DELETE"),
 
+  // ── Export email (Resend, server-side, real file attached) ─────────────────
+  // Replaces the old client-side webhook/mailto flow: the server builds the
+  // actual CSV/PDF/Markdown/JSON file, gates on the SAME export.<fmt> and
+  // export.email capabilities entitlementModel.js already enforces for
+  // downloads, and sends it via Resend as an attachment. Payload:
+  // { items, format: "csv"|"pdf"|"markdown"|"json", to: string[] }.
+  sendExportEmail: (payload) => request("/export-email", "POST", payload),
+
   // ── Referrals ("invite a friend, you both get 25") ─────────────────────────
   // Codes are minted server-side and rewards applied server-side; nothing here
   // names a user or an amount. See netlify/functions/referral.js for why.

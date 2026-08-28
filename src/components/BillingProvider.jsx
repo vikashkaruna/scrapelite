@@ -411,6 +411,10 @@ export function BillingProvider({ children }) {
   const checkCanEmail        = useCallback(() => can(entitlement, "export.email", gateCtx()).allowed, [entitlement, gateCtx]);
   const checkCanBatch        = useCallback((urlCount) => can(entitlement, "batch", gateCtx({ urlCount })), [entitlement, gateCtx]);
   const checkCanExtractBatch = useCallback((urlCount) => can(entitlement, "extract.batch", gateCtx({ urlCount })), [entitlement, gateCtx, usage]);
+  // Push integrations (HubSpot, Notion, Airtable, Slack) — Select and up.
+  // Google Sheets is NOT gated by this: it needs no connection and is a
+  // client-side CSV download, not a real integration (see PushIntegrationMenu).
+  const checkCanIntegrations = useCallback(() => can(entitlement, "integrations", gateCtx()).allowed, [entitlement, gateCtx]);
 
   /**
    * Full denial detail for any capability — `{ allowed, reason, code, upgradeTo }`.
@@ -534,7 +538,7 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch, whyCannot,
+    checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
@@ -549,7 +553,7 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch, whyCannot,
+    checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,

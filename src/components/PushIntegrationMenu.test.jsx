@@ -39,6 +39,12 @@ vi.mock("../lib/integrationsClient.js", () => ({
 
 vi.mock("./Toast.jsx", () => ({ useToast: () => toastSpy }));
 
+const checkCanIntegrations = vi.hoisted(() => vi.fn(() => true));
+vi.mock("./BillingProvider.jsx", () => ({
+  useBilling: () => ({ checkCanIntegrations }),
+  BillingProvider: ({ children }) => children,
+}));
+
 const { default: PushIntegrationMenu } = await import("./PushIntegrationMenu.jsx");
 
 const ITEMS = [
@@ -57,6 +63,33 @@ function renderMenu(props = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   getPushProviderStatuses.mockResolvedValue({});
+  checkCanIntegrations.mockReturnValue(true);
+});
+
+describe("PushIntegrationMenu — plan gating (Select and up)", () => {
+  it("Google Sheets stays reachable even when the plan lacks integrations", async () => {
+    checkCanIntegrations.mockReturnValue(false);
+    renderMenu();
+    await userEvent.click(screen.getByRole("button", { name: /^push$/i }));
+    await userEvent.click(screen.getByText("Google Sheets"));
+    expect(openInGoogleSheets).toHaveBeenCalled();
+  });
+
+  it("a real provider is blocked with an upgrade toast when the plan lacks integrations", async () => {
+    checkCanIntegrations.mockReturnValue(false);
+    renderMenu();
+    await userEvent.click(screen.getByRole("button", { name: /^push$/i }));
+    await userEvent.click(screen.getByText("HubSpot"));
+    expect(pushToIntegration).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/Select plan/i), expect.anything());
+  });
+
+  it("shows a 'Select plan+' badge on real providers when the plan lacks integrations", async () => {
+    checkCanIntegrations.mockReturnValue(false);
+    renderMenu();
+    await userEvent.click(screen.getByRole("button", { name: /^push$/i }));
+    expect(screen.getAllByText(/Select plan\+/i).length).toBeGreaterThan(0);
+  });
 });
 
 describe("PushIntegrationMenu — one list, one label", () => {
