@@ -141,14 +141,29 @@ export function BillingProvider({ children }) {
    *
    * `status` deliberately defaults to "active": a user with no row is a
    * legitimate free user, not a suspended one.
+   *
+   * `frozen_at` / `deletion_requested_at` (and their two supporting fields)
+   * MUST be carried through: `can()`'s freeze/deletion gate (entitlementModel.js
+   * §1b) reads them directly off this object, and every client-side pre-flight
+   * check (checkCanExtract, checkCanEnrich, checkCanBatch, ...) calls `can()`
+   * with exactly this entitlement. Omitting them here doesn't just skip a
+   * field — it makes every pre-flight check silently BLIND to a frozen or
+   * deletion-pending account, so the request always looks fine client-side and
+   * only the server (which reads the real row) ever refuses it. That is what
+   * let a scheduled-for-deletion account keep hitting extract/enrich and
+   * burning a real provider call each time before finding out.
    */
   const entitlement = useMemo(
     () => ({
-      plan_id:    planId,
-      status:     entitlementRow?.status ?? "active",
-      source:     entitlementRow?.source ?? null,
-      period_end: entitlementRow?.period_end ?? null,
-      comp_until: entitlementRow?.comp_until ?? null,
+      plan_id:               planId,
+      status:                entitlementRow?.status ?? "active",
+      source:                entitlementRow?.source ?? null,
+      period_end:            entitlementRow?.period_end ?? null,
+      comp_until:            entitlementRow?.comp_until ?? null,
+      frozen_at:             entitlementRow?.frozen_at ?? null,
+      frozen_reason:         entitlementRow?.frozen_reason ?? null,
+      deletion_requested_at: entitlementRow?.deletion_requested_at ?? null,
+      deletion_purge_after:  entitlementRow?.deletion_purge_after ?? null,
     }),
     [planId, entitlementRow],
   );

@@ -89,6 +89,22 @@ const EXPORT_CAPS = new Set([
   "export.email",
 ]);
 
+/**
+ * Deny codes `can()` returns for a blocked ACCOUNT, as opposed to a plan or
+ * quota limit. The distinction matters to every caller that turns a denial
+ * into UI copy: "upgrade your plan" is nonsensical advice for an account that
+ * is frozen, scheduled for deletion, or a paused seat — the fix is in Account
+ * (or asking an owner), never in Pricing. Exported so both the client
+ * (BillingProvider's pre-flight checks) and the server (requireEntitlement's
+ * denyBody, which the discoverability audit UI reads via `err.lifecycle`)
+ * make that call the same way.
+ */
+export const ACCOUNT_BLOCKED_CODES = new Set([
+  "FROZEN", "DELETION_PENDING", "MEMBER_PAUSED",
+  "SUSPENDED", "DEACTIVATED", "GRANT_EXPIRED", "PURGED",
+]);
+export const isAccountBlocked = (code) => ACCOUNT_BLOCKED_CODES.has(code);
+
 const ok = (remaining = Infinity) => ({
   allowed: true,
   reason: null,

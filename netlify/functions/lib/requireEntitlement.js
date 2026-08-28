@@ -27,7 +27,7 @@
 // overrides are per-operator-browser and must never influence a server-side
 // authorization decision.
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
-import { can, computeLifecycle } from "../../../src/lib/entitlementModel.js";
+import { can, computeLifecycle, isAccountBlocked } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
@@ -161,16 +161,21 @@ export const DENY_STATUS = 402;
  * header convention — extract.js builds CORS headers inside its own respond()
  * helper, schedules.js has a CORS constant. Callers use whichever fits.
  *
- * `lifecycle: true` distinguishes "your subscription lapsed" from "your plan
- * doesn't include this", so the client can route to renewal vs upgrade without
- * string-matching the message.
+ * `lifecycle: true` distinguishes "your account needs attention" (lapsed,
+ * frozen, scheduled for deletion, a paused seat) from "your plan doesn't
+ * include this", so the client can route to Account vs a plan upgrade
+ * without string-matching the message. Uses entitlementModel's
+ * ACCOUNT_BLOCKED_CODES rather than its own SUSPENDED/DEACTIVATED/PURGED
+ * list, so a code freeze/deletion-pending/paused reaches the client flagged
+ * the same way — before this, discoverabilityClient.js's `err.lifecycle`
+ * branch caught a lapsed subscription but not a frozen or deletion-pending
+ * account, which fell through to a generic "Something went wrong".
  */
 export function denyBody(check) {
   return {
     error: check.reason,
     code: check.code,
-    lifecycle:
-      check.code === "SUSPENDED" || check.code === "DEACTIVATED" || check.code === "PURGED",
+    lifecycle: isAccountBlocked(check.code),
     upgradeTo: check.upgradeTo ?? null,
     remaining: Number.isFinite(check.remaining) ? check.remaining : null,
   };

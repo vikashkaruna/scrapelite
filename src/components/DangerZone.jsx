@@ -20,6 +20,7 @@ import { useState } from "react";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useToast } from "./Toast.jsx";
+import { useBilling } from "./BillingProvider.jsx";
 import {
   DELETE_CONFIRMATION,
   freezeAccount, unfreezeAccount,
@@ -64,6 +65,7 @@ export function previewDeletionDate(state, now = Date.now(), graceDays = DEFAULT
 
 export default function DangerZone({ state, onChange }) {
   const showToast = useToast();
+  const refreshEntitlement = useBilling()?.refreshEntitlement;
   const [busy, setBusy] = useState(null);
   const [confirmText, setConfirmText] = useState("");
   const [showDelete, setShowDelete] = useState(false);
@@ -85,6 +87,12 @@ export default function DangerZone({ state, onChange }) {
     setBusy(null);
     if (!r.ok) { showToast(r.error); return; }
     onChange?.(r.state);
+    // BillingProvider's cached entitlement (frozen_at / deletion_requested_at)
+    // is what every client-side pre-flight check (checkCanExtract, ...) reads.
+    // Without this, freezing or cancelling a deletion here is invisible to
+    // those checks for up to the cache's 60s TTL — the user could freeze their
+    // account and still see Extract behave as if nothing changed.
+    refreshEntitlement?.();
     return r;
   }
 

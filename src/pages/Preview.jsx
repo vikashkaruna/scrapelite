@@ -12,6 +12,7 @@ import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { isComplianceError } from "../lib/errorMessages.js";
+import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
@@ -316,11 +317,17 @@ export default function Preview() {
       console.error("[DatIQ] Quick enrichment failed:", err);
       // Don't blame the connection for a policy refusal. A robots.txt block is
       // the server declining deliberately, and "check your connection" sends
-      // the user to debug something that is working fine.
+      // the user to debug something that is working fine. Same reasoning for
+      // an account block (frozen / deletion-pending / suspended / paused
+      // seat) reaching here — the pre-flight check in ExtractionProvider was
+      // stale or bypassed, and the server's own message already says exactly
+      // what to do (unfreeze, cancel the deletion, ask an owner to resume).
       showToast(
         isComplianceError(err)
           ? "This site doesn't allow automated access"
-          : "Enrichment failed — check your connection",
+          : isAccountBlocked(err?.code)
+            ? err.message
+            : "Enrichment failed — check your connection",
         "alert-triangle",
       );
     } finally {

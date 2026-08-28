@@ -22,6 +22,7 @@ import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, csvDownload, markdownDownload, jsonDownload, copyToClipboard, uid } from "../lib/utils.js";
 import { hostOf, snippet } from "../lib/utils.js";
+import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { getBatchRun } from "../lib/batchRunsService.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
@@ -471,15 +472,28 @@ export default function Batch() {
 
     const batchSizeCheck = billing?.checkCanBatch?.(urlCount);
     if (batchSizeCheck && !batchSizeCheck.allowed) {
-      showToast(`${batchSizeCheck.reason} Upgrade your plan to process more URLs.`);
-      navigate("/pricing");
+      // A frozen / deletion-pending / suspended account isn't a batch-size
+      // problem — send them to Account, where the fix actually lives, not to
+      // a plan upsell that cannot help.
+      if (isAccountBlocked(batchSizeCheck.code)) {
+        showToast(batchSizeCheck.reason);
+        navigate("/account");
+      } else {
+        showToast(`${batchSizeCheck.reason} Upgrade your plan to process more URLs.`);
+        navigate("/pricing");
+      }
       return;
     }
 
     const quotaCheck = billing?.checkCanExtractBatch?.(urlCount);
     if (quotaCheck && !quotaCheck.allowed) {
-      showToast(`${quotaCheck.reason} Add an Extractions Bundle or upgrade your plan.`);
-      navigate("/pricing");
+      if (isAccountBlocked(quotaCheck.code)) {
+        showToast(quotaCheck.reason);
+        navigate("/account");
+      } else {
+        showToast(`${quotaCheck.reason} Add an Extractions Bundle or upgrade your plan.`);
+        navigate("/pricing");
+      }
       return;
     }
 

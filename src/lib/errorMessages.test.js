@@ -3,6 +3,8 @@ import {
   CATEGORIES,
   classifyError,
   isComplianceError,
+  isAccountBlockedError,
+  accountBlockedTitle,
   formatDetail,
   COMPLIANCE_ERROR,
 } from "./errorMessages.js";
@@ -73,6 +75,78 @@ describe("classifyError — compliance refusals are not faults", () => {
     const e = new Error("Nope, not for you");
     e.status = 403;
     expect(classifyError(e).title).toBe("Access forbidden");
+  });
+});
+
+/**
+ * A frozen / deletion-pending / suspended account is a deliberate account
+ * block, not a fault — same shape as the compliance refusal above, and it hit
+ * the exact same bug: reported live as "Something went wrong. An unexpected
+ * error occurred." with the real, already-actionable server message ("This
+ * account is scheduled for deletion...") buried under three lines of
+ * minified stack in "technical details".
+ */
+describe("classifyError — account blocks are not faults", () => {
+  const deletionErr = () => {
+    const e = new Error(
+      "This account is scheduled for deletion. You can still read and export your data. " +
+      "Cancel the deletion in Account to start working again.",
+    );
+    e.code = "DELETION_PENDING";
+    e.status = 402;
+    return e;
+  };
+
+  it("does NOT fall through to the generic default", () => {
+    const r = classifyError(deletionErr());
+    expect(r.title).not.toMatch(/something went wrong/i);
+    expect(r.message).not.toMatch(/unexpected error/i);
+  });
+
+  it("uses the server's own message verbatim, not a canned string", () => {
+    const e = deletionErr();
+    expect(classifyError(e).message).toBe(e.message);
+  });
+
+  it("names the block for what it is, per code", () => {
+    expect(classifyError(deletionErr()).title).toBe("This account is scheduled for deletion");
+    const frozen = new Error("This account is frozen.");
+    frozen.code = "FROZEN";
+    expect(classifyError(frozen).title).toBe("This account is frozen");
+    const paused = new Error("Your seat in this workspace is paused.");
+    paused.code = "MEMBER_PAUSED";
+    expect(classifyError(paused).title).toBe("Your seat is paused");
+  });
+
+  it("takes priority over a coincidental status-based match (402 isn't in CATEGORIES, but proves precedence)", () => {
+    const e = deletionErr();
+    const r = classifyError(e);
+    expect(r.title).toBe(accountBlockedTitle("DELETION_PENDING"));
+  });
+
+  it("formatDetail drops the stack — a policy decision is not a crash", () => {
+    const e = deletionErr();
+    e.stack = "Error: x\n    at r (apiClient.js:1:1)\n    at async hl (index.js:1:1)";
+    const detail = formatDetail(e);
+    expect(detail).not.toContain("at r (");
+    expect(detail).toBe(e.message);
+  });
+});
+
+describe("isAccountBlockedError", () => {
+  it("recognises every account-blocked code", () => {
+    for (const code of ["FROZEN", "DELETION_PENDING", "MEMBER_PAUSED", "SUSPENDED", "DEACTIVATED", "GRANT_EXPIRED", "PURGED"]) {
+      const e = new Error("x");
+      e.code = code;
+      expect(isAccountBlockedError(e)).toBe(true);
+    }
+  });
+
+  it("does not misclassify a plan/quota denial", () => {
+    const e = new Error("You've used all 10 extractions this month.");
+    e.code = "QUOTA_EXCEEDED";
+    expect(isAccountBlockedError(e)).toBe(false);
+    expect(classifyError(e).title).not.toBe(accountBlockedTitle("QUOTA_EXCEEDED"));
   });
 });
 
