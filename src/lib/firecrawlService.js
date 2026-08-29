@@ -19,6 +19,7 @@ import {
   mockDomainMap,
 } from "../data/mockData.js";
 import { hostOf, looksLikeHtml, hashContent } from "./utils.js";
+import { guessRelatedPageHintsKey } from "./extractionPresets.js";
 
 const MOCK_DELAY_MS = 2000;
 
@@ -205,6 +206,20 @@ export async function extractStructure(url, options = {}) {
     return buildStructureFromText(options.rawText, { pseudoUrl: url, customPrompt: options.customPrompt });
   }
   if (options.mapMode) return mapDomain(url);
-  return hasFirecrawl ? realScrape(url, options) : mockScrape(url, options);
+  // Tell the server which capability this is (pricing/contacts/leadership/…)
+  // so it can look for the data on a RELATED same-domain page — not just the
+  // one URL given — when the base page itself doesn't have it. This is the
+  // ONE place every customPrompt-driven caller funnels through (Home's
+  // custom/pricing/contacts intents, Preview's Quick Enrichment, and every
+  // Batch run/retry), so computing it here covers all of them without
+  // touching each call site. A caller that already knows its own key
+  // (enrich() on the Preview screen) sets options.enrichKey directly and
+  // this is a no-op for it.
+  let resolvedOptions = options;
+  if (options.customPrompt && !options.enrichKey) {
+    const guessed = guessRelatedPageHintsKey(options.customPrompt);
+    if (guessed) resolvedOptions = { ...options, enrichKey: guessed };
+  }
+  return hasFirecrawl ? realScrape(url, resolvedOptions) : mockScrape(url, resolvedOptions);
 }
 

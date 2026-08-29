@@ -585,6 +585,145 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
   });
 });
 
+// ── Related-page scanning ─────────────────────────────────────────────────────
+//
+// "Pricing & Plans" run against a homepage that has no pricing on it
+// (plans live on /pricing) used to report "no data returned" even though
+// the site plainly has the answer one link away. When the base page's own
+// AI extraction comes up empty AND the caller told us which capability this
+// is (options.enrichKey), the handler now looks at the base page's own links
+// for a same-domain match (RELATED_PAGE_HINTS) and gives the combined text
+// one more shot before giving up.
+describe("extract — related-page scanning (enrichKey)", () => {
+  async function loadHandlerWithAI(runChainImpl) {
+    vi.doMock("../functions/lib/aiProviders.js", () => ({
+      runChain: runChainImpl,
+      keyPresence: () => ({ anthropic: true }),
+    }));
+    return loadHandler();
+  }
+
+  it("finds pricing on a linked /pricing page when the homepage has none", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+
+    // Base page: no pricing content, but links to /pricing.
+    const homeHtml =
+      "<html><head><title>Acme Inc</title></head><body>" +
+      "<h1>Acme Inc</h1><p>We build software.</p>" +
+      '<a href="/pricing">See our plans</a>' +
+      "</body></html>";
+    // The related page: the actual pricing table.
+    const pricingHtml =
+      "<html><head><title>Acme Pricing</title></head><body>" +
+      "<p>Starter: $10/mo. Pro: $30/mo. Enterprise: contact us.</p>" +
+      "</body></html>";
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(homeHtml, { status: 200 })) // base scrape (direct)
+      .mockResolvedValueOnce(new Response(pricingHtml, { status: 200 })); // related-page fetch
+
+    const aiJson = { plans: ["Starter $10/mo", "Pro $30/mo", "Enterprise: contact us"] };
+    const runChainMock = vi
+      .fn()
+      // 1st call: base page alone — nothing to extract.
+      .mockResolvedValueOnce({ ok: false, error: "empty response" })
+      // 2nd call: base + related page combined — finds it.
+      .mockResolvedValueOnce({ ok: true, text: JSON.stringify(aiJson) });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: {
+          customPrompt: "Extract every pricing tier.",
+          enrichKey: "pricing",
+        },
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.data.json).toEqual(aiJson);
+    expect(body._aiExtractFallback).toBe(true);
+    expect(body._relatedPagesScanned).toEqual(["https://acme.com/pricing"]);
+    expect(runChainMock).toHaveBeenCalledTimes(2);
+    // The second (successful) call's prompt carries text from BOTH pages.
+    const secondCallText = runChainMock.mock.calls[1][0][0].content;
+    expect(secondCallText).toMatch(/We build software/);
+    expect(secondCallText).toMatch(/Starter: \$10\/mo/);
+    // The related fetch went to the resolved absolute URL, not a relative path.
+    expect(fetchMock.mock.calls[2][0]).toBe("https://acme.com/pricing");
+  });
+
+  it("does not scan related pages when no enrichKey was supplied", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    const homeHtml =
+      '<html><head><title>Acme</title></head><body><a href="/pricing">Plans</a></body></html>';
+    fetchMock.mockResolvedValueOnce(new Response(homeHtml, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: { customPrompt: "Extract every pricing tier." }, // no enrichKey
+      }),
+    });
+    const body = JSON.parse(r.body);
+    expect(body._enrichment).toEqual({ ok: false, reason: "ai_chain_failed" });
+    expect(body._relatedPagesScanned).toBeUndefined();
+    // Only ONE AI call (the base page) and only ONE scrape fetch — no
+    // related-page fetch was attempted.
+    expect(runChainMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // robots.txt + base scrape only
+  });
+
+  it("reports no_match (not a second AI call) when no related link matches the hints", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    // No link on the page matches any pricing-related hint.
+    const homeHtml =
+      '<html><head><title>Acme</title></head><body><a href="/about">About us</a></body></html>';
+    fetchMock.mockResolvedValueOnce(new Response(homeHtml, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: { customPrompt: "Extract every pricing tier.", enrichKey: "pricing" },
+      }),
+    });
+    const body = JSON.parse(r.body);
+    // scanRelatedPages found no candidate link at all, so it reports its own
+    // "no_match" rather than the base page's ai_chain_failed reason.
+    expect(body._enrichment).toEqual({ ok: false, reason: "no_match" });
+    expect(body._relatedPagesScanned).toBeUndefined();
+    expect(runChainMock).toHaveBeenCalledTimes(1); // no related page to scan → no 2nd AI call
+  });
+
+  it("rejects an enrichKey that isn't a known capability", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    const h = await loadHandlerWithAI(runChainMock);
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: { customPrompt: "x", enrichKey: "'; DROP TABLE extractions;--" },
+      }),
+    });
+    const body = JSON.parse(r.body);
+    // Unwhitelisted enrichKey is dropped silently — behaves exactly as if
+    // none was supplied, never reaches the related-page scanner.
+    expect(body._relatedPagesScanned).toBeUndefined();
+    expect(runChainMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ── FD3 compliance: a refusal is free, and overridable only from the server ──
 //
 // The bug this suite exists for: consumeGuestCredit ran BEFORE the robots.txt

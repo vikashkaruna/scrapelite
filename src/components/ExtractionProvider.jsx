@@ -166,7 +166,15 @@ export function ExtractionProvider({ children }) {
     setJob({ status: "running", url, phase: 0, path: startedPath });
     const startedAt = Date.now();
     try {
-      const structure = await extractStructure(url, options);
+      // Prefer the caller's own capability key over the generic prompt-text
+      // guess in extractStructure() — enrichMeta.key is exact (it's what
+      // Home/Batch actually selected), not inferred from wording.
+      const structure = await extractStructure(
+        url,
+        options.enrichMeta?.key && !options.enrichKey
+          ? { ...options, enrichKey: options.enrichMeta.key }
+          : options,
+      );
 
       let result;
       if (structure.domain_map) {
@@ -397,7 +405,7 @@ export function ExtractionProvider({ children }) {
     if (guestTrial?.requireGuestCredit?.("single") === false) return null;
 
     const id = ++reqId.current;
-    const structure = await extractStructure(url, { customPrompt: preset.prompt });
+    const structure = await extractStructure(url, { customPrompt: preset.prompt, enrichKey: preset.key });
     if (reqId.current !== id) return null; // superseded by a newer run
     const entry = {
       key: preset.key,

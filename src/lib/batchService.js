@@ -8,6 +8,17 @@ import { uid } from "./utils.js";
 // Max simultaneous in-flight requests to avoid hammering the API.
 const CONCURRENCY = 3;
 
+// Attach the exact capability key (pricing/contacts/leadership/custom) to the
+// extract() options BEFORE the request goes out, using the same lookup
+// buildBatchEnrichments uses to label the result — so the server's related-
+// page scanning (see extract.js) gets the precise key instead of guessing
+// one from the prompt text.
+function withEnrichKey(options) {
+  if (!options.customPrompt || options.enrichKey) return options;
+  const meta = enrichMetaForIntent(options.intent, options.customPrompt);
+  return meta ? { ...options, enrichKey: meta.key } : options;
+}
+
 // Build the SAME { [capabilityKey]: entry } tab map that a single-URL
 // extraction builds in ExtractionProvider.extract(). Batch previously only
 // spread the raw `custom_extraction` / `generated_content` fields onto the
@@ -91,7 +102,7 @@ export async function runBatch(urls, options = {}, onProgress, signal) {
 
       let result;
       try {
-        const structure = await extractStructure(url, options);
+        const structure = await extractStructure(url, withEnrichKey(options));
         if (cancelled) return;
 
         if (structure.domain_map) {
@@ -225,7 +236,7 @@ export function parseUrlsFromCsv(csvText) {
 // { _status, _error, ...item } object in the same shape as runBatch results.
 export async function extractOne(url, options = {}) {
   try {
-    const structure = await extractStructure(url, options);
+    const structure = await extractStructure(url, withEnrichKey(options));
     if (structure.domain_map) {
       return {
         ...structure,

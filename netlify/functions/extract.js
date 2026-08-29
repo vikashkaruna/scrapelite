@@ -15,7 +15,8 @@
 // malformed URLs are rejected with 400.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
-import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
+import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
+import { RELATED_PAGE_HINTS } from "../../src/lib/extractionPresets.js";
 import { getCached, setCached } from "./lib/resultCacheStore.js";
 import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -170,6 +171,126 @@ function parseJsonLoose(text) {
   return null;
 }
 
+// ── Related-page scanning ───────────────────────────────────────────────────
+//
+// A capability like "Pricing & Plans" or "Leadership & Board" is routinely
+// asked of a homepage that does not itself carry that data — plans live on
+// /pricing, leadership on /about or /team. Extracting from the ONE URL the
+// user gave us and reporting "no data returned" when the site plainly has
+// the answer one click away is the gap this closes: when the base page's own
+// content comes up empty, look at that page's OWN links for a same-domain
+// subpage matching the requested capability (RELATED_PAGE_HINTS, shared with
+// the client so labeling and scanning agree), fetch up to a couple of them,
+// and give the combined text one more shot through the AI extractor before
+// giving up.
+const RELATED_PAGE_MAX_CANDIDATES = 2;
+const RELATED_PAGE_FETCH_TIMEOUT_MS = 8000;
+const RELATED_PAGE_TEXT_CHARS_EACH = 8000; // keeps 2 related pages + the base page within AI_EXTRACT_TEXT_CHARS
+
+// Decode the handful of HTML entities link text realistically contains.
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+// Pull same-domain candidate links out of the base page's own HTML and score
+// them against the capability's hint keywords (checked against both the URL
+// path and the visible link text — a "Meet the team" link with an href of
+// /people/ matches on text, not path). Returns URLs sorted best-match-first.
+function findRelatedPageLinks(html, baseUrl, hints) {
+  if (!html || !hints || hints.length === 0) return [];
+  let origin;
+  try {
+    origin = new URL(baseUrl).origin;
+  } catch {
+    return [];
+  }
+  const seen = new Map(); // absolute url -> best score
+  const anchorRe = /<a\s[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(html))) {
+    const rawHref = m[1];
+    const text = decodeEntities(m[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim().toLowerCase();
+    let abs;
+    try {
+      abs = new URL(rawHref, baseUrl);
+    } catch {
+      continue;
+    }
+    if (abs.origin !== origin) continue; // same domain only — "related pages" means this site
+    if (!/^https?:$/.test(abs.protocol)) continue;
+    abs.hash = "";
+    const absStr = abs.toString();
+    if (absStr === baseUrl) continue;
+    const haystack = `${abs.pathname.toLowerCase()} ${text}`;
+    let bestScore = 0;
+    for (let i = 0; i < hints.length; i++) {
+      if (haystack.includes(hints[i])) {
+        // Earlier hints are more specific (see RELATED_PAGE_HINTS ordering);
+        // score them higher so "pricing" outranks a looser fallback term.
+        bestScore = Math.max(bestScore, hints.length - i);
+      }
+    }
+    if (bestScore > 0) {
+      const prev = seen.get(absStr) || 0;
+      if (bestScore > prev) seen.set(absStr, bestScore);
+    }
+  }
+  return [...seen.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, RELATED_PAGE_MAX_CANDIDATES)
+    .map(([url]) => url);
+}
+
+// Best-effort fetch of one related page's plain text. Never throws — a
+// candidate that fails (blocked, slow, 404) is simply skipped; this is a
+// bonus attempt on top of an extraction that already failed, not a new
+// entry point that needs its own error surface.
+async function fetchRelatedPageText(url) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), RELATED_PAGE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetchPublicUrl(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const text = htmlToPlainText(html).slice(0, RELATED_PAGE_TEXT_CHARS_EACH);
+    return text || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Try the requested capability again against 1-2 related same-domain pages,
+// combined with the base page's own text for context. Returns the same
+// shape as extractJsonWithAI's result, plus `pagesScanned` on success.
+async function scanRelatedPages({ baseUrl, baseHtml, baseText, enrichKey, prompt, title }) {
+  const hints = RELATED_PAGE_HINTS[enrichKey];
+  const candidates = findRelatedPageLinks(baseHtml, baseUrl, hints);
+  if (candidates.length === 0) return { ok: false, reason: "no_match" };
+
+  const fetched = [];
+  for (const url of candidates) {
+    const text = await fetchRelatedPageText(url);
+    if (text) fetched.push({ url, text });
+  }
+  if (fetched.length === 0) return { ok: false, reason: "no_match" };
+
+  const combinedText = [baseText, ...fetched.map((f) => f.text)]
+    .filter(Boolean)
+    .join("\n\n---\n\n")
+    .slice(0, AI_EXTRACT_TEXT_CHARS);
+  const aiRes = await extractJsonWithAI({ prompt, title, text: combinedText });
+  if (aiRes.ok) return { ...aiRes, pagesScanned: fetched.map((f) => f.url) };
+  return aiRes;
+}
+
 // True when a customPrompt-driven extraction actually found something.
 // Firecrawl's prompt-only JSON extraction (no schema) frequently comes back
 // as `{}` when it can't confidently match the prompt — an EMPTY OBJECT is
@@ -215,6 +336,13 @@ export const handler = async (event) => {
         mapMode: rawOptions.mapMode === true,
         noCache: rawOptions.noCache === true,
         ...(rawOptions.customPrompt == null ? {} : { customPrompt: String(rawOptions.customPrompt).trim().slice(0, 12000) }),
+        // Whitelisted against the known capability keys (not free text) —
+        // this only ever selects which RELATED_PAGE_HINTS bucket to scan,
+        // never anything that reaches a query or a filesystem path, but
+        // there is no reason to accept an arbitrary client-supplied string.
+        ...(typeof rawOptions.enrichKey === "string" && RELATED_PAGE_HINTS[rawOptions.enrichKey]
+          ? { enrichKey: rawOptions.enrichKey }
+          : {}),
       }
     : {};
   if (!url) return respond(400, { error: "url is required" });
@@ -415,15 +543,37 @@ export const handler = async (event) => {
     // a page that genuinely has no pricing table were indistinguishable from
     // the UI, from the logs, and from each other.
     let enrichmentReason = null;
+    let relatedPagesScanned = null;
     if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
+      const baseText = htmlToPlainText(result.html || "");
       const aiRes = await extractJsonWithAI({
         prompt: options.customPrompt,
         title: result.title || "",
-        text: htmlToPlainText(result.html || ""),
+        text: baseText,
       });
       if (aiRes.ok && aiRes.data && !isEmptyExtraction(aiRes.data)) {
         result.customExtraction = aiRes.data;
         aiExtractionUsed = true;
+      } else if (options.enrichKey) {
+        // The requested capability wasn't on THIS page — try 1-2 same-domain
+        // pages this page itself links to (e.g. /pricing, /about, /team)
+        // before reporting "no data returned". Best-effort: any failure here
+        // falls back to the base-page reason, same as before this existed.
+        const relatedRes = await scanRelatedPages({
+          baseUrl: url,
+          baseHtml: result.html || "",
+          baseText,
+          enrichKey: options.enrichKey,
+          prompt: options.customPrompt,
+          title: result.title || "",
+        });
+        if (relatedRes.ok && relatedRes.data && !isEmptyExtraction(relatedRes.data)) {
+          result.customExtraction = relatedRes.data;
+          aiExtractionUsed = true;
+          relatedPagesScanned = relatedRes.pagesScanned || null;
+        } else {
+          enrichmentReason = relatedRes.reason || aiRes.reason || "no_match";
+        }
       } else {
         enrichmentReason = aiRes.reason || "no_match";
       }
@@ -447,6 +597,11 @@ export const handler = async (event) => {
       // absent from the response when Firecrawl handled it natively, so
       // existing clients ignore it.
       ...(aiExtractionUsed ? { _aiExtractFallback: true } : {}),
+      // Present only when the answer came from a related same-domain page
+      // rather than the URL the caller gave us — e.g. pricing found on
+      // /pricing after the homepage itself had none. Debug/UX transparency;
+      // absent whenever no related-page scan happened.
+      ...(relatedPagesScanned ? { _relatedPagesScanned: relatedPagesScanned } : {}),
       // F36 — headless attribution. Only surface when the caller asked for
       // JS rendering; otherwise we omit the field so the UI doesn't show a
       // confusing "rendered via X" message on plain HTTP extractions.

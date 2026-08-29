@@ -54,6 +54,35 @@ export const QUICK_ACTIONS = [
 // Lookup a quick action by its capability key.
 export const QUICK_ACTION_BY_KEY = Object.fromEntries(QUICK_ACTIONS.map((a) => [a.key, a]));
 
+// Same-domain subpage keywords worth checking when a capability's data isn't
+// on the URL the user actually gave us. "Extract pricing" run against a
+// homepage routinely finds nothing — the plans live on /pricing, not /ā€” so
+// the server (netlify/functions/extract.js) uses this to pick 1-2 of the
+// page's OWN links to also scan before reporting "no data returned". Order
+// matters: more specific terms first, since the first match wins per link.
+// Shared between client (label lookups) and server (scanning) — see the
+// "RELATED_PAGE_HINTS" note in extract.js's header comment.
+export const RELATED_PAGE_HINTS = {
+  pricing:    ["pricing", "plans", "price"],
+  contacts:   ["contact", "support"],
+  leadership: ["team", "leadership", "about", "management", "board", "company"],
+  mission:    ["about", "mission", "company", "who-we-are", "story"],
+  social:     [], // social links are almost always in the header/footer of every page
+  custom:     [], // free-text prompts have no reliable subpage signal to key off
+};
+
+// Best-effort guess at which RELATED_PAGE_HINTS bucket a free-text prompt
+// belongs to, for callers that only have prompt text (no capability key) —
+// e.g. a custom prompt typed on Home that happens to ask about pricing.
+export function guessRelatedPageHintsKey(prompt) {
+  const p = (prompt || "").toLowerCase();
+  if (/pric|plan|tier|cost/.test(p)) return "pricing";
+  if (/contact|email|phone/.test(p)) return "contacts";
+  if (/leader|board|executive|founder|ceo|cfo|cto|management/.test(p)) return "leadership";
+  if (/mission|about|value proposition|what.*compan/.test(p)) return "mission";
+  return null;
+}
+
 // Metadata (key/label/icon) for any enrichment capability key, falling back to a
 // generic "Custom extraction" descriptor for free-text prompts run from Home.
 export function enrichMeta(key) {
