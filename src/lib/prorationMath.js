@@ -109,6 +109,8 @@ export function describePlanChange(fromPlan, toPlan) {
     ["api_access", "API access"],
     ["white_label_pdf", "White-label PDF"],
     ["priority_support", "Priority support"],
+    ["integrations", "Push integrations (HubSpot, Notion, Airtable, Slack)"],
+    ["browser_extension", "Browser extension"],
   ];
   for (const [key, label] of flags) {
     if (from[key] && !to[key]) losses.push(label);

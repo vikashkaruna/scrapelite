@@ -4,7 +4,7 @@
 // Step 1: Pick your role (7 persona cards).
 // Step 2: Choose a Recipe Pack (or skip) + optional name entry + persona welcome.
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONAS } from "../lib/personaConfig.js";

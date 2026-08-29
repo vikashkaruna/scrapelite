@@ -21,6 +21,14 @@ export const CAPS = Object.freeze([
   "extract",
   "extract.batch",
   "batch",
+  // Discoverability audits get their OWN monthly budget rather than debiting
+  // extraction credits. An audit is several fetches, a PageSpeed lookup, a
+  // citation sample and an AI call — materially more expensive than one
+  // extraction — so quietly draining the extraction pool would leave a user who
+  // ran ten audits unable to extract anything and unable to see why.
+  "audit",
+  "audit.benchmark",
+  "audit.schedule",
   "enrich",
   "ai",
   "export.csv",
@@ -31,6 +39,10 @@ export const CAPS = Object.freeze([
   "schedules",
   "integrations",
   "webhooks",
+  // Entitlement flag only — no shipping product yet. Gates the /pricing and
+  // /account "Browser extension" line so the plan matrix and the entitlement
+  // model can never disagree about who it's promised to.
+  "browser_extension",
   // New in 2026-08-02: Business and Agency both ship with white-label PDF +
   // priority support. These caps are how the rest of the app finds out
   // (PDF export, template uploader, support contact routing, badge rendering).
@@ -40,10 +52,15 @@ export const CAPS = Object.freeze([
   // plan's feature set; the seat cap is enforced at invite time, not here.
   "workspace.extra",
   "workspace.team_seats",
+  // Whether the user may create ANOTHER workspace at all — checked at
+  // create-workspace time, before workspace.team_seats or workspace.extra
+  // ever come into play (a workspace has to exist before it can have seats).
+  "workspace.create",
 ]);
 
 export const STATUS = Object.freeze({
   ACTIVE: "active",
+  GRANT_EXPIRED: "grant_expired",
   SUSPENDED: "suspended",
   DEACTIVATED: "deactivated",
   PURGED: "purged",
@@ -56,7 +73,7 @@ export const PURGE_AFTER_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Severity ordering, so "stricter of stored vs computed" is a max(). */
-const SEVERITY = { active: 0, suspended: 1, deactivated: 2, purged: 3 };
+const SEVERITY = { active: 0, grant_expired: 1, suspended: 1, deactivated: 2, purged: 3 };
 
 /**
  * While suspended or deactivated the user keeps FULL export of their own data,
@@ -75,6 +92,22 @@ const EXPORT_CAPS = new Set([
   "export.json",
   "export.email",
 ]);
+
+/**
+ * Deny codes `can()` returns for a blocked ACCOUNT, as opposed to a plan or
+ * quota limit. The distinction matters to every caller that turns a denial
+ * into UI copy: "upgrade your plan" is nonsensical advice for an account that
+ * is frozen, scheduled for deletion, or a paused seat — the fix is in Account
+ * (or asking an owner), never in Pricing. Exported so both the client
+ * (BillingProvider's pre-flight checks) and the server (requireEntitlement's
+ * denyBody, which the discoverability audit UI reads via `err.lifecycle`)
+ * make that call the same way.
+ */
+export const ACCOUNT_BLOCKED_CODES = new Set([
+  "FROZEN", "DELETION_PENDING", "MEMBER_PAUSED",
+  "SUSPENDED", "DEACTIVATED", "GRANT_EXPIRED", "PURGED",
+]);
+export const isAccountBlocked = (code) => ACCOUNT_BLOCKED_CODES.has(code);
 
 const ok = (remaining = Infinity) => ({
   allowed: true,
@@ -125,6 +158,23 @@ export function isLifecycleManaged(ent) {
 export function computeLifecycle(ent, now = new Date()) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
   const stored = ent?.status && SEVERITY[ent.status] != null ? ent.status : STATUS.ACTIVE;
+
+  // Complimentary grants have a hard validity window, but are not paid
+  // subscriptions: once they end, deny product capabilities without sending
+  // renewal notices, suspending schedules through the paid lifecycle, or
+  // entering the 90-day data-purge path.
+  const grantEnd = ent?.source === "admin_coupon" ? toTime(ent.period_end) : null;
+  if (grantEnd && nowMs >= grantEnd && stored === STATUS.ACTIVE) {
+    return {
+      status: STATUS.GRANT_EXPIRED,
+      computed: STATUS.GRANT_EXPIRED,
+      stored,
+      periodEnd: grantEnd,
+      deactivateAt: null,
+      purgeAt: null,
+      daysUntilPurge: null,
+    };
+  }
 
   if (!isLifecycleManaged(ent)) {
     // Not lifecycle-managed: an admin may still have set an explicit status
@@ -183,6 +233,9 @@ function fmtDate(ms) {
 export function lifecycleReason(life) {
   const ended = fmtDate(life.periodEnd);
   const purge = fmtDate(life.purgeAt);
+  if (life.status === STATUS.GRANT_EXPIRED) {
+    return `Your complimentary plan grant ended on ${ended}. Apply another grant or choose a paid plan to continue.`;
+  }
   if (life.status === STATUS.PURGED) {
     return "This account's data was removed after 90 days without an active subscription. Choose a plan to start again.";
   }
@@ -219,9 +272,50 @@ export function can(ent, capability, ctx = {}) {
       return deny("PURGED", lifecycleReason(life));
     }
     if (EXPORT_CAPS.has(capability)) return ok(); // data portability, see EXPORT_CAPS
+    const lifecycleCode = life.status === STATUS.GRANT_EXPIRED
+      ? "GRANT_EXPIRED"
+      : life.status === STATUS.DEACTIVATED
+        ? "DEACTIVATED"
+        : "SUSPENDED";
     return deny(
-      life.status === STATUS.DEACTIVATED ? "DEACTIVATED" : "SUSPENDED",
+      lifecycleCode,
       lifecycleReason(life),
+    );
+  }
+
+  // ── 1b. Account freeze / member pause ─────────────────────────────────────
+  //
+  // A SEPARATE AXIS from `status`, deliberately. `status = 'suspended'` is the
+  // BILLING lifecycle — it starts dunning and a day-90 purge countdown, and it
+  // means "this account has lapsed". A freeze means the opposite: "keep
+  // charging me, keep my data, just stop anyone consuming units". Modelling one
+  // as the other would enrol a paying customer in a dunning sequence and start
+  // a deletion clock on data they explicitly asked to keep.
+  //
+  // Same shape as scheduled_tasks.system_paused vs .status: one column records
+  // the USER's intent, another the PLATFORM's, and neither is mistakable for
+  // the other.
+  //
+  // Sits AFTER the lifecycle gate because a purged account is past caring about
+  // a freeze, and BEFORE the plan lookup because a frozen account's plan is
+  // irrelevant to the answer.
+  //
+  // It reuses the EXPORT_CAPS carve-out above rather than inventing a second
+  // one: read and export stay available, which is exactly the "view-only until
+  // unfrozen" behaviour the feature promises. `ctx.memberPaused` carries the
+  // per-seat version of the same rule for a workspace member.
+  const frozen = Boolean(ent?.frozen_at);
+  const paused = Boolean(ctx.memberPaused);
+  if (frozen || paused) {
+    if (EXPORT_CAPS.has(capability)) return ok();
+    const deleting = Boolean(ent?.deletion_requested_at);
+    return deny(
+      paused ? "MEMBER_PAUSED" : deleting ? "DELETION_PENDING" : "FROZEN",
+      paused
+        ? "Your seat in this workspace is paused. You can still read and export; ask an owner or admin to resume it."
+        : deleting
+          ? "This account is scheduled for deletion. You can still read and export your data. Cancel the deletion in Account to start working again."
+          : "This account is frozen. You can still read and export your data — unfreeze it in Account to run extractions, enrichments and audits again.",
     );
   }
 
@@ -300,6 +394,70 @@ export function can(ent, capability, ctx = {}) {
       return ok(effective - urlCount);
     }
 
+    case "audit": {
+      const count = ctx.auditCount ?? 1;
+      const limit = L.audits === Infinity ? Infinity : (L.audits || 0) + (ctx.bonusAudits || 0);
+      if (limit === Infinity) return ok(Infinity);
+      if (limit <= 0) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Discoverability audits are not included in your plan.",
+          0,
+          "go",
+        );
+      }
+      const used = usage.audits || 0;
+      if (used + count > limit) {
+        return deny(
+          "QUOTA_EXCEEDED",
+          used >= limit
+            ? `You've used all ${limit} discoverability audit${limit === 1 ? "" : "s"} this month.`
+            : `This needs ${count} audits but only ${Math.max(0, limit - used)} remain this month.`,
+          Math.max(0, limit - used),
+        );
+      }
+      return ok(limit - used - count);
+    }
+
+    // A benchmark audits several URLs at once, so it is gated on the audit
+    // quota being able to cover the WHOLE set. Half a competitive comparison
+    // is not a smaller comparison, it is a misleading one.
+    case "audit.benchmark": {
+      const urlCount = ctx.urlCount ?? 2;
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Competitive benchmarks are not included in your plan.", 0, "pro");
+      }
+      // Benchmarking is a paid-plan capability: the free taster exists to show
+      // what a single audit looks like, not to run competitor sets.
+      if (L.audits !== Infinity && L.audits < 25) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Competitive benchmarks are available from the Select plan upward.",
+          0,
+          "select",
+        );
+      }
+      return can(ent, "audit", { ...ctx, auditCount: urlCount });
+    }
+
+    case "audit.schedule": {
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Scheduled monitoring is not included in your plan.", 0, "go");
+      }
+      // Reuses the extraction scheduler's own plan limit: a user who may keep
+      // no schedules at all should not acquire the right to keep them by
+      // pointing them at audits instead.
+      if (!L.scheduled_monitoring) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Scheduled monitoring is not included in your plan.",
+          0,
+          "select",
+        );
+      }
+      return ok(L.scheduled_monitoring);
+    }
+
     case "enrich": {
       const limit = L.enrichments_per_extraction;
       if (limit === Infinity) return ok(Infinity);
@@ -333,9 +491,9 @@ export function can(ent, capability, ctx = {}) {
         ? ok(L.scheduled_monitoring)
         : deny(
             "NOT_IN_PLAN",
-            "Scheduled monitoring is not available on your current plan. Upgrade to Pro to schedule recurring runs.",
+            "Scheduled monitoring is not available on your current plan. Upgrade to Select to schedule recurring runs.",
             0,
-            "pro",
+            "select",
           );
 
     // White-label PDF: Business (2026-08-02) and Agency. The flag is what
@@ -366,6 +524,27 @@ export function can(ent, capability, ctx = {}) {
             "business",
           );
 
+    // How many workspaces this user may OWN, total. Free/Go/Select/Pro/
+    // Developer all ship `workspaces: 1` (their one default workspace,
+    // created automatically); Agency ships `workspaces: 5`. Each purchased
+    // "Extra Workspace" bundle (ctx.workspacesPurchased) adds one more on
+    // top of the plan's base allotment, on any plan — see the bundle's own
+    // description in pricingConfig.js ("adds a fully-featured client
+    // workspace... capped at your plan's team-seats limit"), which is a
+    // capacity add-on, not a plan requirement.
+    case "workspace.create": {
+      const cap = (L.workspaces || 1) + (ctx.workspacesPurchased || 0);
+      const owned = ctx.workspacesOwned ?? 0;
+      return owned < cap
+        ? ok(cap - owned)
+        : deny(
+            "QUOTA_EXCEEDED",
+            `You've reached your plan's workspace limit (${cap}). Add an Extra Workspace or upgrade to create another.`,
+            0,
+            planId === "agency" ? null : "agency",
+          );
+    }
+
     // Workspace add-on: only meaningful when the user has actually
     // purchased extra workspaces. The cap is consulted when the user
     // tries to INVITE a member into an extra workspace — invite
@@ -391,22 +570,61 @@ export function can(ent, capability, ctx = {}) {
       // Business, that's 3; on Agency it's 5; etc. Extra workspaces
       // never expand this — they inherit it.
       const cap = L.team_seats || 0;
-      return cap > 0
-        ? ok(cap - (ctx.seatsUsed || 0))
-        : deny(
-            "NOT_IN_PLAN",
-            "Your plan does not include team seats. Upgrade to invite members into your workspace.",
-            0,
-            "select",
-          );
+      if (cap <= 0) {
+        return deny(
+          "NOT_IN_PLAN",
+          "Your plan does not include team seats. Upgrade to invite members into your workspace.",
+          0,
+          "select",
+        );
+      }
+      const remaining = cap - (ctx.seatsUsed || 0);
+      // cap>0 alone is not "there is room" — a workspace already at its cap
+      // (seatsUsed === cap, or over it if the cap shrank after a downgrade)
+      // must still be denied, or an invite silently overfills the workspace.
+      if (remaining <= 0) {
+        return deny(
+          "QUOTA_EXCEEDED",
+          `This workspace is at its seat limit (${cap}). Remove a member or upgrade for more seats.`,
+          0,
+          "agency",
+        );
+      }
+      return ok(remaining);
     }
 
     // Not plan-gated today; listed so suspension still blocks them and so the
     // capability names exist before PR3 wires the UI.
     case "ai":
-    case "integrations":
     case "webhooks":
       return ok();
+
+    // Push integrations (HubSpot, Notion, Airtable, Slack). Free and Go are
+    // taster tiers; Google Sheets stays available to everyone regardless —
+    // it needs no connection and is not gated through this capability at all
+    // (see PushIntegrationMenu's SHEETS_ROW, which is clientSide and never
+    // calls checkCanIntegrations).
+    case "integrations":
+      return L.integrations
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Push integrations (HubSpot, Notion, Airtable, Slack) are available from the Select plan upward.",
+            0,
+            "select",
+          );
+
+    // Entitlement flag only — see the CAPS comment. Same taster-tier split as
+    // integrations: Free and Go don't get it, Select and up do.
+    case "browser_extension":
+      return L.browser_extension
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "The DatIQ browser extension is available from the Select plan upward.",
+            0,
+            "select",
+          );
 
     default:
       return deny("UNKNOWN_CAPABILITY", `Unknown capability: ${capability}`);

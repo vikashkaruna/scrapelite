@@ -3,7 +3,7 @@
 // ⚠️ As in Privacy.jsx, SECTIONS drives the #section-N anchor ids by ARRAY
 // INDEX. Edit in place; appending is safe; inserting or reordering silently
 // repoints every existing deep link.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useSeo } from "../hooks/useSeo.js";
@@ -22,8 +22,10 @@ const SECTIONS = [
   {
     title: "Acceptable Use",
     items: [
-      "You may only use DatIQ to extract data from websites you own, have explicit permission to scrape, or that are publicly accessible and not protected by technical or legal access controls.",
-      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using DatIQ.",
+      "You may only use DatIQ to extract data from websites you own, have explicit permission to scrape, or that are publicly accessible and not protected by technical or legal access controls. \"Technical or legal access controls\" means measures that restrict access itself — authentication, paywalls, IP or geographic blocking, or licence terms prohibiting automated access.",
+      "A website's robots.txt is a request addressed to automated clients rather than a control that restricts access, and it is governed by the two items that follow rather than by the exclusion above.",
+      "You must comply with the robots.txt directives and Terms of Service of any website you scrape using DatIQ. DatIQ honours robots.txt by default and will decline a request that a site disallows.",
+      "Where a site's robots.txt disallows extraction, DatIQ may permit you to proceed only if you first record a confirmation that you own that site or have the owner's permission. That confirmation is your representation, recorded against your account for one named site at a time. You remain solely responsible for its accuracy and for any extraction it permits, and DatIQ may withdraw it or suspend your access at any time.",
       "You may not use DatIQ to harvest personal data for spam, phishing, identity theft, or any other malicious purpose.",
       "You may not use DatIQ to circumvent authentication, access controls, or rate limits of any website or service.",
       "You may not resell, sublicense, or redistribute access to DatIQ's extraction infrastructure without prior written consent.",

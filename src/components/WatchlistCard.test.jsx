@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import WatchlistCard from "./WatchlistCard.jsx";
 
 const NOW = new Date("2026-07-18T12:00:00Z").getTime();

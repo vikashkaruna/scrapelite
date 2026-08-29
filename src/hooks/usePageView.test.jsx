@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, act } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router";
 import { StrictMode, useEffect } from "react";
 import { usePageView } from "./usePageView.js";
 

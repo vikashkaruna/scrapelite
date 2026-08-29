@@ -23,14 +23,18 @@ import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
 import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
+import { consumeGuestCredit } from "./lib/guestUsage.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 
-function respond(statusCode, body) {
+function respond(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   };
@@ -48,7 +52,7 @@ function htmlToPlainText(html) {
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
       .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<\/?[a-z][^>]*>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
@@ -71,17 +75,14 @@ function htmlToPlainText(html) {
 // capability" even on a perfectly valid URL. Now the function asks the
 // multi-provider AI chain to extract the JSON from the page text using the
 // user's customPrompt as the schema instruction.
-//
-// Strict-JSON prompt: the model is told to return ONLY a JSON object, with
-// no markdown fences and no preamble. parseJsonLoose tolerates a few
-// common deviations (```json fences, leading prose) so a slightly messy
-// reply still produces a usable extraction instead of silently failing.
 const AI_EXTRACT_MAX_TOKENS = 2048;
 const AI_EXTRACT_TEXT_CHARS = 24000; // ~6k tokens of plain text — well within every model
 
 async function extractJsonWithAI({ prompt, title, text }) {
   const presence = keyPresence();
-  if (!Object.values(presence).some(Boolean)) return null;
+  if (!Object.values(presence).some(Boolean)) {
+    return { ok: false, reason: "ai_not_configured" };
+  }
   const trimmed = (text || "").slice(0, AI_EXTRACT_TEXT_CHARS);
   const messages = [
     {
@@ -95,9 +96,25 @@ async function extractJsonWithAI({ prompt, title, text }) {
         `PAGE CONTENT (truncated):\n${trimmed}`,
     },
   ];
-  const r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
-  if (!r.ok || !r.text) return null;
-  return parseJsonLoose(r.text);
+  let r;
+  try {
+    r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
+  } catch (err) {
+    console.warn("[DatIQ] AI extraction runChain threw:", err?.message || err);
+    return { ok: false, reason: "ai_chain_failed" };
+  }
+  if (!r || !r.ok) {
+    console.warn("[DatIQ] AI extraction provider chain failed:", r?.error, r?.attempts);
+    return { ok: false, reason: "ai_chain_failed", attempts: r?.attempts };
+  }
+  if (!r.text || !r.text.trim()) {
+    return { ok: false, reason: "no_match" };
+  }
+  const parsed = parseJsonLoose(r.text);
+  if (!parsed || isEmptyExtraction(parsed)) {
+    return { ok: false, reason: "no_match" };
+  }
+  return { ok: true, data: parsed };
 }
 
 function parseJsonLoose(text) {
@@ -117,12 +134,7 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* fall through */ }
   }
-  // Last resort: find the outermost JSON object OR array in the reply. The
-  // "no preamble" instruction usually works, but some models add a one-line
-  // intro, and prompts that are naturally list-shaped (e.g. "extract all
-  // social links") sometimes come back as a bare `[...]` rather than an
-  // object — only scanning for `{`/`}` missed that shape entirely and threw
-  // away a perfectly good extraction.
+  // Find the outermost JSON object OR array in the reply.
   const firstObj = trimmed.indexOf("{");
   const lastObj = trimmed.lastIndexOf("}");
   const firstArr = trimmed.indexOf("[");
@@ -136,6 +148,25 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* try the next candidate */ }
   }
+
+  // Structured key-value lines fallback (requires at least 2 distinct key-value pairs)
+  const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length >= 2 || lines.some((l) => /^[-*•]/.test(l))) {
+    const kvObj = {};
+    let count = 0;
+    for (const line of lines) {
+      const m = line.match(/^[-*•]?\s*([A-Za-z0-9_ ]{2,40})\s*:\s*(.+)$/);
+      if (m && m[1] && m[2]) {
+        const k = m[1].trim().toLowerCase().replace(/\s+/g, "_");
+        kvObj[k] = m[2].trim();
+        count++;
+      }
+    }
+    if (count >= 2) {
+      return kvObj;
+    }
+  }
+
   return null;
 }
 
@@ -199,12 +230,18 @@ export const handler = async (event) => {
   }
 
   // Subscription gate. Placed AFTER the SSRF guard (never spend a DB round-trip
-  // on a request we are about to reject anyway) and BEFORE any provider call.
+  // on a request we are about to reject anyway) and BEFORE any outbound call at
+  // all — including the robots.txt fetch below. A denied account must cost us
+  // nothing on the wire, which is what entitlement-enforcement.test.js pins.
   //
   // Signed-in users only: guests fall through untouched and are still governed
   // solely by the per-host token bucket below. Fails OPEN when Supabase is
   // unreachable — see the header of lib/requireEntitlement.js for why that
   // asymmetry is deliberate and must not be "fixed".
+  //
+  // `respond`, not `reply`: consumeGuestCredit has not run yet, so there is no
+  // cookie to set — and it would return none here anyway, since it short-
+  // circuits for any request carrying an Authorization header.
   try {
     const { check } = await requireCapability(event, "extract");
     if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
@@ -212,23 +249,98 @@ export const handler = async (event) => {
     console.warn("[DatIQ] entitlement check errored (failing open):", err.message);
   }
 
-  // FD3: robots.txt compliance. This is server-enforced; clients cannot bypass it.
+  // FD3: robots.txt compliance. Server-enforced; clients cannot bypass it.
+  //
+  // ⚠️ ORDERING IS LOAD-BEARING: this runs BEFORE consumeGuestCredit. It used
+  // to run after, which meant a guest who pasted three LinkedIn URLs spent
+  // three of their ten free extractions on requests that were refused on
+  // policy grounds before any provider was ever contacted. You do not bill for
+  // work you declined to do. The check needs only the URL, so it costs nothing
+  // to do it first — and it still sits after the SSRF guard, which is the one
+  // ordering that actually matters (never fetch robots.txt from an address we
+  // are about to reject as non-public).
+  //
+  // The refusal is OVERRIDABLE for a signed-in user who has attested that they
+  // have permission for this host — but only from a record we resolve here,
+  // server-side, from their JWT. See lib/scrapeConsent.js.
   {
     try {
       const compliance = await checkCompliance(url, {
         permittedHosts: process.env.PERMITTED_HOSTS || "",
       });
       if (!compliance.allowed) {
-        return respond(403, {
-          error: compliance.reason,
-          _complianceBlocked: true,
-          _crawlDelayMs: compliance.crawlDelayMs,
-        });
+        // Only a robots.txt refusal is overridable. `host_not_permitted` is the
+        // OPERATOR's allowlist decision, not the site's, and a user must not be
+        // able to attest their way past their own operator.
+        //
+        // This resolution has its OWN try/catch, and it must keep it. The outer
+        // catch below fails open on compliance-engine errors, which is right for
+        // "we could not read robots.txt" — but catastrophic here: a throw while
+        // looking up the attestation would fall through to that handler and
+        // allow a scrape the site refused. An error resolving consent means NO
+        // consent, always.
+        let overridden = false;
+        let consentAvailable = false;
+        if (compliance.code === "robots_disallowed") {
+          try {
+            const auth = await authenticateBearer(event, { label: "extract-consent" });
+            if (auth.ok && auth.user?.id) {
+              const consent = await hasScrapeConsent(auth.user.id, compliance.host);
+              // `degraded` (we could not read the record) is treated exactly
+              // like "no record" — see the fail-closed note in scrapeConsent.js.
+              overridden = consent.granted === true;
+              // ...and it also suppresses the OFFER. `degraded` means the
+              // consent store could not answer — unconfigured, unmigrated, or
+              // unreachable — so recording an attestation would fail too.
+              // Advertising the override there sends the user into a dialog
+              // that can only ever error: they tick the box, the POST 502s,
+              // and nothing is granted. Better to show the plain refusal, which
+              // is accurate in every case, than a door that cannot open.
+              consentAvailable = !overridden && !consent.degraded;
+            }
+          } catch (err) {
+            console.warn("[DatIQ] consent lookup errored (refusal stands):", err.message);
+            overridden = false;
+            consentAvailable = false;
+          }
+        }
+        if (!overridden) {
+          return respond(403, {
+            error: compliance.reason,
+            code: compliance.code,
+            _complianceBlocked: true,
+            _crawlDelayMs: compliance.crawlDelayMs,
+            host: compliance.host,
+            // Tells the client whether to offer the attestation dialog or ask
+            // the caller to sign in first. Never a permission in itself.
+            consentAvailable,
+          });
+        }
+        console.info(`[DatIQ] robots.txt refusal overridden by recorded attestation for ${compliance.host}`);
       }
     } catch (err) {
       // Fail open on compliance-engine errors.
       console.warn("[DatIQ] compliance check errored (failing open):", err.message);
     }
+  }
+
+  // The guest charge. Everything above this line is a gate that can decline
+  // WITHOUT doing any work, so nothing above it may bill. This used to sit
+  // directly under the SSRF guard, which is how a guest pasting three LinkedIn
+  // URLs spent three of their ten free extractions on requests that were
+  // refused on policy grounds before a provider was ever contacted.
+  const guestUsage = await consumeGuestCredit(event, "single");
+  const reply = (statusCode, body) => respond(
+    statusCode,
+    body,
+    guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {},
+  );
+  if (!guestUsage.allowed) {
+    return reply(429, {
+      error: "Guest extraction limit reached. Sign in to continue.",
+      code: guestUsage.reason || "single_limit_reached",
+      remaining: 0,
+    });
   }
 
   // FD3: per-host rate limiter. Wait for a token before any provider call.
@@ -245,12 +357,12 @@ export const handler = async (event) => {
     if (options.mapMode) {
       const result = await runMapChain(url);
       if (!result.ok) {
-        return respond(502, {
+        return reply(502, {
           error: result.error,
           _providerAttempts: result.attempts,
         });
       }
-      return respond(200, {
+      return reply(200, {
         mapLinks: result.mapLinks,
         source: result.source,
         _providerAttempts: result.attempts,
@@ -269,7 +381,7 @@ export const handler = async (event) => {
       } catch { /* cache miss on any error */ }
     }
     if (cacheHit && cacheHit.result) {
-      return respond(200, {
+      return reply(200, {
         data: cacheHit.result.data,
         source: `${cacheHit.result.source || "cache"} (cached)`,
         _cacheHit: true,
@@ -279,7 +391,7 @@ export const handler = async (event) => {
     // ── Scrape mode: extract page HTML + metadata ────────────────────────────
     const result = await runScrapeChain(url, options);
     if (!result.ok) {
-      return respond(502, {
+      return reply(502, {
         error: result.error,
         _providerAttempts: result.attempts,
       });
@@ -304,35 +416,16 @@ export const handler = async (event) => {
     // the UI, from the logs, and from each other.
     let enrichmentReason = null;
     if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
-      const aiConfigured = Object.values(keyPresence()).some(Boolean);
-      if (!aiConfigured) {
-        // The single most likely cause in a fresh deployment, and previously
-        // the most silent: extractJsonWithAI() returns null before making any
-        // request when no provider key is set. Nothing else in the product
-        // reveals this — aiService falls back to mock summaries, so summaries
-        // keep "working" and only enrichment visibly dies.
-        enrichmentReason = "ai_not_configured";
+      const aiRes = await extractJsonWithAI({
+        prompt: options.customPrompt,
+        title: result.title || "",
+        text: htmlToPlainText(result.html || ""),
+      });
+      if (aiRes.ok && aiRes.data && !isEmptyExtraction(aiRes.data)) {
+        result.customExtraction = aiRes.data;
+        aiExtractionUsed = true;
       } else {
-        try {
-          const aiJson = await extractJsonWithAI({
-            prompt: options.customPrompt,
-            title: result.title || "",
-            text: htmlToPlainText(result.html || ""),
-          });
-          if (!isEmptyExtraction(aiJson)) {
-            result.customExtraction = aiJson;
-            aiExtractionUsed = true;
-          } else {
-            // The chain answered, and the answer was "nothing here".
-            enrichmentReason = "no_match";
-          }
-        } catch (err) {
-          // Non-fatal: the response goes back to the client with null
-          // customExtraction. The error is logged so the regression can
-          // be diagnosed from the function log if it fires repeatedly.
-          console.warn("[DatIQ] AI-extract fallback failed:", err?.message || err);
-          enrichmentReason = "ai_chain_failed";
-        }
+        enrichmentReason = aiRes.reason || "no_match";
       }
     }
 
@@ -382,8 +475,8 @@ export const handler = async (event) => {
       } catch { /* cache write failure is non-fatal */ }
     }
 
-    return respond(200, responseBody);
+    return reply(200, responseBody);
   } catch (err) {
-    return respond(502, { error: `Scrape chain failed: ${err.message}` });
+    return reply(502, { error: `Scrape chain failed: ${err.message}` });
   }
 };

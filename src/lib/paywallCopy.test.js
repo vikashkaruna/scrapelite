@@ -30,8 +30,8 @@ describe("FA3 — pickRecommendedPlan", () => {
     expect(pickRecommendedPlan({ kind: "batch", urls: 300 }).id).toBe("agency");
   });
 
-  it("picks Pro for JSON export", () => {
-    expect(pickRecommendedPlan({ kind: "export", format: "json" }).id).toBe("pro");
+  it("picks Go for JSON export (all paid plans now include every export format)", () => {
+    expect(pickRecommendedPlan({ kind: "export", format: "json" }).id).toBe("go");
   });
 
   it("picks Go for PDF / Markdown export", () => {
@@ -39,8 +39,12 @@ describe("FA3 — pickRecommendedPlan", () => {
     expect(pickRecommendedPlan({ kind: "export", format: "markdown" }).id).toBe("go");
   });
 
-  it("picks Pro for scheduled monitoring (Go and Select both have scheduled_monitoring: 0)", () => {
-    expect(pickRecommendedPlan({ kind: "schedule" }).id).toBe("pro");
+  it("picks Select for scheduled monitoring (Go is 0, Select is the first tier with it)", () => {
+    expect(pickRecommendedPlan({ kind: "schedule" }).id).toBe("select");
+  });
+
+  it("picks Select for push integrations (Free/Go are excluded)", () => {
+    expect(pickRecommendedPlan({ kind: "integrations" }).id).toBe("select");
   });
 
   it("picks Business for API access", () => {
@@ -69,9 +73,9 @@ describe("FA3 — buildPaywallCopy", () => {
       currentPlan: FREE,
       usage: { extractions: 10 },
     });
-    // Annual price is 17 (USD), monthly 20.4. The CTA should mention the annual figure.
-    expect(out.ctaLabel).toMatch(/\$17\/mo, billed annually/);
-    expect(out.ctaLabel).not.toMatch(/^\$20\.4/);
+    // JSON export now recommends Go: annual price is 4 (USD), monthly 4.8.
+    expect(out.ctaLabel).toMatch(/\$4\/mo, billed annually/);
+    expect(out.ctaLabel).not.toMatch(/^\$4\.8/);
   });
 
   it("uses INR formatting when currency='INR'", () => {

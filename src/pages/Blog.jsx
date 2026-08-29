@@ -45,6 +45,81 @@ Start with any URL. No sign-up required.
 
 const POSTS = [
   {
+    slug: "discoverability-seo-aeo-geo-audits",
+    tag: "Release",
+    title: "Three Audiences, Three Scores: Auditing for Search, Answers and AI Citation",
+    excerpt:
+      "Your page can rank perfectly and still never be quoted. DatIQ now scores SEO, AEO and GEO separately, shows you where they disagree, and writes the fixes for you.",
+    date: "August 26, 2026",
+    readTime: "6 min read",
+    coverIcon: "scan-search",
+    fullContent: `
+Search stopped being one audience.
+
+A page can be crawled, indexed and ranking well, and still never appear in a ChatGPT answer. Not because it is worse — because it is optimised for a reader who arrives via a results page, and answer engines are looking for something else: a passage they can lift out, quote whole, and attribute.
+
+Those are different jobs, and a single "SEO score" hides the gap between them. So **Discoverability** scores three audiences separately.
+
+## What the three scores mean
+
+**SEO** is the classic one. Can a crawler reach the page, render it, and trust the canonical? Is it fast enough?
+
+**AEO** — answer engine optimisation — asks whether an assistant could lift a passage off your page and quote it. That rewards something quite specific: a self-contained answer near the top, roughly 40 to 60 words, that still makes sense when the surrounding page is gone. A passage that opens with "This is why it matters" is useless quoted alone, however good the paragraph is.
+
+**GEO** — generative engine optimisation — asks whether a machine can work out *who published this*, and whether answer engines already cite you. That is entity identity: schema that names you, profile links that confirm it is you, an author with a real page behind their byline.
+
+When those three scores disagree, the gap is the finding. A page scoring 88 for SEO and 41 for AEO is a page that ranks and never gets quoted, and now you can see that in one screen instead of inferring it.
+
+## Four pillars, and every score traces back
+
+Underneath sit Answer Clarity, Entity Authority, Structural Hierarchy and Technical Accessibility. Open any pillar and you see every signal that fed it, its weight, and its score — because a number you cannot interrogate is a number you cannot act on.
+
+## "Not measured" is not zero
+
+This is the part we spent the longest on, and it is the part most audit tools get wrong.
+
+Some signals need something outside the page. Core Web Vitals come from Google's field data. Citation footprint comes from actually asking an answer engine. Those services are sometimes unavailable, rate-limited, or simply have no data for a low-traffic URL.
+
+The tempting thing is to score a missing signal as zero. It keeps the maths simple. It is also a lie, and a corrosive one: it would subtract points from every audit during an outage, then show you a phantom "improvement" when the service came back — an improvement you did nothing to earn. Your trend line, the whole reason to audit twice, would become fiction.
+
+So an unmeasured signal is **excluded**, and its weight is redistributed across the signals we could read. Every score then carries a **coverage** figure, because a 92 built on 70% of the evidence is not the same as a 92 built on all of it, and you should be able to tell which one you are looking at.
+
+Some signals are marked *not applicable* instead — a pricing page has no step-by-step procedure, so it is never asked for HowTo markup and never marked down for its absence.
+
+## Blocking issues scale, they do not deduct
+
+A page marked \`noindex\` is not "a good page minus a few points". Neither is one whose content only appears after JavaScript runs — to a crawler that does not execute JavaScript, that page is blank.
+
+So those failures scale the whole score down rather than costing it a slice, and the report shows the arithmetic: your score before the blockers, the multiplier, and the result. No hidden penalties.
+
+## It writes the fix
+
+Every finding becomes a recommendation with an owner, an effort estimate, and how much it is worth **on your page** — not in general. Fixing FAQ markup on a page already at 61 is worth less than on one at 12, and the queue sorts accordingly.
+
+Where a fix is markup or copy, DatIQ drafts it from what your page already contains. FAQ schema built from your visible questions. An Organization block carrying the profile links you actually have. A corrected heading outline that fixes the nesting and leaves your wording completely alone, because renaming your sections is not a defect fix.
+
+Anything we could not observe comes back as an explicit \`TODO:\` rather than a plausible guess. A schema block containing an invented founder name is worse than no schema block, because it tends to get published without being read.
+
+## Proving the fix worked
+
+An audit is a reading. Two are a direction.
+
+Re-audit after you have made changes and DatIQ compares the runs: what moved, what was resolved, and — the line we care about most — anything **new** that appeared. A fix that introduces a regression is exactly what you want to catch before it compounds.
+
+The comparison only reports a change when both runs actually measured the same thing. If Core Web Vitals were unavailable last week and available today, that is labelled *not comparable* rather than being handed to you as your improvement.
+
+The trend chart draws a gap where a score could not be measured, rather than a straight line through it. A line implies a continuity nobody observed.
+
+## What we will not tell you
+
+Discoverability scores describe how findable and extractable a page is **today**. They are not a prediction of rankings, citations or traffic, and any tool that promises you one is selling something.
+
+What you get instead is a reproducible measurement, the evidence behind it, and a list of specific things to change — so that when the outcome does move, you know what moved it.
+
+Free accounts get three audits a month. Paste a URL and see where your page actually stands.
+    `.trim(),
+  },
+  {
     slug: "one-composer-background-runs-addressable-batches",
     tag: "Release",
     title: "One Box to Start Anything: Background Runs and Batches You Can Come Back To",
@@ -200,7 +275,7 @@ None of this makes extraction faster. It makes DatIQ safe to put on a company ca
 
 ## Where to find it
 
-Open **Account → Invoices & receipts**. Full detail in the [Plans, usage & billing](/help/11-plans-usage-and-billing.html) help guide. If a document ever looks wrong, tell us at **hello@datiq.app** — a correction is a credit note, and we would rather issue one than have your books disagree with ours.
+Open **Account → Invoices & receipts**. Full detail in the [Plans, usage & billing](/help/12-plans-usage-and-billing.html) help guide. If a document ever looks wrong, tell us at **hello@datiq.app** — a correction is a credit note, and we would rather issue one than have your books disagree with ours.
 
 Every payment, one document, permanently yours.
 `,
@@ -448,26 +523,30 @@ The persona system is used to feed AI prompts too. A Sales persona extracts cont
     fullContent: `
 Every time you paste a URL into DatIQ and click Extract, a multi-step pipeline runs in milliseconds. Here's how it works.
 
-## Step 1: Extraction (Firecrawl)
+## Step 1: Compliance check
 
-The URL is sent to Firecrawl's /scrape API endpoint. Firecrawl handles:
+Before any page is fetched, DatIQ reads the site's own robots.txt and checks the URL against it as **DatIQBot/1.0**. If the site disallows that path, the extraction is declined then and there — no page is requested, and nothing is charged. Any Crawl-delay the site publishes is honoured too.
+
+This check is ours, and it runs first, whichever fetcher handles the page afterwards.
+
+## Step 2: Extraction (provider chain)
+
+Permitted URLs go to the first available fetcher in a fallback chain — **Firecrawl → Spider.cloud → Jina AI → a direct fetch** — so extraction keeps working when one provider is down or unconfigured. Between them they handle:
 - JavaScript rendering (for React/Vue/Angular SPAs, when enabled)
-- Robots.txt compliance
-- Rate limiting and retry logic
-- Returning clean HTML + metadata
+- Retry logic and clean HTML + metadata
 
-DatIQ requests the page in HTML format, then parses the response to extract headings (H1–H6), links (internal and external), and page metadata.
+DatIQ adds a per-host rate limiter in front of the chain, so one busy account can't hammer someone else's site. DatIQ requests the page in HTML format, then parses the response to extract headings (H1–H6), links (internal and external), and page metadata.
 
-## Step 2: AI enrichment (Anthropic Claude)
+## Step 3: AI enrichment
 
-The extracted content is passed to Claude via the Anthropic messages API. Depending on the extraction options:
+The extracted content is passed to an AI model through a second fallback chain — **Google Gemini → Anthropic Claude → OpenAI** by default, configurable per deployment. Depending on the extraction options:
 - **Summary** — a single paragraph describing the page's purpose and structure
 - **Custom extraction** — a structured JSON object based on the user's plain-English prompt
 - **Contact extraction** — leadership names, titles, and emails
 
-All AI calls route through a Netlify serverless function — the API key never touches the browser.
+All AI calls route through a Netlify serverless function — the API keys never touch the browser.
 
-## Step 3: Persistence (Supabase)
+## Step 4: Persistence (Supabase)
 
 Extraction results are saved to a Supabase PostgreSQL database, keyed by session ID and URL. This powers the Dashboard view, history, and the CSV/PDF export pipeline.
 

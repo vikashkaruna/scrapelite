@@ -13,7 +13,7 @@
 // both directions — the old table silently omitted Firecrawl, Apify and
 // PhantomBuster even though all three pages existed and were being maintained.
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useSeo } from "../hooks/useSeo.js";

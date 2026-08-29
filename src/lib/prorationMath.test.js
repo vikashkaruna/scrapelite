@@ -112,7 +112,9 @@ describe("describePlanChange", () => {
     expect(d.direction).toBe("downgrade");
     expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from 10,000 to 500/);
     expect(d.losses.join(" | ")).toMatch(/URLs per batch drops from 250 to 50/);
-    expect(d.losses.join(" | ")).toMatch(/JSON export/);
+    // Business and Select both include every export format (JSON included) —
+    // white-label PDF and API access are the real exclusive losses here.
+    expect(d.losses.join(" | ")).toMatch(/White-label PDF/);
     expect(d.losses.join(" | ")).toMatch(/API access/);
   });
 

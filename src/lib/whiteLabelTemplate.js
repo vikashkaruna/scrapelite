@@ -286,3 +286,128 @@ export function resolveTemplateUserId({ user = null, session = null } = {}) {
 
 /** Test-only helper: pretend we're in localStorage mode. */
 export function __setBackendForTest(name) { writeActiveBackend(name); }
+
+// ── Brand Kit (Phase 2 — structured branding, additive) ─────────────────────
+//
+// The raw-PDF-upload feature above ("paint a full page as a background
+// image") is a blunt instrument: PDF-only, no structured fields, and no way
+// for Markdown/CSV/JSON/email exports to pick up any of it. This adds a real,
+// schema-validated template — company name, tagline, accent color, footer
+// text, website, a small logo image — that every export format's branding
+// renderer (see exportBranding.js) can use natively, not just PDF.
+//
+// Deliberately NOT a replacement: the raw-PDF upload keeps working exactly as
+// before (existing uploads, existing tests, unaffected) and stays available
+// as an "Advanced: full-page background" option. A user with BOTH set gets
+// the raw-PDF background (visually dominant) with the Brand Kit's text/logo
+// still driving the non-PDF formats and the PDF's HEADER/FOOTER bar drawn
+// on top of that background.
+//
+// Storage: localStorage only, for now — a Brand Kit is small (a few strings
+// plus a capped-size logo image), so the 2MB-blob Supabase Storage path the
+// raw-PDF template needs doesn't apply. This means a Brand Kit does not yet
+// sync across devices/browsers for the same account — worth revisiting if
+// that turns out to matter, but not invented here without a concrete need.
+
+const LS_BRAND_KIT_KEY = "datiq.brandKit";
+const BRAND_KIT_LOGO_MAX_BYTES = 200 * 1024; // 200KB — a small logo mark, not a hero image
+const BRAND_KIT_TEXT_MAX = 120; // company name / tagline / footer text length cap
+const BRAND_KIT_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Validate + sanitize a Brand Kit object before it is stored. Returns
+ * `{ ok: true, value }` or `{ ok: false, code, reason }` — same envelope
+ * shape as validateFile()/writeTemplate() above, for a consistent caller
+ * contract across both template mechanisms.
+ *
+ * `logo`, if present, must already be `{ dataUrl, width, height }` — the
+ * caller (the upload form) is responsible for reading the File into a data
+ * URL and reporting its natural dimensions; this function only checks the
+ * MIME prefix on the data URL and the encoded size.
+ */
+export function validateBrandKit(input) {
+  if (!input || typeof input !== "object") return err("INVALID_TYPE", "No brand kit data was provided.");
+  const out = {};
+
+  for (const field of ["companyName", "tagline", "footerText"]) {
+    const v = input[field];
+    if (v == null || v === "") continue;
+    const s = String(v).trim();
+    if (s.length > BRAND_KIT_TEXT_MAX) {
+      return err("FIELD_TOO_LONG", `${field} must be ${BRAND_KIT_TEXT_MAX} characters or fewer.`);
+    }
+    out[field] = s;
+  }
+
+  if (input.website) {
+    const s = String(input.website).trim();
+    if (!/^https?:\/\/.+/i.test(s)) return err("INVALID_URL", "Website must be a full https:// URL.");
+    out.website = s;
+  }
+  if (input.contactEmail) {
+    const s = String(input.contactEmail).trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return err("INVALID_EMAIL", "Contact email doesn't look valid.");
+    out.contactEmail = s;
+  }
+  if (input.accentColor) {
+    const s = String(input.accentColor).trim();
+    if (!HEX_COLOR_RE.test(s)) return err("INVALID_COLOR", "Accent color must be a hex value like #4f46e5.");
+    out.accentColor = s;
+  }
+  if (input.logo) {
+    const { dataUrl, width, height } = input.logo;
+    if (!dataUrl || typeof dataUrl !== "string") return err("INVALID_LOGO", "No logo image was provided.");
+    const mimeMatch = /^data:([^;]+);base64,/.exec(dataUrl);
+    const mime = mimeMatch?.[1];
+    if (!mime || !BRAND_KIT_LOGO_TYPES.has(mime)) {
+      return err("INVALID_LOGO_TYPE", "Logo must be a PNG, JPEG, or SVG image.");
+    }
+    // Rough byte size from the base64 payload length (each 4 chars ≈ 3 bytes).
+    const approxBytes = Math.floor((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
+    if (approxBytes > BRAND_KIT_LOGO_MAX_BYTES) {
+      return err(
+        "LOGO_TOO_LARGE",
+        `Logo must be ${(BRAND_KIT_LOGO_MAX_BYTES / 1024).toFixed(0)}KB or smaller (yours is ~${(approxBytes / 1024).toFixed(0)}KB).`,
+      );
+    }
+    out.logo = { dataUrl, width: Number(width) || null, height: Number(height) || null };
+  }
+
+  return ok(out);
+}
+
+/** Save a Brand Kit (already validated, or run through validateBrandKit() if
+ *  the caller hasn't). Whole-object replace, matching every other
+ *  admin-*-config write convention in this codebase — a partial save would
+ *  silently drop fields the caller didn't include. */
+export function writeBrandKit(input) {
+  const v = validateBrandKit(input);
+  if (!v.ok) return v;
+  try {
+    localStorage.setItem(LS_BRAND_KIT_KEY, JSON.stringify({ ...v.value, updatedAt: new Date().toISOString() }));
+    return ok(v.value);
+  } catch {
+    return err("STORAGE_ERROR", "Could not save your brand kit. Try a smaller logo image.");
+  }
+}
+
+/** Read the stored Brand Kit, or null if none is set. Never throws — a
+ *  corrupt stored value degrades to "no brand kit" (default DatIQ branding)
+ *  rather than breaking every export. */
+export function readBrandKit() {
+  try {
+    const raw = localStorage.getItem(LS_BRAND_KIT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forget the Brand Kit entirely. Idempotent. */
+export function clearBrandKit() {
+  try { localStorage.removeItem(LS_BRAND_KIT_KEY); } catch {}
+  return ok({ cleared: true });
+}

@@ -89,6 +89,17 @@ describe("computeLifecycle windows", () => {
     const free = { plan_id: "free", status: STATUS.ACTIVE, source: null, period_end: null };
     expect(computeLifecycle(free, at(999 * DAY)).status).toBe(STATUS.ACTIVE);
   });
+
+  it("expires an admin grant at its period end without entering paid dunning", () => {
+    const grant = {
+      plan_id: "pro",
+      status: STATUS.ACTIVE,
+      source: "admin_coupon",
+      period_end: new Date(T0).toISOString(),
+    };
+    expect(computeLifecycle(grant, at(-1000)).status).toBe(STATUS.ACTIVE);
+    expect(computeLifecycle(grant, at(0)).status).toBe(STATUS.GRANT_EXPIRED);
+  });
 });
 
 describe("computeLifecycle takes the STRICTER of stored and computed", () => {
@@ -121,6 +132,25 @@ describe("comp_until (admin grace)", () => {
   it("stops protecting once the comp window closes", () => {
     const comped = paid("pro", { comp_until: new Date(T0 + 10 * DAY).toISOString() });
     expect(can(comped, "extract", ctx({ now: at(11 * DAY) })).allowed).toBe(false);
+  });
+});
+
+describe("admin coupon grant expiry", () => {
+  const grant = {
+    plan_id: "pro",
+    status: STATUS.ACTIVE,
+    source: "admin_coupon",
+    period_end: new Date(T0).toISOString(),
+  };
+
+  it("denies gated work with a dedicated grant-expired code", () => {
+    const result = can(grant, "extract", ctx({ now: at(1) }));
+    expect(result.allowed).toBe(false);
+    expect(result.code).toBe("GRANT_EXPIRED");
+  });
+
+  it("still permits exports after expiry for data portability", () => {
+    expect(can(grant, "export.csv", ctx({ now: at(1) })).allowed).toBe(true);
   });
 });
 
@@ -228,18 +258,30 @@ describe("active accounts fall through to plan limits", () => {
     expect(r.reason).toMatch(/batch limit|not available/i);
   });
 
-  it("blocks scheduled monitoring below Pro and points at Pro", () => {
+  it("blocks scheduled monitoring below Select and points at Select", () => {
     const free = can(activeEntitlement("free"), "schedules", ctx());
     expect(free.allowed).toBe(false);
-    expect(free.upgradeTo).toBe("pro");
-    expect(can(activeEntitlement("pro"), "schedules", ctx()).allowed).toBe(true);
+    expect(free.upgradeTo).toBe("select");
+    expect(can(activeEntitlement("go"), "schedules", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "schedules", ctx()).allowed).toBe(true);
   });
 
   it("gates export formats by plan", () => {
     expect(can(activeEntitlement("free"), "export.pdf", ctx()).allowed).toBe(false);
     expect(can(activeEntitlement("free"), "export.csv", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("free"), "export.json", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "export.json", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(true);
     expect(can(activeEntitlement("pro"), "export.json", ctx()).allowed).toBe(true);
+  });
+
+  it("gates push integrations and the browser extension flag by plan (Select and up; Free/Go excluded)", () => {
+    expect(can(activeEntitlement("free"), "integrations", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "integrations", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "integrations", ctx()).allowed).toBe(true);
+    expect(can(activeEntitlement("free"), "browser_extension", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("go"), "browser_extension", ctx()).allowed).toBe(false);
+    expect(can(activeEntitlement("select"), "browser_extension", ctx()).allowed).toBe(true);
   });
 });
 
@@ -342,6 +384,46 @@ describe("workspace.team_seats cap (bounded by the PARENT plan's team_seats)", (
     const r = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 1 }));
     expect(r.remaining).toBe(2);
   });
+
+  it("denies once the workspace is AT its seat cap — cap>0 alone is not room", () => {
+    // Regression: the original implementation returned ok(cap - seatsUsed)
+    // unconditionally whenever cap > 0, so a workspace already full (or over
+    // its cap after a downgrade) was reported as allowed with remaining <= 0.
+    // Nothing called this capability until the workspaces feature landed, so
+    // the bug was latent rather than caught by a live caller.
+    const atCap = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 3 }));
+    expect(atCap.allowed).toBe(false);
+    expect(atCap.code).toBe("QUOTA_EXCEEDED");
+
+    const overCap = can(activeEntitlement("business"), "workspace.team_seats", ctx({ seatsUsed: 4 }));
+    expect(overCap.allowed).toBe(false);
+  });
+});
+
+describe("workspace.create cap (how many workspaces this user may OWN)", () => {
+  it("base plans allow exactly 1 (their default workspace)", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 0 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
+
+  it("denies creating a second workspace on a plan capped at 1", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 1 }));
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("QUOTA_EXCEEDED");
+  });
+
+  it("Agency's base allotment is 5", () => {
+    const r = can(activeEntitlement("agency"), "workspace.create", ctx({ workspacesOwned: 4 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
+
+  it("a purchased Extra Workspace bundle raises the cap by 1, on any plan", () => {
+    const r = can(activeEntitlement("business"), "workspace.create", ctx({ workspacesOwned: 1, workspacesPurchased: 1 }));
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(1);
+  });
 });
 
 describe("workspaceAddonFeaturesForPlan — feature parity helper", () => {
@@ -381,5 +463,76 @@ describe("workspaceAddonFeaturesForPlan — feature parity helper", () => {
     r.exports.push("mutated");
     // Mutating the result must not leak into the underlying plan object.
     expect(planMap.business.limits.exports).not.toContain("mutated");
+  });
+});
+
+// ── Account freeze / member pause ───────────────────────────────────────────
+// A SEPARATE AXIS from `status`, and these tests exist mainly to keep it that
+// way. `status = 'suspended'` is the billing lifecycle: it starts dunning and a
+// day-90 purge countdown and means "this account has lapsed". A freeze means
+// the opposite — "keep charging me, keep my data, just stop anyone consuming
+// units". Collapsing the two would enrol a paying customer in a dunning
+// sequence and start a deletion clock on data they explicitly asked to keep.
+describe("can() — frozen accounts and paused seats", () => {
+  const active = { plan_id: "pro", status: "active", source: "payment",
+                   period_end: new Date(Date.now() + 20 * 86400000).toISOString() };
+
+  const UNIT_CAPS = ["extract", "enrich", "audit", "batch", "ai"];
+
+  it("denies every unit-consuming capability while frozen", () => {
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    for (const cap of UNIT_CAPS) {
+      const v = can(frozen, cap, { planMap, usage: { extractions: 0, enrichments: {} } });
+      expect(v.allowed, `${cap} was allowed on a frozen account`).toBe(false);
+      expect(v.code).toBe("FROZEN");
+    }
+  });
+
+  it("still allows every export — this is 'view-only', not 'locked out'", () => {
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    for (const cap of ["export.csv", "export.pdf", "export.markdown", "export.json", "export.email"]) {
+      expect(can(frozen, cap, { planMap }).allowed, `${cap} was denied on a frozen account`).toBe(true);
+    }
+  });
+
+  it("does not confuse a freeze with a lapse", () => {
+    // The billing status is untouched, so nothing downstream should read a
+    // freeze as a reason to dun or to purge.
+    const frozen = { ...active, frozen_at: new Date().toISOString() };
+    expect(computeLifecycle(frozen).status).toBe("active");
+  });
+
+  it("a normal active account is unaffected", () => {
+    expect(can(active, "extract", { planMap, usage: { extractions: 0, enrichments: {} } }).allowed).toBe(true);
+  });
+
+  it("reports a pending deletion distinctly from a plain freeze", () => {
+    // Different remedy, so different code: one is "unfreeze", the other is
+    // "cancel the deletion". Telling somebody to unfreeze an account that is
+    // scheduled for deletion sends them to a button that will refuse them.
+    const deleting = {
+      ...active,
+      frozen_at: new Date().toISOString(),
+      deletion_requested_at: new Date().toISOString(),
+    };
+    const v = can(deleting, "extract", { planMap, usage: { extractions: 0, enrichments: {} } });
+    expect(v.allowed).toBe(false);
+    expect(v.code).toBe("DELETION_PENDING");
+    expect(v.reason).toMatch(/cancel the deletion/i);
+  });
+
+  it("a paused workspace seat is denied the same capabilities", () => {
+    for (const cap of UNIT_CAPS) {
+      const v = can(active, cap, { planMap, memberPaused: true, usage: { extractions: 0, enrichments: {} } });
+      expect(v.allowed, `${cap} was allowed on a paused seat`).toBe(false);
+      expect(v.code).toBe("MEMBER_PAUSED");
+    }
+    expect(can(active, "export.csv", { planMap, memberPaused: true }).allowed).toBe(true);
+  });
+
+  it("a purged account outranks a freeze", () => {
+    // Nothing is recoverable from purged, so the freeze is not the story.
+    const purged = { ...active, status: "purged", frozen_at: new Date().toISOString() };
+    expect(can(purged, "export.csv", { planMap }).code).toBe("PURGED");
   });
 });

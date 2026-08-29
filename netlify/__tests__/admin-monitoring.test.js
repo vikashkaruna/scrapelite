@@ -113,7 +113,8 @@ describe("admin-monitoring GET (AM-02)", () => {
     const b = body(await handler(authed()));
     expect(b.ok).toBe(true);
     expect(b.jobs.map((j) => j.id)).toEqual([
-      "scheduled-runner", "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
+      "scheduled-runner", "discoverability-monitor", "reengagement",
+      "billing-lifecycle", "billing-purge", "health-monitor",
     ]);
     const lifecycle = b.jobs.find((j) => j.id === "billing-lifecycle");
     expect(lifecycle.state).toBe("healthy");
@@ -151,7 +152,7 @@ describe("admin-monitoring GET (AM-02)", () => {
     wireReads({ runs: [] });
     const b = body(await handler(authed()));
     expect(b.jobs.every((j) => j.state === "never-run")).toBe(true);
-    expect(b.jobSummary.neverRun).toBe(5);
+    expect(b.jobSummary.neverRun).toBe(6);
   });
 
   it("reports a failing job and surfaces it as the worst state", async () => {
@@ -179,10 +180,10 @@ describe("admin-monitoring GET (AM-02)", () => {
     expect(purge.manualRunAllowed).toBe(false);
   });
 
-  it("surfaces the known reengagement caveat next to its status", async () => {
+  it("reengagement's success status is trustworthy again — no caveat attached", async () => {
     wireReads({ runs: [run("reengagement", "success", 60)] });
     const b = body(await handler(authed()));
-    expect(b.jobs.find((j) => j.id === "reengagement").caveat).toMatch(/silent no-op/i);
+    expect(b.jobs.find((j) => j.id === "reengagement").caveat).toBeFalsy();
   });
 
   it("reports a stopped job as stopped, with its provenance", async () => {

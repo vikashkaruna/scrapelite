@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import AdminUsers from "./AdminUsers.jsx";
 import { AuthProvider } from "../../components/AuthProvider.jsx";
 import { ToastProvider } from "../../components/Toast.jsx";
@@ -24,7 +24,7 @@ const authMocks = vi.hoisted(() => ({
 const adminConfigMocks = vi.hoisted(() => ({
   fetchRealUsers: vi.fn(),
   extendUserBonus: vi.fn(),
-  assignUserCoupon: vi.fn(),
+  assignAdminGrantCoupon: vi.fn(),
   inviteUserByEmail: vi.fn(),
 }));
 
@@ -88,7 +88,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/admin/users"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -130,5 +129,8 @@ describe("I-46 — AdminUsers: real users + assign-coupon modal", () => {
     await act(async () => { await Promise.resolve(); });
     // The modal header references the user name.
     expect(screen.getByText(/assign coupon — alice/i)).toBeInTheDocument();
+    expect(screen.getByText(/one-time complimentary plan grant/i)).toBeInTheDocument();
+    expect(screen.getByText("Plan granted")).toBeInTheDocument();
+    expect(screen.getByText("Validity")).toBeInTheDocument();
   });
 });

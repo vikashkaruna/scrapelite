@@ -621,9 +621,9 @@ jobs:
     name: Unit + Contract Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version-file: ".node-version", cache: "npm" }
       - run: npm ci
       - run: npm test
 
@@ -635,9 +635,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version-file: ".node-version", cache: "npm" }
       - run: npm ci
       - name: Wait for Netlify to finish the staging deploy
         run: |
@@ -674,12 +674,11 @@ jobs:
       name: production
       url: https://datiq.app
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-node-version: "20", cache: "npm" }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
-          cache: npm
+          node-version-file: ".node-version"
+          cache: "npm"
       - run: npm ci
 
       # The Netlify context (production) reads its env vars from the Netlify
@@ -718,9 +717,9 @@ jobs:
     needs: deploy-production
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version-file: ".node-version", cache: "npm" }
       - run: npm ci
       - name: Wait for Netlify CDN to converge
         run: sleep 30
@@ -747,14 +746,14 @@ jobs:
 
       - name: Notify on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v3.0.3
         with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "🚨 DatIQ production smoke FAILED. Auto-rollback executed. Commit: ${{ github.sha }}"
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
 ```
 
@@ -1173,7 +1172,8 @@ Run through this list with the boxes ticked. Each one is a real failure mode.
 - [ ] Stripe (deferred) test keys in staging, live in production
 - [ ] AI / scraping / email keys per context
 - [ ] `ADMIN_PIN_HASH` set per context; `ADMIN123` is rejected on prod
-- [ ] `NODE_VERSION` = `20` in the build env
+- [ ] `NODE_VERSION` = `24` in the build env for staging and production
+- [ ] `AWS_LAMBDA_JS_RUNTIME` = `nodejs24.x` in the Netlify UI/API for staging and production (do not add it to `netlify.toml`)
 
 ### GitHub
 

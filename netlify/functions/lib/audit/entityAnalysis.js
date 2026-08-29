@@ -1,0 +1,260 @@
+// entityAnalysis.js — the Entity Authority pillar.
+//
+// Whether a machine can work out WHO published this and WHETHER to trust them.
+// This is the pillar that decides which of several equally-correct sources gets
+// cited, and it is the one GEO guidance weights most heavily.
+//
+// The citation-footprint signal is supplied by the sampling layer rather than
+// read off the page. When no sampling engine is configured it arrives as null,
+// the signal drops out of the pillar, and the remaining four re-weight — an
+// unsampled brand is UNKNOWN, never uncited.
+
+import {
+  citationFootprintScore, shareOfVoice, freshnessScore,
+} from "../../../../src/lib/discoverability/signalScorers.js";
+import { findSchema } from "./htmlParse.js";
+
+/** Properties that make each identity type actually resolvable. */
+const IDENTITY_REQUIREMENTS = Object.freeze({
+  Organization: ["name", "url", "logo", "sameAs"],
+  Person:       ["name", "url", "jobTitle"],
+  Article:      ["headline", "author", "datePublished"],
+  Product:      ["name", "description", "offers"],
+  WebSite:      ["name", "url"],
+});
+
+/** How complete is one schema block against the properties that matter? */
+export function schemaCompleteness(block, type) {
+  const required = IDENTITY_REQUIREMENTS[type];
+  if (!block || !required) return null;
+  const present = required.filter((k) => {
+    const v = block[k];
+    if (v === undefined || v === null || v === "") return false;
+    if (Array.isArray(v)) return v.length > 0;
+    return true;
+  });
+  return Math.round((present.length / required.length) * 100);
+}
+
+export function analyseEntityAuthority(parsed, ctx = {}) {
+  const signals = {};
+  const reasons = {};
+  const issues = [];
+
+  const jsonLd = parsed.jsonLd || [];
+  const org = findSchema(jsonLd, "Organization");
+  const person = findSchema(jsonLd, "Person");
+  const article = findSchema(jsonLd, "Article") || findSchema(jsonLd, "BlogPosting");
+  const product = findSchema(jsonLd, "Product");
+  const website = findSchema(jsonLd, "WebSite");
+
+  // ── schema identity completeness ─────────────────────────────────────────
+  // Averaged over the types PRESENT, not over all five. A blog post has no
+  // Product schema and must not be marked down for it — that would push every
+  // page toward declaring types it has no business declaring.
+  const parts = [
+    org && schemaCompleteness(org, "Organization"),
+    person && schemaCompleteness(person, "Person"),
+    article && schemaCompleteness(article, "Article"),
+    product && schemaCompleteness(product, "Product"),
+    website && schemaCompleteness(website, "WebSite"),
+  ].filter((v) => typeof v === "number");
+
+  if (parts.length === 0) {
+    signals.schema_identity_completeness = 0;
+    issues.push({
+      code: "EA-01", signalCode: "schema_identity_completeness", measuredScore: 0,
+      evidence: "No Organization, Person, Article, Product or WebSite markup identifies who publishes this page.",
+      details: { schemaTypesFound: parsed.schemaTypes || [] },
+    });
+    if ((parsed.schemaTypes || []).length === 0) {
+      issues.push({
+        code: "TA-15", signalCode: "structured_data_validity", measuredScore: 0,
+        evidence: "The page carries no structured data of any kind.",
+        details: {},
+      });
+    } else {
+      issues.push({
+        code: "EA-10", signalCode: "schema_identity_completeness", measuredScore: 0,
+        evidence: `Structured data is present (${(parsed.schemaTypes || []).join(", ")}) but none of it describes the publisher or the page type.`,
+        details: { schemaTypesFound: parsed.schemaTypes },
+      });
+    }
+  } else {
+    signals.schema_identity_completeness = Math.round(parts.reduce((a, b) => a + b, 0) / parts.length);
+    if (!org) {
+      issues.push({
+        code: "EA-01", signalCode: "schema_identity_completeness",
+        measuredScore: signals.schema_identity_completeness,
+        evidence: "Page-level markup is present, but nothing declares the publishing organisation.",
+        details: { schemaTypesFound: parsed.schemaTypes },
+      });
+    } else if (signals.schema_identity_completeness < 75) {
+      const missing = (IDENTITY_REQUIREMENTS.Organization || []).filter((k) => !org[k]);
+      issues.push({
+        code: "EA-02", signalCode: "schema_identity_completeness",
+        measuredScore: signals.schema_identity_completeness,
+        evidence: `Organization markup is missing ${missing.join(", ") || "key properties"}.`,
+        details: { missing },
+      });
+    }
+    if (!article && !product && (parsed.wordCount || 0) > 300) {
+      issues.push({
+        code: "EA-10", signalCode: "schema_identity_completeness",
+        measuredScore: signals.schema_identity_completeness,
+        evidence: "No Article or Product markup declares what kind of page this is.",
+        details: {},
+      });
+    }
+  }
+
+  // ── sameAs / profile linkage ─────────────────────────────────────────────
+  const schemaSameAs = []
+    .concat(org?.sameAs || [], person?.sameAs || [], website?.sameAs || [])
+    .filter((s) => typeof s === "string" && /^https?:\/\//i.test(s));
+  const uniqueSameAs = [...new Set(schemaSameAs)];
+  const visibleProfiles = (parsed.links?.profiles || []).map((p) => p.href);
+
+  if (uniqueSameAs.length === 0 && visibleProfiles.length === 0) {
+    signals.sameas_consistency = 0;
+    issues.push({
+      code: "EA-03", signalCode: "sameas_consistency", measuredScore: 0,
+      evidence: "No sameAs entries and no links to official profiles, so nothing confirms which entity this page belongs to.",
+      details: {},
+    });
+  } else if (uniqueSameAs.length === 0) {
+    // Profiles are linked in the page but never declared as sameAs. The
+    // relationship is visible to a human and invisible to a parser.
+    signals.sameas_consistency = 40;
+    issues.push({
+      code: "EA-03", signalCode: "sameas_consistency", measuredScore: 40,
+      evidence: `${visibleProfiles.length} profile link${visibleProfiles.length === 1 ? " is" : "s are"} present in the page but not declared as sameAs in the markup.`,
+      details: { profiles: visibleProfiles.slice(0, 8) },
+    });
+  } else {
+    // Three or more distinct official profiles is a well-resolved entity.
+    signals.sameas_consistency = Math.min(100, 40 + uniqueSameAs.length * 20);
+  }
+
+  // ── author trust ─────────────────────────────────────────────────────────
+  const author = parsed.author || {};
+  if (!author.name) {
+    signals.author_trust_signals = 0;
+    issues.push({
+      code: "EA-04", signalCode: "author_trust_signals", measuredScore: 0,
+      evidence: "The page has no named author, in the markup or on the page.",
+      details: {},
+    });
+  } else {
+    let s = 40;                                    // a name at all
+    if (author.visible) s += 20;                   // and a reader can see it
+    if (author.inSchema) s += 15;                  // and a parser can read it
+    if (author.bioLinked) s += 15;                 // and it leads somewhere real
+    if (author.credentials) s += 10;               // and that somewhere has standing
+    signals.author_trust_signals = Math.min(100, s);
+    if (!author.bioLinked || !author.credentials) {
+      issues.push({
+        code: "EA-05", signalCode: "author_trust_signals",
+        measuredScore: signals.author_trust_signals,
+        evidence: `"${author.name}" is credited${author.bioLinked ? "" : " but links to no author page"}${author.credentials ? "" : " and shows no credentials"}.`,
+        details: { author: author.name, bioLinked: author.bioLinked, credentials: author.credentials },
+      });
+    }
+  }
+
+  // ── freshness and sourcing ───────────────────────────────────────────────
+  const dates = parsed.dates || {};
+  const best = dates.best ? Date.parse(dates.best) : NaN;
+  const ageDays = Number.isFinite(best) && ctx.now
+    ? Math.max(0, Math.floor((ctx.now - best) / 86_400_000))
+    : Number.isFinite(best) ? null : null;
+
+  // Outbound links to somewhere other than social profiles read as sourcing.
+  const outbound = (parsed.links?.external || []).filter(
+    (l) => !(parsed.links?.profiles || []).some((p) => p.href === l.href),
+  );
+  const hasSourceLinks = outbound.length >= 2;
+
+  signals.freshness_and_sources = freshnessScore({
+    ageDays, hasVisibleDate: Boolean(dates.visibleDate), hasSourceLinks,
+  });
+  if (!dates.visibleDate) {
+    issues.push({
+      code: "EA-06", signalCode: "freshness_and_sources",
+      measuredScore: signals.freshness_and_sources,
+      evidence: "No published or last-updated date is visible to a reader.",
+      details: { schemaDate: dates.best },
+    });
+  }
+  if (!hasSourceLinks && (parsed.wordCount || 0) > 500) {
+    issues.push({
+      code: "EA-07", signalCode: "freshness_and_sources",
+      measuredScore: signals.freshness_and_sources,
+      evidence: `${parsed.wordCount} words with ${outbound.length} outbound reference${outbound.length === 1 ? "" : "s"} — claims are largely unattributed.`,
+      details: { outboundCount: outbound.length },
+      confidenceOverride: 60,   // link count is a proxy for sourcing, not proof
+    });
+  }
+
+  // ── citation footprint (supplied by the sampling layer) ──────────────────
+  const sample = ctx.citationSample || null;
+  if (!sample || !sample.promptCount) {
+    // No engine configured, or sampling failed. UNKNOWN, not zero — see the
+    // header of scoringModel.js for why that distinction is load-bearing.
+    signals.citation_footprint = null;
+    reasons.citation_footprint = "not_measured";
+  } else {
+    signals.citation_footprint = citationFootprintScore({
+      prompts: sample.promptCount,
+      mentions: sample.mentions,
+      citations: sample.citations,
+      sentiment: sample.sentiment,
+    });
+    if (sample.citations === 0 && sample.mentions === 0) {
+      issues.push({
+        code: "EA-08", signalCode: "citation_footprint", measuredScore: 0,
+        evidence: `Across ${sample.promptCount} sampled prompts the brand was neither mentioned nor cited.`,
+        details: { engine: sample.engine, promptCount: sample.promptCount },
+        confidenceOverride: sample.live ? 80 : 55,
+      });
+    } else if (sample.citations === 0 && sample.mentions > 0) {
+      issues.push({
+        code: "EA-09", signalCode: "citation_footprint",
+        measuredScore: signals.citation_footprint,
+        evidence: `The brand was mentioned in ${sample.mentions} of ${sample.promptCount} sampled answers but cited as the source in none.`,
+        details: { engine: sample.engine, mentions: sample.mentions },
+        confidenceOverride: sample.live ? 80 : 55,
+      });
+    }
+  }
+
+  return {
+    signals, reasons, issues,
+    facts: {
+      brand_name: org?.name || website?.name || null,
+      schema_types: parsed.schemaTypes || [],
+      sameAs_links: uniqueSameAs,
+      visible_profile_links: visibleProfiles.slice(0, 12),
+      authors: author.name ? [{
+        name: author.name,
+        bio_page_present: Boolean(author.bioLinked),
+        credentials_present: Boolean(author.credentials),
+        visible: Boolean(author.visible),
+      }] : [],
+      third_party_mentions: outbound.length,
+      last_updated_visible: Boolean(dates.visibleDate),
+      date_published: dates.published || null,
+      date_modified: dates.modified || null,
+      age_days: ageDays,
+      ai_citation_sample: sample ? {
+        engine: sample.engine,
+        live: Boolean(sample.live),
+        prompt_count: sample.promptCount,
+        mentions: sample.mentions,
+        citations: sample.citations,
+        share_of_voice: shareOfVoice({ prompts: sample.promptCount, citations: sample.citations }),
+        sentiment_score: sample.sentiment,
+      } : null,
+    },
+  };
+}

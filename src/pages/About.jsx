@@ -1,5 +1,5 @@
 // About.jsx — DatIQ / DatIQ about page.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -36,45 +36,26 @@ const HOW_IT_WORKS = [
   { step: "04", title: "Decide and act", desc: "Export to CSV, share via PDF, trigger a webhook, or build on top of the API — your data, your workflow." },
 ];
 
-// DatIQ's product is organised as a stack of named pillars. Pillar 0 is the
-// proven foundation that ships today; higher pillars build on top of it.
-// Each pillar is intentionally short — the point is to communicate that
-// Pillar 0 is real (not a roadmap promise) and that the rest is layered.
-const PILLARS = [
+const MODULES = [
   {
-    id: "p0",
-    label: "Pillar 0",
-    title: "Web Intelligence (Core)",
-    status: "live",
-    desc: "The proven single, batch, and scheduled URL-extraction engine that the whole platform is built on. Headings, links, contacts, pricing, custom fields, AI summaries, CSV/PDF export, domain mapping — every DatIQ capability you use today runs on Pillar 0.",
+    icon: "search",
+    title: "Research any site",
+    desc: "Get a clear view of companies, products, pricing, and markets in seconds — useful for founders, investors, competitive-intelligence, and research teams.",
   },
   {
-    id: "p1",
-    label: "Pillar 1",
-    title: "Enrichment & Insight",
-    status: "live",
-    desc: "AI summaries, lead scoring, contact enrichment, social-link discovery, company-mission extraction, and content generation (SEO outlines, competitor briefs, social posts) — all running on the structured data Pillar 0 returns.",
+    icon: "user-plus",
+    title: "Enrich the details",
+    desc: "Find contacts, leadership, social profiles, company missions, and other signals for faster prospecting, recruiting, and account research.",
   },
   {
-    id: "p2",
-    label: "Pillar 2",
-    title: "Distribution & Workflow",
-    status: "live",
-    desc: "CSV / PDF / Google Sheets export, scheduled monitoring with alerts, email delivery, webhook push, and CRM sync (HubSpot). The intelligence leaves the app on your terms.",
+    icon: "sparkles",
+    title: "Create better work",
+    desc: "Turn source material into summaries, SEO briefs, competitor comparisons, and content ideas — without starting from a blank page.",
   },
   {
-    id: "p3",
-    label: "Pillar 3",
-    title: "Workspace & Collaboration",
-    status: "roadmap",
-    desc: "Shared workspaces, role-based access, audit trails, and team-level usage controls — for agencies, research teams, and revenue ops running DatIQ at scale.",
-  },
-  {
-    id: "p4",
-    label: "Pillar 4",
-    title: "Intelligence Mesh (API & Integrations)",
-    status: "roadmap",
-    desc: "A first-class REST + webhook API, native integrations (Zapier, Make, n8n, HubSpot, Salesforce, Notion, Airtable), and an SDK so DatIQ's intelligence can be embedded anywhere.",
+    icon: "share",
+    title: "Share and act",
+    desc: "Keep results organized, export polished reports, monitor changes, and connect insights to the tools used by agencies, marketers, and operations teams.",
   },
 ];
 
@@ -97,10 +78,10 @@ export default function About() {
             Data + IQ — Intelligence Quotient for the Web
           </div>
           <h1>
-            Intelligence from the <span style={{ color: "var(--accent)" }}>Web.</span>
+            Turn the public web into <span style={{ color: "var(--accent)" }}>useful answers.</span>
           </h1>
           <p className="about-hero-sub">
-            DatIQ — the unified web intelligence platform.
+            DatIQ helps sales, research, marketing, recruiting, and operations teams turn any public URL into structured, ready-to-use intelligence — without code.
           </p>
           <div className="about-hero-actions">
             <Button variant="primary" icon="rocket" onClick={() => navigate("/")}>
@@ -112,38 +93,23 @@ export default function About() {
           </div>
         </div>
 
-        {/* Pillars — communicates that Pillar 0 is the proven foundation and
-            higher pillars are layered on top. Visually mirrors the
-            home/capabilities grid for a consistent mental model. */}
+        {/* User-facing modules */}
         <div className="about-section">
           <div className="about-section-label">
             <Icon name="layers" size={14} />
-            The product, organised
+            What you can do with DatIQ
           </div>
-          <h2>Built on a named foundation. Pillar 0 ships today.</h2>
-          <p style={{ marginTop: -4, marginBottom: 18 }}>
-            DatIQ is structured as a stack of pillars. <strong>Pillar 0 — Web Intelligence (Core)</strong> is the
-            single, batch, and scheduled URL-extraction engine that every other capability in the product is
-            built on. It's the proven foundation; the rest of the platform is what you can do once you have it.
-          </p>
-          <div className="about-pillars">
-            {PILLARS.map((p) => (
-              <div
-                key={p.id}
-                className={
-                  "about-pillar" +
-                  (p.status === "live" ? " about-pillar-live" : " about-pillar-roadmap") +
-                  (p.id === "p0" ? " about-pillar-p0" : "")
-                }
-              >
-                <div className="about-pillar-head">
-                  <span className="about-pillar-label">{p.label}</span>
-                  <span className={"about-pillar-status about-pillar-status-" + p.status}>
-                    {p.status === "live" ? "Live" : "Roadmap"}
-                  </span>
+          <h2>One simple workflow, useful for every role.</h2>
+          <div className="about-values">
+            {MODULES.map((module) => (
+              <div key={module.title} className="about-value">
+                <div className="about-value-icon">
+                  <Icon name={module.icon} size={20} strokeWidth={2} />
                 </div>
-                <div className="about-pillar-title">{p.title}</div>
-                <p className="about-pillar-desc">{p.desc}</p>
+                <div>
+                  <div className="about-value-title">{module.title}</div>
+                  <p className="about-value-desc">{module.desc}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -224,8 +190,7 @@ export default function About() {
           </div>
           <h2>Built for every data-driven role</h2>
           <p>
-            DatIQ adapts to your role from the moment you start. Tell us who you are and we tailor the examples,
-            quick actions, and hero copy to your exact use case.
+            Choose your starting point and DatIQ brings the right examples and quick actions to the work you need to do.
           </p>
           <div className="about-personas">
             {personas.map((p) => (
@@ -287,6 +252,13 @@ export default function About() {
                 <Icon name="linkedin" size={15} />
                 linkedin.com/company/axiom-minds/
               </a>
+              {/* The one place in the app that shows a release number. Reads
+                  package.json via vite.config.js's __APP_VERSION__ define, the
+                  same source scripts/bump-version.mjs writes to — one number,
+                  one place it's shown. */}
+              <p className="about-version-tag">
+                DatIQ v{typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0"}
+              </p>
             </div>
           </div>
         </div>

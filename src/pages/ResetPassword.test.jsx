@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { AuthProvider, useAuth } from "../components/AuthProvider.jsx";
 import ResetPassword from "./ResetPassword.jsx";
 
@@ -39,7 +39,7 @@ vi.mock("../lib/apiClient.js", () => ({
 
 function Shell({ initialUser = null }) {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <AuthProvider>
         {/* Seed the user before ResetPassword mounts so it sees a valid session. */}
         <SeedUser user={initialUser} />
@@ -73,10 +73,10 @@ describe("I-45 — ResetPassword page", () => {
   it("shows the 'isn't valid' card when no recovery session is present", async () => {
     authMocks.getSession.mockResolvedValue(null);
     render(<Shell />);
-    // Wait for the RecoveryChecked timeout to fire (250ms) so the page
-    // can switch from "checking" to "bad link" state.
+    // Wait for AuthProvider's initial getSession() resolution (authLoading
+    // flips false) so the page can switch from "checking" to "bad link".
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 280));
+      await new Promise((r) => setTimeout(r, 10));
     });
     expect(
       screen.getByRole("heading", { name: /this reset link isn't valid/i }),
@@ -95,13 +95,9 @@ describe("I-45 — ResetPassword page", () => {
       return () => {};
     });
     render(<Shell />);
-    // Two ticks: getSession resolves, SIGNED_IN callback fires, then
-    // the recovery-checked timer flips to "form" state.
+    // Let getSession() resolve and the SIGNED_IN callback fire.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
-    });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 280));
     });
     expect(
       screen.getByRole("heading", { name: /set a new password/i }),
@@ -120,9 +116,6 @@ describe("I-45 — ResetPassword page", () => {
     render(<Shell />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
-    });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 280));
     });
 
     fireEvent.change(screen.getByLabelText(/^new password$/i), {
@@ -151,9 +144,6 @@ describe("I-45 — ResetPassword page", () => {
     render(<Shell />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
-    });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 280));
     });
 
     fireEvent.change(screen.getByLabelText(/^new password$/i), {

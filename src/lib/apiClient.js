@@ -17,6 +17,20 @@ export function setAuthToken(token) {
   _authToken = token ?? null;
 }
 
+/**
+ * Read the current session token.
+ *
+ * Exported so discoverabilityClient.js shares ONE auth source rather than
+ * subscribing to the session separately. Two modules tracking the same token
+ * is how one of them ends up a session behind and 401s for reasons nobody can
+ * reproduce. The Discoverability module keeps its own client because its
+ * report endpoints return markdown and CSV, which `request()` — which always
+ * calls res.json() — cannot handle.
+ */
+export function getAuthToken() {
+  return _authToken;
+}
+
 async function request(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
   if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
@@ -59,6 +73,19 @@ async function request(path, method = "GET", body) {
     e.status = res.status;
     e.detail = errData.detail;
     e.useLocalStorage = errData.useLocalStorage === true;
+    // Machine-readable verdict from the server, carried through so callers can
+    // branch on it instead of pattern-matching the prose in `message`. Dropping
+    // these was how a deliberate robots.txt refusal reached classifyError as an
+    // unrecognised string and got reported as "Something went wrong. An
+    // unexpected error occurred." — see src/lib/errorMessages.js.
+    if (errData.code) e.code = errData.code;
+    if (errData.host) e.host = errData.host;
+    if (errData._complianceBlocked === true) e.complianceBlocked = true;
+    if (errData.consentAvailable === true) e.consentAvailable = true;
+    // Referral refusals carry a `reason` (invalid | self | already |
+    // unavailable) whose user-facing wording the SERVER owns, so the two can
+    // never drift into describing the same verdict differently.
+    if (errData.reason) e.reason = errData.reason;
     if (isHtml) e.edgeAccess = true;
     throw e;
   }
@@ -71,6 +98,10 @@ export const apiClient = {
   /** Scrape a single URL or map a domain (options.mapMode = true). */
   extract: (url, options = {}) =>
     request("/extract", "POST", { url, options }),
+
+  /** Reserve one server-side anonymous usage credit (used for batch runs). */
+  consumeGuestCredit: (kind = "single") =>
+    request("/guest-usage", "POST", { kind }),
 
   // ── AI (Anthropic Claude) ──────────────────────────────────────────────────
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
@@ -122,6 +153,79 @@ export const apiClient = {
   /** Delete an extraction by id. */
   deleteExtraction: (id) =>
     request(`/extractions?id=${encodeURIComponent(id)}`, "DELETE"),
+
+  // ── Export email (Resend, server-side, real file attached) ─────────────────
+  // Replaces the old client-side webhook/mailto flow: the server builds the
+  // actual CSV/PDF/Markdown/JSON file, gates on the SAME export.<fmt> and
+  // export.email capabilities entitlementModel.js already enforces for
+  // downloads, and sends it via Resend as an attachment. Payload:
+  // { items, format: "csv"|"pdf"|"markdown"|"json", to: string[] }.
+  sendExportEmail: (payload) => request("/export-email", "POST", payload),
+
+  // ── Referrals ("invite a friend, you both get 25") ─────────────────────────
+  // Codes are minted server-side and rewards applied server-side; nothing here
+  // names a user or an amount. See netlify/functions/referral.js for why.
+
+  /** This user's invite code plus their referral standing. */
+  getReferral: () => request("/referral", "GET"),
+
+  /** Redeem someone else's code. The server credits both sides atomically. */
+  redeemReferral: (code) => request("/referral", "POST", { code }),
+
+  // ── Team workspaces ──────────────────────────────────────────────────────
+  // A workspace membership is a real, billable seat gated by
+  // entitlementModel.js's workspace.create / workspace.team_seats — the
+  // server decides eligibility, this just calls the endpoint. See
+  // netlify/functions/workspaces.js.
+
+  /** My workspaces, plus whether the plan allows creating another. */
+  listWorkspaces: () => request("/workspaces", "GET"),
+
+  /** One workspace's members and (for owner/admin) pending invites. */
+  getWorkspace: (workspaceId) =>
+    request(`/workspaces?workspaceId=${encodeURIComponent(workspaceId)}`, "GET"),
+
+  /** Create a workspace owned by the signed-in user. */
+  createWorkspace: (name) => request("/workspaces", "POST", { action: "create", name }),
+
+  /** Invite `email` into `workspaceId`, as `role` ('member' or 'admin'). */
+  inviteToWorkspace: (workspaceId, email, role = "member") =>
+    request("/workspaces", "POST", { action: "invite", workspaceId, email, role }),
+
+  /** Accept an invite token as the signed-in user. */
+  acceptWorkspaceInvite: (token) => request("/workspaces", "POST", { action: "accept", token }),
+
+  /** Remove a member, or leave (targetUserId === your own id). */
+  removeWorkspaceMember: (workspaceId, targetUserId) =>
+    request("/workspaces", "POST", { action: "remove", workspaceId, targetUserId }),
+
+  /**
+   * Pause or resume one member's seat. Not a removal — the seat is still
+   * theirs and still counts against the plan's team_seats.
+   */
+  setWorkspaceMemberPaused: (workspaceId, targetUserId, paused) =>
+    request("/workspaces", "POST", { action: "set_member_paused", workspaceId, targetUserId, paused }),
+
+  /** Revoke a still-pending invite. */
+  revokeWorkspaceInvite: (workspaceId, inviteId) =>
+    request("/workspaces", "POST", { action: "revoke_invite", workspaceId, inviteId }),
+
+  // ── Scrape consent ("I have permission to extract this site") ──────────────
+  // The record behind an override of a robots.txt refusal. The server resolves
+  // the user from the JWT; nothing here names a user, and /api/extract never
+  // accepts a "consented" flag — it re-reads the record itself on every call.
+
+  /** Is there an unexpired attestation for `host`? Omit host to list them all. */
+  getScrapeConsent: (host) =>
+    request(host ? `/scrape-consent?host=${encodeURIComponent(host)}` : "/scrape-consent", "GET"),
+
+  /** Record an attestation. `confirmed` must be true — the server re-checks it. */
+  grantScrapeConsent: (host, source = "extract_refusal") =>
+    request("/scrape-consent", "POST", { host, confirmed: true, source }),
+
+  /** Withdraw it. Consent you cannot revoke is not consent. */
+  revokeScrapeConsent: (host) =>
+    request(`/scrape-consent?host=${encodeURIComponent(host)}`, "DELETE"),
 
   // ── Schedules CRUD (recurring extraction / track-changes) ───────────────────
   /** List all schedules for the current session, newest first. */

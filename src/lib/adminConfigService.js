@@ -30,6 +30,38 @@ export async function saveAiConfig(config) {
   return data;
 }
 
+// ── Coupons (checkout-facing sync) ───────────────────────────────────────────
+// See netlify/functions/admin-coupons-config.js for why this exists: saveCoupon
+// in adminService.js only ever wrote to the admin's own localStorage, so a
+// coupon created in /admin/coupons could never actually be redeemed at
+// checkout. AdminCoupons.jsx calls saveCouponsConfig() after every local
+// mutation with the FULL current percent-type coupon set (see its
+// buildCouponsSyncPayload helper) — this endpoint replaces the whole stored
+// value, it does not merge one code in.
+
+const COUPONS_ENDPOINT = "/api/admin-coupons-config";
+
+/** What checkout will actually see: static table merged with pricing_config. */
+export async function getCouponsConfig() {
+  const res = await fetch(COUPONS_ENDPOINT, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+  });
+  if (!res.ok) throw new Error(`Failed to load coupon sync state (${res.status})`);
+  return res.json(); // { ok, coupons, persisted }
+}
+
+/** Replace the checkout-facing coupon map. `coupons` is {CODE: {value,planId,expiresAt,active,maxUses}}. */
+export async function saveCouponsConfig(coupons) {
+  const res = await fetch(COUPONS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ coupons }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+  return data;
+}
+
 // ── General / global settings ────────────────────────────────────────────────
 
 const GENERAL_ENDPOINT = "/api/admin-general-config";
@@ -93,19 +125,24 @@ export async function extendUserBonus(userId, bonus) {
   return data; // { ok, userId, newBonus }
 }
 
-/**
- * Assign a coupon code (+ optional discount % and plan restriction) to a
- * user via auth metadata. `planId` null/omitted = usable on any plan.
- */
-export async function assignUserCoupon(userId, couponCode, discountPct, planId) {
+/** Issue a user-specific, one-time, non-recurring complimentary plan grant. */
+export async function assignAdminGrantCoupon(userId, { couponCode, planId, validityMonths, claimExpiresAt, reason }) {
   const res = await fetch(USERS_ENDPOINT, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ action: "assign_coupon", userId, couponCode, discountPct, planId: planId || null }),
+    body: JSON.stringify({
+      action: "assign_grant_coupon",
+      userId,
+      couponCode,
+      planId,
+      validityMonths,
+      claimExpiresAt: claimExpiresAt || null,
+      reason,
+    }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Assign coupon failed (${res.status})`);
-  return data; // { ok, userId, couponCode, discountPct, planId }
+  if (!res.ok) throw new Error(data.error || `Issue grant failed (${res.status})`);
+  return data;
 }
 
 /** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */

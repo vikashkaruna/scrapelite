@@ -34,6 +34,16 @@ vi.mock("../../src/lib/airtable.js", () => ({
   validateAirtableConfig: vi.fn(() => []),
 }));
 
+// The push entitlement gate hits the entitlements table via plain fetch() —
+// not the mocked @supabase/supabase-js client — which would otherwise be a
+// real, unmocked network call to the fake SUPABASE_URL during push tests.
+const mockRequireCapabilityForUser = vi.fn().mockResolvedValue({ check: { allowed: true } });
+vi.mock("../functions/lib/requireEntitlement.js", () => ({
+  requireCapabilityForUser: (...args) => mockRequireCapabilityForUser(...args),
+  denyBody: (check) => ({ error: check.reason, code: check.code }),
+  DENY_STATUS: 402,
+}));
+
 import { handler } from "../functions/integrations-airtable.js";
 import { pushToAirtable } from "../../src/lib/airtable.js";
 
@@ -205,6 +215,18 @@ describe("integrations-airtable", () => {
       }));
       expect(r.statusCode).toBe(200);
       expect(pushToAirtable).toHaveBeenCalled();
+    });
+    it("refuses the push server-side when the plan lacks the integrations capability", async () => {
+      mockRequireCapabilityForUser.mockResolvedValueOnce({
+        check: { allowed: false, reason: "Push integrations are Select and up.", code: "NOT_IN_PLAN" },
+      });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ items: [{ url: "a" }] }),
+      }));
+      expect(r.statusCode).toBe(402);
+      expect(pushToAirtable).not.toHaveBeenCalled();
     });
   });
 

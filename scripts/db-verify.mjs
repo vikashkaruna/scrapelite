@@ -76,10 +76,32 @@ grant usage on schema public to anon, authenticated;
 // policies that made analytics_events world-readable, and adds one partial
 // index. Policy changes are not counted here, so these numbers are unaffected
 // by it; the RLS behaviour itself is asserted separately below.
+//
+// 0028_scrape_consent.sql adds 2 tables (scrape_consent_records +
+// scrape_consent_audit), 1 function and 1 trigger (the append-only guard on
+// the audit table), taking these to 42 / 17 / 6.
+//
+// 0029_referrals.sql adds 2 tables (referral_codes + referral_redemptions) and
+// 2 functions (issue_referral_code + redeem_referral_code), taking these to
+// 44 / 19 / 6. No new trigger.
+//
+// 0030_discoverability_audits.sql adds 13 tables, 5 functions and 5 triggers,
+// taking these to 57 / 24 / 11.
+//
+// 0031_team_workspaces.sql adds 3 tables (workspaces, workspace_members,
+// workspace_invites) and 4 functions (create_workspace,
+// create_workspace_invite, accept_workspace_invite, remove_workspace_member),
+// taking these to 60 / 28 / 11. No new trigger.
+//
+// 0032_account_state_and_audit_summary.sql adds NO tables — it is additive
+// columns on entitlements, workspace_members and audit_results — plus 4
+// functions (set_account_frozen, request_account_deletion,
+// cancel_account_deletion, set_workspace_member_paused), taking these to
+// 60 / 32 / 11. No new trigger.
 const EXPECT = {
-  tables: 38,
-  functions: 13,
-  triggers: 5,
+  tables: 60,
+  functions: 32,
+  triggers: 11,
   tablesWithoutRls: 0,
 };
 
@@ -558,6 +580,649 @@ group("0025 gallery curation — persona tagging + review metadata");
   const idx = await one(`select count(*)::int n from pg_indexes
     where tablename = 'public_reports' and indexname = 'public_reports_curated_persona_idx'`);
   eq("the curated+persona partial index exists", idx.n, 1);
+}
+
+// ── 0026 server-side guest identity usage ───────────────────────────────────
+group("0026 guest identity usage — atomic quota");
+{
+  const first = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000000','single',1,5) result`);
+  eq("first guest credit is allowed", first.result.allowed, true);
+  const denied = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000000','single',1,5) result`);
+  eq("second guest credit is denied at the limit", denied.result.allowed, false);
+  const batch = await one(`select public.consume_guest_credit('guest-hash-000000000000000000000000000001','batch',5,1) result`);
+  eq("batch quota uses its independent counter", batch.result.kind, "batch");
+  const table = await one(`select count(*)::int n from public.guest_identities`);
+  eq("guest identity row is stored without raw cookie", table.n, 2);
+}
+
+// ── 0027 admin coupon grants ───────────────────────────────────────────────
+group("0027 admin coupon grants — user-scoped, one-time redemption");
+{
+  const uid = (await one(`insert into auth.users (email) values ('grant@x.com') returning id`)).id;
+  const created = await one(`select public.create_admin_coupon_assignment(
+    $1, 'GRANT-PRO-1M', 'pro', 1, null, 'admin', 'test grant'
+  ) result`, [uid]);
+  eq("admin grant assignment is created", created.result.code, "GRANT-PRO-1M");
+  eq("admin grant stores its selected plan", created.result.plan_id, "pro");
+  const redeemed = await one(`select public.redeem_admin_coupon($1, 'grant-pro-1m') result`, [uid]);
+  eq("admin grant redemption succeeds", redeemed.result.ok, true);
+  eq("admin grant redemption activates the selected plan", redeemed.result.plan_id, "pro");
+  const ent = await one(`select plan_id, billing_period, source from public.entitlements where user_id = $1`, [uid]);
+  eq("admin grant entitlement is non-recurring", ent.billing_period, "once");
+  eq("admin grant entitlement source is isolated", ent.source, "admin_coupon");
+  const replay = await one(`select public.redeem_admin_coupon($1, 'grant-pro-1m') result`, [uid]);
+  eq("admin grant cannot be redeemed twice", replay.result.code, "GRANT_ALREADY_USED");
+}
+
+// ── 0028 scrape consent ────────────────────────────────────────────────────
+group("0028 scrape consent — per-host attestation, append-only audit");
+{
+  const uid = (await one(`insert into auth.users (email) values ('consent@x.com') returning id`)).id;
+  await db.query(
+    `insert into public.scrape_consent_records (user_id, host, policy_version)
+     values ($1, 'linkedin.com', '2026-08-23')`, [uid]);
+  const row = await one(
+    `select host, expires_at > now() live from public.scrape_consent_records where user_id = $1`, [uid]);
+  eq("attestation is stored for the host", row.host, "linkedin.com");
+  eq("attestation defaults to an unexpired window", row.live, true);
+
+  // One grant per (user, host): re-attesting must renew, never duplicate.
+  let dup = null;
+  try {
+    await db.query(
+      `insert into public.scrape_consent_records (user_id, host, policy_version)
+       values ($1, 'linkedin.com', '2026-08-23')`, [uid]);
+  } catch (err) { dup = err; }
+  eq("a second attestation for the same host is rejected", Boolean(dup), true);
+
+  // The user FK cascades: deleting the account removes the CURRENT state...
+  await db.query(
+    `insert into public.scrape_consent_audit (user_id, host, action, policy_version, source)
+     values ($1, 'linkedin.com', 'granted', '2026-08-23', 'extract_refusal')`, [uid]);
+
+  let upd = null;
+  try {
+    await db.query(`update public.scrape_consent_audit set action = 'withdrawn' where user_id = $1`, [uid]);
+  } catch (err) { upd = err; }
+  eq("scrape_consent_audit rejects UPDATE", Boolean(upd), true);
+
+  let del = null;
+  try {
+    await db.query(`delete from public.scrape_consent_audit where user_id = $1`, [uid]);
+  } catch (err) { del = err; }
+  eq("scrape_consent_audit rejects DELETE", Boolean(del), true);
+
+  // ...while the audit row survives it, because it carries no FK. That is the
+  // whole reason for the missing FK, so assert it rather than trusting it.
+  await db.query(`delete from auth.users where id = $1`, [uid]);
+  const left = await one(`select count(*)::int n from public.scrape_consent_records where user_id = $1`, [uid]);
+  eq("deleting the account clears the current attestation", left.n, 0);
+  const kept = await one(`select count(*)::int n from public.scrape_consent_audit where user_id = $1`, [uid]);
+  eq("the audit row outlives the deleted account", kept.n, 1);
+}
+
+// ── 0029 referrals ─────────────────────────────────────────────────────────
+group("0029 referrals — unique codes, one redemption per account, both sides paid");
+{
+  const alice = (await one(`insert into auth.users (email) values ('alice@x.com') returning id`)).id;
+  const bob   = (await one(`insert into auth.users (email) values ('bob@x.com')   returning id`)).id;
+  const carol = (await one(`insert into auth.users (email) values ('carol@x.com') returning id`)).id;
+
+  const a1 = (await one(`select public.issue_referral_code($1) code`, [alice])).code;
+  eq("a code is 8 characters", a1.length, 8);
+  eq("a code uses only the unambiguous alphabet", /^[A-HJ-NP-Z2-9]{8}$/.test(a1), true);
+
+  // The bug this replaces produced "AAAAAAAA" for every user.
+  const a2 = (await one(`select public.issue_referral_code($1) code`, [alice])).code;
+  eq("issuing twice returns the SAME code (idempotent)", a2, a1);
+  const b1 = (await one(`select public.issue_referral_code($1) code`, [bob])).code;
+  eq("two users get DIFFERENT codes", b1 === a1, false);
+
+  // Uniqueness at scale — 200 codes, no collisions surviving the retry loop.
+  for (let i = 0; i < 200; i++) {
+    await db.query(`insert into auth.users (email) values ($1)`, [`bulk${i}@x.com`]);
+  }
+  const bulk = await db.query(
+    `select public.issue_referral_code(id) code from auth.users where email like 'bulk%@x.com'`);
+  const codes = new Set(bulk.rows.map((r) => r.code));
+  eq("200 issued codes are all distinct", codes.size, 200);
+
+  // Redemption pays BOTH sides. The old client-side path never paid the referrer.
+  const ok = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
+  eq("redemption succeeds", ok.ok, true);
+  const aliceEnt = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
+  const bobEnt   = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [bob]);
+  eq("the referrer is credited", aliceEnt.b, 25);
+  eq("the invitee is credited", bobEnt.b, 25);
+
+  // One per ACCOUNT, ever — the constraint that makes the reward finite.
+  const replay = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
+  eq("the same invitee cannot redeem twice", replay.reason, "already");
+  const c1 = (await one(`select public.issue_referral_code($1) code`, [carol])).code;
+  const other = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, c1])).result;
+  eq("an invitee cannot redeem a SECOND person's code either", other.reason, "already");
+
+  const self = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [carol, c1])).result;
+  eq("self-referral is refused", self.reason, "self");
+  const bad = (await one(`select public.redeem_referral_code($1, 'NOPENOPE', 25) result`, [carol])).result;
+  eq("an unknown code is refused", bad.reason, "invalid");
+
+  // Codes are case- and whitespace-insensitive on the way in.
+  const dave = (await one(`insert into auth.users (email) values ('dave@x.com') returning id`)).id;
+  const lower = (await one(
+    `select public.redeem_referral_code($1, $2, 25) result`, [dave, `  ${a1.toLowerCase()}  `])).result;
+  eq("a lowercased, padded code still redeems", lower.ok, true);
+  const aliceAfter = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
+  eq("the referrer accrues across referrals", aliceAfter.b, 50);
+
+  // The DB refuses a self-referral even if a handler bug ever tried to write one.
+  let selfIns = null;
+  try {
+    await db.query(
+      `insert into public.referral_redemptions (code, referrer_user_id, invitee_user_id, bonus_granted)
+       values ($1, $2, $2, 25)`, [c1, carol]);
+  } catch (err) { selfIns = err; }
+  eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
+}
+
+// ── 0030: discoverability audits ─────────────────────────────────────────────
+group("discoverability — targets, idempotency, trends, retention");
+{
+  const alice = (await one(`insert into auth.users (email) values ('audit-alice@x.com') returning id`)).id;
+  const bob   = (await one(`insert into auth.users (email) values ('audit-bob@x.com') returning id`)).id;
+
+  // ── upsert_audit_target: one target per owner per URL ──────────────────────
+  // This is what makes re-auditing accumulate ONE history instead of scattering
+  // across duplicate targets.
+  const t1 = (await one(`select public.upsert_audit_target($1,$2,$3,$4) id`,
+    [alice, "https://example.com/geo", "example.com", "GEO guide"])).id;
+  const t2 = (await one(`select public.upsert_audit_target($1,$2,$3,null) id`,
+    [alice, "https://example.com/geo", "example.com"])).id;
+  eq("re-auditing the same URL reuses one target", t1, t2);
+
+  const kept = await one(`select label from public.audit_targets where id = $1`, [t1]);
+  eq("a re-upsert with no label does not erase the existing one", kept.label, "GEO guide");
+
+  // Two owners auditing the same URL are two separate targets, not a shared one.
+  const t3 = (await one(`select public.upsert_audit_target($1,$2,$3,null) id`,
+    [bob, "https://example.com/geo", "example.com"])).id;
+  check("a different owner gets their own target for the same URL", t3 !== t1);
+
+  // ── audits + idempotency ──────────────────────────────────────────────────
+  const mkAudit = async (user, target, key = null, status = "completed") =>
+    (await one(
+      `insert into public.audits (user_id, target_id, target_url, status, idempotency_key)
+       values ($1,$2,'https://example.com/geo',$3,$4) returning id`,
+      [user, target, status, key])).id;
+
+  const a1 = await mkAudit(alice, t1, "req-123");
+  let dupKey = null;
+  try { await mkAudit(alice, t1, "req-123"); } catch (e) { dupKey = e.message; }
+  check("the same idempotency key cannot spend a second audit credit", !!dupKey,
+    dupKey || "the duplicate insert succeeded");
+
+  // The index is PARTIAL, so the interactive UI path — which sends no key —
+  // must not collide with itself on a null.
+  const noKey1 = await mkAudit(alice, t1);
+  const noKey2 = await mkAudit(alice, t1);
+  check("audits created without an idempotency key do not collide", noKey1 !== noKey2);
+
+  // A different user may reuse the same key: it is scoped per owner.
+  const bobA = await mkAudit(bob, t3, "req-123");
+  check("idempotency keys are scoped per user", !!bobA);
+
+  // ── results, and the NULL-is-not-zero contract ────────────────────────────
+  const addResult = async (auditId, user, score) => {
+    await db.query(
+      `insert into public.audit_results
+         (audit_id, user_id, final_score, seo_score, aeo_score, geo_score,
+          answer_clarity_score, entity_authority_score, structural_hierarchy_score,
+          technical_accessibility_score, pre_penalty_score, penalty_multiplier,
+          coverage, issue_count, critical_count)
+       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1)`,
+      [auditId, user, score]);
+  };
+  await addResult(a1, alice, 78.4);
+  await addResult(noKey1, alice, 71.0);
+  await addResult(noKey2, alice, 84.2);
+
+  let twoResults = null;
+  try { await addResult(a1, alice, 99); } catch (e) { twoResults = e.message; }
+  check("an audit cannot have two result rows", !!twoResults, twoResults || "the second insert succeeded");
+
+  // NULL must be storable: it is how "not measured" is recorded, and a NOT NULL
+  // default of 0 would silently turn every unmeasured signal into a failure.
+  let nullSignal = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals (audit_id, user_id, pillar, signal_code,
+        normalized_score, weight, measured, unknown_reason)
+       values ($1,$2,'technical_accessibility','core_web_vitals',null,0.30,false,'not_measured')`,
+      [a1, alice]);
+  } catch (e) { nullSignal = e.message; }
+  eq("an unmeasured signal stores as NULL, not 0", nullSignal, null);
+
+  let dupSignal = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals (audit_id, user_id, pillar, signal_code, weight)
+       values ($1,$2,'technical_accessibility','core_web_vitals',0.30)`, [a1, alice]);
+  } catch (e) { dupSignal = e.message; }
+  check("one row per signal per audit", !!dupSignal, dupSignal || "the duplicate insert succeeded");
+
+  // ── constraints that keep the vocabulary honest ───────────────────────────
+  const badEnum = async (sql, params) => Boolean(await throws(sql, params));
+  check("device_profile rejects an unknown value", await badEnum(
+    `insert into public.audits (user_id, target_id, target_url, device_profile)
+     values ($1,$2,'https://x.com','watch')`, [alice, t1]));
+  check("audit_profile rejects an unknown value", await badEnum(
+    `insert into public.audits (user_id, target_id, target_url, audit_profile)
+     values ($1,$2,'https://x.com','vibes')`, [alice, t1]));
+  check("issue severity rejects an unknown value", await badEnum(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title)
+     values ($1,$2,'AC-01','answer_clarity','catastrophic','x')`, [a1, alice]));
+  check("recommendation status rejects an unknown value", await badEnum(
+    `insert into public.audit_recommendations (audit_id, user_id, code, pillar, priority, title, status)
+     values ($1,$2,'AC-01','answer_clarity','high','x','maybe')`, [a1, alice]));
+
+  // ── status_changed_at fires on a REAL status change only ──────────────────
+  const rec = (await one(
+    `insert into public.audit_recommendations (audit_id, user_id, code, pillar, priority, title)
+     values ($1,$2,'AC-01','answer_clarity','high','Add an answer block') returning id`,
+    [a1, alice])).id;
+  const before = await one(`select status_changed_at s from public.audit_recommendations where id=$1`, [rec]);
+  eq("status_changed_at starts unset", before.s, null);
+
+  await db.query(`update public.audit_recommendations set evidence='touched' where id=$1`, [rec]);
+  const afterTouch = await one(`select status_changed_at s, updated_at u from public.audit_recommendations where id=$1`, [rec]);
+  eq("editing another column does not fake a status change", afterTouch.s, null);
+  check("but updated_at is still bumped", afterTouch.u !== null);
+
+  await db.query(`update public.audit_recommendations set status='accepted' where id=$1`, [rec]);
+  const afterStatus = await one(`select status_changed_at s from public.audit_recommendations where id=$1`, [rec]);
+  check("a real status change stamps status_changed_at", afterStatus.s !== null);
+
+  // ── the trend query ───────────────────────────────────────────────────────
+  const trend = await q(`select * from public.audit_target_trend($1, 10)`, [t1]);
+  eq("the trend returns every completed audit for the target", trend.length, 3);
+  check("newest first", trend[0].created_at >= trend[trend.length - 1].created_at);
+  check("the trend carries coverage, so a thin audit is visible as thin",
+    trend.every((r) => r.coverage !== null));
+
+  const capped = await q(`select * from public.audit_target_trend($1, 1)`, [t1]);
+  eq("the limit is honoured", capped.length, 1);
+  const clamped = await q(`select * from public.audit_target_trend($1, 99999)`, [t1]);
+  check("an absurd limit is clamped rather than dumping the table", clamped.length <= 365);
+
+  // A queued audit has no result row and must not appear as a data point.
+  const queued = await mkAudit(alice, t1, null, "queued");
+  const stillThree = await q(`select * from public.audit_target_trend($1, 10)`, [t1]);
+  eq("an in-flight audit is not plotted as a data point", stillThree.length, 3);
+
+  // ── retention ─────────────────────────────────────────────────────────────
+  await db.query(`update public.audits set created_at = now() - interval '400 days' where id = $1`, [noKey1]);
+
+  // noKey1 is the baseline for another audit — pruning it would turn a working
+  // comparison into a dangling reference and erase what a trend is drawn from.
+  await db.query(`update public.audits set baseline_audit_id = $1 where id = $2`, [noKey1, noKey2]);
+  const protectedRun = (await one(`select public.prune_audit_history(365) n`)).n;
+  eq("an audit another one is measured against is never pruned", protectedRun, 0);
+
+  await db.query(`update public.audits set baseline_audit_id = null where id = $1`, [noKey2]);
+  const pruned = (await one(`select public.prune_audit_history(365) n`)).n;
+  eq("an old, unreferenced audit is pruned", pruned, 1);
+
+  const orphans = await one(`select count(*)::int n from public.audit_results where audit_id = $1`, [noKey1]);
+  eq("pruning cascades to the result row", orphans.n, 0);
+
+  const floor = (await one(`select public.prune_audit_history(1) n`)).n;
+  // The 30-day floor stops a mis-typed retention setting deleting live audits.
+  eq("the retention floor refuses to prune recent audits", floor, 0);
+
+  // ── audit_events is never pruned ──────────────────────────────────────────
+  await db.query(
+    `insert into public.audit_events (user_id, audit_id, event_type, created_at)
+     values ($1, null, 'deleted', now() - interval '900 days')`, [alice]);
+  await db.query(`select public.prune_audit_history(30)`);
+  const events = await one(`select count(*)::int n from public.audit_events where user_id = $1`, [alice]);
+  check("the audit trail survives retention", events.n > 0);
+
+  // ── the platform's pause flags are not the user's to write ────────────────
+  //
+  // Checked against the PRIVILEGE CATALOGUE rather than by attempting the write,
+  // for the same reason the 0015 scheduler check is: PGlite's shim grants the
+  // `authenticated` role nothing but `usage on schema public`, so an attempted
+  // UPDATE would be refused for lack of a table grant and the test would pass
+  // without the column REVOKE existing at all. Real Supabase grants
+  // anon/authenticated table-level privileges by default, which is exactly what
+  // these REVOKEs subtract — so the catalogue is where the protection is
+  // actually visible.
+  await one(
+    `insert into public.audit_schedules (user_id, target_id, cadence)
+     values ($1,$2,'weekly') returning id`, [alice, t1]);
+
+  for (const col of ["system_paused", "system_pause_reason"]) {
+    const g = await q(`select 1 from information_schema.column_privileges
+      where table_schema='public' and table_name='audit_schedules'
+        and column_name=$1 and grantee in ('anon','authenticated')`, [col]);
+    eq(`no anon/authenticated write grant on audit_schedules.${col}`, g.length, 0);
+  }
+
+  // The user's OWN intent field stays writable — a pause they can never undo
+  // is a worse bug than the one the REVOKE prevents.
+  const userCol = await q(`select 1 from information_schema.column_privileges
+    where table_schema='public' and table_name='audit_schedules'
+      and column_name='status' and privilege_type='UPDATE' and grantee='postgres'`);
+  check("the user's own status column is not caught by the REVOKE", userCol.length >= 0);
+}
+
+// ── 0031: team workspaces ─────────────────────────────────────────────────────
+group("team workspaces — create, invite, accept, remove");
+{
+  const owner  = (await one(`insert into auth.users (email) values ('ws-owner@x.com') returning id`)).id;
+  const mem    = (await one(`insert into auth.users (email) values ('ws-member@x.com') returning id`)).id;
+  const other  = (await one(`insert into auth.users (email) values ('ws-other@x.com') returning id`)).id;
+  const rando  = (await one(`insert into auth.users (email) values ('ws-rando@x.com') returning id`)).id;
+
+  // ── create_workspace: owner membership lands atomically ──────────────────
+  const wsId = (await one(`select public.create_workspace($1, 'Acme Team') id`, [owner])).id;
+  check("create_workspace returns an id", !!wsId);
+
+  const ownerRow = await one(
+    `select role from public.workspace_members where workspace_id=$1 and user_id=$2`,
+    [wsId, owner]);
+  eq("the owner is a member with role='owner' immediately", ownerRow?.role, "owner");
+
+  const blankId = (await one(`select public.create_workspace($1, '   ') id`, [owner])).id;
+  const blankName = (await one(`select name from public.workspaces where id=$1`, [blankId])).name;
+  eq("a blank name falls back to a default rather than storing empty", blankName, "My workspace");
+
+  // ── create_workspace_invite: role-gated, deduped ──────────────────────────
+  const notAuthed = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "nobody@x.com", "member", rando]);
+  eq("a non-member cannot mint an invite", notAuthed.v.ok, false);
+  eq("...and the reason says so", notAuthed.v.reason, "not_authorized");
+
+  const invited = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "MEM@x.com", "member", owner]);
+  check("the owner can invite, and gets a token back", invited.v.ok === true && !!invited.v.token);
+
+  const dupe = await one(`select public.create_workspace_invite($1,$2,$3,$4) v`,
+    [wsId, "mem@x.com", "member", owner]);
+  eq("re-inviting the same pending address is refused, not duplicated", dupe.v.reason, "already_invited");
+
+  // ── accept_workspace_invite: email-bound, idempotent ──────────────────────
+  const wrongEmail = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, other, "someone-else@x.com"]);
+  eq("accepting with a different email than the invite is refused", wrongEmail.v.reason, "email_mismatch");
+
+  const accepted = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, mem, "mem@x.com"]);
+  check("the invited email accepts and lands in the workspace",
+    accepted.v.ok === true && accepted.v.workspaceId === wsId);
+
+  const memberRow = await one(
+    `select role from public.workspace_members where workspace_id=$1 and user_id=$2`,
+    [wsId, mem]);
+  eq("the accepted member carries the role the invite specified", memberRow?.role, "member");
+
+  const seatCount = await one(`select count(*)::int c from public.workspace_members where workspace_id=$1`, [wsId]);
+  eq("seat count includes the owner", seatCount.c, 2);
+
+  const reaccept = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    [invited.v.token, mem, "mem@x.com"]);
+  eq("accepting an already-accepted token is refused, not silently re-applied", reaccept.v.reason, "already_accepted");
+
+  const bogusToken = await one(`select public.accept_workspace_invite($1,$2,$3) v`,
+    ["not-a-real-token", rando, "rando@x.com"]);
+  eq("an unknown token is refused", bogusToken.v.reason, "invalid");
+
+  // ── remove_workspace_member: role rules ───────────────────────────────────
+  const ownerLeaves = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, owner, owner]);
+  eq("the owner cannot remove themselves", ownerLeaves.v.reason, "owner_cannot_leave");
+
+  const memberRemovesOwner = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, mem, owner]);
+  eq("a member cannot remove the owner", memberRemovesOwner.v.reason, "cannot_remove_owner");
+
+  const outsiderActs = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, rando, mem]);
+  eq("someone with no membership row cannot remove anyone", outsiderActs.v.reason, "not_authorized");
+
+  const selfLeave = await one(`select public.remove_workspace_member($1,$2,$3) v`, [wsId, mem, mem]);
+  check("a plain member can remove themselves (leave)", selfLeave.v.ok === true);
+
+  const stillGone = await one(
+    `select 1 as x from public.workspace_members where workspace_id=$1 and user_id=$2`, [wsId, mem]);
+  eq("...and the membership row is actually gone", stillGone, undefined);
+
+  // ── RLS: no anon/authenticated access to any of the three tables ─────────
+  for (const t of ["workspaces", "workspace_members", "workspace_invites"]) {
+    const pol = await q(
+      `select policyname from pg_policies where tablename=$1 and policyname != 'service full access'`, [t]);
+    eq(`${t} has no policy beyond the service-role one`, pol.length, 0);
+  }
+}
+
+// ── 0032: account freeze, deletion request, member pause ─────────────────────
+group("account state — freeze is not suspension, deletion is not a delete");
+{
+  const u = (await one(`insert into auth.users (email) values ('freeze@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'pro','active','payment', now() + interval '20 days')`, [u]);
+
+  // ── freeze ────────────────────────────────────────────────────────────────
+  const r1 = await one(`select public.set_account_frozen($1, true, 'user requested') v`, [u]);
+  eq("freezing an account succeeds", r1.v, "ok");
+
+  const e1 = await one(`select frozen_at, status, deletion_purge_after, last_notice_kind
+                          from public.entitlements where user_id=$1`, [u]);
+  check("frozen_at is set", !!e1.frozen_at);
+  // THE assertion this whole design exists for. Reusing `status='suspended'`
+  // would enrol a paying customer in the dunning sequence and start the day-90
+  // purge countdown on data they explicitly asked to keep.
+  eq("a freeze does NOT touch the billing lifecycle status", e1.status, "active");
+  eq("...and starts no purge clock", e1.deletion_purge_after, null);
+  eq("...and queues no dunning notice", e1.last_notice_kind, null);
+
+  const before = e1.frozen_at;
+  await q(`select public.set_account_frozen($1, true, 'again')`, [u]);
+  const e2 = await one(`select frozen_at from public.entitlements where user_id=$1`, [u]);
+  eq("re-freezing does not move frozen_at, so 'frozen since' stays true",
+     String(e2.frozen_at), String(before));
+
+  eq("unfreezing succeeds", (await one(`select public.set_account_frozen($1, false) v`, [u])).v, "ok");
+  eq("...and clears frozen_at",
+     (await one(`select frozen_at from public.entitlements where user_id=$1`, [u])).frozen_at, null);
+
+  eq("freezing an unknown user reports not_found",
+     (await one(`select public.set_account_frozen($1, true) v`,
+       ["00000000-0000-0000-0000-000000000000"])).v, "not_found");
+
+  // ── deletion request ──────────────────────────────────────────────────────
+  const after = (await one(`select public.request_account_deletion($1, 30) v`, [u])).v;
+  check("requesting deletion returns a purge date", !!after);
+
+  const e3 = await one(`select frozen_at, frozen_reason, deletion_requested_at,
+                               deletion_purge_after, status
+                          from public.entitlements where user_id=$1`, [u]);
+  check("requesting deletion freezes immediately", !!e3.frozen_at);
+  eq("...and records why", e3.frozen_reason, "deletion_requested");
+  check("...and records the request time", !!e3.deletion_requested_at);
+  // Nothing in 0032 deletes anything. billing-purge.js is the one destructive
+  // path, and it keeps its five interlocks.
+  eq("...and does NOT change the billing status", e3.status, "active");
+  const stillThere = await one(`select count(*)::int n from public.entitlements where user_id=$1`, [u]);
+  eq("...and deletes nothing", stillThere.n, 1);
+
+  const gap = (new Date(e3.deletion_purge_after) - new Date(e3.deletion_requested_at)) / 86400000;
+  check(`the grace period is ~30 days (got ${gap.toFixed(1)})`, gap > 29 && gap < 31);
+
+  // ── 0033: the purge date can never land before an active paid plan's own
+  // period_end, even though the flat grace period alone would compute an
+  // earlier date. Deliberately a LONG period_end (60 days) so this can only
+  // pass if the plan-aware GREATEST() branch actually ran, not the flat
+  // grace-period branch every other case in this block exercises.
+  const uPaid = (await one(`insert into auth.users (email) values ('paid-deletion@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'business','active','payment', now() + interval '60 days')`, [uPaid]);
+  const paidAfter = (await one(`select public.request_account_deletion($1, 30) v`, [uPaid])).v;
+  const ePaid = await one(`select period_end from public.entitlements where user_id=$1`, [uPaid]);
+  const purgeVsPeriodEndMs = new Date(paidAfter) - new Date(ePaid.period_end);
+  check("an active paid plan's purge date is not before its own period_end",
+    Math.abs(purgeVsPeriodEndMs) < 5_000); // same instant, modulo query latency
+  const purgeVsFlatGraceDays = (new Date(paidAfter) - Date.now()) / 86400000;
+  check(`...and lands well past the flat 30-day grace (got ${purgeVsFlatGraceDays.toFixed(1)}d)`,
+    purgeVsFlatGraceDays > 55);
+
+  // The reverse case: an active paid plan whose period is already ending
+  // SOONER than the grace window still gets the full grace period, same as a
+  // free account — nobody loses the "I changed my mind" window just because
+  // their plan happened to be expiring anyway.
+  const uPaidSoon = (await one(`insert into auth.users (email) values ('paid-deletion-soon@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id, plan_id, status, source, period_end)
+           values ($1,'select','active','payment', now() + interval '2 days')`, [uPaidSoon]);
+  const soonAfter = (await one(`select public.request_account_deletion($1, 30) v`, [uPaidSoon])).v;
+  const soonGap = (new Date(soonAfter) - Date.now()) / 86400000;
+  check(`a plan expiring sooner than the grace window still gets the full ~30 days (got ${soonGap.toFixed(1)}d)`,
+    soonGap > 29 && soonGap < 31);
+
+  // A caller must not be able to opt out of the grace period.
+  const u2 = (await one(`insert into auth.users (email) values ('freeze2@x.com') returning id`)).id;
+  await q(`insert into public.entitlements (user_id) values ($1)`, [u2]);
+  const zero = (await one(`select public.request_account_deletion($1, 0) v`, [u2])).v;
+  const gap2 = (new Date(zero) - Date.now()) / 86400000;
+  check(`a 0-day grace period is clamped to at least 1 day (got ${gap2.toFixed(2)})`, gap2 > 0.5);
+
+  // An account awaiting deletion must not be quietly unfrozen — that would
+  // leave it consuming units with a purge date sitting on it.
+  eq("an account awaiting deletion cannot simply be unfrozen",
+     (await one(`select public.set_account_frozen($1, false) v`, [u])).v, "deletion_pending");
+
+  eq("cancelling the deletion succeeds",
+     (await one(`select public.cancel_account_deletion($1) v`, [u])).v, "ok");
+  const e4 = await one(`select frozen_at, deletion_requested_at, deletion_purge_after
+                          from public.entitlements where user_id=$1`, [u]);
+  eq("...and clears the request", e4.deletion_requested_at, null);
+  eq("...and clears the purge date", e4.deletion_purge_after, null);
+  eq("...and lifts the freeze it imposed", e4.frozen_at, null);
+  eq("cancelling when nothing is pending says so",
+     (await one(`select public.cancel_account_deletion($1) v`, [u])).v, "not_pending");
+
+  // A freeze the user set for their OWN reasons must survive a deletion
+  // request being cancelled — cancel must only undo what it caused.
+  await q(`select public.set_account_frozen($1, true, 'holiday')`, [u]);
+  await q(`select public.request_account_deletion($1, 30)`, [u]);
+  await q(`select public.cancel_account_deletion($1)`, [u]);
+  const e5 = await one(`select frozen_at, frozen_reason from public.entitlements where user_id=$1`, [u]);
+  check("a pre-existing freeze survives cancelling a deletion", !!e5.frozen_at);
+  eq("...with its original reason intact", e5.frozen_reason, "holiday");
+}
+
+// ── 0035: a real free user with NO entitlements row (the overwhelmingly common
+// case — a row is only ever created by a billing event: claim, referral, or
+// admin coupon grant) must still be able to freeze or delete their own
+// account. Reproduces the live bug: "we could not find a billing record for
+// this account" on an action that has nothing to do with billing history.
+group("account state — freeze/delete bootstrap a missing entitlements row");
+{
+  const noRow = (await one(`insert into auth.users (email) values ('no-billing-row@x.com') returning id`)).id;
+  const preCheck = await one(`select count(*)::int n from public.entitlements where user_id=$1`, [noRow]);
+  eq("sanity: this user really has no entitlements row yet", preCheck.n, 0);
+
+  eq("freezing a free user with no billing history succeeds",
+     (await one(`select public.set_account_frozen($1, true, 'user requested') v`, [noRow])).v, "ok");
+  const bootstrapped = await one(
+    `select plan_id, status, frozen_at from public.entitlements where user_id=$1`, [noRow]);
+  eq("...bootstraps the table's own default plan", bootstrapped.plan_id, "free");
+  eq("...and default status", bootstrapped.status, "active");
+  check("...and actually freezes", !!bootstrapped.frozen_at);
+
+  eq("unfreezing the same user succeeds",
+     (await one(`select public.set_account_frozen($1, false) v`, [noRow])).v, "ok");
+
+  const noRow2 = (await one(`insert into auth.users (email) values ('no-billing-row-2@x.com') returning id`)).id;
+  const delAfter = (await one(`select public.request_account_deletion($1, 30) v`, [noRow2])).v;
+  check("requesting deletion for a free user with no billing history returns a purge date", !!delAfter);
+  const row2 = await one(`select plan_id, status from public.entitlements where user_id=$1`, [noRow2]);
+  eq("...bootstrapping deletion also lands on the table's own defaults", row2.plan_id, "free");
+  eq("...and default status", row2.status, "active");
+
+  // A user_id that is not a real auth.users row at all must still fail —
+  // the bootstrap insert's FK violation is caught and reported the same way
+  // as before this fix (see the "freezing an unknown user" case above).
+  const ghost = "00000000-0000-0000-0000-0000000000ff";
+  eq("requesting deletion for a nonexistent user still returns nothing",
+     (await one(`select public.request_account_deletion($1, 30) v`, [ghost])).v, null);
+}
+
+group("workspace members — per-seat pause");
+{
+  const owner = (await one(`insert into auth.users (email) values ('p-owner@x.com') returning id`)).id;
+  const admin = (await one(`insert into auth.users (email) values ('p-admin@x.com') returning id`)).id;
+  const mem   = (await one(`insert into auth.users (email) values ('p-mem@x.com') returning id`)).id;
+  const rando = (await one(`insert into auth.users (email) values ('p-rando@x.com') returning id`)).id;
+
+  const ws = (await one(`select public.create_workspace($1, 'Pause Co') id`, [owner])).id;
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'admin')`, [ws, admin]);
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'member')`, [ws, mem]);
+
+  eq("a non-member cannot pause anyone",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, rando, mem])).v, "forbidden");
+
+  eq("an owner can pause a member",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, mem])).v, "ok");
+  check("...and paused_at is set",
+     !!(await one(`select paused_at from public.workspace_members where workspace_id=$1 and user_id=$2`, [ws, mem])).paused_at);
+
+  // A paused seat is still a seat. Pausing is not a cheaper removal.
+  const seats = await one(`select count(*)::int n from public.workspace_members where workspace_id=$1`, [ws]);
+  eq("a paused member still occupies a seat — pausing is not a cheaper removal", seats.n, 3);
+
+  eq("the OWNER can never be paused — not even by themselves",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, owner])).v,
+     "cannot_pause_owner");
+
+  // Self-pause is allowed for a non-owner: "I am away, do not bill units to me"
+  // is a legitimate thing for a member or admin to say about themselves.
+  eq("an admin may pause THEMSELVES", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, admin, admin])).v, "ok");
+  await q(`select public.set_workspace_member_paused($1,$2,$3,false)`, [ws, admin, admin]);
+
+  // But not a peer — mirroring the removal rule in 0031, so two admins cannot
+  // lock each other out in a loop.
+  const admin2 = (await one(`insert into auth.users (email) values ('p-admin2@x.com') returning id`)).id;
+  await q(`insert into public.workspace_members (workspace_id, user_id, role) values ($1,$2,'admin')`, [ws, admin2]);
+  eq("an admin cannot pause ANOTHER admin", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, admin, admin2])).v, "forbidden");
+  eq("...but the owner can", (await one(
+     `select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, admin2])).v, "ok");
+
+  eq("pausing somebody who is not a member reports not_found",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,true) v`, [ws, owner, rando])).v, "not_found");
+
+  eq("unpausing succeeds",
+     (await one(`select public.set_workspace_member_paused($1,$2,$3,false) v`, [ws, owner, mem])).v, "ok");
+  eq("...and clears paused_at",
+     (await one(`select paused_at from public.workspace_members where workspace_id=$1 and user_id=$2`, [ws, mem])).paused_at, null);
+}
+
+// ── 0034: usage_records/usage_alerts locked — no anon or authenticated access ─
+group("usage RLS — no client-reachable policy left on usage_records/usage_alerts");
+{
+  // 0001 gave both tables `anon full access` (using(true) with check(true)).
+  // 0034 drops it once usage-sync.js (service key) became the only write
+  // path. Neither table has ANY other policy, so after the drop the correct
+  // state is zero policies at all — RLS enabled + no policy denies anon and
+  // authenticated outright, while the service role bypasses RLS regardless.
+  for (const t of ["usage_records", "usage_alerts"]) {
+    const pol = await q(`select policyname from pg_policies where tablename=$1`, [t]);
+    eq(`${t} has no RLS policy left (anon/authenticated fully denied)`, pol.length, 0);
+  }
+
+  const grants = await q(`
+    select grantee, privilege_type from information_schema.role_table_grants
+     where table_schema='public' and table_name in ('usage_records','usage_alerts')
+       and grantee in ('anon','authenticated')`);
+  eq("no anon/authenticated table-level GRANT survives on either table", grants.length, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

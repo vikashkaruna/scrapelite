@@ -81,7 +81,7 @@ Both workflows add a cache step before `npm ci`:
 
 ```yaml
 - name: Cache Playwright browsers
-  uses: actions/cache@v4
+  uses: actions/cache@v5
   with:
     path: ~/.cache/ms-playwright
     key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}

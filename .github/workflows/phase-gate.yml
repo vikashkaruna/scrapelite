@@ -23,8 +23,14 @@
 #                                             "required reviewers" feature, which
 #                                             returns HTTP 422 on Free).
 #   6. Deploy to Production                 → Netlify deploy, only after approval.
-#   7. Smoke Test — Production              → verify the deploy; auto-rollback
-#                                             to the last good deploy on failure
+#                                             The CLI comes from a COMMITTED
+#                                             LOCKFILE (tools/netlify-cli/), never
+#                                             `npx --yes netlify-cli` — see the
+#                                             comment on that step for the release
+#                                             an upstream publish killed.
+#   7. Smoke Test — Production              → verify the deploy; on failure restore
+#                                             the last good deploy via the Netlify
+#                                             REST API (the CLI has no `rollback`)
 #
 # ⚠️  FREE-PLAN ENFORCEMENT NOTE
 # Branch protection + Environment required-reviewers are Pro/public-only. To
@@ -96,7 +102,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       # 2026-08-12: CI-local-first — cache Playwright's browser binaries so
       # the e2e step doesn't re-download chromium (~200MB) on every run.
@@ -104,7 +110,7 @@ jobs:
       # bust it correctly) and the OS (so Ubuntu/macOS don't share).
       # Saves ~90s on warm cache, ~3min on cold. See docs/CI-LOCAL-FIRST.md.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -157,7 +163,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - name: Audit dependencies (high/critical block)
         run: node scripts/check-vulnerabilities.mjs
@@ -173,7 +179,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
       - name: Check open defects
         run: node scripts/check-open-defects.mjs
         env:
@@ -199,7 +205,7 @@ jobs:
           fetch-depth: 0 # full history for the ancestor check
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
@@ -387,8 +393,14 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
+          # Both lockfiles, so the deploy toolchain is served from the runner
+          # cache too and the release depends on the registry as little as
+          # possible at the moment it is least able to absorb a surprise.
+          cache-dependency-path: |
+            package-lock.json
+            tools/netlify-cli/package-lock.json
       - run: npm ci
 
       # Build with the PRODUCTION env vars (read from the `production-release`
@@ -471,9 +483,48 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
+      # The deploy tool is installed from a COMMITTED LOCKFILE
+      # (tools/netlify-cli/package-lock.json), never resolved from the registry
+      # at release time.
+      #
+      # This step exists because `npx --yes netlify-cli` — which is what used to
+      # be here — re-resolves ~1,160 transitive `^` ranges against the live npm
+      # registry every single run, and on 2026-08-27 that broke a release that
+      # had passed every gate: @netlify/dev@5.0.4 was published at 19:43Z
+      # declaring a dependency on @netlify/ai@^1.0.1, a version that has never
+      # existed. The deploy ran 27 minutes later, npm answered ETARGET, and the
+      # job died AFTER manual approval, with production hand-unlocked.
+      #
+      # Note what pinning `netlify-cli@<version>` alone would NOT have fixed:
+      # the break arrived through a floating transitive range, not through the
+      # top-level one. Only a lockfile freezes the whole tree.
+      #
+      # It is also its own step, before the deploy, so a toolchain problem is
+      # reported as a toolchain problem and nothing has touched production yet.
+      #
+      # `--ignore-scripts` on purpose. The CLI's tree carries native postinstall
+      # builds (sharp, unix-dgram) that belong to `netlify dev` — the local dev
+      # server and its image transforms. `netlify deploy` uploads a directory
+      # and never loads them. Skipping those builds takes the install from
+      # minutes to ~7s and, more importantly, removes node-gyp and the prebuilt
+      # binary downloads from the release path: fewer moving parts between
+      # "approved" and "published". The next step proves the CLI still runs.
+      - name: Install the pinned deploy toolchain
+        run: npm ci --prefix tools/netlify-cli --ignore-scripts
+
+      # Fail here, with production untouched, rather than half-way through a
+      # deploy. Loading `deploy --help` exercises the command's own module graph,
+      # which is what would break if `--ignore-scripts` ever mattered to it.
+      - name: Verify the deploy toolchain runs
+        run: |
+          set -euo pipefail
+          ./tools/netlify-cli/node_modules/.bin/netlify --version
+          ./tools/netlify-cli/node_modules/.bin/netlify deploy --help > /dev/null
+          echo "  ✓ pinned netlify CLI is executable and its deploy command loads"
+
       - name: Deploy to Netlify (production)
         run: |
-          npx --yes netlify-cli deploy \
+          ./tools/netlify-cli/node_modules/.bin/netlify deploy \
             --prod \
             --dir=dist \
             --auth=$NETLIFY_AUTH_TOKEN \
@@ -495,7 +546,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
 
@@ -512,27 +563,76 @@ jobs:
           NODE_OPTIONS: --dns-result-order=ipv4first
           SMOKE_ADMIN_PIN: ${{ secrets.PRODUCTION_ADMIN_PIN }}
 
+      # 🔴 This used to run `netlify rollback`. THAT COMMAND DOES NOT EXIST.
+      # netlify-cli has no `rollback` — it exits 2 with the generic help text, so
+      # the safety net that is supposed to pull a bad release off datiq.app has
+      # only ever printed a usage message and failed the step. Verified against
+      # the CLI's own command list (claim/deploy/init/watch/…, no rollback) and
+      # `grep -ri rollback` over its dist, which finds nothing.
+      #
+      # Restoring a deploy now goes through the documented REST endpoint
+      # (`restoreSiteDeploy` — POST /sites/{id}/deploys/{id}/restore), the same
+      # way this workflow already verifies the lock and re-locks afterwards. It
+      # needs no toolchain at all, so the recovery path cannot be taken out by an
+      # npm install — which is exactly how the deploy step failed on 2026-08-27.
+      #
+      # Production is UNLOCKED for the duration of this run (the operator lifted
+      # the lock by hand before `deploy-production`) and `relock-production` runs
+      # after this job, so the restore is permitted inside this window.
       - name: Auto-rollback on smoke failure
         if: failure()
         run: |
-          echo "✗ production smoke failed, rolling back to last good deploy"
-          npx --yes netlify-cli rollback \
-            --auth=$NETLIFY_AUTH_TOKEN \
-            --site=$NETLIFY_SITE_ID
+          set -euo pipefail
+          echo "✗ production smoke failed — restoring the last good production deploy"
+
+          API="https://api.netlify.com/api/v1"
+
+          BAD=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "$API/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
+          echo "  currently published (bad) deploy: ${BAD:-<unknown>}"
+
+          # Newest READY production deploy that is not the one that just failed.
+          TARGET=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "$API/sites/$NETLIFY_SITE_ID/deploys?per_page=50&context=production" \
+            | jq -r --arg bad "$BAD" \
+                '[.[] | select(.state == "ready") | select(.id != $bad)][0].id // empty')
+
+          if [ -z "$TARGET" ]; then
+            echo "::error title=Rollback failed::No earlier ready production deploy to restore."
+            echo "  Roll back by hand: Netlify → Deploys → a known-good deploy → Publish deploy."
+            exit 1
+          fi
+
+          echo "  restoring deploy $TARGET"
+          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "$API/sites/$NETLIFY_SITE_ID/deploys/$TARGET/restore" -o /dev/null
+
+          NOW=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "$API/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
+
+          # Assert the restore actually changed what datiq.app serves. A rollback
+          # that reports success while the bad build is still live is worse than
+          # one that fails loudly, because nobody goes and looks.
+          if [ "$NOW" != "$TARGET" ]; then
+            echo "::error title=Rollback did not take effect::published_deploy is still ${NOW:-<unknown>}."
+            echo "  Roll back by hand: Netlify → Deploys → $TARGET → Publish deploy."
+            exit 1
+          fi
+          echo "  ✓ production rolled back to $TARGET"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Notify on smoke failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v3.0.3
         with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "🚨 DatIQ production smoke FAILED. Auto-rollback executed. Commit: ${{ github.sha }}\nActor: ${{ github.actor }}\nWorkflow: ${{ github.workflow }} #${{ github.run_number }}"
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
 
   # ─────────────────────────────────────────────────────────────────

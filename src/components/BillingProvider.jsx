@@ -10,8 +10,9 @@ import { can, computeLifecycle } from "../lib/entitlementModel.js";
 import { clearEntitlementCache, getCachedEntitlement, loadEntitlement } from "../lib/entitlementClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
-import { validateCoupon, incrementCouponUses } from "../lib/adminService.js";
+import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
+import { fetchAdminGrantCoupon, redeemAdminGrantCoupon as redeemAdminGrantCouponRequest } from "../lib/billingRepo.js";
 import { checkAndFireAlerts } from "../lib/alertService.js";
 import {
   initiateCheckout, initiateTopupCheckout, hasPayment,
@@ -43,6 +44,7 @@ export function BillingProvider({ children }) {
   // Seeded synchronously from the cache so the first paint already knows the
   // lifecycle state and a suspended user never sees a flash of full access.
   const [entitlementRow, setEntitlementRow] = useState(() => getCachedEntitlement());
+  const [adminGrantCoupon, setAdminGrantCoupon] = useState(null);
 
   // ── Payment progress state (drives PaymentProcessingModal) ──────────────────
   const [paymentStage, setPaymentStage]     = useState(PAYMENT_STAGE.IDLE);
@@ -108,6 +110,15 @@ export function BillingProvider({ children }) {
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setAdminGrantCoupon(null);
+    fetchAdminGrantCoupon().then((grant) => {
+      if (!cancelled) setAdminGrantCoupon(grant);
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   /** Force a re-read of the entitlement (after a payment, or on demand). */
   const refreshEntitlement = useCallback(async () => {
     clearEntitlementCache();
@@ -130,14 +141,29 @@ export function BillingProvider({ children }) {
    *
    * `status` deliberately defaults to "active": a user with no row is a
    * legitimate free user, not a suspended one.
+   *
+   * `frozen_at` / `deletion_requested_at` (and their two supporting fields)
+   * MUST be carried through: `can()`'s freeze/deletion gate (entitlementModel.js
+   * §1b) reads them directly off this object, and every client-side pre-flight
+   * check (checkCanExtract, checkCanEnrich, checkCanBatch, ...) calls `can()`
+   * with exactly this entitlement. Omitting them here doesn't just skip a
+   * field — it makes every pre-flight check silently BLIND to a frozen or
+   * deletion-pending account, so the request always looks fine client-side and
+   * only the server (which reads the real row) ever refuses it. That is what
+   * let a scheduled-for-deletion account keep hitting extract/enrich and
+   * burning a real provider call each time before finding out.
    */
   const entitlement = useMemo(
     () => ({
-      plan_id:    planId,
-      status:     entitlementRow?.status ?? "active",
-      source:     entitlementRow?.source ?? null,
-      period_end: entitlementRow?.period_end ?? null,
-      comp_until: entitlementRow?.comp_until ?? null,
+      plan_id:               planId,
+      status:                entitlementRow?.status ?? "active",
+      source:                entitlementRow?.source ?? null,
+      period_end:            entitlementRow?.period_end ?? null,
+      comp_until:            entitlementRow?.comp_until ?? null,
+      frozen_at:             entitlementRow?.frozen_at ?? null,
+      frozen_reason:         entitlementRow?.frozen_reason ?? null,
+      deletion_requested_at: entitlementRow?.deletion_requested_at ?? null,
+      deletion_purge_after:  entitlementRow?.deletion_purge_after ?? null,
     }),
     [planId, entitlementRow],
   );
@@ -385,6 +411,10 @@ export function BillingProvider({ children }) {
   const checkCanEmail        = useCallback(() => can(entitlement, "export.email", gateCtx()).allowed, [entitlement, gateCtx]);
   const checkCanBatch        = useCallback((urlCount) => can(entitlement, "batch", gateCtx({ urlCount })), [entitlement, gateCtx]);
   const checkCanExtractBatch = useCallback((urlCount) => can(entitlement, "extract.batch", gateCtx({ urlCount })), [entitlement, gateCtx, usage]);
+  // Push integrations (HubSpot, Notion, Airtable, Slack) — Select and up.
+  // Google Sheets is NOT gated by this: it needs no connection and is a
+  // client-side CSV download, not a real integration (see PushIntegrationMenu).
+  const checkCanIntegrations = useCallback(() => can(entitlement, "integrations", gateCtx()).allowed, [entitlement, gateCtx]);
 
   /**
    * Full denial detail for any capability — `{ allowed, reason, code, upgradeTo }`.
@@ -403,20 +433,53 @@ export function BillingProvider({ children }) {
     writeSubscription(sub);
   }, [subscription]);
 
-  const applyCoupon = useCallback((code) => {
+  const applyCoupon = useCallback(async (code) => {
     setCouponError("");
     setCouponSuccess("");
-    // A coupon an admin assigned to THIS signed-in user (user_metadata.coupon_availed)
-    // is allowed to self-apply even if it's a planId==="manual" coupon — see
-    // validateCoupon's allowManual doc. The bypass activates only when the typed/
-    // clicked code matches the assignment on the authenticated user's own account,
-    // never for an arbitrary discovered code.
-    const meta = user?.user_metadata || {};
-    const isOwnAssigned = meta.coupon_availed && String(meta.coupon_availed).toUpperCase() === String(code).toUpperCase();
-    const validateOpts = isOwnAssigned ? { allowManual: true, assignedPlanId: meta.coupon_plan_id || null } : {};
-    const { valid, reason, coupon } = validateCoupon(code, planId, validateOpts);
+    // Admin grant coupons use redeemAdminGrantCoupon() below. Keeping them out
+    // of this path is what prevents a complimentary plan grant from touching
+    // normal paid checkout or public coupon usage.
+    const trimmed = String(code || "").trim();
+    if (!trimmed) { setCouponError("Enter a coupon code."); return false; }
+
+    // Prefer the server's real verdict — same source of truth checkout uses
+    // (lib/pricingSource.js), including the actual redemption count, which a
+    // purely local check has no way to see. Falls back to the local check
+    // below only for coupon types the server doesn't track (extraction-bonus,
+    // manual-assign) or if the request itself fails.
+    const serverInfo = await checkCouponServer(trimmed);
+    if (serverInfo) {
+      if (!serverInfo.active) { setCouponError("This coupon has been deactivated."); return false; }
+      if (serverInfo.expired) { setCouponError("This coupon has expired."); return false; }
+      if (serverInfo.exhausted) { setCouponError("This coupon has reached its usage limit."); return false; }
+
+      const restrictTo = serverInfo.planId || null;
+      const restrictedPlan = restrictTo ? planMap[restrictTo] : null;
+      const restrictedLabel = restrictedPlan?.name || restrictTo;
+
+      const sub = { ...subscription, coupon: { code: trimmed.toUpperCase(), appliedAt: new Date().toISOString() } };
+      sub.discountPercent = serverInfo.value;
+      setSubscription(sub);
+      writeSubscription(sub);
+
+      if (restrictTo && restrictTo === planId) {
+        // Already on the exact plan this coupon restricts to — applying it
+        // now can't discount an upgrade that doesn't exist, so say so instead
+        // of the generic "on your next upgrade" line, which would be untrue.
+        setCouponSuccess(
+          `This coupon is for the ${restrictedLabel} plan, which you're already on — it won't discount a different plan.`
+        );
+      } else if (restrictTo) {
+        setCouponSuccess(`Coupon applied — ${serverInfo.value}% off when you upgrade to ${restrictedLabel}.`);
+      } else {
+        setCouponSuccess(`Coupon applied — ${serverInfo.value}% discount on your next upgrade.`);
+      }
+      return true;
+    }
+
+    const { valid, reason, coupon } = validateCoupon(trimmed, planId);
     if (!valid) { setCouponError(reason); return false; }
-    incrementCouponUses(code);
+    incrementCouponUses(trimmed);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
     if (coupon.type === "extractions") sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
     if (coupon.type === "percent")     sub.discountPercent  = coupon.value;
@@ -428,7 +491,31 @@ export function BillingProvider({ children }) {
         : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
     );
     return true;
-  }, [subscription, planId]);
+  }, [subscription, planId, planMap]);
+
+  const redeemAdminGrant = useCallback(async (code) => {
+    setCouponError("");
+    setCouponSuccess("");
+    try {
+      const result = await redeemAdminGrantCouponRequest(code);
+      setAdminGrantCoupon((current) => ({
+        ...(current || {}),
+        code: result.code,
+        planId: result.plan_id,
+        validityMonths: result.validity_months,
+        status: "redeemed",
+        periodStart: result.period_start,
+        periodEnd: result.period_end,
+        redeemedAt: new Date().toISOString(),
+      }));
+      await refreshEntitlement();
+      setCouponSuccess(`Plan grant applied — ${result.plan_id} is active through ${new Date(result.period_end).toLocaleDateString()}.`);
+      return true;
+    } catch (err) {
+      setCouponError(err.message || "Could not redeem this plan grant.");
+      return false;
+    }
+  }, [refreshEntitlement]);
 
   const removeCoupon = useCallback(() => {
     const sub = { ...subscription, coupon: null, discountPercent: 0 };
@@ -489,10 +576,10 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch, whyCannot,
+    checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
-    couponError, couponSuccess,
+    couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   }), [
     subscription, plan, planId, bonus, usage,
     currency, rates, setCurrency,
@@ -504,10 +591,10 @@ export function BillingProvider({ children }) {
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
     checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
-    checkCanBatch, checkCanExtractBatch, whyCannot,
+    checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
-    couponError, couponSuccess,
+    couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   ]);
 
   return (

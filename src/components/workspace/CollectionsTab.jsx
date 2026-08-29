@@ -15,7 +15,7 @@
 // extraction, summarised by lib/collectionsService.summariseCollections().
 
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import Icon from "../Icon.jsx";
 import FaviconDot from "../FaviconDot.jsx";
 import { listExtractions } from "../../lib/extractionsRepo.js";

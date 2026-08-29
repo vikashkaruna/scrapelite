@@ -9,7 +9,7 @@
 // to live in the conversion-critical spot — under the input box, not buried
 // in /privacy.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "./Icon.jsx";
 
 const PILLS = [

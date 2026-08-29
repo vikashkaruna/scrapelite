@@ -3,15 +3,16 @@
 //
 //   - Monthly billing is the default (toggle starts on Monthly)
 //   - All 8 plan cards render (Free / Go / Select / Pro / Business / Agency / Developer / Enterprise)
-//   - Developer card has a "Coming soon" badge
+//   - Developer card is marked coming-soon (badge + disabled "Notify me")
 //   - Enterprise card has a "Contact sales" mailto
 //   - INR currency shows ₹-prefix prices
 //   - v1.0 ships all 4 paid tiers (one-time Order payments); only recurring
 //     subscription billing is deferred to v2.0 (see docs/RECURRING-BILLING-DEFERRAL.md)
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { PLANS } from "../lib/pricingConfig.js";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import Pricing from "./Pricing.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
 import { ToastProvider } from "../components/Toast.jsx";
@@ -77,7 +78,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/pricing"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -108,10 +108,18 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
     }
   });
 
-  it("Developer card has a 'Coming soon' badge", async () => {
+  it("Developer card carries its coming-soon badge and a disabled CTA", async () => {
+    // This asserted `/coming soon/i` and passed for the WRONG REASON: it was
+    // matching the referral teaser elsewhere on the page, not the plan card.
+    // The card's badge is the specific, dated string from pricingConfig
+    // ("Coming H3 2026"), which is also what e2e/smoke/pricing.spec.js pins —
+    // so the two suites had drifted into asserting different things.
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    const badge = PLANS.find((p) => p.comingSoon)?.badge;
+    expect(badge).toBeTruthy();
+    expect(screen.getByText(badge)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /notify me/i })).toBeDisabled();
   });
 
   it("Enterprise card has a 'Contact sales' mailto link", async () => {

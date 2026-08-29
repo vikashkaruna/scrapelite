@@ -17,6 +17,7 @@ import PublicReportArticle from "../../components/PublicReportArticle.jsx";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
+import { buildPublicUrl } from "../../lib/shareService.js";
 
 function timeAgo(iso) {
   if (!iso) return "";
@@ -76,6 +77,16 @@ function ReportRow({ report, onCurated, onUncurated }) {
             <Icon name="globe" size={11} /> {report.url} · {timeAgo(report.created_at)}
             {report.intent ? ` · ${report.intent}` : ""}
           </p>
+          {report.slug && (
+            <a
+              className="admin-gallery-public-link"
+              href={buildPublicUrl(report.slug)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="external" size={11} /> Open public report
+            </a>
+          )}
         </div>
         <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "Hide preview" : "Preview"}
@@ -143,6 +154,10 @@ export default function AdminGallery() {
     if (filter === "uncurated") return !r.curated;
     return true;
   });
+  const coverage = PERSONAS.map((p) => ({
+    ...p,
+    count: reports.filter((r) => r.curated && r.persona === p.id).length,
+  }));
 
   if (loading) {
     return (
@@ -179,6 +194,15 @@ export default function AdminGallery() {
           <Icon name="alert-circle" size={15} /><span>{error}</span>
         </div>
       )}
+
+      <div className="admin-gallery-coverage" aria-label="Gallery persona coverage">
+        {coverage.map((p) => (
+          <span key={p.id} className={`admin-gallery-coverage-pill${p.count ? " covered" : " missing"}`}>
+            <Icon name={p.count ? "check-circle" : "alert-circle"} size={12} />
+            {p.label}: {p.count}
+          </span>
+        ))}
+      </div>
 
       <div className="admin-gallery-filter-row">
         {[

@@ -1,6 +1,6 @@
 // Preview.jsx — review & save interface (route "/preview").
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
@@ -11,8 +11,10 @@ import ExtractSimilarCard from "../components/ExtractSimilarCard.jsx";
 import TagChips from "../components/TagChips.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { isComplianceError } from "../lib/errorMessages.js";
+import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { useBilling } from "../components/BillingProvider.jsx";
-import { resolveTemplateUserId } from "../lib/whiteLabelTemplate.js";
+import { resolveTemplateUserId, readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { deleteExtraction } from "../lib/extractionsRepo.js";
 import { shareExtraction, unshareExtraction, getSharedSlugForId, buildPublicUrl, recordPublicShare, recordPublicUnshare } from "../lib/shareService.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
@@ -24,6 +26,8 @@ import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/li
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
 import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import EmailModal from "../components/EmailModal.jsx";
+import { apiClient } from "../lib/apiClient.js";
 import { useSeo } from "../hooks/useSeo.js";
 
 function HeadingRow({ h }) {
@@ -163,11 +167,27 @@ export default function Preview() {
   const navigate = useNavigate();
   const showToast = useToast();
   const { current, enrich, enrichWithContent } = useExtraction();
-  const { checkCanExport } = useBilling();
+  const { checkCanExport, checkCanEmail } = useBilling();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (current?.activeTab && current?.enrichments?.[current.activeTab]) {
+      return current.activeTab;
+    }
+    const enrichKeys = Object.keys(current?.enrichments || {});
+    if (current?.intent && current.intent !== "summary" && current.intent !== "map") {
+      const match = enrichKeys.find(
+        (k) => k === current.intent || (current.intent === "contacts" && (k === "contacts" || k === "leadership"))
+      );
+      if (match) return match;
+    }
+    if (enrichKeys.length > 0 && current?.custom_extraction != null) {
+      return enrichKeys[0];
+    }
+    return "overview";
+  });
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharedSlug, setSharedSlug] = useState(() => current?.id ? getSharedSlugForId(current.id) : null);
   const downloadRef = useRef(null);
@@ -176,6 +196,18 @@ export default function Preview() {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
+
+  useEffect(() => {
+    if (current?.activeTab && current?.enrichments?.[current.activeTab]) {
+      setActiveTab(current.activeTab);
+    } else if (current?.intent && current.intent !== "summary" && current.intent !== "map") {
+      const enrichKeys = Object.keys(current?.enrichments || {});
+      const match = enrichKeys.find(
+        (k) => k === current.intent || (current.intent === "contacts" && (k === "contacts" || k === "leadership"))
+      );
+      if (match) setActiveTab(match);
+    }
+  }, [current?.id, current?.activeTab]);
 
   useEffect(() => {
     if (!downloadOpen) return;
@@ -197,24 +229,43 @@ export default function Preview() {
     setSharedSlug(current?.id ? getSharedSlugForId(current.id) : null);
   }, [current?.id]);
 
+
   // Q6 — share handlers
   const handleShare = async () => {
     if (!current?.id) { showToast("Save the extraction before sharing."); return; }
     setShareOpen(false);
     try {
-      const { slug, persistedTo } = await shareExtraction(current);
+      const alreadyHadLocalLink = Boolean(getSharedSlugForId(current.id));
+      const { slug, persistedTo, refreshed } = await shareExtraction(current);
       setSharedSlug(slug);
       // FA1 — count this as a public report (free-tier quota mechanic)
-      recordPublicShare(current.id);
+      if (!alreadyHadLocalLink) recordPublicShare(current.id);
       analytics.exported({ format: "share", source: "preview", persistedTo });
-      const msg = persistedTo === "supabase"
-        ? "Public link created — works in any browser."
-        : persistedTo === "both"
-          ? "Public link created (local + cloud)."
-          : "Public link created locally — configure Supabase to share across browsers.";
+
+      // Four outcomes, and they are genuinely different things to say. The
+      // verb changes on whether a link already existed, because "created" is
+      // wrong for the Sync action the user reached this from.
+      const verb = alreadyHadLocalLink ? "Public link is live" : "Public link created";
+      let msg;
+      if (persistedTo === "supabase" && refreshed === false) {
+        // Live, but this browser could not overwrite the published copy — see
+        // the RLS note in shareService. Not a failure; the link works.
+        msg = `${verb} — already published. Sign in to update its contents.`;
+      } else if (persistedTo === "supabase" || persistedTo === "both") {
+        msg = `${verb} — works in any browser.`;
+      } else {
+        msg = `${verb} in this browser only. Sign in to make it work everywhere.`;
+      }
       showToast(msg, "check");
     } catch (err) {
-      showToast("Share failed. Please try again.", "alert-triangle");
+      // Never name Supabase here, and never claim data was lost: the
+      // extraction itself is untouched — only the public link failed. The old
+      // copy ("nothing was saved locally. Check Supabase configuration") told
+      // an end user to debug a vendor they have no relationship with, about a
+      // loss that had not happened.
+      showToast(err?.code === "PUBLIC_PUBLISH_FAILED"
+        ? "Couldn't create the public link just now. Your extraction is safe — please try again."
+        : "Share failed. Please try again.", "alert-triangle");
       console.warn("[DatIQ] Share failed:", err);
     }
   };
@@ -295,7 +346,21 @@ export default function Preview() {
       }
     } catch (err) {
       console.error("[DatIQ] Quick enrichment failed:", err);
-      showToast("Enrichment failed — check your connection", "alert-triangle");
+      // Don't blame the connection for a policy refusal. A robots.txt block is
+      // the server declining deliberately, and "check your connection" sends
+      // the user to debug something that is working fine. Same reasoning for
+      // an account block (frozen / deletion-pending / suspended / paused
+      // seat) reaching here — the pre-flight check in ExtractionProvider was
+      // stale or bypassed, and the server's own message already says exactly
+      // what to do (unfreeze, cancel the deletion, ask an owner to resume).
+      showToast(
+        isComplianceError(err)
+          ? "This site doesn't allow automated access"
+          : isAccountBlocked(err?.code)
+            ? err.message
+            : "Enrichment failed — check your connection",
+        "alert-triangle",
+      );
     } finally {
       setRunningKey(null);
     }
@@ -372,7 +437,7 @@ export default function Preview() {
 
   const onDownloadCsv = () => {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
-    csvDownload([data]);
+    csvDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to CSV", "download");
   };
   const onOpenInSheets = () => {
@@ -381,17 +446,17 @@ export default function Preview() {
     showToast("CSV downloaded. Upload it to the Google Sheet that just opened (File → Import → Upload).", "sheet");
   };
   const onDownloadMarkdown = () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
-    markdownDownload([data]);
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
+    markdownDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to Markdown", "file-code");
   };
   const onDownloadJson = () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
-    jsonDownload([data]);
+    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
+    jsonDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to JSON", "file-json");
   };
   const onDownloadPdf = async () => {
-    if (!checkCanExport("pdf")) { showToast("PDF export requires the Select plan or higher."); return; }
+    if (!checkCanExport("pdf")) { showToast("PDF export requires the Go plan or higher."); return; }
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
       // White-label PDF: Business & Agency users can upload a branded template
@@ -405,7 +470,7 @@ export default function Preview() {
         const tplRes = await readTemplate({ userId: resolveTemplateUserId() });
         if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
       } catch { /* swallow — plain PDF is fine */ }
-      extractionsToPdf([data], { template });
+      extractionsToPdf([data], { template, brandKit: readBrandKit() });
       showToast("Exported to PDF", "file");
     } catch (err) {
       if (/dynamically imported/i.test(err?.message || "")) {
@@ -430,13 +495,13 @@ export default function Preview() {
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyMarkdown = async () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Select plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
     const out = await copyToClipboard([data], "markdown");
     if (out.ok) showToast("Markdown copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyJson = async () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Pro plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
     const out = await copyToClipboard([data], "json");
     if (out.ok) showToast("JSON copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
@@ -448,6 +513,15 @@ export default function Preview() {
     }
     showToast("Extraction deleted", "trash");
     navigate("/");
+  };
+
+  const handleSendEmail = async (emails, format) => {
+    if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
+    const res = await apiClient.sendExportEmail({ to: emails, items: [data], format });
+    setEmailOpen(false);
+    showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");
+    return res;
   };
 
   return (
@@ -476,6 +550,16 @@ export default function Preview() {
                 <div className="export-dropdown-menu share-menu">
                   {sharedSlug ? (
                     <>
+                      <button
+                        className="export-dropdown-item"
+                        onClick={handleShare}
+                      >
+                        <Icon name="refresh" size={14} />
+                        <span>
+                          <b>Sync public link</b>
+                          <span className="export-plan-hint">Ensure this link is published to the cloud</span>
+                        </span>
+                      </button>
                       <button
                         className="export-dropdown-item"
                         onClick={() => { handleCopyShareLink(); setShareOpen(false); }}
@@ -531,34 +615,46 @@ export default function Preview() {
                   <div className="export-dropdown-section">
                     <div className="export-dropdown-section-label">Download</div>
                     <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
-                      <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="download" size={14} /> <span><b>CSV</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
-                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">All plans · downloads CSV + opens new Sheet</span></span>
+                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">Downloads CSV + opens new Sheet</span></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
-                      <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="file" size={14} /> <span><b>PDF</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="file-code" size={14} /> <span><b>Markdown</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadJson(); setDownloadOpen(false); }}>
-                      <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+                      <Icon name="file-json" size={14} /> <span><b>JSON</b></span>
                     </button>
                   </div>
                   <div className="export-dropdown-section">
                     <div className="export-dropdown-section-label">Copy to clipboard</div>
                     <button className="export-dropdown-item" onClick={() => { onCopySummary(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy summary</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy summary</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyCsv(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onCopyJson(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
+                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b></span>
+                    </button>
+                  </div>
+                  <div className="export-dropdown-section">
+                    <button
+                      className="export-dropdown-item"
+                      onClick={() => {
+                        if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setDownloadOpen(false); return; }
+                        setEmailOpen(true);
+                        setDownloadOpen(false);
+                      }}
+                    >
+                      <Icon name="mail" size={14} /> <span><b>Email…</b></span>
                     </button>
                   </div>
                 </div>
@@ -889,6 +985,15 @@ export default function Preview() {
             ))}
         </div>
       </div>
+      {emailOpen && (
+        <EmailModal
+          items={[data]}
+          hint="Sent as a real attached file — pick a format below."
+          formats={["csv", "pdf", "markdown", "json"].filter(checkCanExport)}
+          onSend={handleSendEmail}
+          onClose={() => setEmailOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@
 // Must be placed INSIDE AuthProvider (to react to login events) and INSIDE
 // BrowserRouter (to call useNavigate).
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useAuth } from "./AuthProvider.jsx";
 import {
   getGuestCount,

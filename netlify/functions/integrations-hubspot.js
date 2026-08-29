@@ -42,6 +42,7 @@ import {
   deleteConnection,
 } from "./lib/integrationConnectionStore.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -121,7 +122,7 @@ export const handler = async (event) => {
   try {
     // GET /api/integrations/hubspot/status
     if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
-      const r = await getConnection({ userId, provider: "hubspot" });
+      const r = await getConnection({ userId, provider: "hubspot", includeSecrets: true });
       if (!r.ok) return respond(500, { error: r.error });
       if (!r.connection) {
         return respond(200, { connected: false, provider: "hubspot" });
@@ -244,6 +245,11 @@ export const handler = async (event) => {
 
     // POST /api/integrations/hubspot/push
     if (event.httpMethod === "POST" && subPath[0] === "push") {
+      // Server-side mirror of the client's checkCanIntegrations gate — a
+      // client that skips the UI and POSTs directly must still be refused.
+      // See entitlementModel.js's "integrations" case (Select and up).
+      const { check } = await requireCapabilityForUser(userId, "integrations");
+      if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
       const body = await readJsonBody(event);
       const extraction = body?.extraction;
       if (!extraction || typeof extraction !== "object") {

@@ -33,6 +33,10 @@ await ctx.addInitScript(() => {
       "datiq.onboardingTour.v1",
       JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
     );
+    localStorage.setItem(
+      "datiq.discoverabilityTour.v1",
+      JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
+    );
     // The consent banner is a fixed-bottom overlay, so without a stored choice
     // it sits across the lower ~15% of EVERY shot and buries the thing each
     // screenshot exists to show. Recording a choice up front suppresses it.
@@ -141,6 +145,18 @@ try {
     const cardBtn = page.locator('.seg-opt[title="Card view"], button[title="Card view"]').first();
     if (await cardBtn.count()) { await cardBtn.click(); await sleep(700); await shot("07-dashboard-cards.png"); }
     else skip("07-dashboard-cards.png", "Card-view button not found");
+  });
+
+  // ── Discoverability (SEO / AEO / GEO audits) ───────────────────────────────
+  // The empty state, deliberately: running a real audit here would fire live
+  // network calls against a third-party page and produce a screenshot whose
+  // numbers change every time it is regenerated.
+  await safe("11-discoverability.png", async () => {
+    await go("/discoverability");
+    await sleep(700);
+    const adv = page.getByRole("button", { name: /Advanced options/i });
+    if (await adv.count()) { await adv.click(); await sleep(400); }
+    await shot("11-discoverability.png");
   });
 
   // ── Pricing ────────────────────────────────────────────────────────────────

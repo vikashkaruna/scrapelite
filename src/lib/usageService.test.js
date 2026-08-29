@@ -6,6 +6,7 @@ import {
   canExport,
   canExtract,
   canExtractBatch,
+  incrementAudits,
   incrementBatchRuns,
   incrementContentGenerations,
   incrementEnrichments,
@@ -116,10 +117,14 @@ describe("canExport / canEmailExport (U-22)", () => {
     expect(canExport("free", "csv")).toBe(true);
   });
 
-  it("Select plan: markdown is allowed, JSON is not", () => {
+  it("Select plan: markdown, JSON and PDF are all allowed (every paid plan now ships every format)", () => {
     expect(canExport("select", "markdown")).toBe(true);
-    expect(canExport("select", "json")).toBe(false);
+    expect(canExport("select", "json")).toBe(true);
     expect(canExport("select", "pdf")).toBe(true);
+  });
+
+  it("Free plan: JSON is not allowed (still CSV-only)", () => {
+    expect(canExport("free", "json")).toBe(false);
   });
 
   it("canEmailExport reflects plan's email_export limit", () => {
@@ -290,5 +295,76 @@ describe("RC-02 — concurrent usage writes are atomic (race conditions)", () =>
     expect(applied[0].credit).toBe(25);
     // The persisted bonusExtractions is exactly 25.
     expect(readSubscription().bonusExtractions).toBe(25);
+  });
+});
+
+// ── Per-persona attribution ─────────────────────────────────────────────────
+// Persona has always shaped what the product SHOWS, but nothing recorded which
+// one was active when a unit was spent — so "which of my team's roles is
+// consuming the plan?" had no answer, on a product that sells team seats.
+//
+// The breakdown is a breakdown OF the totals, never a parallel counter: the two
+// can never disagree about the month, which is the failure a second counter
+// always eventually reaches.
+describe("usage — per-persona breakdown", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("attributes an extraction to the persona in effect", () => {
+    localStorage.setItem("datiq.persona", "seo");
+    incrementExtractions(2);
+    const u = readUsage();
+    expect(u.extractions).toBe(2);
+    expect(u.byPersona.seo.extractions).toBe(2);
+  });
+
+  it("keeps the breakdown adding up to the total across personas", () => {
+    localStorage.setItem("datiq.persona", "sales");
+    incrementExtractions(3);
+    localStorage.setItem("datiq.persona", "recruiter");
+    incrementExtractions(2);
+    const u = readUsage();
+    const summed = Object.values(u.byPersona).reduce((n, r) => n + r.extractions, 0);
+    expect(summed).toBe(u.extractions);
+    expect(u.extractions).toBe(5);
+  });
+
+  it("records work done with no persona rather than dropping it", () => {
+    // Silently omitting it would make the breakdown fail to add up.
+    incrementExtractions(1);
+    const u = readUsage();
+    expect(u.byPersona.__none__.extractions).toBe(1);
+    expect(u.extractions).toBe(1);
+  });
+
+  it("tracks every counter, not only extractions", () => {
+    localStorage.setItem("datiq.persona", "agency");
+    incrementBatchRuns(1);
+    incrementContentGenerations(2);
+    incrementEnrichments("https://example.com");
+    incrementAudits(3);
+    const row = readUsage().byPersona.agency;
+    expect(row).toMatchObject({ batchRuns: 1, contentGenerations: 2, enrichments: 1, audits: 3 });
+  });
+
+  it("reads back a record written before byPersona existed", () => {
+    // Historic months genuinely have no breakdown. That must not throw.
+    const mk = readUsage().month;
+    localStorage.setItem("datiq.usage", JSON.stringify({
+      [mk]: { month: mk, extractions: 9, enrichments: {}, batchRuns: 1, contentGenerations: 0 },
+    }));
+    const u = readUsage();
+    expect(u.extractions).toBe(9);
+    expect(u.byPersona).toEqual({});
+  });
+
+  it("survives storage being unreadable", () => {
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation((k) => {
+      if (k === "datiq.persona") throw new Error("blocked");
+      return null;
+    });
+    expect(() => incrementExtractions(1)).not.toThrow();
+    spy.mockRestore();
   });
 });

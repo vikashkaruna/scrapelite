@@ -7,7 +7,7 @@
 // than against localStorage.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { BillingProvider, useBilling } from "./BillingProvider.jsx";
 import { AuthProvider } from "./AuthProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -43,6 +43,8 @@ vi.mock("../lib/billingRepo.js", () => ({
   claimBillingSession: vi.fn(() => Promise.resolve({ claimed: true })),
   getAuthUserId: vi.fn(() => Promise.resolve("u1")),
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 vi.mock("../lib/entitlementClient.js", () => entMocks);
 
@@ -70,7 +72,7 @@ function Probe() {
 
 function Tree() {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>
@@ -150,6 +152,59 @@ describe("suspended subscriber", () => {
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("suspended"));
     expect(screen.getByTestId("planId").textContent).toBe("pro"); // server wins
     expect(screen.getByTestId("extract").textContent).toBe("false");
+  });
+});
+
+/**
+ * Reproduces the live bug: a frozen or deletion-pending account could still
+ * click Extract, because BillingProvider's `entitlement` object (the one
+ * `can()` decides against for every client-side pre-flight check) never
+ * carried `frozen_at` / `deletion_requested_at` off the server row — so the
+ * pre-flight check always saw a "clean" entitlement and let the request
+ * through to consume a real provider call before the SERVER finally refused
+ * it. Free plan on purpose: freeze/deletion are account-level, independent of
+ * plan or billing history (see migration 0035).
+ */
+describe("frozen / deletion-pending account — the pre-flight must actually see it", () => {
+  it("blocks extraction client-side for a frozen account, before any request is made", async () => {
+    entMocks.loadEntitlement.mockResolvedValue({
+      user_id: "u1",
+      plan_id: "free",
+      status: "active",
+      frozen_at: new Date().toISOString(),
+      frozen_reason: "user_requested",
+    });
+    render(<Tree />);
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("active"));
+
+    expect(screen.getByTestId("extract").textContent).toBe("false");
+    // Read/export stays available — freezing is view-only, not a lockout.
+    expect(screen.getByTestId("csv").textContent).toBe("true");
+
+    const why = seen.whyCannot("extract");
+    expect(why.code).toBe("FROZEN");
+    expect(why.reason).toMatch(/frozen/i);
+  });
+
+  it("blocks extraction client-side for a deletion-pending account, and names the right code", async () => {
+    entMocks.loadEntitlement.mockResolvedValue({
+      user_id: "u1",
+      plan_id: "free",
+      status: "active",
+      frozen_at: new Date().toISOString(),
+      frozen_reason: "deletion_requested",
+      deletion_requested_at: new Date().toISOString(),
+      deletion_purge_after: new Date(Date.now() + 30 * DAY).toISOString(),
+    });
+    render(<Tree />);
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("active"));
+
+    expect(screen.getByTestId("extract").textContent).toBe("false");
+    expect(screen.getByTestId("batch").textContent).toBe("false");
+
+    const why = seen.whyCannot("extract");
+    expect(why.code).toBe("DELETION_PENDING");
+    expect(why.reason).toMatch(/scheduled for deletion/i);
   });
 });
 

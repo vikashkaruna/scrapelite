@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useState } from "react";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import { ExtractionProvider, useExtraction } from "./ExtractionProvider.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ToastProvider } from "./Toast.jsx";
@@ -49,7 +49,7 @@ vi.mock("../lib/firecrawlService.js", () => ({
 vi.mock("../lib/aiService.js", () => ({
   summarize: vi.fn(async () => "Mock summary"),
   categorizeLinks: vi.fn(async (links) => links || []),
-  generateContent: vi.fn(async () => ""),
+  generateContent: vi.fn(async () => "Mock generated content"),
   CONTENT_FORMATS: [],
 }));
 
@@ -104,7 +104,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -131,16 +130,23 @@ function Probe() {
   const { pathname } = useLocation();
   const [entry, setEntry] = useState(null);
   const extractEntry = current?.enrichments?.pricing;
+  const contentEntry = current?.enrichments?.["seo-outline"];
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="showHardBlock">{String(showHardBlock)}</span>
       <span data-testid="hardBlockReason">{hardBlockReason}</span>
       <span data-testid="canSingle">{String(checkCanExtractSingle().allowed)}</span>
+      <span data-testid="guestCount">
+        {String(JSON.parse(localStorage.getItem("datiq.guestTrial") || "{}").count ?? 0)}
+      </span>
       <span data-testid="pathname">{pathname}</span>
       <span data-testid="entryReason">{entry?.reason ?? "(none)"}</span>
       <span data-testid="extractEntryReason">{extractEntry?.reason ?? "(none)"}</span>
       <span data-testid="extractEntryPresent">{String(Boolean(extractEntry))}</span>
+      <span data-testid="contentEntryPresent">{String(Boolean(contentEntry))}</span>
+      <span data-testid="contentEntryText">{contentEntry?.data?.text ?? "(none)"}</span>
+      <span data-testid="activeTab">{current?.activeTab ?? "(none)"}</span>
       <button data-testid="extract" onClick={() => extract("https://x.example.com")}>
         extract
       </button>
@@ -154,6 +160,21 @@ function Probe() {
         }
       >
         extractWithEnrich
+      </button>
+      <button
+        data-testid="extractWithContent"
+        onClick={() =>
+          extract("https://x.example.com", {
+            generateContent: {
+              key: "seo-outline",
+              label: "SEO Blog Outline",
+              icon: "file-text",
+              instruction: "Generate outline",
+            },
+          })
+        }
+      >
+        extractWithContent
       </button>
       <button
         data-testid="enrich"
@@ -311,5 +332,130 @@ describe("ExtractionProvider.extract — carries the empty-extraction reason (Ho
     });
     expect(screen.getByTestId("extractEntryPresent").textContent).toBe("true");
     expect(screen.getByTestId("extractEntryReason").textContent).toBe("(none)");
+    expect(screen.getByTestId("activeTab").textContent).toBe("pricing");
+  });
+
+  it("creates a content enrichment tab when generateContent is passed to extract()", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      domain_map: null,
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("extractWithContent").click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("contentEntryPresent").textContent).toBe("true");
+    expect(screen.getByTestId("contentEntryText").textContent).toBe("Mock generated content");
+    expect(screen.getByTestId("activeTab").textContent).toBe("seo-outline");
+  });
+});
+
+// ── Compliance refusals ──────────────────────────────────────────────────────
+// A robots.txt refusal is the server doing its job: it declines BEFORE any
+// provider is contacted. Two things follow, and both were wrong.
+//
+//   1. Nothing was spent, so nothing may be charged. The catch block used to
+//      call trackGuestExtraction(1) unconditionally, justified by a comment —
+//      "A failed attempt still consumed a provider call" — that is simply not
+//      true for this path. The server was double-billing the same refusal.
+//   2. Retrying cannot change a policy decision, so there must be no "Try
+//      again" button. Offering one teaches people to hammer a wall.
+describe("ExtractionProvider.extract — robots.txt refusals are not failures", () => {
+  const ROBOTS_MESSAGE =
+    "robots.txt disallows scraping for DatIQBot/1.0 (path=/in/vikashkaruna)";
+
+  function complianceError({ consentAvailable = false } = {}) {
+    const err = new Error(ROBOTS_MESSAGE);
+    err.status = 403;
+    err.code = "robots_disallowed";
+    err.complianceBlocked = true;
+    err.host = "www.linkedin.com";
+    if (consentAvailable) err.consentAvailable = true;
+    return err;
+  }
+
+  beforeEach(() => {
+    localStorage.setItem(TRIAL_KEY, JSON.stringify({ count: 4, batchCount: 0, sid: "s1" }));
+  });
+
+  async function runRefusal(err) {
+    firecrawlMocks.extractStructure.mockRejectedValueOnce(err);
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("extract").click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it("does NOT charge a guest credit for a refusal", async () => {
+    await runRefusal(complianceError());
+    expect(screen.getByTestId("guestCount").textContent.trim()).toBe("4");
+  });
+
+  it("still charges a guest credit for a genuine provider failure", async () => {
+    // The rule that a failed attempt costs a credit exists for a reason —
+    // otherwise a URL that always fails is free and endlessly repeatable. This
+    // change must narrow it to refusals, not remove it.
+    await runRefusal(new Error("Failed to fetch"));
+    expect(screen.getByTestId("guestCount").textContent.trim()).toBe("5");
+  });
+
+  it("shows the refusal without a Try again button", async () => {
+    await runRefusal(complianceError());
+    expect(screen.getByText(/doesn't allow automated access/i)).toBeTruthy();
+    // Scoped to the BUTTON: the friendly copy of other categories mentions
+    // "try again" in prose, and it is the affordance that matters here.
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+  });
+
+  it("does not leak the raw robots.txt string as the headline", async () => {
+    await runRefusal(complianceError());
+    expect(screen.queryByText(/^robots\.txt disallows/)).toBeNull();
+  });
+
+  it("keeps Try again for a genuine failure", async () => {
+    await runRefusal(new Error("Failed to fetch"));
+    expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
+  });
+
+  it("gives the signed-out user a working way to sign in", async () => {
+    // The copy says "sign in and DatIQ can record that and continue". Without a
+    // button that was a dead end: the only control on this modal was Close, so
+    // it told the user what to do and gave them no way to do it.
+    await runRefusal(complianceError({ consentAvailable: true }));
+    const signIn = screen.getByRole("button", { name: /^sign in$/i });
+    expect(signIn).toBeTruthy();
+  });
+
+  it("does not print a stack trace under the refusal", async () => {
+    // A minified trace under a deliberate policy decision is what made the
+    // refusal read as a crash.
+    await runRefusal(complianceError());
+    const toggle = screen.queryByRole("button", { name: /technical details/i });
+    if (toggle) {
+      toggle.click();
+      expect(document.body.textContent).not.toMatch(/\bat async\b/);
+    }
+  });
+
+  it("tells a signed-out user to sign in rather than offering the override", async () => {
+    // An anonymous cookie is nobody to attribute a permission claim to, so a
+    // guest never sees the attestation dialog even when the server flags the
+    // refusal as overridable in principle.
+    await runRefusal(complianceError({ consentAvailable: true }));
+    // Scoped to the MESSAGE: there is now also a "Sign in" button, so a bare
+    // /sign in/i matches twice.
+    expect(screen.getByText(/sign in and DatIQ can record that/i)).toBeTruthy();
+    expect(screen.queryByText(/I confirm I have permission/i)).toBeNull();
   });
 });

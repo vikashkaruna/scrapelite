@@ -179,13 +179,18 @@ function abandonedTrialHtml({ userName, lastRun }) {
 
 // ── Supabase query helpers ────────────────────────────────────────────────────
 
+// "Active" = signed in + at least one monitoring schedule. We pick
+// (user_id, schedule) pairs from the public.scheduled_tasks table (the data
+// column is JSON; alertEmail + lastRunAt + runCount live in there).
+//
+// ⚠️ This used to select a `user_email` column that 0004_scheduler.sql never
+// creates — scheduled_tasks only ever had `user_id` at its root — so the
+// query 400'd on every single run and the error was swallowed, making this
+// cron report success while sending nothing. `user_id` is what the table
+// actually has; the email is resolved separately via fetchUserEmails(),
+// the same Supabase Auth Admin API call admin-users.js already uses.
 async function fetchActiveUsers(db) {
-  // "Active" = signed in + at least one monitoring schedule. We pick
-  // (user_email, schedule) pairs from the public.scheduled_tasks table
-  // (the data column is JSON; alertEmail + lastRunAt + runCount live in
-  // there). The `user_email` lives at the row root for ergonomics; we
-  // store it when the schedule is created.
-  const url = `${db.base}/scheduled_tasks?status=eq.active&select=id,user_email,data&limit=200`;
+  const url = `${db.base}/scheduled_tasks?status=eq.active&select=id,user_id,data&limit=200`;
   try {
     const res = await fetch(url, { headers: db.headers });
     if (!res.ok) return [];
@@ -193,6 +198,22 @@ async function fetchActiveUsers(db) {
   } catch {
     return [];
   }
+}
+
+// Batched, matching admin-users.js's own single-page read — this cron runs
+// daily and email delivery is not time-critical, so one page (1000 users) is
+// the same trade-off already accepted there, not a new limitation.
+async function fetchUserEmails(db) {
+  const url = `${db.base.replace(/\/rest\/v1$/, "")}/auth/v1/admin/users?per_page=1000&page=1`;
+  const byId = new Map();
+  try {
+    const res = await fetch(url, { headers: db.headers });
+    if (!res.ok) return byId;
+    const data = await res.json().catch(() => null);
+    const users = Array.isArray(data) ? data : data?.users || [];
+    for (const u of users) if (u?.id && u?.email) byId.set(u.id, u.email);
+  } catch { /* leave empty — callers treat a missing email as "skip this row" */ }
+  return byId;
 }
 
 async function alreadySent(db, userEmail, kind, window) {
@@ -276,11 +297,13 @@ const run = async () => {
   const isDigestHour = now.getUTCHours() === DAILY_DIGEST_HOUR_UTC;
 
   const rows = await fetchActiveUsers(db);
+  const emailsById = await fetchUserEmails(db);
   const byEmail = new Map();
   for (const r of rows) {
-    if (!r.user_email) continue;
-    if (!byEmail.has(r.user_email)) byEmail.set(r.user_email, []);
-    byEmail.get(r.user_email).push(r);
+    const email = r.user_id ? emailsById.get(r.user_id) : null;
+    if (!email) continue; // no user_id on the row, or the account no longer exists
+    if (!byEmail.has(email)) byEmail.set(email, []);
+    byEmail.get(email).push(r);
   }
 
   let sent = 0;
@@ -378,12 +401,6 @@ const run = async () => {
 };
 
 // Wrapped for /admin/monitoring — see jobControl.js.
-//
-// ⚠️ A green run row here does NOT mean mail was sent. This handler selects a
-// `user_email` column that 0004_scheduler.sql never creates; the query 400s and
-// the error is swallowed, so the job reports success while doing nothing. The
-// defect is carried as an explicit `caveat` on this job in monitoringModel.js so
-// the dashboard shows it next to the status rather than quietly contradicting it.
 export const handler = withJobRun("reengagement", run);
 
 // ISO week number (1-53) — used for the weekly digest dedup window.

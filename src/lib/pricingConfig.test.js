@@ -28,9 +28,28 @@ const ALLOWED_LIMIT_KEYS = new Set([
   "priority_support",
   "workspaces",
   "batch_max_urls",
+  // Discoverability audits carry their own monthly budget rather than debiting
+  // extraction credits — an audit is several fetches, a PageSpeed lookup, a
+  // citation sample and an AI call.
+  "audits",
+  // Push integrations (HubSpot, Notion, Airtable, Slack) — Select and up.
+  "integrations",
+  // Entitlement flag only — no shipping extension yet. Select and up.
+  "browser_extension",
 ]);
 
 const ALLOWED_EXPORT_FORMATS = new Set(["csv", "pdf", "markdown", "json", "jsonl"]);
+
+/**
+ * Every plan must declare an audit quota.
+ *
+ * The stronger half of the guard above. Registering the key only stops an
+ * unknown one appearing; this stops a NEW plan shipping without one, which
+ * would read as `undefined`, fall through `(L.audits || 0)` to zero, and deny
+ * Discoverability to that plan's customers with a "not included in your plan"
+ * message nobody wrote.
+ */
+const AUDIT_QUOTA_REQUIRED = true;
 
 describe("PLANS schema (U-12)", () => {
   it("every plan has the required fields and valid limit values", () => {
@@ -42,6 +61,12 @@ describe("PLANS schema (U-12)", () => {
       expect(typeof p.price_usd_annual, `${p.id}.price_usd_annual must be a number`).toBe("number");
       expect(typeof p.price_inr, `${p.id}.price_inr must be a number`).toBe("number");
       expect(typeof p.price_inr_annual, `${p.id}.price_inr_annual must be a number`).toBe("number");
+      // Every plan declares an audit quota. See AUDIT_QUOTA_REQUIRED.
+      if (AUDIT_QUOTA_REQUIRED) {
+        expect(typeof p.limits.audits, `plan ${p.id} is missing an audits limit`).toBe("number");
+        expect(p.limits.audits, `plan ${p.id} has a negative audits limit`).toBeGreaterThanOrEqual(0);
+      }
+
       // Limits — every limit key is from the allowed set
       for (const key of Object.keys(p.limits)) {
         expect(ALLOWED_LIMIT_KEYS.has(key), `plan ${p.id} has unknown limit ${key}`).toBe(true);
@@ -91,11 +116,27 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
     const select = PLAN_BY_ID.select;
     expect(go.limits.extractions).toBeLessThan(select.limits.extractions);
     expect(go.limits.batch_max_urls).toBeLessThan(select.limits.batch_max_urls);
-    // Everything else about Go mirrors Select's original feature set.
+    // Export formats and email export are still identical between the two —
+    // the split is in scheduled monitoring, integrations and the browser
+    // extension, which are deliberately Select-and-up only (Go is a taster tier).
     expect(go.limits.exports).toEqual(select.limits.exports);
     expect(go.limits.email_export).toBe(select.limits.email_export);
-    expect(go.limits.scheduled_monitoring).toBe(select.limits.scheduled_monitoring);
     expect(go.limits.api_access).toBe(select.limits.api_access);
+  });
+
+  it("Go is excluded from scheduled monitoring, integrations and the browser extension; Select and up get all three", () => {
+    const go = PLAN_BY_ID.go;
+    for (const id of ["select", "pro", "business", "agency", "developer"]) {
+      const plan = PLAN_BY_ID[id];
+      expect(plan.limits.scheduled_monitoring, `${id} should have scheduled monitoring`).toBeGreaterThan(0);
+      expect(plan.limits.integrations, `${id} should have integrations`).toBe(true);
+      expect(plan.limits.browser_extension, `${id} should have the browser extension flag`).toBe(true);
+    }
+    expect(go.limits.scheduled_monitoring).toBe(0);
+    expect(go.limits.integrations).toBe(false);
+    expect(go.limits.browser_extension).toBe(false);
+    expect(PLAN_BY_ID.free.limits.integrations).toBe(false);
+    expect(PLAN_BY_ID.free.limits.browser_extension).toBe(false);
   });
 
   it("Developer plan is marked 'coming soon' with a 'Coming H3 2026' badge", () => {

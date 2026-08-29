@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import Account from "./Account.jsx";
 import { BillingProvider } from "../components/BillingProvider.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
@@ -21,6 +21,8 @@ const billingRepoMocks = vi.hoisted(() => ({
   claimBillingSession: vi.fn(() => Promise.resolve({ claimed: true })),
   getAuthUserId: vi.fn(() => Promise.resolve("u1")),
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 const repoMocks = vi.hoisted(() => ({
   fetchUsageFromDb: vi.fn(() => Promise.resolve(null)),
@@ -95,7 +97,7 @@ const LINES = [
 
 function Tree() {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>

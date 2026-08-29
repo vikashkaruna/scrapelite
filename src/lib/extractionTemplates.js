@@ -88,7 +88,7 @@ export const EXTRACTION_TEMPLATES = [
     prompt:
       "Return an object with: title, meta_description, h1 (array), h2 (array), canonical_url, og_image, json_ld_count.",
     tags: ["seo", "audit"],
-    packs: ["seo"],
+    packs: ["seo", "discoverability"],
   },
   {
     key: "tech-stack",
@@ -148,6 +148,47 @@ export const EXTRACTION_TEMPLATES = [
     tags: ["dev", "research"],
     packs: ["research", "seo"],
   },
+  // ── Discoverability recipes ───────────────────────────────────────────────
+  // These do NOT run an audit. They carry `route: "/discoverability"`, so the
+  // gallery HANDS the URL to the audit screen exactly as the Home composer's
+  // Discover button does. The alternative — a template that quietly triggers a
+  // second implementation of the audit flow — would mean two places that have
+  // to keep telling the same story about quota, compliance refusals and the
+  // signed-in rule, which is precisely how the guest-credit leak happened when
+  // four extraction paths each wired their own check.
+  {
+    key: "aeo-answer-audit",
+    icon: "scan-search",
+    title: "Can answer engines cite this page?",
+    desc: "Score a page for AEO: direct-answer blocks, question headings, extractable formatting.",
+    exampleUrl: "https://datiq.app/blog",
+    route: "/discoverability",
+    auditProfile: "aeo",
+    tags: ["discoverability", "aeo", "content"],
+    packs: ["seo", "discoverability"],
+  },
+  {
+    key: "geo-citation-check",
+    icon: "sparkles",
+    title: "Is this brand cited by generative engines?",
+    desc: "Score a page for GEO: entity authority, sameAs consistency, author trust, citation footprint.",
+    exampleUrl: "https://stripe.com",
+    route: "/discoverability",
+    auditProfile: "geo",
+    tags: ["discoverability", "geo", "brand"],
+    packs: ["seo", "discoverability"],
+  },
+  {
+    key: "technical-crawl-audit",
+    icon: "settings",
+    title: "Can crawlers actually read this page?",
+    desc: "Score a page for technical accessibility: indexability, render completeness, Core Web Vitals, mobile parity.",
+    exampleUrl: "https://www.notion.so/help",
+    route: "/discoverability",
+    auditProfile: "seo",
+    tags: ["discoverability", "technical", "seo"],
+    packs: ["seo", "discoverability"],
+  },
 ];
 
 // ── F06: Recipe Packs ────────────────────────────────────────────────────────
@@ -172,12 +213,28 @@ export const RECIPE_PACKS = [
     templateKeys: ["yc-companies", "saas-pricing", "job-board", "tech-stack", "competitor-pricing"],
   },
   {
+    key: "discoverability",
+    label: "Discoverability Pack",
+    description: "Find out whether a page can be found and cited — by search engines, answer engines and generative engines. Opens the audit screen rather than extracting.",
+    icon: "scan-search",
+    color: "#c026d3",
+    templateKeys: ["aeo-answer-audit", "geo-citation-check", "technical-crawl-audit", "seo-audit"],
+  },
+  {
     key: "seo",
     label: "SEO Pack",
     description: "Audit any site in one click. Pull heading structure, meta, links, and competitor content for content briefs.",
     icon: "search",
     color: "#0d9488",
     templateKeys: ["saas-pricing", "producthunt-launch", "seo-audit", "news-article", "github-repo"],
+  },
+  {
+    key: "research",
+    label: "Research Pack",
+    description: "Dig into a company or market before you write a word. Job postings, launches, product pages, tech stack, and press coverage in one pass.",
+    icon: "book-open",
+    color: "#0369a1",
+    templateKeys: ["job-board", "producthunt-launch", "shopify-product", "tech-stack", "news-article", "github-repo"],
   },
 ];
 

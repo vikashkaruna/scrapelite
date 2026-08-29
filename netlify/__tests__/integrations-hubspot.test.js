@@ -44,6 +44,19 @@ vi.mock("../functions/lib/hubspotService.js", () => ({
   DEFAULT_COMPANY_MAPPING: { name: "page_title" },
 }));
 
+// The push entitlement gate hits the entitlements table via plain fetch() —
+// not the mocked @supabase/supabase-js client — which would otherwise be a
+// REAL, unmocked network call to the fake SUPABASE_URL below during "POST
+// /push" tests (it happens to fail open on the DNS error, but a real lookup
+// in a test is exactly the flakiness trap this codebase has been bitten by
+// before — see CLAUDE.md's LinkedIn/DNS note).
+const mockRequireCapabilityForUser = vi.fn().mockResolvedValue({ check: { allowed: true } });
+vi.mock("../functions/lib/requireEntitlement.js", () => ({
+  requireCapabilityForUser: (...args) => mockRequireCapabilityForUser(...args),
+  denyBody: (check) => ({ error: check.reason, code: check.code }),
+  DENY_STATUS: 402,
+}));
+
 import { handler } from "../functions/integrations-hubspot.js";
 
 const baseEvent = (overrides = {}) => ({
@@ -133,6 +146,7 @@ describe("integrations-hubspot", () => {
       expect(body.connected).toBe(true);
       expect(body.connection.account_label).toBe("ACME");
       expect(body.connection.access_token).toBeUndefined();
+      expect(mockStore.get).toHaveBeenCalledWith({ userId: "u1", provider: "hubspot", includeSecrets: true });
     });
   });
 
@@ -220,6 +234,18 @@ describe("integrations-hubspot", () => {
         extraction,
         expect.objectContaining({ accessToken: "pat-xxx" }),
       );
+    });
+    it("refuses the push server-side when the plan lacks the integrations capability", async () => {
+      mockRequireCapabilityForUser.mockResolvedValueOnce({
+        check: { allowed: false, reason: "Push integrations are Select and up.", code: "NOT_IN_PLAN" },
+      });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ extraction: { url: "https://acme.com" } }),
+      }));
+      expect(r.statusCode).toBe(402);
+      expect(mockHubspot.push).not.toHaveBeenCalled();
     });
   });
 

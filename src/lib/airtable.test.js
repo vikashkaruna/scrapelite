@@ -264,15 +264,12 @@ describe("airtable (F18)", () => {
       // Mock that mirrors real Airtable: returns the actual chunk size
       // (Airtable echoes back the records it accepted).
       const fetchFn = vi.fn().mockImplementation(async (_url, init) => {
+        if (init.method === "GET") return { ok: true, status: 200, json: async () => ({ records: [] }) };
         const body = JSON.parse(init.body);
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ records: body.records.map((r) => ({ id: "rec", fields: r.fields })) }),
-        };
+        return { ok: true, status: 200, json: async () => ({ records: body.records.map((r) => ({ id: "rec", fields: r.fields })) }) };
       });
       const result = await pushToAirtable(items, { ...validConfig, fetchFn });
-      expect(fetchFn).toHaveBeenCalledTimes(3); // 10 + 10 + 2
+      expect(fetchFn).toHaveBeenCalledTimes(44); // lookup + create per record
       expect(result.pushed).toBe(22);
       expect(result.ok).toBe(true);
     });
@@ -284,7 +281,7 @@ describe("airtable (F18)", () => {
         json: async () => ({ error: { message: "INVALID_VALUE_FOR_COLUMN" } }),
       });
       const result = await pushToAirtable(
-        [{ url: "u", page_title: "t", host: "h", ai_summary: "s" }],
+        [{ url: "https://example.com", page_title: "t", host: "h", ai_summary: "s" }],
         { ...validConfig, fetchFn },
       );
       expect(result.ok).toBe(false);
@@ -296,7 +293,7 @@ describe("airtable (F18)", () => {
     it("captures network errors per chunk", async () => {
       const fetchFn = vi.fn().mockRejectedValue(new Error("DNS failure"));
       const result = await pushToAirtable(
-        [{ url: "u", page_title: "t", host: "h", ai_summary: "s" }],
+        [{ url: "https://example.com", page_title: "t", host: "h", ai_summary: "s" }],
         { ...validConfig, fetchFn },
       );
       expect(result.ok).toBe(false);
@@ -336,18 +333,27 @@ describe("airtable (F18)", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          id: "tblABCDEFGHIJK",
-          name: "Scrape Results",
-          fields: [
-            { id: "fld1", name: "URL", type: "url" },
-            { id: "fld2", name: "Title", type: "singleLineText" },
-            { id: "fld3", name: "Notes", type: "multilineText" },
+          tables: [
+            {
+              id: "tblOtherTable",
+              name: "Other table",
+              fields: [],
+            },
+            {
+              id: "tblABCDEFGHIJK",
+              name: "Scrape Results",
+              fields: [
+                { id: "fld1", name: "URL", type: "url" },
+                { id: "fld2", name: "Title", type: "singleLineText" },
+                { id: "fld3", name: "Notes", type: "multilineText" },
+              ],
+            },
           ],
         }),
       });
       const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
       expect(fetchFn).toHaveBeenCalledWith(
-        "https://api.airtable.com/v0/meta/bases/appABCDEFGHIJK/tables/tblABCDEFGHIJK",
+        "https://api.airtable.com/v0/meta/bases/appABCDEFGHIJK/tables",
         expect.objectContaining({ method: "GET" }),
       );
       expect(r.ok).toBe(true);
@@ -379,6 +385,17 @@ describe("airtable (F18)", () => {
       const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
       expect(r.ok).toBe(false);
       expect(r.error).toMatch(/Base ID and Table ID/);
+    });
+
+    it("returns an actionable error when the configured table is absent from the base schema", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ tables: [{ id: "tblOtherTable", name: "Other table", fields: [] }] }),
+      });
+      const r = await fetchAirtableSchema({ ...validConfig, fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/table was not found/i);
     });
 
     it("rejects an invalid config before fetching", async () => {

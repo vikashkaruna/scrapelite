@@ -39,6 +39,7 @@ Disallow: /account
 Disallow: /preview
 Disallow: /batch
 Disallow: /schedules
+Disallow: /discoverability
 Disallow: /workspace
 Disallow: /collections
 Disallow: /payment

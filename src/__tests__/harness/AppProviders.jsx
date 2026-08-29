@@ -15,7 +15,7 @@
 // compose the test around their own wrapper using the exported
 // `AppProviders` component as a base.
 
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { ThemeProvider } from "../../components/ThemeProvider.jsx";
 import { ToastProvider } from "../../components/Toast.jsx";
 import { ErrorModalProvider } from "../../components/ErrorModal.jsx";
@@ -45,7 +45,6 @@ export function renderWithProviders(ui, options = {}) {
     <MemoryRouter
       initialEntries={initialEntries}
       initialIndex={initialIndex}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ThemeProvider>
         <ToastProvider>
@@ -75,7 +74,6 @@ export function AppProviders({ children, initialEntries = ["/"] }) {
   return (
     <MemoryRouter
       initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ThemeProvider>
         <ToastProvider>

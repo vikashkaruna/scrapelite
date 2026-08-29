@@ -24,18 +24,15 @@ test("about page does NOT contain the 'powered by DatIQ' copy bug (R4)", async (
   expect(text?.toLowerCase()).not.toContain("powered by datiq");
 });
 
-test("about page renders the Pillar 0 (Web Intelligence Core) section", async ({ page }) => {
-  // R1 rebrand: the about page now opens with a Pillars section that names
-  // Pillar 0 as the proven foundation. Pin the section so a regression that
-  // drops the architecture framing is caught at the gate.
+test("about page explains the user-facing DatIQ modules", async ({ page }) => {
   await page.goto("/about");
-  const section = page.locator(".about-pillars");
+  const section = page.locator(".about-section").filter({ hasText: "What you can do with DatIQ" });
   await expect(section).toBeVisible();
-  // All five pillars (P0..P4) are listed, with P0 highlighted as the foundation.
-  await expect(section.locator(".about-pillar")).toHaveCount(5);
-  await expect(section.locator(".about-pillar-p0")).toBeVisible();
-  await expect(section.locator(".about-pillar-p0")).toContainText(/Pillar 0/i);
-  await expect(section.locator(".about-pillar-p0")).toContainText(/Web Intelligence \(Core\)/i);
+  await expect(page.getByText("Research any site")).toBeVisible();
+  await expect(page.getByText("Enrich the details")).toBeVisible();
+  await expect(page.getByText("Create better work")).toBeVisible();
+  await expect(page.getByText("Share and act")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/Pillar 0/i);
 });
 
 test("about page shows the Axiom Minds logo next to the company name", async ({ page }) => {

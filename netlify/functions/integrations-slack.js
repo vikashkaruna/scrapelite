@@ -30,6 +30,7 @@ import {
 import { postToSlack, buildSlackWelcomeMessage } from "./lib/slackFormatter.js";
 import { notifyExtractionComplete, buildSlackNewExtraction, resolveSlackWebhook } from "./lib/notify.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -64,7 +65,7 @@ async function authenticateRequest(event) {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleStatus(userId) {
-  const r = await getConnection({ userId, provider: "slack" });
+  const r = await getConnection({ userId, provider: "slack", includeSecrets: true });
   if (!r.ok) return respond(500, { error: r.error });
   if (!r.connection) {
     return respond(200, {
@@ -190,7 +191,7 @@ async function handleDisconnect(userId) {
 }
 
 async function handleTest(event, userId) {
-  const conn = await getConnection({ userId, provider: "slack" });
+  const conn = await getConnection({ userId, provider: "slack", includeSecrets: true });
   const webhookUrl = conn?.ok && conn.connection?.config?.webhook_url
     || process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) {
@@ -230,6 +231,12 @@ async function handleNotify(event, userId) {
 //     action — Slack only, no Zapier fan-out.
 //   • /send is one call with N items; /notify is one call per event.
 async function handleSend(event, userId) {
+  // Server-side mirror of the client's checkCanIntegrations gate (Select and
+  // up) — a client that skips the UI and POSTs directly must still be
+  // refused. Scoped to the manual "Push" action only — handleNotify (the
+  // automated extraction-complete alert) is a different feature and untouched.
+  const { check } = await requireCapabilityForUser(userId, "integrations");
+  if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
   const body = await readJsonBody(event);
   const items = Array.isArray(body?.items) ? body.items : [];
   if (items.length === 0) {

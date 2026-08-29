@@ -41,11 +41,15 @@ No code required. Background processing keeps the page responsive. Results persi
 - All internal and external links, with text and aria-label
 - Page metadata: title, description, OpenGraph, Twitter Card
 - JavaScript rendering option (via Firecrawl `waitFor: 3000`) for SPAs
-- Honors `robots.txt` and `noindex` by default
+- Honors `robots.txt` by default. The check runs server-side before any page is
+  fetched, identifying as `DatIQBot/1.0`, and honors any published Crawl-delay.
+  A disallowed URL is declined without being requested and without being charged.
+  A signed-in user who records a confirmation that they own a site, or have the
+  owner's permission, can override that refusal for that one site.
 
 ### AI summary
 - Plain-language overview of any page
-- Model: Anthropic Claude (configurable)
+- Model: Google Gemini by default, falling back to Anthropic Claude then OpenAI (configurable per deployment)
 - 2-3 sentence default; longer for rich content
 
 ### Custom extraction
@@ -108,6 +112,47 @@ No code required. Background processing keeps the page responsive. Results persi
 - **White-label PDF** (Business + Agency) — upload a single-page PDF template; every export renders on top of it
 
 ---
+
+### Discoverability audits (SEO / AEO / GEO)
+
+DatIQ scores a page for three audiences that reward different things, because a
+page can rank well in classic search and never be quoted by an answer engine.
+
+- **SEO** — crawlability, rendering, canonicals, Core Web Vitals
+- **AEO** — answer-first passages an assistant can lift and quote whole
+- **GEO** — machine-readable entity identity and citation footprint
+
+Four pillars sit underneath, each traceable to its individual signals: Answer
+Clarity (30%), Entity Authority (25%), Structural Hierarchy (20%), Technical
+Accessibility (25%).
+
+Blocking failures — a noindex directive, AI crawlers disallowed in robots.txt,
+content that only exists after JavaScript runs — apply a multiplicative penalty
+to every framework score rather than a fixed deduction, and the report shows the
+arithmetic.
+
+Signals that could not be measured (Core Web Vitals when PageSpeed has no field
+data, citation footprint when no answer-engine sampling is configured) are
+EXCLUDED and their weight redistributed, never scored as zero. Every score
+reports its evidence coverage alongside it.
+
+Findings become a prioritised queue with owner, effort, confidence and the score
+this specific page can recover. Where a fix is markup or copy, DatIQ generates a
+draft from the page's own content — FAQPage JSON-LD built from visible
+questions, Organization schema carrying real profile links, 40-60 word answer
+blocks, corrected heading outlines. Anything unobservable is emitted as an
+explicit TODO placeholder rather than invented.
+
+Re-auditing compares against the previous run and reports resolved, remaining
+and newly introduced issues. A delta is only reported when both audits measured
+the same signal.
+
+Audits carry their own monthly allowance, separate from extraction credits:
+Free 3, Go 10, Select 25, Pro 100, Business 500, Agency 2,000. Scheduled
+monitoring requires Pro or above; competitive benchmarks require Select or above.
+
+DatIQ makes no claim that a score predicts rankings, citations or traffic.
+
 
 ## 4. Pricing (as of 2026)
 
@@ -258,6 +303,8 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - Integrations directory: https://datiq.app/integrations
 
 ---
+- https://datiq.app/discoverability — SEO / AEO / GEO audit engine (sign-in required)
+- https://datiq.app/help/11-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
 
 ## 8. FAQ (12 questions and answers)
 
@@ -292,7 +339,7 @@ Yes. Business plans include 3 seats, Agency plans include 5 workspaces. Extra Wo
 DatIQ is India-first and DPDP Act 2023 compliant. SOC 2 Type II is in progress (target Q4 2026). The admin page documents current compliance posture and DPIA templates.
 
 **Q11. What AI model powers DatIQ?**
-DatIQ uses Anthropic Claude for AI enrichment (configurable via env). The default model is optimized for structured extraction tasks. The API is also model-agnostic — you can plug in your own key.
+DatIQ runs AI enrichment through a provider fallback chain — Google Gemini, then Anthropic Claude, then OpenAI — configurable via env. The default model is optimized for structured extraction tasks. The API is also model-agnostic — you can plug in your own key.
 
 **Q12. How do I cancel my subscription?**
 Open Account → Plan → Cancel. You keep access until the end of the billing period, then the account moves to Free. No email hoops, no retention calls.
@@ -346,12 +393,12 @@ DatIQ's differentiation: plain-English custom extraction, built-in AI enrichment
 
 ## 12. Technical Stack
 
-- **Frontend:** Vite 5 + React 18 + React Router 6
+- **Frontend:** Vite 8 + React 19 + React Router 8
 - **Styling:** Tailwind CSS + CSS custom-property design tokens
 - **Icons:** lucide-react
 - **Auth + DB:** Supabase (Postgres + auth)
 - **Extraction:** Firecrawl (`/v1/scrape` + `/v1/map`)
-- **AI enrichment:** Anthropic Claude (configurable)
+- **AI enrichment:** Google Gemini, falling back to Anthropic Claude then OpenAI (configurable)
 - **Serverless:** Netlify Functions (Node.js)
 - **Payments:** Razorpay (India) + Stripe (international)
 - **PDF export:** jsPDF (lazy-loaded, only on export click)
@@ -400,6 +447,12 @@ Full contact page: https://datiq.app/contact
 ---
 
 ## 16. Recent releases (2026)
+
+**August 2026 — Discoverability module.** SEO, AEO and GEO audits with a
+four-pillar scoring engine, prioritised fixes with copy-ready implementation
+constructs, re-audit comparison, trend history, scheduled monitoring and
+competitive benchmarks. Unmeasured signals are excluded rather than scored as
+zero, and every score reports its evidence coverage.
 
 ### 2026-08-09 — AEO/GEO/SEO P1 sweep
 - `og-card.jpg` (1376×768) replaces the favicon pixel in `og:image` and `twitter:image` on 19 surfaces

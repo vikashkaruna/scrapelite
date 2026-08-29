@@ -13,24 +13,17 @@
 // popup-free. The "Custom schedule…" item routes to /schedules with the current
 // input pre-populated.
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useToast } from "./Toast.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
-import { enrichMeta } from "../lib/extractionPresets.js";
+import { knownDisallowedHost } from "../lib/scrapeConsentService.js";
+import { enrichMeta, enrichMetaForIntent } from "../lib/extractionPresets.js";
 import { buildSchedule, saveSchedule, SCHEDULE_PRESETS, presetByKey } from "../lib/schedulerService.js";
 
-// Map an intent → the enrichment-tab metadata so a custom/contacts/pricing run
-// from the composer persists as a named tab on the Preview screen.
-function enrichMetaForIntent(intent) {
-  if (intent === "contacts") return enrichMeta("leadership");
-  if (intent === "pricing")  return enrichMeta("pricing");
-  if (intent === "custom")   return enrichMeta("custom");
-  return null;
-}
 
 const TEXT_MIN_LEN = 40; // raw text shorter than this with no URL is likely a typo'd URL
 
@@ -105,6 +98,17 @@ export default function HeroComposer({
   const urlCount = detectedUrls.length;
   // Raw pasted text can't be scheduled (no URL to re-fetch).
   const canSchedule = classification.kind !== "text" && !embeddedAsText;
+  // Discoverability audits exactly one page, so it needs one resolvable URL.
+  // A batch of 40 is not a discoverability request; the benchmark flow on
+  // /discoverability is, and that is a different screen.
+  const canDiscover = detectedUrls.length === 1 && !embeddedAsText;
+
+  // Pre-flight hint for sites we know disallow every crawler. A HINT ONLY: it
+  // never blocks submission, because robots.txt is fetched live on the server
+  // and is the only thing that decides. Its job is to stop someone learning
+  // that LinkedIn is off-limits by watching a request fail. First match wins —
+  // naming one site is useful, listing six is noise.
+  const disallowedHint = detectedUrls.map(knownDisallowedHost).find(Boolean) || null;
 
   // Reset the chooser whenever the input changes shape, so a previous answer
   // can't silently apply to a completely different paste.
@@ -267,10 +271,11 @@ export default function HeroComposer({
         return;
       }
       const prompt = resolvePrompt({ intent, customPrompt });
-      const opts = { rawText: text, intent };
+      const opts = { rawText: text, intent, background };
+      if (generateContent) opts.generateContent = generateContent;
       if (prompt) {
         opts.customPrompt = prompt;
-        const meta = enrichMetaForIntent(intent);
+        const meta = enrichMetaForIntent(intent, prompt);
         if (meta) opts.enrichMeta = meta;
       }
       extract(`text://pasted-${Date.now().toString(36)}`, opts);
@@ -285,7 +290,7 @@ export default function HeroComposer({
     if (generateContent) opts.generateContent = generateContent;
     if (prompt) {
       opts.customPrompt = prompt;
-      const meta = enrichMetaForIntent(intent);
+      const meta = enrichMetaForIntent(intent, prompt);
       if (meta) opts.enrichMeta = meta;
     }
     extract(target, opts);
@@ -308,6 +313,21 @@ export default function HeroComposer({
       return;
     }
     navigate("/schedules", { state: { draftSchedule: { ...draft, cadenceKey: presetKey || undefined }, openEditor: true } });
+  }
+
+  /**
+   * Hand the pasted URL to /discoverability with the run armed.
+   *
+   * Router state, not a query string: the URL is the user's, not ours to put in
+   * our own address bar, and /discoverability is a private prefix whose noindex
+   * rules are an exact path match. `navigate`, never window.location — a hard
+   * navigation would drop the SPA and, for any prerendered route, land on a
+   * static snapshot instead of the app.
+   */
+  function goDiscover() {
+    const target = detectedUrls[0];
+    if (!target) return;
+    navigate("/discoverability", { state: { auditUrl: normalizeUrl(target), autorun: true } });
   };
 
   // Enter submits in single mode; batch mode keeps Enter for newlines.
@@ -387,6 +407,20 @@ export default function HeroComposer({
               </button>
             </span>
           )}
+        </div>
+      )}
+
+      {/* Known-blocked host — warn before the request, not after. This is a
+          hint, not a gate: the button stays enabled, because this list can go
+          stale and only the live robots.txt on the server is authoritative. */}
+      {disallowedHint && (
+        <div className="hero-blocked-hint" role="status">
+          <Icon name="shield" size={13} />
+          <span>
+            <b>{disallowedHint.label}</b> blocks automated tools in its robots.txt,
+            and DatIQ honours that — this will be declined. Try the company's own
+            website instead.
+          </span>
         </div>
       )}
 
@@ -490,6 +524,34 @@ export default function HeroComposer({
             <Icon name={batchMode ? "toggle-right" : "toggle-left"} size={16} />
             Batch
           </button>
+
+          {/* ── Discover ──────────────────────────────────────────────────
+              A DOOR, not a second implementation.
+
+              Discoverability answers a different question about a page than
+              Extract does — "can this be found and cited?" rather than "what is
+              on it?" — but people arrive at the composer with a URL already
+              pasted, and that is the moment the question occurs to them.
+
+              So this hands the URL to /discoverability with the run armed and
+              does no auditing itself. Duplicating even a thin version of the
+              audit flow here would mean two entry points that must be kept
+              telling the same story about quota, compliance refusals and the
+              signed-in requirement — which is exactly how the guest-credit leak
+              happened when four extraction paths each wired their own check.
+
+              Hidden for raw pasted text: there is no URL to audit. */}
+          {canDiscover && (
+            <button
+              type="button"
+              className="hero-chip-btn"
+              onClick={goDiscover}
+              title="Discoverability — score this page for search, answer engines and generative engines"
+            >
+              <Icon name="scan-search" size={16} />
+              Discover
+            </button>
+          )}
 
           {/* Schedule (preset cadence — works for a single URL or a batch) */}
           {canSchedule && (

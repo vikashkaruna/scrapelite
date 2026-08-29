@@ -74,7 +74,7 @@ export const handler = async (event) => {
     try {
       const reports = await sbFetch(
         db,
-        "/rest/v1/public_reports?select=id,slug,title,url,intent,data,persona,curated,reviewed_at,reviewed_by,created_at&order=created_at.desc&limit=200"
+        "/rest/v1/public_reports?select=id,slug,title,url,intent,data,persona,curated,reviewed_at,reviewed_by,created_at&is_public=eq.true&order=created_at.desc&limit=200"
       );
       return respond(200, { ok: true, reports });
     } catch (e) {

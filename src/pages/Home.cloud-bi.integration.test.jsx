@@ -9,8 +9,8 @@
 //   - Credit estimator tone flips to "block" when over quota
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Routes, Route } from "react-router";
 import Home from "./Home.jsx";
 import { AppProviders } from "../__tests__/harness/AppProviders.jsx";
 
@@ -75,6 +75,11 @@ function renderHome() {
     <AppProviders initialEntries={["/"]}>
       <Routes>
         <Route path="/" element={<Home />} />
+        {/* Stub, so a template that ROUTES can be asserted on without pulling
+            the whole Discoverability page (and its API client) into this
+            harness. What matters here is that Home navigated, not what the
+            destination renders. */}
+        <Route path="/discoverability" element={<div data-testid="discoverability-route" />} />
       </Routes>
     </AppProviders>,
   );
@@ -110,15 +115,26 @@ describe("Stage 1 — Home: Q3 outcome tiles", () => {
 });
 
 describe("Stage 1 — Home: Q5 template gallery", () => {
-  it("renders the Template library section with template cards", () => {
+  it("renders the Template library COLLAPSED, filters still visible", () => {
+    // The grid is 15 cards and sat permanently open beneath the hero, so the
+    // homepage asked a first-time visitor to read a catalogue before deciding
+    // to do anything. The heading and the filter rows stay — they are the cheap
+    // signal about what the product covers — and the grid is one click away.
     renderHome();
     expect(screen.getByText(/Template library/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /^All$/ })).toBeInTheDocument();
-    // Restrict to the template gallery's own list items (10–15 templates)
     const gallery = screen.getByText(/Template library/i).closest(".template-gallery");
+    expect(gallery.querySelectorAll('[role="listitem"]')).toHaveLength(0);
+    expect(within(gallery).getByRole("button", { name: /Browse \d+ recipes/i })).toBeInTheDocument();
+  });
+
+  it("opens the template grid on the toggle", () => {
+    renderHome();
+    const gallery = screen.getByText(/Template library/i).closest(".template-gallery");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Browse \d+ recipes/i }));
     const items = gallery.querySelectorAll('[role="listitem"]');
     expect(items.length).toBeGreaterThanOrEqual(10);
-    expect(items.length).toBeLessThanOrEqual(15);
+    expect(items.length).toBeLessThanOrEqual(20);
   });
 
   it("clicking a tag filters the visible cards", () => {
@@ -137,6 +153,7 @@ describe("Stage 1 — Home: Q5 template gallery", () => {
   it("clicking the 'Y Combinator company directory' template prefills the composer URL", () => {
     renderHome();
     const gallery = screen.getByText(/Template library/i).closest(".template-gallery");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Browse \d+ recipes/i }));
     const cards = gallery.querySelectorAll(".template-card");
     const card = Array.from(cards).find((c) => /Y Combinator company directory/i.test(c.textContent));
     expect(card).toBeTruthy();
@@ -146,6 +163,22 @@ describe("Stage 1 — Home: Q5 template gallery", () => {
       const joined = Array.from(inputs).map((i) => i.value).join(" ");
       expect(joined).toMatch(/ycombinator\.com\/companies/);
     });
+  });
+
+  it("a discoverability recipe navigates instead of prefilling", () => {
+    // These recipes name a DESTINATION, not an extraction. They must hand the
+    // URL to /discoverability rather than quietly running a second copy of the
+    // audit flow from the homepage — one implementation of quota, compliance
+    // refusals and the signed-in rule, in one place.
+    renderHome();
+    const gallery = screen.getByText(/Template library/i).closest(".template-gallery");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Browse \d+ recipes/i }));
+    const card = Array.from(gallery.querySelectorAll(".template-card"))
+      .find((c) => /answer engines cite this page/i.test(c.textContent));
+    expect(card, "the AEO recipe is missing from the gallery").toBeTruthy();
+    fireEvent.click(card);
+    // renderHome mounts a route stub for /discoverability (see the harness).
+    expect(screen.getByTestId("discoverability-route")).toBeInTheDocument();
   });
 });
 

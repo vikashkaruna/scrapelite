@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { useEffect } from "react";
 import { AppProviders } from "../harness/AppProviders.jsx";
 import { useAuth } from "../../components/AuthProvider.jsx";
@@ -73,7 +73,6 @@ function AppProvidersWithPath({ children, path = "/" }) {
   return (
     <MemoryRouter
       initialEntries={[path]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <AppProviders>{children}</AppProviders>
     </MemoryRouter>

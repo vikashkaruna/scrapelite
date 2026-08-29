@@ -25,9 +25,12 @@ function makeFetcher(handlers = {}) {
   // script asserts them to unmask an SPA catch-all serving index.html at 200
   // in place of a missing static file or function.
   const defaults = {
-    "/": { status: 200, body: "<html>DatIQ — Extract & enrich</html>", contentType: "text/html; charset=UTF-8" },
+    // Bodies carry an <h1> because production now serves PRERENDERED documents
+    // at / and /pricing, not the SPA shell. The smoke script asserts that, so a
+    // shell-shaped fixture here would be testing the wrong world.
+    "/": { status: 200, body: "<html><body><h1>Intelligence from the Web.</h1>DatIQ — Extract & enrich</body></html>", contentType: "text/html; charset=UTF-8" },
     "/dashboard": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
-    "/pricing": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
+    "/pricing": { status: 200, body: "<html><body><h1>Simple, transparent pricing</h1></body></html>", contentType: "text/html" },
     "/batch": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
     "/favicon.svg": { status: 200, body: "<svg/>", contentType: "image/svg+xml" },
     "/robots.txt": { status: 200, body: "User-agent: *\nAllow: /", contentType: "text/plain; charset=utf-8" },
@@ -306,8 +309,48 @@ describe("runSmoke — failure paths", () => {
     const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
     expect(result.failed).toBe(1);
     expect(result.passed).toBe(9);
-    expect(result.failures[0]).toMatch(/GET \/ \(home contains brand\)/);
+    expect(result.failures[0]).toMatch(/GET \/ \(home serves rendered content/);
     expect(result.failures[0]).toMatch(/DatIQ|Extract/);
+  });
+
+  it("rejects the home probe when the BARE SHELL is served", async () => {
+    // The case nothing in CI could previously see. The shell 200s and its
+    // <title> and meta both contain "DatIQ", so the brand check above passes
+    // while the page has no rendered content at all. Only structure separates
+    // a prerendered document from the shell.
+    const { fetcher } = makeFetcher({
+      "/": { status: 200, body: '<html><head><title>DatIQ</title></head><body><div id="root"></div></body></html>' },
+    });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(1);
+    expect(result.failures[0]).toMatch(/no <h1>/);
+  });
+
+  it("rejects /pricing when the prerendered document is not served", async () => {
+    const { fetcher } = makeFetcher({
+      "/pricing": { status: 200, body: '<html><body><div id="root"></div></body></html>' },
+    });
+    const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+    expect(result.failed).toBe(1);
+    expect(result.failures[0]).toMatch(/prerendered document is not being served/);
+  });
+
+  it("lets a plain vite preview opt out of the homepage structure check", async () => {
+    // `vite preview` serves dist/ directly and applies no netlify.toml rules,
+    // so the forced rewrite cannot fire there. The Staging Gate's local smoke
+    // step runs exactly that, and must not fail on a rule it cannot exercise.
+    const prev = process.env.SMOKE_SKIP_PRERENDER;
+    process.env.SMOKE_SKIP_PRERENDER = "1";
+    try {
+      const { fetcher } = makeFetcher({
+        "/": { status: 200, body: '<html><head><title>DatIQ</title></head><body><div id="root"></div></body></html>' },
+      });
+      const result = await runSmoke("https://x.test", { fetcher, logger: quiet });
+      expect(result.failed).toBe(0);
+    } finally {
+      if (prev === undefined) delete process.env.SMOKE_SKIP_PRERENDER;
+      else process.env.SMOKE_SKIP_PRERENDER = prev;
+    }
   });
 
   it("flags a 404 on a SPA route", async () => {

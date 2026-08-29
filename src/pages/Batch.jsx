@@ -2,7 +2,7 @@
 // Supports: paste URLs textarea, CSV file import, progress tracking, and
 // combined export (CSV / PDF / Markdown / JSON).
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
@@ -17,11 +17,15 @@ import UrlReviewTable from "../components/UrlReviewTable.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
 import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import EmailModal from "../components/EmailModal.jsx";
+import { apiClient } from "../lib/apiClient.js";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
 import { isValidUrl, csvDownload, markdownDownload, jsonDownload, copyToClipboard, uid } from "../lib/utils.js";
+import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { hostOf, snippet } from "../lib/utils.js";
+import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { getBatchRun } from "../lib/batchRunsService.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
@@ -68,7 +72,7 @@ function parseUrlsFromText(text) {
 }
 
 // ── Export Dropdown (matches Dashboard pattern) ───────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled }) {
+function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, onEmail, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -97,30 +101,37 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
           <div className="export-dropdown-section">
             <div className="export-dropdown-section-label">Download</div>
             <button className="export-dropdown-item" onClick={() => { onCsv(); setOpen(false); }}>
-              <Icon name="download" size={14} /> <span><b>CSV</b><span className="export-plan-hint">All plans</span></span>
+              <Icon name="download" size={14} /> <span><b>CSV</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onPdf(); setOpen(false); }}>
-              <Icon name="file" size={14} /> <span><b>PDF</b><span className="export-plan-hint">Select+</span></span>
+              <Icon name="file" size={14} /> <span><b>PDF</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onMarkdown(); setOpen(false); }}>
-              <Icon name="file-code" size={14} /> <span><b>Markdown</b><span className="export-plan-hint">Select+</span></span>
+              <Icon name="file-code" size={14} /> <span><b>Markdown</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onJson(); setOpen(false); }}>
-              <Icon name="file-json" size={14} /> <span><b>JSON</b><span className="export-plan-hint">Pro+</span></span>
+              <Icon name="file-json" size={14} /> <span><b>JSON</b></span>
             </button>
           </div>
           <div className="export-dropdown-section">
             <div className="export-dropdown-section-label">Copy to clipboard</div>
             <button className="export-dropdown-item" onClick={() => { onCopyCsv && onCopyCsv(); setOpen(false); }}>
-              <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b><span className="export-plan-hint">All plans</span></span>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onCopyMarkdown && onCopyMarkdown(); setOpen(false); }}>
-              <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b><span className="export-plan-hint">Select+</span></span>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onCopyJson && onCopyJson(); setOpen(false); }}>
-              <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b><span className="export-plan-hint">Pro+</span></span>
+              <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b></span>
             </button>
           </div>
+          {onEmail && (
+            <div className="export-dropdown-section">
+              <button className="export-dropdown-item" onClick={() => { onEmail(); setOpen(false); }}>
+                <Icon name="mail" size={14} /> <span><b>Email…</b></span>
+              </button>
+            </div>
+          )}
           {/* No "Send to" section — destinations live on the Push button, which
               now carries Google Sheets too. Export ▾ is downloads + clipboard. */}
         </div>
@@ -363,6 +374,7 @@ export default function Batch() {
     : null;
 
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   // F16 — results table filter + sort
   const [resultsFilter, setResultsFilter] = useState("all"); // all | success | error
   const [resultsSort, setResultsSort] = useState("original"); // original | url-asc | url-desc | status | title | headings
@@ -471,15 +483,28 @@ export default function Batch() {
 
     const batchSizeCheck = billing?.checkCanBatch?.(urlCount);
     if (batchSizeCheck && !batchSizeCheck.allowed) {
-      showToast(`${batchSizeCheck.reason} Upgrade your plan to process more URLs.`);
-      navigate("/pricing");
+      // A frozen / deletion-pending / suspended account isn't a batch-size
+      // problem — send them to Account, where the fix actually lives, not to
+      // a plan upsell that cannot help.
+      if (isAccountBlocked(batchSizeCheck.code)) {
+        showToast(batchSizeCheck.reason);
+        navigate("/account");
+      } else {
+        showToast(`${batchSizeCheck.reason} Upgrade your plan to process more URLs.`);
+        navigate("/pricing");
+      }
       return;
     }
 
     const quotaCheck = billing?.checkCanExtractBatch?.(urlCount);
     if (quotaCheck && !quotaCheck.allowed) {
-      showToast(`${quotaCheck.reason} Add an Extractions Bundle or upgrade your plan.`);
-      navigate("/pricing");
+      if (isAccountBlocked(quotaCheck.code)) {
+        showToast(quotaCheck.reason);
+        navigate("/account");
+      } else {
+        showToast(`${quotaCheck.reason} Add an Extractions Bundle or upgrade your plan.`);
+        navigate("/pricing");
+      }
       return;
     }
 
@@ -550,39 +575,50 @@ export default function Batch() {
   const onExportCsv = () => {
     if (!billing?.checkCanExport?.("csv")) { showToast("CSV export unavailable on your plan."); return; }
     if (!successResults.length) return;
-    csvDownload(successResults);
+    csvDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to CSV`, "download");
   };
 
   const onExportMarkdown = async () => {
     if (!billing?.checkCanExport?.("markdown")) {
-      showToast("Markdown export requires the Select plan or higher. Upgrade to unlock.");
+      showToast("Markdown export requires the Go plan or higher. Upgrade to unlock.");
       return;
     }
     if (!successResults.length) return;
-    markdownDownload(successResults);
+    markdownDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to Markdown`, "file-code");
   };
 
   const onExportJson = async () => {
     if (!billing?.checkCanExport?.("json")) {
-      showToast("JSON export requires the Pro plan or higher. Upgrade to unlock.");
+      showToast("JSON export requires the Go plan or higher. Upgrade to unlock.");
       return;
     }
     if (!successResults.length) return;
-    jsonDownload(successResults);
+    jsonDownload(successResults, { brandKit: readBrandKit() });
     showToast(`Exported ${successResults.length} pages to JSON`, "file-json");
   };
 
   const onExportPdf = async () => {
     if (!billing?.checkCanExport?.("pdf")) {
-      showToast("PDF export requires the Select plan or higher. Upgrade to unlock.");
+      showToast("PDF export requires the Go plan or higher. Upgrade to unlock.");
       return;
     }
     if (!successResults.length) return;
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
-      extractionsToPdf(successResults);
+      // White-label PDF (Business + Agency) — Dashboard's and Preview's PDF
+      // export both load the user's template; this one never did, so a
+      // batch-exported PDF silently dropped back to plain DatIQ branding
+      // even for a plan that pays for white-label. Same fallback-on-failure
+      // behavior as those two: a bad template must never fail the export.
+      let template = null;
+      try {
+        const { readTemplate, resolveTemplateUserId } = await import("../lib/whiteLabelTemplate.js");
+        const tplRes = await readTemplate({ userId: resolveTemplateUserId({ user }) });
+        if (tplRes?.ok && tplRes.value?.bytes) template = tplRes.value.bytes;
+      } catch { /* plain PDF is fine */ }
+      extractionsToPdf(successResults, { template, brandKit: readBrandKit() });
       showToast(`Exported ${successResults.length} pages to PDF`, "file");
     } catch (err) {
       console.error("[DatIQ] PDF export failed:", err);
@@ -603,18 +639,27 @@ export default function Batch() {
     else showToast(`Copy failed (${out.reason || "unknown"}). Use the CSV download instead.`, "alert-triangle");
   };
   const onCopyMarkdown = async () => {
-    if (!billing?.checkCanExport?.("markdown")) { showToast("Markdown export requires Select+."); return; }
+    if (!billing?.checkCanExport?.("markdown")) { showToast("Markdown export requires Go+."); return; }
     if (!successResults.length) return;
     const out = await copyToClipboard(successResults, "markdown");
     if (out.ok) showToast(`Copied ${successResults.length} pages to clipboard (Markdown)`, "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}). Use the Markdown download instead.`, "alert-triangle");
   };
   const onCopyJson = async () => {
-    if (!billing?.checkCanExport?.("json")) { showToast("JSON export requires Pro+."); return; }
+    if (!billing?.checkCanExport?.("json")) { showToast("JSON export requires Go+."); return; }
     if (!successResults.length) return;
     const out = await copyToClipboard(successResults, "json");
     if (out.ok) showToast(`Copied ${successResults.length} pages to clipboard (JSON)`, "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}). Use the JSON download instead.`, "alert-triangle");
+  };
+
+  const handleSendEmail = async (emails, format) => {
+    if (!billing?.checkCanEmail?.()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!billing?.checkCanExport?.(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
+    const res = await apiClient.sendExportEmail({ to: emails, items: successResults, format });
+    setEmailOpen(false);
+    showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");
+    return res;
   };
 
   // ── Count badge colour ───────────────────────────────────────────────────────
@@ -1008,6 +1053,7 @@ export default function Batch() {
                       onCopyCsv={onCopyCsv}
                       onCopyMarkdown={onCopyMarkdown}
                       onCopyJson={onCopyJson}
+                      onEmail={() => setEmailOpen(true)}
                       disabled={!successResults.length}
                     />
                     <PushIntegrationMenu
@@ -1119,6 +1165,15 @@ export default function Batch() {
         <ExportIntegrations
           items={successResults}
           onClose={() => setIntegrationsOpen(false)}
+        />
+      )}
+      {emailOpen && successResults.length > 0 && (
+        <EmailModal
+          items={successResults}
+          hint="Sent as a real attached file — pick a format below."
+          formats={["csv", "pdf", "markdown", "json"].filter((f) => billing?.checkCanExport?.(f))}
+          onSend={handleSendEmail}
+          onClose={() => setEmailOpen(false)}
         />
       )}
     </div>

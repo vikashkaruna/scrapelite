@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import Onboarding from "./Onboarding.jsx";
 import { AuthProvider, useAuth } from "../components/AuthProvider.jsx";
 import { ToastProvider } from "../components/Toast.jsx";
@@ -71,7 +71,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/onboarding"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -112,7 +111,6 @@ describe("F-09 — Onboarding persona selection persists", () => {
     render(
       <MemoryRouter
         initialEntries={["/onboarding"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <ToastProvider>
           <ErrorModalProvider>
@@ -144,7 +142,6 @@ describe("F-09 — Onboarding persona selection persists", () => {
     render(
       <MemoryRouter
         initialEntries={["/onboarding"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <ToastProvider>
           <ErrorModalProvider>
@@ -195,7 +192,6 @@ describe("F-19 — Switch persona re-opens /onboarding (Q8)", () => {
     render(
       <MemoryRouter
         initialEntries={["/"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <ToastProvider>
           <ErrorModalProvider>

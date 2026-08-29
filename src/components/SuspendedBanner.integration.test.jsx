@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import SuspendedBanner from "./SuspendedBanner.jsx";
 import { BillingProvider } from "./BillingProvider.jsx";
 import { AuthProvider } from "./AuthProvider.jsx";
@@ -45,6 +45,8 @@ vi.mock("../lib/billingRepo.js", () => ({
   fetchEntitlement: vi.fn(() => Promise.resolve(null)),
   fetchInvoices: vi.fn(() => Promise.resolve([])),
   fetchInvoiceLines: vi.fn(() => Promise.resolve([])),
+  fetchAdminGrantCoupon: vi.fn(() => Promise.resolve(null)),
+  redeemAdminGrantCoupon: vi.fn(),
 }));
 vi.mock("../lib/entitlementClient.js", () => entMocks);
 
@@ -62,7 +64,7 @@ const paid = (over = {}) => ({
 
 function Tree() {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ToastProvider>
         <ErrorModalProvider>
           <AuthProvider>

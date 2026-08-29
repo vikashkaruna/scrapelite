@@ -1,6 +1,8 @@
 // AdminCoupons.jsx — coupon CRUD management.
 import { useState } from "react";
-import { getCoupons, saveCoupon, deleteCoupon } from "../../lib/adminService.js";
+import { getCoupons, saveCoupon, deleteCoupon, buildCouponsSyncPayload } from "../../lib/adminService.js";
+import { saveCouponsConfig } from "../../lib/adminConfigService.js";
+import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
@@ -43,14 +45,36 @@ function CouponRow({ coupon, onEdit, onToggle, onDelete }) {
 }
 
 export default function AdminCoupons() {
-  const [coupons, setCoupons] = useState(getCoupons);
+  const showToast = useToast();
+  // Legacy manual coupons belong to the retired admin-discount flow. Keep them
+  // out of the public catalog; plan grants are issued from Admin › Users.
+  const [coupons, setCoupons] = useState(() => getCoupons().filter((c) => c.planId !== "manual"));
   const [form, setForm] = useState(EMPTY_FORM);
   const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const handleField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSave = (e) => {
+  // Pushes the current local coupon list to the checkout-facing store (see
+  // admin-coupons-config.js). Percent-type coupons are worthless until this
+  // succeeds — they can't reduce a real charge from localStorage alone — so
+  // this reports failure explicitly rather than only logging it.
+  async function syncToServer(nextCoupons) {
+    setSyncing(true);
+    try {
+      const res = await saveCouponsConfig(buildCouponsSyncPayload(nextCoupons));
+      if (res.persisted === false) {
+        showToast(res.warning || "Saved locally only — coupon can't be used at checkout yet.");
+      }
+    } catch (e) {
+      showToast(e.message || "Couldn't sync coupon to checkout — it won't be redeemable yet.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const handleSave = async (e) => {
     e.preventDefault();
     setFormError("");
     if (!form.code.trim()) { setFormError("Coupon code is required."); return; }
@@ -64,9 +88,11 @@ export default function AdminCoupons() {
       maxUses: form.maxUses ? Number(form.maxUses) : 0,
     };
     if (coupon.id == null) delete coupon.id; // create: let saveCoupon generate the id
-    setCoupons(saveCoupon(coupon));
+    const next = saveCoupon(coupon);
+    setCoupons(next);
     setForm(EMPTY_FORM);
     setFormOpen(false);
+    await syncToServer(next);
   };
 
   const handleEdit = (coupon) => {
@@ -91,21 +117,25 @@ export default function AdminCoupons() {
     setFormOpen(true);
   };
 
-  const handleToggle = (coupon) => {
-    setCoupons(saveCoupon({ ...coupon, active: !coupon.active }));
+  const handleToggle = async (coupon) => {
+    const next = saveCoupon({ ...coupon, active: !coupon.active });
+    setCoupons(next);
+    await syncToServer(next);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (!window.confirm("Delete this coupon? This cannot be undone.")) return;
-    setCoupons(deleteCoupon(id));
+    const next = deleteCoupon(id);
+    setCoupons(next);
+    await syncToServer(next);
   };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <div>
-          <h2 className="admin-section-title">Coupons & Discounts</h2>
-          <p className="admin-section-sub">Create and manage promotional codes.</p>
+      <div>
+          <h2 className="admin-section-title">Public coupons & discounts</h2>
+          <p className="admin-section-sub">Manage paid checkout promotions. User-specific plan grants are issued from Admin › Users.</p>
         </div>
         <Button variant="primary" size="sm" icon="plus" onClick={handleNew}>
           New coupon
@@ -152,13 +182,7 @@ export default function AdminCoupons() {
                   <option value="pro">Pro</option>
                   <option value="business">Business</option>
                   <option value="agency">Agency</option>
-                  <option value="manual">Manually Assigned To User(s)</option>
                 </select>
-                {form.planId === "manual" && (
-                  <p className="cf-hint" style={{ marginTop: 5 }}>
-                    This coupon will only appear in the admin user coupon picker — users cannot self-apply it.
-                  </p>
-                )}
               </div>
               <div className="cf-field">
                 <label>Expiry date (optional)</label>

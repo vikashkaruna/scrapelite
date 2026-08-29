@@ -149,7 +149,18 @@ async function renderAll() {
   const server = serveDist(DIST);
   await new Promise((r) => server.listen(PORT, r));
 
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  // System Chrome first — that is what docs/capture-screenshots.mjs uses and it
+  // avoids a Playwright browser download on a dev machine. But `channel:"chrome"`
+  // is a hard failure when Chrome is not installed, and this script now also runs
+  // in CI as a freshness gate. Fall back to Playwright's own chromium so a missing
+  // system Chrome degrades to a slower run rather than a red build.
+  let browser;
+  try {
+    browser = await chromium.launch({ channel: "chrome", headless: true });
+  } catch (err) {
+    console.warn(`  system Chrome unavailable (${err.message.split("\n")[0]}) — falling back to bundled chromium`);
+    browser = await chromium.launch({ headless: true });
+  }
   const ctx = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     // Pin the timezone and locale. currencyService.detectCurrency() reads the
@@ -167,6 +178,10 @@ async function renderAll() {
       localStorage.clear();
       localStorage.setItem(
         "datiq.onboardingTour.v1",
+        JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() }),
+      );
+      localStorage.setItem(
+        "datiq.discoverabilityTour.v1",
         JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() }),
       );
     } catch { /* storage unavailable */ }
@@ -253,6 +268,14 @@ if (isMain) {
   }
 
   console.log(`\n[prerender] ${ok.length} rendered · ${changed} ${CHECK ? "stale" : "written"} · ${failed.length} failed`);
+  if (!CHECK && changed > 0) {
+    // ⚠️ dist/ is now ONE GENERATION BEHIND. Vite copies public/ into dist/ at
+    // BUILD time, and this script writes public/ AFTER its build — so
+    // dist/<route>/index.html still holds the previous render and references
+    // the previous asset hashes. Netlify is unaffected (it builds from the
+    // COMMITTED public/), but serving dist/ locally right now tests stale HTML.
+    console.log("           dist/ is stale until the next `npm run build` — rebuild before serving it locally.");
+  }
   for (const f of failed) console.log(`  ✗ ${f.route} — ${f.error}`);
   for (const w of wrongCanonical) console.log(`  ✗ ${w.route} — canonical is ${w.canonical}`);
   for (const n of noCanonical) console.log(`  ✗ ${n.route} — no canonical`);

@@ -15,6 +15,7 @@
 // shared across every page.
 
 import { useEffect, useRef } from "react";
+import { breadcrumbFor } from "../lib/pageSeo.js";
 
 const HOOK_ID = "datiq-useSeo";
 
@@ -157,6 +158,35 @@ function restore(snapshot) {
     .forEach((el) => el.parentNode.removeChild(el));
 }
 
+/**
+ * Every indexable page gets a BreadcrumbList, derived from its own path.
+ *
+ * Generated HERE rather than written into each page's SEO entry because the
+ * defect being fixed (SH-09) was a WHOLE-SITE omission — no page had one — and
+ * re-introducing it as a per-page obligation is exactly how it would come back
+ * the next time somebody adds a route. Deriving it from the URL also means it
+ * cannot drift out of sync with the real navigation path.
+ *
+ * Skipped for the homepage (a breadcrumb whose only item is the page itself
+ * describes nothing) and for noindex pages (the signed-in app is not part of
+ * any site hierarchy a crawler should be reading).
+ */
+function autoBreadcrumb({ canonical, robots, jsonLd }) {
+  if (robots && /noindex/i.test(robots)) return null;
+  // ⚠️ Never a SECOND one. Eight entries in pageSeo.js already declare their
+  // own BreadcrumbList, hand-written to match a real navigation path. Two
+  // conflicting BreadcrumbList blocks on one page is worse than none — the
+  // page is then asserting two different positions in the site hierarchy, and
+  // a crawler is entitled to believe either. The page's own always wins.
+  if (Array.isArray(jsonLd) && jsonLd.some((x) => x && x["@type"] === "BreadcrumbList")) return null;
+  let path = null;
+  if (canonical) {
+    try { path = new URL(canonical).pathname; } catch { /* not absolute */ }
+  }
+  if (!path && typeof window !== "undefined" && window.location) path = window.location.pathname;
+  return breadcrumbFor(path);
+}
+
 export function useSeo({ title, description, canonical, ogImage, jsonLd, robots } = {}) {
   // Use a ref so the capture/restore happens exactly once per mount/unmount,
   // not on every render. The values are read from the closure on mount.
@@ -165,7 +195,9 @@ export function useSeo({ title, description, canonical, ogImage, jsonLd, robots 
 
   useEffect(() => {
     const snapshot = capture();
-    apply(optsRef.current);
+    const opts = optsRef.current;
+    const crumb = autoBreadcrumb(opts);
+    apply(crumb ? { ...opts, jsonLd: [...(opts.jsonLd || []), crumb] } : opts);
     return () => restore(snapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

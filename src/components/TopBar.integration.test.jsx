@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { useEffect } from "react";
 import TopBar from "./TopBar.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
@@ -52,7 +52,7 @@ beforeEach(() => {
 
 function Providers({ children, initialPath = "/" }) {
   return (
-    <MemoryRouter initialEntries={[initialPath]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>
         <ToastProvider>
           <ErrorModalProvider>
@@ -193,6 +193,43 @@ describe("I-25 — TopBar: mobile hamburger", () => {
     act(() => fireEvent.click(hamburger));
     expect(hamburger.getAttribute("aria-expanded")).toBe("true");
   });
+
+  // Regression guard for the React 19 upgrade (2026-08-23).
+  //
+  // The closed mobile nav is offscreen but still in the DOM, so `aria-hidden`
+  // alone is not enough — Tab would walk into its buttons. `inert` is what
+  // removes the subtree from the focus order.
+  //
+  // TopBar used to pass `inert={!isOpen ? "" : undefined}`, which worked only
+  // because React 18 did not recognise `inert` and forwarded the empty string
+  // as a bare attribute (HTML reads a present boolean attribute as true).
+  // React 19 recognises `inert` as a boolean prop, so `""` coerces to false
+  // and the attribute vanishes. Nothing failed — React only warns — so the
+  // whole suite stayed green while the menu quietly became tabbable again.
+  //
+  // Asserting on the rendered attribute rather than the prop is the point:
+  // it is the DOM, not the JSX, that decides whether focus can enter.
+  it("closed mobile nav is inert, so Tab cannot reach its offscreen buttons", async () => {
+    const { container } = render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const nav = container.querySelector("nav.mobile-nav");
+    expect(nav).toBeTruthy();
+
+    // Closed: the attribute must actually be present in the DOM.
+    expect(nav.hasAttribute("inert")).toBe(true);
+
+    // Open: it must be gone, or the menu the user just opened is unusable.
+    const hamburger = screen.getByRole("button", { name: /open menu/i });
+    act(() => fireEvent.click(hamburger));
+    expect(nav.hasAttribute("inert")).toBe(false);
+  });
 });
 
 describe("I-49 — TopBar: 'Switch persona' label (Q8)", () => {
@@ -239,5 +276,73 @@ describe("I-49 — TopBar: 'Switch persona' label (Q8)", () => {
     );
     act(() => fireEvent.click(personaBtn));
     expect(screen.getByTestId("location").textContent).toBe("/onboarding");
+  });
+});
+
+describe("Workspace moved into the signed-in user menu (2026-08-28)", () => {
+  it("is absent from the primary desktop nav links", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    const primaryNav = document.querySelector(".nav-links");
+    expect(primaryNav.textContent).not.toMatch(/workspace/i);
+  });
+
+  it("appears in the user dropdown, listed above 'Schedules & monitors'", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    const items = Array.from(desktopMenu.querySelectorAll(".nav-dropdown-item")).map((b) => b.textContent);
+    const workspaceIdx = items.findIndex((t) => /^workspace$/i.test(t.trim()));
+    const schedulesIdx = items.findIndex((t) => /schedules.*monitors/i.test(t));
+    expect(workspaceIdx).toBeGreaterThanOrEqual(0);
+    expect(schedulesIdx).toBeGreaterThanOrEqual(0);
+    expect(workspaceIdx).toBeLessThan(schedulesIdx);
+  });
+
+  it("clicking Workspace in the user dropdown navigates to /workspace", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    const workspaceBtn = Array.from(desktopMenu.querySelectorAll("button")).find(
+      (b) => /^workspace$/i.test(b.textContent.trim()),
+    );
+    act(() => fireEvent.click(workspaceBtn));
+    expect(screen.getByTestId("location").textContent).toBe("/workspace");
+  });
+
+  it("appears in the mobile nav's user section, above 'Schedules & monitors'", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    const mobileItems = Array.from(document.querySelectorAll(".mobile-nav .mobile-nav-item")).map((b) => b.textContent);
+    const workspaceIdx = mobileItems.findIndex((t) => /^workspace$/i.test(t.trim()));
+    const schedulesIdx = mobileItems.findIndex((t) => /schedules.*monitors/i.test(t));
+    expect(workspaceIdx).toBeGreaterThanOrEqual(0);
+    expect(schedulesIdx).toBeGreaterThanOrEqual(0);
+    expect(workspaceIdx).toBeLessThan(schedulesIdx);
   });
 });

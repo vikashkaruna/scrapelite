@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-08-11 ~05:00 IST (Integration-with-outside-ecosystem merged into staging, all docs swept, all test suites green on staging; main + production untouched)**
+> **Last updated: 2026-08-29 (Staging merged into main; all docs swept; all test suites green; main + staging in sync)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
@@ -16,15 +16,13 @@
 | **Project** | DatIQ (rebranded from ScrapeLite in R6, 2026-06-09) — zero-code web-extraction + enrichment platform |
 | **Working dir** | `/Users/vikash/Extracta` |
 | **Live site** | https://datiq.app (Netlify project `datiqapp`; site `0ac65a7e-bd3f-4cde-a8d3-66c23899c473`) |
-| **Staging site** | https://staging--datiqapp.netlify.app (will rebuild on next push; staging HEAD is the integration-merge commit) |
-| **Branch deploy** | https://integration-with-outside-ecosystem--datiqapp.netlify.app (live, all late-night integration fixes + Account rich status + ExportIntegrations one-click refactor) |
+| **Staging site** | https://staging--datiqapp.netlify.app |
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `staging` (in sync with `origin/staging` after the integration merge; production `main` untouched at `ebaa4bf`) |
-| **Latest commits** | The integration merge, then `f5afca8` db-verify fix (PGlite pgcrypto stub + EXPECT bump) |
-| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-11-STAGING-INTEGRATION-MERGE.md` (full state, test counts, behavior changes, follow-ups) |
-| **Previous handoffs** | `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-3.md` (Account rich status + ExportIntegrations one-click) · `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-2.md` (Integrations overhaul + Workspace tabs) · `docs/SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md` (7 integration fixes) |
+| **Current branch** | `main` / `staging` (in sync with `origin/main` and `origin/staging`) |
+| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-29-ENRICHMENT-AI-FIXES.md` |
+| **Previous handoffs** | `docs/SESSION-HANDOFF-2026-08-29-HOME-ENRICHMENT-EXTRACTION-FIXES.md` · `docs/SESSION-HANDOFF-2026-08-29-STAGING-GATE-TOUR-STORAGE-FIXES.md` |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the staging promotion needs to roll back |
 | **Remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in the late-night handoffs) so the in-browser Connect/Push calls stop hitting the SSO gate on the branch preview |
 
@@ -32,7 +30,7 @@
 
 ## Tech stack (locked — do NOT change these choices)
 
-- **Vite 5 + React 18 + React Router 6** (v7 future flags set in `main.jsx`)
+- **Vite 8 + React 19 + React Router 8** — router APIs import from `react-router`; the `react-router-dom` package no longer exists and must not be reintroduced. `BrowserRouter` in `main.jsx` deliberately passes **no** `future` prop and **no** `useTransitions`: both old v7 flags are v8 defaults, and `useTransitions={true}` is a different, unevaluated mode (see the comment there).
 - **Tailwind CSS** for utilities only — the design system tokens live in CSS custom properties, never in Tailwind config
 - **Design system** — `src/styles/design-system.css` (CSS vars: `--accent`, `--bg`, `--surface`, `--text-*`, `--r`, `--shadow-*`) + `src/styles/screens.css`. **NEVER rewrite these into Tailwind classes.**
 - **lucide-react** icons, all named in `src/components/Icon.jsx`. Add new icons there; don't import lucide directly elsewhere.

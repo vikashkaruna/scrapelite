@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useEffect } from "react";
 import { AppProviders } from "../harness/AppProviders.jsx";
 import { useAuth } from "../../components/AuthProvider.jsx";

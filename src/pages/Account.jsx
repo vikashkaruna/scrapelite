@@ -1,6 +1,6 @@
 // Account.jsx — V5 billing & usage: plan details, usage, alerts, coupon, payment history.
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
 import { getAlertConfig, saveAlertConfig } from "../lib/alertService.js";
@@ -21,6 +21,10 @@ import { formatMoney } from "../lib/invoiceModel.js";
 import { fetchInvoices } from "../lib/billingRepo.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
+import DangerZone from "../components/DangerZone.jsx";
+import DiscoverabilityStats from "../components/DiscoverabilityStats.jsx";
+import PersonaUsage from "../components/PersonaUsage.jsx";
+import { fetchAccountState } from "../lib/accountStateService.js";
 
 // ── Integrations catalog ─────────────────────────────────────────────────
 // One row per provider; status is fetched from /api/integrations/{slug}/status.
@@ -253,7 +257,7 @@ export default function Account() {
   const navigate = useNavigate();
   const {
     plan: ctxPlan, planId, usage, bonus, currency, rates,
-    applyCoupon, removeCoupon, couponError, couponSuccess,
+    applyCoupon, redeemAdminGrant, adminGrantCoupon, removeCoupon, couponError, couponSuccess,
     subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
     paymentHistory, dbSubscription, hasPayment,
   } = useBilling();
@@ -279,6 +283,18 @@ export default function Account() {
   const [invoices, setInvoices]             = useState([]);
   const [invoicesLoading, setInvoicesLoad]  = useState(true);
   const [openInvoice, setOpenInvoice]       = useState(null);
+
+  // ── Account state (freeze / pending deletion) ───────────────────────────
+  // Read once on mount and then owned locally: every mutation returns the new
+  // state, so there is no reason to re-fetch and no window where the panel
+  // shows something the last action already changed.
+  const [accountState, setAccountState] = useState({ available: false });
+  useEffect(() => {
+    if (!user) { setAccountState({ available: false }); return; }
+    let alive = true;
+    fetchAccountState().then((s) => { if (alive) setAccountState(s); });
+    return () => { alive = false; };
+  }, [user]);
 
   // ── Integrations state ──────────────────────────────────────────────────
   // Map of provider slug → full server status object (connected, account_label,
@@ -433,7 +449,9 @@ export default function Account() {
     if (!couponInput.trim()) return;
     setApplying(true);
     await new Promise((r) => setTimeout(r, 600));
-    applyCoupon(couponInput.trim().toUpperCase());
+    const code = couponInput.trim().toUpperCase();
+    if (adminGrantCoupon?.code === code) await redeemAdminGrant(code);
+    else applyCoupon(code);
     setCouponInput("");
     setApplying(false);
   };
@@ -784,7 +802,33 @@ export default function Account() {
                   <Icon name="info" size={13} /> Sign in to manage integrations.
                 </div>
               )}
+              {/* Entitlement flag only — no shipping extension yet (see
+                  entitlementModel.js "browser_extension"). Shown only to
+                  plans that carry the flag (Select and up) so it reads as
+                  "coming to your plan", not a generic teaser everyone sees. */}
+              {plan?.limits?.browser_extension && (
+                <div className="int-row" style={{ marginTop: 8 }}>
+                  <div className="int-row-icon">
+                    <Icon name="puzzle" size={18} />
+                  </div>
+                  <div className="int-row-meta">
+                    <div className="int-row-name">Browser extension</div>
+                    <div className="int-row-status">
+                      <span className="int-row-status-dot" />
+                      Coming soon — included on your plan once it ships
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* ── Danger zone ──────────────────────────────────────────────
+                Last in the left column, below everything routine, and only for
+                a signed-in account. Its position is the point: the two actions
+                in it are the only ones on this page you cannot casually undo,
+                so nothing should be able to lead you into them on the way to
+                something else. */}
+            {user && <DangerZone state={accountState} onChange={setAccountState} />}
           </div>
 
           {/* Right column */}
@@ -804,31 +848,28 @@ export default function Account() {
               canManage={canWhiteLabel}
             />
 
-            {/* Your offers — coupon / bonus extractions an admin assigned to
-                THIS account (adminConfigService.assignUserCoupon /
-                extendUserBonus). Read straight off the Supabase auth user's
-                own metadata — no extra API call needed. */}
-            {(user?.user_metadata?.coupon_availed || user?.user_metadata?.bonus_extractions > 0) && (
+            {/* Your offers — a user-specific, one-time complimentary plan grant
+                or bonus extractions. Grant state comes from the authenticated
+                server endpoint, never from editable browser metadata. */}
+            {(adminGrantCoupon || user?.user_metadata?.bonus_extractions > 0) && (
               <div className="card card-pad">
                 <div className="card-section-title"><Icon name="gift" size={15} />Your offers</div>
-                {user?.user_metadata?.coupon_availed && (
+                {adminGrantCoupon && (
                   <div className="my-offer-row">
                     <span className="user-coupon-pill">
-                      {user.user_metadata.coupon_availed}
-                      {user.user_metadata.coupon_discount > 0 && (
-                        <span className="user-coupon-pct"> −{user.user_metadata.coupon_discount}%</span>
-                      )}
+                      {adminGrantCoupon.code}
                     </span>
                     <span className="my-offer-meta">
-                      {user.user_metadata.coupon_plan_id
-                        ? `Valid for ${getEffectivePlanById(user.user_metadata.coupon_plan_id)?.name || user.user_metadata.coupon_plan_id} only`
-                        : "Valid for any plan"}
+                      {getEffectivePlanById(adminGrantCoupon.planId)?.name || adminGrantCoupon.planId}
+                      {adminGrantCoupon.validityMonths ? ` · ${adminGrantCoupon.validityMonths} month${adminGrantCoupon.validityMonths === 1 ? "" : "s"}` : ""}
                     </span>
-                    {subscription.coupon?.code === user.user_metadata.coupon_availed ? (
-                      <span className="my-offer-applied"><Icon name="check-circle" size={13} />Applied</span>
+                    {adminGrantCoupon.status === "redeemed" ? (
+                      <span className="my-offer-applied"><Icon name="check-circle" size={13} />Redeemed</span>
+                    ) : adminGrantCoupon.status === "expired" || adminGrantCoupon.status === "revoked" ? (
+                      <span className="my-offer-meta">{adminGrantCoupon.status}</span>
                     ) : (
-                      <Button variant="secondary" size="sm" onClick={() => applyCoupon(user.user_metadata.coupon_availed)}>
-                        Apply
+                      <Button variant="secondary" size="sm" onClick={() => redeemAdminGrant(adminGrantCoupon.code)}>
+                        Apply grant
                       </Button>
                     )}
                   </div>
@@ -870,6 +911,17 @@ export default function Account() {
                 </div>
               )}
             </div>
+
+            {/* ── Discoverability ─────────────────────────────────────────
+                Its own card because audits have their OWN monthly budget
+                rather than debiting extraction credits — folding them into
+                the extraction counter would misreport both. */}
+            {user && <DiscoverabilityStats auditLimit={plan.limits?.audits ?? 0} />}
+
+            {/* ── Usage by role ───────────────────────────────────────────
+                A breakdown OF the totals below, computed from the same record
+                so the two can never disagree about the month. */}
+            {user && <PersonaUsage usage={usage} />}
 
             {/* Quick stats */}
             <div className="card card-pad account-stats">

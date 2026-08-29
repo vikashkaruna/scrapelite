@@ -16,7 +16,7 @@
 //  - On narrow screens, the table is horizontally scrollable with a sticky
 //    first column (feature name) so labels never disappear off-screen.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "./Icon.jsx";
 import { getEffectivePlans } from "../lib/pricingOverrides.js";
 import { applyGlobalDiscount } from "../lib/pricingOverrides.js";
@@ -56,12 +56,27 @@ const FEATURE_ROWS = [
   { key: "enrichments",    group: "Usage",       label: "Enrichments per extraction",  render: (p) => fmtNum(p.limits?.enrichments_per_extraction) },
   { key: "batch",          group: "Usage",       label: "Batch mode (URLs per run)",   render: (p) => fmtNum(p.limits?.batch_max_urls) },
   { key: "monitoring",     group: "Usage",       label: "Scheduled monitoring",        render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
+  // ── Discoverability ─────────────────────────────────────────────────────
+  // These limits have existed in pricingConfig since the module shipped
+  // (free 3 · go 10 · select 25 · pro 100 · business 500 · agency 2000) but
+  // appeared NOWHERE on /pricing. So the quota wall said "You've used all 3
+  // discoverability audits this month → See plans", and the page it sent
+  // people to never mentioned discoverability at all — the one number they
+  // had gone there to compare.
+  { key: "audits",         group: "Discoverability", label: "Discoverability audits (per month)", render: (p) => fmtNum(p.limits?.audits) },
+  // Benchmarks gate on the audit allowance rather than a flag of their own:
+  // a competitive set is several full audits, so entitlementModel requires an
+  // allowance of at least 25 (`audit.benchmark`). Mirrored here rather than
+  // re-derived, so the table cannot drift from what the server enforces.
+  { key: "benchmarks",     group: "Discoverability", label: "Competitive benchmarks",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
   { key: "csv",            group: "Exports",     label: "CSV export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("csv")) },
   { key: "pdf",            group: "Exports",     label: "PDF export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("pdf")) },
   { key: "markdown",       group: "Exports",     label: "Markdown export",             render: (p) => fmtBool((p.limits?.exports || []).includes("markdown")) },
   { key: "json",           group: "Exports",     label: "JSON export",                 render: (p) => fmtBool((p.limits?.exports || []).includes("json")) },
   { key: "email",          group: "Exports",     label: "Email export",                render: (p) => fmtBool(p.limits?.email_export) },
   { key: "api",            group: "Power",       label: "API access",                  render: (p) => fmtBool(p.limits?.api_access) },
+  { key: "integrations",   group: "Power",       label: "Integrations (HubSpot, Notion, Airtable, Slack)", render: (p) => fmtBool(p.limits?.integrations) },
+  { key: "browser_ext",    group: "Power",       label: "Browser extension",           render: (p) => fmtBool(p.limits?.browser_extension) },
   { key: "white_label",    group: "Power",       label: "White-label PDF",             render: (p) => fmtBool(p.limits?.white_label_pdf) },
   { key: "seats",          group: "Team",        label: "Team seats (included)",       render: (p) => fmtNum(p.limits?.team_seats) },
   { key: "workspaces",     group: "Team",        label: "Workspaces",                  render: (p) => fmtNum(p.limits?.workspaces) },

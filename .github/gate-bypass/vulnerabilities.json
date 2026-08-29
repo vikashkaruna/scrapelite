@@ -1,19 +1,23 @@
 {
-  "bypasses": [
-    {
-      "id": "GHSA-qwww-vcr4-c8h2",
-      "package": "react-router",
-      "reason": "RSC-mode-only CSRF bypass (action executes before the 400 response). DatIQ is a client-rendered Vite SPA using BrowserRouter — no React Server Components, no SSR, no server actions — so the vulnerable code path is unreachable. No patched version exists for React 18: every release falls under either this advisory (7.12.0-8.2.0) or the earlier open-redirect advisory GHSA-wrjc-x8rr-h8h6 (<=7.17.0). The only clean release is react-router 8.3.0, which requires react >=19.2.7.",
-      "todo": "TODO: upgrade React 18 -> 19 and move to react-router 8.3.0+ (drops the react-router-dom package; rewrite the ~93 'react-router-dom' imports to 'react-router'), then remove this bypass",
-      "expires": "2026-12-31",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "react-router-dom",
-      "reason": "Transitive of react-router (same advisory chain; react-router-dom 7.x is a thin re-export shim over react-router).",
-      "todo": "TODO: removed together with the react-router bypass above when the React 19 / react-router 8 migration lands",
-      "expires": "2026-12-31",
-      "approvedBy": "vikashkaruna"
-    }
-  ]
+  "_comment": [
+    "No active vulnerability bypasses. Format and rules: see README.md in this directory.",
+    "",
+    "The two react-router entries that lived here were removed on 2026-08-23 when the",
+    "React 19 / react-router 8 migration landed. Worth recording WHY, because their",
+    "stated reason had already stopped being true before the migration ran:",
+    "",
+    "They bypassed GHSA-qwww-vcr4-c8h2 on the grounds that 'no patched version exists",
+    "for React 18'. That was correct when written. It is not correct now — the advisory",
+    "was subsequently amended, and its affected ranges are >=7.12.0 <7.18.2 and",
+    ">=8.0.0 <8.3.0. react-router 7.18.2, which this repo was already pinned to, is the",
+    "7.x patch. So the gate had been passing on its own merits, not on the bypass, and",
+    "npm audit reported 0 vulnerabilities with these entries in place.",
+    "",
+    "The repo now runs react-router 8.3.0, which is patched on the 8.x line.",
+    "",
+    "The lesson for the next bypass: a bypass records a judgement about the world at a",
+    "point in time, and advisories get re-scoped. Re-read the advisory before renewing",
+    "one, rather than trusting the reason written into it."
+  ],
+  "bypasses": []
 }

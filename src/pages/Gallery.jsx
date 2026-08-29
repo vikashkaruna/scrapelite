@@ -13,7 +13,7 @@
 //     localStorage first, then the async result replaces it.
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { getGallery, getGalleryLocal, getCuratedGallery, buildPublicUrl } from "../lib/shareService.js";
 import { PERSONAS, PERSONA_BY_ID } from "../lib/personaConfig.js";

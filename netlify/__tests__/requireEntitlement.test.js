@@ -178,7 +178,7 @@ describe("denyResponse", () => {
     const { check } = await mod.requireCapability(ev(), "schedules");
     const body = JSON.parse(mod.denyResponse(check).body);
     expect(body.lifecycle).toBe(false);
-    expect(body.upgradeTo).toBe("pro");
+    expect(body.upgradeTo).toBe("select");
   });
 
   it("never leaks the service key into a response body", async () => {

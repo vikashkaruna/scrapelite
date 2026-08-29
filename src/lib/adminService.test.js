@@ -4,6 +4,7 @@ import {
   adminLogout,
   isAdminAuthed,
   validateCoupon,
+  buildCouponsSyncPayload,
 } from "./adminService.js";
 
 /**
@@ -120,5 +121,34 @@ describe("adminLogout", () => {
     localStorage.setItem("scrapelite.adminAuthExp", String(Date.now() + 1_000_000));
     adminLogout();
     expect(isAdminAuthed()).toBe(false);
+  });
+});
+
+describe("buildCouponsSyncPayload — the checkout-facing subset of local coupons", () => {
+  it("keeps only percent-type coupons, keyed by uppercase code", () => {
+    const out = buildCouponsSyncPayload([
+      { code: "save20", type: "percent", value: 20, planId: null, expiresAt: null, active: true, maxUses: 0 },
+    ]);
+    expect(out).toEqual({
+      SAVE20: { value: 20, planId: null, expiresAt: null, active: true, maxUses: 0 },
+    });
+  });
+
+  it("drops extraction-bonus coupons — they never touch checkout", () => {
+    const out = buildCouponsSyncPayload([
+      { code: "BONUS50", type: "extractions", value: 50, active: true },
+    ]);
+    expect(out).toEqual({});
+  });
+
+  it("drops planId:'manual' coupons — admin-assign only, not checkout-redeemable", () => {
+    const out = buildCouponsSyncPayload([
+      { code: "ASSIGNED", type: "percent", value: 30, planId: "manual", active: true },
+    ]);
+    expect(out).toEqual({});
+  });
+
+  it("an empty local list produces an empty payload (clears the server side too)", () => {
+    expect(buildCouponsSyncPayload([])).toEqual({});
   });
 });

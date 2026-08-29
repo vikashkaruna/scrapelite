@@ -11,7 +11,7 @@
 // note: "Upgrade screen at the exact moment of trial exhaustion, showing
 // which paid feature completes the current task; annual anchoring").
 import { useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";

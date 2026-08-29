@@ -1,5 +1,14 @@
 // utils.js — small pure helpers shared across screens.
 
+import {
+  buildBrandingContext,
+  brandingMarkdownHeader,
+  brandingMarkdownFooter,
+  brandingCsvHeaderRows,
+  brandingCsvFooterRows,
+  brandingJsonMeta,
+} from "./exportBranding.js";
+
 export function hostOf(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -309,15 +318,25 @@ export function extractionToCsv(extraction) {
 }
 
 // Build one combined CSV across one or more extractions, with a leading "page"
-// column so rows from different extractions stay distinguishable.
-export function extractionsToCsv(items) {
+// column so rows from different extractions stay distinguishable. Branded
+// with leading/trailing "#"-prefixed comment rows (see exportBranding.js) —
+// ignored by Excel/Sheets/Papa.parse and every real CSV consumer, so the
+// data rows themselves stay exactly as before.
+export function extractionsToCsv(items, { generatedAt = null, brandKit = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
+  const ctx = buildBrandingContext({
+    kind: list.length > 1 ? "batch" : "extraction",
+    sourceUrls: list.map((e) => e.url).filter(Boolean),
+    generatedAt: generatedAt || new Date().toISOString(),
+    brandKit,
+  });
   const rows = [["page", "type", "name", "text", "value"]];
   for (const e of list) {
     const page = hostOf(e.url) + (pathOf(e.url) !== "/" ? pathOf(e.url) : "");
     for (const r of extractionRows(e)) rows.push([page, ...r]);
   }
-  return rows.map((r) => r.map(csvEsc).join(",")).join("\r\n");
+  const dataCsv = rows.map((r) => r.map(csvEsc).join(",")).join("\r\n");
+  return [...brandingCsvHeaderRows(ctx), dataCsv, ...brandingCsvFooterRows(ctx)].join("\r\n");
 }
 
 // Trigger a browser file download from a Blob.
@@ -331,10 +350,29 @@ function triggerDownload(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/**
+ * Download a string the caller has already rendered.
+ *
+ * csvDownload / markdownDownload / jsonDownload all take EXTRACTION ROWS and
+ * build the document themselves. The Discoverability reports arrive from the
+ * server already rendered — the server owns that formatting so an exported
+ * report and the screen it came from can never disagree — so they need a helper
+ * that takes finished text rather than rows to format.
+ *
+ * @param {string} content
+ * @param {string} filename
+ * @param {string} mime
+ */
+export function downloadTextFile(content, filename, mime = "text/plain;charset=utf-8;") {
+  const blob = new Blob([String(content ?? "")], { type: mime });
+  triggerDownload(blob, filename);
+  return { name: filename, blob };
+}
+
 // Download one or more extractions as a single CSV (all capabilities included).
-export function csvDownload(items) {
+export function csvDownload(items, opts = {}) {
   const list = Array.isArray(items) ? items : [items];
-  const csv = extractionsToCsv(list);
+  const csv = extractionsToCsv(list, opts);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const name =
     list.length === 1
@@ -413,6 +451,36 @@ async function writeViaExecCommand(text) {
   return ok;
 }
 
+/**
+ * Write a raw string to the clipboard.
+ *
+ * The two-path fallback (navigator.clipboard, then execCommand) is shared with
+ * copyToClipboard rather than duplicated: some browsers reject a clipboard
+ * write outside a user gesture or in an unfocused window, and a second copy of
+ * that handling is a second copy to keep working.
+ *
+ * copyToClipboard() takes EXTRACTION ROWS and a format. This takes text that is
+ * already text — a generated JSON-LD block, a markdown answer block — which is
+ * what the Discoverability constructs are.
+ *
+ * @returns {Promise<boolean>} whether the text reached the clipboard
+ */
+export async function copyTextToClipboard(text) {
+  const str = String(text ?? "");
+  if (!str) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(str);
+      return true;
+    } catch (err) {
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] clipboard.writeText failed, trying execCommand:", err);
+      }
+    }
+  }
+  return Boolean(await writeViaExecCommand(str));
+}
+
 export async function copyToClipboard(items, format = "csv") {
   if (!CLIPBOARD_FORMATS.has(format)) {
     return { ok: false, reason: `unsupported_format:${format}` };
@@ -455,22 +523,21 @@ function mdEsc(text) {
   return String(text ?? "").replace(/[\\`*_{}[\]()#+\-.!|]/g, "\\$&");
 }
 
-export function extractionsToMarkdown(items) {
+export function extractionsToMarkdown(items, { generatedAt = null, brandKit = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
-  const date = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+  const generatedAtISO = generatedAt || new Date().toISOString();
+  const ctx = buildBrandingContext({
+    kind: list.length > 1 ? "batch" : "extraction",
+    sourceUrls: list.map((e) => e.url).filter(Boolean),
+    generatedAt: generatedAtISO,
+    brandKit,
   });
-  const lines = [
-    `# DatIQ Export — ${date}`,
-    ``,
-    `> Generated from [DatIQ](https://datiq.app) • ${list.length} page${list.length !== 1 ? "s" : ""}`,
-    ``,
-  ];
+  const lines = [brandingMarkdownHeader(ctx)];
 
   list.forEach((e, idx) => {
-    lines.push(`---`, ``);
+    // The header block above already ends with a "---" rule, so only insert
+    // one before items after the first (avoids a doubled rule).
+    if (idx > 0) lines.push(`---`, ``);
     lines.push(`## ${idx + 1}. ${mdEsc(e.page_title || hostOf(e.url))}`, ``);
     lines.push(`**URL:** <${e.url}>  `);
     if (e.created_at) {
@@ -525,13 +592,13 @@ export function extractionsToMarkdown(items) {
     }
   });
 
-  lines.push(`---`, ``, `*Exported with DatIQ — https://datiq.app*`);
+  lines.push(brandingMarkdownFooter(ctx));
   return lines.join("\n");
 }
 
-export function markdownDownload(items) {
+export function markdownDownload(items, opts = {}) {
   const list = Array.isArray(items) ? items : [items];
-  const md = extractionsToMarkdown(list);
+  const md = extractionsToMarkdown(list, opts);
   const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
   const name =
     list.length === 1
@@ -542,13 +609,20 @@ export function markdownDownload(items) {
 
 // ── JSON export ──────────────────────────────────────────────────────────────
 
-export function extractionsToJson(items) {
+export function extractionsToJson(items, { generatedAt = null, brandKit = null } = {}) {
   const list = Array.isArray(items) ? items : [items];
+  const generatedAtISO = generatedAt || new Date().toISOString();
+  const ctx = buildBrandingContext({
+    kind: list.length > 1 ? "batch" : "extraction",
+    sourceUrls: list.map((e) => e.url).filter(Boolean),
+    generatedAt: generatedAtISO,
+    brandKit,
+  });
   const payload = {
     export: {
-      tool: "DatIQ",
+      ...brandingJsonMeta(ctx),
       version: "2.0",
-      date: new Date().toISOString(),
+      date: generatedAtISO,
       count: list.length,
     },
     pages: list.map((e) => {
@@ -580,9 +654,9 @@ export function extractionsToJson(items) {
   return JSON.stringify(payload, null, 2);
 }
 
-export function jsonDownload(items) {
+export function jsonDownload(items, opts = {}) {
   const list = Array.isArray(items) ? items : [items];
-  const json = extractionsToJson(list);
+  const json = extractionsToJson(list, opts);
   const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
   const name =
     list.length === 1

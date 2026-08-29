@@ -17,7 +17,12 @@ const supabaseMock = {
 
 vi.mock("./supabaseClient.js", () => ({
   get supabase() { return supabaseMock.enabled ? supabaseMock : null; },
-  isSupabaseEnabled: () => supabaseMock.enabled,
+  // The real export is a plain boolean (see supabaseClient.js), not a
+  // function — mocked as a getter so `isSupabaseEnabled` alone (without also
+  // checking `&& supabase`) gates correctly, matching how shareExtraction's
+  // write path uses it now that the write no longer touches the Supabase
+  // client object at all.
+  get isSupabaseEnabled() { return supabaseMock.enabled; },
   EXTRACTIONS_TABLE: "extractions",
 }));
 
@@ -60,6 +65,17 @@ const sampleExtraction = () => ({
   created_at: "2026-07-17T00:00:00Z",
 });
 
+// The write path now goes through fetch("/api/public-reports", ...) instead
+// of a direct Supabase upsert — see public-reports.js's header comment for
+// why. Slug LOOKUPS (step 1 of shareExtraction) still read Supabase
+// directly, since a read is exactly what the "public read" RLS policy is
+// for; only the write moved server-side.
+function mockPublishFetch(impl) {
+  const fetchMock = vi.fn(impl);
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 beforeEach(() => {
   try { localStorage.clear(); } catch {}
   _resetShareForTests();
@@ -67,10 +83,18 @@ beforeEach(() => {
   supabaseMock.from.mockReset();
   supabaseMock.auth.getUser.mockReset();
   supabaseMock.auth.getUser.mockResolvedValue({ data: { user: null }, error: null });
+  // Safe default for any test that calls shareExtraction without caring
+  // about the publish call itself (public-quota counters, gallery merge,
+  // etc.) — individual write-path tests below override this per-case.
+  mockPublishFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ ok: true, slug: body.slug, refreshed: true }), { status: 200 });
+  });
 });
 
 afterEach(() => {
   supabaseMock.enabled = false;
+  vi.unstubAllGlobals();
 });
 
 // ── Slug shape + validation ───────────────────────────────────────────────────
@@ -170,48 +194,82 @@ describe("Q8 — shareService: offline (Supabase disabled)", () => {
 // ── Share (Supabase enabled — the cross-browser fix) ─────────────────────────
 
 describe("Q8 — shareService: Supabase enabled (cross-browser path)", () => {
-  it("shareExtraction writes to Supabase and reports persistedTo='supabase'", async () => {
+  it("shareExtraction posts to public-reports.js and reports persistedTo='supabase'", async () => {
     supabaseMock.enabled = true;
-    let upsertedRow = null;
-    supabaseMock.from.mockImplementation(() => makeSupabaseClient({
-      onUpsert: (row) => { upsertedRow = row; },
-    }).from());
-    const { slug, persistedTo } = await shareExtraction(sampleExtraction(), { userId: "u_1", sessionId: "s_1" });
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from()); // slug lookup: nothing yet
+    let posted = null;
+    mockPublishFetch(async (url, init) => {
+      posted = { url: String(url), body: JSON.parse(init.body) };
+      return new Response(JSON.stringify({ ok: true, slug: posted.body.slug, refreshed: true }), { status: 200 });
+    });
+    const { slug, persistedTo } = await shareExtraction(sampleExtraction(), { sessionId: "s_1" });
     expect(slug).toMatch(/^[a-z0-9]{8}$/);
     expect(persistedTo).toBe("supabase");
-    expect(upsertedRow.slug).toBe(slug);
-    expect(upsertedRow.user_id).toBe("u_1");
-    expect(upsertedRow.session_id).toBe("s_1");
-    expect(upsertedRow.is_public).toBe(true);
+    expect(posted.url).toBe("/api/public-reports");
+    expect(posted.body.slug).toBe(slug);
+    expect(posted.body.sessionId).toBe("s_1");
+    expect(posted.body.data.is_public).toBe(true);
   });
 
-  it("shareExtraction falls back to local when Supabase throws", async () => {
+  it("reports the link as LIVE when the server says refreshed:false", async () => {
+    // The reported bug: creating a public link works, then "Sync public link"
+    // says "Public publish failed — nothing was saved locally. Check Supabase
+    // configuration." public-reports.js now decides ownership server-side and
+    // reports refreshed:false — link stays live, only the overwrite didn't
+    // apply — rather than the client throwing on an RLS denial it used to hit
+    // directly. Calling that a publish failure was false.
     supabaseMock.enabled = true;
-    const chain = {
-      select: vi.fn(() => chain),
-      eq:    vi.fn(() => chain),
-      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-      upsert: vi.fn(async () => ({ data: null, error: { message: "boom" } })),
-      delete: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
-    };
-    supabaseMock.from.mockImplementation(() => chain);
-    const { slug, persistedTo } = await shareExtraction(sampleExtraction());
-    expect(slug).toMatch(/^[a-z0-9]{8}$/);
-    // Persisted locally even though Supabase errored.
-    expect(persistedTo).toBe("local");
-    expect(getSharedSlugForId("ext_1")).toBe(slug);
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({
+      onSelect: () => ({ slug: "abc12345" }), // slug lookup finds the existing share
+    }).from());
+    mockPublishFetch(async () =>
+      new Response(JSON.stringify({ ok: true, slug: "abc12345", refreshed: false }), { status: 200 }));
+    const res = await shareExtraction(sampleExtraction());
+    expect(res.persistedTo).toBe("supabase");
+    // The distinguishing flag: live, but this caller could not refresh it.
+    expect(res.refreshed).toBe(false);
+  });
+
+  it("still fails when the server reports ok:false", async () => {
+    // A genuine publish failure — not every non-refresh case is a success.
+    supabaseMock.enabled = true;
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from());
+    mockPublishFetch(async () =>
+      new Response(JSON.stringify({ ok: false, error: "boom" }), { status: 200 }));
+    await expect(shareExtraction(sampleExtraction())).rejects.toMatchObject({
+      code: "PUBLIC_PUBLISH_FAILED",
+    });
+  });
+
+  it("reports refreshed:true on an ordinary successful publish", async () => {
+    supabaseMock.enabled = true;
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from());
+    mockPublishFetch(async () =>
+      new Response(JSON.stringify({ ok: true, slug: "newslug1", refreshed: true }), { status: 200 }));
+    const res = await shareExtraction(sampleExtraction());
+    expect(res.refreshed).toBe(true);
+  });
+
+  it("fails closed when Supabase is configured but the server rejects the publish (HTTP error)", async () => {
+    supabaseMock.enabled = true;
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from());
+    mockPublishFetch(async () => new Response(JSON.stringify({ ok: false, error: "boom" }), { status: 502 }));
+    await expect(shareExtraction(sampleExtraction())).rejects.toMatchObject({
+      code: "PUBLIC_PUBLISH_FAILED",
+    });
+    // A cloud-configured failure must not leave a false local-only share.
+    expect(getSharedSlugForId("ext_1")).toBeNull();
   });
 
   it("re-share looks up the existing slug from Supabase first", async () => {
     supabaseMock.enabled = true;
-    const chain = {
-      select: vi.fn(() => chain),
-      eq:    vi.fn(() => chain),
-      maybeSingle: vi.fn(async () => ({ data: { slug: "k7m2p4qx" }, error: null })),
-      upsert: vi.fn(async (row) => ({ data: { slug: row.slug }, error: null })),
-      delete: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
-    };
-    supabaseMock.from.mockImplementation(() => chain);
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({
+      onSelect: () => ({ slug: "k7m2p4qx" }),
+    }).from());
+    mockPublishFetch(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      return new Response(JSON.stringify({ ok: true, slug: body.slug, refreshed: true }), { status: 200 });
+    });
     const ext = sampleExtraction();
     const { slug } = await shareExtraction(ext);
     expect(slug).toBe("k7m2p4qx");
@@ -221,10 +279,34 @@ describe("Q8 — shareService: Supabase enabled (cross-browser path)", () => {
     supabaseMock.enabled = true;
     const client = makeSupabaseClient({});
     supabaseMock.from.mockImplementation(() => client.from());
+    mockPublishFetch(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      return new Response(JSON.stringify({ ok: true, slug: body.slug, refreshed: true }), { status: 200 });
+    });
     await shareExtraction(sampleExtraction());
     const ok = await unshareExtraction("ext_1");
     expect(ok).toBe(true);
     expect(getSharedSlugForId("ext_1")).toBeNull();
+  });
+});
+
+describe("Q8 — public-reports.js integration point: sessionId ownership, never a header", () => {
+  it("sends sessionId in the POST body, never as an x-session-id header", async () => {
+    // The exact trap the fix must not fall into: 0007's owner-update policy's
+    // header-based branch is unusable because nothing ever sends it, and it
+    // must stay unused — session_id ownership is proven via the body, which
+    // (unlike a header matched against a public column) is never something a
+    // reader of the published row could obtain.
+    supabaseMock.enabled = true;
+    supabaseMock.from.mockImplementation(() => makeSupabaseClient({}).from());
+    let capturedInit = null;
+    mockPublishFetch(async (_url, init) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({ ok: true, slug: "s1", refreshed: true }), { status: 200 });
+    });
+    await shareExtraction(sampleExtraction(), { sessionId: "sess-abc" });
+    expect(capturedInit.headers?.["x-session-id"]).toBeUndefined();
+    expect(JSON.parse(capturedInit.body).sessionId).toBe("sess-abc");
   });
 });
 
@@ -280,8 +362,11 @@ describe("Q8 — getPublicBySlug: the cross-browser fix", () => {
   });
 
   it("falls back to localStorage when Supabase errors", async () => {
-    supabaseMock.enabled = true;
+    // Seed the local fallback while Supabase is deliberately disabled, then
+    // simulate the server becoming unavailable on the read path.
+    supabaseMock.enabled = false;
     const { slug } = await shareExtraction(sampleExtraction());
+    supabaseMock.enabled = true;
     // After sharing, simulate Supabase going down on the read path.
     const chain = {
       select: vi.fn(() => chain),

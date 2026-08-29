@@ -584,3 +584,177 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     });
   });
 });
+
+// ── FD3 compliance: a refusal is free, and overridable only from the server ──
+//
+// The bug this suite exists for: consumeGuestCredit ran BEFORE the robots.txt
+// check, so a guest who pasted three LinkedIn URLs spent three of their ten
+// free extractions on requests that were declined before any provider was
+// contacted. You do not bill for work you refused to do.
+describe("extract — robots.txt refusal", () => {
+  const DISALLOW_ALL = "User-agent: *\nDisallow: /\n";
+  const linkedInEvent = {
+    httpMethod: "POST",
+    body: JSON.stringify({ url: "https://www.linkedin.com/in/vikashkaruna" }),
+  };
+
+  /** Reload the handler with guestUsage + consent mocked so we can observe them. */
+  async function loadWithMocks({ consumeSpy, consentGranted = false, consentDegraded = false, user = null } = {}) {
+    vi.resetModules();
+    vi.doMock("../functions/lib/guestUsage.js", () => ({
+      consumeGuestCredit: consumeSpy,
+    }));
+    vi.doMock("../functions/lib/supabaseServerClient.js", () => ({
+      authenticateBearer: vi.fn(async () =>
+        user ? { ok: true, user, client: {} } : { ok: false, status: 401, body: {} },
+      ),
+      getUserScopedClient: vi.fn(() => ({ client: null })),
+    }));
+    vi.doMock("../functions/lib/scrapeConsent.js", () => ({
+      hasScrapeConsent: vi.fn(async () => ({
+        granted: consentGranted, expiresAt: null, degraded: consentDegraded,
+      })),
+    }));
+    // The entitlement gate runs BEFORE compliance (a denied account must cost
+    // nothing on the wire). Stub it to "allowed" so this suite tests the
+    // compliance gate alone — entitlement has its own suite in
+    // entitlement-enforcement.test.js.
+    vi.doMock("../functions/lib/requireEntitlement.js", () => ({
+      requireCapability: vi.fn(async () => ({ check: { allowed: true } })),
+      DENY_STATUS: 402,
+      denyBody: vi.fn(() => ({})),
+    }));
+    // Keep the suite hermetic. The real publicUrl helpers resolve DNS, and
+    // linkedin.com is unreachable from CI — which does not merely slow the
+    // test, it INVERTS it: loadRobots fails open on a network error, so the
+    // refusal under test silently becomes an allow.
+    vi.doMock("../functions/lib/publicUrl.js", () => ({
+      isPublicHttpUrlAsync: vi.fn(async () => true),
+      isPublicHttpUrl: vi.fn(() => true),
+      fetchPublicUrl: vi.fn((...args) => globalThis.fetch(...args)),
+    }));
+    const mod = await import("../functions/extract.js");
+    return mod.handler;
+  }
+
+  beforeEach(() => {
+    // Replace the permissive robots.txt queued by the outer beforeEach.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(new Response(DISALLOW_ALL, { status: 200 }));
+  });
+
+  it("refuses with 403 and a machine-readable code", async () => {
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy });
+    const r = await h(linkedInEvent);
+    expect(r.statusCode).toBe(403);
+    const body = JSON.parse(r.body);
+    expect(body.code).toBe("robots_disallowed");
+    expect(body._complianceBlocked).toBe(true);
+    expect(body.host).toBe("www.linkedin.com");
+    // The path a support report needs, echoed intact.
+    expect(body.error).toContain("path=/in/vikashkaruna");
+  });
+
+  it("does NOT consume a guest credit for a refused request", async () => {
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy });
+    const r = await h(linkedInEvent);
+    expect(r.statusCode).toBe(403);
+    expect(consumeSpy).not.toHaveBeenCalled();
+  });
+
+  it("tells a signed-in user the refusal is overridable", async () => {
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" } });
+    const body = JSON.parse((await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } })).body);
+    expect(body.consentAvailable).toBe(true);
+  });
+
+  it("does NOT offer the override to a guest", async () => {
+    // An anonymous cookie is nobody to attribute a permission claim to.
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy });
+    const body = JSON.parse((await h(linkedInEvent)).body);
+    expect(body.consentAvailable).toBe(false);
+  });
+
+  it("proceeds when the signed-in user has a recorded attestation", async () => {
+    const consumeSpy = vi.fn(async () => ({ allowed: true, cookie: null }));
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" }, consentGranted: true });
+    const r = await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } });
+    expect(r.statusCode).not.toBe(403);
+    // Past the gate, the request is billed like any other.
+    expect(consumeSpy).toHaveBeenCalled();
+  });
+
+  it("IGNORES a client-supplied consent flag", async () => {
+    // The whole point: consent is read server-side from the JWT. A flag a
+    // client can set is not an attestation, it is compliance-off as a query
+    // parameter.
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy });
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://www.linkedin.com/in/vikashkaruna",
+        consented: true,
+        options: { consented: true, skipCompliance: true },
+      }),
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it("does NOT offer the override when the consent store cannot answer", async () => {
+    // `degraded` means the store is unconfigured, unmigrated or unreachable —
+    // so recording an attestation would fail too. Offering the override there
+    // sends the user into a dialog that can only error: they tick the box, the
+    // POST 502s, and nothing is granted. This is the state the product is in
+    // until 0028_scrape_consent.sql has been applied.
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" }, consentDegraded: true });
+    const body = JSON.parse((await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } })).body);
+    expect(body.code).toBe("robots_disallowed");
+    expect(body.consentAvailable).toBe(false);
+  });
+
+  it("keeps the refusal standing when the consent lookup THROWS", async () => {
+    // The outer catch around the compliance block fails open, which is right
+    // for "could not read robots.txt" and catastrophic for "could not read the
+    // attestation": it would allow a scrape the site refused. An error
+    // resolving consent must mean NO consent.
+    vi.resetModules();
+    vi.doMock("../functions/lib/guestUsage.js", () => ({ consumeGuestCredit: vi.fn() }));
+    vi.doMock("../functions/lib/requireEntitlement.js", () => ({
+      requireCapability: vi.fn(async () => ({ check: { allowed: true } })),
+      DENY_STATUS: 402,
+      denyBody: vi.fn(() => ({})),
+    }));
+    vi.doMock("../functions/lib/publicUrl.js", () => ({
+      isPublicHttpUrlAsync: vi.fn(async () => true),
+      isPublicHttpUrl: vi.fn(() => true),
+      fetchPublicUrl: vi.fn((...a) => globalThis.fetch(...a)),
+    }));
+    vi.doMock("../functions/lib/supabaseServerClient.js", () => ({
+      authenticateBearer: vi.fn(async () => { throw new Error("auth exploded"); }),
+      getUserScopedClient: vi.fn(() => ({ client: null })),
+    }));
+    vi.doMock("../functions/lib/scrapeConsent.js", () => ({ hasScrapeConsent: vi.fn() }));
+    const { handler } = await import("../functions/extract.js");
+    const r = await handler({ ...linkedInEvent, headers: { authorization: "Bearer t" } });
+    expect(r.statusCode).toBe(403);
+    expect(JSON.parse(r.body).consentAvailable).toBe(false);
+  });
+
+  it("does not offer the override for an operator allowlist rejection", async () => {
+    // host_not_permitted is the OPERATOR's decision; a user must not be able to
+    // attest their way past their own operator.
+    process.env.PERMITTED_HOSTS = "example.com";
+    const consumeSpy = vi.fn();
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" } });
+    const body = JSON.parse((await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } })).body);
+    expect(body.code).toBe("host_not_permitted");
+    expect(body.consentAvailable).toBe(false);
+    delete process.env.PERMITTED_HOSTS;
+  });
+});

@@ -18,12 +18,18 @@
 //
 // Statuses are fetched on mount and on a window-focus refresh, so coming
 // back from /account#integrations reflects the new connect state.
+//
+// Plan gating: HubSpot/Notion/Airtable/Slack require the "integrations"
+// capability (Select and up — see entitlementModel.js). Google Sheets is
+// exempt: it needs no server-side connection, it is a client-side CSV
+// download, and CSV export is already available on every plan including Free.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Button from "./Button.jsx";
 import Icon from "./Icon.jsx";
 import { useToast } from "./Toast.jsx";
+import { useBilling } from "./BillingProvider.jsx";
 import {
   PUSH_PROVIDERS,
   getPushProviderStatuses,
@@ -59,6 +65,8 @@ export default function PushIntegrationMenu({
 }) {
   const navigate = useNavigate();
   const showToast = useToast();
+  const { checkCanIntegrations } = useBilling();
+  const canIntegrate = checkCanIntegrations();
   const [open, setOpen] = useState(false);
   const [statuses, setStatuses] = useState({}); // slug → { connected, ... }
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -123,6 +131,12 @@ export default function PushIntegrationMenu({
 
   const handlePickProvider = async (slug) => {
     if (slug === SHEETS_ROW.slug) return handleSheets();
+    if (!canIntegrate) {
+      setOpen(false);
+      showToast("Push integrations are available from the Select plan upward.", "lock");
+      navigate("/pricing");
+      return;
+    }
     const status = statuses[slug];
     if (!status?.connected) {
       setOpen(false);
@@ -198,6 +212,11 @@ export default function PushIntegrationMenu({
                       {p.clientSide ? (
                         <span className="push-int-badge push-int-badge-ok" title="No setup needed">
                           <Icon name="check" size={10} strokeWidth={3} /> No setup needed
+                        </span>
+                      ) : !canIntegrate ? (
+                        <span className="push-int-badge push-int-badge-off" title="Available from the Select plan upward">
+                          <Icon name="lock" size={10} />
+                          Select plan+
                         </span>
                       ) : isConnected ? (
                         <span className="push-int-badge push-int-badge-ok" title={accLabel ? `Connected as ${accLabel}` : "Connected"}>

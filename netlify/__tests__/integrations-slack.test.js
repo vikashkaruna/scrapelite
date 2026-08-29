@@ -37,6 +37,19 @@ vi.mock("../functions/lib/notify.js", () => ({
   resolveSlackWebhook: (...args) => mockNotify.resolve(...args),
 }));
 
+// The push (/send) entitlement gate hits the entitlements table via plain
+// fetch() — NOT the mocked @supabase/supabase-js client above — which would
+// otherwise silently consume slots from a test's own globalThis.fetch queue
+// (meant for the Slack webhook calls under test). Mocked here so each test's
+// fetch mock stays scoped to what it's actually testing; the gating itself is
+// covered by entitlement-gate tests further down.
+const mockRequireCapabilityForUser = vi.fn().mockResolvedValue({ check: { allowed: true } });
+vi.mock("../functions/lib/requireEntitlement.js", () => ({
+  requireCapabilityForUser: (...args) => mockRequireCapabilityForUser(...args),
+  denyBody: (check) => ({ error: check.reason, code: check.code }),
+  DENY_STATUS: 402,
+}));
+
 import { handler } from "../functions/integrations-slack.js";
 
 const baseEvent = (overrides = {}) => ({
@@ -295,6 +308,20 @@ describe("integrations-slack", () => {
       expect(body.failedRecords).toHaveLength(1);
       expect(body.failedRecords[0].url).toBe("https://b.com");
       expect(body.failedRecords[0].error).toMatch(/slack_429/);
+    });
+
+    it("refuses the push server-side when the plan lacks the integrations capability, before touching Slack", async () => {
+      mockRequireCapabilityForUser.mockResolvedValueOnce({
+        check: { allowed: false, reason: "Push integrations are Select and up.", code: "NOT_IN_PLAN" },
+      });
+      globalThis.fetch = vi.fn();
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "send" },
+        body: JSON.stringify({ items: [{ id: "e1", url: "https://a.com", page_title: "A" }] }),
+      }));
+      expect(r.statusCode).toBe(402);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     it("dispatches via body.action when sub-path is empty (Netlify-redirect-safe)", async () => {

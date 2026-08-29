@@ -2,42 +2,72 @@
 // for the Dashboard row actions. Shows existing collections + an inline
 // "new collection…" option. Calls onSelect with the new collection name
 // (or "" to remove from a collection).
-import { useEffect, useRef, useState } from "react";
+//
+// The menu is rendered via a PORTAL to document.body, positioned with
+// `position: fixed` from the trigger's own bounding rect. It cannot live as a
+// normal absolutely-positioned child: this component is used inside
+// Dashboard's table view, where `.card.rise.table-wrap` sets `overflow:
+// hidden` to clip the table to its rounded corners — a plain in-flow dropdown
+// opened there is invisible, clipped by that same boundary. See the bug report
+// "clicking Collection gets hidden in Dashboard".
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Icon from "./Icon.jsx";
 
 export default function CollectionPicker({ value, collections = [], onSelect, onCreate }) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
-  const wrapRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null); // { top, left } in viewport coords
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const reposition = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Right-align to the trigger, same as the old absolute .cp-menu did,
+    // clamped so it never runs off the left edge of the viewport.
+    const left = Math.max(8, r.right - 220);
+    setMenuPos({ top: r.bottom + 4, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
+    const onScrollOrResize = () => reposition();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
     const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+      if (
+        triggerRef.current && !triggerRef.current.contains(e.target) &&
+        menuRef.current && !menuRef.current.contains(e.target)
+      ) {
         setOpen(false); setCreating(false); setDraft("");
       }
     };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+      document.removeEventListener("mousedown", handler);
+    };
   }, [open]);
 
   const label = value || "No collection";
 
-  return (
-    <div className="collection-picker" ref={wrapRef}>
-      <button
-        type="button"
-        className={"cp-trigger" + (value ? " cp-set" : "")}
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        title={value ? `In collection: ${value}` : "Add to a collection"}
-      >
-        <Icon name="folder" size={12} />
-        {value ? value : "Collection"}
-        <Icon name="chevron-down" size={10} />
-      </button>
-      {open && (
-        <div className="cp-menu" onClick={(e) => e.stopPropagation()}>
+  const menu = open && menuPos && createPortal(
+        <div
+          className="cp-menu cp-menu-portal"
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+        >
           {value && (
             <button
               type="button"
@@ -99,8 +129,24 @@ export default function CollectionPicker({ value, collections = [], onSelect, on
               <Icon name="plus" size={11} /> New collection…
             </button>
           )}
-        </div>
-      )}
+        </div>,
+        document.body,
+      );
+
+  return (
+    <div className="collection-picker">
+      <button
+        type="button"
+        ref={triggerRef}
+        className={"cp-trigger" + (value ? " cp-set" : "")}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        title={value ? `In collection: ${value}` : "Add to a collection"}
+      >
+        <Icon name="folder" size={12} />
+        {value ? value : "Collection"}
+        <Icon name="chevron-down" size={10} />
+      </button>
+      {menu}
     </div>
   );
 }

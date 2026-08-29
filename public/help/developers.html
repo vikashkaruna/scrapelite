@@ -40,7 +40,7 @@
   </div>
 </header>
 <div class="layout">
-  <nav class="sidebar" aria-label="Help navigation"><div class="side-group"><a class="side-link" href="index.html">Overview</a></div><div class="side-label">Guide</div><div class="side-group"><a class="side-link" href="01-what-datiq-is.html"><span class="side-num">1</span>What DatIQ is</a><a class="side-link" href="02-quick-start-your-first-extraction.html"><span class="side-num">2</span>Quick start — your first extraction</a><a class="side-link" href="03-the-home-composer.html"><span class="side-num">3</span>The Home composer</a><a class="side-link" href="04-what-you-can-extract.html"><span class="side-num">4</span>What you can extract</a><a class="side-link" href="05-reviewing-results-the-preview-screen.html"><span class="side-num">5</span>Reviewing results — the Preview screen</a><a class="side-link" href="06-enrichment-and-content-generation.html"><span class="side-num">6</span>Enrichment &amp; content generation</a><a class="side-link" href="07-batch-extraction.html"><span class="side-num">7</span>Batch extraction</a><a class="side-link" href="08-scheduling-and-change-monitoring.html"><span class="side-num">8</span>Scheduling &amp; change monitoring</a><a class="side-link" href="09-your-dashboard.html"><span class="side-num">9</span>Your Dashboard</a><a class="side-link" href="10-exports-and-sharing.html"><span class="side-num">10</span>Exports &amp; sharing</a><a class="side-link" href="11-plans-usage-and-billing.html"><span class="side-num">11</span>Plans, usage &amp; billing</a><a class="side-link" href="12-accounts-trial-and-sign-in.html"><span class="side-num">12</span>Accounts, trial &amp; sign-in</a><a class="side-link" href="13-privacy-and-your-data.html"><span class="side-num">13</span>Privacy &amp; your data</a><a class="side-link" href="14-troubleshooting.html"><span class="side-num">14</span>Troubleshooting</a><a class="side-link" href="15-keyboard-shortcuts.html"><span class="side-num">15</span>Keyboard shortcuts</a><a class="side-link" href="16-glossary.html"><span class="side-num">16</span>Glossary</a></div><div class="side-label">For developers</div><div class="side-group"><a class="side-link active" href="developers.html">API reference</a></div></nav>
+  <nav class="sidebar" aria-label="Help navigation"><div class="side-group"><a class="side-link" href="index.html">Overview</a></div><div class="side-label">Guide</div><div class="side-group"><a class="side-link" href="01-what-datiq-is.html"><span class="side-num">1</span>What DatIQ is</a><a class="side-link" href="02-quick-start-your-first-extraction.html"><span class="side-num">2</span>Quick start — your first extraction</a><a class="side-link" href="03-the-home-composer.html"><span class="side-num">3</span>The Home composer</a><a class="side-link" href="04-what-you-can-extract.html"><span class="side-num">4</span>What you can extract</a><a class="side-link" href="05-reviewing-results-the-preview-screen.html"><span class="side-num">5</span>Reviewing results — the Preview screen</a><a class="side-link" href="06-enrichment-and-content-generation.html"><span class="side-num">6</span>Enrichment &amp; content generation</a><a class="side-link" href="07-batch-extraction.html"><span class="side-num">7</span>Batch extraction</a><a class="side-link" href="08-scheduling-and-change-monitoring.html"><span class="side-num">8</span>Scheduling &amp; change monitoring</a><a class="side-link" href="09-your-dashboard.html"><span class="side-num">9</span>Your Dashboard</a><a class="side-link" href="10-exports-and-sharing.html"><span class="side-num">10</span>Exports &amp; sharing</a><a class="side-link" href="11-discoverability-seo-aeo-and-geo-audits.html"><span class="side-num">11</span>Discoverability — SEO, AEO &amp; GEO audits</a><a class="side-link" href="12-plans-usage-and-billing.html"><span class="side-num">12</span>Plans, usage &amp; billing</a><a class="side-link" href="13-accounts-trial-and-sign-in.html"><span class="side-num">13</span>Accounts, trial &amp; sign-in</a><a class="side-link" href="14-privacy-and-your-data.html"><span class="side-num">14</span>Privacy &amp; your data</a><a class="side-link" href="15-troubleshooting.html"><span class="side-num">15</span>Troubleshooting</a><a class="side-link" href="16-keyboard-shortcuts.html"><span class="side-num">16</span>Keyboard shortcuts</a><a class="side-link" href="17-glossary.html"><span class="side-num">17</span>Glossary</a></div><div class="side-label">For developers</div><div class="side-group"><a class="side-link active" href="developers.html">API reference</a></div></nav>
   <main class="content">
     <button class="side-toggle" id="sideToggle" aria-label="Toggle navigation">☰ Contents</button>
     <article class="doc">
@@ -61,7 +61,29 @@
   -d '{
     "urls": ["https://example.com", "https://stripe.com"],
     "intent": "summary"
-  }'</code></pre><p>Returns a <strong>Batch object</strong> with <code>status: "queued"</code>.</p><h3 id="get-batch-status-and-results">Get batch status &amp; results</h3><pre class="code lang-http"><code>GET /v1/batches/{id}</code></pre><p>Returns the <strong>Batch object</strong>. When <code>status</code> is <code>completed</code>, <code>results</code> holds one entry per URL (each with its own status and, on success, an embedded Extraction).</p><h3 id="schedules">Schedules</h3><p>Create and manage recurring extractions that watch a page and report changes.</p><pre class="code lang-http"><code>POST   /v1/schedules
+  }'</code></pre><p>Returns a <strong>Batch object</strong> with <code>status: "queued"</code>.</p><h3 id="get-batch-status-and-results">Get batch status &amp; results</h3><pre class="code lang-http"><code>GET /v1/batches/{id}</code></pre><p>Returns the <strong>Batch object</strong>. When <code>status</code> is <code>completed</code>, <code>results</code> holds one entry per URL (each with its own status and, on success, an embedded Extraction).</p><h3 id="discoverability-audits">Discoverability audits</h3><p>Score a page for classic search (SEO), answer engines (AEO) and generative engines (GEO), and get the prioritised fixes.</p><pre class="code lang-http"><code>POST   /v1/audits                          # run an audit
+GET    /v1/audits                          # list your audits
+GET    /v1/audits/{id}                     # status and summary
+GET    /v1/audits/{id}/results             # the full payload
+GET    /v1/audits/{id}/report              # markdown, csv or json
+POST   /v1/audits/{id}/rerun               # re-run, measured against this one
+DELETE /v1/audits/{id}
+GET    /v1/audits/{id}/compare/{baseline}  # what changed between two audits
+GET    /v1/audits/{id}/recommendations
+GET    /v1/audits/{id}/headings
+GET    /v1/audits/{id}/schema
+GET    /v1/audits/{id}/answers
+GET    /v1/audits/{id}/entities
+GET    /v1/audits/{id}/technical
+POST   /v1/recommendations/{id}/accept
+POST   /v1/recommendations/{id}/dismiss    # a reason is required
+GET    /v1/targets                         # pages you have audited
+GET    /v1/targets/{id}/history
+GET    /v1/targets/{id}/trends             # time series for charting
+POST   /v1/benchmarks                      # audit several URLs and compare
+GET    /v1/benchmarks/{id}</code></pre><p><strong>Create body</strong></p><div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>target_url</code></td><td>string</td><td>yes</td><td>The page to audit.</td></tr><tr><td><code>device_profile</code></td><td>string</td><td>no</td><td><code>mobile</code> (default) or <code>desktop</code>.</td></tr><tr><td><code>audit_profile</code></td><td>string</td><td>no</td><td><code>balanced</code> (default), <code>seo</code>, <code>aeo</code> or <code>geo</code>. Selects which score leads the report; all four are always computed the same way.</td></tr><tr><td><code>page_type_hint</code></td><td>string</td><td>no</td><td><code>article</code>, <code>faq</code>, <code>howto</code>, <code>pricing</code>, <code>product</code>, <code>docs</code>. Decides which checks apply. Detected automatically when omitted.</td></tr><tr><td><code>baseline_audit_id</code></td><td>string</td><td>no</td><td>An earlier audit to compare against.</td></tr><tr><td><code>idempotency_key</code></td><td>string</td><td>no</td><td>Strongly recommended. A repeated request returns the original audit instead of spending a second credit.</td></tr><tr><td><code>prompt_sample_set_id</code></td><td>string</td><td>no</td><td>A saved prompt set for citation sampling.</td></tr><tr><td><code>tags</code></td><td>string[]</td><td>no</td><td>Up to 10 labels.</td></tr></tbody></table></div><p>Returns an <strong>Audit object</strong>. Audits have their own monthly allowance, separate from extraction credits.</p><p><strong>Report formats</strong></p><pre class="code lang-http"><code>GET /v1/audits/{id}/report?format=markdown&amp;constructs=1
+GET /v1/audits/{id}/report?format=csv&amp;rows=recommendations
+GET /v1/audits/{id}/report?format=json</code></pre><p><code>markdown</code> and <code>csv</code> return text rather than JSON. <code>constructs=1</code> embeds the copy-ready implementation assets in the markdown report.</p><hr><h3 id="schedules">Schedules</h3><p>Create and manage recurring extractions that watch a page and report changes.</p><pre class="code lang-http"><code>POST   /v1/schedules
 GET    /v1/schedules
 GET    /v1/schedules/{id}
 PATCH  /v1/schedules/{id}
@@ -102,7 +124,83 @@ POST   /v1/schedules/{id}/run     # run once, immediately</code></pre><p><strong
     { "url": "https://example.com", "status": "succeeded", "extraction": { "id": "ex_tkp20mc" } },
     { "url": "https://stripe.com",  "status": "succeeded", "extraction": { "id": "ex_6tt10md" } }
   ]
-}</code></pre><p><code>status</code> is one of <code>queued</code>, <code>running</code>, <code>completed</code>. Each result's <code>status</code> is <code>succeeded</code> or <code>failed</code> (failed entries include an <code>error</code> message).</p><h3 id="schedule-object">Schedule object</h3><pre class="code lang-json"><code>{
+}</code></pre><p><code>status</code> is one of <code>queued</code>, <code>running</code>, <code>completed</code>. Each result's <code>status</code> is <code>succeeded</code> or <code>failed</code> (failed entries include an <code>error</code> message).</p><h3 id="audit-object">Audit object</h3><pre class="code lang-json"><code>{
+  "audit_id": "aud_01K123ABCXYZ",
+  "target": {
+    "url": "https://example.com/guide/what-is-geo",
+    "page_type": "article",
+    "device_profile": "mobile",
+    "audit_profile": "balanced"
+  },
+  "framework_scores": { "overall": 78.4, "seo": 75.2, "aeo": 82.1, "geo": 77.3 },
+  "coverage": 92.5,
+  "pillar_scores": {
+    "answer_clarity": {
+      "score": 84.0,
+      "weight": 0.30,
+      "coverage": 100,
+      "signals": {
+        "direct_answer_block": 100,
+        "conciseness": 88,
+        "passage_independence": 79,
+        "question_headings": 70,
+        "extractable_formatting": 82
+      }
+    },
+    "technical_accessibility": {
+      "score": 76.0,
+      "weight": 0.25,
+      "coverage": 70,
+      "signals": {
+        "crawl_index_eligibility": 90,
+        "render_completeness": 70,
+        "core_web_vitals": null,
+        "mobile_parity": 100,
+        "structured_data_validity": 78
+      }
+    }
+  },
+  "penalties": [
+    {
+      "code": "AI_CRAWLER_PARTIAL_BLOCK",
+      "severity": "medium",
+      "penalty_factor": 0.05,
+      "description": "One or more AI crawlers appear blocked in robots directives."
+    }
+  ],
+  "score_math": { "pre_penalty_total": 82.5, "penalty_multiplier": 0.95, "final_score": 78.4 },
+  "issues": [
+    {
+      "code": "SH-06",
+      "pillar": "structural_hierarchy",
+      "severity": "high",
+      "frameworks": ["aeo", "seo"],
+      "title": "Visible FAQs carry no FAQPage schema",
+      "evidence": "6 visible question-and-answer pairs carry no FAQPage markup."
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "rec_901",
+      "code": "SH-06",
+      "priority": "high",
+      "priority_score": 58.4,
+      "owner": "seo",
+      "frameworks": ["aeo", "seo"],
+      "title": "Add FAQPage JSON-LD whose wording matches the visible questions and answers exactly.",
+      "rationale": "The content is already there; the markup is what makes it eligible for direct extraction.",
+      "estimated_lift": 4.8,
+      "implementation_asset": {
+        "type": "jsonld",
+        "format": "html",
+        "label": "FAQPage schema",
+        "body": "&lt;script type=\"application/ld+json\"&gt;{ ... }&lt;/script&gt;"
+      },
+      "status": "open"
+    }
+  ],
+  "stage_errors": []
+}</code></pre><p><strong><code>null</code> is not <code>0</code>.</strong> A signal that reads <code>null</code> was not measured — the external service was unavailable, or the check does not apply to this page type. It is EXCLUDED from its pillar and its weight is redistributed across the signals that were measured, rather than being scored as a failure.</p><p>That is what <code>coverage</code> reports: the share of intended evidence this audit actually gathered. A score of 92 built on 70% coverage is not the same as a 92 built on all of it, and your code should treat them differently. <code>stage_errors</code> lists what could not be gathered and why.</p><p><code>penalties</code> are multiplicative and apply to every framework score, not only the overall one. <code>score_math</code> shows the arithmetic.</p><hr><h3 id="schedule-object">Schedule object</h3><pre class="code lang-json"><code>{
   "id": "sch_ts2whjj",
   "name": "Track · lumio.io/pricing",
   "url": "https://lumio.io/pricing",
@@ -167,7 +265,7 @@ console.log(content.content);</code></pre><hr><h2 id="support">Support</h2><p>Qu
   ],
   "next_cursor": null
 }</code></pre><h3 id="submit-feedback-on-an-ai-summary">Submit feedback on an AI summary</h3><pre class="code lang-http"><code>POST /v1/extractions/{id}/feedback</code></pre><p>Record a thumbs-up / thumbs-down rating on the AI summary, optionally with a free-text comment.</p><p><strong>Request body</strong></p><div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>rating</code></td><td>string</td><td>yes</td><td><code>up</code> or <code>down</code>.</td></tr><tr><td><code>comment</code></td><td>string</td><td>no</td><td>Free-text feedback.</td></tr></tbody></table></div><p>This data is used to improve the AI model.</p>
-      <div class="page-nav"><a class="pn-btn" href="16-glossary.html"><span class="pn-dir">← Previous</span><span class="pn-title">Glossary</span></a><span></span></div>
+      <div class="page-nav"><a class="pn-btn" href="17-glossary.html"><span class="pn-dir">← Previous</span><span class="pn-title">Glossary</span></a><span></span></div>
     </article>
     <footer class="doc-foot">DatIQ · Product help · Generated from the canonical documentation.</footer>
   </main>

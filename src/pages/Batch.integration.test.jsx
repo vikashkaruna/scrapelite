@@ -8,7 +8,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import Batch from "./Batch.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
 import { ToastProvider } from "../components/Toast.jsx";
@@ -81,7 +81,6 @@ function Tree({ initialPath = "/batch", initialState = null }) {
   return (
     <MemoryRouter
       initialEntries={[{ pathname: initialPath, state: initialState }]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>

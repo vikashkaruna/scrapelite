@@ -1,8 +1,16 @@
 // src/pages/Gallery.test.jsx — Q8 (public sample gallery) listing page tests.
 
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
+
+// Gallery listing tests exercise the local/demo feed. Do not let a developer's
+// .env turn these fixtures into real Supabase writes.
+vi.mock("../lib/supabaseClient.js", () => ({
+  supabase: null,
+  isSupabaseEnabled: false,
+}));
+
 import Gallery from "./Gallery.jsx";
 import { shareExtraction, _resetShareForTests } from "../lib/shareService.js";
 

@@ -36,7 +36,7 @@
 // React at all — public/analytics.js renders an equivalent bar there.
 
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Icon from "./Icon.jsx";
 import { hasChosen, setConsent, GRANTED, DENIED } from "../lib/consentService.js";
 

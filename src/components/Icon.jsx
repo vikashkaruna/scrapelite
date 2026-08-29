@@ -3,6 +3,11 @@
 // icons by name (e.g. <Icon name="bookmark" />), matching the original mockup.
 
 import {
+  ScanSearch,
+  Fingerprint,
+  Radar,
+  SquareCheckBig,
+  CircleSlash,
   Receipt,
   Link,
   ArrowLeft,
@@ -152,6 +157,11 @@ import {
   // Ops monitoring (staging branch)
   Server,
   Gauge,
+  // Team workspaces
+  Lock,
+  Puzzle,
+  // Export branding — Brand Kit
+  Palette,
 } from "lucide-react";
 
 const MAP = {
@@ -318,6 +328,15 @@ const MAP = {
   activity: Activity,
   server: Server,
   gauge: Gauge,
+  // Discoverability module (/discoverability). `target` already exists above.
+  "scan-search": ScanSearch,
+  fingerprint: Fingerprint,
+  radar: Radar,
+  "square-check-big": SquareCheckBig,
+  "circle-slash": CircleSlash,
+  lock: Lock,
+  puzzle: Puzzle,
+  palette: Palette,
 };
 
 

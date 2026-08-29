@@ -1,5 +1,5 @@
 // Footer.jsx — simplified footer: socials + legal only.
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 
 const LEGAL_LINKS = [
@@ -49,10 +49,10 @@ export default function Footer() {
             className="footer-version-tag"
             href="/changelog"
             onClick={(e) => { e.preventDefault(); navigate("/changelog"); }}
-            aria-label="DatIQ V1.0 — what's new"
-            title="See what's in DatIQ V1.0"
+            aria-label="DatIQ changelog — what's new"
+            title="See what's new in DatIQ"
           >
-            V1.0
+            Changelog
           </a>
         </span>
 

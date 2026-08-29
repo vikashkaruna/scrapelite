@@ -4,6 +4,7 @@ import {
   QUICK_ACTIONS,
   QUICK_ACTION_BY_KEY,
   enrichMeta,
+  enrichMetaForIntent,
   resolveCustomPrompt,
 } from "./extractionPresets.js";
 
@@ -77,3 +78,40 @@ describe("resolveCustomPrompt", () => {
     expect(r).toMatch(/Also: and the pricing/);
   });
 });
+
+describe("enrichMetaForIntent", () => {
+  it("matches QUICK_ACTIONS by prompt text", () => {
+    const socialAction = QUICK_ACTIONS.find((a) => a.key === "social");
+    expect(enrichMetaForIntent("custom", socialAction.prompt)).toEqual(socialAction);
+  });
+
+  it("matches QUICK_ACTIONS by preset label", () => {
+    const missionAction = QUICK_ACTIONS.find((a) => a.key === "mission");
+    expect(enrichMetaForIntent("custom", "Company Mission")).toEqual(missionAction);
+  });
+
+  it("returns contacts metadata for contacts intent", () => {
+    const m = enrichMetaForIntent("contacts");
+    expect(m.key).toBe("contacts");
+    expect(m.label).toBe("Find Contact Info");
+  });
+
+  it("returns pricing metadata for pricing intent", () => {
+    const m = enrichMetaForIntent("pricing");
+    expect(m.key).toBe("pricing");
+    expect(m.label).toBe("Pricing & Plans");
+  });
+
+  it("returns generic custom extraction metadata for typed custom prompt", () => {
+    const m = enrichMetaForIntent("custom", "Extract product rating and reviews");
+    expect(m.key).toBe("custom");
+    expect(m.label).toBe("Custom extraction");
+    expect(m.icon).toBe("code");
+  });
+
+  it("returns null for summary or map intent without matching prompt", () => {
+    expect(enrichMetaForIntent("summary", "")).toBeNull();
+    expect(enrichMetaForIntent("map", "")).toBeNull();
+  });
+});
+

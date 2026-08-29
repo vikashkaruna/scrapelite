@@ -143,9 +143,10 @@ function buildStructureFromText(rawText, options = {}) {
   const text = String(rawText || "").trim();
   const pseudoUrl = options.pseudoUrl || `text://pasted-${hashContent(text)}`;
 
+  let result;
   if (looksLikeHtml(text)) {
     const parsed = parseHtml(text, "https://pasted.local/");
-    return {
+    result = {
       url: pseudoUrl,
       page_title: parsed.page_title || "Pasted content",
       headings: parsed.headings,
@@ -153,19 +154,24 @@ function buildStructureFromText(rawText, options = {}) {
       is_pasted: true,
       raw_text: text,
     };
+  } else {
+    // Plain text: derive a title from the first non-empty line; keep the body as
+    // a single content blob the summarizer/custom-extractor can read.
+    const firstLine = text.split(/\n/).map((l) => l.trim()).find(Boolean) || "Pasted text";
+    result = {
+      url: pseudoUrl,
+      page_title: firstLine.slice(0, 120),
+      headings: [{ tag: "H1", text: firstLine.slice(0, 120) }],
+      links: [],
+      is_pasted: true,
+      raw_text: text,
+    };
   }
 
-  // Plain text: derive a title from the first non-empty line; keep the body as
-  // a single content blob the summarizer/custom-extractor can read.
-  const firstLine = text.split(/\n/).map((l) => l.trim()).find(Boolean) || "Pasted text";
-  return {
-    url: pseudoUrl,
-    page_title: firstLine.slice(0, 120),
-    headings: [{ tag: "H1", text: firstLine.slice(0, 120) }],
-    links: [],
-    is_pasted: true,
-    raw_text: text,
-  };
+  if (options.customPrompt) {
+    result.custom_extraction = mockCustomExtraction(pseudoUrl, options.customPrompt);
+  }
+  return result;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -196,8 +202,9 @@ export async function extractStructure(url, options = {}) {
   // Paste-anything: when options.rawText is present, skip the network entirely and
   // build the structure from the pasted content (handles raw text + HTML).
   if (options.rawText) {
-    return buildStructureFromText(options.rawText, { pseudoUrl: url });
+    return buildStructureFromText(options.rawText, { pseudoUrl: url, customPrompt: options.customPrompt });
   }
   if (options.mapMode) return mapDomain(url);
   return hasFirecrawl ? realScrape(url, options) : mockScrape(url, options);
 }
+

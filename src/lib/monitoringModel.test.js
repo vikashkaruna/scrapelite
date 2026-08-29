@@ -22,9 +22,14 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the five platform jobs", () => {
+  it("registers the six platform jobs", () => {
+    // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
+    // is the REALITY: adding a job here does not schedule it, and scheduling one
+    // without adding it here means it runs unmonitored. Both halves have to be
+    // edited together, and this assertion is what forces the second one.
     expect(JOB_IDS).toEqual([
-      "scheduled-runner", "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
+      "scheduled-runner", "discoverability-monitor", "reengagement",
+      "billing-lifecycle", "billing-purge", "health-monitor",
     ]);
   });
 
@@ -59,10 +64,12 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
     expect(jobById("nope")).toBeNull();
   });
 
-  it("carries the known reengagement defect as an explicit caveat", () => {
-    // Documented in CLAUDE.md: the query 400s and the error is swallowed, so a
-    // green run row would otherwise be a lie.
-    expect(jobById("reengagement").caveat).toMatch(/silent no-op/i);
+  it("reengagement carries no caveat — the user_id/email-resolution fix closed it", () => {
+    // Was: selected a user_email column scheduled_tasks never had, the query
+    // 400'd and the error was swallowed, so a green run row was a lie. Fixed
+    // by reading user_id (the column that actually exists) and resolving the
+    // email via the Supabase Auth Admin API, same as admin-users.js.
+    expect(jobById("reengagement").caveat).toBeUndefined();
   });
 });
 
@@ -468,5 +475,42 @@ describe("presentation helpers (M-10)", () => {
   it("says never rather than Invalid Date", () => {
     expect(formatRelative(null, NOW)).toBe("never");
     expect(formatRelative("not-a-date", NOW)).toBe("never");
+  });
+});
+
+// ── Expiry (regression) ─────────────────────────────────────────────────────
+// deriveScheduleStatus read `data.endsAt || data.runUntil`, and no schedule has
+// ever carried either: buildSchedule() persists `expiresAt`. So EXPIRED was
+// unreachable and the admin dashboard's "Expired" filter always matched
+// nothing, whatever was in the table — a filter that silently lies is worse
+// than no filter, because it is read as evidence.
+describe("deriveScheduleStatus — expiry", () => {
+  const past = new Date(Date.now() - 86400000).toISOString();
+  const future = new Date(Date.now() + 86400000).toISOString();
+
+  it("reads the field schedules actually persist (expiresAt)", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { expiresAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("does not expire one whose end date is still ahead", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { expiresAt: future } }).state)
+      .toBe(SCHEDULE_STATE.ACTIVE);
+  });
+
+  it("still honours the older field names", () => {
+    expect(deriveScheduleStatus({ status: "active", data: { endsAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+    expect(deriveScheduleStatus({ status: "active", data: { runUntil: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("expiry outranks a pause — a stopped schedule that has also ended is ended", () => {
+    expect(deriveScheduleStatus({ status: "paused", system_paused: true, data: { expiresAt: past } }).state)
+      .toBe(SCHEDULE_STATE.EXPIRED);
+  });
+
+  it("a schedule with no end date never expires", () => {
+    expect(deriveScheduleStatus({ status: "active", data: {} }).state).toBe(SCHEDULE_STATE.ACTIVE);
   });
 });

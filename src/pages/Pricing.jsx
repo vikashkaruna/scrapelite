@@ -1,6 +1,6 @@
 // Pricing.jsx — V6: annual/monthly toggle, USD+INR, Developer+Enterprise tiers.
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,
@@ -494,10 +494,11 @@ export default function Pricing() {
         <div className="referral-teaser">
           <div className="referral-teaser-icon"><Icon name="gift" size={22} /></div>
           <div>
-            <div className="referral-teaser-title">Referral program — coming soon</div>
+            <div className="referral-teaser-title">Invite a friend, you both get 25 extractions</div>
             <div className="referral-teaser-desc">
-              Earn 10% lifetime discount for every friend you refer, or a 40% one-time discount on your current plan.
-              <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Get early access →</a>
+              Sign in and share your invite link. When someone creates an account through it,
+              25 extractions are added to their account and 25 to yours — every time.
+              <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Questions? Talk to us →</a>
             </div>
           </div>
         </div>

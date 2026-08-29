@@ -13,7 +13,7 @@
 // field) are excluded from the per-user widget — they still appear in
 // the full Dashboard.
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import FaviconDot from "./FaviconDot.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";

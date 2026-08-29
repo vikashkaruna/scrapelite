@@ -1,6 +1,6 @@
 // TopBar.jsx — sticky navigation with brand, route links, theme toggle, auth, and mobile menu.
 import { useState, useRef, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useTheme } from "./ThemeProvider.jsx";
@@ -95,7 +95,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -160,6 +160,26 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
               <div className="nav-dropdown-divider" />
             </>
           )}
+          {/* Workspace and Schedules both live here rather than in the
+              primary nav. Both are signed-in destinations people reach from
+              wherever they formed the intent — the Home composer, a persona
+              switch, Dashboard's run history — so neither needs to compete
+              with the four primary verbs for space. This is the "I know it
+              exists, where was it" path. */}
+          {user && (
+            <button className="nav-dropdown-item" role="menuitem"
+              onClick={() => { setOpen(false); onWorkspace(); }}>
+              <span className="nav-dd-icon"><Icon name="layout-grid" size={14} /></span>
+              Workspace
+            </button>
+          )}
+          {user && (
+            <button className="nav-dropdown-item" role="menuitem"
+              onClick={() => { setOpen(false); onSchedules(); }}>
+              <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
+              Schedules &amp; monitors
+            </button>
+          )}
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onAccount(); }}>
             <span className="nav-dd-icon"><Icon name="user" size={14} /></span>
@@ -192,7 +212,7 @@ function UserDropdown({ user, persona, onAccount, onSwitchRole, onSignOut, onSig
 
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
-                     onAccount, onSwitchRole, onSignOut, onSignIn }) {
+                     onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [exploreOpen, setExploreOpen] = useState(false);
 
   // Close panel on navigation
@@ -214,7 +234,16 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
         // from the focus order and from the a11y tree when the mobile menu
         // is closed. Without it, `aria-hidden` only hides content from the
         // a11y tree but Tab still moves into the offscreen buttons.
-        inert={!isOpen ? "" : undefined}
+        //
+        // Pass a real boolean, never `""`. Under React 18 this read
+        // `inert={!isOpen ? "" : undefined}`, because React 18 did not know
+        // `inert` and forwarded the empty string as a bare attribute, which
+        // HTML reads as true. React 19 knows `inert` as a boolean prop, so
+        // `""` now coerces to FALSE and the attribute is dropped entirely —
+        // silently restoring the exact tab-into-the-offscreen-menu bug this
+        // line exists to prevent. React 19 warns about it, but nothing fails:
+        // no test asserts inertness, so the suite stayed green.
+        inert={!isOpen}
       >
         {/* Main links with icon + text */}
         <div className="mobile-nav-section">
@@ -283,6 +312,18 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                   <span style={{ color: persona.color, fontSize: ".86em", fontWeight: 650 }}>{persona.label}</span>
                 </div>
               )}
+              {user && (
+                <button className="mobile-nav-item" onClick={() => { onWorkspace(); onClose(); }}>
+                  <span className="mobile-nav-icon"><Icon name="layout-grid" size={17} /></span>
+                  Workspace
+                </button>
+              )}
+              {user && (
+                <button className="mobile-nav-item" onClick={() => { onSchedules(); onClose(); }}>
+                  <span className="mobile-nav-icon"><Icon name="calendar-clock" size={17} /></span>
+                  Schedules &amp; monitors
+                </button>
+              )}
               <button className="mobile-nav-item" onClick={() => { onAccount(); onClose(); }}>
                 <span className="mobile-nav-icon"><Icon name="user" size={17} /></span>
                 Account &amp; Usage
@@ -343,12 +384,33 @@ export default function TopBar() {
     // route still exists — it's the run + results surface, reached from the
     // composer and from Dashboard's batch-run history.
     { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
-    { to: "/schedules",   label: "Schedules",   icon: "repeat",    match: (p) => p === "/schedules" },
+    // Schedules is deliberately NOT a nav item. Every place a person forms the
+    // intent to schedule something already offers the door: the Home composer's
+    // cadence dropdown, Workspace's Schedules tab and quick actions, Dashboard's
+    // run history, and the Explore menu. A fifth entry competed with the four
+    // primary verbs for the widest breakpoint's worth of space while duplicating
+    // routes the user reaches from where they already are. The /schedules route
+    // is unchanged and every existing link still works.
+    // Discoverability is its own entry rather than a tab inside Extract: it
+    // answers a different question ("can this page be found and cited?") about
+    // a page the user usually already owns, whereas Extract answers "what is on
+    // this page?" about one they usually do not.
+    // Labelled "Discover", not "Discoverability". The full word is 15
+    // characters against 7-9 for every sibling, so it dominated the nav and was
+    // the first item to force the tablet breakpoint to compress. The ROUTE, the
+    // page <h1> and every piece of copy stay "Discoverability" — this is the
+    // nav label only, where space is the constraint and the icon plus context
+    // carry the rest of the meaning.
+    { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
-    // Collections moved inside /workspace as a tab (2026-08-11) — the
-    // top-level "Collections" nav item is removed. Old /collections URLs
-    // still work via the redirect in App.jsx.
-    ...(user ? [{ to: "/workspace", label: "Workspace", icon: "layout-grid", match: (p) => p === "/workspace" }] : []),
+    // Workspace moved into the signed-in user menu (2026-08-28), same
+    // reasoning already applied to Schedules below: it's a destination people
+    // reach with intent already formed (a persona switch, a team's shared
+    // view), not one that needs to compete with the primary verbs for the
+    // widest breakpoint's worth of nav space. Listed above "Schedules &
+    // monitors" in that menu. Collections moved inside /workspace as a tab
+    // (2026-08-11) — old /collections URLs still work via the redirect in
+    // App.jsx.
   ];
 
   async function handleSignOut() {
@@ -412,7 +474,9 @@ export default function TopBar() {
           {user ? (
             <UserDropdown
               user={user} persona={persona}
+              onWorkspace={() => navigate("/workspace")}
               onAccount={() => navigate("/account")}
+              onSchedules={() => navigate("/schedules")}
               onSwitchRole={handleSwitchRole}
               onSignOut={handleSignOut}
               onSignIn={() => openAuth("signin")}
@@ -450,7 +514,9 @@ export default function TopBar() {
         isExploreActive={isExploreActive}
         persona={persona}
         user={user}
+        onWorkspace={() => navigate("/workspace")}
         onAccount={() => navigate("/account")}
+        onSchedules={() => navigate("/schedules")}
         onSwitchRole={handleSwitchRole}
         onSignOut={handleSignOut}
         onSignIn={(mode) => openAuth(mode || "signin")}

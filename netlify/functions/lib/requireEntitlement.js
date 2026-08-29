@@ -27,11 +27,19 @@
 // overrides are per-operator-browser and must never influence a server-side
 // authorization decision.
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
-import { can, computeLifecycle } from "../../../src/lib/entitlementModel.js";
+import { can, computeLifecycle, isAccountBlocked } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
-function getServiceDb() {
+/**
+ * The service-key PostgREST connection.
+ *
+ * Exported so lib/audit/auditStore.js uses THIS definition rather than keeping
+ * its own copy. Two copies of the env-var precedence (SUPABASE_URL then
+ * VITE_SUPABASE_URL) is exactly the drift that leaves one module working and
+ * the other silently degraded on a deploy where only one variable is set.
+ */
+export function getServiceDb() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return null;
@@ -143,6 +151,21 @@ export async function requireCapability(event, capability, ctx = {}) {
   return { resolved, check: checkCapability(resolved, capability, ctx) };
 }
 
+/**
+ * Same decision as requireCapability, for a caller that has ALREADY
+ * authenticated the request and knows the user id — skips the second
+ * authenticateBearer() round trip that requireCapability(event, ...) would
+ * otherwise do internally. Used by handlers (e.g. the integrations-* push
+ * endpoints) whose top-level dispatcher already resolved `userId` before
+ * routing to the specific action.
+ */
+export async function requireCapabilityForUser(userId, capability, ctx = {}) {
+  if (!userId) return { check: { allowed: true, reason: null, code: null, remaining: Infinity } };
+  const { row, degraded } = await fetchEntitlement(userId);
+  const resolved = { planMap: PLAN_BY_ID, userId, guest: false, entitlement: row, degraded };
+  return { resolved, check: checkCapability(resolved, capability, ctx) };
+}
+
 /** HTTP status for a denied capability. See denyBody for why 402. */
 export const DENY_STATUS = 402;
 
@@ -153,16 +176,21 @@ export const DENY_STATUS = 402;
  * header convention — extract.js builds CORS headers inside its own respond()
  * helper, schedules.js has a CORS constant. Callers use whichever fits.
  *
- * `lifecycle: true` distinguishes "your subscription lapsed" from "your plan
- * doesn't include this", so the client can route to renewal vs upgrade without
- * string-matching the message.
+ * `lifecycle: true` distinguishes "your account needs attention" (lapsed,
+ * frozen, scheduled for deletion, a paused seat) from "your plan doesn't
+ * include this", so the client can route to Account vs a plan upgrade
+ * without string-matching the message. Uses entitlementModel's
+ * ACCOUNT_BLOCKED_CODES rather than its own SUSPENDED/DEACTIVATED/PURGED
+ * list, so a code freeze/deletion-pending/paused reaches the client flagged
+ * the same way — before this, discoverabilityClient.js's `err.lifecycle`
+ * branch caught a lapsed subscription but not a frozen or deletion-pending
+ * account, which fell through to a generic "Something went wrong".
  */
 export function denyBody(check) {
   return {
     error: check.reason,
     code: check.code,
-    lifecycle:
-      check.code === "SUSPENDED" || check.code === "DEACTIVATED" || check.code === "PURGED",
+    lifecycle: isAccountBlocked(check.code),
     upgradeTo: check.upgradeTo ?? null,
     remaining: Number.isFinite(check.remaining) ? check.remaining : null,
   };

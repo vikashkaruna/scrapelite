@@ -1,13 +1,12 @@
 // src/pages/admin/AdminCoupons.integration.test.jsx
 // I-47 — AdminCoupons integration.
 //
-//   - planId="manual" rows show the purple "Manual assign" pill
-//   - The "Restrict to plan" select has a "Manually Assigned To User(s)" option
+//   - public coupon CRUD stays separate from user-specific plan grants
 //   - Coupon form is gated behind admin auth (no real auth in test → render in isolation)
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import AdminCoupons from "./AdminCoupons.jsx";
 import { ToastProvider } from "../../components/Toast.jsx";
 import { ErrorModalProvider } from "../../components/ErrorModal.jsx";
@@ -40,7 +39,6 @@ function Tree() {
   return (
     <MemoryRouter
       initialEntries={["/admin/coupons"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -51,26 +49,26 @@ function Tree() {
   );
 }
 
-describe("I-47 — AdminCoupons: manual planId", () => {
+describe("I-47 — AdminCoupons: public coupons only", () => {
   it("renders the coupon list with the seeded 'LAUNCH20' coupon", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("LAUNCH20")).toBeInTheDocument();
   });
 
-  it("'New coupon' button opens the form with a 'Manually Assigned To User(s)' option", async () => {
+  it("'New coupon' button opens the form without a manual-assignment option", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
     // Click "New coupon" to open the form.
     act(() => screen.getByRole("button", { name: /new coupon/i }).click());
     await act(async () => { await Promise.resolve(); });
-    // The new-coupon form now has a select with the manual option.
+    // User-specific grants are issued from Admin › Users, never as public coupons.
     const selects = document.querySelectorAll("form select");
     expect(selects.length).toBeGreaterThan(0);
     const planSelect = Array.from(selects).find((s) =>
       Array.from(s.options).some((o) => /manually assigned/i.test(o.textContent))
     );
-    expect(planSelect).toBeDefined();
+    expect(planSelect).toBeUndefined();
   });
 
   it("seeded LAUNCH20 row does NOT show 'Manual assign' (it has planId=null)", () => {

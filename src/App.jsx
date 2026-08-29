@@ -1,6 +1,6 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
 import { useState, useEffect } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ErrorModalProvider } from "./components/ErrorModal.jsx";
@@ -58,6 +58,7 @@ import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Schedules from "./pages/Schedules.jsx";
+import Discoverability from "./pages/Discoverability.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import Workspace from "./pages/Workspace.jsx";
 import PublicReport from "./pages/PublicReport.jsx";
@@ -72,6 +73,9 @@ import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
 import GuestTrialModal from "./components/GuestTrialModal.jsx";
 import PendingScheduleFlush from "./components/PendingScheduleFlush.jsx";
+import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
+import PendingWorkspaceInviteFlush from "./components/PendingWorkspaceInviteFlush.jsx";
+import PendingAuditFlush from "./components/PendingAuditFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
 
 
@@ -102,34 +106,38 @@ function Shell() {
   // hook itself skips /admin paths rather than relying on not being called.
   usePageView();
 
-  // FA2 — referral ?ref=CODE handler. Redeem the code on first paint, then
-  // strip the param from the URL so the user can't accidentally share it
-  // back to themselves. Toast fires on a successful redemption.
+  // Referral ?ref=CODE handler. The code is STASHED here, never redeemed here:
+  // redemption grants real quota and is signed-in only, so a guest arriving on
+  // an invite link keeps the code until they have an account — which is what
+  // the copy has always described ("when they sign up with your link").
+  // PendingReferralFlush below does the redeeming once a session exists.
+  //
+  // The param is stripped either way, so the URL a user copies out of their
+  // address bar is never someone else's invite link.
   useEffect(() => {
     const ref = searchParams.get("ref");
     if (!ref) return;
-    import("./lib/referralService.js").then(({ redeemReferralCode }) => {
-      const r = redeemReferralCode(ref);
-      if (r.ok) {
-        // We can't call showToast from here without a context; surface the
-        // bonus as a query param flag and let the ReferralBanner pick it up.
-        // Cleaner: write the bonus to localStorage and show a one-shot toast
-        // via the Toast context if we can grab it.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        next.set("ref_redeemed", "1");
-        setSearchParams(next, { replace: true });
-      } else if (r.reason === "self") {
-        // Silently strip self-referrals.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        setSearchParams(next, { replace: true });
-      } else {
-        // Unknown / already redeemed / invalid — just strip and move on.
-        const next = new URLSearchParams(searchParams);
-        next.delete("ref");
-        setSearchParams(next, { replace: true });
-      }
+    import("./lib/referralService.js").then(({ setPendingReferral }) => {
+      setPendingReferral(ref);
+      const next = new URLSearchParams(searchParams);
+      next.delete("ref");
+      setSearchParams(next, { replace: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Workspace invite ?invite=TOKEN handler — same STASH-here /
+  // REDEEM-in-a-flush-component split as ?ref= above, and for the same
+  // reason: accepting a seat is signed-in only, so a guest arriving on an
+  // invite link keeps the token until they have an account.
+  useEffect(() => {
+    const invite = searchParams.get("invite");
+    if (!invite) return;
+    import("./lib/pendingWorkspaceInvite.js").then(({ setPendingWorkspaceInvite }) => {
+      setPendingWorkspaceInvite(invite);
+      const next = new URLSearchParams(searchParams);
+      next.delete("invite");
+      setSearchParams(next, { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -220,6 +228,7 @@ function Shell() {
           <Route path="/collections"                   element={<Navigate to="/workspace?tab=collections" replace />} />
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
+          <Route path="/discoverability"               element={<Discoverability />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />
@@ -263,8 +272,25 @@ function Shell() {
       {/* Saves a schedule built while signed out, once the user signs in.
           Global because OAuth navigates the document away and back. */}
       <PendingScheduleFlush />
+      <PendingReferralFlush />
+      <PendingWorkspaceInviteFlush />
+      <PendingAuditFlush />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
-      <OnboardingTour key={tourForceOpen} forceOpen={tourForceOpen > 0} onClose={() => setTourForceOpen(0)} />
+      <OnboardingTour
+        key={tourForceOpen}
+        tourId="home"
+        forceOpen={tourForceOpen > 0}
+        enabled={pathname === "/"}
+        onClose={() => setTourForceOpen(0)}
+      />
+      {/* Separate tour, separate localStorage flag — a first-time visitor to
+          Discoverability gets walked through it independently of whether
+          they've seen (or skipped) the Home tour. No replay hotkey wired to
+          this one yet; forceOpen stays false so it only auto-starts once. */}
+      <OnboardingTour
+        tourId="discoverability"
+        enabled={pathname === "/discoverability"}
+      />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
       {/* Non-blocking background-extraction progress dock (replaces the old
           full-screen LoadingScreen). Global so it persists across route changes. */}

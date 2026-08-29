@@ -33,12 +33,29 @@
  * `priority` and `changefreq` are sitemap hints only.
  */
 export const REACT_OWNED = [
-  // ⚠️ The homepage is NEVER prerendered. Its output file would be
-  // public/index.html, and Vite copies public/ verbatim over the build output —
-  // so it would overwrite dist/index.html, which is the app's actual entry
-  // point. It also needs no help: `/` is the one route that already serves the
-  // right title and canonical="https://datiq.app/" straight from the shell.
-  { path: "/", priority: "1.0", changefreq: "daily", prerender: false },
+  // ⚠️ The homepage IS prerendered, but NOT to public/index.html.
+  //
+  // The old reasoning was half right and half wrong, and the wrong half was
+  // expensive. Right: public/index.html would be copied verbatim over
+  // dist/index.html and clobber Vite's entry point, so that filename is still
+  // forbidden — generatedFileFor() throws on any route that would derive it.
+  // Wrong: "it needs no help". That was only ever true of the <head>. The
+  // <body> of the shell is literally `<div id="root"></div>`, so the site's
+  // highest-priority URL was the ONE public page serving no content at all.
+  //
+  // A discoverability audit of https://datiq.app on 2026-08-26 measured the
+  // consequence: 10 rendered words, no H1, no headings, no answer passage, no
+  // author, no dates — SEO 53.4, AEO 25.4, GEO 43. Five of its seven findings
+  // were that one fact. Googlebot renders JavaScript eventually; GPTBot,
+  // ClaudeBot, PerplexityBot and CCBot largely do not, so to the answer engines
+  // this module exists to optimise for, the homepage was blank.
+  //
+  // So it renders to public/home/index.html and netlify.toml rewrites `/` to it
+  // with status 200 + force (forced because dist/index.html is a real file at
+  // `/` and would otherwise win). /home itself is noindexed and 301s to `/`,
+  // and the generated file's own canonical is https://datiq.app/, so the helper
+  // path cannot become a duplicate in the index.
+  { path: "/", file: "home/index.html", priority: "1.0", changefreq: "daily" },
   { path: "/pricing",                         priority: "0.9", changefreq: "weekly" },
   { path: "/about",                           priority: "0.7", changefreq: "monthly" },
   { path: "/contact",                         priority: "0.6", changefreq: "monthly" },
@@ -121,6 +138,7 @@ export const PRIVATE_PREFIXES = [
   "/preview",
   "/batch",
   "/schedules",
+  "/discoverability",
   "/workspace",
   "/collections",
   "/payment",
@@ -134,6 +152,12 @@ export const PRIVATE_PREFIXES = [
  * URL cannot be retired here without the redirect actually shipping.
  */
 export const REDIRECTS = [
+  // The homepage's prerendered output lives at public/home/index.html so it
+  // cannot clobber Vite's entry (see the "/" entry above). Netlify serves it at
+  // `/` via a 200 rewrite; this makes the helper path itself a dead end for
+  // humans, and netlify.toml noindexes it for crawlers. Belt and braces: the
+  // generated file's own canonical already points at https://datiq.app/.
+  { from: "/home", to: "/" },
   // The duplicate Firecrawl page: public/vs/firecrawl.html AND
   // public/vs/firecrawl/index.html both existed and both served.
   { from: "/vs/firecrawl.html", to: "/vs/firecrawl" },
@@ -147,7 +171,20 @@ export const REDIRECTS = [
   // build-help.mjs names pages after the section TITLE, so retitling section 14
   // to "Troubleshooting" moved this one file. The section NUMBER is unchanged,
   // so /help/15-* and /help/16-* keep their URLs.
-  { from: "/help/14-faq-and-troubleshooting.html", to: "/help/14-troubleshooting.html" },
+  // Points at 15-, not 14-, because 14-troubleshooting.html ITSELF now
+  // redirects to 15-. Leaving it would create a two-hop chain, which browsers
+  // follow but crawlers discount.
+  { from: "/help/14-faq-and-troubleshooting.html", to: "/help/15-troubleshooting.html" },
+  // The Discoverability guide was inserted as section 11, shifting the six
+  // sections after it by one. Their old URLs are in the published sitemap and
+  // linked from blog posts; a module about discoverability that broke its own
+  // indexed URLs would be a poor advertisement for it.
+  { from: "/help/11-plans-usage-and-billing.html", to: "/help/12-plans-usage-and-billing.html" },
+  { from: "/help/12-accounts-trial-and-sign-in.html", to: "/help/13-accounts-trial-and-sign-in.html" },
+  { from: "/help/13-privacy-and-your-data.html", to: "/help/14-privacy-and-your-data.html" },
+  { from: "/help/14-troubleshooting.html", to: "/help/15-troubleshooting.html" },
+  { from: "/help/15-keyboard-shortcuts.html", to: "/help/16-keyboard-shortcuts.html" },
+  { from: "/help/16-glossary.html", to: "/help/17-glossary.html" },
   // These were React <Navigate> redirects in App.jsx pointing at /vs/browse-ai.
   // That route is being deleted (the page is static-owned now), so they have to
   // become server-side redirects or they would dead-end in NotFound.
@@ -174,11 +211,21 @@ export function prerenderableRoutes() {
  * and a silent return here is how that bug would reach a build.
  */
 export function generatedFileFor(routePath) {
-  if (routePath === "/") {
+  const route = REACT_OWNED.find((r) => r.path === routePath);
+  // An explicit `file` is the ONLY way a route may land somewhere other than
+  // <path>/index.html. `/` uses it to reach public/home/index.html.
+  if (route?.file) return route.file;
+
+  const slug = routePath.replace(/^\/+/, "").replace(/\/+$/, "");
+  const derived = `${slug}/index.html`;
+  // Still fatal, and deliberately so: an empty slug means public/index.html,
+  // which Vite copies over dist/index.html and destroys the app's entry point.
+  // A silent return here is how that bug would reach a build.
+  if (slug === "") {
     throw new Error(
-      "generatedFileFor('/') — the homepage is not prerendered; " +
-      "public/index.html would overwrite Vite's build entry. See site-routes.mjs.",
+      `generatedFileFor('${routePath}') would write public/index.html and ` +
+      "overwrite Vite's build entry. Give the route an explicit `file`. See site-routes.mjs.",
     );
   }
-  return `${routePath.replace(/^\/+/, "").replace(/\/+$/, "")}/index.html`;
+  return derived;
 }

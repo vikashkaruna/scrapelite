@@ -43,6 +43,22 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "discoverability-monitor",
+    label: "Discoverability monitor",
+    schedule: "@daily",
+    cron: "0 0 * * *",
+    expectedIntervalMs: 24 * 60 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Re-audits every page a user is watching, compares the result against the previous run, " +
+      "and alerts when the overall score moves past that schedule's threshold or a new critical " +
+      "issue appears.",
+    destructive: false,
+    // Safe by hand: each schedule advances its own next_run_at, so a manual run
+    // re-audits what is due and then falls back to its cadence.
+    manualRunAllowed: true,
+  },
+  {
     id: "reengagement",
     label: "Re-engagement digest",
     schedule: "@daily",
@@ -53,13 +69,6 @@ export const AUTOMATION_JOBS = [
       "Daily digest + win-back email to users who have gone quiet.",
     destructive: false,
     manualRunAllowed: true,
-    // Surfaced verbatim on the dashboard. See the note in CLAUDE.md: this cron
-    // selects a user_email column that 0004_scheduler.sql never creates, the
-    // query 400s, and the error is swallowed — so it is a silent no-op whatever
-    // its run log says. Monitoring that lies by omission is worse than none.
-    caveat:
-      "Known defect: queries a user_email column that does not exist, so it is a " +
-      "silent no-op in production. A 'success' run here does not mean mail was sent.",
   },
   {
     id: "billing-lifecycle",
@@ -334,7 +343,13 @@ export function deriveScheduleStatus(row, now = new Date()) {
   const data = row?.data || {};
   const userPaused = row?.status === "paused";
   const systemPaused = row?.system_paused === true;
-  const endsAt = data.endsAt || data.runUntil || null;
+  // ⚠️ `expiresAt` is the field schedulerService.buildSchedule() actually
+  // persists — see its shape there. This read `endsAt || runUntil`, neither of
+  // which any schedule has ever carried, so deriveScheduleStatus could never
+  // return EXPIRED and the admin dashboard's "Expired" filter was dead: it
+  // always matched nothing, whatever was in the table. The other two names are
+  // kept as fallbacks in case an older row used them.
+  const endsAt = data.expiresAt || data.endsAt || data.runUntil || null;
   const expired = !!endsAt && Date.parse(endsAt) < now.getTime();
 
   let state = SCHEDULE_STATE.ACTIVE;
