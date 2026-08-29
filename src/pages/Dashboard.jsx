@@ -680,7 +680,7 @@ export default function Dashboard() {
     if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
     if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
     try {
-      const res = await apiClient.sendExportEmail({ to: emails, items: selectedItems.map(withEnrichments), format });
+      const res = await apiClient.sendExportEmail({ to: emails, items: selectedItems.map(withEnrichments), format, brandKit: readBrandKit() });
       setEmailOpen(false);
       setSelected(new Set());
       showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");

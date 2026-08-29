@@ -656,7 +656,7 @@ export default function Batch() {
   const handleSendEmail = async (emails, format) => {
     if (!billing?.checkCanEmail?.()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
     if (!billing?.checkCanExport?.(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
-    const res = await apiClient.sendExportEmail({ to: emails, items: successResults, format });
+    const res = await apiClient.sendExportEmail({ to: emails, items: successResults, format, brandKit: readBrandKit() });
     setEmailOpen(false);
     showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");
     return res;

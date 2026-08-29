@@ -27,6 +27,8 @@
 
 import { extractionsToCsv, extractionsToMarkdown, extractionsToJson, isValidEmail, hostOf } from "../../src/lib/utils.js";
 import { extractionsPdfBuffer, extractionsPdfFilename } from "../../src/lib/pdfExport.js";
+import { buildBrandingContext, brandingEmailHtml, brandingEmailText } from "../../src/lib/exportBranding.js";
+import { validateBrandKit } from "../../src/lib/whiteLabelTemplate.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
 
@@ -65,17 +67,27 @@ const FORMAT_META = {
   pdf: { label: "PDF", mime: "application/pdf", ext: "pdf" },
 };
 
-/** Build the file content for the given format. PDF returns a Buffer; the rest return strings. */
-function buildAttachment(format, items) {
+/**
+ * Build the file content for the given format. PDF returns a Buffer; the
+ * rest return strings. `brandKit` flows straight into the same builders
+ * Dashboard/Preview/Batch downloads already use (extractionsToCsv etc. and
+ * buildExtractionsPdf, via extractionsPdfBuffer) — this is not a second
+ * branding implementation, it is the existing one finally reached from the
+ * email path too.
+ */
+function buildAttachment(format, items, brandKit) {
   switch (format) {
     case "csv":
-      return { content: extractionsToCsv(items), filename: filenameFor(items, "csv") };
+      return { content: extractionsToCsv(items, { brandKit }), filename: filenameFor(items, "csv") };
     case "markdown":
-      return { content: extractionsToMarkdown(items), filename: filenameFor(items, "md") };
+      return { content: extractionsToMarkdown(items, { brandKit }), filename: filenameFor(items, "md") };
     case "json":
-      return { content: extractionsToJson(items), filename: filenameFor(items, "json") };
+      return { content: extractionsToJson(items, { brandKit }), filename: filenameFor(items, "json") };
     case "pdf":
-      return { content: Buffer.from(extractionsPdfBuffer(items)), filename: extractionsPdfFilename(items) };
+      return {
+        content: Buffer.from(extractionsPdfBuffer(items, { brandKit })),
+        filename: extractionsPdfFilename(items),
+      };
     default:
       return null;
   }
@@ -87,9 +99,13 @@ function filenameFor(items, ext) {
     : `datiq-export-${items.length}-pages.${ext}`;
 }
 
-/** HTML body. Mirrors the house style used by invoiceEmail.js: 560px, brand header, bordered body. */
-function exportEmailHtml({ items, format }) {
-  const meta = FORMAT_META[format];
+/**
+ * The item-preview list, as an HTML `<table>` fragment — handed to
+ * `brandingEmailHtml`'s `bodyHtml` slot so the envelope itself (header,
+ * accent color, logo, footer, poweredByLine) comes from exportBranding.js
+ * rather than a second hand-rolled template.
+ */
+function itemListHtml(items) {
   const rows = items
     .slice(0, 25)
     .map(
@@ -99,39 +115,17 @@ function exportEmailHtml({ items, format }) {
       </tr>`,
     )
     .join("");
-  const more = items.length > 25 ? `<p style="margin:8px 0 0;font-size:12px;color:#9aa0af">+ ${items.length - 25} more, included in the attached file.</p>` : "";
-
-  return `<!doctype html><html><body style="margin:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#4f46e5;border-radius:12px 12px 0 0;padding:20px 24px">
-      <div style="color:#fff;font-size:18px;font-weight:700">DatIQ</div>
-      <div style="color:#c7d2fe;font-size:12px">Intelligence from every URL</div>
-    </div>
-    <div style="background:#fff;border:1px solid #e1e3e9;border-top:none;border-radius:0 0 12px 12px;padding:24px">
-      <h1 style="margin:0 0 4px;font-size:17px;color:#20222c">${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label}</h1>
-      <p style="margin:0 0 18px;font-size:13px;color:#6e7484">
-        Shared from DatIQ. The full data is attached as a ${meta.label} file — here's what's inside:
-      </p>
-      <table width="100%" style="border-collapse:collapse">${rows}</table>
-      ${more}
-      <p style="margin:20px 0 0;font-size:11px;color:#9aa0af;line-height:1.6">
-        This file was generated from your DatIQ extractions. If you weren't expecting it, you can ignore this email.
-      </p>
-    </div>
-    <p style="text-align:center;color:#9aa0af;font-size:11px;margin-top:16px">
-      Questions? Just reply to this email.
-    </p>
-  </div></body></html>`;
+  const more = items.length > 25
+    ? `<p style="margin:8px 0 0;font-size:12px;color:#9aa0af">+ ${items.length - 25} more, included in the attached file.</p>`
+    : "";
+  return `<table width="100%" style="border-collapse:collapse">${rows}</table>${more}`;
 }
 
-function exportEmailText({ items, format }) {
-  const meta = FORMAT_META[format];
+function itemListText(items) {
   return [
-    `${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label} — shared from DatIQ`,
-    "",
     ...items.slice(0, 25).map((it) => `- ${it.page_title || hostOf(it.url)}  (${hostOf(it.url)})`),
     items.length > 25 ? `\n+ ${items.length - 25} more, included in the attached file.` : "",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export const handler = async (event) => {
@@ -177,12 +171,30 @@ export const handler = async (event) => {
   if (!emailCheck.check.allowed) return respond(DENY_STATUS, denyBody(emailCheck.check));
   if (!formatCheck.check.allowed) return respond(DENY_STATUS, denyBody(formatCheck.check));
 
+  // The Brand Kit lives in browser localStorage (whiteLabelTemplate.js); this
+  // function has no access to it, so the client includes its own read in the
+  // body — same pattern report-email.js already uses for the same reason.
+  // Re-validated here rather than trusted, and re-checked against
+  // white_label_pdf server-side: the UI never offers Brand Kit customization
+  // below Business/Agency, but a hand-built request could still include one.
+  // A disallowed or malformed Brand Kit is silently dropped, not an error the
+  // sender ever sees — a report emailed with the default DatIQ look is still
+  // a correct outcome.
+  let brandKit = null;
+  if (body.brandKit && typeof body.brandKit === "object") {
+    const v = validateBrandKit(body.brandKit);
+    if (v.ok && Object.keys(v.value).length) {
+      const { check } = await requireCapabilityForUser(userId, "white_label_pdf");
+      if (check.allowed) brandKit = v.value;
+    }
+  }
+
   const key = process.env.RESEND_API_KEY;
   if (!key) return respond(503, { error: "Email is not configured (RESEND_API_KEY missing)." });
 
   let attachment;
   try {
-    attachment = buildAttachment(format, items);
+    attachment = buildAttachment(format, items, brandKit);
   } catch (err) {
     console.error("[export-email] build attachment failed:", err?.message);
     return respond(500, { error: "Couldn't build the export file. Please try again." });
@@ -191,8 +203,19 @@ export const handler = async (event) => {
     ? attachment.content.toString("base64")
     : Buffer.from(attachment.content, "utf8").toString("base64");
 
-  const from = process.env.EXPORT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
   const meta = FORMAT_META[format];
+  const ctx = buildBrandingContext({
+    kind: "extraction",
+    sourceUrls: items.map((it) => hostOf(it.url)),
+    generatedAt: new Date().toISOString(),
+    brandKit,
+  });
+  // A Brand Kit swaps the visual identity of the message body and the
+  // attached file; the SENDING address is a delivery-infrastructure detail
+  // (SPF/DKIM alignment for datiq.app) and stays DatIQ's own regardless —
+  // same split invoiceEmail.js and reportEmail.js already make.
+  const from = process.env.EXPORT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
+  const heading = `${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label}`;
 
   try {
     const res = await fetch(RESEND_ENDPOINT, {
@@ -202,9 +225,13 @@ export const handler = async (event) => {
         from,
         to,
         reply_to: REPLY_TO,
-        subject: `DatIQ — ${items.length} extraction${items.length === 1 ? "" : "s"} (${meta.label})`,
-        html: exportEmailHtml({ items, format }),
-        text: exportEmailText({ items, format }),
+        subject: `${ctx.brand} — ${heading}`,
+        html: brandingEmailHtml(ctx, {
+          heading,
+          bodyHtml: itemListHtml(items),
+          attachmentLabel: attachment.filename,
+        }),
+        text: brandingEmailText(ctx, { heading, bodyText: itemListText(items), attachmentLabel: attachment.filename }),
         attachments: [{ filename: attachment.filename, content }],
         tags: [{ name: "stream", value: "export" }],
       }),
