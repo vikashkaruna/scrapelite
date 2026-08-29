@@ -22,12 +22,13 @@ import { apiClient } from "../lib/apiClient.js";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
 import { runBatch, parseUrlsFromCsv, extractOne } from "../lib/batchService.js";
 import { saveExtraction } from "../lib/extractionsRepo.js";
+import { saveEnrichment } from "../lib/enrichmentStore.js";
 import { isValidUrl, csvDownload, markdownDownload, jsonDownload, copyToClipboard, uid } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 import { hostOf, snippet } from "../lib/utils.js";
 import { isAccountBlocked } from "../lib/entitlementModel.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
-import { getBatchRun } from "../lib/batchRunsService.js";
+import { getBatchRun, recordBatchItems } from "../lib/batchRunsService.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
 import { useSeo } from "../hooks/useSeo.js";
 
@@ -335,7 +336,7 @@ export default function Batch() {
 
   // Run state lives in BatchRunProvider so it survives navigation. This page
   // reads it rather than owning it; the floating dock renders the progress.
-  const { job: batchJob, results, setResults, startBatchRun, cancelBatchRun } = useBatchRun();
+  const { job: batchJob, results, setResults, startBatchRun, cancelBatchRun, runId } = useBatchRun();
   const running = batchJob?.status === "running";
   const runInBackground = location.state?.background === true;
 
@@ -393,11 +394,18 @@ export default function Batch() {
     setRetryingIndex(index);
     try {
       const fresh = await extractOne(item.url, {
+        intent,
         renderJs,
         customPrompt: intent === "custom" ? customPrompt : undefined,
         mapMode: intent === "map",
         ...(intent === "contacts" ? { customPrompt: CONTACTS_PROMPT } : {}),
         ...(intent === "pricing" ? { customPrompt: PRICING_PROMPT } : {}),
+        // A retry re-runs the SAME row under the run's own configuration —
+        // it previously dropped content generation entirely, so retrying a
+        // failed URL in a "Generate AI content" batch silently produced a
+        // row with no generated content and no enrichment tab, unlike every
+        // other row in the same run.
+        ...(generateContentEnabled && intent !== "map" ? { generateContent: selectedContentFormat } : {}),
       });
       setResults((prev) => {
         if (!prev) return prev;
@@ -408,6 +416,24 @@ export default function Batch() {
       if (fresh._status === "success") {
         billing?.trackExtraction?.(1);
         showToast(`Retried ${hostOf(fresh.url)} — success`, "check");
+        // A retry is a fresh row like any other batch success — save it and
+        // its enrichment tabs (custom extraction, generated content) so a
+        // retried "Pricing & Plans" / "Competitor Summary" row actually
+        // shows up in Dashboard and on other devices, not just in this
+        // page's in-memory table.
+        // generated_content is a scratch field only — see the matching note
+        // in BatchRunProvider.jsx. Sending it to the server 500s the insert.
+        const { _status, _error, generated_content, ...cleanItem } = fresh;
+        if (cleanItem.enrichments) {
+          for (const entry of Object.values(cleanItem.enrichments)) {
+            saveEnrichment(cleanItem.url, entry);
+          }
+        }
+        saveExtraction(cleanItem)
+          .then((saved) => {
+            if (saved?.id && runId) recordBatchItems(runId, [saved.id]);
+          })
+          .catch((err) => console.warn("[DatIQ] Retry save failed:", err));
       } else {
         showToast(`Retry failed: ${fresh._error || "unknown error"}`, "alert-triangle");
       }

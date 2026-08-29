@@ -58,16 +58,52 @@ export async function installOfflineMocks(page, options = {}) {
     await stubExternalOrigins(page);
   }
 
-  // Pre-mark the Q4 onboarding tour as "skipped" before the app boots so the
-  // first-time-visitor auto-tour overlay does not intercept pointer events.
-  // addInitScript runs on every navigation, before the app's scripts, so the
-  // tour's mount-time `useEffect` reads `skippedAt === true` and stays closed.
-  // The smoke suite has its own dedicated tour specs that exercise the tour
-  // end-to-end and clear this key explicitly when they need a clean state.
+  // Pre-mark the Q4 onboarding tour(s) as "skipped" before the app boots so
+  // the first-time-visitor auto-tour overlay does not intercept pointer
+  // events. addInitScript runs on every navigation, before the app's
+  // scripts, so the tour's mount-time `useEffect` reads `skippedAt === true`
+  // and stays closed. The smoke suite has its own dedicated tour specs that
+  // exercise the tour end-to-end and clear this key explicitly when they
+  // need a clean state.
+  //
+  // `options.tours === "show"` opts OUT of this suppression — discoverability-
+  // tour.spec.js and consent-tour.spec.js's siblings pass it because they
+  // exist specifically to drive the real first-visit tour, and this helper
+  // used to ignore the option entirely: it always force-marked BOTH tours as
+  // skipped regardless of what was passed, so a caller asking to see the
+  // tour got the opposite — the tour it opted into was the one thing this
+  // helper always suppressed.
+  //
   // Also pin currency to USD so pricing-claim assertions are deterministic
   // regardless of the host machine's timezone (the dev box is in IST).
-  await page.addInitScript(() => {
+  const suppressTours = options.tours !== "show";
+  await page.addInitScript((suppress) => {
     try {
+      if (suppress) {
+        localStorage.setItem(
+          "datiq.onboardingTour.v1",
+          JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
+        );
+        localStorage.setItem(
+          "datiq.discoverabilityTour.v1",
+          JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
+        );
+      }
+      localStorage.setItem("datiq.currency", "USD");
+    } catch { /* storage unavailable; tour will auto-open, tests will retry */ }
+  }, suppressTours);
+
+  // Clear storage exactly once per test. addInitScript runs on every
+  // navigation, including page.reload(), so doing it there would wipe the
+  // extraction state a reload-based assertion is trying to verify.
+  await page.goto("/");
+  await page.evaluate((suppress) => {
+    localStorage.clear();
+    sessionStorage.clear();
+    // Re-apply the tour-skip and USD pin after clearing — the init script
+    // only runs on navigations, not on `page.evaluate`, so the clear above
+    // wiped both keys.
+    if (suppress) {
       localStorage.setItem(
         "datiq.onboardingTour.v1",
         JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
@@ -76,30 +112,9 @@ export async function installOfflineMocks(page, options = {}) {
         "datiq.discoverabilityTour.v1",
         JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
       );
-      localStorage.setItem("datiq.currency", "USD");
-    } catch { /* storage unavailable; tour will auto-open, tests will retry */ }
-  });
-
-  // Clear storage exactly once per test. addInitScript runs on every
-  // navigation, including page.reload(), so doing it there would wipe the
-  // extraction state a reload-based assertion is trying to verify.
-  await page.goto("/");
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-    // Re-apply the tour-skip and USD pin after clearing — the init script
-    // only runs on navigations, not on `page.evaluate`, so the clear above
-    // wiped both keys.
-    localStorage.setItem(
-      "datiq.onboardingTour.v1",
-      JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
-    );
-    localStorage.setItem(
-      "datiq.discoverabilityTour.v1",
-      JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
-    );
+    }
     localStorage.setItem("datiq.currency", "USD");
-  });
+  }, suppressTours);
 
   // Do not allow the development runtime config to add an external webhook.
   await page.route("**/runtime-config.js", async (route) => {

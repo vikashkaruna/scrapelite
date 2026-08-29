@@ -2,10 +2,62 @@
 // Each URL is extracted independently; results stream back via onProgress.
 import { extractStructure } from "./firecrawlService.js";
 import { summarize, categorizeLinks, generateContent } from "./aiService.js";
+import { enrichMetaForIntent } from "./extractionPresets.js";
 import { uid } from "./utils.js";
 
 // Max simultaneous in-flight requests to avoid hammering the API.
 const CONCURRENCY = 3;
+
+// Build the SAME { [capabilityKey]: entry } tab map that a single-URL
+// extraction builds in ExtractionProvider.extract(). Batch previously only
+// spread the raw `custom_extraction` / `generated_content` fields onto the
+// result — real data, but with nowhere to live: Preview only ever renders
+// `result.enrichments`, so a batch-run "Pricing & Plans" or "Competitor
+// Summary" selection produced data that was saved to the row and then never
+// shown as a tab anywhere, on any device. Centralizing this here (instead of
+// in BatchRunProvider, which only handled the customPrompt half and dropped
+// generateContent entirely) means runBatch AND the per-row Retry path
+// (extractOne) both produce identically-shaped, correctly-labeled tabs.
+function buildBatchEnrichments({ options, structure, generatedContentText, createdAt }) {
+  const enrichments = {};
+  let activeTab = null;
+
+  if (options.customPrompt) {
+    const meta = enrichMetaForIntent(options.intent, options.customPrompt);
+    if (meta) {
+      const entry = {
+        key: meta.key,
+        label: meta.label,
+        icon: meta.icon,
+        prompt: options.customPrompt,
+        data: structure.custom_extraction ?? null,
+        ...(structure.custom_extraction_reason
+          ? { reason: structure.custom_extraction_reason }
+          : {}),
+        created_at: createdAt,
+      };
+      enrichments[meta.key] = entry;
+      activeTab = meta.key;
+    }
+  }
+
+  if (options.generateContent && generatedContentText) {
+    const f = options.generateContent;
+    const entry = {
+      key: f.key,
+      label: f.label,
+      icon: f.icon,
+      prompt: f.instruction || f.desc || "",
+      data: { text: generatedContentText },
+      kind: "content",
+      created_at: createdAt,
+    };
+    enrichments[f.key] = entry;
+    activeTab = activeTab || f.key;
+  }
+
+  return { enrichments, activeTab };
+}
 
 /**
  * Run batch extraction on an array of URLs.
@@ -73,6 +125,18 @@ export async function runBatch(urls, options = {}, onProgress, signal) {
               // Non-fatal: extraction still succeeds without generated content.
             }
             if (cancelled) return;
+          }
+          // Turn the raw custom_extraction / generated_content fields into
+          // the tab map Preview actually renders — see buildBatchEnrichments.
+          const { enrichments, activeTab } = buildBatchEnrichments({
+            options,
+            structure,
+            generatedContentText: result.generated_content,
+            createdAt: result.created_at,
+          });
+          if (Object.keys(enrichments).length > 0) {
+            result.enrichments = enrichments;
+            result.activeTab = activeTab;
           }
         }
       } catch (err) {
@@ -189,6 +253,16 @@ export async function extractOne(url, options = {}) {
       } catch (err) {
         console.warn("[DatIQ] Retry content generation failed for", url, err?.message);
       }
+    }
+    const { enrichments, activeTab } = buildBatchEnrichments({
+      options,
+      structure,
+      generatedContentText: result.generated_content,
+      createdAt: result.created_at,
+    });
+    if (Object.keys(enrichments).length > 0) {
+      result.enrichments = enrichments;
+      result.activeTab = activeTab;
     }
     return result;
   } catch (err) {

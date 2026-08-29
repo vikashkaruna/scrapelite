@@ -41,15 +41,6 @@ export function useBatchRun() {
   return useContext(BatchRunContext);
 }
 
-// Derive the enrichment-tab metadata for an intent. Summary and map produce no
-// named tab. Kept here (not in the page) because persistence moved here.
-function getEnrichMetaForIntent(intent) {
-  if (intent === "contacts") return { key: "contacts", label: "Find Contact Info", icon: "mail" };
-  if (intent === "pricing")  return { key: "pricing",  label: "Pricing & Plans",   icon: "hash" };
-  if (intent === "custom")   return { key: "custom",   label: "Custom extraction", icon: "code" };
-  return null;
-}
-
 export function BatchRunProvider({ children }) {
   const navigate = useNavigate();
   const showToast = useToast();
@@ -166,23 +157,33 @@ export function BatchRunProvider({ children }) {
         })),
       });
 
-      const enrichMetaObj = getEnrichMetaForIntent(intent);
       if (successItems.length > 0) {
         const settled = await Promise.allSettled(
           successItems.map((r) => {
-            const { _status, _error, ...cleanItem } = r;
-            if (enrichMetaObj) {
-              saveEnrichment(cleanItem.url, {
-                key: enrichMetaObj.key,
-                label: enrichMetaObj.label,
-                icon: enrichMetaObj.icon,
-                prompt: customPrompt || "",
-                data: cleanItem.custom_extraction ?? null,
-                ...(cleanItem.custom_extraction_reason
-                  ? { reason: cleanItem.custom_extraction_reason }
-                  : {}),
-                created_at: cleanItem.created_at,
-              });
+            // `generated_content` is a raw scratch field batchService uses to
+            // build the enrichments map below — it is not a real column on
+            // `extractions`. Sending it to the server made the insert fail
+            // with a "could not find column" error on EVERY item that had
+            // content generation enabled, which the retry-without-v2-columns
+            // path (extractions.js) never fixes, since generated_content
+            // isn't part of v2 either — the row degraded to a localStorage-
+            // only save (or failed outright), so the batch's "N pages saved"
+            // count silently excluded exactly the rows this feature targets.
+            const { _status, _error, generated_content, ...cleanItem } = r;
+            // batchService already built the { [capabilityKey]: entry } tab
+            // map (custom extraction — contacts/pricing/custom — AND any
+            // generated-content selection, e.g. "Competitor Summary"). Mirror
+            // each entry into the local per-URL cache the same way
+            // ExtractionProvider.extract() does, then save the row WITH its
+            // enrichments so it renders correctly on this device and syncs
+            // to Supabase for every other one. Previously only the
+            // customPrompt half was reconstructed here (mislabeled, always
+            // "custom") and generated content was dropped entirely — it
+            // never became a tab anywhere, on any device.
+            if (cleanItem.enrichments) {
+              for (const entry of Object.values(cleanItem.enrichments)) {
+                saveEnrichment(cleanItem.url, entry);
+              }
             }
             return saveExtraction(cleanItem);
           }),
