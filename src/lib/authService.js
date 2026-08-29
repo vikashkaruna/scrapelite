@@ -82,6 +82,27 @@ export async function updatePassword(newPassword) {
 }
 
 /**
+ * Merge fields into the signed-in user's own `user_metadata`. This is a
+ * client-writable field on the user's OWN record — Supabase Auth enforces
+ * that a caller can only ever update their own metadata via this API, so it
+ * needs no server function and no RLS policy, unlike an admin-assigned field
+ * (coupon_availed, bonus_extractions) which is written via the Auth Admin
+ * API from a Netlify Function instead. Never throws — this is UX
+ * convenience (cross-device persona sync), not an authorization write, so a
+ * failure here must not block the caller's own local state change.
+ */
+export async function updateUserMetadata(fields) {
+  if (!supabase) return { ok: false, reason: "not_configured" };
+  try {
+    const { error } = await supabase.auth.updateUser({ data: fields });
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err?.message || "unknown" };
+  }
+}
+
+/**
  * Resend the signup confirmation email. The link uses the same
  * `emailRedirectTo` as the original signup (origin).
  */
