@@ -21,8 +21,8 @@
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `main` / `staging` (in sync with `origin/main` and `origin/staging`) |
-| **Active handoff** | `docs/SESSION-HANDOFF-2026-08-29-ENRICHMENT-AI-FIXES.md` |
-| **Previous handoffs** | `docs/SESSION-HANDOFF-2026-08-29-HOME-ENRICHMENT-EXTRACTION-FIXES.md` · `docs/SESSION-HANDOFF-2026-08-29-STAGING-GATE-TOUR-STORAGE-FIXES.md` |
+| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-08-30-SESSION-REORGANIZATION-AND-SKILL-BUILD.md` |
+| **Previous handoffs** | `docs/sessions/SESSION-HANDOFF-2026-08-30-MERGE-STAGING-INTO-WORKFLOW-BRANCH.md` · `docs/sessions/SESSION-HANDOFF-2026-08-29-BRANCH-CLEANUP-AND-WORKSPACE-PAUSE.md` (see `docs/sessions/README.md` for full index) |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the staging promotion needs to roll back |
 | **Remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in the late-night handoffs) so the in-browser Connect/Push calls stop hitting the SSO gate on the branch preview |
 
