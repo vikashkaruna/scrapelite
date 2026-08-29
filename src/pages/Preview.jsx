@@ -518,7 +518,7 @@ export default function Preview() {
   const handleSendEmail = async (emails, format) => {
     if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
     if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
-    const res = await apiClient.sendExportEmail({ to: emails, items: [data], format });
+    const res = await apiClient.sendExportEmail({ to: emails, items: [data], format, brandKit: readBrandKit() });
     setEmailOpen(false);
     showToast(`Email sent to ${emails.length} recipient${emails.length > 1 ? "s" : ""}`, "mail");
     return res;

@@ -228,7 +228,9 @@ describe("export-email", () => {
   it("subject names the count and the format", async () => {
     const items = [ITEM, { ...ITEM, id: "e2" }];
     await handler(makeEvent({ items, format: "pdf" }));
-    expect(sentPayload().subject).toMatch(/2 extractions \(PDF\)/);
+    // Envelope now built via exportBranding.js's shared heading style
+    // ("N items, as FORMAT") — the same wording report-email.js uses.
+    expect(sentPayload().subject).toMatch(/2 extractions, as PDF/);
   });
 
   // ── Infra failures ───────────────────────────────────────────────────────
@@ -251,5 +253,65 @@ describe("export-email", () => {
     global.fetch = vi.fn(() => Promise.reject(new Error("network down")));
     const r = await handler(makeEvent());
     expect(r.statusCode).toBe(502);
+  });
+});
+
+// ── Brand Kit — the gap this session closed: report-email.js accepted and
+// validated brandKit; this endpoint had no such parameter at all. Same
+// pattern, same tests, ported over. ────────────────────────────────────────
+describe("export-email — Brand Kit", () => {
+  const BRAND_KIT = { companyName: "Acme Research Co.", accentColor: "#0f766e" };
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon";
+    process.env.SUPABASE_SERVICE_KEY = "service";
+    process.env.RESEND_API_KEY = "resend-key";
+    delete process.env.EXPORT_EMAIL_FROM;
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1", email: "u1@example.com" } }, error: null });
+    mockRequireCapabilityForUser.mockResolvedValue({ check: { allowed: true } });
+    global.fetch = vi.fn(() => Promise.resolve(resendOk()));
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.restoreAllMocks();
+  });
+
+  it("carries a valid Brand Kit into the attached file and the email body when the caller is entitled", async () => {
+    await handler(makeEvent({ brandKit: BRAND_KIT }));
+    const payload = sentPayload();
+    // The email envelope (subject/header) reflects the Brand Kit's brand name.
+    expect(payload.subject).toContain("Acme Research Co.");
+    expect(payload.html).toContain("Acme Research Co.");
+    // white_label_pdf is checked once, for the Brand Kit specifically — not
+    // reusing the export.<format>/export.email calls already made above.
+    expect(mockRequireCapabilityForUser).toHaveBeenCalledWith("u1", "white_label_pdf");
+  });
+
+  it("drops the Brand Kit (but still sends, unbranded) when the caller is NOT entitled", async () => {
+    mockRequireCapabilityForUser.mockImplementation((userId, capability) =>
+      Promise.resolve({ check: { allowed: capability !== "white_label_pdf" } }),
+    );
+    const r = await handler(makeEvent({ brandKit: BRAND_KIT }));
+    expect(r.statusCode).toBe(200);
+    const payload = sentPayload();
+    expect(payload.subject).not.toContain("Acme Research Co.");
+    expect(payload.subject).toContain("DatIQ");
+  });
+
+  it("drops a malformed Brand Kit without failing the send", async () => {
+    const r = await handler(makeEvent({ brandKit: { accentColor: "not-a-color" } }));
+    expect(r.statusCode).toBe(200);
+    expect(sentPayload().subject).toContain("DatIQ");
+  });
+
+  it("sends the default DatIQ branding when no Brand Kit is supplied at all", async () => {
+    const r = await handler(makeEvent());
+    expect(r.statusCode).toBe(200);
+    expect(sentPayload().subject).toContain("DatIQ");
   });
 });

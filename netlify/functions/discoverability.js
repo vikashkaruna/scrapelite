@@ -62,6 +62,7 @@ import { createDeadline, budgetFromEnv } from "./lib/audit/deadline.js";
 import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
+import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 import { runAudit } from "./lib/audit/auditPipeline.js";
 import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
@@ -508,7 +509,7 @@ async function createAuditRoute(event, userId, body) {
     }
   }
 
-  const gate = await gateAuditQuota(event, userId, 1);
+  const gate = await gateAuditQuota(event, userId, 1, body.workspace_id);
   if (!gate.ok) return gate.response;
 
   const run = await executeAudit({
@@ -521,7 +522,7 @@ async function rerunRoute(event, userId, auditId, body) {
   const prior = await store.getAudit(userId, auditId);
   if (!prior) return notFound("Audit not found.");
 
-  const gate = await gateAuditQuota(event, userId, 1);
+  const gate = await gateAuditQuota(event, userId, 1, body.workspace_id);
   if (!gate.ok) return gate.response;
 
   const run = await executeAudit({
@@ -629,8 +630,15 @@ function reportRoute(event, full) {
  * asymmetry: a Supabase blip must not take auditing down. It fails CLOSED only
  * on an explicitly-read over-quota state.
  */
-async function gateAuditQuota(event, userId, count) {
+async function gateAuditQuota(event, userId, count, rawWorkspaceId) {
   const resolved = await resolveRequestEntitlement(event);
+  // A refusal here (named a workspace the caller isn't in, or a paused seat)
+  // takes priority over the quota read below — same "decline before doing
+  // work" posture the quota check itself already follows.
+  const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, rawWorkspaceId);
+  if (refusal) {
+    return { ok: false, response: json(403, { error: refusal.message, code: refusal.code }) };
+  }
   const { count: used, degraded } = await store.countAuditsThisMonth(userId);
   if (degraded) return { ok: true, resolved };
 
@@ -638,6 +646,7 @@ async function gateAuditQuota(event, userId, count) {
     usage: { audits: used },
     auditCount: count,
     bonusAudits: resolved.entitlement?.bonus_audits || 0,
+    ...workspaceCtx,
   });
   if (!check.allowed) {
     return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), used, capability: "audit" }) };
@@ -654,6 +663,8 @@ async function benchmarkRoute(event, userId, method, id, body) {
     }
 
     const resolved = await resolveRequestEntitlement(event);
+    const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, body.workspace_id);
+    if (refusal) return json(403, { error: refusal.message, code: refusal.code });
     const { count: used, degraded } = await store.countAuditsThisMonth(userId);
     if (!degraded) {
       // Gated on the WHOLE set fitting. Half a competitive comparison is not a
@@ -661,6 +672,7 @@ async function benchmarkRoute(event, userId, method, id, body) {
       const check = checkCapability(resolved, "audit.benchmark", {
         usage: { audits: used }, urlCount: urls.length,
         bonusAudits: resolved.entitlement?.bonus_audits || 0,
+        ...workspaceCtx,
       });
       if (!check.allowed) return json(DENY_STATUS, { ...denyBody(check), capability: "audit.benchmark" });
     }
@@ -771,8 +783,10 @@ async function scheduleRoute(event, userId, method, id, body) {
     if (!(await isPublicHttpUrlAsync(url))) return bad("That URL is not a public web address.");
 
     const resolved = await resolveRequestEntitlement(event);
+    const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, body.workspace_id);
+    if (refusal) return json(403, { error: refusal.message, code: refusal.code });
     const existing = await store.listSchedules(userId);
-    const check = checkCapability(resolved, "audit.schedule", {});
+    const check = checkCapability(resolved, "audit.schedule", workspaceCtx);
     if (!check.allowed) return json(DENY_STATUS, { ...denyBody(check), capability: "audit.schedule" });
     if (Number.isFinite(check.remaining) && existing.length >= check.remaining) {
       return json(DENY_STATUS, {

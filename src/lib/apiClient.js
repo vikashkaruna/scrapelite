@@ -95,9 +95,22 @@ async function request(path, method = "GET", body) {
 
 export const apiClient = {
   // ── Firecrawl ──────────────────────────────────────────────────────────────
-  /** Scrape a single URL or map a domain (options.mapMode = true). */
-  extract: (url, options = {}) =>
-    request("/extract", "POST", { url, options }),
+  /**
+   * Scrape a single URL or map a domain (options.mapMode = true).
+   * `options.workspaceId` is optional and lifted OUT of the options object
+   * onto the top-level request body — the server's option-copy is a fixed
+   * whitelist (renderJs/mapMode/noCache/customPrompt) that would silently
+   * drop anything else left nested inside `options`. When set, the server
+   * checks the caller's seat in that workspace (a paused seat is refused)
+   * before running the scrape. Omit it for a personal extraction, unchanged
+   * from before this parameter existed.
+   */
+  extract: (url, options = {}) => {
+    const { workspaceId, ...scrapeOptions } = options;
+    return request("/extract", "POST", {
+      url, options: scrapeOptions, ...(workspaceId ? { workspaceId } : {}),
+    });
+  },
 
   /** Reserve one server-side anonymous usage credit (used for batch runs). */
   consumeGuestCredit: (kind = "single") =>

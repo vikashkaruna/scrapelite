@@ -11,6 +11,7 @@ import {
   signOut,
   signUpWithEmail,
   updatePassword,
+  updateUserMetadata,
 } from "./authService.js";
 
 /**
@@ -157,6 +158,27 @@ describe("updatePassword (U-47)", () => {
     const err = new Error("Auth session missing");
     mockSupabase.auth.updateUser.mockResolvedValue({ data: null, error: err });
     await expect(updatePassword("pw1234")).rejects.toBe(err);
+  });
+});
+
+describe("updateUserMetadata — cross-device persona sync", () => {
+  it("merges fields into user_metadata via updateUser({data})", async () => {
+    mockSupabase.auth.updateUser.mockResolvedValue({ data: { user: { id: "u_1" } }, error: null });
+    const r = await updateUserMetadata({ persona_id: "recruiter" });
+    expect(mockSupabase.auth.updateUser).toHaveBeenCalledWith({ data: { persona_id: "recruiter" } });
+    expect(r).toEqual({ ok: true });
+  });
+
+  it("reports failure rather than throwing on a Supabase error", async () => {
+    mockSupabase.auth.updateUser.mockResolvedValue({ data: null, error: new Error("session expired") });
+    const r = await updateUserMetadata({ persona_id: "recruiter" });
+    expect(r).toEqual({ ok: false, reason: "session expired" });
+  });
+
+  it("reports failure rather than throwing when the call itself rejects", async () => {
+    mockSupabase.auth.updateUser.mockRejectedValue(new Error("network down"));
+    const r = await updateUserMetadata({ persona_id: "recruiter" });
+    expect(r).toEqual({ ok: false, reason: "network down" });
   });
 });
 

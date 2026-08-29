@@ -29,6 +29,9 @@ test("makes no promise about rankings, citations or traffic", async ({ page }) =
 
 test("advanced options expose the profile lens and say it does not rescore", async ({ page }) => {
   await page.goto("/discoverability");
+  // Standard smoke coverage runs with first-visit tours marked as seen; the
+  // dedicated discoverability-tour spec verifies the overlay itself.
+  await expect(page.getByRole("dialog", { name: /score how discoverable/i })).toHaveCount(0);
   await page.getByRole("button", { name: /Advanced options/i }).click();
   for (const p of ["Balanced", "SEO-heavy", "AEO-heavy", "GEO-heavy"]) {
     await expect(page.getByRole("button", { name: p, exact: true })).toBeVisible();

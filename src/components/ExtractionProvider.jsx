@@ -20,6 +20,7 @@ import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { usePersona } from "./PersonaProvider.jsx";
+import { useWorkspace } from "./WorkspaceContext.jsx";
 import { uid } from "../lib/utils.js";
 import { isComplianceError, COMPLIANCE_ERROR, COMPLIANCE_GUEST_ERROR } from "../lib/errorMessages.js";
 import { consentHostOf } from "../lib/scrapeConsentService.js";
@@ -40,6 +41,7 @@ export function ExtractionProvider({ children }) {
   const { user, openAuth } = useAuth();
   const guestTrial = useGuestTrial();
   const { personaId } = usePersona();
+  const { currentWorkspaceId } = useWorkspace();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
   // A mirror of `current` that async work can read AFTER its await. The value
@@ -168,13 +170,15 @@ export function ExtractionProvider({ children }) {
     try {
       // Prefer the caller's own capability key over the generic prompt-text
       // guess in extractStructure() — enrichMeta.key is exact (it's what
-      // Home/Batch actually selected), not inferred from wording.
-      const structure = await extractStructure(
-        url,
-        options.enrichMeta?.key && !options.enrichKey
-          ? { ...options, enrichKey: options.enrichMeta.key }
-          : options,
-      );
+      // Home/Batch actually selected), not inferred from wording. Also
+      // names the active workspace, if any, so the server can refuse the
+      // run for a paused seat.
+      const extractOpts = {
+        ...options,
+        ...(options.enrichMeta?.key && !options.enrichKey ? { enrichKey: options.enrichMeta.key } : {}),
+        ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+      };
+      const structure = await extractStructure(url, extractOpts);
 
       let result;
       if (structure.domain_map) {

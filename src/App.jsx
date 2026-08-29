@@ -68,6 +68,7 @@ import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import SuspendedBanner from "./components/SuspendedBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
+import { WorkspaceProvider } from "./components/WorkspaceContext.jsx";
 import ReferralBanner from "./components/ReferralBanner.jsx";
 import ConsentBanner from "./components/ConsentBanner.jsx";
 import { usePageView } from "./hooks/usePageView.js";
@@ -312,20 +313,22 @@ export default function App() {
         <ErrorModalProvider>
           <AuthProvider>
             <GuestTrialProvider>
-              <PersonaProvider>
-                <BillingProvider>
-                  <ExtractionProvider>
-                    {/* Owns an in-flight batch above the router, so a run
-                        survives navigation and reports through the same
-                        global dock as a single extraction. */}
-                    <BatchRunProvider>
-                      <div className="app-root">
-                        <Shell />
-                      </div>
-                    </BatchRunProvider>
-                  </ExtractionProvider>
-                </BillingProvider>
-              </PersonaProvider>
+              <WorkspaceProvider>
+                <PersonaProvider>
+                  <BillingProvider>
+                    <ExtractionProvider>
+                      {/* Owns an in-flight batch above the router, so a run
+                          survives navigation and reports through the same
+                          global dock as a single extraction. */}
+                      <BatchRunProvider>
+                        <div className="app-root">
+                          <Shell />
+                        </div>
+                      </BatchRunProvider>
+                    </ExtractionProvider>
+                  </BillingProvider>
+                </PersonaProvider>
+              </WorkspaceProvider>
             </GuestTrialProvider>
           </AuthProvider>
         </ErrorModalProvider>

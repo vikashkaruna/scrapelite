@@ -657,3 +657,59 @@ describe("POST /audits/{id}/summary", () => {
     expect(storeMock.saveAuditSummary).toHaveBeenCalledWith("user-1", "abc", expect.anything());
   });
 });
+
+// ── Workspace member pause — the real wiring, not the isolated unit test ────
+//
+// entitlementModel.js's can() has had a ctx.memberPaused branch since Team
+// Workspaces shipped, and workspaces.js has let an owner pause a seat since
+// the same session — but until now nothing on the audit-create path ever set
+// ctx.memberPaused to anything but its default false. These tests prove a
+// request naming a workspace_id is actually checked against a real
+// workspace_members row, not just accepted at face value.
+describe("workspace member pause", () => {
+  beforeEach(happyStore);
+
+  const withServiceDb = (fn) => async () => {
+    process.env.SUPABASE_URL = "https://db.example.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    const realFetch = globalThis.fetch;
+    try {
+      await fn();
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SERVICE_KEY;
+    }
+  };
+
+  it("refuses a workspace the caller does not belong to, before spending any quota", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    const res = await call("POST", "audits", {
+      body: { target_url: "https://example.com", workspace_id: "ws-1" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_NOT_MEMBER");
+    expect(storeMock.createAudit).not.toHaveBeenCalled();
+    expect(auditRun).not.toHaveBeenCalled();
+  }));
+
+  it("denies audit creation for a paused seat, but does not touch quota logic", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ paused_at: "2026-08-01T00:00:00Z" }]), { status: 200 }),
+    );
+    const res = await call("POST", "audits", {
+      body: { target_url: "https://example.com", workspace_id: "ws-1" },
+    });
+    expect(res.statusCode).toBe(402);
+    expect(parse(res).code).toBe("MEMBER_PAUSED");
+    expect(auditRun).not.toHaveBeenCalled();
+  }));
+
+  it("proceeds normally when no workspace_id is named at all", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    expect(res.statusCode).toBe(201);
+    // The workspace lookup is never even attempted for a personal request.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  }));
+});
