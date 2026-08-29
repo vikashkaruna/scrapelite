@@ -23,6 +23,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
+import { useWorkspace } from "../components/WorkspaceContext.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import AuditComposer from "../components/discoverability/AuditComposer.jsx";
 import { setPendingAudit } from "../lib/pendingAudit.js";
@@ -100,6 +101,7 @@ function AuditError({ error, onRetry, onAttest, onUpgrade }) {
 export default function Discoverability() {
   const showToast = useToast();
   const { user, openAuth } = useAuth();
+  const { currentWorkspaceId } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -203,8 +205,11 @@ export default function Discoverability() {
     setError(null);
     setDiff(null);
     setLastRequest(payload);
+    // Naming the active workspace lets the server refuse the run for a paused
+    // seat; a personal request (no workspace selected) is unaffected.
+    const runPayload = currentWorkspaceId ? { ...payload, workspace_id: currentWorkspaceId } : payload;
     try {
-      const data = await discoverability.runAudit(payload);
+      const data = await discoverability.runAudit(runPayload);
       setAudit(data);
       setMatrixCell(null);
       // Deliberately NOT clearing expandedPillars: which pillars the reader has
@@ -222,7 +227,7 @@ export default function Discoverability() {
     } finally {
       setRunning(false);
     }
-  }, [user, openAuth, setParams, loadTrend, showToast]);
+  }, [user, openAuth, setParams, loadTrend, showToast, currentWorkspaceId]);
 
   // ── Resume an audit interrupted by sign-in ──────────────────────────────
   // PendingAuditFlush navigates here with the stashed request once a session

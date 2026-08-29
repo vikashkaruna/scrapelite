@@ -620,7 +620,8 @@ describe("extract — robots.txt refusal", () => {
     // compliance gate alone — entitlement has its own suite in
     // entitlement-enforcement.test.js.
     vi.doMock("../functions/lib/requireEntitlement.js", () => ({
-      requireCapability: vi.fn(async () => ({ check: { allowed: true } })),
+      resolveRequestEntitlement: vi.fn(async () => ({ userId: user?.id ?? null, guest: !user })),
+      checkCapability: vi.fn(() => ({ allowed: true })),
       DENY_STATUS: 402,
       denyBody: vi.fn(() => ({})),
     }));
@@ -726,7 +727,8 @@ describe("extract — robots.txt refusal", () => {
     vi.resetModules();
     vi.doMock("../functions/lib/guestUsage.js", () => ({ consumeGuestCredit: vi.fn() }));
     vi.doMock("../functions/lib/requireEntitlement.js", () => ({
-      requireCapability: vi.fn(async () => ({ check: { allowed: true } })),
+      resolveRequestEntitlement: vi.fn(async () => ({ userId: user?.id ?? null, guest: !user })),
+      checkCapability: vi.fn(() => ({ allowed: true })),
       DENY_STATUS: 402,
       denyBody: vi.fn(() => ({})),
     }));

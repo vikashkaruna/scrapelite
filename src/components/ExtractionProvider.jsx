@@ -20,6 +20,7 @@ import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { usePersona } from "./PersonaProvider.jsx";
+import { useWorkspace } from "./WorkspaceContext.jsx";
 import { uid } from "../lib/utils.js";
 import { isComplianceError, COMPLIANCE_ERROR, COMPLIANCE_GUEST_ERROR } from "../lib/errorMessages.js";
 import { consentHostOf } from "../lib/scrapeConsentService.js";
@@ -40,6 +41,7 @@ export function ExtractionProvider({ children }) {
   const { user, openAuth } = useAuth();
   const guestTrial = useGuestTrial();
   const { personaId } = usePersona();
+  const { currentWorkspaceId } = useWorkspace();
   // Restore the last-viewed extraction so /preview survives a browser reload.
   const [current, setCurrent] = useState(readCurrent);
   // A mirror of `current` that async work can read AFTER its await. The value
@@ -166,7 +168,10 @@ export function ExtractionProvider({ children }) {
     setJob({ status: "running", url, phase: 0, path: startedPath });
     const startedAt = Date.now();
     try {
-      const structure = await extractStructure(url, options);
+      const structure = await extractStructure(
+        url,
+        currentWorkspaceId ? { ...options, workspaceId: currentWorkspaceId } : options,
+      );
 
       let result;
       if (structure.domain_map) {

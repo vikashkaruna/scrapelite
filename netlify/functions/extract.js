@@ -22,7 +22,8 @@ import { checkCompliance } from "./lib/complianceEngine.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
 import { headlessAttribution, isHeadlessAvailable } from "./lib/headlessProvider.js";
 import { runChain, keyPresence } from "./lib/aiProviders.js";
-import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
+import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
+import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 import { consumeGuestCredit } from "./lib/guestUsage.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
@@ -243,7 +244,13 @@ export const handler = async (event) => {
   // cookie to set — and it would return none here anyway, since it short-
   // circuits for any request carrying an Authorization header.
   try {
-    const { check } = await requireCapability(event, "extract");
+    const resolved = await resolveRequestEntitlement(event);
+    // A caller acting "as" a workspace names it in the body; a request naming
+    // none is unaffected — personal extractions behave exactly as before.
+    // See lib/workspaceContext.js for why this can't just be `requireCapability`.
+    const { ctx, refusal } = await buildWorkspaceCtx(resolved, reqBody.workspaceId);
+    if (refusal) return respond(403, { error: refusal.message, code: refusal.code });
+    const check = checkCapability(resolved, "extract", ctx);
     if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
   } catch (err) {
     console.warn("[DatIQ] entitlement check errored (failing open):", err.message);

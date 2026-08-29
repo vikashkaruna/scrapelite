@@ -8,6 +8,7 @@ import { useAuth } from "./AuthProvider.jsx";
 import { signOut, getUserInitials, getUserAvatar, getUserDisplayName } from "../lib/authService.js";
 import { usePersona } from "./PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { useWorkspace } from "./WorkspaceContext.jsx";
 
 function Brand({ onClick }) {
   return (
@@ -98,6 +99,7 @@ function ExploreDropdown({ onNavigate }) {
 function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const { workspaces, currentWorkspaceId, setCurrentWorkspaceId } = useWorkspace();
 
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -172,6 +174,24 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSw
               <span className="nav-dd-icon"><Icon name="layout-grid" size={14} /></span>
               Workspace
             </button>
+          )}
+          {user && workspaces.length > 0 && (
+            <div className="nav-dd-workspace-switch" role="menuitem">
+              <span className="nav-dd-icon"><Icon name="layout-grid" size={14} /></span>
+              <label htmlFor="topbar-workspace-select" className="sr-only">Working in</label>
+              <select
+                id="topbar-workspace-select"
+                className="nav-dd-workspace-select"
+                value={currentWorkspaceId || ""}
+                onChange={(e) => setCurrentWorkspaceId(e.target.value || null)}
+                title="Which workspace new extractions and audits act under"
+              >
+                <option value="">Personal</option>
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
           )}
           {user && (
             <button className="nav-dropdown-item" role="menuitem"

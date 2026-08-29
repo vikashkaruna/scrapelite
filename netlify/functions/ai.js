@@ -11,7 +11,8 @@
 // per-call budget) and `messages` are honored.
 
 import { runChain, keyPresence } from "./lib/aiProviders.js";
-import { DENY_STATUS, denyBody, requireCapability } from "./lib/requireEntitlement.js";
+import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
+import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 
 const MAX_MESSAGES = 50;
 const MAX_MESSAGE_CHARS = 20_000;
@@ -74,7 +75,7 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { max_tokens, messages } = reqBody && typeof reqBody === "object" ? reqBody : {};
+  const { max_tokens, messages, workspaceId } = reqBody && typeof reqBody === "object" ? reqBody : {};
 
   const safeMessages = normalizeMessages(messages);
   if (!safeMessages) {
@@ -88,7 +89,10 @@ export const handler = async (event) => {
   // lapsed subscriber. Signed-in users only; guests are unaffected. Fails OPEN
   // on infrastructure error (see lib/requireEntitlement.js).
   try {
-    const { check } = await requireCapability(event, "ai");
+    const resolved = await resolveRequestEntitlement(event);
+    const { ctx, refusal } = await buildWorkspaceCtx(resolved, workspaceId);
+    if (refusal) return respond(403, { error: refusal.message, code: refusal.code });
+    const check = checkCapability(resolved, "ai", ctx);
     if (!check.allowed) return respond(DENY_STATUS, denyBody(check));
   } catch (err) {
     console.warn("[DatIQ] entitlement check errored (failing open):", err.message);

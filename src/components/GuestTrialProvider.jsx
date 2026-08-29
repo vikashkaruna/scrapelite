@@ -42,6 +42,8 @@ const SENSITIVE_KEYS = [
   "datiq.batchMap",    // extractionId → batchRunId map
   "datiq.batchDraft",  // batch textarea draft
   "datiq.stats",       // cached aggregate stats (stale after logout)
+  "datiq.currentWorkspace", // selected workspace — account-scoped, must not
+                             // leak to the next signed-in user on a shared machine
 ];
 
 const GuestTrialContext = createContext({

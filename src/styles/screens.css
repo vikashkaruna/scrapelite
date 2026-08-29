@@ -3348,6 +3348,21 @@
 .nav-dropdown-item:hover { background: var(--surface-2); }
 .nav-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
 
+/* Working-in-a-workspace switcher, sitting where a nav-dropdown-item would.
+   Minimal by design: this is the "which workspace am I acting under" concept
+   entitlementModel.js's memberPaused check needed a live caller for — not
+   the fuller "save everything under a workspace" feature that's still its
+   own deferred project. */
+.nav-dd-workspace-switch {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px 9px;
+}
+.nav-dd-workspace-select {
+  flex: 1; min-width: 0; font-family: inherit; font-size: .86em; font-weight: 500;
+  color: var(--text-1); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 5px 6px; cursor: pointer;
+}
+
 /* ── R1: nav link with inline icon ──────────────────────────────── */
 .nav-link-icon { display: inline-flex; align-items: center; gap: 5px; }
 .nav-link-icon svg { color: var(--text-3); transition: color .15s; }
