@@ -180,6 +180,10 @@ async function renderAll() {
         "datiq.onboardingTour.v1",
         JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() }),
       );
+      localStorage.setItem(
+        "datiq.discoverabilityTour.v1",
+        JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() }),
+      );
     } catch { /* storage unavailable */ }
   });
 

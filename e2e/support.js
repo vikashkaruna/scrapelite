@@ -72,6 +72,10 @@ export async function installOfflineMocks(page, options = {}) {
         "datiq.onboardingTour.v1",
         JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
       );
+      localStorage.setItem(
+        "datiq.discoverabilityTour.v1",
+        JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
+      );
       localStorage.setItem("datiq.currency", "USD");
     } catch { /* storage unavailable; tour will auto-open, tests will retry */ }
   });
@@ -88,6 +92,10 @@ export async function installOfflineMocks(page, options = {}) {
     // wiped both keys.
     localStorage.setItem(
       "datiq.onboardingTour.v1",
+      JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
+    );
+    localStorage.setItem(
+      "datiq.discoverabilityTour.v1",
       JSON.stringify({ skippedAt: "1970-01-01T00:00:00.000Z" })
     );
     localStorage.setItem("datiq.currency", "USD");

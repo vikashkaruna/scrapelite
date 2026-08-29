@@ -33,6 +33,10 @@ await ctx.addInitScript(() => {
       "datiq.onboardingTour.v1",
       JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
     );
+    localStorage.setItem(
+      "datiq.discoverabilityTour.v1",
+      JSON.stringify({ completedAt: new Date("2026-01-01T00:00:00Z").toISOString() })
+    );
     // The consent banner is a fixed-bottom overlay, so without a stored choice
     // it sits across the lower ~15% of EVERY shot and buries the thing each
     // screenshot exists to show. Recording a choice up front suppresses it.
