@@ -21,17 +21,9 @@ import { useToast } from "./Toast.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
 import { knownDisallowedHost } from "../lib/scrapeConsentService.js";
-import { enrichMeta } from "../lib/extractionPresets.js";
+import { enrichMeta, enrichMetaForIntent } from "../lib/extractionPresets.js";
 import { buildSchedule, saveSchedule, SCHEDULE_PRESETS, presetByKey } from "../lib/schedulerService.js";
 
-// Map an intent → the enrichment-tab metadata so a custom/contacts/pricing run
-// from the composer persists as a named tab on the Preview screen.
-function enrichMetaForIntent(intent) {
-  if (intent === "contacts") return enrichMeta("leadership");
-  if (intent === "pricing")  return enrichMeta("pricing");
-  if (intent === "custom")   return enrichMeta("custom");
-  return null;
-}
 
 const TEXT_MIN_LEN = 40; // raw text shorter than this with no URL is likely a typo'd URL
 
@@ -279,10 +271,11 @@ export default function HeroComposer({
         return;
       }
       const prompt = resolvePrompt({ intent, customPrompt });
-      const opts = { rawText: text, intent };
+      const opts = { rawText: text, intent, background };
+      if (generateContent) opts.generateContent = generateContent;
       if (prompt) {
         opts.customPrompt = prompt;
-        const meta = enrichMetaForIntent(intent);
+        const meta = enrichMetaForIntent(intent, prompt);
         if (meta) opts.enrichMeta = meta;
       }
       extract(`text://pasted-${Date.now().toString(36)}`, opts);
@@ -297,7 +290,7 @@ export default function HeroComposer({
     if (generateContent) opts.generateContent = generateContent;
     if (prompt) {
       opts.customPrompt = prompt;
-      const meta = enrichMetaForIntent(intent);
+      const meta = enrichMetaForIntent(intent, prompt);
       if (meta) opts.enrichMeta = meta;
     }
     extract(target, opts);

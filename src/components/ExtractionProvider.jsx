@@ -182,10 +182,20 @@ export function ExtractionProvider({ children }) {
           created_at: new Date().toISOString(),
         };
       } else {
-        // Standard (and custom-extraction) mode: summarize and AI-tag concurrently.
-        const [ai_summary, links] = await Promise.all([
-          summarize(structure, { personaId, intent: options.intent }),
-          categorizeLinks(structure.links, structure.url),
+        // Standard (and custom-extraction) mode: summarize, AI-tag, and optional content generation concurrently.
+        const summarizePromise = summarize(structure, { personaId, intent: options.intent });
+        const categorizePromise = categorizeLinks(structure.links, structure.url);
+        const contentPromise = options.generateContent
+          ? generateContent(structure, options.generateContent).catch((err) => {
+              console.warn("[DatIQ] generateContent in extract failed:", err);
+              return null;
+            })
+          : null;
+
+        const [ai_summary, links, genContentText] = await Promise.all([
+          summarizePromise,
+          categorizePromise,
+          contentPromise,
         ]);
         if (reqId.current !== id) return; // superseded by a newer extraction
         result = {
@@ -219,7 +229,27 @@ export function ExtractionProvider({ children }) {
           enrichments[meta.key] = entry;
           saveEnrichment(url, entry);
         }
+        if (options.generateContent && genContentText) {
+          const f = options.generateContent;
+          const entry = {
+            key: f.key,
+            label: f.label,
+            icon: f.icon,
+            prompt: f.instruction || f.desc || "",
+            data: { text: genContentText },
+            kind: "content",
+            created_at: result.created_at,
+          };
+          enrichments[f.key] = entry;
+          saveEnrichment(url, entry);
+        }
         result.enrichments = enrichments;
+
+        if (options.enrichMeta) {
+          result.activeTab = options.enrichMeta.key;
+        } else if (options.generateContent) {
+          result.activeTab = options.generateContent.key;
+        }
       }
       // Q9 — wrap with provenance (per-record + per-field metadata)
       const withProv = attachProvenance(result, { now: result.created_at });
@@ -474,7 +504,9 @@ export function ExtractionProvider({ children }) {
     }
     // Mirror the merged result back into the local cache so it stays consistent.
     Object.values(enrichments).forEach((e) => saveEnrichment(item.url, e));
-    commitCurrent({ ...item, enrichments });
+    const enrichKeys = Object.keys(enrichments);
+    const activeTab = item.activeTab || (enrichKeys.length > 0 ? enrichKeys[0] : "overview");
+    commitCurrent({ ...item, enrichments, activeTab });
     navigate("/preview");
   };
 

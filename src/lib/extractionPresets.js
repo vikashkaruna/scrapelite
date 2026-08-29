@@ -69,3 +69,21 @@ export function resolveCustomPrompt({ customMode, customPrompt, contactsMode }) 
   if (contactsMode) return CONTACTS_PROMPT;
   return typed || "";
 }
+
+// Map an intent and/or prompt → the enrichment-tab metadata so a custom/contacts/pricing run
+// from Home/composer persists as a named tab on the Preview screen.
+export function enrichMetaForIntent(intent, customPrompt = "") {
+  const prompt = (customPrompt || "").trim();
+  if (prompt) {
+    const matched = QUICK_ACTIONS.find(
+      (a) => a.prompt.trim() === prompt || a.label.toLowerCase() === prompt.toLowerCase()
+    );
+    if (matched) return matched;
+  }
+  if (intent === "contacts") return enrichMeta("contacts");
+  if (intent === "pricing")  return enrichMeta("pricing");
+  if (intent === "custom" && prompt) return enrichMeta("custom");
+  if (intent === "custom")   return enrichMeta("custom");
+  return null;
+}
+

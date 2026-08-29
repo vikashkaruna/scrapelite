@@ -49,7 +49,7 @@ vi.mock("../lib/firecrawlService.js", () => ({
 vi.mock("../lib/aiService.js", () => ({
   summarize: vi.fn(async () => "Mock summary"),
   categorizeLinks: vi.fn(async (links) => links || []),
-  generateContent: vi.fn(async () => ""),
+  generateContent: vi.fn(async () => "Mock generated content"),
   CONTENT_FORMATS: [],
 }));
 
@@ -130,6 +130,7 @@ function Probe() {
   const { pathname } = useLocation();
   const [entry, setEntry] = useState(null);
   const extractEntry = current?.enrichments?.pricing;
+  const contentEntry = current?.enrichments?.["seo-outline"];
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
@@ -143,6 +144,9 @@ function Probe() {
       <span data-testid="entryReason">{entry?.reason ?? "(none)"}</span>
       <span data-testid="extractEntryReason">{extractEntry?.reason ?? "(none)"}</span>
       <span data-testid="extractEntryPresent">{String(Boolean(extractEntry))}</span>
+      <span data-testid="contentEntryPresent">{String(Boolean(contentEntry))}</span>
+      <span data-testid="contentEntryText">{contentEntry?.data?.text ?? "(none)"}</span>
+      <span data-testid="activeTab">{current?.activeTab ?? "(none)"}</span>
       <button data-testid="extract" onClick={() => extract("https://x.example.com")}>
         extract
       </button>
@@ -156,6 +160,21 @@ function Probe() {
         }
       >
         extractWithEnrich
+      </button>
+      <button
+        data-testid="extractWithContent"
+        onClick={() =>
+          extract("https://x.example.com", {
+            generateContent: {
+              key: "seo-outline",
+              label: "SEO Blog Outline",
+              icon: "file-text",
+              instruction: "Generate outline",
+            },
+          })
+        }
+      >
+        extractWithContent
       </button>
       <button
         data-testid="enrich"
@@ -313,6 +332,28 @@ describe("ExtractionProvider.extract — carries the empty-extraction reason (Ho
     });
     expect(screen.getByTestId("extractEntryPresent").textContent).toBe("true");
     expect(screen.getByTestId("extractEntryReason").textContent).toBe("(none)");
+    expect(screen.getByTestId("activeTab").textContent).toBe("pricing");
+  });
+
+  it("creates a content enrichment tab when generateContent is passed to extract()", async () => {
+    firecrawlMocks.extractStructure.mockResolvedValueOnce({
+      url: "https://x.example.com",
+      page_title: "X",
+      headings: [],
+      links: [],
+      domain_map: null,
+    });
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      screen.getByTestId("extractWithContent").click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("contentEntryPresent").textContent).toBe("true");
+    expect(screen.getByTestId("contentEntryText").textContent).toBe("Mock generated content");
+    expect(screen.getByTestId("activeTab").textContent).toBe("seo-outline");
   });
 });
 

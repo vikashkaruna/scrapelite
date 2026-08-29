@@ -170,7 +170,22 @@ export default function Preview() {
   const { checkCanExport, checkCanEmail } = useBilling();
   const [filter, setFilter] = useState("all");
   const [runningKey, setRunningKey] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (current?.activeTab && current?.enrichments?.[current.activeTab]) {
+      return current.activeTab;
+    }
+    const enrichKeys = Object.keys(current?.enrichments || {});
+    if (current?.intent && current.intent !== "summary" && current.intent !== "map") {
+      const match = enrichKeys.find(
+        (k) => k === current.intent || (current.intent === "contacts" && (k === "contacts" || k === "leadership"))
+      );
+      if (match) return match;
+    }
+    if (enrichKeys.length > 0 && current?.custom_extraction != null) {
+      return enrichKeys[0];
+    }
+    return "overview";
+  });
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -181,6 +196,18 @@ export default function Preview() {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
+
+  useEffect(() => {
+    if (current?.activeTab && current?.enrichments?.[current.activeTab]) {
+      setActiveTab(current.activeTab);
+    } else if (current?.intent && current.intent !== "summary" && current.intent !== "map") {
+      const enrichKeys = Object.keys(current?.enrichments || {});
+      const match = enrichKeys.find(
+        (k) => k === current.intent || (current.intent === "contacts" && (k === "contacts" || k === "leadership"))
+      );
+      if (match) setActiveTab(match);
+    }
+  }, [current?.id, current?.activeTab]);
 
   useEffect(() => {
     if (!downloadOpen) return;
@@ -201,6 +228,7 @@ export default function Preview() {
   useEffect(() => {
     setSharedSlug(current?.id ? getSharedSlugForId(current.id) : null);
   }, [current?.id]);
+
 
   // Q6 — share handlers
   const handleShare = async () => {

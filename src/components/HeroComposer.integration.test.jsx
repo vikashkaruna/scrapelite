@@ -186,5 +186,37 @@ describe("I-04 — HeroComposer: customPrompt is forwarded to extract", () => {
     expect(firecrawlMocks.extractStructure).toHaveBeenCalledTimes(1);
     const [, optionsArg] = firecrawlMocks.extractStructure.mock.calls[0];
     expect(optionsArg).toHaveProperty("customPrompt", "Tell me about the team");
+    expect(optionsArg.enrichMeta).toEqual({
+      key: "custom",
+      label: "Custom extraction",
+      icon: "code",
+    });
+  });
+
+  it("intent='pricing' forwards pricing enrichMeta to extractStructure", async () => {
+    firecrawlMocks.extractStructure.mockClear();
+    render(
+      <Tree
+        initialValue="https://example.com"
+        intent="pricing"
+        customPrompt="Extract every pricing tier."
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /^extract$/i });
+    await act(async () => {
+      fireEvent.click(btn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(firecrawlMocks.extractStructure).toHaveBeenCalledTimes(1);
+    const [, optionsArg] = firecrawlMocks.extractStructure.mock.calls[0];
+    expect(optionsArg).toHaveProperty("customPrompt", "Extract every pricing tier.");
+    expect(optionsArg.enrichMeta).toEqual({
+      key: "pricing",
+      label: "Pricing & Plans",
+      icon: "hash",
+      prompt: "Extract every pricing tier: the plan name, price, billing period, and the key features included in each plan.",
+    });
   });
 });
+
