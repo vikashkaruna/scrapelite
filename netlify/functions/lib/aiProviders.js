@@ -22,7 +22,7 @@
 // `call(messages, model, maxTokens, apiKey)` that returns { ok, status, text, error }.
 
 const DEFAULT_MODELS = {
-  gemini:     "gemini-2.5-flash",
+  gemini:     "gemini-2.0-flash",
   anthropic:  "claude-3-5-haiku-20241022",
   openai:     "gpt-4o-mini",
   perplexity: "sonar",

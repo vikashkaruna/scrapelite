@@ -52,7 +52,7 @@ function htmlToPlainText(html) {
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
       .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<\/?[a-z][^>]*>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
@@ -75,17 +75,14 @@ function htmlToPlainText(html) {
 // capability" even on a perfectly valid URL. Now the function asks the
 // multi-provider AI chain to extract the JSON from the page text using the
 // user's customPrompt as the schema instruction.
-//
-// Strict-JSON prompt: the model is told to return ONLY a JSON object, with
-// no markdown fences and no preamble. parseJsonLoose tolerates a few
-// common deviations (```json fences, leading prose) so a slightly messy
-// reply still produces a usable extraction instead of silently failing.
 const AI_EXTRACT_MAX_TOKENS = 2048;
 const AI_EXTRACT_TEXT_CHARS = 24000; // ~6k tokens of plain text — well within every model
 
 async function extractJsonWithAI({ prompt, title, text }) {
   const presence = keyPresence();
-  if (!Object.values(presence).some(Boolean)) return null;
+  if (!Object.values(presence).some(Boolean)) {
+    return { ok: false, reason: "ai_not_configured" };
+  }
   const trimmed = (text || "").slice(0, AI_EXTRACT_TEXT_CHARS);
   const messages = [
     {
@@ -99,9 +96,25 @@ async function extractJsonWithAI({ prompt, title, text }) {
         `PAGE CONTENT (truncated):\n${trimmed}`,
     },
   ];
-  const r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
-  if (!r.ok || !r.text) return null;
-  return parseJsonLoose(r.text);
+  let r;
+  try {
+    r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
+  } catch (err) {
+    console.warn("[DatIQ] AI extraction runChain threw:", err?.message || err);
+    return { ok: false, reason: "ai_chain_failed" };
+  }
+  if (!r || !r.ok) {
+    console.warn("[DatIQ] AI extraction provider chain failed:", r?.error, r?.attempts);
+    return { ok: false, reason: "ai_chain_failed", attempts: r?.attempts };
+  }
+  if (!r.text || !r.text.trim()) {
+    return { ok: false, reason: "no_match" };
+  }
+  const parsed = parseJsonLoose(r.text);
+  if (!parsed || isEmptyExtraction(parsed)) {
+    return { ok: false, reason: "no_match" };
+  }
+  return { ok: true, data: parsed };
 }
 
 function parseJsonLoose(text) {
@@ -121,12 +134,7 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* fall through */ }
   }
-  // Last resort: find the outermost JSON object OR array in the reply. The
-  // "no preamble" instruction usually works, but some models add a one-line
-  // intro, and prompts that are naturally list-shaped (e.g. "extract all
-  // social links") sometimes come back as a bare `[...]` rather than an
-  // object — only scanning for `{`/`}` missed that shape entirely and threw
-  // away a perfectly good extraction.
+  // Find the outermost JSON object OR array in the reply.
   const firstObj = trimmed.indexOf("{");
   const lastObj = trimmed.lastIndexOf("}");
   const firstArr = trimmed.indexOf("[");
@@ -140,6 +148,25 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* try the next candidate */ }
   }
+
+  // Structured key-value lines fallback (requires at least 2 distinct key-value pairs)
+  const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length >= 2 || lines.some((l) => /^[-*•]/.test(l))) {
+    const kvObj = {};
+    let count = 0;
+    for (const line of lines) {
+      const m = line.match(/^[-*•]?\s*([A-Za-z0-9_ ]{2,40})\s*:\s*(.+)$/);
+      if (m && m[1] && m[2]) {
+        const k = m[1].trim().toLowerCase().replace(/\s+/g, "_");
+        kvObj[k] = m[2].trim();
+        count++;
+      }
+    }
+    if (count >= 2) {
+      return kvObj;
+    }
+  }
+
   return null;
 }
 
@@ -389,35 +416,16 @@ export const handler = async (event) => {
     // the UI, from the logs, and from each other.
     let enrichmentReason = null;
     if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
-      const aiConfigured = Object.values(keyPresence()).some(Boolean);
-      if (!aiConfigured) {
-        // The single most likely cause in a fresh deployment, and previously
-        // the most silent: extractJsonWithAI() returns null before making any
-        // request when no provider key is set. Nothing else in the product
-        // reveals this — aiService falls back to mock summaries, so summaries
-        // keep "working" and only enrichment visibly dies.
-        enrichmentReason = "ai_not_configured";
+      const aiRes = await extractJsonWithAI({
+        prompt: options.customPrompt,
+        title: result.title || "",
+        text: htmlToPlainText(result.html || ""),
+      });
+      if (aiRes.ok && aiRes.data && !isEmptyExtraction(aiRes.data)) {
+        result.customExtraction = aiRes.data;
+        aiExtractionUsed = true;
       } else {
-        try {
-          const aiJson = await extractJsonWithAI({
-            prompt: options.customPrompt,
-            title: result.title || "",
-            text: htmlToPlainText(result.html || ""),
-          });
-          if (!isEmptyExtraction(aiJson)) {
-            result.customExtraction = aiJson;
-            aiExtractionUsed = true;
-          } else {
-            // The chain answered, and the answer was "nothing here".
-            enrichmentReason = "no_match";
-          }
-        } catch (err) {
-          // Non-fatal: the response goes back to the client with null
-          // customExtraction. The error is logged so the regression can
-          // be diagnosed from the function log if it fires repeatedly.
-          console.warn("[DatIQ] AI-extract fallback failed:", err?.message || err);
-          enrichmentReason = "ai_chain_failed";
-        }
+        enrichmentReason = aiRes.reason || "no_match";
       }
     }
 
