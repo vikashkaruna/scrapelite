@@ -86,7 +86,7 @@ export const HEALTH_COMPONENTS = [
     label: "Payments (Razorpay)",
     group: "services",
     critical: false,
-    description: "Razorpay's public status page. Checkout is INR-only in v1.0.",
+    description: "Razorpay payment gateway API and checkout service. Checkout is INR-only in v1.0.",
   },
   {
     id: "ai-providers",
