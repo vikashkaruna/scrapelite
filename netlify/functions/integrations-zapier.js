@@ -256,6 +256,7 @@ async function handleStatus(userId) {
     connection: {
       ...safe,
       token_hint: config?.token_hint || null, // last 4 chars
+      webhook_hint: config?.webhook_url ? (config.webhook_url.slice(0, 32) + "…") : null,
       has_token: !!config?.token_hash,
     },
   });
@@ -265,13 +266,13 @@ async function handleConnect(event, userId) {
   let body = {};
   try { body = await readJsonBody(event); } catch { /* tolerate empty */ }
 
-  const regenerate = body?.regenerate === true;
-  if (!regenerate && !body?.token) {
-    return respond(400, { error: "Provide either { token } to store an existing token, or { regenerate: true } to mint a new one." });
-  }
+  const webhookUrl = typeof body?.webhookUrl === "string" && body.webhookUrl.trim().startsWith("http")
+    ? body.webhookUrl.trim()
+    : null;
 
+  const regenerate = body?.regenerate === true || (!body?.token && !webhookUrl);
   let plaintext = body?.token;
-  if (regenerate) {
+  if (regenerate || !plaintext) {
     plaintext = generateZapierToken();
   }
 
@@ -284,7 +285,11 @@ async function handleConnect(event, userId) {
     userId,
     provider: "zapier",
     fields: {
-      config: { token_hash: tokenHash, token_hint: plaintext.slice(-4) },
+      config: {
+        token_hash: tokenHash,
+        token_hint: plaintext.slice(-4),
+        webhook_url: webhookUrl,
+      },
       account_label: "Zapier",
     },
   });
@@ -297,20 +302,77 @@ async function handleConnect(event, userId) {
   if (existing?.connection?.config?.api_key_id && !regenerate) {
     // Don't re-mint.
   } else {
-    // Mint a fresh API key tied to this user. v1.1 will store the plaintext
-    // temporarily for the user's Zap setup; v1 returns it ONCE in the
-    // response so they can paste it elsewhere.
     apiKey = generateApiKey("live");
-    // Note: we do not persist the plaintext — this is only useful for
-    // ad-hoc scripts. Zapier itself uses the per-Zap token above.
   }
 
   return respond(200, {
     ok: true,
     connected: true,
-    // Return the plaintext ONLY on mint (regenerate=true). When the user
-    // stores an existing token, never echo it back.
-    ...(regenerate ? { token: plaintext } : {}),
+    ...(regenerate || !body?.token ? { token: plaintext } : {}),
+    webhook_url: webhookUrl,
+  });
+}
+
+async function handlePush(event, userId) {
+  const connRes = await getConnection({ userId, provider: "zapier" });
+  if (!connRes.ok || !connRes.connection) {
+    return respond(412, { error: "Zapier is not connected. Connect Zapier in Account → Integrations." });
+  }
+
+  let body;
+  try { body = await readJsonBody(event); } catch { return respond(400, { error: "Invalid JSON" }); }
+  const items = Array.isArray(body?.items) ? body.items : (body?.extraction ? [body.extraction] : []);
+  if (items.length === 0) {
+    return respond(400, { error: "No items provided to push." });
+  }
+
+  const webhookUrl = connRes.connection.config?.webhook_url;
+  let webhookSuccess = 0;
+  const errors = [];
+
+  // 1. Direct webhook dispatch if user configured a Zapier Catch Hook URL
+  if (webhookUrl) {
+    for (const item of items) {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "extraction.pushed",
+            extraction: item,
+            pushed_at: new Date().toISOString(),
+          }),
+        });
+        if (res.ok) webhookSuccess++;
+        else errors.push(`Zapier catch hook returned ${res.status}`);
+      } catch (err) {
+        errors.push(`Zapier webhook error: ${err.message}`);
+      }
+    }
+  }
+
+  // 2. Event Store emission for polling Zaps
+  for (const item of items) {
+    await appendEvent({
+      userId,
+      eventType: "new_extraction",
+      payload: {
+        id: item.id || `ext_${Date.now()}`,
+        url: item.url,
+        title: item.title || item.page_title,
+        summary: item.summary || item.ai_summary,
+        created_at: item.created_at || new Date().toISOString(),
+        manual_push: true,
+      },
+      dedupeKey: `push_${item.id || item.url}_${Date.now()}`,
+    }).catch(() => {});
+  }
+
+  return respond(200, {
+    ok: true,
+    pushed: items.length,
+    total: items.length,
+    errors,
   });
 }
 
@@ -327,10 +389,6 @@ export const handler = async (event) => {
     return { statusCode: 204, headers: CORS, body: "" };
   }
 
-  // Resolve the sub-path from THREE sources, in priority order:
-  //   1. body.action          — sent by the Account UI (2026-08-10 fix)
-  //   2. event.queryStringParameters.splat — original Netlify redirect form
-  //   3. event.path tail      — fallback for path-based routing
   let body = {};
   try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* ignore */ }
   const splatFromBody = (body && typeof body.action === "string") ? body.action : "";
@@ -342,20 +400,6 @@ export const handler = async (event) => {
   const splat = splatFromBody || splatFromQuery || tail;
   const subPath = splat.split("/").filter(Boolean);
 
-  // Top-level try/catch (2026-08-11 fix): a thrown error in any handler
-  // used to surface as a Netlify 502 with no body — opaque to the
-  // browser. The modal then rendered "HTTP 502" with nothing to debug.
-  // This wraps the whole dispatch and converts the throw into a 500
-  // with err.message, which the modal can display verbatim. Airtable
-  // and HubSpot already have this pattern; Zapier did not.
-  //
-  // Subtle but critical: each `return handleX(...)` MUST be `return await
-  // handleX(...)`. Returning the bare Promise from an async function
-  // means the try/catch sees the return value (a Promise), NOT a
-  // rejection — the rejection just becomes the function's return value,
-  // which propagates straight to the caller. The fix: `await` every
-  // handler return so rejections are thrown inside the try block, where
-  // the catch can see them.
   try {
     // Public, no JWT required:
     if (event.httpMethod === "GET" && subPath[0] === "test") return await handleTest(event);
@@ -373,8 +417,9 @@ export const handler = async (event) => {
     if (event.httpMethod === "POST" && subPath[0] === "connect") {
       return await handleConnect(event, auth.user.id);
     }
-    // Disconnect is the only DELETE endpoint for Zapier; route it
-    // regardless of the sub-path (DELETE is unambiguous).
+    if (event.httpMethod === "POST" && (subPath[0] === "push" || body.action === "push")) {
+      return await handlePush(event, auth.user.id);
+    }
     if (event.httpMethod === "DELETE") {
       return await handleDisconnect(auth.user.id);
     }

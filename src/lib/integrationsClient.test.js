@@ -35,11 +35,12 @@ beforeEach(() => {
 });
 
 describe("integrationsClient — PUSH_PROVIDERS", () => {
-  it("includes slack alongside hubspot, notion, airtable", () => {
+  it("includes slack and zapier alongside hubspot, notion, airtable", () => {
     const slugs = PUSH_PROVIDERS.map((p) => p.slug);
     expect(slugs).toContain("hubspot");
     expect(slugs).toContain("notion");
     expect(slugs).toContain("airtable");
+    expect(slugs).toContain("zapier");
     expect(slugs).toContain("slack");
   });
 
@@ -50,6 +51,33 @@ describe("integrationsClient — PUSH_PROVIDERS", () => {
       expect(p.icon).toBeTypeOf("string");
       expect(p.desc).toBeTypeOf("string");
     }
+  });
+});
+
+describe("integrationsClient — pushToIntegration(zapier)", () => {
+  const items = [
+    { id: "e1", url: "https://a.com", page_title: "A" },
+    { id: "e2", url: "https://b.com", page_title: "B" },
+  ];
+
+  it("POSTs to /api/integrations/zapier/push with the items list + action dispatch", async () => {
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({ ok: true, pushed: 2, total: 2 }),
+    });
+
+    const r = await pushToIntegration("zapier", items);
+    expect(r.ok).toBe(true);
+    expect(r.pushed).toBe(2);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/integrations/zapier/push",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ items, action: "push" }),
+      })
+    );
   });
 });
 

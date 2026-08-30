@@ -20,14 +20,12 @@
 
 import { supabase } from "./supabaseClient.js";
 
-// The 4 push-style providers. Order = display order in the menu.
-// Slack comes last because it's the most "ephemeral" destination — a
-// notification, not a record store — and the others are more common
-// workflows for power users.
+// The 5 push-style providers. Order = display order in the menu.
 export const PUSH_PROVIDERS = [
   { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "Push company + contacts to your CRM" },
   { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "Create pages in a database" },
   { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Add records to a base" },
+  { slug: "zapier",   name: "Zapier",   icon: "share",         desc: "Push to Zapier webhook or connected Zap" },
   { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Post a summary to your channel" },
 ];
 
@@ -195,6 +193,41 @@ export async function pushToIntegration(slug, items) {
           errors: [body?.error || "push_failed"],
           failedRecords: [],
           message: body?.error || "Push failed",
+        };
+      }
+      return {
+        ok: body.ok !== false,
+        pushed: body.pushed ?? clean.length,
+        total: body.total ?? clean.length,
+        errors: body.errors || [],
+        failedRecords: body.failedRecords || [],
+      };
+    }
+
+    if (slug === "zapier") {
+      const { ok, body, status } = await authedFetch(`/api/integrations/zapier/push`, {
+        method: "POST",
+        body: JSON.stringify({ items: clean, action: "push" }),
+      });
+      if (!ok) {
+        if (status === 412) {
+          return {
+            ok: false,
+            pushed: 0,
+            total: clean.length,
+            errors: [body?.error || "not_connected"],
+            failedRecords: [],
+            message: body?.error || "Zapier is not connected.",
+            not_connected: true,
+          };
+        }
+        return {
+          ok: false,
+          pushed: 0,
+          total: clean.length,
+          errors: [body?.error || "push_failed"],
+          failedRecords: [],
+          message: body?.error || "Push to Zapier failed",
         };
       }
       return {

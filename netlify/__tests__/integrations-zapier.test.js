@@ -251,6 +251,39 @@ describe("integrations-zapier", () => {
         userId: "u1", eventType: "new_extraction",
       }));
     });
+
+    it("POST /push returns 412 if Zapier is not connected", async () => {
+      mockStore.get.mockResolvedValue({ ok: true, connection: null });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ items: [{ url: "https://example.com" }] }),
+      }));
+      expect(r.statusCode).toBe(412);
+      expect(JSON.parse(r.body).error).toMatch(/Zapier is not connected/);
+    });
+
+    it("POST /push pushes to Zapier Catch Hook and emits event", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: {
+          id: "c1",
+          config: { token_hash: TOKEN_HASH, webhook_url: "https://hooks.zapier.com/hooks/catch/123/456" },
+        },
+      });
+      mockEventStore.append.mockResolvedValue({ ok: true });
+      const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+      globalThis.fetch = fetchMock;
+
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ items: [{ id: "e1", url: "https://example.com", title: "Example" }] }),
+      }));
+      expect(r.statusCode).toBe(200);
+      expect(JSON.parse(r.body).ok).toBe(true);
+      expect(mockEventStore.append).toHaveBeenCalled();
+    });
   });
 
   it("returns 404 for unknown sub-paths", async () => {
