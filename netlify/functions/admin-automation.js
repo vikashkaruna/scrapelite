@@ -11,7 +11,7 @@
 //
 // Auth: Bearer admin session token (HMAC of admin-auth.js).
 
-import { verifyAdminToken } from "./lib/adminToken.js";
+import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
 import { runOnce, dispatchOne } from "./lib/workflowOrchestrator.js";
 
 const HEADERS = { "Content-Type": "application/json" };
@@ -154,7 +154,7 @@ async function handleGet(event) {
 }
 
 async function handlePost(event) {
-  const auth = (event.headers?.authorization || event.headers?.Authorization || "").replace(/^Bearer\s+/i, "");
+  const auth = bearerFromEvent(event);
   const v = verifyAdminToken(auth);
   if (!v.ok) return bad(401, v.reason || "unauthorized");
 

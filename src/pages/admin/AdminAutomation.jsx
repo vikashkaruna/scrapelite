@@ -264,7 +264,25 @@ export default function AdminAutomation() {
       </header>
 
       {warning && <div className="admin-warning-banner">{warning}</div>}
-      {error && <div className="admin-error-banner">{error}</div>}
+      {error && (
+        <div className="admin-error-banner" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+          <span>{error}</span>
+          {(error.toLowerCase().includes("unauthor") || error.toLowerCase().includes("token") || error.toLowerCase().includes("401")) && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              style={{ padding: "2px 8px", fontSize: "12px", border: "1px solid currentColor" }}
+              onClick={() => {
+                localStorage.removeItem("scrapelite.adminAuth");
+                localStorage.removeItem("scrapelite.adminAuthExp");
+                window.location.reload();
+              }}
+            >
+              Re-enter PIN
+            </button>
+          )}
+        </div>
+      )}
 
       <section className="automation-kpis">
         <KpiCard label="Pending" value={stats?.byState?.pending ?? 0} icon="clock" accent="#f59e0b" />
