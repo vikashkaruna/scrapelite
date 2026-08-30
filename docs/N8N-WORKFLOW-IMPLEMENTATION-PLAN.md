@@ -409,8 +409,18 @@ All 10 test suites executed via `npm run test:all` have passed with 100% green i
 [10/10] Playwright Smoke Tests...        PASSED (95.80s) (131/131 E2E tests)
 
 ───────────────────────────────────────────────────
-Test Summary (128.10s total): All test suites passed! (4,500+ assertions / 0 failed)
+Test Summary: All test suites passed! (4,500+ assertions / 0 failed)
 ───────────────────────────────────────────────────
+```
+
+### 5.1 Dedicated Workflow Automation Runner & Cloud Run Import
+
+```bash
+# 1. Complete end-to-end 5-stage pipeline simulation:
+npm run test:workflow
+
+# 2. Automated bulk import of all 17 workflow JSON files to Cloud Run:
+N8N_API_KEY=<your-api-key> npm run import:cloudrun
 ```
 
 ---
@@ -420,7 +430,7 @@ Test Summary (128.10s total): All test suites passed! (4,500+ assertions / 0 fai
 For specialized domain walkthroughs, integration setup, and runbooks, refer to these canonical documents:
 
 1. **Manual Verification & Integrations Runbook**: [`docs/MANUAL-VERIFICATION-AND-INTEGRATION-GUIDE.md`](./MANUAL-VERIFICATION-AND-INTEGRATION-GUIDE.md)
-   - Step-by-step setup for Slack, Resend, HubSpot, Notion, Airtable, Zapier, manual verification scenarios, and diagnostic SQL queries.
+   - Step-by-step setup for Slack, Resend, HubSpot, Notion, Airtable, Zapier, manual verification scenarios, diagnostic SQL queries, and complete Edge Access / Auth troubleshooting.
 2. **Active Milestone Session Handoff**: [`docs/sessions/SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./sessions/SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md)
 3. **Master Consolidated Session Archive (70 Sessions)**: [`docs/sessions/SESSIONS-HISTORY.md`](./sessions/SESSIONS-HISTORY.md)
 4. **17 n8n Workflows Specification**: [`docs/N8N-WORKFLOWS.md`](./N8N-WORKFLOWS.md)
@@ -429,3 +439,4 @@ For specialized domain walkthroughs, integration setup, and runbooks, refer to t
 7. **Self-Hosted Deployment Checklist**: [`docs/N8N-DEPLOYMENT-STATUS.md`](./N8N-DEPLOYMENT-STATUS.md)
 8. **End-to-End V2 Implementation Guide**: [`docs/V2-IMPLEMENTATION-GUIDE.md`](./V2-IMPLEMENTATION-GUIDE.md)
 9. **Database Migration Runbook**: [`docs/DB-MIGRATION-RUNBOOK.md`](./DB-MIGRATION-RUNBOOK.md)
+

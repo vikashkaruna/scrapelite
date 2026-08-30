@@ -319,6 +319,21 @@ npx n8n import:workflow --input=n8n/workflows/
 
 ---
 
+### 3.9 Scenario 9: Automated Pipeline Test Runner (`npm run test:workflow`)
+- **Goal:** Execute the complete 5-stage lifecycle simulation locally or against live Supabase without needing manual `curl` or SQL commands.
+- **Command:**
+  ```bash
+  npm run test:workflow
+  ```
+- **Lifecycle Executed & Verified:**
+  1. **Enqueue:** Builds `workflow_events` row with deployment context `_ctx` (`site_url`, `callback_url`).
+  2. **DB Verification:** Asserts `state = 'pending'`, `attempts = 0`.
+  3. **Dispatch:** Signs payload with HMAC-SHA256 and POSTs to n8n webhook.
+  4. **Retry/Backoff:** Verifies error tracking and exponential backoff if n8n responds with non-200.
+  5. **Callback:** Emulates authenticated callback from n8n to `POST /api/workflow-callback` with HMAC headers, transitioning state to `'done'` and logging to `workflow_runs`.
+
+---
+
 ## 4. Test Execution Matrix & SQL Verification Queries
 
 ### Quick Diagnostic SQL Queries (Run in Supabase SQL Editor):
@@ -351,7 +366,8 @@ LIMIT 20;
 SELECT 
   r.id, 
   r.event_id, 
-  r.run_type, 
+  r.channel, 
+  r.status, 
   r.response_status, 
   r.duration_ms, 
   r.created_at 
@@ -368,3 +384,38 @@ SELECT
 FROM integration_connections 
 ORDER BY created_at DESC;
 ```
+
+---
+
+## 5. Troubleshooting & Known Edge Cases
+
+### 5.1 Netlify Edge Access SSO Redirect (`<title>Login Redirect</title>`)
+- **Symptom:** Running `curl` against draft/preview endpoints returns an HTML page containing `<title>Login Redirect</title>` and `requested_path=%2F.netlify%2Ffunctions%2F...`.
+- **Cause:** Netlify branch previews and draft deploys enable Edge Access (Team SSO / password protection) by default, intercepting external unauthenticated HTTP calls before they reach serverless functions.
+- **Remedy:**
+  1. Add `/.netlify/functions/*` and `/api/*` to your Netlify Edge Access bypass rules.
+  2. Use the automated test runner `npm run test:workflow` which operates in-process.
+  3. Run tests against the production URL (`https://datiq.app`) once deployed.
+
+### 5.2 Terminal Shell vs SQL Editor (`zsh: unknown file attribute: k`)
+- **Symptom:** Pasting `INSERT INTO workflow_events (kind, ref_id)...` into your macOS terminal outputs `zsh: unknown file attribute: k`.
+- **Cause:** The `zsh` shell interprets parentheses `(kind, ref_id)` as filename glob qualifiers.
+- **Remedy:** Execute SQL statements inside the **Supabase Dashboard → SQL Editor** or use `npm run test:workflow`.
+
+### 5.3 Admin / Automation Unauthorized & Re-Authentication (`401 Unauthorized`)
+- **Symptom:** Admin page `/admin/automation` displays an error banner saying "unauthorized" or "Missing admin token" upon refresh.
+- **Cause:** The admin session token stored in `localStorage` (`scrapelite.adminAuth`) has expired (8h TTL) or was created under a different secret.
+- **Remedy:**
+  1. Click the **"Re-enter PIN"** button directly inside the red error banner on `/admin/automation`.
+  2. Alternatively, click **"Exit admin"** at the bottom-left of the sidebar to return to the PIN login gate.
+  3. Enter your configured admin PIN (default demo PIN: `ADMIN123`).
+
+### 5.4 How to Ensure Primary n8n Route Executed (and Fallback Did NOT Trigger)
+- **Primary vs Fallback Verification:**
+  1. In Supabase: Run `SELECT state, attempts FROM workflow_events WHERE id = '<ID>';`. A successful n8n run will have `state = 'done'` and `attempts >= 1`.
+  2. In `workflow_runs`: Run `SELECT channel, status, response_status FROM workflow_runs WHERE event_id = '<ID>';`. Look for `channel = 'n8n'`, `status = 'success'`, and `response_status = 200`.
+  3. In n8n UI: Open `https://n8n-dev-692109205619.asia-south1.run.app/executions` to inspect the live execution trace and callback step.
+
+### 5.5 Integrations Catalog (`/integrations`) vs Account Settings (`/account#integrations`)
+- **`/integrations` (Explore Catalog):** Public discovery and marketing directory explaining available integrations, capabilities, and setup instructions.
+- **`/account#integrations` (Account & Usage):** Authenticated user credential vault where logged-in users enter their personal API keys and tokens for HubSpot, Notion, Airtable, Slack, and Zapier, stored securely in `integration_connections`.
