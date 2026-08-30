@@ -1,9 +1,10 @@
 # Session Handoff — 2026-08-30 — Two-Way Integrations, Scale-to-Zero & Master Manual Verification Guide
 
-> **Branch:** `workflow-implementation-and-optimization` @ `adc0752`  
-> **Target:** `staging` / `main`  
+> **Branch:** `staging` (merged via PR #129 from `workflow-implementation-and-optimization`) @ `90870d4`  
+> **Target:** `main` (safe, ready for promotion)  
 > **Verification:** All 291 test suites (4,548 tests) green · 35 DB migrations / 271 assertions green · Clean Vite build · 23 prerendered pages verified  
-> **Live Netlify Preview:** https://workflow-optimization.datiq.app  
+> **Live Staging URL:** https://staging.datiq.app / https://staging--datiqapp.netlify.app  
+> **Live Preview URL:** https://workflow-optimization.datiq.app  
 > **Deployed n8n Target:** https://n8n-dev-692109205619.asia-south1.run.app  
 
 ---
@@ -13,9 +14,10 @@
 | Property | Value |
 |---|---|
 | **Date** | 2026-08-30 |
-| **Branch** | `workflow-implementation-and-optimization` |
-| **HEAD SHA** | `adc0752` |
-| **Status** | Complete, fully verified, and ready for review / promotion |
+| **Branch** | `staging` / `workflow-implementation-and-optimization` |
+| **HEAD SHA** | `90870d4` |
+| **PR** | [#129 (Merged into staging)](https://github.com/vikashkaruna/scrapelite/pull/129) |
+| **Status** | Merged into staging, deployed live, all test suites green |
 | **Pre-Push Gates** | 100% green (unit, integration, contract, DB verify, security, build, prerender) |
 | **Active Focus** | Event-Driven Workflow Architecture, Cloud Run Scale-to-Zero, Two-Way Integrations (HubSpot, Notion, Airtable, Zapier, n8n), and Master Verification Runbook |
 
