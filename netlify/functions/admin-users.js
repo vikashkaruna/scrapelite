@@ -179,9 +179,31 @@ export const handler = async (event) => {
 
   // ── PATCH — extend bonus extractions OR issue/revoke a grant coupon ───────────
   if (event.httpMethod === "PATCH") {
-    if (!db) return respond(503, { error: "Supabase not configured." });
+    let body = {};
+    try { body = JSON.parse(event.body || "{}"); }
+    catch { return respond(400, { error: "Invalid JSON body." }); }
+
+    if (!db) {
+      if (body.action === "assign_grant_coupon") {
+        const { userId, couponCode, planId, validityMonths, claimExpiresAt } = body;
+        return respond(200, {
+          ok: true,
+          userId,
+          adminGrantCoupon: {
+            id: `grant_${Date.now()}`,
+            code: (couponCode || "DEMO").trim().toUpperCase(),
+            planId: planId || "pro",
+            validityMonths: Number(validityMonths || 1),
+            claimExpiresAt: claimExpiresAt || null,
+            status: "assigned",
+            assignedAt: new Date().toISOString(),
+          },
+          localOnly: true,
+        });
+      }
+      return respond(503, { error: "Supabase not configured." });
+    }
     try {
-      const body = JSON.parse(event.body || "{}");
 
       // ── issue a user-specific, non-recurring plan grant ──
       if (body.action === "assign_grant_coupon") {

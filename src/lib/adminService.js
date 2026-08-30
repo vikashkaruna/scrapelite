@@ -247,6 +247,96 @@ export function addAdminUser(user) {
   return users;
 }
 
+// ── Admin Grants (testing mode & local persistence) ───────────────────────────
+const ADMIN_GRANTS_KEY = "datiq.adminGrants";
+
+export function getAdminGrants() {
+  return ls(ADMIN_GRANTS_KEY) || [];
+}
+
+export function saveAdminGrant(grant) {
+  const grants = getAdminGrants();
+  const cleanCode = String(grant.code || grant.couponCode || "").trim().toUpperCase();
+  const idx = grants.findIndex((g) => g.code === cleanCode || (grant.id && g.id === grant.id));
+  const entry = {
+    id: grant.id || `grant_${Date.now()}`,
+    userId: grant.userId || null,
+    userEmail: grant.userEmail || null,
+    code: cleanCode,
+    planId: grant.planId || "pro",
+    validityMonths: Number(grant.validityMonths || 1),
+    claimExpiresAt: grant.claimExpiresAt || null,
+    status: grant.status || "assigned",
+    assignedBy: grant.assignedBy || "admin",
+    reason: grant.reason || "goodwill",
+    assignedAt: grant.assignedAt || new Date().toISOString(),
+    redeemedAt: grant.redeemedAt || null,
+    periodStart: grant.periodStart || null,
+    periodEnd: grant.periodEnd || null,
+  };
+  if (idx >= 0) {
+    grants[idx] = { ...grants[idx], ...entry };
+  } else {
+    grants.unshift(entry);
+  }
+  lsSet(ADMIN_GRANTS_KEY, grants);
+  return entry;
+}
+
+export function getAdminGrantForUser(userId, email) {
+  const grants = getAdminGrants();
+  const cleanEmail = email ? String(email).trim().toLowerCase() : null;
+  const found = grants.find((g) =>
+    (userId && g.userId === userId) ||
+    (cleanEmail && g.userEmail && String(g.userEmail).trim().toLowerCase() === cleanEmail)
+  );
+  return found || null;
+}
+
+export function redeemLocalAdminGrant(userIdOrEmail, code) {
+  const grants = getAdminGrants();
+  const cleanCode = String(code || "").trim().toUpperCase();
+  const grant = grants.find((g) => g.code === cleanCode);
+  if (!grant) {
+    return { ok: false, error: "This grant coupon is not valid or not assigned to your account." };
+  }
+  if (grant.status === "expired" || (grant.claimExpiresAt && new Date(grant.claimExpiresAt) < new Date())) {
+    grant.status = "expired";
+    lsSet(ADMIN_GRANTS_KEY, grants);
+    return { ok: false, error: "This grant coupon has expired." };
+  }
+  if (grant.status === "redeemed") {
+    return {
+      ok: true,
+      code: grant.code,
+      plan_id: grant.planId,
+      validity_months: grant.validityMonths,
+      period_start: grant.periodStart || new Date().toISOString(),
+      period_end: grant.periodEnd || new Date(Date.now() + 30 * 86400000).toISOString(),
+      alreadyRedeemed: true,
+    };
+  }
+
+  const start = new Date();
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + (grant.validityMonths || 1));
+
+  grant.status = "redeemed";
+  grant.redeemedAt = start.toISOString();
+  grant.periodStart = start.toISOString();
+  grant.periodEnd = end.toISOString();
+  lsSet(ADMIN_GRANTS_KEY, grants);
+
+  return {
+    ok: true,
+    code: grant.code,
+    plan_id: grant.planId,
+    validity_months: grant.validityMonths,
+    period_start: grant.periodStart,
+    period_end: grant.periodEnd,
+  };
+}
+
 // ── Revenue metrics ───────────────────────────────────────────────────────────
 // Reads pricing overrides directly from localStorage to avoid circular imports.
 function getEffectivePlanPrices() {

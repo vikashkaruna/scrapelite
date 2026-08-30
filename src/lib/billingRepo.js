@@ -120,40 +120,87 @@ export async function fetchEntitlement() {
   }
 }
 
+import { getAdminGrantForUser, redeemLocalAdminGrant } from "./adminService.js";
+
 /**
  * Read the newest admin-issued grant for the signed-in user. The endpoint is
  * user-scoped server-side; the browser never queries the assignment table.
  */
 export async function fetchAdminGrantCoupon() {
-  if (!supabase) return null;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return null;
-    const res = await fetch("/api/redeem-admin-coupon", {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => ({}));
-    return data.grant ?? null;
-  } catch {
-    return null;
+  let userId = null;
+  let email = null;
+  if (supabase) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id || null;
+      email = session?.user?.email || null;
+      if (session?.access_token) {
+        const res = await fetch("/api/redeem-admin-coupon", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data?.grant) return data.grant;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
+  const local = getAdminGrantForUser(userId, email);
+  if (local) {
+    return {
+      id: local.id,
+      code: local.code,
+      planId: local.planId,
+      validityMonths: local.validityMonths,
+      claimExpiresAt: local.claimExpiresAt,
+      status: local.status,
+      assignedAt: local.assignedAt,
+      redeemedAt: local.redeemedAt,
+      periodStart: local.periodStart,
+      periodEnd: local.periodEnd,
+    };
+  }
+  return null;
 }
 
 /** Redeem a grant coupon for the currently signed-in user. */
 export async function redeemAdminGrantCoupon(code) {
-  if (!supabase) throw new Error("Sign in to redeem a plan grant.");
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Sign in to redeem a plan grant.");
-  const res = await fetch("/api/redeem-admin-coupon", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ code }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Could not redeem this plan grant.");
-  return data;
+  let session = null;
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (session?.access_token) {
+    try {
+      const res = await fetch("/api/redeem-admin-coupon", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) return data;
+      if (res.status !== 503 && res.status !== 404) {
+        throw new Error(data.error || "Could not redeem this plan grant.");
+      }
+    } catch (err) {
+      if (err.message && !err.message.includes("503") && !err.message.includes("404") && !err.message.includes("Failed to fetch")) {
+        throw err;
+      }
+    }
+  }
+
+  // Local / testing fallback
+  const localRes = redeemLocalAdminGrant(session?.user?.id || session?.user?.email, code);
+  if (localRes.ok) return localRes;
+  throw new Error(localRes.error || "Could not redeem this plan grant.");
 }

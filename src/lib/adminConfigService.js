@@ -125,24 +125,64 @@ export async function extendUserBonus(userId, bonus) {
   return data; // { ok, userId, newBonus }
 }
 
+import { saveAdminGrant } from "./adminService.js";
+
 /** Issue a user-specific, one-time, non-recurring complimentary plan grant. */
-export async function assignAdminGrantCoupon(userId, { couponCode, planId, validityMonths, claimExpiresAt, reason }) {
-  const res = await fetch(USERS_ENDPOINT, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({
-      action: "assign_grant_coupon",
+export async function assignAdminGrantCoupon(userId, { couponCode, planId, validityMonths, claimExpiresAt, reason, userEmail }) {
+  try {
+    const res = await fetch(USERS_ENDPOINT, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+      body: JSON.stringify({
+        action: "assign_grant_coupon",
+        userId,
+        couponCode,
+        planId,
+        validityMonths,
+        claimExpiresAt: claimExpiresAt || null,
+        reason,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok) {
+      saveAdminGrant({
+        ...(data.adminGrantCoupon || {}),
+        userId,
+        userEmail,
+        code: couponCode,
+        planId,
+        validityMonths,
+        claimExpiresAt,
+        reason,
+      });
+      return data;
+    }
+    if (!res.ok && res.status === 503) {
+      const localGrant = saveAdminGrant({
+        userId,
+        userEmail,
+        code: couponCode,
+        planId,
+        validityMonths,
+        claimExpiresAt,
+        reason,
+      });
+      return { ok: true, userId, adminGrantCoupon: localGrant, localOnly: true };
+    }
+    throw new Error(data.error || `Issue grant failed (${res.status})`);
+  } catch (err) {
+    if (err.message && !err.message.includes("failed") && !err.message.includes("503")) throw err;
+    const localGrant = saveAdminGrant({
       userId,
-      couponCode,
+      userEmail,
+      code: couponCode,
       planId,
       validityMonths,
-      claimExpiresAt: claimExpiresAt || null,
+      claimExpiresAt,
       reason,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Issue grant failed (${res.status})`);
-  return data;
+    });
+    return { ok: true, userId, adminGrantCoupon: localGrant, localOnly: true };
+  }
 }
 
 /** Send a Supabase auth invite email. Returns { ok, userId, email } or throws. */
