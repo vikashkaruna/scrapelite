@@ -2,7 +2,7 @@
 
 > **Audience:** Anyone (you, a future co-founder, a contractor) who needs to stand up, configure, test, and operate the v2 workflow pipeline from scratch.
 > **Read time:** 25 min for the full guide; 2 hours to do everything end-to-end.
-> **Pre-requisites:** DatIQ V1.0 already deployed and working at `https://datiq.app` (per the 2026-07-26 handoff). Supabase project + service-role key. A self-hosted n8n instance (you already have one at `https://n8n-k8q6.srv1738397.hstgr.cloud`).
+> **Pre-requisites:** DatIQ V1.0 already deployed and working at `https://datiq.app` (per the 2026-07-26 handoff). Supabase project + service-role key. A self-hosted n8n instance (you already have one at `https://n8n-dev-692109205619.asia-south1.run.app`).
 > **Companion docs:** `WORKFLOW-IMPLEMENTATION-PLAN.md` (the why), `N8N-WORKFLOWS.md` (workflow inventory), `N8N-OPERATIONS.md` (the runbook), `MCP-TOOLS.md` (MCP tool reference), `SESSION-HANDOFF-2026-07-27-V2-WORKFLOWS.md` (session close).
 
 ---
@@ -29,7 +29,7 @@ Check each item. If any is missing, stop and address it first.
 | 1 | DatIQ V1.0 deployed at `https://datiq.app` and serving real traffic | `curl -I https://datiq.app` returns 200 |
 | 2 | Netlify CLI auth'd for the `datiqapp` project | `npx netlify status` shows the project name |
 | 3 | Supabase project + `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in Netlify env | Netlify dashboard → Environment → these two are set in production |
-| 4 | n8n instance running and reachable at `https://n8n-k8q6.srv1738397.hstgr.cloud` | Browser → login works |
+| 4 | n8n instance running and reachable at `https://n8n-dev-692109205619.asia-south1.run.app` | Browser → login works |
 | 5 | Resend account with `RESEND_API_KEY` | Netlify env has it; domain `datiq.app` is verified in Resend |
 | 6 | Slack workspace with an incoming webhook for `#monitoring` (and `#datiq-support`, `#datiq-alerts` if you want them) | Slack → Apps → Incoming Webhooks → URLs are saved in 1Password |
 | 7 | `RESEND_API_KEY` set in Netlify env | Netlify dashboard → Environment |
@@ -115,7 +115,7 @@ Netlify dashboard → Site → Settings → Environment variables → add the fo
 
 | Variable | Production | Staging | Deploy preview |
 |---|---|---|---|
-| `N8N_BASE_URL` | `https://n8n-k8q6.srv1738397.hstgr.cloud` | same | same |
+| `N8N_BASE_URL` | `https://n8n-dev-692109205619.asia-south1.run.app` | same | same |
 | `N8N_WEBHOOK_SECRET` | (value from 3.1) | same | empty (skip) |
 | `WORKFLOW_ORCHESTRATOR_TOKEN` | (separate value from 3.1) | separate | empty (skip) |
 
@@ -145,7 +145,7 @@ If you get `401 unauthorized`, the token is wrong. If you get `503 supabase not 
 SSH to the Hostinger VPS:
 
 ```bash
-ssh user@n8n-k8q6.srv1738397.hstgr.cloud
+ssh user@your-n8n-host
 sudo -i
 ls -la /opt/datiq-n8n/  # or wherever the existing instance lives
 ```
@@ -158,7 +158,7 @@ Add or update these variables. See `n8n/.env.example` for the full template.
 
 ```bash
 # Required
-WEBHOOK_URL=https://n8n-k8q6.srv1738397.hstgr.cloud
+WEBHOOK_URL=https://n8n-dev-692109205619.asia-south1.run.app
 GENERIC_TIMEZONE=Asia/Kolkata
 N8N_ENCRYPTION_KEY=<from step 3.1>
 DATIQ_N8N_API_KEY=<same value as N8N_WEBHOOK_SECRET in Netlify>
@@ -194,7 +194,7 @@ sudo journalctl -u n8n -f
 ### 4.4 Verify
 
 ```bash
-# In a browser, open https://n8n-k8q6.srv1738397.hstgr.cloud/ and log in.
+# In a browser, open https://n8n-dev-692109205619.asia-south1.run.app/ and log in.
 # Then in n8n, go to Settings → API → Create API Key (name: "DatIQ MCP").
 # Copy the key. It becomes DATIQ_N8N_API_KEY (if not already set) and N8N_WEBHOOK_SECRET in Netlify.
 ```
@@ -402,7 +402,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sse"],
       "env": {
-        "MCP_SERVER_URL": "https://n8n-k8q6.srv1738397.hstgr.cloud/mcp",
+        "MCP_SERVER_URL": "https://n8n-dev-692109205619.asia-south1.run.app/mcp",
         "MCP_API_KEY": "<DATIQ_N8N_API_KEY>"
       }
     }
@@ -426,7 +426,7 @@ Add a `.mcp.json` at the repo root:
   "mcpServers": {
     "datiq": {
       "type": "sse",
-      "url": "https://n8n-k8q6.srv1738397.hstgr.cloud/mcp",
+      "url": "https://n8n-dev-692109205619.asia-south1.run.app/mcp",
       "headers": { "Authorization": "Bearer <DATIQ_N8N_API_KEY>" }
     }
   }
@@ -564,7 +564,7 @@ After verification: Netlify UI → Deploys → find the post-deploy job → "Re-
 
 - Check the n8n backup log:
   ```bash
-  ssh user@n8n-k8q6.srv1738397.hstgr.cloud
+  ssh user@your-n8n-host
   tail -20 /var/log/datiq-n8n-backup.log
   ```
 - Verify the off-host copy (Tigris / S3) ran:
@@ -593,7 +593,7 @@ Out of scope for V2; documented for V2.1:
 
 - Slack `#datiq-alerts` channel — auto-create a cron that posts a daily digest at 09:00 UTC (use the `datiq_daily_digest` workflow as the template).
 - Email alert when `state='failed' AND created_at > now() - 1 hour` > 0.
-- Uptime monitoring on `https://n8n-k8q6.srv1738397.hstgr.cloud/`. Use Better Uptime, UptimeRobot, or Cloudflare Analytics.
+- Uptime monitoring on `https://n8n-dev-692109205619.asia-south1.run.app/`. Use Better Uptime, UptimeRobot, or Cloudflare Analytics.
 - A `failed_attempts` alert: if any event has `attempts > 3` and `state='pending'`, post to Slack.
 
 ---
@@ -606,7 +606,7 @@ Out of scope for V2; documented for V2.1:
 
 **Causes & fixes:**
 
-1. **n8n is down.** `curl -I https://n8n-k8q6.srv1738397.hstgr.cloud/`. If 5xx, SSH in and `docker compose -f /opt/datiq-n8n/docker-compose.yml up -d`. Watch logs.
+1. **n8n is down.** `curl -I https://n8n-dev-692109205619.asia-south1.run.app/`. If 5xx, SSH in and `docker compose -f /opt/datiq-n8n/docker-compose.yml up -d`. Watch logs.
 2. **The orchestrator is down.** Netlify dashboard → Functions → `workflow-orchestrator` → Logs. Look for 5xx in the most recent run.
 3. **A specific workflow is broken.** `/admin/automation` → "Events by kind" chips → find the dominant kind → open that workflow in n8n → check the most recent execution's error.
 4. **All events failing the same way.** Click one failed event → see the runs → identify the error pattern. Common:
@@ -621,7 +621,7 @@ Out of scope for V2; documented for V2.1:
 
 **Cause:** `N8N_BASE_URL` missing in Netlify env.
 
-**Fix:** Netlify dashboard → Site → Settings → Environment → add `N8N_BASE_URL=https://n8n-k8q6.srv1738397.hstgr.cloud` → trigger a redeploy OR call `/api/workflow-orchestrator/run-now` to force a fresh env read.
+**Fix:** Netlify dashboard → Site → Settings → Environment → add `N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app` → trigger a redeploy OR call `/api/workflow-orchestrator/run-now` to force a fresh env read.
 
 Then `/admin/automation` → click "Retry" on the failed events.
 
@@ -639,7 +639,7 @@ Then `/admin/automation` → click "Retry" on the failed events.
 
 **Causes:**
 
-1. Wrong URL → should be `https://n8n-k8q6.srv1738397.hstgr.cloud/mcp` (no trailing slash, no path)
+1. Wrong URL → should be `https://n8n-dev-692109205619.asia-south1.run.app/mcp` (no trailing slash, no path)
 2. Wrong API key → `DATIQ_N8N_API_KEY` is the API key from n8n Settings → API
 3. Workflows not imported → re-import (section 6)
 4. MCP server trigger not enabled in n8n → n8n Settings → MCP Server

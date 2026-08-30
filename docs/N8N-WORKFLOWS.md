@@ -36,14 +36,18 @@ The DatIQ v2 workflow pipeline uses **17 n8n workflows** total: **11 MCP tool wo
 
 ### First-time setup
 
-1. Log in to your n8n instance at `https://n8n-k8q6.srv1738397.hstgr.cloud/`
-2. Settings → API → Create API Key (save this; it's `DATIQ_N8N_API_KEY`)
-3. **No JSON edits needed** — the workflows are environment-agnostic. They read the host from `$json._ctx.*` (per-event, set by the orchestrator) or from `$env.N8N_BASE_URL` / `$env.SITE_URL` (per-instance, set in n8n's `.env`).
+1. Log in to your n8n instance at `https://n8n-dev-692109205619.asia-south1.run.app/`
+2. Go to **Settings → API** and create an API Key (name: "DatIQ MCP")
+3. Copy the key and set it in Netlify:
+   ```bash
+   N8N_WEBHOOK_SECRET=<your-api-key>
+   N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app
+   ```
 4. Configure n8n's `.env` (one-time, on the n8n host):
 
    ```bash
    # This n8n's own URL — the workflows POST back to it via $env.N8N_BASE_URL
-   N8N_BASE_URL=https://n8n-k8q6.srv1738397.hstgr.cloud
+   N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app
    # Schedule-triggered workflows (no event body) need this for the ping URL
    SITE_URL=https://datiq.app
    ```

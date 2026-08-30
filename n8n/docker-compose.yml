@@ -2,7 +2,7 @@
 #
 # Self-hosted n8n for the DatIQ workflow pipeline. Runs on a Hostinger VPS
 # (or any Docker-capable host). The user already has an instance at
-# https://n8n-k8q6.srv1738397.hstgr.cloud/ — this compose is the
+# https://n8n-dev-692109205619.asia-south1.run.app/ — this compose is the
 # reference setup for new instances or for re-provisioning.
 #
 # v2 plan: docs/WORKFLOW-IMPLEMENTATION-PLAN.md §4

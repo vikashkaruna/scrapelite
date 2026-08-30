@@ -209,11 +209,13 @@ export function buildCtx(env = process.env, overrides = {}) {
   const branch = env.BRANCH || null;
   const siteUrl = env.URL || env.SITE_URL || env.DEPLOY_PRIME_URL || null;
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL || null;
+  const callbackUrl = siteUrl ? `${String(siteUrl).replace(/\/+$/, "")}/api/workflow-callback` : null;
   const ctx = {
     env: context,
     branch,
     site_url: siteUrl,
     supabase_url: supabaseUrl,
+    callback_url: callbackUrl,
     commit_ref: env.COMMIT_REF || null,
   };
   // Allow callers to override (e.g. for tests) without losing auto-detected fields.

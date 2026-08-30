@@ -89,7 +89,7 @@ The 3 audit warnings are pre-existing on main and not workflow-related:
 | C2 | **`.env.example` does not document the new env vars** (`N8N_BASE_URL`, `N8N_WEBHOOK_SECRET`, `WORKFLOW_ORCHESTRATOR_TOKEN`). The code reads them (see `netlify/functions/workflow-orchestrator.js:28-31`) but the file is the canonical reference for new operators. | Append to `.env.example` after the webhook section | 5 min |
 | C3 | **`scripts/env/production.env` and `scripts/env/staging.env` have no N8N/MCP env entries.** Real secret values live in Netlify, but the local scripts/env files are the "what env vars exist per context" reference. | Add placeholder rows in both files; fill the production value via Netlify's CLI when ready | 5 min |
 | C4 | **`scripts/netlify-toml.test.mjs` has no guard test for `[functions."workflow-orchestrator"] schedule = "*/5 * * * *"`.** The pattern in the comment says "if you remove a block here, that function silently stops being a cron. There is no build error and no runtime error — it just never fires again." A guard test would catch removal in PR review. | Append a test that asserts the schedule block exists | 5 min |
-| C5 | **n8n instance env (`n8n/.env`) is not committed (gitignored — correct), but the documented `N8N_BASE_URL`/`SITE_URL` in `n8n/.env.example` are placeholders.** The reference n8n at `https://n8n-k8q6.srv1738397.hstgr.cloud` already exists per the docs, but the env file on the host needs real values for `N8N_ENCRYPTION_KEY` (generated), `DATIQ_N8N_API_KEY` (generated, must match `N8N_WEBHOOK_SECRET` in Netlify). | Operator action on the Hostinger VPS — generate secrets, fill `n8n/.env` | 15 min |
+| C5 | **n8n instance env (`n8n/.env`) is not committed (gitignored — correct), but the documented `N8N_BASE_URL`/`SITE_URL` in `n8n/.env.example` are placeholders.** The reference n8n at `https://n8n-dev-692109205619.asia-south1.run.app` already exists per the docs, but the env file on the host needs real values for `N8N_ENCRYPTION_KEY` (generated), `DATIQ_N8N_API_KEY` (generated, must match `N8N_WEBHOOK_SECRET` in Netlify). | Operator action on the Hostinger VPS — generate secrets, fill `n8n/.env` | 15 min |
 
 ### 2.2 E2E test gaps — 3 items
 
@@ -105,7 +105,7 @@ These are not code changes; they're the operator dance to make the function runn
 
 | # | Item | Where |
 |---|---|---|
-| N1 | Set `N8N_BASE_URL=https://n8n-k8q6.srv1738397.hstgr.cloud` in **production** and **staging** Netlify contexts. Deploy-preview can stay empty. | Netlify dashboard → Site → Settings → Environment |
+| N1 | Set `N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app` in **production** and **staging** Netlify contexts. Deploy-preview can stay empty. | Netlify dashboard → Site → Settings → Environment |
 | N2 | Set `N8N_WEBHOOK_SECRET` in **production** and **staging** to the SAME value as `DATIQ_N8N_API_KEY` in `n8n/.env`. Mismatch = 401 on every dispatch. | Netlify dashboard |
 | N3 | Set `WORKFLOW_ORCHESTRATOR_TOKEN` (separate, `openssl rand -hex 32`) in **production** and **staging**. Empty in deploy-preview. | Netlify dashboard |
 | N4 | Verify the 4 scheduled functions are registered: `netlify functions:list` should show `workflow-orchestrator` with a schedule AFTER C1 is fixed. Today (pre-C1) only 5 cron functions are registered. | `netlify functions:list` or Netlify dashboard |
@@ -114,7 +114,7 @@ These are not code changes; they're the operator dance to make the function runn
 
 | # | Item | Where |
 |---|---|---|
-| K1 | Confirm n8n at `https://n8n-k8q6.srv1738397.hstgr.cloud` is running, healthy, and reachable. | `curl -I https://n8n-k8q6.srv1738397.hstgr.cloud/` |
+| K1 | Confirm n8n at `https://n8n-dev-692109205619.asia-south1.run.app` is running, healthy, and reachable. | `curl -I https://n8n-dev-692109205619.asia-south1.run.app/` |
 | K2 | Import the 17 workflow JSONs (if not already imported). | `npx n8n import:workflow --input=n8n/workflows/ --separate` |
 | K3 | Create the 4 n8n credentials: `datiq-resend`, `datiq-slack-monitoring`, `datiq-supabase-service`, `datiq-orchestrator`. Bind to the relevant nodes in each workflow. | n8n UI → Settings → Credentials |
 | K4 | Activate the 17 workflows. The smoke test (`00_datiq_smoke_test`) should be the first one activated — it pings the orchestrator every 5 min and confirms the whole path. | n8n UI → Workflows → Active toggle |

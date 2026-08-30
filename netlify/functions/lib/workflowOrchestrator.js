@@ -18,7 +18,7 @@ import { sign, buildHeader } from "./n8nSignature.js";
 import { backoffMs, STATE } from "./workflowEnqueue.js";
 
 // Maps each event kind to the n8n webhook path on the self-hosted n8n.
-// The user has an existing n8n at https://n8n-k8q6.srv1738397.hstgr.cloud/
+// The n8n instance is deployed at https://n8n-dev-692109205619.asia-south1.run.app/
 // (Hostinger VPS). The path is whatever they set in the workflow's Webhook
 // trigger node.
 export const KIND_TO_N8N_WEBHOOK = Object.freeze({

@@ -1,86 +1,24 @@
-# DatIQ Session Archive Index
+# DatIQ — Sessions Directory
 
-> This directory contains all historical and active development session handoffs and milestone records.
-> Managed by the `session-handoff-management` skill.
-> **Total Sessions Archived:** 70
+This directory stores session records, engineering milestones, architectural decisions, and handoffs.
 
 ---
 
-## Session Archive (Reverse Chronological)
+## 1. Active Session Handoff
 
-| Date | File | Summary / Topic |
-|---|---|---|
-| 2026-08-30 | [`SESSION-HANDOFF-2026-08-30-SESSION-REORGANIZATION-AND-SKILL-BUILD.md`](./SESSION-HANDOFF-2026-08-30-SESSION-REORGANIZATION-AND-SKILL-BUILD.md) | 2026-08-30 — Session Reorganization & Handoff Management Skill |
-| 2026-08-30 | [`SESSION-HANDOFF-2026-08-30-MERGE-STAGING-INTO-WORKFLOW-BRANCH.md`](./SESSION-HANDOFF-2026-08-30-MERGE-STAGING-INTO-WORKFLOW-BRANCH.md) | 2026-08-30 — Merge staging into workflow-implementation-and-optimization |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-STAGING-GATE-TOUR-STORAGE-FIXES.md`](./SESSION-HANDOFF-2026-08-29-STAGING-GATE-TOUR-STORAGE-FIXES.md) | Staging Gate E2E Tour & Vitest Storage Fixes |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-INTEGRATIONS-PRICING-EXPORT-EMAIL.md`](./SESSION-HANDOFF-2026-08-29-INTEGRATIONS-PRICING-EXPORT-EMAIL.md) | 2026-08-29 — Integrations/Browser-extension on pricing, real Push+export gating, Resend export-email rebuild |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-HOME-ENRICHMENT-EXTRACTION-FIXES.md`](./SESSION-HANDOFF-2026-08-29-HOME-ENRICHMENT-EXTRACTION-FIXES.md) | Home Screen Extraction, Custom Extraction & Quick Enrichment End-to-End Fix |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-EXPORT-BRANDING-AND-FIXES.md`](./SESSION-HANDOFF-2026-08-29-EXPORT-BRANDING-AND-FIXES.md) | 2026-08-29: export branding, four bug fixes, design-system contrast, Workspace nav move |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-ENRICHMENT-AI-FIXES.md`](./SESSION-HANDOFF-2026-08-29-ENRICHMENT-AI-FIXES.md) | DatIQ — Session Handoff (2026-08-29) |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-BRANCH-CLEANUP-AND-WORKSPACE-PAUSE.md`](./SESSION-HANDOFF-2026-08-29-BRANCH-CLEANUP-AND-WORKSPACE-PAUSE.md) | 2026-08-29 — branch cleanup + workspace member-pause enforcement + export-email Brand Kit + persona sync |
-| 2026-08-29 | [`SESSION-HANDOFF-2026-08-29-BATCH-ENRICHMENT-RELATED-PAGES-TOUR-MOCK.md`](./SESSION-HANDOFF-2026-08-29-BATCH-ENRICHMENT-RELATED-PAGES-TOUR-MOCK.md) | 2026-08-29 — Batch enrichment population, related-page scanning, tour e2e mock fix |
-| 2026-08-28 | [`SESSION-HANDOFF-2026-08-28-QUICK-ENRICHMENT-AUTOSAVE-RACE.md`](./SESSION-HANDOFF-2026-08-28-QUICK-ENRICHMENT-AUTOSAVE-RACE.md) | 2026-08-28: the Quick enrichment tab that deleted itself |
-| 2026-08-28 | [`SESSION-HANDOFF-2026-08-28-EIGHT-BUGS-AND-RESEARCH-PACK.md`](./SESSION-HANDOFF-2026-08-28-EIGHT-BUGS-AND-RESEARCH-PACK.md) | 2026-08-28 — eight items closed, merged to `staging` |
-| 2026-08-28 | [`SESSION-HANDOFF-2026-08-28-DEPLOY-TOOLCHAIN-PIN.md`](./SESSION-HANDOFF-2026-08-28-DEPLOY-TOOLCHAIN-PIN.md) | 2026-08-28 |
-| 2026-08-28 | [`SESSION-HANDOFF-2026-08-28-ACCOUNT-BLOCK-GATING.md`](./SESSION-HANDOFF-2026-08-28-ACCOUNT-BLOCK-GATING.md) | 2026-08-28 — Account-deletion billing error, and early account-block gating |
-| 2026-08-27 | [`SESSION-HANDOFF-2026-08-27-UIUX-DISCOVERABILITY.md`](./SESSION-HANDOFF-2026-08-27-UIUX-DISCOVERABILITY.md) | UI/UX and discoverability improvement (2026-08-27) |
-| 2026-08-27 | [`SESSION-HANDOFF-2026-08-27-PRERENDER-ASSET-HASH.md`](./SESSION-HANDOFF-2026-08-27-PRERENDER-ASSET-HASH.md) | 2026-08-27 — the prerendered pages pointed at a bundle that was never deployed |
-| 2026-08-26 | [`SESSION-HANDOFF-2026-08-26-TEAM-WORKSPACES.md`](./SESSION-HANDOFF-2026-08-26-TEAM-WORKSPACES.md) | 2026-08-26 (later) — Team Workspaces + OAuth redirect investigation |
-| 2026-08-26 | [`SESSION-HANDOFF-2026-08-26-DISCOVERABILITY-504-PDF-HISTORY.md`](./SESSION-HANDOFF-2026-08-26-DISCOVERABILITY-504-PDF-HISTORY.md) | 2026-08-26 — Discoverability: the 504, PDF export, audit history, pricing tiers |
-| 2026-08-23 | [`SESSION-HANDOFF-2026-08-23-ROBOTS-COMPLIANCE-UX.md`](./SESSION-HANDOFF-2026-08-23-ROBOTS-COMPLIANCE-UX.md) | 2026-08-23 |
-| 2026-08-23 | [`SESSION-HANDOFF-2026-08-23-NODE24-PHASE5.md`](./SESSION-HANDOFF-2026-08-23-NODE24-PHASE5.md) | 2026-08-23 — Node 24 Phase 5 (ecosystem upgrades) |
-| 2026-08-23 | [`SESSION-HANDOFF-2026-08-23-COMPLIANCE-REFERRAL-SHARE.md`](./SESSION-HANDOFF-2026-08-23-COMPLIANCE-REFERRAL-SHARE.md) | 2026-08-23 |
-| 2026-08-21 | [`SESSION-HANDOFF-2026-08-21-NODE24-ANALYSIS.md`](./SESSION-HANDOFF-2026-08-21-NODE24-ANALYSIS.md) | 2026-08-21 — Node 24 analysis and branch push |
-| 2026-08-20 | [`SESSION-HANDOFF-2026-08-20-BRANCH-SYNC-AND-INTEGRATION-PLAN.md`](./SESSION-HANDOFF-2026-08-20-BRANCH-SYNC-AND-INTEGRATION-PLAN.md) | Plan — Branch sync + Integration-with-outside-ecosystem implementation roadmap |
-| 2026-08-18 | [`SESSION-HANDOFF-2026-08-18-PARALLEL-RUN-CONSOLIDATION.md`](./SESSION-HANDOFF-2026-08-18-PARALLEL-RUN-CONSOLIDATION.md) | 2026-08-18 — parallel-run consolidation + branch cleanup |
-| 2026-08-18 | [`SESSION-HANDOFF-2026-08-18-HOME-BATCH-MERGE.md`](./SESSION-HANDOFF-2026-08-18-HOME-BATCH-MERGE.md) | 2026-08-18 — Home/Batch consolidation, guest-gate leak, auth gating |
-| 2026-08-18 | [`SESSION-HANDOFF-2026-08-18-DOCS-SCREENSHOT-REFRESH.md`](./SESSION-HANDOFF-2026-08-18-DOCS-SCREENSHOT-REFRESH.md) | 2026-08-18 — documentation + screenshot refresh (Home/Batch consolidation) |
-| 2026-08-16 | [`SESSION-HANDOFF-2026-08-16-GALLERY-CURATION-AND-UX-FIXES.md`](./SESSION-HANDOFF-2026-08-16-GALLERY-CURATION-AND-UX-FIXES.md) | 2026-08-16 — Gallery curation tooling + consent banner / dark-mode / keyboard-docs fixes |
-| 2026-08-16 | [`SESSION-HANDOFF-2026-08-16-FOOTER-CLICK-FIX.md`](./SESSION-HANDOFF-2026-08-16-FOOTER-CLICK-FIX.md) | 2026-08-16 — footer click-blocking fix (Staging Gate unblocked) |
-| 2026-08-16 | [`SESSION-HANDOFF-2026-08-16-ANALYTICS-CONSENT-SEO.md`](./SESSION-HANDOFF-2026-08-16-ANALYTICS-CONSENT-SEO.md) | 2026-08-16 — GA4 consent + one-owner-per-page SEO fix |
-| 2026-08-13 | [`SESSION-HANDOFF-2026-08-13-SUPABASE-IDENTITY.md`](./SESSION-HANDOFF-2026-08-13-SUPABASE-IDENTITY.md) | 2026-08-13 — Supabase identity, integrations & enrichment |
-| 2026-08-13 | [`SESSION-HANDOFF-2026-08-13-INTEGRATION-ENV-FIXES.md`](./SESSION-HANDOFF-2026-08-13-INTEGRATION-ENV-FIXES.md) | 2026-08-13 — Integration/Environment Fixes Branch |
-| 2026-08-13 | [`SESSION-HANDOFF-2026-08-13-DISCOUNTS-AND-COUPONS.md`](./SESSION-HANDOFF-2026-08-13-DISCOUNTS-AND-COUPONS.md) | Discounts, coupons & bonus-extraction display (2026-08-13, latest) |
-| 2026-08-13 | [`SESSION-HANDOFF-2026-08-13-DASHBOARD-AND-RESEND-HEALTH-FIXES.md`](./SESSION-HANDOFF-2026-08-13-DASHBOARD-AND-RESEND-HEALTH-FIXES.md) | 2026-08-13 — Dashboard Disappearing-Extractions + Resend Health False-Positive |
-| 2026-08-12 | [`SESSION-HANDOFF-2026-08-12-CI-LOCAL-FIRST.md`](./SESSION-HANDOFF-2026-08-12-CI-LOCAL-FIRST.md) | 2026-08-12 — CI Local-First |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-WORKFLOW-BRANCH-GAPS.md`](./SESSION-HANDOFF-2026-08-11-WORKFLOW-BRANCH-GAPS.md) | Gaps & TODOs — `workflow-implementation-and-optimization` |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-SYNC-MAIN-INTO-SUB-BRANCHES.md`](./SESSION-HANDOFF-2026-08-11-SYNC-MAIN-INTO-SUB-BRANCHES.md) | 2026-08-11 ~10:30 IST — Sync origin/main into sub-branches + green E2E |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-STAGING-INTEGRATION-MERGE.md`](./SESSION-HANDOFF-2026-08-11-STAGING-INTEGRATION-MERGE.md) | 2026-08-11 ~05:00 IST — Integration-with-outside-ecosystem merged to staging |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-STAGING-DOCS-AND-OPS.md`](./SESSION-HANDOFF-2026-08-11-STAGING-DOCS-AND-OPS.md) | 2026-08-11 ~09:10 IST — Stage-2 docs + ops helpers |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-3.md`](./SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-3.md) | 2026-08-11 ~02:05 IST — Account page rich status + ExportIntegrations one-click |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-2.md`](./SESSION-HANDOFF-2026-08-11-LATE-NIGHT-PART-2.md) | 2026-08-11 01:42 IST — Integrations overhaul + Workspace tabs |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md`](./SESSION-HANDOFF-2026-08-11-LATE-NIGHT-INTEGRATION-FIXES.md) | 2026-08-11 00:30 IST — Integration fixes + Generate Content in-page |
-| 2026-08-11 | [`SESSION-HANDOFF-2026-08-11-INTEGRATION-BRANCH-GAPS.md`](./SESSION-HANDOFF-2026-08-11-INTEGRATION-BRANCH-GAPS.md) | Gaps & TODOs — `Integration-with-outside-ecosystem` |
-| 2026-08-10 | [`SESSION-HANDOFF-2026-08-10-INTEGRATION-WORK.md`](./SESSION-HANDOFF-2026-08-10-INTEGRATION-WORK.md) | 2026-08-10 — Integration work + auth routing |
-| 2026-08-09 | [`SESSION-HANDOFF-2026-08-09-FULL-DAY.md`](./SESSION-HANDOFF-2026-08-09-FULL-DAY.md) | DatIQ — Session end handoff (2026-08-09, full day) |
-| 2026-08-09 | [`SESSION-HANDOFF-2026-08-09-DOC-SWEEP.md`](./SESSION-HANDOFF-2026-08-09-DOC-SWEEP.md) | DatIQ — Documentation sweep (post AEO/GEO P1 ship) |
-| 2026-08-09 | [`SESSION-HANDOFF-2026-08-09-AEO-GEO-P1-SWEEP.md`](./SESSION-HANDOFF-2026-08-09-AEO-GEO-P1-SWEEP.md) | DatIQ — AEO/GEO/SEO P1 sweep (post P0 ship) |
-| 2026-08-08 | [`SESSION-HANDOFF-2026-08-08-STAGING-REBUILD-RETEST.md`](./SESSION-HANDOFF-2026-08-08-STAGING-REBUILD-RETEST.md) | DatIQ — staging rebuild + full retest, Go plan help-docs fix, design-sync re-sync |
-| 2026-08-08 | [`SESSION-HANDOFF-2026-08-08-AEO-GEO-SEO-PARTIAL-SHIP.md`](./SESSION-HANDOFF-2026-08-08-AEO-GEO-SEO-PARTIAL-SHIP.md) | DatIQ — AEO/GEO/SEO hardening: partial P0.1 ship + plan for the rest |
-| 2026-08-08 | [`SESSION-HANDOFF-2026-08-08-AEO-GEO-SEO-FULL-SHIP.md`](./SESSION-HANDOFF-2026-08-08-AEO-GEO-SEO-FULL-SHIP.md) | DatIQ — AEO/GEO/SEO hardening: full P0 ship (all 5 items) |
-| 2026-07-29 | [`SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md`](./SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md) | DatIQ — OAuth callback URL cleanup + Supabase project-mismatch fix |
-| 2026-07-28 | [`SESSION-HANDOFF-2026-07-28-OPS-MONITORING.md`](./SESSION-HANDOFF-2026-07-28-OPS-MONITORING.md) | 2026-07-28 — Ops monitoring in the admin module |
-| 2026-07-27 | [`SESSION-HANDOFF-2026-07-27-V2-WORKFLOWS.md`](./SESSION-HANDOFF-2026-07-27-V2-WORKFLOWS.md) | 2026-07-27 · v2 Workflow pipeline (n8n + MCP server) |
-| 2026-07-27 | [`SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md`](./SESSION-HANDOFF-2026-07-27-MIGRATIONS-EXECUTED-AND-STAGING.md) | 2026-07-27 (late) — migrations executed, release merged to `staging` |
-| 2026-07-27 | [`SESSION-HANDOFF-2026-07-27-INVOICING-AND-LIFECYCLE.md`](./SESSION-HANDOFF-2026-07-27-INVOICING-AND-LIFECYCLE.md) | 2026-07-27 — Invoicing & subscription lifecycle |
-| 2026-07-26 | [`SESSION-HANDOFF-2026-07-26-CI-GATE-UNBLOCK.md`](./SESSION-HANDOFF-2026-07-26-CI-GATE-UNBLOCK.md) | 2026-07-26 · CI gate unblock (staging → production path) |
-| 2026-07-25 | [`SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md`](./SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md) | SESSION-HANDOFF-2026-07-25-CONTACT-RESEND.md |
-| 2026-07-25 | [`SESSION-HANDOFF-2026-07-25-BRANCH-CLEANUP-AND-GATE.md`](./SESSION-HANDOFF-2026-07-25-BRANCH-CLEANUP-AND-GATE.md) | SESSION-HANDOFF-2026-07-25-BRANCH-CLEANUP-AND-GATE.md |
-| 2026-07-19 | [`SESSION-HANDOFF-2026-07-19.md`](./SESSION-HANDOFF-2026-07-19.md) | SESSION-HANDOFF-2026-07-19.md |
-| 2026-07-19 | [`SESSION-HANDOFF-2026-07-19-HABIT-AND-RELIABILITY.md`](./SESSION-HANDOFF-2026-07-19-HABIT-AND-RELIABILITY.md) | Habit-and-Reliability branch (2026-07-19) |
-| 2026-07-19 | [`SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md`](./SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md) | SESSION-HANDOFF-2026-07-19-BUILD-FIXES.md |
-| 2026-07-18 | [`SESSION-HANDOFF-2026-07-18.md`](./SESSION-HANDOFF-2026-07-18.md) | 2026-07-18 (DatIQ — clean state, ready for v2.0) |
-| 2026-07-18 | [`SESSION-HANDOFF-2026-07-18-R3-RELIABILITY.md`](./SESSION-HANDOFF-2026-07-18-R3-RELIABILITY.md) | 2026-07-18 (R3 Habit & Reliability drop) |
-| 2026-07-18 | [`SESSION-HANDOFF-2026-07-18-COUNCIL-FEATURES.md`](./SESSION-HANDOFF-2026-07-18-COUNCIL-FEATURES.md) | 2026-07-18 (council feature drop) |
-| 2026-07-18 | [`SESSION-HANDOFF-2026-07-18-COUNCIL-BACKLOG.md`](./SESSION-HANDOFF-2026-07-18-COUNCIL-BACKLOG.md) | 2026-07-18 (Council backlog drop) |
-| 2026-07-17 | [`SESSION-HANDOFF-2026-07-17.md`](./SESSION-HANDOFF-2026-07-17.md) | 2026-07-17 (DatIQ v1.0+ Quick Wins) |
-| 2026-07-16 | [`SESSION-HANDOFF-2026-07-16.md`](./SESSION-HANDOFF-2026-07-16.md) | 2026-07-16 (DatIQ v1.0 launch readiness) |
-| 2026-07-18 | [`SESSION-END-2026-07-18.md`](./SESSION-END-2026-07-18.md) | 2026-07-18 (council feature drop, merged + synced) |
-| 2026-07-18 | [`SESSION-END-2026-07-18-V1.0-RC.md`](./SESSION-END-2026-07-18-V1.0-RC.md) | 2026-07-18 — V1.0 Release-Candidate prepared |
-| 2026-07-18 | [`SESSION-END-2026-07-18-V1.0-CUTOVER.md`](./SESSION-END-2026-07-18-V1.0-CUTOVER.md) | 2026-07-18 — v1.0 cutover complete |
-| 2026-07-18 | [`SESSION-END-2026-07-18-HOME-UX.md`](./SESSION-END-2026-07-18-HOME-UX.md) | 2026-07-18 — Home screen UX cleanup (post-v1.0) |
-| 2026-07-18 | [`SESSION-END-2026-07-18-FULL.md`](./SESSION-END-2026-07-18-FULL.md) | 2026-07-18 (full state for the next session) |
+- **Latest Active Handoff:** [`SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md)
+  - Covers: Server Callback API, n8n decoupling, direct fallbacks, GCP Cloud Run URL configuration, and 2-phase n8n rollout.
 
 ---
 
-*Index generated automatically by `node .agents/skills/session-handoff-management/scripts/index-sessions.mjs`*
+## 2. Master Consolidated Session Archive
+
+- **Complete Historical Archive:** [`SESSIONS-HISTORY.md`](./SESSIONS-HISTORY.md)
+  - Contains the full unedited history of all 70 prior engineering sessions and milestone reports from project inception to 2026-08-30.
+
+---
+
+## 3. Session Management Tooling
+
+- Skill: `.agents/skills/session-handoff-management/`
+- Tool: `scripts/consolidate-sessions.mjs` (for periodic archive merging)

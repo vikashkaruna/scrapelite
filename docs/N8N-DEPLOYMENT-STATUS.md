@@ -34,7 +34,7 @@
    can answer. **Check `/admin/health`** (or `netlify env:list` if you have
    CLI access) before assuming either way.
 2. **Whether the 17 workflows are imported into the running n8n instance**
-   (`https://n8n-k8q6.srv1738397.hstgr.cloud/`, per `n8n/ops/DEPLOY.md`).
+   (`https://n8n-dev-692109205619.asia-south1.run.app/`, per `n8n/ops/DEPLOY.md`).
    `npx n8n import:workflow --input=n8n/workflows/` is idempotent — safe to
    re-run even if some are already there.
 3. **Whether the 3 credentials exist in n8n** (`datiq-resend`,
@@ -50,7 +50,7 @@
 
 ```bash
 # 1. Is n8n reachable at all?
-curl -sf https://n8n-k8q6.srv1738397.hstgr.cloud/healthz
+curl -sf https://n8n-dev-692109205619.asia-south1.run.app/healthz
 
 # 2. Smoke test the orchestrator (needs WORKFLOW_ORCHESTRATOR_TOKEN set)
 curl -X POST https://datiq.app/api/workflow-orchestrator/run-now \

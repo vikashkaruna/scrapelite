@@ -3,7 +3,7 @@
 > **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4
 > **Audience:** You (Vikash), the only operator. Documented for reproducibility, not for handing off to a team.
 
-The user already has an n8n instance running at `https://n8n-k8q6.srv1738397.hstgr.cloud/`. This guide covers both **first-time setup** (if you need to re-provision) and **adding the DatIQ workflows** to an existing instance.
+The user already has an n8n instance running at `https://n8n-dev-692109205619.asia-south1.run.app/`. This guide covers both **first-time setup** (if you need to re-provision) and **adding the DatIQ workflows** to an existing instance.
 
 ---
 
@@ -101,7 +101,7 @@ Watch for `n8n ready on ::, port 5678` then `Ctrl-C`.
 
 ### 6. First-time admin user
 
-Open `https://n8n-k8q6.srv1738397.hstgr.cloud/` (or your URL) in a browser.
+Open `https://n8n-dev-692109205619.asia-south1.run.app/` (or your URL) in a browser.
 Create the first owner user. **Use a strong password; this is the only admin account.**
 
 ### 7. Import the DatIQ workflows
@@ -109,7 +109,7 @@ Create the first owner user. **Use a strong password; this is the only admin acc
 From your local repo:
 ```bash
 # In one terminal — start an SSH tunnel so the local CLI can reach the VPS
-ssh -L 5678:127.0.0.1:5678 user@n8n-k8q6.srv1738397.hstgr.cloud
+ssh -L 5678:127.0.0.1:5678 user@your-n8n-host
 
 # In another terminal — install n8n CLI locally if not already
 npm install -g n8n   # the CLI (separate from the Docker image)
@@ -146,7 +146,7 @@ In Netlify → Site → Settings → Environment, add per context:
 
 | Variable | Production | Staging | Deploy preview |
 |---|---|---|---|
-| `N8N_BASE_URL` | `https://n8n-k8q6.srv1738397.hstgr.cloud` | same | same |
+| `N8N_BASE_URL` | `https://n8n-dev-692109205619.asia-south1.run.app` | same | same |
 | `N8N_WEBHOOK_SECRET` | value of `DATIQ_N8N_API_KEY` on the n8n side | same | same |
 | `WORKFLOW_ORCHESTRATOR_TOKEN` | `openssl rand -hex 32` (separate) | separate | empty (skip) |
 

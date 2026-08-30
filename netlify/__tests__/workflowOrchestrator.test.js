@@ -40,7 +40,7 @@ const baseClient = {
 const env = {
   url: "https://x.supabase.co",
   key: "sk",
-  n8nBase: "https://n8n-k8q6.srv1738397.hstgr.cloud",
+  n8nBase: "https://n8n-dev-692109205619.asia-south1.run.app",
   n8nSecret: "shared-secret",
   adminToken: "admin-tok",
 };

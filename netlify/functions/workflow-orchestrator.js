@@ -25,7 +25,7 @@ function getEnv() {
   return {
     url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
     key: process.env.SUPABASE_SERVICE_KEY || "",
-    n8nBase: process.env.N8N_BASE_URL || "", // e.g. https://n8n-k8q6.srv1738397.hstgr.cloud
+    n8nBase: process.env.N8N_BASE_URL || "", // e.g. https://n8n-dev-692109205619.asia-south1.run.app
     n8nSecret: process.env.N8N_WEBHOOK_SECRET || "",
     adminToken:
       process.env.WORKFLOW_ORCHESTRATOR_TOKEN ||

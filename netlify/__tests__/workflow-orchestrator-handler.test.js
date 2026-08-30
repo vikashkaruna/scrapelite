@@ -38,7 +38,7 @@ function setSupabase() {
 }
 
 function setN8n() {
-  process.env.N8N_BASE_URL = "https://n8n-k8q6.srv1738397.hstgr.cloud";
+  process.env.N8N_BASE_URL = "https://n8n-dev-692109205619.asia-south1.run.app";
   process.env.N8N_WEBHOOK_SECRET = "shared-secret";
 }
 

@@ -31,7 +31,7 @@ The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. 
 **Symptom:** `/admin/automation` shows 20+ pending events.
 
 **Possible causes:**
-1. **n8n is down.** Check: `curl -I https://n8n-k8q6.ssrv1738397.hstgr.cloud/`. If 5xx, the orchestrator is dispatching but n8n is failing.
+1. **n8n is down.** Check: `curl -I https://n8n-dev-692109205619.asia-south1.run.app/`. If 5xx, the orchestrator is dispatching but n8n is failing.
 2. **The orchestrator is down.** Check: `curl -X POST https://datiq.app/api/workflow-orchestrator/run-now -H "Authorization: Bearer $WORKFLOW_ORCHESTRATOR_TOKEN"`. If 5xx, Netlify's function is broken.
 3. **A specific kind is broken.** Check the "Events by kind" chips on the admin page. If one kind is dominating, the matching workflow is the issue.
 4. **All events failing.** Look at "Failed (24h)". Click one. Look at the runs. If `response_status: 500` from n8n, the workflow is broken. If `network: ECONNREFUSED`, n8n is unreachable.
@@ -77,7 +77,7 @@ The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. 
 **Symptom:** Claude Desktop shows "Failed to connect to MCP server" or "tool not found."
 
 **Possible causes:**
-1. **Wrong URL or API key.** Verify `MCP_SERVER_URL` in `claude_desktop_config.json` is `https://n8n-k8q6.ssrv1738397.hstgr.cloud/mcp` (no trailing slash, no path).
+1. **Wrong URL or API key.** Verify `MCP_SERVER_URL` in `claude_desktop_config.json` is `https://n8n-dev-692109205619.asia-south1.run.app/mcp` (no trailing slash, no path).
 2. **n8n is down.** Check the URL in a browser; should redirect to the n8n login.
 3. **Workflows aren't imported.** Open n8n → Workflows. The `datiq_*` workflows should be present and active. If not, re-import.
 4. **MCP server trigger not enabled.** n8n Settings → MCP Server. Verify it's enabled.
