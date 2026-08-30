@@ -6,8 +6,8 @@ This directory stores session records, engineering milestones, architectural dec
 
 ## 1. Active Session Handoff
 
-- **Latest Active Handoff:** [`SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md)
-  - Covers: Server Callback API, n8n decoupling, direct fallbacks, GCP Cloud Run URL configuration, and 2-phase n8n rollout.
+- **Latest Active Handoff:** [`SESSION-HANDOFF-2026-08-30-TWO-WAY-INTEGRATIONS-AND-SCALE-TO-ZERO.md`](./SESSION-HANDOFF-2026-08-30-TWO-WAY-INTEGRATIONS-AND-SCALE-TO-ZERO.md)
+  - Covers: Event-Driven Scale-to-Zero Architecture, Admin Scheduling Controls, Two-Way Integrations (HubSpot, Notion, Airtable, Zapier, n8n), and Master Verification Runbook.
 
 ---
 
