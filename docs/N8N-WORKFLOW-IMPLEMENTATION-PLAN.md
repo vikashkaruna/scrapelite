@@ -228,13 +228,59 @@ When setting up credentials in the n8n web dashboard (`https://n8n-dev-692109205
 
 ---
 
-### 2.6 Platform-Agnostic Self-Hosted n8n Deployment Architectures
+### 2.6 Platform-Agnostic Self-Hosted n8n Deployment Architectures & Cloud Run Bulk Import
 
 The self-hosted n8n infrastructure is designed to run seamlessly across any cloud environment:
 1. **Google Cloud Platform (Cloud Run - Deployed)**: Serverless container deployed at `https://n8n-dev-692109205619.asia-south1.run.app`.
 2. **Generic VM / VPS** (Hostinger, DigitalOcean, Hetzner, EC2, GCE): Docker Compose with SQLite and Caddy SSL proxy.
 3. **AWS (ECS Fargate)**: Serverless container task behind an Application Load Balancer (ALB) with RDS PostgreSQL.
 4. **Kubernetes (EKS / GKE / AKS)**: Deployment manifests with PersistentVolumeClaims or managed database backends.
+
+#### 2.6.1 Automated Remote Bulk Import for Cloud Run (`scripts/import-workflows-cloudrun.mjs`)
+Because Cloud Run is a serverless container environment without persistent SSH access, DatIQ provides an automated Node.js bulk-import tool: [`scripts/import-workflows-cloudrun.mjs`](../scripts/import-workflows-cloudrun.mjs) (or `npm run import:cloudrun`).
+
+```
+                    REMOTE BULK IMPORT ARCHITECTURE
+
+ [ Local Machine / CI ]                   [ GCP Cloud Run n8n ]
+ ┌────────────────────────┐              ┌────────────────────────┐
+ │ scripts/               │              │ REST API (/api/v1)     │
+ │ import-workflows-      │              │                        │
+ │ cloudrun.mjs           │              │                        │
+ └──────────┬─────────────┘              └──────────▲─────────────┘
+            │                                       │
+            │ 1. GET /api/v1/workflows (Fetch all)  │
+            ├───────────────────────────────────────┤
+            │                                       │
+            │ 2. Iterate local n8n/workflows/*.json │
+            │    • If exists: PUT /workflows/:id    │
+            │    • If new:    POST /workflows       │
+            ├───────────────────────────────────────┤
+            │                                       │
+            │ 3. POST /workflows/:id/activate       │
+            └───────────────────────────────────────┘
+```
+
+**How to Execute Remote Bulk Import to Cloud Run:**
+1. Generate an API Key in n8n UI: **Settings (gear icon) → n8n API → Create API Key**.
+2. Run the bulk import script:
+   ```bash
+   N8N_API_KEY="your-n8n-api-key" npm run import:cloudrun
+   ```
+3. The script automatically:
+   - Queries `https://n8n-dev-692109205619.asia-south1.run.app/api/v1/workflows` to map all existing workflow IDs.
+   - Reads all 17 JSON workflows from `n8n/workflows/`.
+   - Performs idempotent upserts (`PUT` for existing, `POST` for new).
+   - Automatically activates all workflows via `POST /api/v1/workflows/:id/activate`.
+
+#### 2.6.2 Specific Workflows Modified for Server Callback API
+Due to the removal of direct Supabase PostgREST `PATCH /rest/v1/workflow_events` calls, these 4 core automation routers were rebuilt with the `Callback DatIQ` node and must be re-imported:
+1. `datiq_schedule_changed_router.json` (*DatIQ Schedule Changed Router*)
+2. `datiq_contact_router.json` (*DatIQ Contact Router*)
+3. `datiq_failure_alert.json` (*DatIQ Failure Alert*)
+4. `datiq_user_lifecycle.json` (*DatIQ User Lifecycle*)
+
+*Running `npm run import:cloudrun` synchronizes all 17 workflows in ~5 seconds.*
 
 ---
 
