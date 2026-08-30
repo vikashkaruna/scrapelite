@@ -69,7 +69,7 @@ function sb(exprStr) {
   return `={{ ${jsExpr("https://")} + $json._ctx.supabase_url + (${exprStr}) }}`;
 }
 function api(exprStr) {
-  return `={{ (($json._ctx?.site_url ? ($json._ctx.site_url.startsWith('http') ? $json._ctx.site_url : 'https://' + $json._ctx.site_url) : ($env.SITE_URL ? ($env.SITE_URL.startsWith('http') ? $env.SITE_URL : 'https://' + $env.SITE_URL) : 'https://datiq.app')).replace(/\\/+$/, '')) + (${exprStr}) }}`;
+  return `={{ (() => { let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + (${exprStr}); })() }}`;
 }
 function n8nWebhook(exprStr) {
   return `={{ $env.N8N_BASE_URL + (${exprStr}) }}`;
@@ -82,7 +82,7 @@ function callbackNode({ eventPath = "$json.event?.id || $json.id" } = {}) {
     typeVersion: 4.2,
     parameters: {
       method: "POST",
-      url: "={{ $json._ctx?.callback_url || ((($json._ctx?.site_url ? ($json._ctx.site_url.startsWith('http') ? $json._ctx.site_url : 'https://' + $json._ctx.site_url) : ($env.SITE_URL ? ($env.SITE_URL.startsWith('http') ? $env.SITE_URL : 'https://' + $env.SITE_URL) : 'https://datiq.app')).replace(/\\/+$/, '')) + '/api/workflow-callback') }}",
+      url: "={{ (() => { if ($json._ctx && $json._ctx.callback_url && typeof $json._ctx.callback_url === 'string' && $json._ctx.callback_url.includes('.')) return $json._ctx.callback_url; let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + '/api/workflow-callback'; })() }}",
       sendHeaders: true,
       headerParameters: {
         parameters: [
