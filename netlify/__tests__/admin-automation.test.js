@@ -214,15 +214,28 @@ describe("admin-automation — POST (actions)", () => {
     expect(patchBody.last_error).toMatch(/obsolete/);
   });
 
-  it("dispatch: delegates to the orchestrator's /dispatch endpoint", async () => {
+  it("dispatch: force-dispatches an event via the orchestrator in-process", async () => {
     setSupabase();
     setAdminSecret();
-    process.env.WORKFLOW_ORCHESTRATOR_TOKEN = "orch-tok";
+    process.env.N8N_BASE_URL = "https://n8n.example.com";
+    process.env.N8N_WEBHOOK_SECRET = "secret";
     const token = await makeAdminToken();
     routeFetch([
       {
-        match: (u, m) => u.includes("/api/workflow-orchestrator/dispatch") && m === "POST",
-        respond: () => okJson({ ok: true, dispatched: { ok: true } }),
+        match: (u, m) => u.includes("/rest/v1/workflow_events?id=eq.wfe_x") && m === "GET",
+        respond: () => okJson([{ id: "wfe_x", kind: "schedule.changed", state: "pending", payload: {}, attempts: 0, max_attempts: 5 }]),
+      },
+      {
+        match: (u, m) => u.includes("/webhook/datiq/schedule-changed") && m === "POST",
+        respond: () => okJson({ ok: true }),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/workflow_runs") && m === "POST",
+        respond: () => okJson([{ id: "run_1" }]),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/workflow_events?id=eq.wfe_x") && m === "PATCH",
+        respond: () => okJson([{ id: "wfe_x", state: "processing" }]),
       },
     ]);
     const h = await loadHandler();
@@ -232,9 +245,6 @@ describe("admin-automation — POST (actions)", () => {
       body: '{"action":"dispatch","event_id":"wfe_x"}',
     });
     expect(r.statusCode).toBe(200);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/api\/workflow-orchestrator\/dispatch$/);
-    expect(init.headers.Authorization).toBe("Bearer orch-tok");
   });
 
   it("returns 400 on unknown action", async () => {

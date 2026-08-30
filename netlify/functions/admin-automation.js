@@ -12,6 +12,7 @@
 // Auth: Bearer admin session token (HMAC of admin-auth.js).
 
 import { verifyAdminToken } from "./lib/adminToken.js";
+import { runOnce, dispatchOne } from "./lib/workflowOrchestrator.js";
 
 const HEADERS = { "Content-Type": "application/json" };
 const ok = (body) => ({ statusCode: 200, headers: HEADERS, body: JSON.stringify(body) });
@@ -175,27 +176,26 @@ async function handlePost(event) {
     return r.ok ? ok(r) : bad(500, r.error);
   }
   if (action === "dispatch") {
-    // Defer to the orchestrator's /dispatch endpoint.
-    const orchUrl = `${process.env.URL || "https://datiq.app"}/api/workflow-orchestrator/dispatch`;
-    const orchTok = process.env.WORKFLOW_ORCHESTRATOR_TOKEN || process.env.ADMIN_TOKEN_SECRET || "";
-    const r = await fetch(orchUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orchTok}` },
-      body: JSON.stringify({ event_id: body.event_id }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return r.ok ? ok({ ok: true, dispatched: data }) : bad(r.status, data.error || "orchestrator failed");
+    if (!body.event_id) return bad(400, "missing event_id");
+    const getRes = await fetch(`${db.base}/workflow_events?id=eq.${encodeURIComponent(body.event_id)}&select=*`, { headers: db.headers });
+    if (!getRes.ok) return bad(502, `supabase ${getRes.status}`);
+    const rows = await getRes.json();
+    const eventRow = Array.isArray(rows) ? rows[0] : null;
+    if (!eventRow) return bad(404, "event not found");
+    const orchEnv = {
+      n8nBase: process.env.N8N_BASE_URL || "",
+      n8nSecret: process.env.N8N_WEBHOOK_SECRET || "",
+    };
+    const r = await dispatchOne(orchEnv, db, eventRow);
+    return ok({ ok: true, dispatched: r });
   }
   if (action === "run-now") {
-    const orchUrl = `${process.env.URL || "https://datiq.app"}/api/workflow-orchestrator/run-now`;
-    const orchTok = process.env.WORKFLOW_ORCHESTRATOR_TOKEN || process.env.ADMIN_TOKEN_SECRET || "";
-    const r = await fetch(orchUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orchTok}` },
-      body: JSON.stringify({}),
-    });
-    const data = await r.json().catch(() => ({}));
-    return r.ok ? ok({ ok: true, ran: data }) : bad(r.status, data.error || "orchestrator failed");
+    const orchEnv = {
+      n8nBase: process.env.N8N_BASE_URL || "",
+      n8nSecret: process.env.N8N_WEBHOOK_SECRET || "",
+    };
+    const r = await runOnce(orchEnv, db);
+    return ok({ ok: true, ran: r });
   }
   return bad(400, `unknown action '${action}'`);
 }

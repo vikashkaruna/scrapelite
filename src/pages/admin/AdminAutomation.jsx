@@ -150,12 +150,21 @@ export default function AdminAutomation() {
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
+  async function parseJsonSafe(res) {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { ok: false, error: `Invalid response from server (${res.status})` };
+    }
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ENDPOINT, { headers: { "Content-Type": "application/json" } });
-      const data = await res.json();
+      const res = await fetch(ENDPOINT, { headers: authedHeaders() });
+      const data = await parseJsonSafe(res);
       if (!alive.current) return;
       if (!res.ok || !data.ok) {
         setError(data.error || `Failed to load (${res.status})`);
@@ -173,8 +182,8 @@ export default function AdminAutomation() {
 
   const loadDetail = useCallback(async (id) => {
     try {
-      const res = await fetch(`${ENDPOINT}?event_id=${encodeURIComponent(id)}`, { headers: { "Content-Type": "application/json" } });
-      const data = await res.json();
+      const res = await fetch(`${ENDPOINT}?event_id=${encodeURIComponent(id)}`, { headers: authedHeaders() });
+      const data = await parseJsonSafe(res);
       if (!alive.current) return;
       if (data.ok) setSelected({ ...data.event, runs: data.runs || [] });
     } catch {/* ignore */}
@@ -192,7 +201,7 @@ export default function AdminAutomation() {
         headers: authedHeaders(),
         body: JSON.stringify({ action, event_id: selected.id }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!alive.current) return;
       if (!data.ok) {
         setError(data.error || `Action failed (${res.status})`);
@@ -216,7 +225,7 @@ export default function AdminAutomation() {
         headers: authedHeaders(),
         body: JSON.stringify({ action: "run-now" }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!alive.current) return;
       if (!data.ok) {
         setError(data.error || "Run-now failed");
