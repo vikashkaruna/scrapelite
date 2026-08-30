@@ -47,7 +47,8 @@
     "build:sitemap": "node scripts/build-sitemap.mjs",
     "verify:referral": "node scripts/verify-referral-e2e.mjs",
     "sync:prerender": "node scripts/sync-prerender-assets.mjs",
-    "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs"
+    "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs",
+    "test:workflow": "node scripts/test-workflow-pipeline.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
