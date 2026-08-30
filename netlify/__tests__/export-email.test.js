@@ -8,10 +8,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const mockGetUser = vi.fn().mockResolvedValue({
-  data: { user: { id: "u1", email: "u1@example.com" } },
-  error: null,
-});
+const { mockGetUser, mockRequireCapabilityForUser } = vi.hoisted(() => ({
+  mockGetUser: vi.fn().mockResolvedValue({
+    data: { user: { id: "u1", email: "u1@example.com" } },
+    error: null,
+  }),
+  mockRequireCapabilityForUser: vi.fn().mockResolvedValue({ check: { allowed: true } }),
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({ auth: { getUser: mockGetUser } })),
 }));
@@ -20,7 +24,6 @@ vi.mock("@supabase/supabase-js", () => ({
 // not the mocked @supabase/supabase-js client — which would otherwise
 // consume slots from this file's Resend fetch mock (see the integrations-*
 // contract tests for the same trap, hit and fixed there first).
-const mockRequireCapabilityForUser = vi.fn().mockResolvedValue({ check: { allowed: true } });
 vi.mock("../functions/lib/requireEntitlement.js", () => ({
   requireCapabilityForUser: (...args) => mockRequireCapabilityForUser(...args),
   denyBody: (check) => ({ error: check.reason, code: check.code, upgradeTo: check.upgradeTo ?? null }),
