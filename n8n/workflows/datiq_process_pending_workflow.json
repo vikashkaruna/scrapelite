@@ -29,7 +29,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://' + $json._ctx.site_url + ('/api/workflow-orchestrator/dispatch') }}",
+        "url": "={{ ($json._ctx?.site_url ? ($json._ctx.site_url.startsWith('http') ? $json._ctx.site_url : 'https://' + $json._ctx.site_url) : ($env.SITE_URL ? ($env.SITE_URL.startsWith('http') ? $env.SITE_URL : 'https://' + $env.SITE_URL) : 'https://datiq.app')) + ('/api/workflow-orchestrator/dispatch') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

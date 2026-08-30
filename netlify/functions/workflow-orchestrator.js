@@ -126,6 +126,9 @@ async function handleHttp(event, env, client) {
   }
   const action = body.action || (event.path || "").replace(/^\/+/, "");
 
+  if (action === "ping" || action.endsWith("/ping") || action.endsWith("ping")) {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, pong: true, ts: new Date().toISOString() }) };
+  }
   if (action === "dispatch" || action === "/dispatch") {
     return await forceDispatch(env, client, body);
   }
