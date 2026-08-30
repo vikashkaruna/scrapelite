@@ -189,7 +189,26 @@ async function enqueueChange(client, schedule, changedSummary) {
     ],
   });
   if (!result.ok) {
-    console.warn(`[DatIQ] scheduled-runner: enqueue failed for ${schedule.id}: ${result.error}`);
+    console.warn(`[DatIQ] scheduled-runner: enqueue failed for ${schedule.id}: ${result.error} — attempting direct fallback`);
+    try {
+      if (schedule.alertEmail && process.env.RESEND_API_KEY) {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>",
+            to: [schedule.alertEmail],
+            subject: `DatIQ — content changed: ${schedule.label || "Monitored URL"}`,
+            html: `<h2>Content Changed</h2><p>Your schedule <b>${schedule.label || ""}</b> detected a change.</p><p><a href="${SITE_URL}/schedules">View in DatIQ →</a></p>`,
+          }),
+        });
+      }
+    } catch (fallbackErr) {
+      console.warn(`[DatIQ] scheduled-runner: direct email fallback failed: ${fallbackErr.message}`);
+    }
   }
   return result;
 }

@@ -123,16 +123,6 @@ const PROVIDERS = {
     title: "Connect Zapier",
     icon: "share",
     desc: "Generate a DatIQ Zapier token. Paste it into Zapier when installing the DatIQ private app.",
-    // Zapier has no client-side fields — the server mints a fresh token
-    // on every successful connect. The old UI had a "Generate vs Replace"
-    // select that mapped to {regenerate:false|true}, but the server only
-    // mints when regenerate:true, so the "Generate a new token" option
-    // (the default!) sent regenerate:false and the server returned 400
-    // "Provide either { token } to store an existing token…". The
-    // token-store path was unreachable from the UI (no input field), so
-    // it was effectively dead code. v1 is "every connect mints a fresh
-    // token"; if you connected before, the old token is invalidated the
-    // moment you mint a new one.
     fields: [],
     help: "Click Generate to mint a fresh token. The plaintext is shown ONCE — copy it into Zapier immediately. DatIQ stores only the SHA-256 hash, and any previous token you minted is invalidated the moment a new one is issued.",
   },
@@ -153,12 +143,6 @@ function pickFirstNonEmptyString(obj) {
   return null;
 }
 
-/**
- * Truncate a non-JSON response body to a single-line, reasonable-length
- * snippet for display in the toast. 240 chars is the sweet spot — long
- * enough for a stack-trace fragment, short enough to not blow up the
- * modal. Strips newlines so the toast stays on one line.
- */
 function rawBodySnippet(raw) {
   if (!raw || typeof raw !== "string") return null;
   const flat = raw.replace(/\s+/g, " ").trim();
@@ -167,36 +151,32 @@ function rawBodySnippet(raw) {
   return flat.slice(0, 237) + "…";
 }
 
-export default function IntegrationConnectModal({ open, provider, onClose, onConnected, onTokenMinted }) {
+export default function IntegrationConnectModal({
+  open,
+  provider,
+  onClose,
+  onConnected,
+  onTokenMinted,
+}) {
+  const config = PROVIDERS[provider] || null;
   const [values, setValues] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  // Reset state on open/close
+  // Reset state on provider change / modal re-open
   useEffect(() => {
     if (open) {
       setValues({});
       setError(null);
       setSuccess(null);
+      setCopied(false);
+      setSubmitting(false);
     }
-  }, [open]);
+  }, [open, provider]);
 
-  if (!open || !provider) return null;
-
-  const config = PROVIDERS[provider];
-  if (!config) {
-    return (
-      <div className="icm-backdrop" onClick={onClose}>
-        <div className="icm-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="icm-head">
-            <h3>Unknown provider: {provider}</h3>
-            <button className="icm-close" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!open || !config) return null;
 
   const setField = (key, val) => setValues((v) => ({ ...v, [key]: val }));
 
@@ -206,12 +186,9 @@ export default function IntegrationConnectModal({ open, provider, onClose, onCon
     setSuccess(null);
     setSubmitting(true);
     try {
-      // Build the request body per-provider. Zapier takes no client-side
-      // input — the server always mints a fresh token (regenerate:true).
-      // Every other provider reads the field values directly.
       let body;
       if (provider === "zapier") {
-        body = { regenerate: true };
+        body = { regenerate: true, webhookUrl: values.webhookUrl || undefined };
       } else {
         body = {};
         for (const f of config.fields) {

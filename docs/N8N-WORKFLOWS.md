@@ -36,14 +36,18 @@ The DatIQ v2 workflow pipeline uses **17 n8n workflows** total: **11 MCP tool wo
 
 ### First-time setup
 
-1. Log in to your n8n instance at `https://n8n-k8q6.srv1738397.hstgr.cloud/`
-2. Settings → API → Create API Key (save this; it's `DATIQ_N8N_API_KEY`)
-3. **No JSON edits needed** — the workflows are environment-agnostic. They read the host from `$json._ctx.*` (per-event, set by the orchestrator) or from `$env.N8N_BASE_URL` / `$env.SITE_URL` (per-instance, set in n8n's `.env`).
+1. Log in to your n8n instance at `https://n8n-dev-692109205619.asia-south1.run.app/`
+2. Go to **Settings → API** and create an API Key (name: "DatIQ MCP")
+3. Copy the key and set it in Netlify:
+   ```bash
+   N8N_WEBHOOK_SECRET=<your-api-key>
+   N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app
+   ```
 4. Configure n8n's `.env` (one-time, on the n8n host):
 
    ```bash
    # This n8n's own URL — the workflows POST back to it via $env.N8N_BASE_URL
-   N8N_BASE_URL=https://n8n-k8q6.srv1738397.hstgr.cloud
+   N8N_BASE_URL=https://n8n-dev-692109205619.asia-south1.run.app
    # Schedule-triggered workflows (no event body) need this for the ping URL
    SITE_URL=https://datiq.app
    ```
@@ -54,32 +58,40 @@ The DatIQ v2 workflow pipeline uses **17 n8n workflows** total: **11 MCP tool wo
    - Bind the credentials to the relevant nodes
    - Activate the workflow (toggle in the top-right)
 
-### Why the workflows don't need per-environment editing
+### Why the workflows don't need per-environment editing (Server Callback Architecture)
 
-Every URL/host in the generated workflow JSONs is an n8n expression that reads from the per-event `_ctx` field (set by the DatIQ orchestrator at dispatch time) or from `$env.*` (n8n's own `.env`). The mapping:
+Every URL/host in the generated workflow JSONs is an n8n expression that reads from the per-event `_ctx` field (set by the DatIQ orchestrator at dispatch time) or from `$env.*` (n8n's own `.env`).
+
+> [!NOTE]
+> **Complete Decoupling Guarantee:** Master database keys (`datiq-supabase-service`) have been removed from n8n. All database mutations (transitioning `state='done'`, logging `workflow_runs`) are executed by DatIQ's Server Callback API (`POST /api/workflow-callback`) upon receiving HMAC-signed notifications from n8n.
 
 | What | Lives in | Example n8n expression |
 |---|---|---|
-| Supabase project host | `_ctx.supabase_url` (per event) | `"={{ 'https://' + $json._ctx.supabase_url + '/rest/v1/workflow_events' }}"` |
+| DatIQ Callback URL | `_ctx.callback_url` (per event) | `"={{ $json._ctx.callback_url || 'https://' + $json._ctx.site_url + '/api/workflow-callback' }}"` |
 | DatIQ site host | `_ctx.site_url` (per event) or `$env.SITE_URL` (per instance) | `"={{ 'https://' + $json._ctx.site_url + '/api/workflow-orchestrator/dispatch' }}"` |
 | n8n's own host (for internal webhook URLs) | `$env.N8N_BASE_URL` (per instance) | `"={{ $env.N8N_BASE_URL + '/webhook/datiq/schedule-changed' }}"` |
-| Supabase service key | n8n credential `datiq-supabase-service` | `"=Bearer {{ $credentials['datiq-supabase-service'].value }}"` |
 
 So the SAME `n8n/workflows/*.json` works in production, staging, and every branch deploy. The DatIQ orchestrator reads `process.env` (Netlify-set per context) at enqueue time, builds `_ctx`, and carries it in the event payload. n8n reads `_ctx` from `$json` per event.
 
-### Bulk import (existing instance)
+### Bulk Import for GCP Cloud Run / VPS
 
-From your local machine:
+To import all 17 workflows in one automated command:
 
 ```bash
-# (optional) install the n8n CLI
-npm install -g n8n
+N8N_API_KEY=<your-n8n-api-key> npm run import:cloudrun
+```
 
-# Import all workflows in one go
+Or when running directly inside the container / local CLI:
+```bash
 npx n8n import:workflow --input=n8n/workflows/
 ```
 
-This works for the Webhook and Schedule triggered workflows. The MCP tool workflows need the MCP server trigger node, which requires a slightly different import (see n8n docs for "MCP Server Trigger").
+### Automated End-to-End Pipeline Verification
+
+```bash
+npm run test:workflow
+```
+Runs the automated test runner simulating the entire 5-step event bus lifecycle: Enqueue (`_ctx`) → Claim → HMAC Dispatch → Retry/Backoff → Server Callback (`done`) → `workflow_runs` audit log.
 
 ### After editing
 

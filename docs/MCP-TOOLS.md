@@ -1,7 +1,7 @@
 # MCP Tools — DatIQ
 
 > **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §7.1, §7.2
-> **Endpoint:** `https://n8n-k8q6.srv1738397.hstgr.cloud/mcp/<workflow-path>`
+> **Endpoint:** `https://n8n-dev-692109205619.asia-south1.run.app/mcp/<workflow-path>`
 > **Auth:** `Authorization: Bearer <DATIQ_N8N_API_KEY>`
 
 The DatIQ v2 pipeline exposes 11 MCP tools via the n8n MCP Server Trigger. Claude Desktop, Claude Code, and any other MCP client can call these to read DatIQ state, manage schedules, and process the workflow queue.
@@ -19,7 +19,7 @@ The DatIQ v2 pipeline exposes 11 MCP tools via the n8n MCP Server Trigger. Claud
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sse"],
       "env": {
-        "MCP_SERVER_URL": "https://n8n-k8q6.srv1738397.hstgr.cloud/mcp",
+        "MCP_SERVER_URL": "https://n8n-dev-692109205619.asia-south1.run.app/mcp",
         "MCP_API_KEY": "<DATIQ_N8N_API_KEY>"
       }
     }
@@ -34,7 +34,7 @@ The DatIQ v2 pipeline exposes 11 MCP tools via the n8n MCP Server Trigger. Claud
   "mcpServers": {
     "datiq": {
       "type": "sse",
-      "url": "https://n8n-k8q6.srv1738397.hstgr.cloud/mcp",
+      "url": "https://n8n-dev-692109205619.asia-south1.run.app/mcp",
       "headers": { "Authorization": "Bearer <DATIQ_N8N_API_KEY>" }
     }
   }

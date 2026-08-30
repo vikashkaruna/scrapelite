@@ -8133,6 +8133,166 @@ body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
 /* ── /admin/automation ───────────────────────────────────────────────── */
 .admin-automation-page { display: flex; flex-direction: column; gap: 18px; }
 
+/* ── /admin/automation: Scheduler & Scale-to-Zero Control Panel ── */
+.automation-control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--r, 8px);
+}
+
+.automation-control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.automation-control-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.automation-control-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.automation-control-title {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.automation-control-sub {
+  margin: 2px 0 0;
+  font-size: 0.85em;
+  color: var(--text-3);
+}
+
+.automation-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 600;
+}
+
+.automation-mode-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.automation-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r, 8px);
+  background: var(--bg-1, rgba(0, 0, 0, 0.02));
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.automation-mode-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface);
+}
+
+.automation-mode-card.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.automation-mode-radio {
+  margin-top: 2px;
+}
+
+.automation-mode-radio input[type="radio"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.automation-mode-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.automation-mode-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95em;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.automation-rec-pill {
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.automation-mode-desc {
+  font-size: 0.82em;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+.automation-interval-picker {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  color: var(--text-2);
+}
+
+.automation-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-1);
+  font-size: 0.9em;
+}
+
+.automation-control-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.automation-unsaved-text {
+  font-size: 0.82em;
+  color: #f59e0b;
+  font-style: italic;
+}
+
 .automation-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

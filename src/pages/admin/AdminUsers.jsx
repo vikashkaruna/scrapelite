@@ -298,7 +298,7 @@ export default function AdminUsers() {
   const handleAssignCoupon = async (user, grant) => {
     setCouponSaving(true);
     try {
-      const result = await assignAdminGrantCoupon(user.id, grant);
+      const result = await assignAdminGrantCoupon(user.id, { ...grant, userEmail: user.email });
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id

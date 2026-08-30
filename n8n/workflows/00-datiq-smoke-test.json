@@ -53,7 +53,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://' + $env.SITE_URL + '/api/workflow-orchestrator/ping' }}",
+        "url": "={{ (() => { let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + '/api/workflow-orchestrator/ping'; })() }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -66,7 +66,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"source\": \"n8n-smoke-test\",\n  \"ts\": {{ JSON.stringify($json.timestamp) }},\n  \"host\": {{ JSON.stringify($json.host) }}\n}",
-        "options": {}
+        "options": {
+          "continueOnFail": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,

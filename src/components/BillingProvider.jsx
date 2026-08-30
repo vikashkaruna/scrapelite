@@ -70,7 +70,7 @@ export function BillingProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Hydrate usage + subscription from Supabase on mount
+  // Hydrate usage + subscription on mount & user change / login / relogin
   useEffect(() => {
     let cancelled = false;
     const current = readUsage();
@@ -97,7 +97,7 @@ export function BillingProvider({ children }) {
     fetchPaymentHistory().then((h) => { if (!cancelled) setPaymentHistory(h); });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [user?.id]);
 
   // Load the server-authoritative entitlement, and reload whenever the signed-in
   // user changes. AuthProvider clears the cache on both sign-in and sign-out, so
@@ -105,16 +105,35 @@ export function BillingProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     loadEntitlement()
-      .then((row) => { if (!cancelled) setEntitlementRow(row); })
+      .then((row) => {
+        if (cancelled || !row) return;
+        setEntitlementRow(row);
+        if (row.plan_id && row.plan_id !== subscription.planId) {
+          const merged = { ...readSubscription(), planId: row.plan_id };
+          setSubscription(merged);
+          writeSubscription(merged);
+        }
+      })
       .catch(() => { /* offline / unconfigured — plan-only gating still works */ });
     return () => { cancelled = true; };
   }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;
-    setAdminGrantCoupon(null);
     fetchAdminGrantCoupon().then((grant) => {
-      if (!cancelled) setAdminGrantCoupon(grant);
+      if (cancelled || !grant) {
+        if (!cancelled && !user) setAdminGrantCoupon(null);
+        return;
+      }
+      setAdminGrantCoupon(grant);
+      if (grant.status === "redeemed" && grant.planId) {
+        const localSub = readSubscription();
+        if (localSub.planId === "free" && grant.planId !== "free") {
+          const merged = { ...localSub, planId: grant.planId };
+          setSubscription(merged);
+          writeSubscription(merged);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [user?.id]);
@@ -127,8 +146,8 @@ export function BillingProvider({ children }) {
     return row;
   }, []);
 
-  const planId = entitlementRow?.plan_id || subscription.planId || "free";
-  const bonus  = subscription.bonusExtractions || 0;
+  const planId = entitlementRow?.plan_id || (adminGrantCoupon?.status === "redeemed" ? adminGrantCoupon.planId : null) || subscription.planId || "free";
+  const bonus  = (entitlementRow?.bonus_extractions ?? 0) + (user?.user_metadata?.bonus_extractions ?? 0) + (subscription.bonusExtractions || 0);
   const plan   = planMap[planId] ?? planMap.free;
 
   /**
@@ -508,6 +527,23 @@ export function BillingProvider({ children }) {
         periodEnd: result.period_end,
         redeemedAt: new Date().toISOString(),
       }));
+
+      // Update subscription locally and persist so it is never lost on refresh or relogin
+      const currentSub = readSubscription();
+      const updatedSub = {
+        ...currentSub,
+        planId: result.plan_id,
+        coupon: { code: result.code, planId: result.plan_id, appliedAt: new Date().toISOString() },
+      };
+      setSubscription(updatedSub);
+      writeSubscription(updatedSub);
+
+      // Dual-write to subscriptions table in DB if user is signed in
+      syncSubscriptionToDb(result.plan_id, "admin_grant", {
+        periodStart: result.period_start,
+        periodEnd: result.period_end,
+      }).catch(() => {});
+
       await refreshEntitlement();
       setCouponSuccess(`Plan grant applied — ${result.plan_id} is active through ${new Date(result.period_end).toLocaleDateString()}.`);
       return true;

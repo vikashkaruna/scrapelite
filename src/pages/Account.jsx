@@ -739,6 +739,12 @@ export default function Account() {
                                     <code className="int-row-detail-val">{conn.token_hint}</code>
                                   </div>
                                 )}
+                                {conn.webhook_hint && (
+                                  <div className="int-row-detail-line">
+                                    <span className="int-row-detail-key">Catch Hook</span>
+                                    <code className="int-row-detail-val">{conn.webhook_hint}</code>
+                                  </div>
+                                )}
                                 {conn.created_at && (
                                   <div className="int-row-detail-line">
                                     <span className="int-row-detail-key">Issued</span>

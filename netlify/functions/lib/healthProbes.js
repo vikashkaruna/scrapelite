@@ -96,8 +96,116 @@ export const probeNetlifyPlatform = () =>
 export const probeSupabasePlatform = () =>
   statusPageProbe("supabase-platform", "https://status.supabase.com/api/v2/status.json");
 
-export const probeRazorpay = () =>
-  statusPageProbe("payments-razorpay", "https://status.razorpay.com/api/v2/status.json");
+/**
+ * Razorpay Payment Gateway probe.
+ *
+ * Checks Razorpay API reachability and key validity.
+ * If RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set, makes an authenticated probe
+ * to GET https://api.razorpay.com/v1/payments?count=1.
+ * If keys are not set, probes the API gateway to confirm Razorpay is live and reachable.
+ */
+export async function probeRazorpay() {
+  const keyId = env("RAZORPAY_KEY_ID");
+  const keySecret = env("RAZORPAY_KEY_SECRET");
+
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) DatIQ-HealthMonitor/1.0",
+    Accept: "application/json",
+  };
+
+  if (keyId && keySecret) {
+    const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
+    headers.Authorization = authHeader;
+
+    const { ok, res, latencyMs, error } = await timedFetch(
+      "https://api.razorpay.com/v1/payments?count=1",
+      { headers },
+    );
+
+    if (!ok) {
+      return {
+        id: "payments-razorpay",
+        configured: true,
+        reachable: false,
+        latencyMs,
+        status: HEALTH_STATUS.UNKNOWN,
+        note: `Razorpay API unreachable: ${error}`,
+      };
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      return {
+        id: "payments-razorpay",
+        configured: true,
+        reachable: true,
+        latencyMs,
+        status: HEALTH_STATUS.DOWN,
+        note: "RAZORPAY_KEY_ID / KEY_SECRET rejected by Razorpay.",
+        detail: { keyId: maskKey(keyId) },
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        id: "payments-razorpay",
+        configured: true,
+        reachable: true,
+        latencyMs,
+        status: HEALTH_STATUS.DEGRADED,
+        note: `Razorpay API returned HTTP ${res.status}.`,
+      };
+    }
+
+    return {
+      id: "payments-razorpay",
+      configured: true,
+      reachable: true,
+      latencyMs,
+      status: HEALTH_STATUS.OK,
+      note: "Razorpay API is live and credentials are valid.",
+      detail: { keyId: maskKey(keyId), endpoint: "api.razorpay.com/v1" },
+    };
+  }
+
+  // No API keys configured on server: probe API gateway liveness
+  const { ok, res, latencyMs, error } = await timedFetch(
+    "https://api.razorpay.com/v1/payments",
+    { headers },
+  );
+
+  if (!ok) {
+    return {
+      id: "payments-razorpay",
+      configured: false,
+      reachable: false,
+      latencyMs,
+      status: HEALTH_STATUS.UNKNOWN,
+      note: `Razorpay gateway unreachable: ${error}`,
+    };
+  }
+
+  // A 400 or 401 from /v1/payments asking for API credentials proves the gateway is reachable and answering
+  if (res.status === 400 || res.status === 401) {
+    return {
+      id: "payments-razorpay",
+      configured: false,
+      reachable: true,
+      latencyMs,
+      status: HEALTH_STATUS.OK,
+      note: "Razorpay API gateway is reachable (keys not configured on server).",
+      detail: { endpoint: "api.razorpay.com/v1" },
+    };
+  }
+
+  return {
+    id: "payments-razorpay",
+    configured: false,
+    reachable: true,
+    latencyMs,
+    status: res.ok ? HEALTH_STATUS.OK : HEALTH_STATUS.DEGRADED,
+    note: `Razorpay API returned HTTP ${res.status}.`,
+  };
+}
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 

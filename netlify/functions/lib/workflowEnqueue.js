@@ -207,18 +207,42 @@ export { KIND_WHITELIST };
 export function buildCtx(env = process.env, overrides = {}) {
   const context = env.CONTEXT || "unknown";
   const branch = env.BRANCH || null;
-  const siteUrl = env.URL || env.SITE_URL || env.DEPLOY_PRIME_URL || null;
+
+  let requestHost = null;
+  if (overrides.event?.headers) {
+    const rawHost = overrides.event.headers["x-forwarded-host"] || overrides.event.headers["host"];
+    if (rawHost && typeof rawHost === "string" && rawHost.includes(".")) {
+      requestHost = rawHost.trim();
+      if (!requestHost.startsWith("http://") && !requestHost.startsWith("https://")) {
+        requestHost = `https://${requestHost}`;
+      }
+    }
+  }
+
+  let siteUrl = overrides.site_url || requestHost || env.URL || env.SITE_URL || env.DEPLOY_PRIME_URL || null;
+
+  if (typeof siteUrl === "string" && siteUrl.includes(".")) {
+    siteUrl = siteUrl.trim().replace(/\/+$/, "");
+    if (!siteUrl.startsWith("http://") && !siteUrl.startsWith("https://")) {
+      siteUrl = `https://${siteUrl}`;
+    }
+  } else if (!siteUrl) {
+    siteUrl = null;
+  }
+
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL || null;
+  const callbackUrl = siteUrl ? `${siteUrl}/api/workflow-callback` : null;
   const ctx = {
     env: context,
     branch,
     site_url: siteUrl,
     supabase_url: supabaseUrl,
+    callback_url: callbackUrl,
     commit_ref: env.COMMIT_REF || null,
   };
   // Allow callers to override (e.g. for tests) without losing auto-detected fields.
   for (const [k, v] of Object.entries(overrides)) {
-    if (v !== undefined) ctx[k] = v;
+    if (k !== "event" && v !== undefined) ctx[k] = v;
   }
   return ctx;
 }

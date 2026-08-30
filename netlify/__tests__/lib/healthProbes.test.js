@@ -56,7 +56,7 @@ describe("status page probes (P-01)", () => {
 
   it("maps a minor incident to degraded", async () => {
     fetchMock.mockResolvedValue(statusPage("minor"));
-    expect((await probes.probeRazorpay()).status).toBe("degraded");
+    expect((await probes.probeNetlifyPlatform()).status).toBe("degraded");
   });
 
   // A vendor's status site having a blip says nothing about the vendor's
@@ -88,11 +88,57 @@ describe("status page probes (P-01)", () => {
     fetchMock.mockResolvedValue(statusPage("none"));
     await probes.probeNetlifyPlatform();
     await probes.probeSupabasePlatform();
-    await probes.probeRazorpay();
     const urls = fetchMock.mock.calls.map(([u]) => String(u));
     expect(urls[0]).toBe("https://www.netlifystatus.com/api/v2/status.json");
     expect(urls[1]).toBe("https://status.supabase.com/api/v2/status.json");
-    expect(urls[2]).toBe("https://status.razorpay.com/api/v2/status.json");
+  });
+});
+
+describe("Razorpay payment gateway probe", () => {
+  it("probes API gateway liveness when keys are unconfigured", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "BAD_REQUEST_ERROR" } }), { status: 401 })
+    );
+    const r = await probes.probeRazorpay();
+    expect(r.id).toBe("payments-razorpay");
+    expect(r.reachable).toBe(true);
+    expect(r.status).toBe("ok");
+    expect(r.note).toMatch(/reachable/i);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.razorpay.com/v1/payments");
+  });
+
+  it("probes authenticated endpoint and passes when keys are valid", async () => {
+    process.env.RAZORPAY_KEY_ID = "rzp_live_test123";
+    process.env.RAZORPAY_KEY_SECRET = "secret456";
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ count: 1, items: [] }), { status: 200 })
+    );
+    const r = await probes.probeRazorpay();
+    expect(r.id).toBe("payments-razorpay");
+    expect(r.configured).toBe(true);
+    expect(r.reachable).toBe(true);
+    expect(r.status).toBe("ok");
+    expect(r.note).toMatch(/credentials are valid/i);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.razorpay.com/v1/payments?count=1");
+  });
+
+  it("reports down when configured keys are rejected", async () => {
+    process.env.RAZORPAY_KEY_ID = "rzp_live_badkey";
+    process.env.RAZORPAY_KEY_SECRET = "badsecret";
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "BAD_REQUEST_ERROR" } }), { status: 401 })
+    );
+    const r = await probes.probeRazorpay();
+    expect(r.id).toBe("payments-razorpay");
+    expect(r.status).toBe("down");
+    expect(r.note).toMatch(/rejected by Razorpay/i);
+  });
+
+  it("reports unknown when network fails", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+    const r = await probes.probeRazorpay();
+    expect(r.status).toBe("unknown");
+    expect(r.reachable).toBe(false);
   });
 });
 

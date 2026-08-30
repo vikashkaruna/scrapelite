@@ -152,3 +152,45 @@ describe("buildCouponsSyncPayload — the checkout-facing subset of local coupon
     expect(buildCouponsSyncPayload([])).toEqual({});
   });
 });
+
+describe("Admin Grants (testing mode & local persistence)", () => {
+  it("saves, retrieves by userId and email, and redeems a local admin grant", async () => {
+    const { saveAdminGrant, getAdminGrantForUser, redeemLocalAdminGrant } = await import("./adminService.js");
+
+    const grant = saveAdminGrant({
+      userId: "u123",
+      userEmail: "test@example.com",
+      couponCode: "TEST-PRO-1M",
+      planId: "pro",
+      validityMonths: 1,
+      reason: "tester goodwill",
+    });
+
+    expect(grant.code).toBe("TEST-PRO-1M");
+    expect(grant.status).toBe("assigned");
+
+    const byId = getAdminGrantForUser("u123", null);
+    expect(byId).toBeTruthy();
+    expect(byId.code).toBe("TEST-PRO-1M");
+
+    const byEmail = getAdminGrantForUser(null, "TEST@example.com");
+    expect(byEmail).toBeTruthy();
+    expect(byEmail.code).toBe("TEST-PRO-1M");
+
+    const redeemRes = redeemLocalAdminGrant("u123", "TEST-PRO-1M");
+    expect(redeemRes.ok).toBe(true);
+    expect(redeemRes.plan_id).toBe("pro");
+    expect(redeemRes.period_start).toBeTruthy();
+    expect(redeemRes.period_end).toBeTruthy();
+
+    const afterRedeem = getAdminGrantForUser("u123", null);
+    expect(afterRedeem.status).toBe("redeemed");
+    expect(afterRedeem.redeemedAt).toBeTruthy();
+
+    // Idempotent / already redeemed check
+    const replayRes = redeemLocalAdminGrant("u123", "TEST-PRO-1M");
+    expect(replayRes.ok).toBe(true);
+    expect(replayRes.plan_id).toBe("pro");
+    expect(replayRes.alreadyRedeemed).toBe(true);
+  });
+});

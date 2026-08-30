@@ -1,9 +1,10 @@
 # n8n Operations Runbook — DatIQ
 
-> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4
-> **Audience:** You (Vikash) running the Hostinger-hosted n8n instance
+> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4  
+> **Architecture & Scale-to-Zero Guide:** `docs/N8N-WORKFLOW-OPTIMIZATION-ARCHITECTURE.md`  
+> **Audience:** Operators running the GCP Cloud Run n8n instance + DatIQ Platform
 
-The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. This runbook is the higher-level "what to do when X" guide.
+The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/` and `docs/N8N-WORKFLOW-OPTIMIZATION-ARCHITECTURE.md`. This runbook is the higher-level "what to do when X" guide.
 
 ---
 
@@ -31,7 +32,7 @@ The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. 
 **Symptom:** `/admin/automation` shows 20+ pending events.
 
 **Possible causes:**
-1. **n8n is down.** Check: `curl -I https://n8n-k8q6.ssrv1738397.hstgr.cloud/`. If 5xx, the orchestrator is dispatching but n8n is failing.
+1. **n8n is down.** Check: `curl -I https://n8n-dev-692109205619.asia-south1.run.app/`. If 5xx, the orchestrator is dispatching but n8n is failing.
 2. **The orchestrator is down.** Check: `curl -X POST https://datiq.app/api/workflow-orchestrator/run-now -H "Authorization: Bearer $WORKFLOW_ORCHESTRATOR_TOKEN"`. If 5xx, Netlify's function is broken.
 3. **A specific kind is broken.** Check the "Events by kind" chips on the admin page. If one kind is dominating, the matching workflow is the issue.
 4. **All events failing.** Look at "Failed (24h)". Click one. Look at the runs. If `response_status: 500` from n8n, the workflow is broken. If `network: ECONNREFUSED`, n8n is unreachable.
@@ -72,33 +73,54 @@ The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. 
 
 ---
 
-### MCP server connection fails (Claude Desktop)
+### Netlify Edge Access SSO Redirect (curl returns Login Redirect HTML)
 
-**Symptom:** Claude Desktop shows "Failed to connect to MCP server" or "tool not found."
+**Symptom:** `curl -X POST https://<preview>--datiqapp.netlify.app/...` returns `<title>Login Redirect</title>`.
 
-**Possible causes:**
-1. **Wrong URL or API key.** Verify `MCP_SERVER_URL` in `claude_desktop_config.json` is `https://n8n-k8q6.ssrv1738397.hstgr.cloud/mcp` (no trailing slash, no path).
-2. **n8n is down.** Check the URL in a browser; should redirect to the n8n login.
-3. **Workflows aren't imported.** Open n8n → Workflows. The `datiq_*` workflows should be present and active. If not, re-import.
-4. **MCP server trigger not enabled.** n8n Settings → MCP Server. Verify it's enabled.
+**Cause:** Netlify draft/preview deployments enforce Edge Access Team SSO on unauthenticated external HTTP requests.
 
-**Resolution:** Fix the config, restart Claude Desktop.
+**Resolution:**
+1. Add `/.netlify/functions/*` and `/api/*` to Netlify Edge Access Bypass.
+2. Or run the local end-to-end simulation: `npm run test:workflow`.
 
 ---
 
-### Credentials expired / rotated
+### Admin / Automation Unauthorized (401) on refresh
 
-**Symptom:** A workflow that was working suddenly returns 401/403 from an upstream service (Resend, Slack, Supabase).
+**Symptom:** `/admin/automation` displays an error banner saying "unauthorized" or "Missing admin token".
 
-**Resolution:** See `n8n/ops/SECRETS.md` for the rotation procedure. After updating, retry the failed events in `/admin/automation`.
+**Cause:** The admin session token in `localStorage` expired (8h TTL) or was created with an outdated key.
+
+**Resolution:**
+1. Click the **"Re-enter PIN"** button directly inside the red error banner on `/admin/automation` (or click "Exit admin" at the bottom-left of the sidebar).
+2. Enter your admin PIN (default demo PIN: `ADMIN123`).
 
 ---
 
-### n8n version upgrade failed
+### Verifying Primary n8n Route vs Fallback
 
-**Symptom:** n8n is up but workflows return 500s.
+**Goal:** Ensure events are processed by n8n on Cloud Run and did NOT fall back to direct Netlify functions.
 
-**Resolution:** See `n8n/ops/UPGRADES.md` §"Rollback". Roll back to the previous image, then restore the data dir from the pre-upgrade backup.
+**Resolution:**
+1. Query Supabase: `SELECT state, attempts FROM workflow_events WHERE id = '<EVENT_ID>';` — state must be `'done'`.
+2. Query Runs: `SELECT channel, status, response_status FROM workflow_runs WHERE event_id = '<EVENT_ID>';` — channel must be `'n8n'` and status `'success'`.
+3. Check n8n Executions: Open `https://n8n-dev-692109205619.asia-south1.run.app/executions` to view the live execution trace.
+
+---
+
+## Automated Pipeline Testing & Cloud Run Import
+
+### 1. Test Pipeline End-to-End
+```bash
+npm run test:workflow
+```
+Simulates the full 5-stage pipeline: Enqueue (`_ctx`) → Claim → HMAC Dispatch → Exponential Backoff → Server Callback (`done`) → `workflow_runs` audit log.
+
+### 2. Bulk Import Workflows to Cloud Run
+```bash
+N8N_API_KEY=<your-n8n-api-key> npm run import:cloudrun
+```
+Imports all 17 workflow JSON files directly to Cloud Run via the n8n REST API.
 
 ---
 

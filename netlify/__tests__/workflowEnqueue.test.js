@@ -84,6 +84,7 @@ describe("workflowEnqueue.buildCtx", () => {
       branch: "main",
       site_url: "https://datiq.app",
       supabase_url: "aubwooslkkrprdxuiyvj.supabase.co",
+      callback_url: "https://datiq.app/api/workflow-callback",
       commit_ref: "abc123",
     });
   });
@@ -95,6 +96,7 @@ describe("workflowEnqueue.buildCtx", () => {
     expect(ctx.branch).toBeNull();
     expect(ctx.site_url).toBeNull();
     expect(ctx.supabase_url).toBeNull();
+    expect(ctx.callback_url).toBeNull();
     expect(ctx.commit_ref).toBeNull();
   });
 

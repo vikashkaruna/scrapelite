@@ -38,11 +38,22 @@ export async function syncSubscriptionToDb(planId, provider, providerData = {}) 
 export async function fetchSubscriptionFromDb() {
   if (!supabase) return null;
   try {
+    const userId = await getAuthUserId();
+    if (userId) {
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error && data) return data;
+    }
     const { data, error } = await supabase
       .from("subscriptions")
       .select("*")
       .eq("session_id", getSessionId())
-      .single();
+      .maybeSingle();
     if (error) return null;
     return data;
   } catch { return null; }
@@ -70,10 +81,14 @@ export async function logPaymentEvent({ type, provider, providerId, planId, amou
 export async function fetchPaymentHistory(limit = 10) {
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase
-      .from("payment_events")
-      .select("*")
-      .eq("session_id", getSessionId())
+    const userId = await getAuthUserId();
+    let query = supabase.from("payment_events").select("*");
+    if (userId) {
+      query = query.eq("user_id", userId);
+    } else {
+      query = query.eq("session_id", getSessionId());
+    }
+    const { data, error } = await query
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) return [];

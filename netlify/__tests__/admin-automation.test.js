@@ -214,15 +214,28 @@ describe("admin-automation — POST (actions)", () => {
     expect(patchBody.last_error).toMatch(/obsolete/);
   });
 
-  it("dispatch: delegates to the orchestrator's /dispatch endpoint", async () => {
+  it("dispatch: force-dispatches an event via the orchestrator in-process", async () => {
     setSupabase();
     setAdminSecret();
-    process.env.WORKFLOW_ORCHESTRATOR_TOKEN = "orch-tok";
+    process.env.N8N_BASE_URL = "https://n8n.example.com";
+    process.env.N8N_WEBHOOK_SECRET = "secret";
     const token = await makeAdminToken();
     routeFetch([
       {
-        match: (u, m) => u.includes("/api/workflow-orchestrator/dispatch") && m === "POST",
-        respond: () => okJson({ ok: true, dispatched: { ok: true } }),
+        match: (u, m) => u.includes("/rest/v1/workflow_events?id=eq.wfe_x") && m === "GET",
+        respond: () => okJson([{ id: "wfe_x", kind: "schedule.changed", state: "pending", payload: {}, attempts: 0, max_attempts: 5 }]),
+      },
+      {
+        match: (u, m) => u.includes("/webhook/datiq/schedule-changed") && m === "POST",
+        respond: () => okJson({ ok: true }),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/workflow_runs") && m === "POST",
+        respond: () => okJson([{ id: "run_1" }]),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/workflow_events?id=eq.wfe_x") && m === "PATCH",
+        respond: () => okJson([{ id: "wfe_x", state: "processing" }]),
       },
     ]);
     const h = await loadHandler();
@@ -232,9 +245,6 @@ describe("admin-automation — POST (actions)", () => {
       body: '{"action":"dispatch","event_id":"wfe_x"}',
     });
     expect(r.statusCode).toBe(200);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/api\/workflow-orchestrator\/dispatch$/);
-    expect(init.headers.Authorization).toBe("Bearer orch-tok");
   });
 
   it("returns 400 on unknown action", async () => {
@@ -274,6 +284,36 @@ describe("admin-automation — POST (actions)", () => {
       body: "not json",
     });
     expect(r.statusCode).toBe(400);
+  });
+
+  it("handles set-config and get-config actions", async () => {
+    setSupabase();
+    setAdminSecret();
+    const token = await makeAdminToken();
+    routeFetch([
+      {
+        match: (u, m) => u.includes("/rest/v1/app_config") && m === "POST",
+        respond: () => okJson([{ key: "automation_pipeline", value: { mode: "event_driven" } }]),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/app_config") && m === "GET",
+        respond: () => okJson([{ value: { mode: "event_driven", polling_interval_minutes: 60 } }]),
+      },
+    ]);
+    const h = await loadHandler();
+    const setRes = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "set-config", config: { mode: "event_driven" } }),
+    });
+    expect(setRes.statusCode).toBe(200);
+
+    const getRes = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "get-config" }),
+    });
+    expect(getRes.statusCode).toBe(200);
   });
 });
 

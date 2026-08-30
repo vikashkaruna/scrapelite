@@ -16,8 +16,9 @@
 
 import { runOnce } from "./lib/workflowOrchestrator.js";
 import { verify as verifySig } from "./lib/n8nSignature.js";
+import { getPipelineConfig } from "./admin-automation.js";
 
-// Cron: every 5 minutes.
+// Cron: every 5 minutes (acts as backup fallback when enabled).
 export const config = { schedule: "*/5 * * * *" };
 
 // ── Environment ────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ function getEnv() {
   return {
     url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
     key: process.env.SUPABASE_SERVICE_KEY || "",
-    n8nBase: process.env.N8N_BASE_URL || "", // e.g. https://n8n-k8q6.srv1738397.hstgr.cloud
+    n8nBase: process.env.N8N_BASE_URL || "", // e.g. https://n8n-dev-692109205619.asia-south1.run.app
     n8nSecret: process.env.N8N_WEBHOOK_SECRET || "",
     adminToken:
       process.env.WORKFLOW_ORCHESTRATOR_TOKEN ||
@@ -126,6 +127,9 @@ async function handleHttp(event, env, client) {
   }
   const action = body.action || (event.path || "").replace(/^\/+/, "");
 
+  if (action === "ping" || action.endsWith("/ping") || action.endsWith("ping")) {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, pong: true, ts: new Date().toISOString() }) };
+  }
   if (action === "dispatch" || action === "/dispatch") {
     return await forceDispatch(env, client, body);
   }
@@ -152,6 +156,13 @@ export const handler = async (event) => {
   }
   if (!env.n8nBase) {
     return { statusCode: 200, body: "skipped (no N8N_BASE_URL)" };
+  }
+
+  // Check admin pipeline configuration
+  const pipelineConfig = await getPipelineConfig(client);
+  if (pipelineConfig.mode === "paused") {
+    console.log("[DatIQ] orchestrator: scheduled poll skipped (pipeline paused by admin)");
+    return { statusCode: 200, body: "skipped (pipeline paused by admin)" };
   }
 
   const result = await runOnce(env, client);

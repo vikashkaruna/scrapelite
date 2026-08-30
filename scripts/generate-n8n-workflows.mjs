@@ -69,10 +69,38 @@ function sb(exprStr) {
   return `={{ ${jsExpr("https://")} + $json._ctx.supabase_url + (${exprStr}) }}`;
 }
 function api(exprStr) {
-  return `={{ ${jsExpr("https://")} + $json._ctx.site_url + (${exprStr}) }}`;
+  return `={{ (() => { let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + (${exprStr}); })() }}`;
 }
 function n8nWebhook(exprStr) {
   return `={{ $env.N8N_BASE_URL + (${exprStr}) }}`;
+}
+
+function callbackNode({ eventPath = "$json.event?.id || $json.id" } = {}) {
+  return {
+    name: "Callback DatIQ",
+    type: "n8n-nodes-base.httpRequest",
+    typeVersion: 4.2,
+    parameters: {
+      method: "POST",
+      url: "={{ (() => { if ($json._ctx && $json._ctx.callback_url && typeof $json._ctx.callback_url === 'string' && $json._ctx.callback_url.includes('.')) return $json._ctx.callback_url; let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + '/api/workflow-callback'; })() }}",
+      sendHeaders: true,
+      headerParameters: {
+        parameters: [
+          { name: "Content-Type", value: "application/json" },
+          { name: "Authorization", value: "=Bearer {{ $env.DATIQ_N8N_API_KEY || $env.N8N_WEBHOOK_SECRET }}" },
+        ],
+      },
+      sendBody: true,
+      specifyBody: "json",
+      jsonBody:
+        `={\\n` +
+        `  "event_id": "{{ ${eventPath} }}",\\n` +
+        `  "state": "done",\\n` +
+        `  "output": { "completed_at": "{{ $now.toISO() }}" }\\n` +
+        `}`,
+      options: { continueOnFail: true },
+    },
+  };
 }
 
 const UUIDS = {};
@@ -636,28 +664,7 @@ const AUTOMATION_WORKFLOWS = [
             options: { continueOnFail: true },
           },
         },
-        {
-          name: "Mark done",
-          type: "n8n-nodes-base.httpRequest",
-          typeVersion: 4.2,
-          parameters: {
-            method: "PATCH",
-            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.event.id"),
-            sendHeaders: true,
-            headerParameters: {
-              parameters: [
-                { name: "apikey", value: "={{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Authorization", value: "=Bearer {{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Content-Type", value: "application/json" },
-                { name: "Prefer", value: "return=minimal" },
-              ],
-            },
-            sendBody: true,
-            specifyBody: "json",
-            jsonBody: '={ "state": "done", "finished_at": "={{ $now.toISO() }}", "last_error": null }',
-            options: {},
-          },
-        },
+        callbackNode({ eventPath: "$json.event?.id || $json.id" }),
       ],
     },
   }),
@@ -698,28 +705,7 @@ const AUTOMATION_WORKFLOWS = [
             options: { continueOnFail: true },
           },
         },
-        {
-          name: "Mark done",
-          type: "n8n-nodes-base.httpRequest",
-          typeVersion: 4.2,
-          parameters: {
-            method: "PATCH",
-            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
-            sendHeaders: true,
-            headerParameters: {
-              parameters: [
-                { name: "apikey", value: "={{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Authorization", value: "=Bearer {{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Content-Type", value: "application/json" },
-                { name: "Prefer", value: "return=minimal" },
-              ],
-            },
-            sendBody: true,
-            specifyBody: "json",
-            jsonBody: '={ "state": "done", "finished_at": "={{ $now.toISO() }}", "last_error": null }',
-            options: {},
-          },
-        },
+        callbackNode({ eventPath: "$json.id" }),
       ],
     },
   }),
@@ -742,28 +728,7 @@ const AUTOMATION_WORKFLOWS = [
           },
           credentials: { slackOAuth2Api: { id: "datiq-slack-monitoring", name: "datiq-slack-monitoring" } },
         },
-        {
-          name: "Mark done",
-          type: "n8n-nodes-base.httpRequest",
-          typeVersion: 4.2,
-          parameters: {
-            method: "PATCH",
-            url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
-            sendHeaders: true,
-            headerParameters: {
-              parameters: [
-                { name: "apikey", value: "={{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Authorization", value: "=Bearer {{ $credentials['datiq-supabase-service'].value }}" },
-                { name: "Content-Type", value: "application/json" },
-                { name: "Prefer", value: "return=minimal" },
-              ],
-            },
-            sendBody: true,
-            specifyBody: "json",
-            jsonBody: '={ "state": "done", "finished_at": "={{ $now.toISO() }}", "last_error": null }',
-            options: {},
-          },
-        },
+        callbackNode({ eventPath: "$json.id" }),
       ],
     },
   }),
@@ -803,37 +768,18 @@ const AUTOMATION_WORKFLOWS = [
           sendBody: true,
           specifyBody: "json",
           jsonBody:
-            `={\n` +
-            `  "from": "{{ $env.CONTACT_EMAIL_FROM || 'DatIQ <hello@datiq.app>' }}",\n` +
-            `  "to": ["{{ $json.user?.email }}"],\n` +
-            `  "subject": "{{ $json.subject || 'Welcome to DatIQ' }}",\n` +
-            `  "html": "{{ $json.html || '<p>Welcome to DatIQ!</p>' }}"\n` +
+            `={\\n` +
+            `  "from": "{{ $env.CONTACT_EMAIL_FROM || 'DatIQ <hello@datiq.app>' }}",\\n` +
+            `  "to": ["{{ $json.user?.email }}"],\\n` +
+            `  "subject": "{{ $json.subject || 'Welcome to DatIQ' }}",\\n` +
+            `  "html": "{{ $json.html || '<p>Welcome to DatIQ!</p>' }}"\\n` +
             `}`,
           options: { continueOnFail: true },
         },
         position: [500, 300],
       },
       {
-        name: "Mark done",
-        type: "n8n-nodes-base.httpRequest",
-        typeVersion: 4.2,
-        parameters: {
-          method: "PATCH",
-          url: sb("'/rest/v1/workflow_events?id=eq.' + $json.id"),
-          sendHeaders: true,
-          headerParameters: {
-            parameters: [
-              { name: "apikey", value: "={{ $credentials['datiq-supabase-service'].value }}" },
-              { name: "Authorization", value: "=Bearer {{ $credentials['datiq-supabase-service'].value }}" },
-              { name: "Content-Type", value: "application/json" },
-              { name: "Prefer", value: "return=minimal" },
-            ],
-          },
-          sendBody: true,
-          specifyBody: "json",
-          jsonBody: '={ "state": "done", "finished_at": "={{ $now.toISO() }}", "last_error": null }',
-          options: {},
-        },
+        ...callbackNode({ eventPath: "$json.id" }),
         position: [760, 300],
       },
       {
@@ -846,8 +792,8 @@ const AUTOMATION_WORKFLOWS = [
     ],
     connections: {
       Webhook: { main: [[{ node: "Send Resend email", type: "main", index: 0 }]] },
-      "Send Resend email": { main: [[{ node: "Mark done", type: "main", index: 0 }]] },
-      "Mark done": { main: [[{ node: "Respond OK", type: "main", index: 0 }]] },
+      "Send Resend email": { main: [[{ node: "Callback DatIQ", type: "main", index: 0 }]] },
+      "Callback DatIQ": { main: [[{ node: "Respond OK", type: "main", index: 0 }]] },
     },
   },
 

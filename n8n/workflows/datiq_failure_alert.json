@@ -42,33 +42,27 @@
     },
     {
       "parameters": {
-        "method": "PATCH",
-        "url": "={{ 'https://' + $json._ctx.supabase_url + ('/rest/v1/workflow_events?id=eq.' + $json.id) }}",
+        "method": "POST",
+        "url": "={{ (() => { if ($json._ctx && $json._ctx.callback_url && typeof $json._ctx.callback_url === 'string' && $json._ctx.callback_url.includes('.')) return $json._ctx.callback_url; let u = ($json._ctx && $json._ctx.site_url) || ($json.site_url) || ($env.SITE_URL) || 'https://datiq.app'; if (typeof u !== 'string' || !u.includes('.')) u = 'https://datiq.app'; u = u.trim().replace(/\\/+$/, ''); if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u; return u + '/api/workflow-callback'; })() }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $credentials['datiq-supabase-service'].value }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $credentials['datiq-supabase-service'].value }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             },
             {
-              "name": "Prefer",
-              "value": "return=minimal"
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.DATIQ_N8N_API_KEY || $env.N8N_WEBHOOK_SECRET }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={ \"state\": \"done\", \"finished_at\": \"={{ $now.toISO() }}\", \"last_error\": null }",
-        "options": {}
+        "jsonBody": "={\\n  \"event_id\": \"{{ $json.id }}\",\\n  \"state\": \"done\",\\n  \"output\": { \"completed_at\": \"{{ $now.toISO() }}\" }\\n}",
+        "options": {
+          "continueOnFail": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -76,8 +70,8 @@
         740,
         300
       ],
-      "id": "00000000-0000-4000-a11a-2d80d1158ae0",
-      "name": "Mark done"
+      "id": "00000000-0000-4000-a2e4-71754ef3e760",
+      "name": "Callback DatIQ"
     },
     {
       "parameters": {
@@ -110,14 +104,14 @@
       "main": [
         [
           {
-            "node": "Mark done",
+            "node": "Callback DatIQ",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Mark done": {
+    "Callback DatIQ": {
       "main": [
         [
           {
