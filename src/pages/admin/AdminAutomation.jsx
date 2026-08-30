@@ -140,6 +140,15 @@ function EventDetail({ event, onClose, onAction, busy }) {
 export default function AdminAutomation() {
   const [stats, setStats] = useState(null);
   const [events, setEvents] = useState([]);
+  const [pipelineConfig, setPipelineConfig] = useState({
+    mode: "event_driven",
+    polling_interval_minutes: 60,
+    scale_to_zero: true,
+  });
+  const [pendingMode, setPendingMode] = useState("event_driven");
+  const [pendingInterval, setPendingInterval] = useState(60);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configFeedback, setConfigFeedback] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -171,6 +180,11 @@ export default function AdminAutomation() {
       } else {
         setStats(data.stats);
         setEvents(data.events || []);
+        if (data.config) {
+          setPipelineConfig(data.config);
+          setPendingMode(data.config.mode || "event_driven");
+          setPendingInterval(data.config.polling_interval_minutes || 60);
+        }
       }
     } catch (e) {
       if (!alive.current) return;
@@ -191,6 +205,39 @@ export default function AdminAutomation() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (selectedId) loadDetail(selectedId); }, [selectedId, loadDetail]);
+
+  const onSaveConfig = useCallback(async () => {
+    setSavingConfig(true);
+    setConfigFeedback("");
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: authedHeaders(),
+        body: JSON.stringify({
+          action: "set-config",
+          config: {
+            mode: pendingMode,
+            polling_interval_minutes: Number(pendingInterval) || 60,
+            scale_to_zero: pendingMode === "event_driven",
+          },
+        }),
+      });
+      const data = await parseJsonSafe(res);
+      if (!alive.current) return;
+      if (!data.ok) {
+        setError(data.error || "Failed to save pipeline configuration");
+      } else {
+        setPipelineConfig(data.config);
+        const label = pendingMode === "event_driven" ? "Event-Driven (Scale-to-Zero)" : pendingMode === "scheduled" ? `Scheduled (${pendingInterval}m)` : "Paused";
+        setConfigFeedback(`Pipeline mode updated to ${label}.`);
+        setTimeout(() => alive.current && setConfigFeedback(""), 4000);
+      }
+    } catch (e) {
+      if (alive.current) setError(e.message || "Failed to save configuration");
+    } finally {
+      if (alive.current) setSavingConfig(false);
+    }
+  }, [pendingMode, pendingInterval]);
 
   const onAction = useCallback(async (action) => {
     if (!selected) return;
@@ -246,12 +293,14 @@ export default function AdminAutomation() {
     return e.state === filter;
   });
 
+  const isDirty = pendingMode !== pipelineConfig.mode || Number(pendingInterval) !== Number(pipelineConfig.polling_interval_minutes);
+
   return (
     <div className="page admin-automation-page">
       <header className="admin-page-head">
         <div>
           <h1 className="admin-page-title">Automation</h1>
-          <p className="admin-page-sub">n8n workflow pipeline observability. v2 plan §6.</p>
+          <p className="admin-page-sub">n8n workflow pipeline & scheduling controls. Scale-to-Zero enabled.</p>
         </div>
         <div className="admin-page-actions">
           <Button variant="secondary" size="sm" onClick={onRunNow} disabled={busy || loading}>
@@ -264,6 +313,7 @@ export default function AdminAutomation() {
       </header>
 
       {warning && <div className="admin-warning-banner">{warning}</div>}
+      {configFeedback && <div className="admin-warning-banner" style={{ background: "rgba(16,185,129,0.12)", color: "#10b981", borderColor: "rgba(16,185,129,0.3)" }}>{configFeedback}</div>}
       {error && (
         <div className="admin-error-banner" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
           <span>{error}</span>
@@ -283,6 +333,157 @@ export default function AdminAutomation() {
           )}
         </div>
       )}
+
+      {/* ── Scheduler & Mode Control Panel ── */}
+      <section className="automation-control-panel card card-pad">
+        <div className="automation-control-head">
+          <div className="automation-control-title-group">
+            <div className="automation-control-icon">
+              <Icon name="sliders" size={20} />
+            </div>
+            <div>
+              <h3 className="automation-control-title">Pipeline Execution & Cloud Run Scheduler</h3>
+              <p className="automation-control-sub">
+                Control how and when DatIQ interacts with n8n on GCP Cloud Run.
+              </p>
+            </div>
+          </div>
+          <div className="automation-control-status">
+            <span
+              className="automation-mode-badge"
+              style={{
+                background:
+                  pipelineConfig.mode === "event_driven"
+                    ? "rgba(16,185,129,0.12)"
+                    : pipelineConfig.mode === "scheduled"
+                    ? "rgba(59,130,246,0.12)"
+                    : "rgba(245,158,11,0.12)",
+                color:
+                  pipelineConfig.mode === "event_driven"
+                    ? "#10b981"
+                    : pipelineConfig.mode === "scheduled"
+                    ? "#3b82f6"
+                    : "#f59e0b",
+                border: `1px solid ${
+                  pipelineConfig.mode === "event_driven"
+                    ? "rgba(16,185,129,0.3)"
+                    : pipelineConfig.mode === "scheduled"
+                    ? "rgba(59,130,246,0.3)"
+                    : "rgba(245,158,11,0.3)"
+                }`,
+              }}
+            >
+              <Icon
+                name={
+                  pipelineConfig.mode === "event_driven"
+                    ? "zap"
+                    : pipelineConfig.mode === "scheduled"
+                    ? "clock"
+                    : "pause"
+                }
+                size={14}
+              />
+              {pipelineConfig.mode === "event_driven"
+                ? "Event-Driven (Scale-to-Zero)"
+                : pipelineConfig.mode === "scheduled"
+                ? `Periodic Polling (${pipelineConfig.polling_interval_minutes}m)`
+                : "Pipeline Paused"}
+            </span>
+          </div>
+        </div>
+
+        <div className="automation-mode-options">
+          <label className={`automation-mode-card ${pendingMode === "event_driven" ? "selected" : ""}`}>
+            <div className="automation-mode-radio">
+              <input
+                type="radio"
+                name="pipelineMode"
+                value="event_driven"
+                checked={pendingMode === "event_driven"}
+                onChange={(e) => setPendingMode(e.target.value)}
+              />
+            </div>
+            <div className="automation-mode-content">
+              <div className="automation-mode-name">
+                <Icon name="zap" size={16} /> Event-Driven (Real-Time Push)
+                <span className="automation-rec-pill">Recommended</span>
+              </div>
+              <div className="automation-mode-desc">
+                Dispatches webhooks to n8n only when user extractions or automation events occur. Background polling is eliminated and GCP Cloud Run scales down to 0 instances when idle ($0 idle cost).
+              </div>
+            </div>
+          </label>
+
+          <label className={`automation-mode-card ${pendingMode === "scheduled" ? "selected" : ""}`}>
+            <div className="automation-mode-radio">
+              <input
+                type="radio"
+                name="pipelineMode"
+                value="scheduled"
+                checked={pendingMode === "scheduled"}
+                onChange={(e) => setPendingMode(e.target.value)}
+              />
+            </div>
+            <div className="automation-mode-content">
+              <div className="automation-mode-name">
+                <Icon name="clock" size={16} /> Scheduled Polling
+              </div>
+              <div className="automation-mode-desc">
+                Evaluates the automation queue at a configured interval.
+              </div>
+              {pendingMode === "scheduled" && (
+                <div className="automation-interval-picker" onClick={(e) => e.stopPropagation()}>
+                  <label htmlFor="pipeline-interval-select">Cadence:</label>
+                  <select
+                    id="pipeline-interval-select"
+                    value={pendingInterval}
+                    onChange={(e) => setPendingInterval(Number(e.target.value))}
+                    className="automation-select"
+                  >
+                    <option value={60}>Every 1 Hour (@hourly)</option>
+                    <option value={360}>Every 6 Hours</option>
+                    <option value={720}>Every 12 Hours</option>
+                    <option value={1440}>Every 24 Hours (@daily)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </label>
+
+          <label className={`automation-mode-card ${pendingMode === "paused" ? "selected" : ""}`}>
+            <div className="automation-mode-radio">
+              <input
+                type="radio"
+                name="pipelineMode"
+                value="paused"
+                checked={pendingMode === "paused"}
+                onChange={(e) => setPendingMode(e.target.value)}
+              />
+            </div>
+            <div className="automation-mode-content">
+              <div className="automation-mode-name">
+                <Icon name="pause-circle" size={16} /> Paused (Manual 'Run Now' only)
+              </div>
+              <div className="automation-mode-desc">
+                Suspends scheduled queue polling. Events queue in the database and are processed only when an administrator clicks "Run now" or "Dispatch now".
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div className="automation-control-footer">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSaveConfig}
+            disabled={savingConfig || !isDirty}
+          >
+            <Icon name={savingConfig ? "loader" : "check"} size={14} />
+            {savingConfig ? "Saving configuration…" : "Save Configuration"}
+          </Button>
+          {isDirty && <span className="automation-unsaved-text">Unsaved changes</span>}
+        </div>
+      </section>
 
       <section className="automation-kpis">
         <KpiCard label="Pending" value={stats?.byState?.pending ?? 0} icon="clock" accent="#f59e0b" />

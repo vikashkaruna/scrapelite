@@ -1,9 +1,10 @@
 # n8n Operations Runbook — DatIQ
 
-> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4
-> **Audience:** You (Vikash) running the Hostinger-hosted n8n instance
+> **v2 plan:** `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` §4  
+> **Architecture & Scale-to-Zero Guide:** `docs/N8N-WORKFLOW-OPTIMIZATION-ARCHITECTURE.md`  
+> **Audience:** Operators running the GCP Cloud Run n8n instance + DatIQ Platform
 
-The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/`. This runbook is the higher-level "what to do when X" guide.
+The detailed operations (deploy, backups, upgrades, secrets) are in `n8n/ops/` and `docs/N8N-WORKFLOW-OPTIMIZATION-ARCHITECTURE.md`. This runbook is the higher-level "what to do when X" guide.
 
 ---
 

@@ -285,6 +285,36 @@ describe("admin-automation — POST (actions)", () => {
     });
     expect(r.statusCode).toBe(400);
   });
+
+  it("handles set-config and get-config actions", async () => {
+    setSupabase();
+    setAdminSecret();
+    const token = await makeAdminToken();
+    routeFetch([
+      {
+        match: (u, m) => u.includes("/rest/v1/app_config") && m === "POST",
+        respond: () => okJson([{ key: "automation_pipeline", value: { mode: "event_driven" } }]),
+      },
+      {
+        match: (u, m) => u.includes("/rest/v1/app_config") && m === "GET",
+        respond: () => okJson([{ value: { mode: "event_driven", polling_interval_minutes: 60 } }]),
+      },
+    ]);
+    const h = await loadHandler();
+    const setRes = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "set-config", config: { mode: "event_driven" } }),
+    });
+    expect(setRes.statusCode).toBe(200);
+
+    const getRes = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "get-config" }),
+    });
+    expect(getRes.statusCode).toBe(200);
+  });
 });
 
 describe("admin-automation — misc", () => {

@@ -16,8 +16,9 @@
 
 import { runOnce } from "./lib/workflowOrchestrator.js";
 import { verify as verifySig } from "./lib/n8nSignature.js";
+import { getPipelineConfig } from "./admin-automation.js";
 
-// Cron: every 5 minutes.
+// Cron: every 5 minutes (acts as backup fallback when enabled).
 export const config = { schedule: "*/5 * * * *" };
 
 // ── Environment ────────────────────────────────────────────────────────
@@ -155,6 +156,13 @@ export const handler = async (event) => {
   }
   if (!env.n8nBase) {
     return { statusCode: 200, body: "skipped (no N8N_BASE_URL)" };
+  }
+
+  // Check admin pipeline configuration
+  const pipelineConfig = await getPipelineConfig(client);
+  if (pipelineConfig.mode === "paused") {
+    console.log("[DatIQ] orchestrator: scheduled poll skipped (pipeline paused by admin)");
+    return { statusCode: 200, body: "skipped (pipeline paused by admin)" };
   }
 
   const result = await runOnce(env, client);

@@ -135,6 +135,62 @@ async function cancelEvent(db, eventId, reason) {
   return { ok: true, event: Array.isArray(rows) ? rows[0] : null };
 }
 
+// ── Pipeline Configuration ─────────────────────────────────────────────
+export const DEFAULT_PIPELINE_CONFIG = {
+  mode: "event_driven", // "event_driven" | "scheduled" | "paused"
+  polling_interval_minutes: 60,
+  scale_to_zero: true,
+  last_updated_at: new Date().toISOString(),
+  updated_by: "system",
+};
+
+export async function getPipelineConfig(db) {
+  if (!db) return DEFAULT_PIPELINE_CONFIG;
+  try {
+    const res = await fetch(`${db.base}/app_config?key=eq.automation_pipeline&select=value&limit=1`, { headers: db.headers });
+    if (!res.ok) return DEFAULT_PIPELINE_CONFIG;
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows[0]?.value) {
+      return { ...DEFAULT_PIPELINE_CONFIG, ...rows[0].value };
+    }
+    return DEFAULT_PIPELINE_CONFIG;
+  } catch {
+    return DEFAULT_PIPELINE_CONFIG;
+  }
+}
+
+export async function savePipelineConfig(db, config, actor = "admin") {
+  if (!db) return { ok: false, error: "supabase not configured" };
+  try {
+    const mode = ["event_driven", "scheduled", "paused"].includes(config?.mode) ? config.mode : "event_driven";
+    const interval = Number(config?.polling_interval_minutes) || 60;
+    const merged = {
+      mode,
+      polling_interval_minutes: interval,
+      scale_to_zero: config?.scale_to_zero !== false,
+      last_updated_at: new Date().toISOString(),
+      updated_by: actor,
+    };
+    const res = await fetch(`${db.base}/app_config?on_conflict=key`, {
+      method: "POST",
+      headers: {
+        ...db.headers,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify({
+        key: "automation_pipeline",
+        value: merged,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) throw new Error(`supabase ${res.status}`);
+    return { ok: true, config: merged };
+  } catch (err) {
+    return { ok: false, error: err.message || "Failed to save pipeline configuration" };
+  }
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────
 async function handleGet(event) {
   const params = event.queryStringParameters || {};
@@ -146,11 +202,12 @@ async function handleGet(event) {
     return ok({ ok: true, ...detail });
   }
 
-  const [stats, events] = await Promise.all([
+  const [stats, events, config] = await Promise.all([
     getStats(db),
     getRecentEvents(db, Number(params.limit) || 50),
+    getPipelineConfig(db),
   ]);
-  return ok({ ok: true, stats, events });
+  return ok({ ok: true, stats, events, config });
 }
 
 async function handlePost(event) {
@@ -165,6 +222,14 @@ async function handlePost(event) {
   try { body = JSON.parse(event.body || "{}"); } catch { return bad(400, "invalid JSON"); }
   const action = body.action;
 
+  if (action === "set-config") {
+    const r = await savePipelineConfig(db, body.config, v.actor || "admin");
+    return r.ok ? ok(r) : bad(500, r.error);
+  }
+  if (action === "get-config") {
+    const config = await getPipelineConfig(db);
+    return ok({ ok: true, config });
+  }
   if (action === "retry") {
     if (!body.event_id) return bad(400, "missing event_id");
     const r = await retryEvent(db, body.event_id);
