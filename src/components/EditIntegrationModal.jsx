@@ -45,6 +45,8 @@ import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import {
   patchIntegrationConnection,
+  fetchAirtableTablesClient,
+  createAirtableTableClient,
 } from "../lib/integrationsClient.js";
 
 // Editable field shape per provider. Each entry says what to render in
@@ -125,6 +127,13 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
   const [mintedToken, setMintedToken]   = useState(null);
   const [mintingToken, setMintingToken] = useState(false);
 
+  // Airtable dynamic table discovery & creation state
+  const [airtableTables, setAirtableTables]   = useState([]);
+  const [loadingTables, setLoadingTables]     = useState(false);
+  const [creatingTable, setCreatingTable]     = useState(false);
+  const [showCreateTable, setShowCreateTable] = useState(false);
+  const [newTableName, setNewTableName]       = useState("DatIQ Extractions");
+
   // Reset state on open/close.
   useEffect(() => {
     if (open && status?.connection) {
@@ -141,8 +150,61 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
       setReplacingToken(false);
       setMintedToken(null);
       setMintingToken(false);
+      setShowCreateTable(false);
+      setNewTableName("DatIQ Extractions");
     }
   }, [open, status]);
+
+  // Load Airtable tables dynamically when modal opens for Airtable or when baseId changes
+  useEffect(() => {
+    if (open && slug === "airtable" && values.baseId && /^app[A-Za-z0-9]{8,}$/i.test(values.baseId.trim())) {
+      let alive = true;
+      setLoadingTables(true);
+      fetchAirtableTablesClient(values.baseId.trim())
+        .then((res) => {
+          if (alive && res.ok && Array.isArray(res.tables)) {
+            setAirtableTables(res.tables);
+          }
+        })
+        .finally(() => {
+          if (alive) setLoadingTables(false);
+        });
+      return () => { alive = false; };
+    }
+  }, [open, slug, values.baseId]);
+
+  const handleCreateAirtableTable = async (e) => {
+    if (e) e.preventDefault();
+    if (!values.baseId) {
+      setError("Base ID is required to create a table.");
+      return;
+    }
+    const nameToCreate = newTableName.trim() || "DatIQ Extractions";
+    setCreatingTable(true);
+    setError(null);
+    try {
+      const res = await createAirtableTableClient({
+        baseId: values.baseId.trim(),
+        tableName: nameToCreate,
+      });
+      if (!res.ok) {
+        setError(res.error || "Failed to create table in Airtable.");
+        return;
+      }
+      setAirtableTables((prev) => [
+        ...prev.filter((t) => t.id !== res.tableId),
+        { id: res.tableId, name: res.tableName, fields: res.fields },
+      ]);
+      setField("tableId", res.tableId);
+      setShowCreateTable(false);
+      setSuccess({ kind: "table_created", tableName: res.tableName });
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err?.message || "Network error while creating table.");
+    } finally {
+      setCreatingTable(false);
+    }
+  };
 
   if (!open || !slug) return null;
   const config = PROVIDER_META[slug];
@@ -353,19 +415,111 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
               </div>
             )}
 
-            {fields.map((f) => (
-              <div key={f.key} className="icm-field">
-                <label htmlFor={`eim-${slug}-${f.key}`}>{f.label}</label>
-                <input
-                  id={`eim-${slug}-${f.key}`}
-                  type={f.kind}
-                  value={values[f.key] || ""}
-                  onChange={(e) => setField(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                  autoComplete="off"
-                />
-              </div>
-            ))}
+            {fields.map((f) => {
+              if (slug === "airtable" && f.key === "tableId") {
+                return (
+                  <div key={f.key} className="icm-field">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                      <label htmlFor={`eim-${slug}-${f.key}`}>{f.label}</label>
+                      <button
+                        type="button"
+                        style={{ fontSize: "0.82em", background: "none", border: "none", color: "var(--accent, #6366f1)", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+                        onClick={() => setShowCreateTable((v) => !v)}
+                      >
+                        {showCreateTable ? "Cancel new table" : "+ Create new table in Airtable"}
+                      </button>
+                    </div>
+
+                    {showCreateTable && (
+                      <div className="eim-token-rotate" style={{ marginBottom: 10, padding: "8px 10px" }}>
+                        <label style={{ fontSize: "0.82em", marginBottom: 4, display: "block" }}>New Table Name</label>
+                        <div className="eim-token-rotate-row">
+                          <input
+                            type="text"
+                            value={newTableName}
+                            onChange={(e) => setNewTableName(e.target.value)}
+                            placeholder="DatIQ Extractions"
+                            disabled={creatingTable}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleCreateAirtableTable}
+                            loading={creatingTable}
+                            disabled={creatingTable || !values.baseId}
+                          >
+                            Create &amp; select
+                          </Button>
+                        </div>
+                        <p className="icm-help" style={{ margin: "4px 0 0 0", fontSize: "0.78em" }}>
+                          Provisions standard columns (URL, Title, Host, Summary, Created at, Headings, Links) directly in your Airtable base.
+                        </p>
+                      </div>
+                    )}
+
+                    {airtableTables.length > 0 ? (
+                      <div>
+                        <select
+                          id={`eim-${slug}-${f.key}`}
+                          value={values[f.key] || ""}
+                          onChange={(e) => setField(f.key, e.target.value)}
+                          className="icm-select"
+                        >
+                          <option value="">-- Select a table from this base --</option>
+                          {airtableTables.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name ? `${t.name} (${t.id})` : t.id}
+                            </option>
+                          ))}
+                        </select>
+                        {(() => {
+                          const selected = airtableTables.find((t) => t.id === values.tableId);
+                          if (selected) {
+                            return (
+                              <p className="icm-help" style={{ margin: "4px 0 0 0", color: "var(--accent, #6366f1)" }}>
+                                <Icon name="check" size={11} /> Table "{selected.name}" · {selected.fields?.length || 0} fields detected
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          id={`eim-${slug}-${f.key}`}
+                          type={f.kind}
+                          value={values[f.key] || ""}
+                          onChange={(e) => setField(f.key, e.target.value)}
+                          placeholder={loadingTables ? "Loading tables from base…" : f.placeholder}
+                          autoComplete="off"
+                        />
+                        {loadingTables && (
+                          <p className="icm-help" style={{ margin: "4px 0 0 0" }}>
+                            <Icon name="loader" size={12} className="spin" /> Fetching tables in this base…
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div key={f.key} className="icm-field">
+                  <label htmlFor={`eim-${slug}-${f.key}`}>{f.label}</label>
+                  <input
+                    id={`eim-${slug}-${f.key}`}
+                    type={f.kind}
+                    value={values[f.key] || ""}
+                    onChange={(e) => setField(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    autoComplete="off"
+                  />
+                </div>
+              );
+            })}
 
             {/* Provider-specific extras ─────────────────────────────────── */}
 

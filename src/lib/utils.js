@@ -382,20 +382,101 @@ export function csvDownload(items, opts = {}) {
   return { csv, name, blob };
 }
 
-// DeepSeq QW#3 — "Open in Google Sheets" deep-link. The cleanest no-OAuth path:
-//   1. Download the CSV locally (so the user has the file)
-//   2. Open Google Drive's "new sheet" page in a new tab
-//   3. The user uploads the downloaded CSV via File → Import → Upload
-// This is the supported deep-link pattern (Google doesn't accept a CSV blob via
-// URL — uploading to Drive first is the canonical path).
+// Build one combined TSV (Tab-Separated Values) across one or more extractions.
+// When copied to clipboard, TSV pastes cleanly into Google Sheets and Microsoft Excel
+// across rows and columns in 1 keystroke (Cmd+V / Ctrl+V in cell A1).
+export function extractionsToTsv(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const rows = [["page", "type", "name", "text", "value"]];
+  for (const e of list) {
+    const page = hostOf(e.url) + (pathOf(e.url) !== "/" ? pathOf(e.url) : "");
+    for (const r of extractionRows(e)) rows.push([page, ...r]);
+  }
+  return rows
+    .map((r) =>
+      r
+        .map((cell) =>
+          String(cell ?? "")
+            .replace(/\t/g, " ")
+            .replace(/[\r\n]+/g, " ")
+        )
+        .join("\t")
+    )
+    .join("\r\n");
+}
+
+// Build an Excel XML Spreadsheet (Worksheet) document compatible with Microsoft Excel,
+// Apple Numbers, Google Drive, and LibreOffice Calc.
+export function extractionsToExcel(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const rows = [["page", "type", "name", "text", "value"]];
+  for (const e of list) {
+    const page = hostOf(e.url) + (pathOf(e.url) !== "/" ? pathOf(e.url) : "");
+    for (const r of extractionRows(e)) rows.push([page, ...r]);
+  }
+  const xmlEscape = (val) =>
+    String(val ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+
+  const rowXml = rows
+    .map(
+      (r) =>
+        `   <Row>\n` +
+        r
+          .map((cell) => `    <Cell><Data ss:Type="String">${xmlEscape(cell)}</Data></Cell>`)
+          .join("\n") +
+        `\n   </Row>`
+    )
+    .join("\n");
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<?mso-application progid="Excel.Sheet"?>\n` +
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n` +
+    ` xmlns:o="urn:schemas-microsoft-com:office:office"\n` +
+    ` xmlns:x="urn:schemas-microsoft-com:office:excel"\n` +
+    ` xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n` +
+    ` <Worksheet ss:Name="DatIQ Extraction">\n` +
+    `  <Table>\n` +
+    rowXml +
+    `\n  </Table>\n` +
+    ` </Worksheet>\n` +
+    `</Workbook>`
+  );
+}
+
+// Download one or more extractions as an Excel Worksheet (.xls).
+export function excelDownload(items) {
+  const list = Array.isArray(items) ? items : [items];
+  const xls = extractionsToExcel(list);
+  const blob = new Blob([xls], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const name =
+    list.length === 1
+      ? `datiq-${hostOf(list[0].url)}-${list[0].id || "export"}.xls`
+      : `datiq-export-${list.length}-pages.xls`;
+  triggerDownload(blob, name);
+  return { xls, name, blob };
+}
+
+// DeepSeq QW#3 — "Open in Google Sheets" workflow:
+//   1. Downloads the CSV locally so the user has the physical file.
+//   2. Copies tabular data (TSV) to the user's clipboard automatically so that
+//      pressing Cmd+V / Ctrl+V in cell A1 instantly fills the new Google Sheet.
+//   3. Opens Google Sheets in a new tab.
 export const GOOGLE_SHEETS_NEW_URL = "https://docs.google.com/spreadsheets/create?usp=datiq_sheet";
 
 export function openInGoogleSheets(items) {
   const meta = csvDownload(items);
+  const tsv = extractionsToTsv(items);
+  copyTextToClipboard(tsv).catch(() => {});
   if (typeof window !== "undefined" && window.open) {
     window.open(GOOGLE_SHEETS_NEW_URL, "_blank", "noopener,noreferrer");
   }
-  return meta;
+  return { ...meta, tsv, copied: true };
 }
 
 // ── Clipboard copy (F01 — Export dropdown "Copy as …" option) ──────────────
@@ -408,7 +489,7 @@ export function openInGoogleSheets(items) {
 // Returns `{ ok: true, text, chars }` on success or `{ ok: false, reason }`
 // when the write is blocked (caller decides what to show).
 
-const CLIPBOARD_FORMATS = new Set(["csv", "json", "markdown", "summary"]);
+const CLIPBOARD_FORMATS = new Set(["csv", "tsv", "json", "markdown", "summary"]);
 
 function summarizeText(extraction) {
   const e = extraction || {};
@@ -419,6 +500,7 @@ export function buildClipboardPayload(items, format = "csv") {
   const list = Array.isArray(items) ? items : [items];
   switch (format) {
     case "csv":      return { text: extractionsToCsv(list),       mime: "text/csv" };
+    case "tsv":      return { text: extractionsToTsv(list),       mime: "text/tab-separated-values" };
     case "json":     return { text: extractionsToJson(list), mime: "application/json" };
     case "markdown": return { text: extractionsToMarkdown(list),  mime: "text/markdown" };
     case "summary":  return { text: list.map(summarizeText).filter(Boolean).join("\n\n---\n\n"), mime: "text/plain" };

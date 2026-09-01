@@ -364,3 +364,49 @@ export async function testIntegrationConnection(slug) {
     return { ok: false, error: "network", message: err?.message || "Network error" };
   }
 }
+
+/**
+ * Fetch all available tables for an Airtable base dynamically using stored credentials.
+ */
+export async function fetchAirtableTablesClient(baseId) {
+  try {
+    const { ok, body, status } = await authedFetch(
+      baseId ? `/api/integrations/airtable/tables?baseId=${encodeURIComponent(baseId)}` : `/api/integrations/airtable/tables`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action: "tables", baseId }),
+      }
+    );
+    if (!ok) {
+      return { ok: false, error: body?.error || `HTTP ${status}` };
+    }
+    return { ok: true, tables: body.tables || [] };
+  } catch (err) {
+    if (err?.message === "not_signed_in") {
+      return { ok: false, error: "not_signed_in", message: "Sign in to list Airtable tables." };
+    }
+    return { ok: false, error: "network", message: err?.message || "Network error" };
+  }
+}
+
+/**
+ * Create a new table in Airtable dynamically and optionally set it as active.
+ */
+export async function createAirtableTableClient({ baseId, tableName = "DatIQ Extractions", fields, setAsActive = true } = {}) {
+  try {
+    const { ok, body, status } = await authedFetch(`/api/integrations/airtable/create-table`, {
+      method: "POST",
+      body: JSON.stringify({ action: "create-table", baseId, tableName, fields, setAsActive }),
+    });
+    if (!ok) {
+      return { ok: false, error: body?.error || `HTTP ${status}` };
+    }
+    return { ok: true, ...body };
+  } catch (err) {
+    if (err?.message === "not_signed_in") {
+      return { ok: false, error: "not_signed_in", message: "Sign in to create an Airtable table." };
+    }
+    return { ok: false, error: "network", message: err?.message || "Network error" };
+  }
+}
+

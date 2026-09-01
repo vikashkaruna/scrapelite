@@ -46,6 +46,8 @@ const integrationMocks = vi.hoisted(() => ({
   pushToIntegration: vi.fn(),
   getIntegrationStatus: vi.fn(),
   getPushProviderStatuses: vi.fn(),
+  fetchAirtableTablesClient: vi.fn(() => Promise.resolve({ ok: true, tables: [] })),
+  createAirtableTableClient: vi.fn(() => Promise.resolve({ ok: true })),
   PUSH_PROVIDERS: [
     { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "CRM" },
     { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "DB" },
@@ -97,6 +99,8 @@ vi.mock("../lib/integrationsClient.js", () => ({
   pushToIntegration: integrationMocks.pushToIntegration,
   getIntegrationStatus: integrationMocks.getIntegrationStatus,
   getPushProviderStatuses: integrationMocks.getPushProviderStatuses,
+  fetchAirtableTablesClient: integrationMocks.fetchAirtableTablesClient,
+  createAirtableTableClient: integrationMocks.createAirtableTableClient,
   PUSH_PROVIDERS: integrationMocks.PUSH_PROVIDERS,
 }));
 

@@ -23,7 +23,7 @@ import { listExtractions, deleteExtraction, saveExtraction } from "../lib/extrac
 import { listBatchRuns, readBatchMap, deleteBatchRun } from "../lib/batchRunsService.js";
 import { apiClient } from "../lib/apiClient.js";
 import { summariseCollections, normalizeCollectionName } from "../lib/collectionsService.js";
-import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
+import { hostOf, pathOf, fmtDate, timeAgo, snippet, csvDownload, excelDownload, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { readEnrichments } from "../lib/enrichmentStore.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
@@ -209,7 +209,7 @@ function DashCard({ item, selected, onToggle, onView, onDelete, category }) {
 }
 
 // ── Export Dropdown ───────────────────────────────────────────────────────────
-function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled, label }) {
+function ExportDropdown({ onCsv, onExcel, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMarkdown, onCopyJson, disabled, label }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -239,6 +239,9 @@ function ExportDropdown({ onCsv, onPdf, onMarkdown, onJson, onCopyCsv, onCopyMar
             <div className="export-dropdown-section-label">Download</div>
             <button className="export-dropdown-item" onClick={() => { onCsv(); setOpen(false); }}>
               <Icon name="download" size={14} /> <span><b>CSV</b></span>
+            </button>
+            <button className="export-dropdown-item" onClick={() => { onExcel && onExcel(); setOpen(false); }}>
+              <Icon name="sheet" size={14} /> <span><b>Excel Worksheet (.xls)</b></span>
             </button>
             <button className="export-dropdown-item" onClick={() => { onPdf(); setOpen(false); }}>
               <Icon name="file" size={14} /> <span><b>PDF</b></span>
@@ -702,6 +705,15 @@ export default function Dashboard() {
     showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to CSV`, "download");
   };
 
+  const onExportExcel = () => {
+    if (!checkCanExport("csv")) { showToast("Spreadsheet export is not available on your current plan."); return; }
+    const targets = exportTargets();
+    if (!targets.length) return;
+    excelDownload(targets, { brandKit: readBrandKit() });
+    analytics.exported({ format: "excel", count: targets.length, source: "dashboard" });
+    showToast(`Exported ${targets.length} page${targets.length > 1 ? "s" : ""} to Excel Worksheet`, "sheet");
+  };
+
   const onExportPdf = async () => {
     if (!checkCanExport("pdf")) { showToast("PDF export requires the Go plan or higher. Upgrade to unlock."); return; }
     const targets = exportTargets();
@@ -887,6 +899,7 @@ export default function Dashboard() {
             {hasItems && (
               <ExportDropdown
                 onCsv={onExportCsv}
+                onExcel={onExportExcel}
                 onPdf={onExportPdf}
                 onMarkdown={onExportMarkdown}
                 onJson={onExportJson}

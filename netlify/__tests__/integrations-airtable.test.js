@@ -29,9 +29,18 @@ vi.mock("../functions/lib/integrationConnectionStore.js", () => ({
   deleteConnection: (...args) => mockStore.delete(...args),
 }));
 
+const mockFetchTables = vi.fn();
+const mockCreateTable = vi.fn();
+const mockResolveTable = vi.fn();
+
 vi.mock("../../src/lib/airtable.js", () => ({
   pushToAirtable: vi.fn(),
+  fetchAirtableSchema: vi.fn(),
+  fetchAirtableTables: (...args) => mockFetchTables(...args),
+  createAirtableTable: (...args) => mockCreateTable(...args),
+  resolveAirtableTable: (...args) => mockResolveTable(...args),
   validateAirtableConfig: vi.fn(() => []),
+  autoMapAirtableFields: vi.fn((fields) => ({ URL: { key: "url" } })),
 }));
 
 // The push entitlement gate hits the entitlements table via plain fetch() —
@@ -193,6 +202,68 @@ describe("integrations-airtable", () => {
     });
   });
 
+  describe("GET /tables", () => {
+    it("fetches tables dynamically using stored credentials", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: { config: { api_key: "patABCDEFGHIJK", base_id: "app12345678" } },
+      });
+      mockFetchTables.mockResolvedValueOnce({
+        ok: true,
+        tables: [{ id: "tbl1", name: "Prospects", fields: [] }],
+      });
+      const r = await handler(baseEvent({
+        httpMethod: "GET",
+        queryStringParameters: { splat: "tables" },
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+      expect(body.tables).toHaveLength(1);
+      expect(body.tables[0].name).toBe("Prospects");
+      expect(mockFetchTables).toHaveBeenCalledWith({
+        apiKey: "patABCDEFGHIJK",
+        baseId: "app12345678",
+      });
+    });
+  });
+
+  describe("POST /create-table", () => {
+    it("creates a table in Airtable and updates the connection config", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: { config: { api_key: "patABCDEFGHIJK", base_id: "app12345678" } },
+      });
+      mockStore.upsert.mockResolvedValue({ ok: true });
+      mockCreateTable.mockResolvedValueOnce({
+        ok: true,
+        tableId: "tblCreated123",
+        tableName: "DatIQ Extractions",
+        fields: [{ id: "fld1", name: "URL", type: "url" }],
+      });
+
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "create-table" },
+        body: JSON.stringify({ tableName: "DatIQ Extractions" }),
+      }));
+      expect(r.statusCode).toBe(200);
+      const body = JSON.parse(r.body);
+      expect(body.ok).toBe(true);
+      expect(body.tableId).toBe("tblCreated123");
+      expect(mockStore.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "airtable",
+          fields: expect.objectContaining({
+            config: expect.objectContaining({
+              table_id: "tblCreated123",
+            }),
+          }),
+        })
+      );
+    });
+  });
+
   describe("POST /push", () => {
     it("rejects an empty items array", async () => {
       const r = await handler(baseEvent({
@@ -215,6 +286,37 @@ describe("integrations-airtable", () => {
       }));
       expect(r.statusCode).toBe(200);
       expect(pushToAirtable).toHaveBeenCalled();
+    });
+    it("resolves dynamic tableName and creates if missing before pushing", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: { config: { api_key: "patABCDEFGHIJK", base_id: "appXXX" } },
+      });
+      mockResolveTable.mockResolvedValueOnce({
+        ok: true,
+        tableId: "tblResolved123",
+        tableName: "Dynamic Table",
+        fields: [{ id: "fld1", name: "URL", type: "url" }],
+        created: true,
+      });
+      pushToAirtable.mockResolvedValue({ ok: true, pushed: 1, total: 1, errors: [], failedRecords: [] });
+      const r = await handler(baseEvent({
+        httpMethod: "POST",
+        queryStringParameters: { splat: "push" },
+        body: JSON.stringify({ items: [{ url: "a" }], tableName: "Dynamic Table", createIfMissing: true }),
+      }));
+      expect(r.statusCode).toBe(200);
+      expect(mockResolveTable).toHaveBeenCalledWith({
+        apiKey: "patABCDEFGHIJK",
+        baseId: "appXXX",
+        tableIdOrName: "Dynamic Table",
+        createIfMissing: true,
+        tableNameIfCreating: "Dynamic Table",
+      });
+      expect(pushToAirtable).toHaveBeenCalledWith(
+        [{ url: "a" }],
+        expect.objectContaining({ tableId: "tblResolved123" })
+      );
     });
     it("refuses the push server-side when the plan lacks the integrations capability", async () => {
       mockRequireCapabilityForUser.mockResolvedValueOnce({

@@ -21,7 +21,7 @@ import { lifecycle as analytics } from "../lib/analyticsService.js";
 import { summariseProvenance } from "../lib/provenanceService.js";
 import ProvenanceBadge, { ProvenanceSummary } from "../components/ProvenanceBadge.jsx";
 import FeedbackWidget from "../components/FeedbackWidget.jsx";
-import { hostOf, pathOf, isExternal, timeAgo, csvDownload, openInGoogleSheets, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
+import { hostOf, pathOf, isExternal, timeAgo, csvDownload, excelDownload, openInGoogleSheets, markdownDownload, jsonDownload, copyToClipboard } from "../lib/utils.js";
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
@@ -440,10 +440,15 @@ export default function Preview() {
     csvDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to CSV", "download");
   };
+  const onDownloadExcel = () => {
+    if (!checkCanExport("csv")) { showToast("Spreadsheet export is not available on your current plan."); return; }
+    excelDownload([data]);
+    showToast("Exported Excel Worksheet", "sheet");
+  };
   const onOpenInSheets = () => {
     if (!checkCanExport("csv")) { showToast("CSV export is not available on your current plan."); return; }
     openInGoogleSheets([data]);
-    showToast("CSV downloaded. Upload it to the Google Sheet that just opened (File → Import → Upload).", "sheet");
+    showToast("Copied table to clipboard & opened Google Sheets! Press Cmd+V (or Ctrl+V) in cell A1 to paste.", "sheet");
   };
   const onDownloadMarkdown = () => {
     if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
@@ -617,8 +622,11 @@ export default function Preview() {
                     <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
                       <Icon name="download" size={14} /> <span><b>CSV</b></span>
                     </button>
+                    <button className="export-dropdown-item" onClick={() => { onDownloadExcel(); setDownloadOpen(false); }}>
+                      <Icon name="sheet" size={14} /> <span><b>Excel Worksheet (.xls)</b><span className="export-plan-hint">Native spreadsheet format</span></span>
+                    </button>
                     <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
-                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">Downloads CSV + opens new Sheet</span></span>
+                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">Copies data + opens new Sheet (Cmd+V to paste)</span></span>
                     </button>
                     <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
                       <Icon name="file" size={14} /> <span><b>PDF</b></span>

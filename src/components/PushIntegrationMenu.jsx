@@ -117,13 +117,13 @@ export default function PushIntegrationMenu({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Google Sheets needs no connection and no server round-trip — it downloads
-  // the CSV and opens a blank sheet to upload it into.
+  // Google Sheets needs no connection and no server round-trip — it copies the table
+  // to the clipboard, downloads the CSV, and opens a blank sheet to paste into.
   const handleSheets = () => {
     setOpen(false);
     openInGoogleSheets(cleanItems);
     showToast(
-      `Downloaded a CSV of ${cleanItems.length} row${cleanItems.length !== 1 ? "s" : ""}. Upload it in the Google Sheets tab that just opened.`,
+      `Copied ${cleanItems.length} row${cleanItems.length !== 1 ? "s" : ""} to clipboard & downloaded CSV! Press Cmd+V (or Ctrl+V) in Google Sheets to paste.`,
       "sheet",
     );
     onPushed?.("sheets", { ok: true, pushed: cleanItems.length, total: cleanItems.length });

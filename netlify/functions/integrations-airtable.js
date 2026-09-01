@@ -20,6 +20,9 @@ import {
 import {
   pushToAirtable,
   fetchAirtableSchema,
+  fetchAirtableTables,
+  createAirtableTable,
+  resolveAirtableTable,
   validateAirtableConfig,
   autoMapAirtableFields,
 } from "../../src/lib/airtable.js";
@@ -274,6 +277,65 @@ async function handleDisconnect(userId) {
   return respond(200, { ok: true, connected: false });
 }
 
+async function handleTables(event, userId) {
+  const body = await readJsonBody(event).catch(() => ({}));
+  const conn = await getConnection({ userId, provider: "airtable", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(412, { error: "Airtable is not connected. Set it up in Account → Integrations." });
+  const apiKey = body?.apiKey || conn.connection.config?.api_key;
+  const baseId = event.queryStringParameters?.baseId || body?.baseId || conn.connection.config?.base_id;
+  if (!apiKey || !baseId) {
+    return respond(400, { error: "Base ID is required to fetch Airtable tables." });
+  }
+  const res = await fetchAirtableTables({ apiKey, baseId });
+  if (!res.ok) return respond(400, { error: res.error });
+  return respond(200, { ok: true, baseId, tables: res.tables });
+}
+
+async function handleCreateTable(event, userId) {
+  const body = await readJsonBody(event).catch(() => ({}));
+  const conn = await getConnection({ userId, provider: "airtable", includeSecrets: true });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) return respond(412, { error: "Airtable is not connected. Set it up in Account → Integrations." });
+  const apiKey = body?.apiKey || conn.connection.config?.api_key;
+  const baseId = body?.baseId || conn.connection.config?.base_id;
+  const tableName = body?.tableName || "DatIQ Extractions";
+  const fields = body?.fields;
+  if (!apiKey || !baseId) {
+    return respond(400, { error: "Airtable API key and Base ID are required to create a table." });
+  }
+  const createRes = await createAirtableTable({ apiKey, baseId, tableName, fields });
+  if (!createRes.ok) return respond(400, { error: createRes.error });
+
+  const fieldMap = autoMapAirtableFields(createRes.fields);
+  const tableMeta = { tableName: createRes.tableName, fields: createRes.fields };
+
+  if (body?.setAsActive !== false) {
+    const existingConfig = conn.connection.config || {};
+    const updatedConfig = {
+      ...existingConfig,
+      base_id: baseId,
+      table_id: createRes.tableId,
+      field_map: fieldMap,
+      table_meta: tableMeta,
+    };
+    await upsertConnection({
+      userId,
+      provider: "airtable",
+      fields: { config: updatedConfig },
+    });
+  }
+
+  return respond(200, {
+    ok: true,
+    tableId: createRes.tableId,
+    tableName: createRes.tableName,
+    fields: createRes.fields,
+    field_map: fieldMap,
+    table_meta: tableMeta,
+  });
+}
+
 async function handlePush(event, userId) {
   // Server-side mirror of the client's checkCanIntegrations gate (Select and
   // up) — a client that skips the UI and POSTs directly must still be refused.
@@ -287,11 +349,30 @@ async function handlePush(event, userId) {
   if (!conn.connection) return respond(412, { error: "Airtable is not connected. Set it up in Account → Integrations." });
   const apiKey = body?.apiKey || conn.connection?.config?.api_key;
   const baseId = body?.baseId || conn.connection?.config?.base_id;
-  const tableId = body?.tableId || conn.connection?.config?.table_id;
-  // Use the server-persisted field_map by default (so cross-device sync
-  // works). The body can still override for one-off pushes.
-  const fieldMap = body?.fieldMap || conn.connection?.config?.field_map || null;
-  if (!apiKey || !baseId || !tableId) return respond(400, { error: "Connect Airtable first." });
+  let tableId = body?.tableId || conn.connection?.config?.table_id;
+  const tableName = body?.tableName;
+  const createIfMissing = body?.createIfMissing === true;
+
+  if (!apiKey || !baseId) return respond(400, { error: "Connect Airtable first (apiKey and baseId are required)." });
+
+  let fieldMap = body?.fieldMap || conn.connection?.config?.field_map || null;
+
+  if (tableName || createIfMissing || (!tableId && tableName)) {
+    const resolved = await resolveAirtableTable({
+      apiKey,
+      baseId,
+      tableIdOrName: tableName || tableId,
+      createIfMissing,
+      tableNameIfCreating: tableName,
+    });
+    if (!resolved.ok) return respond(400, { error: resolved.error });
+    tableId = resolved.tableId;
+    if (!fieldMap && resolved.fields?.length) {
+      fieldMap = autoMapAirtableFields(resolved.fields);
+    }
+  }
+
+  if (!tableId) return respond(400, { error: "A target Table ID or Table Name is required." });
   const r = await pushToAirtable(items, { apiKey, baseId, tableId, fieldMap });
   return respond(200, r);
 }
@@ -321,6 +402,12 @@ export const handler = async (event) => {
 
   if (event.httpMethod === "GET" && (subPath.length === 0 || subPath[0] === "status")) {
     return handleStatus(userId);
+  }
+  if ((event.httpMethod === "GET" || event.httpMethod === "POST") && (subPath[0] === "tables" || splatFromBody === "tables")) {
+    return handleTables(event, userId);
+  }
+  if (event.httpMethod === "POST" && (subPath[0] === "create-table" || splatFromBody === "create-table")) {
+    return handleCreateTable(event, userId);
   }
   if (event.httpMethod === "POST" && subPath[0] === "connect") return handleConnect(event, userId);
   // PATCH /connect — partial update (rename, change IDs, refresh schema).
