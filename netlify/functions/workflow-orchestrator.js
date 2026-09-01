@@ -132,6 +132,8 @@ async function handleHttp(event, env, client) {
     .replace(/^\/api\/workflow-orchestrator\/?/i, "")
     .replace(/^\/workflow-orchestrator\/?/i, "")
     .replace(/^\/+/, "");
+  const action = (splatFromBody || splatFromQuery || cleanPath || "run-now").replace(/^\/+/, "");
+
   if (action === "ping" || action.endsWith("/ping") || action.endsWith("ping")) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, pong: true, ts: new Date().toISOString() }) };
   }
