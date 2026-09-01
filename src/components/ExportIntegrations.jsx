@@ -34,7 +34,7 @@ import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useToast } from "./Toast.jsx";
-import { openInGoogleSheets } from "../lib/utils.js";
+import { openInGoogleSheets, excelDownload } from "../lib/utils.js";
 import {
   getIntegrationStatus,
   pushToIntegration,
@@ -108,11 +108,18 @@ export default function ExportIntegrations({ items, onClose }) {
   const totalCount = list.length;
   const isEmpty = totalCount === 0;
 
-  // ── Google Sheets flow (unchanged) ──────────────────────────────────────
+  // ── Google Sheets / Spreadsheet flow ──────────────────────────────────────
   const onExportSheets = () => {
     if (isEmpty) return;
     openInGoogleSheets(list);
-    showToast(`Downloaded CSV for ${totalCount} row(s). Upload it in the Google Sheets tab that just opened.`, "sheet");
+    showToast(`Copied table to clipboard & downloaded CSV for ${totalCount} row(s). Press Cmd+V (or Ctrl+V) in Google Sheets to paste.`, "sheet");
+    onClose?.();
+  };
+
+  const onExportExcel = () => {
+    if (isEmpty) return;
+    excelDownload(list);
+    showToast(`Exported ${totalCount} row(s) to Excel Worksheet.`, "sheet");
     onClose?.();
   };
 
@@ -324,17 +331,20 @@ export default function ExportIntegrations({ items, onClose }) {
           {tab === "sheets" && (
             <div className="export-int-pane">
               <p className="export-int-help">
-                We&apos;ll download a CSV of your {totalCount} row{totalCount !== 1 ? "s" : ""} and open a new Google Sheet in another tab. From there:
-                <strong> File → Import → Upload → select the downloaded CSV.</strong>
+                Your extracted data is automatically copied to your clipboard (and downloaded as a CSV backup).
+                Simply switch to the newly opened Google Sheet tab and press <strong>Cmd+V</strong> (or <strong>Ctrl+V</strong>) in cell A1 to paste your table instantly!
               </p>
               <ol className="export-int-steps">
-                <li>CSV downloads automatically to your computer.</li>
-                <li>Google Sheets opens in a new tab (blank workbook).</li>
-                <li>File → Import → Upload the CSV → &quot;Replace current sheet&quot;.</li>
+                <li>Table data is automatically copied to your clipboard.</li>
+                <li>Google Sheets opens in a new tab with cell A1 focused.</li>
+                <li>Press <strong>Cmd+V / Ctrl+V</strong> to paste all rows & columns instantly (or use <em>File → Import → Upload</em> with the downloaded CSV).</li>
               </ol>
-              <div className="export-int-actions">
+              <div className="export-int-actions" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <Button variant="primary" icon="sheet" onClick={onExportSheets} disabled={busy || isEmpty}>
-                  Open Google Sheets + download CSV
+                  Open Google Sheets (Auto-Copy Table)
+                </Button>
+                <Button variant="secondary" icon="download" onClick={onExportExcel} disabled={busy || isEmpty}>
+                  Download Excel Worksheet (.xls)
                 </Button>
               </div>
             </div>

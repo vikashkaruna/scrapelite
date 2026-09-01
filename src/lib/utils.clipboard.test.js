@@ -47,14 +47,21 @@ describe("F01 — buildClipboardPayload", () => {
     expect(text).toContain("2.9%");
   });
 
+  it("builds a tsv payload for spreadsheet paste", () => {
+    const { text, mime } = buildClipboardPayload(SAMPLE, "tsv");
+    expect(mime).toBe("text/tab-separated-values");
+    expect(text).toContain("page\ttype\tname\ttext\tvalue");
+    expect(text).toContain("stripe.com");
+  });
+
   it("rejects unknown formats", () => {
     expect(() => buildClipboardPayload(SAMPLE, "xml")).toThrow(/unknown format/);
   });
 });
 
 describe("F01 — listClipboardFormats", () => {
-  it("returns the 4 supported formats", () => {
-    expect(listClipboardFormats().sort()).toEqual(["csv", "json", "markdown", "summary"]);
+  it("returns the supported formats including tsv", () => {
+    expect(listClipboardFormats().sort()).toEqual(["csv", "json", "markdown", "summary", "tsv"]);
   });
 });
 
