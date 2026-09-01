@@ -12,6 +12,7 @@
 
 import { verify as verifyHmac } from "./n8nSignature.js";
 import { backoffMs, nextAttemptAt, STATE } from "./workflowEnqueue.js";
+import { genRunId } from "./workflowOrchestrator.js";
 
 export const CALLBACK_STATE = Object.freeze({
   DONE: "done",
@@ -125,11 +126,14 @@ export async function handleCallback(env, client, rawBody, headers, { now = new 
         method: "POST",
         headers: { ...client.headers, Prefer: "return=minimal" },
         body: JSON.stringify({
+          id: genRunId(),
           event_id,
-          run_type: "n8n_callback",
+          attempt_n: Number(event.attempts) || 1,
+          channel: "n8n",
           response_status: 200,
           response_body: output ? JSON.stringify(output).slice(0, 4096) : null,
           duration_ms: Number(duration_ms) || null,
+          started_at: isoNow,
           finished_at: isoNow,
         }),
       });
@@ -176,11 +180,14 @@ export async function handleCallback(env, client, rawBody, headers, { now = new 
       method: "POST",
       headers: { ...client.headers, Prefer: "return=minimal" },
       body: JSON.stringify({
+        id: genRunId(),
         event_id,
-        run_type: "n8n_callback",
+        attempt_n: nextAttempts,
+        channel: "n8n",
         response_status: 500,
         error: error ? String(error).slice(0, 1000) : "n8n execution failed",
         duration_ms: Number(duration_ms) || null,
+        started_at: isoNow,
         finished_at: isoNow,
       }),
     });

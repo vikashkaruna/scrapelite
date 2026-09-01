@@ -173,14 +173,17 @@ describe("workflowCallback.handleCallback", () => {
 
     // Verify run record created
     expect(client.runs).toHaveLength(1);
-    expect(client.runs[0]).toEqual({
+    expect(client.runs[0]).toMatchObject({
       event_id: "e_done",
-      run_type: "n8n_callback",
+      attempt_n: 1,
+      channel: "n8n",
       response_status: 200,
       response_body: JSON.stringify({ emailSent: true, messageId: "msg-123" }),
       duration_ms: 350,
+      started_at: "2026-08-30T12:00:00.000Z",
       finished_at: "2026-08-30T12:00:00.000Z",
     });
+    expect(client.runs[0].id).toMatch(/^wfr_/);
   });
 
   it("re-schedules event as pending with backoff when state='failed' and attempts < max_attempts", async () => {

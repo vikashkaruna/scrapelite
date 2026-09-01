@@ -111,7 +111,8 @@
   "settings": {
     "executionOrder": "v1",
     "saveExecutionProgress": true,
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "errorWorkflow": "00000000-0000-4000-a887-6b7af3ce4d00"
   },
   "versionId": "00000000-0000-4000-a48f-f47c38cb27c0",
   "id": "00000000-0000-4000-a507-dd10d419e380",

@@ -125,15 +125,20 @@ async function handleHttp(event, env, client) {
   } catch {
     return { statusCode: 400, body: JSON.stringify({ error: "invalid JSON body" }) };
   }
-  const action = body.action || (event.path || "").replace(/^\/+/, "");
-
+  const splatFromBody = (body && typeof body.action === "string") ? body.action : "";
+  const splatFromQuery = event.queryStringParameters?.splat || event.queryStringParameters?.action || "";
+  const cleanPath = (event.path || "")
+    .replace(/^\/\.netlify\/functions\/workflow-orchestrator\/?/i, "")
+    .replace(/^\/api\/workflow-orchestrator\/?/i, "")
+    .replace(/^\/workflow-orchestrator\/?/i, "")
+    .replace(/^\/+/, "");
   if (action === "ping" || action.endsWith("/ping") || action.endsWith("ping")) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, pong: true, ts: new Date().toISOString() }) };
   }
-  if (action === "dispatch" || action === "/dispatch") {
+  if (action === "dispatch") {
     return await forceDispatch(env, client, body);
   }
-  if (action === "run-now" || action === "/run-now" || action === "") {
+  if (action === "run-now" || action === "") {
     const result = await runOnce(env, client);
     return { statusCode: 200, body: JSON.stringify(result) };
   }

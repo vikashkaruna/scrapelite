@@ -39,6 +39,8 @@ vi.mock("../lib/integrationsClient.js", () => ({
   pushToIntegration: vi.fn(),
   patchIntegrationConnection: vi.fn(),
   testIntegrationConnection: vi.fn(),
+  fetchAirtableTablesClient: vi.fn(() => Promise.resolve({ ok: true, tables: [] })),
+  createAirtableTableClient: vi.fn(() => Promise.resolve({ ok: true })),
   PUSH_PROVIDERS: [
     { slug: "hubspot",  name: "HubSpot",  icon: "trending-up",   desc: "CRM" },
     { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "DB" },

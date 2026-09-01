@@ -458,6 +458,20 @@ curl -X POST "https://workflow-optimization.datiq.app/api/integrations/zapier/ac
       "duration_ms": 450
     }'
   ```
+- **Expected Response:**
+  ```json
+  {
+    "ok": true,
+    "event_id": "<EVENT_ID_FROM_QUEUE>",
+    "state": "done"
+  }
+  ```
+- **Database Verification:**
+  ```sql
+  SELECT id, state, finished_at, last_error FROM workflow_events WHERE id = '<EVENT_ID_FROM_QUEUE>';
+  SELECT * FROM workflow_runs WHERE event_id = '<EVENT_ID_FROM_QUEUE>';
+  ```
+  `state` is `'done'`, and a `workflow_runs` row exists with `channel = 'n8n'` and `response_status = 200`.
 
 ---
 
@@ -541,13 +555,15 @@ LIMIT 20;
 SELECT 
   r.id, 
   r.event_id, 
+  r.attempt_n, 
   r.channel, 
-  r.status, 
   r.response_status, 
   r.duration_ms, 
-  r.created_at 
+  r.started_at, 
+  r.finished_at, 
+  r.error 
 FROM workflow_runs r 
-ORDER BY r.created_at DESC 
+ORDER BY r.started_at DESC 
 LIMIT 25;
 
 -- 4. Check user integration connections

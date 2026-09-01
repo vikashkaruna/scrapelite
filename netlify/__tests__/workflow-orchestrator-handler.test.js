@@ -130,7 +130,7 @@ describe("workflow-orchestrator handler — HTTP path", () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it("accepts with Bearer admin token", async () => {
+  it("accepts with Bearer admin token via body.action", async () => {
     setSupabase();
     setN8n();
     setAdmin();
@@ -143,6 +143,42 @@ describe("workflow-orchestrator handler — HTTP path", () => {
       httpMethod: "POST",
       headers: { authorization: "Bearer admin-tok" },
       body: '{"action":"run-now"}',
+    });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it("accepts path-based action /api/workflow-orchestrator/run-now", async () => {
+    setSupabase();
+    setN8n();
+    setAdmin();
+    routeFetch([
+      { match: (u, m) => u.includes("state=eq.processing") && m === "PATCH", respond: () => okJson([]) },
+      { match: (u, m) => u.includes("state=eq.pending") && m === "GET", respond: () => okJson([]) },
+    ]);
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      path: "/api/workflow-orchestrator/run-now",
+      headers: { authorization: "Bearer admin-tok" },
+      body: "{}",
+    });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it("accepts path-based action /.netlify/functions/workflow-orchestrator/run-now", async () => {
+    setSupabase();
+    setN8n();
+    setAdmin();
+    routeFetch([
+      { match: (u, m) => u.includes("state=eq.processing") && m === "PATCH", respond: () => okJson([]) },
+      { match: (u, m) => u.includes("state=eq.pending") && m === "GET", respond: () => okJson([]) },
+    ]);
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      path: "/.netlify/functions/workflow-orchestrator/run-now",
+      headers: { authorization: "Bearer admin-tok" },
+      body: "{}",
     });
     expect(r.statusCode).toBe(200);
   });
