@@ -138,7 +138,8 @@
   "settings": {
     "executionOrder": "v1",
     "saveExecutionProgress": true,
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "errorWorkflow": "00000000-0000-4000-a887-6b7af3ce4d00"
   },
   "versionId": "00000000-0000-4000-a5dd-5f156c4d0700",
   "id": "00000000-0000-4000-a159-66c9a0560660",

@@ -30,7 +30,7 @@ export const KIND_TO_N8N_WEBHOOK = Object.freeze({
 });
 
 export const STUCK_PROCESSING_MS = 5 * 60 * 1000; // 5 minutes
-export const DISPATCH_TIMEOUT_MS = 10_000;
+export const DISPATCH_TIMEOUT_MS = 25_000; // 25s allows Cloud Run cold-starts to warm up
 export const POLL_LIMIT = 50;
 export const RESPONSE_BODY_MAX = 4096;
 export const ERROR_MAX = 1000;

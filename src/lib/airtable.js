@@ -210,19 +210,39 @@ export function buildAirtableDedupUrl(baseId, tableId, fieldMap, sourceUrl) {
   return `${buildAirtableRequestUrl(baseId, tableId)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
 }
 
+export const DEFAULT_AIRTABLE_TABLE_FIELDS = Object.freeze([
+  { name: "URL", type: "url", description: "Source page URL" },
+  { name: "Title", type: "singleLineText", description: "Page title" },
+  { name: "Host", type: "singleLineText", description: "Domain hostname" },
+  { name: "Summary", type: "multilineText", description: "AI summary or description" },
+  {
+    name: "Created at",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso", format: "YYYY-MM-DD" },
+      timeFormat: { name: "24hour", format: "HH:mm" },
+      timeZone: "utc",
+    },
+  },
+  { name: "Headings", type: "multilineText", description: "Extracted headings" },
+  { name: "Links", type: "multilineText", description: "Discovered links" },
+]);
+
 /**
- * Fetch a table's schema (field list). Airtable's Meta API only exposes
- * the schema for a whole base, so we select the requested table locally:
- *   GET /v0/meta/bases/{baseId}/tables
- * Requires `schema.bases:read` scope on the PAT. If the token doesn't
- * have that scope, the API returns 403 — we surface that as a
- * structured error so the UI can fall back to manual field entry.
+ * Fetch all tables in an Airtable base.
+ * Calls GET https://api.airtable.com/v0/meta/bases/{baseId}/tables
+ * Requires `schema.bases:read` scope on the PAT.
  */
-export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
+export async function fetchAirtableTables({
+  apiKey,
+  baseId,
+  fetchFn = (typeof fetch !== "undefined" ? fetch : null),
+} = {}) {
   if (!fetchFn) return { ok: false, error: "No fetch available (SSR?)" };
-  const v = validateAirtableConfig({ apiKey, baseId, tableId });
-  if (v.length) return { ok: false, error: v.join(" ") };
-  const requestedTableId = tableId.trim();
+  if (!apiKey || typeof apiKey !== "string") return { ok: false, error: "Airtable API key is required." };
+  if (!baseId || !/^app[A-Za-z0-9]{8,}$/i.test(baseId.trim())) {
+    return { ok: false, error: "Base ID is required and should look like 'appXXXXXXXXXXXXXX'." };
+  }
   const url = `${AIRTABLE_API_BASE}/meta/bases/${encodeURIComponent(baseId.trim())}/tables`;
   try {
     const res = await fetchFn(url, {
@@ -236,7 +256,6 @@ export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (
         if (data?.error?.message) msg = `${msg}: ${data.error.message}`;
         if (data?.error?.type) msg = `${msg} (${data.error.type})`;
       } catch { /* body wasn't JSON */ }
-      // Translate the most common 403 reason into an actionable hint
       if (res.status === 403) {
         msg += " — your token needs the 'schema.bases:read' scope to load column names. You can still push records using the default column names (URL, Title, Host, Summary).";
       } else if (res.status === 404) {
@@ -245,22 +264,175 @@ export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (
       return { ok: false, error: msg };
     }
     const data = await res.json();
-    const table = Array.isArray(data?.tables)
-      ? data.tables.find((candidate) => candidate?.id === requestedTableId)
-      : null;
-    if (!table) {
-      return {
-        ok: false,
-        error: "Airtable table was not found in this base — check the Table ID and make sure the token can access the selected Base.",
-      };
-    }
-    const fields = Array.isArray(table.fields)
-      ? table.fields.map((f) => ({ name: f.name, type: f.type, id: f.id, description: f.description || "" }))
-      : [];
-    return { ok: true, tableName: table.name || "", tableId: table.id || requestedTableId, fields };
+    const rawTables = Array.isArray(data?.tables) ? data.tables : [];
+    const tables = rawTables.map((t) => ({
+      id: t.id,
+      name: t.name || "",
+      description: t.description || "",
+      primaryFieldId: t.primaryFieldId || null,
+      fields: Array.isArray(t.fields)
+        ? t.fields.map((f) => ({
+            id: f.id,
+            name: f.name,
+            type: f.type,
+            description: f.description || "",
+          }))
+        : [],
+    }));
+    return { ok: true, tables };
   } catch (err) {
     return { ok: false, error: err?.message || "network error" };
   }
+}
+
+/**
+ * Create a new table in an Airtable base with standard or custom columns.
+ * Calls POST https://api.airtable.com/v0/meta/bases/{baseId}/tables
+ * Requires `schema.bases:write` scope on the PAT.
+ */
+export async function createAirtableTable({
+  apiKey,
+  baseId,
+  tableName = "DatIQ Extractions",
+  description = "Extracted web data from DatIQ",
+  fields = DEFAULT_AIRTABLE_TABLE_FIELDS,
+  fetchFn = (typeof fetch !== "undefined" ? fetch : null),
+} = {}) {
+  if (!fetchFn) return { ok: false, error: "No fetch available (SSR?)" };
+  if (!apiKey || typeof apiKey !== "string") return { ok: false, error: "Airtable API key is required." };
+  if (!baseId || !/^app[A-Za-z0-9]{8,}$/i.test(baseId.trim())) {
+    return { ok: false, error: "Base ID is required and should look like 'appXXXXXXXXXXXXXX'." };
+  }
+  const cleanName = String(tableName || "").trim() || "DatIQ Extractions";
+  const url = `${AIRTABLE_API_BASE}/meta/bases/${encodeURIComponent(baseId.trim())}/tables`;
+  const payload = {
+    name: cleanName,
+    description: description || "",
+    fields: Array.isArray(fields) && fields.length > 0 ? fields : DEFAULT_AIRTABLE_TABLE_FIELDS,
+  };
+  try {
+    const res = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let msg = `Airtable ${res.status}`;
+      try {
+        const data = await res.json();
+        if (data?.error?.message) msg = `${msg}: ${data.error.message}`;
+        if (data?.error?.type) msg = `${msg} (${data.error.type})`;
+      } catch { /* body wasn't JSON */ }
+      if (res.status === 403) {
+        msg += " — your token needs the 'schema.bases:write' scope to create new tables in Airtable.";
+      }
+      return { ok: false, error: msg };
+    }
+    const data = await res.json();
+    const tableFields = Array.isArray(data?.fields)
+      ? data.fields.map((f) => ({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          description: f.description || "",
+        }))
+      : [];
+    return {
+      ok: true,
+      tableId: data.id,
+      tableName: data.name || cleanName,
+      description: data.description || "",
+      primaryFieldId: data.primaryFieldId || null,
+      fields: tableFields,
+    };
+  } catch (err) {
+    return { ok: false, error: err?.message || "network error" };
+  }
+}
+
+/**
+ * Resolve a table identifier (table ID 'tbl...' or friendly table name)
+ * to a concrete Airtable table ID, table name, and field schema.
+ * If createIfMissing is true and no table matches, creates a new table.
+ */
+export async function resolveAirtableTable({
+  apiKey,
+  baseId,
+  tableIdOrName,
+  createIfMissing = false,
+  tableNameIfCreating,
+  allowFallback = false,
+  fetchFn = (typeof fetch !== "undefined" ? fetch : null),
+} = {}) {
+  const query = String(tableIdOrName || "").trim();
+  if (!query && !createIfMissing) {
+    return { ok: false, error: "Table ID or Name is required." };
+  }
+
+  const listRes = await fetchAirtableTables({ apiKey, baseId, fetchFn });
+  if (!listRes.ok) {
+    if (allowFallback && query && /^(tbl|viw)[A-Za-z0-9]{8,}$/i.test(query)) {
+      return { ok: true, tableId: query, tableName: "", fields: [], created: false, fallback: true };
+    }
+    return { ok: false, error: listRes.error };
+  }
+
+  const tables = listRes.tables || [];
+  const lowerQuery = query.toLowerCase();
+  const match = tables.find(
+    (t) => t.id === query || (t.name && t.name.toLowerCase() === lowerQuery)
+  );
+
+  if (match) {
+    return {
+      ok: true,
+      tableId: match.id,
+      tableName: match.name,
+      fields: match.fields,
+      created: false,
+    };
+  }
+
+  if (createIfMissing) {
+    const targetName = tableNameIfCreating || query || "DatIQ Extractions";
+    const createRes = await createAirtableTable({
+      apiKey,
+      baseId,
+      tableName: targetName,
+      fetchFn,
+    });
+    if (!createRes.ok) return { ok: false, error: createRes.error };
+    return {
+      ok: true,
+      tableId: createRes.tableId,
+      tableName: createRes.tableName,
+      fields: createRes.fields,
+      created: true,
+    };
+  }
+
+  return {
+    ok: false,
+    error: "Airtable table was not found in this base — check the Table ID and make sure the token can access the selected Base.",
+  };
+}
+
+/**
+ * Fetch a table's schema (field list). Airtable's Meta API only exposes
+ * the schema for a whole base, so we select the requested table locally:
+ *   GET /v0/meta/bases/{baseId}/tables
+ * Requires `schema.bases:read` scope on the PAT. If the token doesn't
+ * have that scope, the API returns 403 — we surface that as a
+ * structured error so the UI can fall back to manual field entry.
+ */
+export async function fetchAirtableSchema({ apiKey, baseId, tableId, fetchFn = (typeof fetch !== "undefined" ? fetch : null) } = {}) {
+  if (!fetchFn) return { ok: false, error: "No fetch available (SSR?)" };
+  const v = validateAirtableConfig({ apiKey, baseId, tableId });
+  if (v.length) return { ok: false, error: v.join(" ") };
+  return resolveAirtableTable({ apiKey, baseId, tableIdOrName: tableId, createIfMissing: false, fetchFn });
 }
 
 // ── Side-effecting: do the push (browser fetch) ─────────────────────────────

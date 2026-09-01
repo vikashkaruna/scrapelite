@@ -202,6 +202,7 @@ function webhookFlowSpec({ name, description, action, errorBranch }) {
 
 function toN8nJson(spec, extra = {}) {
   const wfId = uid(`wf-${spec.name}`);
+  const isErrorHandler = spec.name === "datiq_global_error_handler";
   return {
     name: spec.name,
     nodes: spec.nodes.map((n) => ({
@@ -219,6 +220,7 @@ function toN8nJson(spec, extra = {}) {
       executionOrder: "v1",
       saveExecutionProgress: true,
       saveManualExecutions: true,
+      ...(isErrorHandler ? {} : { errorWorkflow: uid("wf-datiq_global_error_handler") }),
       ...(extra.settings || {}),
     },
     versionId: uid(`ver-${spec.name}`),
@@ -859,6 +861,134 @@ const AUTOMATION_WORKFLOWS = [
     connections: {
       "Daily 21:00 UTC": { main: [[{ node: "Query Supabase for today's runs", type: "main", index: 0 }]] },
       "Query Supabase for today's runs": { main: [[{ node: "Group by user", type: "main", index: 0 }]] },
+    },
+  },
+
+  // ⑦ global-error-handler (ErrorTrigger-based, sends Resend alert email with workflow name, error details, stack trace)
+  {
+    name: "datiq_global_error_handler",
+    description: "Global error handler: catches failed workflow executions and dispatches a detailed alert email via Resend.",
+    nodes: [
+      {
+        name: "Error Trigger",
+        type: "n8n-nodes-base.errorTrigger",
+        typeVersion: 1,
+        position: [240, 300],
+      },
+      {
+        name: "Format error & build Resend email",
+        type: "n8n-nodes-base.code",
+        typeVersion: 2,
+        parameters: {
+          mode: "runOnceForEachItem",
+          jsCode:
+            `// Extract error and execution metadata\n` +
+            `const exec = $json.execution || {};\n` +
+            `const wf = $json.workflow || {};\n` +
+            `const err = exec.error || {};\n\n` +
+            `const workflowName = wf.name || "Unknown Workflow";\n` +
+            `const workflowId = wf.id || "N/A";\n` +
+            `const executionId = exec.id || "N/A";\n` +
+            `const executionUrl = exec.url || ($env.N8N_BASE_URL ? $env.N8N_BASE_URL + '/execution/' + executionId : '');\n` +
+            `const lastNode = exec.lastNodeExecuted || "Unknown Node";\n` +
+            `const errorMessage = err.message || err.description || "An unexpected error occurred during workflow execution.";\n` +
+            `const errorStack = err.stack || err.context?.stack || "No stack trace available.";\n` +
+            `const timestamp = new Date().toISOString();\n\n` +
+            `// Recipient email: configurable via environment variable, defaults to hello@datiq.app\n` +
+            `const toEmail = $env.ERROR_ALERT_EMAIL || $env.OPS_ALERT_EMAIL || "hello@datiq.app";\n` +
+            `const fromEmail = $env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";\n\n` +
+            `const html = \`<!DOCTYPE html>\n` +
+            `<html>\n` +
+            `<head>\n` +
+            `  <meta charset="utf-8">\n` +
+            `  <style>\n` +
+            `    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0c0e12; color: #e2e8f0; margin: 0; padding: 24px; }\n` +
+            `    .card { background-color: #14171f; border: 1px solid #2d3748; border-radius: 8px; max-width: 680px; margin: 0 auto; overflow: hidden; }\n` +
+            `    .header { background-color: #7f1d1d; border-bottom: 1px solid #991b1b; padding: 18px 24px; }\n` +
+            `    .header h2 { margin: 0; font-size: 18px; color: #fecaca; display: flex; align-items: center; gap: 8px; }\n` +
+            `    .content { padding: 24px; }\n` +
+            `    .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }\n` +
+            `    .meta-table td { padding: 8px 0; border-bottom: 1px solid #1e293b; }\n` +
+            `    .meta-label { color: #94a3b8; width: 140px; font-weight: 600; }\n` +
+            `    .meta-value { color: #f1f5f9; word-break: break-all; }\n` +
+            `    .error-box { background-color: #1e1e24; border-left: 4px solid #ef4444; padding: 14px 16px; border-radius: 4px; margin-bottom: 20px; }\n` +
+            `    .error-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #f87171; font-weight: 700; margin-bottom: 6px; }\n` +
+            `    .error-msg { font-size: 15px; color: #ffffff; font-family: monospace; white-space: pre-wrap; word-break: break-word; }\n` +
+            `    .stack-box { background-color: #090a0f; border: 1px solid #1e293b; border-radius: 4px; padding: 14px; overflow-x: auto; max-height: 280px; }\n` +
+            `    .stack-title { font-size: 12px; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; }\n` +
+            `    .stack-trace { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 12px; color: #cbd5e1; line-height: 1.5; margin: 0; white-space: pre-wrap; }\n` +
+            `    .btn { display: inline-block; background-color: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 14px; margin-top: 16px; }\n` +
+            `    .footer { padding: 16px 24px; background-color: #0f1218; border-top: 1px solid #1e293b; font-size: 12px; color: #64748b; text-align: center; }\n` +
+            `  </style>\n` +
+            `</head>\n` +
+            `<body>\n` +
+            `  <div class="card">\n` +
+            `    <div class="header">\n` +
+            `      <h2>🚨 Workflow Execution Failure</h2>\n` +
+            `    </div>\n` +
+            `    <div class="content">\n` +
+            `      <table class="meta-table">\n` +
+            `        <tr><td class="meta-label">Workflow:</td><td class="meta-value"><strong>\${workflowName}</strong></td></tr>\n` +
+            `        <tr><td class="meta-label">Failed Node:</td><td class="meta-value"><code>\${lastNode}</code></td></tr>\n` +
+            `        <tr><td class="meta-label">Execution ID:</td><td class="meta-value">\${executionId}</td></tr>\n` +
+            `        <tr><td class="meta-label">Timestamp:</td><td class="meta-value">\${timestamp}</td></tr>\n` +
+            `      </table>\n\n` +
+            `      <div class="error-box">\n` +
+            `        <div class="error-title">Error Details</div>\n` +
+            `        <div class="error-msg">\${errorMessage}</div>\n` +
+            `      </div>\n\n` +
+            `      <div class="stack-box">\n` +
+            `        <div class="stack-title">Stack Trace</div>\n` +
+            `        <pre class="stack-trace">\${errorStack}</pre>\n` +
+            `      </div>\n\n` +
+            `      \${executionUrl ? \`<p><a href="\${executionUrl}" class="btn" target="_blank">View Execution in n8n &rarr;</a></p>\` : ''}\n` +
+            `    </div>\n` +
+            `    <div class="footer">\n` +
+            `      DatIQ Automation Reliability Engine &bull; Environment: \${$env.NODE_ENV || 'production'}\n` +
+            `    </div>\n` +
+            `  </div>\n` +
+            `</body>\n` +
+            `</html>\`;\n\n` +
+            `return [{\n` +
+            `  json: {\n` +
+            `    emailPayload: {\n` +
+            `      from: fromEmail,\n` +
+            `      to: [toEmail],\n` +
+            `      subject: \`🚨 [DatIQ Workflow Error] \${workflowName} failed on node "\${lastNode}"\`,\n` +
+            `      html: html\n` +
+            `    }\n` +
+            `  }\n` +
+            `}];`,
+        },
+        position: [500, 300],
+      },
+      {
+        name: "Send via Resend",
+        type: "n8n-nodes-base.httpRequest",
+        typeVersion: 4.2,
+        parameters: {
+          method: "POST",
+          url: "https://api.resend.com/emails",
+          sendHeaders: true,
+          headerParameters: {
+            parameters: [
+              { name: "Authorization", value: "=Bearer {{ $env.RESEND_API_KEY }}" },
+              { name: "Content-Type", value: "application/json" },
+            ],
+          },
+          sendBody: true,
+          specifyBody: "json",
+          jsonBody: "={{ JSON.stringify($json.emailPayload) }}",
+          options: {
+            continueOnFail: true,
+          },
+        },
+        position: [760, 300],
+      },
+    ],
+    connections: {
+      "Error Trigger": { main: [[{ node: "Format error & build Resend email", type: "main", index: 0 }]] },
+      "Format error & build Resend email": { main: [[{ node: "Send via Resend", type: "main", index: 0 }]] },
     },
   },
 ];

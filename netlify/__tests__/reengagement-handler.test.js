@@ -26,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   process.env = origEnv;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -37,9 +38,11 @@ async function loadHandler() {
 
 describe("reengagement handler — the real schema, not user_email", () => {
   it("resolves user_id to a real email and sends a D7 email, using scheduled_tasks' actual columns", async () => {
-    const now = new Date();
-    now.setUTCHours(12, 0, 0, 0); // outside the daily-digest hour, so only D7/D30 fire
-    const lastRunAt = new Date(now.getTime() - 10 * 86400000).toISOString(); // 10 days ago → D7-eligible
+    vi.useFakeTimers();
+    // Wednesday 12:00 UTC — outside daily-digest hour (21:00 UTC) and not Monday (weekly digest)
+    const fixedNow = new Date("2026-08-26T12:00:00.000Z");
+    vi.setSystemTime(fixedNow);
+    const lastRunAt = new Date(fixedNow.getTime() - 10 * 86400000).toISOString(); // 10 days ago → D7-eligible
 
     const calls = [];
     vi.stubGlobal("fetch", vi.fn(async (url, opts) => {

@@ -11,6 +11,10 @@ import {
   readAirtableConfig,
   writeAirtableConfig,
   fetchAirtableSchema,
+  fetchAirtableTables,
+  createAirtableTable,
+  resolveAirtableTable,
+  DEFAULT_AIRTABLE_TABLE_FIELDS,
   autoMapAirtableFields,
   defaultAirtableFieldMap,
   mapAirtableColumnToKey,
@@ -403,6 +407,185 @@ describe("airtable (F18)", () => {
       const r = await fetchAirtableSchema({ ...validConfig, apiKey: "", fetchFn });
       expect(fetchFn).not.toHaveBeenCalled();
       expect(r.ok).toBe(false);
+    });
+  });
+
+  describe("DEFAULT_AIRTABLE_TABLE_FIELDS", () => {
+    it("contains standard extraction fields including URL, Title, Host, Summary, Created at, Headings, Links", () => {
+      const names = DEFAULT_AIRTABLE_TABLE_FIELDS.map((f) => f.name);
+      expect(names).toEqual(["URL", "Title", "Host", "Summary", "Created at", "Headings", "Links"]);
+      expect(DEFAULT_AIRTABLE_TABLE_FIELDS.find((f) => f.name === "URL").type).toBe("url");
+      expect(DEFAULT_AIRTABLE_TABLE_FIELDS.find((f) => f.name === "Created at").type).toBe("dateTime");
+    });
+  });
+
+  describe("fetchAirtableTables", () => {
+    it("lists all tables in a base", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tables: [
+            { id: "tbl1", name: "Leads", fields: [{ id: "fld1", name: "URL", type: "url" }] },
+            { id: "tbl2", name: "Competitors", fields: [{ id: "fld2", name: "Title", type: "singleLineText" }] },
+          ],
+        }),
+      });
+      const r = await fetchAirtableTables({ apiKey: "pat12345678901234", baseId: "app12345678", fetchFn });
+      expect(r.ok).toBe(true);
+      expect(r.tables.length).toBe(2);
+      expect(r.tables[0].name).toBe("Leads");
+      expect(r.tables[1].name).toBe("Competitors");
+    });
+
+    it("surfaces 403 scope error with actionable instruction", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: { type: "AUTHENTICATION_REQUIRED", message: "Forbidden" } }),
+      });
+      const r = await fetchAirtableTables({ apiKey: "pat12345678901234", baseId: "app12345678", fetchFn });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/schema\.bases:read/);
+    });
+
+    it("rejects invalid Base ID", async () => {
+      const fetchFn = vi.fn();
+      const r = await fetchAirtableTables({ apiKey: "pat12345678901234", baseId: "invalidBase", fetchFn });
+      expect(r.ok).toBe(false);
+      expect(fetchFn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("createAirtableTable", () => {
+    it("creates a table via Airtable Metadata API", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "tblNewTable123",
+          name: "DatIQ Extractions",
+          fields: [
+            { id: "fld1", name: "URL", type: "url" },
+            { id: "fld2", name: "Title", type: "singleLineText" },
+          ],
+        }),
+      });
+      const r = await createAirtableTable({
+        apiKey: "pat12345678901234",
+        baseId: "app12345678",
+        tableName: "DatIQ Extractions",
+        fetchFn,
+      });
+      expect(r.ok).toBe(true);
+      expect(r.tableId).toBe("tblNewTable123");
+      expect(r.tableName).toBe("DatIQ Extractions");
+      expect(r.fields.length).toBe(2);
+      expect(fetchFn).toHaveBeenCalledWith(
+        "https://api.airtable.com/v0/meta/bases/app12345678/tables",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer pat12345678901234",
+            "Content-Type": "application/json",
+          }),
+        })
+      );
+    });
+
+    it("surfaces 403 error explaining schema.bases:write scope requirement", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: { type: "INVALID_PERMISSIONS", message: "Forbidden" } }),
+      });
+      const r = await createAirtableTable({
+        apiKey: "pat12345678901234",
+        baseId: "app12345678",
+        tableName: "New Table",
+        fetchFn,
+      });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/schema\.bases:write/);
+    });
+  });
+
+  describe("resolveAirtableTable", () => {
+    it("resolves a table by exact tableId", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tables: [
+            { id: "tblA", name: "Table A", fields: [{ name: "URL" }] },
+            { id: "tblB", name: "Table B", fields: [{ name: "Title" }] },
+          ],
+        }),
+      });
+      const r = await resolveAirtableTable({
+        apiKey: "pat12345678901234",
+        baseId: "app12345678",
+        tableIdOrName: "tblB",
+        fetchFn,
+      });
+      expect(r.ok).toBe(true);
+      expect(r.tableId).toBe("tblB");
+      expect(r.tableName).toBe("Table B");
+      expect(r.created).toBe(false);
+    });
+
+    it("resolves a table by friendly name (case-insensitive)", async () => {
+      const fetchFn = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tables: [
+            { id: "tblA", name: "Prospects", fields: [{ name: "URL" }] },
+          ],
+        }),
+      });
+      const r = await resolveAirtableTable({
+        apiKey: "pat12345678901234",
+        baseId: "app12345678",
+        tableIdOrName: "prospects",
+        fetchFn,
+      });
+      expect(r.ok).toBe(true);
+      expect(r.tableId).toBe("tblA");
+      expect(r.tableName).toBe("Prospects");
+      expect(r.created).toBe(false);
+    });
+
+    it("creates a new table when createIfMissing is true and table not found", async () => {
+      const fetchFn = vi.fn()
+        // First call: GET tables
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ tables: [{ id: "tblExisting", name: "Existing Table", fields: [] }] }),
+        })
+        // Second call: POST create table
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: "tblCreatedFresh",
+            name: "New Extractions",
+            fields: [{ id: "fld1", name: "URL", type: "url" }],
+          }),
+        });
+
+      const r = await resolveAirtableTable({
+        apiKey: "pat12345678901234",
+        baseId: "app12345678",
+        tableIdOrName: "New Extractions",
+        createIfMissing: true,
+        fetchFn,
+      });
+      expect(r.ok).toBe(true);
+      expect(r.tableId).toBe("tblCreatedFresh");
+      expect(r.tableName).toBe("New Extractions");
+      expect(r.created).toBe(true);
     });
   });
 

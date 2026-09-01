@@ -1,24 +1,19 @@
-# DatIQ — Sessions Directory
+# DatIQ Session Archive Index
 
-This directory stores session records, engineering milestones, architectural decisions, and handoffs.
-
----
-
-## 1. Active Session Handoff
-
-- **Latest Active Handoff:** [`SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md)
-  - Covers: Server Callback API, n8n decoupling, direct fallbacks, GCP Cloud Run URL configuration, and 2-phase n8n rollout.
+> This directory contains all historical and active development session handoffs and milestone records.
+> Managed by the `session-handoff-management` skill.
+> **Total Sessions Archived:** 3
 
 ---
 
-## 2. Master Consolidated Session Archive
+## Session Archive (Reverse Chronological)
 
-- **Complete Historical Archive:** [`SESSIONS-HISTORY.md`](./SESSIONS-HISTORY.md)
-  - Contains the full unedited history of all 70 prior engineering sessions and milestone reports from project inception to 2026-08-30.
+| Date | File | Summary / Topic |
+|---|---|---|
+| — | [`SESSIONS-HISTORY.md`](./SESSIONS-HISTORY.md) | DatIQ — Master Consolidated Historical Session Archive |
+| 2026-09-01 | [`SESSION-HANDOFF-2026-09-01-DYNAMIC-AIRTABLE-AND-WORKFLOW-ORCHESTRATOR-FIXES.md`](./SESSION-HANDOFF-2026-09-01-DYNAMIC-AIRTABLE-AND-WORKFLOW-ORCHESTRATOR-FIXES.md) | 2026-09-01 — DYNAMIC-AIRTABLE-AND-WORKFLOW-ORCHESTRATOR-FIXES |
+| 2026-08-30 | [`SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md) | DatIQ — Session Handoff: Workflow Optimization & Server Callback API Implementation |
 
 ---
 
-## 3. Session Management Tooling
-
-- Skill: `.agents/skills/session-handoff-management/`
-- Tool: `scripts/consolidate-sessions.mjs` (for periodic archive merging)
+*Index generated automatically by `node .agents/skills/session-handoff-management/scripts/index-sessions.mjs`*
