@@ -20,6 +20,29 @@
   /* Not theme-dependent — matches the literal already hardcoded in .btn-danger below. */
   --danger: #e0556b;
 
+  /* ── Status tokens ────────────────────────────────────────────────────────
+     These were REFERENCED across screens.css but never DEFINED — every call
+     site read `var(--success, #22c55e)` and silently used the hardcoded
+     fallback, which is exactly the drift this file's own header warns about:
+     the fallbacks had already diverged (#22c55e vs #15803d vs #4ade80 for the
+     same semantic colour). Defining them once makes every existing call site
+     correct and theme-aware for free.
+     Both are picked for AA contrast on --surface in light mode; the dark theme
+     overrides them below. */
+  --success: #16a34a;
+  --warning: #d97706;
+  --warn: var(--warning);   /* alias — both spellings are already in use */
+
+  /* Soft tints for status backgrounds, derived so a brand change carries. */
+  --success-soft: color-mix(in srgb, var(--success) 13%, transparent);
+  --warn-soft:    color-mix(in srgb, var(--warning) 15%, transparent);
+  --danger-soft:  color-mix(in srgb, var(--danger)  13%, transparent);
+
+  /* Muted body text. `--text-2` is the real token; this alias exists because
+     `--text-muted` reads more obviously at the call site and both names were
+     already being written by different authors. */
+  --text-muted: var(--text-2);
+
   --row-py: 13px;
   --card-pad: 24px;
   --gap: 22px;
@@ -65,6 +88,10 @@
   --bg-grad-1: color-mix(in srgb, var(--accent) 13%, #080b14);
   --surface: #111726;
   --surface-2: #19202f;
+  /* Status colours lighten in dark mode — the light-theme #16a34a / #d97706
+     fail contrast on a #111726 surface. */
+  --success: #4ade80;
+  --warning: #fbbf24;
   --surface-hover: #1c2433;
   --border: #232b3d;
   --border-strong: #303a50;

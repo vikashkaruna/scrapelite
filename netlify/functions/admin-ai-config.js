@@ -11,7 +11,12 @@
 // SUPABASE_SERVICE_KEY); without it, GET still returns effective defaults and
 // POST reports persisted:false so the admin UI can warn.
 
-import { loadAiConfig, keyPresence, PROVIDER_META, PILLAR_KEYS, SUPABASE_CONFIGURED } from "./lib/aiProviders.js";
+import {
+  loadAiConfig, keyPresence, PROVIDER_META, PILLAR_KEYS, SUPABASE_CONFIGURED,
+  resolvePillarChain, modelForTier, invalidateAiConfigCache,
+} from "./lib/aiProviders.js";
+import { buildCatalogue } from "./admin-provider-test.js";
+import { MODEL_TIER, FUNCTION_AREAS, AI_AREA_KEYS } from "../../src/lib/providerRegistry.js";
 import { verifyAdminToken, bearerFromEvent } from "./lib/adminToken.js";
 
 const HEADERS = {
@@ -36,15 +41,23 @@ function sanitizeChain(input) {
     ? input.order.map((s) => String(s).toLowerCase()).filter((p) => VALID.has(p))
     : [];
   const models = {};
+  const modelsFast = {};
   const enabled = {};
   for (const p of VALID) {
     if (input.models && input.models[p] != null) models[p] = String(input.models[p]).trim().slice(0, 120);
+    // Model ids are accepted as FREE TEXT on purpose: vendors ship new ones
+    // faster than we deploy, and an allowlist here would mean an operator
+    // cannot adopt a better model without waiting for a release. The Test
+    // button is what makes that safe — a typo is one click from being caught.
+    if (input.modelsFast && input.modelsFast[p] != null) modelsFast[p] = String(input.modelsFast[p]).trim().slice(0, 120);
     if (input.enabled && typeof input.enabled[p] === "boolean") enabled[p] = input.enabled[p];
   }
   const out = {};
   if (order.length) out.order = order;
   if (Object.keys(models).length) out.models = models;
+  if (Object.keys(modelsFast).length) out.modelsFast = modelsFast;
   if (Object.keys(enabled).length) out.enabled = enabled;
+  if (input.tier === MODEL_TIER.FAST || input.tier === MODEL_TIER.DEEP) out.tier = input.tier;
   return out;
 }
 
@@ -94,11 +107,40 @@ export const handler = async (event) => {
     const auth = verifyAdminToken(bearerFromEvent(event));
     if (!auth.ok) return respond(401, { ok: false, error: auth.reason || "Unauthorized" });
     const config = await loadAiConfig();
+    // EFFECTIVE settings, resolved exactly the way runChain() resolves them.
+    // The console previously showed stored config only, so an area running on
+    // a registry default looked unconfigured — and an operator could not tell
+    // which model a feature would actually use without reading the source.
+    const effective = {};
+    for (const area of AI_AREA_KEYS) {
+      const chain = resolvePillarChain(config, area);
+      effective[area] = {
+        label: FUNCTION_AREAS[area].label,
+        blurb: FUNCTION_AREAS[area].blurb,
+        userVisibleAs: FUNCTION_AREAS[area].userVisibleAs,
+        callsite: FUNCTION_AREAS[area].callsite,
+        order: chain.order,
+        tier: chain.tier,
+        // The model each provider WOULD use for this area right now.
+        resolvedModels: Object.fromEntries(
+          chain.order.map((p) => [p, modelForTier(chain, p, chain.tier)])
+        ),
+        enabled: chain.enabled,
+        isDefault: !config.pillars?.[area] || Object.keys(config.pillars[area]).length === 0,
+        defaultOrder: FUNCTION_AREAS[area].defaultOrder,
+        defaultTier: FUNCTION_AREAS[area].defaultTier,
+      };
+    }
     return respond(200, {
       ok: true,
       config,
+      effective,
       keyPresence: keyPresence(),
       providers: PROVIDER_META,
+      // The whole catalogue — AI, scrape and intel providers with their key
+      // presence, model choices and the areas each one powers — so the console
+      // is one screen instead of three that disagree.
+      catalogue: buildCatalogue(),
       persisted: SUPABASE_CONFIGURED(),
       demo: auth.demo,
     });
@@ -112,7 +154,7 @@ export const handler = async (event) => {
     try { body = JSON.parse(event.body || "{}"); } catch { return respond(400, { ok: false, error: "Invalid JSON" }); }
 
     const value = sanitize(body);
-    if (!value.order && !value.models && !value.enabled && !value.maxTokens && !value.pillars) {
+    if (!value.order && !value.models && !value.modelsFast && !value.enabled && !value.maxTokens && !value.pillars) {
       return respond(400, { ok: false, error: "Nothing valid to save." });
     }
 
@@ -124,6 +166,10 @@ export const handler = async (event) => {
     let saved = false;
     try { saved = await upsert(value); } catch { saved = false; }
     if (!saved) return respond(502, { ok: false, error: "Failed to persist config to Supabase." });
+    // Drop the 60s cache so the very next request uses what was just saved.
+    // Without this an operator changes a model, re-tests, sees the OLD model
+    // answer, and concludes the save did not work.
+    invalidateAiConfigCache();
     return respond(200, { ok: true, persisted: true, demo: auth.demo, value });
   }
 

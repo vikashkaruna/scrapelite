@@ -30,6 +30,51 @@ export async function saveAiConfig(config) {
   return data;
 }
 
+// ── Live provider tests ──────────────────────────────────────────────────────
+// Key PRESENCE is not health. Production ran for weeks with all three AI keys
+// set and all three dead — one invalid, two out of credit — while the console
+// showed them configured and the health dashboard showed them green. These
+// endpoints actually call the vendor.
+
+const TEST_ENDPOINT = "/api/admin-provider-test";
+
+/** The full provider catalogue (AI + scrape + intel) with key presence. */
+export async function getProviderCatalogue() {
+  const res = await fetch(TEST_ENDPOINT, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+  });
+  if (!res.ok) throw new Error(`Failed to load providers (${res.status})`);
+  return res.json();
+}
+
+/**
+ * Live-test ONE provider. `model` is optional and lets an operator try a model
+ * id BEFORE saving it as the default — which is what makes free-text model
+ * entry safe.
+ */
+export async function testProvider(provider, model) {
+  const res = await fetch(TEST_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ provider, ...(model ? { model } : {}) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Test failed (${res.status})`);
+  return data.result;
+}
+
+/** Live-test every provider (or a named subset) in parallel. */
+export async function testAllProviders(providers) {
+  const res = await fetch(TEST_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ all: true, ...(providers ? { providers } : {}) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Test failed (${res.status})`);
+  return data.results || [];
+}
+
 // ── Coupons (checkout-facing sync) ───────────────────────────────────────────
 // See netlify/functions/admin-coupons-config.js for why this exists: saveCoupon
 // in adminService.js only ever wrote to the admin's own localStorage, so a

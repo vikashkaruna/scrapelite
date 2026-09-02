@@ -23,6 +23,9 @@ import {
   HEALTH_STATUS,
   statusPageIndicatorToStatus,
 } from "../../../src/lib/healthModel.js";
+// A LIVE ping, not a key-presence check — see the note above probeAiProviders.
+import { pingProvider, PROVIDER_ERROR_COPY } from "./aiProviders.js";
+import { PROVIDERS, AI_PROVIDERS, readKey } from "../../../src/lib/providerRegistry.js";
 // Same resolution order the functions use, so the probe reports on the key the
 // app actually authenticates with rather than a healthier one nearby.
 import {
@@ -573,16 +576,39 @@ export async function probeResend() {
   };
 }
 
-// Key presence only. Probing these means paying for a token or a page fetch on
-// every dashboard refresh, and neither answers a question worth that price:
-// both are FALLBACK CHAINS, so what matters is how many links are configured.
-function chainProbe(id, links) {
+// ── Provider chains ──────────────────────────────────────────────────────────
+//
+// ⚠️ THIS USED TO BE KEY-PRESENCE ONLY, AND THAT IS HOW A TOTAL AI OUTAGE
+// STAYED GREEN FOR WEEKS. The old comment argued that probing "means paying
+// for a token on every dashboard refresh, and neither answers a question worth
+// that price". That reasoning is exactly inverted for the failure that
+// actually happened: key PRESENCE is the one thing that never breaks. All
+// three AI keys were present and every one was dead — one invalid, two out of
+// credit — while this dashboard reported "operational".
+//
+// The AI probe now makes a real ~16-token completion per provider, cached for
+// PROBE_TTL_MS so a dashboard refresh does not re-bill. A few tokens an hour
+// is a rounding error against an outage nobody can see.
+//
+// The SCRAPE probe stays presence-based, and that asymmetry is deliberate:
+// `direct` needs no key and is always in the chain, so scraping degrades
+// rather than stops, and a real probe would fetch somebody's website on a
+// timer to prove it.
+
+const PROBE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+let _aiProbeCache = null;
+
+function presenceDetail(links) {
   const present = links.filter((l) => l.present);
-  const detail = {
+  return {
     configured: present.map((l) => l.name).join(", ") || "none",
-    // Named so the UI can say WHICH provider answers first.
     primary: present[0]?.name || "",
   };
+}
+
+function chainProbe(id, links) {
+  const present = links.filter((l) => l.present);
+  const detail = presenceDetail(links);
   if (!present.length) {
     return { id, configured: false, detail,
       note: `No provider key set (${links.map((l) => l.name).join(" → ")}).` };
@@ -598,12 +624,73 @@ function chainProbe(id, links) {
   };
 }
 
-export function probeAiProviders() {
-  return chainProbe("ai-providers", [
-    { name: "Gemini", present: !!env("GEMINI_API_KEY") },
-    { name: "Claude", present: !!env("AI_API_KEY") },
-    { name: "OpenAI", present: !!env("OPENAI_API_KEY") },
-  ]);
+/**
+ * LIVE AI chain probe. Pings every AI provider that has a key and reports what
+ * the chain can ACTUALLY do right now, not what is configured.
+ *
+ * Verdict rules:
+ *   - no keys at all            → unknown (not checked), never "down"
+ *   - every keyed provider dead → DOWN, naming the first actionable cause
+ *   - some dead                 → DEGRADED (the chain still answers)
+ *   - all alive                 → OK
+ */
+export async function probeAiProviders({ force = false } = {}) {
+  const id = "ai-providers";
+  const links = AI_PROVIDERS.map((p) => ({ key: p, name: PROVIDERS[p].label, present: !!readKey(p, process.env) }));
+  const detail = presenceDetail(links);
+  const keyed = links.filter((l) => l.present);
+
+  if (!keyed.length) {
+    return { id, configured: false, detail,
+      note: `No provider key set (${links.map((l) => l.name).join(" → ")}).` };
+  }
+
+  if (!force && _aiProbeCache && Date.now() - _aiProbeCache.at < PROBE_TTL_MS) {
+    return { ..._aiProbeCache.result, detail: { ..._aiProbeCache.result.detail, cached: true } };
+  }
+
+  const startedAt = Date.now();
+  let pings = [];
+  try {
+    pings = await Promise.all(keyed.map((l) => pingProvider(l.key)));
+  } catch {
+    // pingProvider never throws, but a Promise.all that somehow does must not
+    // take the whole health dashboard with it.
+    return { id, configured: true, reachable: false, status: HEALTH_STATUS.DEGRADED,
+      note: "The AI liveness probe could not run.", detail };
+  }
+  const latencyMs = Date.now() - startedAt;
+  const alive = pings.filter((p) => p.ok);
+  const dead = pings.filter((p) => !p.ok);
+
+  const perProvider = pings.map((p) => ({
+    provider: p.provider,
+    label: PROVIDERS[p.provider]?.label || p.provider,
+    ok: p.ok, code: p.code, model: p.model, latencyMs: p.latencyMs,
+    // The vendor's own message, which is the fastest route to the fix
+    // ("credit balance is too low" / "API key not valid").
+    error: p.ok ? undefined : String(p.error || "").slice(0, 200),
+  }));
+
+  let status, note;
+  if (!alive.length) {
+    status = HEALTH_STATUS.DOWN;
+    const first = dead[0];
+    note = `Every configured AI provider is failing. ${PROVIDERS[first.provider]?.label || first.provider}: ${PROVIDER_ERROR_COPY[first.code] || first.error}`;
+  } else if (dead.length) {
+    status = HEALTH_STATUS.DEGRADED;
+    note = `${dead.length} of ${pings.length} AI providers failing (${dead.map((d) => `${PROVIDERS[d.provider]?.label}: ${d.code}`).join("; ")}). The chain still answers via ${PROVIDERS[alive[0].provider]?.label}.`;
+  } else {
+    status = HEALTH_STATUS.OK;
+    note = "";
+  }
+
+  const result = {
+    id, configured: true, reachable: alive.length > 0, status, note, latencyMs,
+    detail: { ...detail, live: true, providers: perProvider },
+  };
+  _aiProbeCache = { at: Date.now(), result };
+  return result;
 }
 
 export function probeScrapeProviders() {

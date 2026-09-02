@@ -16,6 +16,9 @@
 // Every map  adapter returns:  { ok, source, mapLinks[] }
 
 import { fetchPublicUrl } from "./publicUrl.js";
+import {
+  PROVIDERS as REGISTRY, SCRAPE_PROVIDERS_LIST, FUNCTION_AREAS, readKey,
+} from "../../../src/lib/providerRegistry.js";
 
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
 const SPIDER_BASE    = "https://api.spider.cloud/v1";
@@ -42,7 +45,10 @@ function mdToBasicHtml(md) {
 // ── Scrape adapters ────────────────────────────────────────────────────────────
 
 async function scrapeFirecrawl(url, options, apiKey) {
-  const formats = ["html"];
+  // markdown alongside html: Firecrawl's markdown is main-content-isolated and
+  // keeps tables and lists intact, which is strictly better input for an
+  // extraction model than anything we can recover from raw HTML ourselves.
+  const formats = ["html", "markdown"];
   const payload = { url, formats, onlyMainContent: false };
   if (options.renderJs) payload.waitFor = 3000;
   if (options.customPrompt) {
@@ -74,6 +80,8 @@ async function scrapeFirecrawl(url, options, apiKey) {
       ok: true,
       source: "firecrawl",
       html,
+      // Provider-supplied readable text always beats our own HTML flattening.
+      text: typeof inner.markdown === "string" && inner.markdown.trim() ? inner.markdown : "",
       title: inner.metadata?.title || "",
       customExtraction: inner.json || inner.extract || inner.llm_extraction || null,
     };
@@ -138,8 +146,12 @@ async function scrapeJina(url, options, apiKey) {
     return {
       ok: true,
       source: "jina",
-      // Convert markdown headings + links → HTML so browser parseHtml() works
+      // Convert markdown headings + links → HTML so browser parseHtml() works.
       html: mdToBasicHtml(markdown),
+      // …but keep the ORIGINAL markdown as the model-facing text. Round-tripping
+      // it through fake HTML and back out again only loses list and table
+      // structure that Jina had already recovered correctly.
+      text: markdown,
       title: inner.title || inner.description || "",
       customExtraction: null,
     };
@@ -263,51 +275,39 @@ async function mapDirect(url, _apiKey) {
 
 // ── Provider registry ──────────────────────────────────────────────────────────
 
-export const SCRAPE_PROVIDERS = {
-  firecrawl: {
-    label: "Firecrawl",
-    keyEnv: "FIRECRAWL_API_KEY",
-    keyEnvFallback: "VITE_FIRECRAWL_API_KEY",
-    requiresKey: true,
-    scrape: scrapeFirecrawl,
-    map: mapFirecrawl,
-  },
-  spider: {
-    label: "Spider.cloud",
-    keyEnv: "SPIDER_API_KEY",
-    keyEnvFallback: null,
-    requiresKey: true,
-    scrape: scrapeSpider,
-    map: mapSpider,
-  },
-  jina: {
-    label: "Jina AI Reader",
-    keyEnv: "JINA_API_KEY",
-    keyEnvFallback: null,
-    requiresKey: false, // works without a key at lower rate limits
-    scrape: scrapeJina,
-    map: null,          // Jina has no crawl/map endpoint
-  },
-  direct: {
-    label: "Direct fetch",
-    keyEnv: null,
-    keyEnvFallback: null,
-    requiresKey: false,
-    scrape: scrapeDirect,
-    map: mapDirect,
-  },
+// The registry (src/lib/providerRegistry.js) owns labels, key env vars and
+// capabilities so the admin console and the runtime read ONE list. This file
+// keeps only the wire adapters and binds them to it.
+const ADAPTERS = {
+  firecrawl: { scrape: scrapeFirecrawl, map: mapFirecrawl },
+  spider:    { scrape: scrapeSpider,    map: mapSpider },
+  jina:      { scrape: scrapeJina,      map: null }, // no crawl/map endpoint
+  direct:    { scrape: scrapeDirect,    map: mapDirect },
 };
 
-export const DEFAULT_SCRAPE_ORDER = ["firecrawl", "spider", "jina", "direct"];
+export const SCRAPE_PROVIDERS = Object.fromEntries(
+  SCRAPE_PROVIDERS_LIST.map((key) => [key, {
+    label: REGISTRY[key].label,
+    keyEnv: REGISTRY[key].keyEnv || null,
+    keyEnvFallback: REGISTRY[key].keyEnvFallback || null,
+    requiresKey: REGISTRY[key].requiresKey === true,
+    capabilities: REGISTRY[key].capabilities || [],
+    scrape: ADAPTERS[key].scrape,
+    map: ADAPTERS[key].map,
+  }])
+);
+
+// QUALITY-FIRST, not cost-first. `direct` is the lowest-fidelity provider we
+// have — no JS rendering, no main-content isolation, no structured extraction —
+// so it belongs LAST, catching what the others could not rather than
+// pre-empting them. A production deployment that had ordered it first was
+// getting raw unrendered HTML for every page a paid provider could have
+// rendered properly.
+export const DEFAULT_SCRAPE_ORDER = FUNCTION_AREAS.scrape.defaultOrder.slice();
+export const DEFAULT_MAP_ORDER = FUNCTION_AREAS.map.defaultOrder.slice();
 
 function keyFor(providerKey) {
-  const p = SCRAPE_PROVIDERS[providerKey];
-  if (!p?.keyEnv) return "";
-  return (
-    process.env[p.keyEnv] ||
-    (p.keyEnvFallback ? process.env[p.keyEnvFallback] : "") ||
-    ""
-  );
+  return readKey(providerKey, process.env);
 }
 
 function resolveOrder() {

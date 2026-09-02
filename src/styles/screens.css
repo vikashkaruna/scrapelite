@@ -10039,3 +10039,147 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   .srd-card { padding: 18px; }
   .rp-head h1 { font-size: 24px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   /admin/ai — the Providers console
+   Every colour here comes from a design-system token. Hardcoding hex values
+   in a new feature is the exact violation this stylesheet's own header warns
+   about, and one that has already been fixed once in the Discoverability
+   History view.
+   ══════════════════════════════════════════════════════════════════════════ */
+.prov-page { max-width: 1120px; }
+
+.prov-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.prov-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 14px; border-radius: 10px; margin-bottom: 16px;
+  font-size: 13px; line-height: 1.5;
+  border: 1px solid var(--border);
+}
+.prov-banner-bad  { background: var(--danger-soft);  color: var(--danger);  border-color: var(--danger); }
+.prov-banner-warn { background: var(--warn-soft);    color: var(--warn);    border-color: var(--warn); }
+
+/* Summary strip — "is the chain alive?", answered before anything else. */
+.prov-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.prov-summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.prov-summary-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.prov-summary-value { font-size: 15px; font-weight: 600; }
+.prov-ok   { color: var(--success); }
+.prov-warn { color: var(--warn); }
+.prov-bad  { color: var(--danger); }
+
+.prov-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+.prov-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 14px; border: 0; background: transparent; cursor: pointer;
+  color: var(--text-muted); font-size: 14px; font-weight: 500;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.prov-tab:hover { color: var(--text); }
+.prov-tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+
+.prov-section { display: block; }
+.prov-section-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.prov-section-head p { max-width: 68ch; margin: 0; font-size: 13px; line-height: 1.6; }
+.prov-section-intro { max-width: 78ch; font-size: 13px; line-height: 1.6; margin-bottom: 18px; }
+
+.prov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+
+.prov-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.prov-card-off { opacity: .62; }
+.prov-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.prov-card-head h3 { margin: 0 0 4px; font-size: 15px; }
+
+/* Result badge. "Not tested" is styled as UNKNOWN, never as healthy — the
+   whole reason this screen exists is that untested used to read as green. */
+.prov-pill {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+  text-transform: capitalize; border: 1px solid transparent;
+}
+.prov-pill-idle { background: var(--surface-2); color: var(--text-muted); border-style: dashed; border-color: var(--border); }
+.prov-pill-busy { background: var(--accent-soft); color: var(--accent-on-dark); }
+.prov-pill-ok   { background: var(--success-soft); color: var(--success); }
+.prov-pill-warn { background: var(--warn-soft);    color: var(--warn); }
+.prov-pill-bad  { background: var(--danger-soft);  color: var(--danger); }
+
+.prov-key { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+.prov-key code { font-size: 11px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.prov-key-missing { color: var(--warn); }
+.prov-key-optional { color: var(--text-muted); }
+
+.prov-error { background: var(--danger-soft); border-radius: 8px; padding: 9px 11px; font-size: 12.5px; color: var(--danger); }
+.prov-error-raw { margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; opacity: .85; word-break: break-word; }
+.prov-note { background: var(--surface-2); border-radius: 8px; padding: 9px 11px; font-size: 12.5px; color: var(--text-muted); }
+.prov-note code { font-size: 11px; }
+
+.prov-fields { display: flex; flex-direction: column; gap: 10px; }
+.prov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.prov-field em { font-style: normal; opacity: .75; }
+.prov-field input {
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.prov-field-inline { flex-direction: row; align-items: center; gap: 10px; }
+.prov-field-inline input { width: 110px; }
+
+.prov-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.prov-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
+}
+.prov-tag-dim { opacity: .7; }
+.prov-tag-area { background: var(--accent-soft); color: var(--accent-on-dark); border-color: transparent; }
+
+.prov-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 4px; }
+.prov-card-actions { display: flex; align-items: center; gap: 8px; }
+.prov-foot-note { font-size: 11.5px; line-height: 1.4; max-width: 26ch; }
+.prov-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.prov-link { font-size: 12px; color: var(--accent); text-decoration: none; }
+.prov-link:hover { text-decoration: underline; }
+
+.prov-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
+
+/* ── Function areas ── */
+.prov-area { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+.prov-area-readonly { opacity: .92; }
+.prov-area-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.prov-area-head h3 { margin: 0 0 4px; font-size: 15px; }
+.prov-area-head p { margin: 0; font-size: 12.5px; line-height: 1.55; max-width: 64ch; }
+.prov-area-visible { display: flex; align-items: center; gap: 5px; margin-top: 6px !important; font-size: 12px; color: var(--text-muted); }
+.prov-area-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; }
+.prov-area-label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 8px; }
+
+.prov-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prov-chain-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.prov-chain-rank { width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); color: var(--accent-contrast); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.prov-chain-name { font-weight: 500; }
+.prov-chain-model { font-size: 11px; color: var(--text-muted); background: var(--bg); padding: 1px 6px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; }
+.prov-chain-moves { margin-left: auto; display: flex; gap: 2px; }
+.prov-chain-moves button { border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); border-radius: 6px; width: 22px; height: 22px; cursor: pointer; line-height: 1; }
+.prov-chain-moves button:disabled { opacity: .35; cursor: default; }
+.prov-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.prov-dot-ok  { background: var(--success); }
+.prov-dot-bad { background: var(--danger); }
+
+.prov-tier-choice { display: flex; gap: 6px; }
+.prov-tier { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: 13px; cursor: pointer; }
+/* --accent-contrast, NOT --accent-on-dark: this is a SOLID accent fill.
+   --accent-on-dark is for text on the soft tinted background. */
+.prov-tier.on { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
+.prov-tier em { font-style: normal; opacity: .8; font-size: 11px; }
+.prov-tier-hint { font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+.prov-reset { margin-top: 10px; background: none; border: 0; color: var(--accent); font-size: 12.5px; cursor: pointer; padding: 0; text-decoration: underline; }
+
+.prov-area-callsite { margin: 12px 0 0; font-size: 11px; color: var(--text-muted); }
+.prov-area-callsite code { font-size: 11px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+
+@media (max-width: 760px) {
+  .prov-area-body { grid-template-columns: 1fr; gap: 16px; }
+  .prov-section-head { flex-direction: column; }
+}

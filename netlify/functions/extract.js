@@ -628,7 +628,18 @@ export const handler = async (event) => {
     let relatedPagesScanned = null;
 
     const wantsEnrichment = Boolean(options.customPrompt || options.enrichKey);
-    const page = extractPageContent(result.html || "", { maxChars: BASE_PAGE_TEXT_CHARS });
+    // Provider-supplied markdown (Firecrawl, Jina) is already main-content
+    // isolated and keeps tables and lists intact — strictly better than
+    // anything we can recover by flattening raw HTML ourselves. Fall back to
+    // our own extractor for providers that only return HTML.
+    const page = result.text && result.text.trim().length > 200
+      ? {
+          text: String(result.text).slice(0, BASE_PAGE_TEXT_CHARS),
+          chars: String(result.text).length,
+          truncated: String(result.text).length > BASE_PAGE_TEXT_CHARS,
+          mode: `provider:${result.source}`,
+        }
+      : extractPageContent(result.html || "", { maxChars: BASE_PAGE_TEXT_CHARS });
 
     if (wantsEnrichment && isEmptyExtraction(result.customExtraction)) {
       const plan = resolveExtractionPlan(options.enrichKey, options.customPrompt);
