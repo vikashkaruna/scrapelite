@@ -56,6 +56,15 @@ export const CAPS = Object.freeze([
   // create-workspace time, before workspace.team_seats or workspace.extra
   // ever come into play (a workspace has to exist before it can have seats).
   "workspace.create",
+  // ── Intelligence Workflows (docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md)
+  // template.run      may execute a workflow template at all
+  // template.duplicate  may fork a template and edit its prompts
+  // report.share      may publish a report to ANY shared visibility
+  // report.branding   may remove DatIQ attribution / apply the Brand Kit
+  "template.run",
+  "template.duplicate",
+  "report.share",
+  "report.branding",
 ]);
 
 export const STATUS = Object.freeze({
@@ -506,6 +515,49 @@ export function can(ent, capability, ctx = {}) {
         : deny(
             "NOT_IN_PLAN",
             "White-label PDF is available on the Business plan and above. Upgrade to add your own template to exported PDFs.",
+            0,
+            "business",
+          );
+
+    // ── Intelligence Workflows ──────────────────────────────────────────
+    // template.run is DELIBERATELY ungated by plan. PRD 1 exists to get a new
+    // user to a meaningful first outcome inside five minutes; putting a
+    // paywall in front of that would defeat the feature's entire purpose. The
+    // real limit is the extraction/credit quota the run consumes, which the
+    // `extract` and `enrich` cases above already enforce. A template is a
+    // better-shaped way to spend a credit, not an extra thing to sell.
+    case "template.run":
+      return ok();
+
+    // Duplicating a template means editing its prompts — the power-user path,
+    // and the one that costs support time when it goes wrong. Paid only.
+    case "template.duplicate":
+      return L.template_duplicate
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Duplicating and editing a template is available on the Go plan and above.",
+            0,
+            "go",
+          );
+
+    // Sharing is likewise ungated: PRD 2's whole acquisition loop is a free
+    // user sharing a report with someone who then signs up. Gating it would be
+    // charging for our own distribution. What free tier does NOT get is
+    // removing the DatIQ attribution — that is report.branding, below.
+    case "report.share":
+      return ok();
+
+    // Removing DatIQ attribution / applying the Brand Kit to a shared report.
+    // Same tier as white_label_pdf, and deliberately the same underlying
+    // limit: a customer who has paid to brand their PDFs would not understand
+    // being told their shared reports are a separate purchase.
+    case "report.branding":
+      return L.white_label_pdf
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Custom report branding is available on the Business plan and above. Shared reports on your plan carry a DatIQ credit.",
             0,
             "business",
           );

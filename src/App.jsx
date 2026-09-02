@@ -57,6 +57,8 @@ import ProgrammaticRoute from "./pages/ProgrammaticRoute.jsx";
 import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
+import Templates from "./pages/Templates.jsx";
+import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import Discoverability from "./pages/Discoverability.jsx";
 import NotFound from "./pages/NotFound.jsx";
@@ -230,6 +232,16 @@ function Shell() {
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
           <Route path="/discoverability"               element={<Discoverability />} />
+          {/* PRD 1 — the workflow template gallery + runner. Public: the
+              catalogue is an acquisition surface, and a guest can run a
+              template (template.run is deliberately ungated) — they just
+              cannot save the result. */}
+          <Route path="/templates"                     element={<Templates />} />
+          {/* PRD 2 — a shared report. NOT under a private prefix: this page
+              exists to be opened by someone without a DatIQ account, which is
+              the whole acquisition loop. Indexability is decided per report
+              by the server; only `public` reports are indexable. */}
+          <Route path="/r/:slug"                       element={<Report />} />
           <Route path="/pricing"                       element={<Pricing />} />
           <Route path="/account"                       element={<Account />} />
           <Route path="/payment/success"               element={<PaymentSuccess />} />
