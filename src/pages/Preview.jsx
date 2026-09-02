@@ -761,9 +761,24 @@ export default function Preview() {
               </span>
             </div>
             <div className="card-pad">
-              <p className="summary-text">{data.ai_summary}</p>
+              {/* An AI summary that could not be written says so. It used to
+                  be silently replaced with locally-generated placeholder prose
+                  badged ai_generated — so a dead provider account produced
+                  pages of confident-sounding text nothing had read. A blank
+                  card naming the cause is the honest version of that. */}
+              {!data.ai_summary && data.ai_summary_error ? (
+                <div className="empty-mini empty-mini-fault">
+                  <Icon name="alert-circle" size={15} />
+                  <span>
+                    {data.ai_summary_error.hint || "The AI summary could not be generated."}
+                    {" "}The extracted data below is unaffected.
+                  </span>
+                </div>
+              ) : (
+                <p className="summary-text">{data.ai_summary}</p>
+              )}
               {/* Q9 — provenance badge for the AI summary field */}
-              {data._provenance?.fields?.ai_summary && (
+              {data.ai_summary && data._provenance?.fields?.ai_summary && (
                 <div className="prov-row">
                   <ProvenanceBadge prov={data._provenance.fields.ai_summary[0]} compact />
                 </div>

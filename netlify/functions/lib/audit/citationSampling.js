@@ -28,7 +28,13 @@ import { runChain, resolveProvider } from "../aiProviders.js";
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
 // Both the ai-chain fallback and the Perplexity model id below resolve through
 // that one shared, admin-configurable config now, instead of a raw env read.
-const PILLAR = "discoverability";
+// Citation sampling now has its OWN configurable area, separate from the
+// audit's evaluator chain. They want different things: the evaluator wants a
+// fast, cheap judgement under a hard deadline, while this wants a LIVE
+// retrieval engine whose citation URLs are the entire point. Sharing one
+// chain meant an operator could not put Perplexity first here without also
+// putting it first in the evaluator, where it is the wrong tool.
+const PILLAR = "citations";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
 const SAMPLE_TIMEOUT_MS = 15_000;

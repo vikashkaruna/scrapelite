@@ -92,7 +92,12 @@ describe("monitoringService errors (S-02)", () => {
 // ── Control actions ──────────────────────────────────────────────────────────
 
 describe("monitoringService control actions (S-03)", () => {
-  beforeEach(() => fetchMock.mockReturnValue(ok({ ok: true })));
+  // Block body: a value RETURNED from beforeEach is treated as a teardown
+  // callback, and mockReturnValue returns the mock — so the concise-arrow form
+  // hands Vitest the mock as teardown and invokes it after every test. Harmless
+  // here (the mock just returns a value) but the same shape fails loudly the
+  // moment an implementation throws.
+  beforeEach(() => { fetchMock.mockReturnValue(ok({ ok: true })); });
 
   it("posts set_job_enabled with the reason", async () => {
     await setJobEnabled("billing-purge", false, "migration window");
@@ -126,7 +131,12 @@ describe("monitoringService control actions (S-03)", () => {
 // ── Health query ─────────────────────────────────────────────────────────────
 
 describe("getHealthSnapshot (S-04)", () => {
-  beforeEach(() => fetchMock.mockReturnValue(ok({ ok: true })));
+  // Block body: a value RETURNED from beforeEach is treated as a teardown
+  // callback, and mockReturnValue returns the mock — so the concise-arrow form
+  // hands Vitest the mock as teardown and invokes it after every test. Harmless
+  // here (the mock just returns a value) but the same shape fails loudly the
+  // moment an implementation throws.
+  beforeEach(() => { fetchMock.mockReturnValue(ok({ ok: true })); });
 
   it("omits query params for the default request", async () => {
     await getHealthSnapshot();

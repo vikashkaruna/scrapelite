@@ -77,7 +77,11 @@ function toStructuredText(html) {
   // mailto:/tel: — surface the target next to its label. This is the only
   // reliable contact signal on most sites and tag-stripping erased it.
   s = s.replace(/<a\b[^>]*href=["']mailto:([^"'?]+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-    (_, addr, label) => ` ${stripTags(label)} <${decodeEntities(addr).trim()}> `);
+    // Parentheses, NOT angle brackets. `<sales@acme.com>` is the conventional
+    // way to write an address, and it is also indistinguishable from a tag to
+    // the tag-stripper that runs immediately after — so the email was being
+    // reinserted and then deleted, silently, on every page.
+    (_, addr, label) => ` ${stripTags(label)} (email: ${decodeEntities(addr).trim()}) `);
   s = s.replace(/<a\b[^>]*href=["']tel:([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
     (_, num, label) => ` ${stripTags(label)} (tel: ${decodeEntities(num).trim()}) `);
 
