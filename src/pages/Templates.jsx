@@ -17,6 +17,7 @@ import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
+import { useSeo } from "../hooks/useSeo.js";
 import { PERSONAS } from "../lib/personaConfig.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
@@ -35,6 +36,17 @@ export default function Templates() {
 
 function TemplateGalleryView({ onPick }) {
   const { personaId } = usePersona();
+
+  // /templates is a public acquisition surface — the PRD's whole point is that
+  // a template page is also a landing page — so it needs real metadata, the
+  // same as every other indexable route. The runner view below deliberately
+  // does NOT set its own: it is the same URL with a query param, and letting
+  // it rewrite the title would churn the tab on every template click.
+  useSeo({
+    title: "Workflow templates — turn a URL into finished work | DatIQ",
+    description:
+      "Ready-to-run workflows for sales, competitive intelligence, SEO and research. Give one domain, get a source-backed account brief, pricing tracker, audit or due-diligence brief — no prompt writing.",
+  });
   const [templates, setTemplates] = useState(null);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState(personaId || "all");
