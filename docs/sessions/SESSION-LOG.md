@@ -18,6 +18,113 @@
 
 ---
 
+## 2026-09-02 23:10 IST — The AI outage nobody could see: schema-guided extraction, honest failures, and the Providers console
+
+> **Branch:** `claude/custom-extraction-enrichment-debug-711d74` · **Merged to:** nothing yet — review first.
+> **Reported as:** "custom extraction and every enrichment return nothing; multiple fixes attempted, none solved it."
+
+### 1. The root cause was not in the code
+
+Called the live production API directly:
+
+```
+POST https://datiq.app/api/ai  →  502
+{"attempts":[
+ {"provider":"anthropic","status":400,"error":"Your credit balance is too low…"},
+ {"provider":"gemini",   "status":400,"error":"API key not valid…"},
+ {"provider":"openai",   "status":429,"error":"You have no credits remaining…"}]}
+```
+
+**All three AI providers are dead in production.** Anthropic out of credit, the
+**Gemini key invalid**, OpenAI out of credit. No code change was ever going to
+fix it — which is exactly why every prior attempt failed.
+
+🔴 **OPERATOR ACTION, STILL OUTSTANDING: reissue the Gemini key and top up
+Anthropic + OpenAI.** Nothing in this branch substitutes for that.
+
+⚠️ **Also check the Supabase `app_config` row `key='ai'`.** Operator config
+*overrides* code, so an earlier "Gemini model naming fix" could have shipped
+correctly and had zero effect in production. Unverifiable from a worktree.
+
+### 2. Four defects made a total outage invisible for weeks
+
+1. **The reason lied.** `enrichmentReason = relatedRes.reason || aiRes.reason ||
+   "no_match"` let a fruitless related-page scan overwrite a real
+   `ai_chain_failed`. Reproduced against production: `enrichKey=pricing` →
+   `ai_chain_failed` (truthful), `contacts` / `social` / `custom` → `no_match`,
+   which renders as *"The AI read this page but found nothing."* **A statement
+   about the user's page that was really about our billing.** Infra reasons now
+   outrank absence reasons — `pickReason()`, with a regression test.
+2. **Silent fabrication.** `realSummary`/`realContent` caught every error and
+   returned locally-generated fixture prose, badged `ai_generated`. Production
+   was serving Mad Libs as analysis. Mocks now run only in mock mode.
+3. **`/admin/health` reported AI as operational** because three env vars were
+   non-empty strings. Key *presence* never breaks; validity and billing do.
+4. **`no_match` meant four different things** — never ran / empty reply /
+   unparseable / genuinely absent.
+
+### 3. The quality ceiling was architectural
+
+**The page body never reached any client-side prompt.** `realScrape` parsed the
+HTML and threw it away, returning `{page_title, headings, links}` — so every AI
+summary was written from a table of contents, and "Competitor Summary" was an
+LLM guessing about a company from its navigation menu.
+
+And **the templates were an empty shell**: every seed ships a `prompt_bundle`
+with `summarize` and `talking_points`, and a repo-wide grep found **no consumer
+for either**. `executeRun` read `scraped.ai_summary`, a field `extractStructure`
+does not return, so the AI branch was unreachable and the declared output blocks
+could never be populated.
+
+### 4. What shipped
+
+| Area | Change |
+|---|---|
+| `src/lib/providerRegistry.js` | **NEW.** One shared catalogue: every provider, its `fast`/`deep` model tier, and the FUNCTION AREA it powers. |
+| `src/lib/extractionSchemas.js` | **NEW.** Per-capability JSON Schema + an evidence contract. |
+| `netlify/functions/lib/pageContent.js` | **NEW.** Structure-preserving text — a pricing table survives as `\| Pro \| $29 \|`. |
+| `aiProviders.js` | Tiers, areas, **native structured output** (Gemini `responseSchema`, OpenAI `json_schema`, Anthropic forced tool use), `pingProvider()`, actionable error codes. |
+| `extract.js` | Schema-guided extraction, reason precedence, related pages gathered **before** the model call, `data.text` returned. |
+| `admin-provider-test.js` | **NEW.** LIVE tests for AI, scrape and PageSpeed. |
+| `/admin/ai` | Rebuilt as a three-tab **Providers console**. |
+| `healthProbes.js` | `probeAiProviders` now **pings**, cached 10 min. |
+| `StructuredFacts.jsx` | **NEW.** Groups, tables, evidence — replaces `<pre>{JSON.stringify(…)}</pre>`. |
+| `templatesClient.js` | Synthesis actually runs; **AI Visibility & Competitive Brief** (the niche bet). |
+| `design-system.css` | Defined `--success` / `--warning` / `--*-soft` / `--text-muted`, referenced ~30 times and **never defined** — three fallbacks had drifted to different hexes for the same colour. |
+
+### 5. Bugs found by the new tests
+
+- **`mailto:` addresses were being destroyed by the code meant to preserve
+  them**: reinserted as `<sales@acme.com>`, then deleted by the tag-stripper on
+  the next line. The highest-yield contacts signal, gone on every page.
+- **A latent Vitest trap in two files**: `beforeEach(() => m.mockReset())`
+  returns the mock, and a value returned from `beforeEach` is treated as a
+  **teardown callback** — so Vitest invokes it after every test. Harmless with a
+  value-returning mock; with a throwing one it fails a test whose assertions all
+  passed, with an unexplained error.
+
+### 6. Verified
+
+unit+contract+integration **303 files / 4803 tests / 0 failed** · db **39
+migrations / 340 assertions** · verify-referral 17 · build clean ·
+check:prerender 23 pages / 69 refs · security clean · readiness **5 pass / 2
+warn / 0 fail** (both pre-existing). Providers console and the new rendering
+browser-verified in light and dark.
+
+### 7. Open
+
+- 🔴 Reissue/top up the three AI provider accounts. **Nothing works until then.**
+- ⚠️ Check `app_config` `key='ai'` for a stale model override.
+- ⚠️ `SCRAPE_PROVIDER_ORDER` in production starts with `direct` and omits
+  Firecrawl entirely — the lowest-fidelity provider is primary, and the only one
+  that does server-side structured extraction is absent. The code default is now
+  quality-first; **the env var still overrides it.**
+- Structured output is verified against each vendor's documented contract and by
+  unit test, **not against a live key**. First run after the accounts are
+  restored should be watched.
+
+---
+
 ## 2026-09-02 14:05 IST — Intelligence Workflows, Phases 0–2 (templates, credit ledger, shareable reports)
 
 > **Branch:** `feat/intelligence-workflows` @ `c890170` · **Merged to:** `staging` · **`main`: untouched, deliberately**
