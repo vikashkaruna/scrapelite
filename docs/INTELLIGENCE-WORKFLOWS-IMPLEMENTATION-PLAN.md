@@ -464,6 +464,41 @@ Two of these deserve a specific note, because they will be tempting:
 
 ---
 
+## 6a. CI: why the Staging Gate kept going red, and what changed
+
+Measured 2026-09-02 across the last 25 Staging Gate runs: **5 failed, and 4 of
+those 5 failed on the same step — `End-to-end smoke tests (Playwright)`.**
+
+Every one had passed the pre-push hook first, because `test-all.mjs --prepush`
+deliberately skips the e2e suite. So the most common route to a red gate was:
+change a UI file → nine local gates green in ~30s → push → find out ten minutes
+later in CI. Phase 1's own nav change did exactly this.
+
+**Fixed** in `scripts/pre-push.sh`: the e2e smoke suite now runs in the hook,
+**conditionally** on the diff touching the same source set the prerender gate
+already watches (`src/{pages,components,styles,lib,hooks}`, `index.html`,
+`site-routes.mjs`) plus `e2e/` itself.
+
+- Matched to the prerender gate rather than narrowed to pages/components,
+  because if a change can make a prerendered page stale it can break a
+  rendered-structure contract — `pricingConfig.js` → `PricingMatrix` →
+  `pricing.spec.js` is a real path with no component file in it.
+- **Conditionality is the design.** A gate that adds ~90s to *every* push gets
+  `--no-verify`'d, and this repo has an incident about that habit. Docs,
+  `netlify/`, and migration-only pushes still finish in ~30s; a UI push takes
+  ~112s.
+- Escape hatch is explicit: `PREPUSH_SKIP_E2E=1`.
+- `scripts/prepush-gate.test.mjs` guards it — including that it sits **outside**
+  the docs-only early exit (the prerender gate once lived inside
+  `PREPUSH_FORCE`, so a flag meant to run *more* checks silently switched it
+  off) and that the installed hook has not drifted from source. Five of its
+  assertions were confirmed to fail with the gate removed.
+
+Verified live: a `src/pages` push ran all 131 smoke tests in the hook and
+reported `all gates green in 112s`.
+
+---
+
 ## 7. Suggested branch and merge strategy
 
 - One long-lived branch: `feat/intelligence-workflows`, cut from `staging`.
