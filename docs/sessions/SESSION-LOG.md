@@ -20,7 +20,7 @@
 
 ## 2026-09-02 14:05 IST — Intelligence Workflows, Phases 0–2 (templates, credit ledger, shareable reports)
 
-> **Branch:** `feat/intelligence-workflows` @ `734a336` · **Merged to:** `staging` · **`main`: untouched, deliberately**
+> **Branch:** `feat/intelligence-workflows` @ `fe18179` · **Merged to:** `staging` · **`main`: untouched, deliberately**
 > **PR:** [#136](https://github.com/vikashkaruna/scrapelite/pull/136) — kept open; Phases 3–7 continue on this branch.
 > **Staging Gate:** all checks green.
 
@@ -103,6 +103,30 @@ Migrations verified against **real Postgres** (not just PGlite) in a rolled-back
 - [ ] **Reconcile staging schema drift** — `account_deletion_audit` + `delete_user_account` exist on staging in **no migration**. The repo is not the complete source of truth for that project; fold them into a migration before prod diverges further.
 - [ ] **Phase 3** (PQL + integration recipe gallery) is the next build — ~1–2 sessions, cheapest remaining.
 - [ ] Phases 4–7 pending (~12–16 sessions). Phase 4 (bulk) is the heaviest and needs the durable runner.
+
+### 6a. ⚠️ Branch topology at close — read before promoting to `main`
+
+| Ref | SHA | State |
+|---|---|---|
+| `feat/intelligence-workflows` | `fe18179` | **kept open** for Phases 3–7; fixes land here |
+| `staging` | `fe18179` | **identical to the branch** |
+| `main` | `398b0cd` | **untouched by this work** — contains no Phase 0–2 file |
+
+🔴 **Promotion will be a REAL MERGE, not a fast-forward.** `main` carries **4
+commits `staging` does not have**:
+
+```
+398b0cd Merge pull request #133 from vikashkaruna/staging
+5461cb3 Merge pull request #132 from dependabot/npm_and_yarn-db5b772463
+8bae7e0 build(deps-dev): bump the npm_and_yarn group (2 updates)
+e9cef39 Merge pull request #130 from vikashkaruna/staging
+```
+
+`8bae7e0` is a **Dependabot security bump applied directly to `main`**, so
+`staging` is currently *missing* it — which is why pushes from this branch keep
+printing *"GitHub found 2 vulnerabilities on the default branch"*. Merge `main`
+into `staging` (or let the promotion PR carry it) rather than assuming
+`staging` is strictly newer.
 
 ### 7. Decisions recorded (D1–D6, resolved with the owner)
 
