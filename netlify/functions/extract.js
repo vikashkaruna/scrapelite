@@ -48,6 +48,7 @@ import {
   resolveExtractionPlan, isSchemaResultEmpty, countSchemaFacts,
 } from "../../src/lib/extractionSchemas.js";
 import { extractPageContent } from "./lib/pageContent.js";
+import { publicFailureCode } from "../../src/lib/aiFailureCopy.js";
 import { getCached, setCached } from "./lib/resultCacheStore.js";
 import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -134,6 +135,19 @@ function reasonForChainCode(code) {
     case "no_key":        return ENRICH_REASON.NOT_CONFIGURED;
     default:              return ENRICH_REASON.CHAIN_FAILED;
   }
+}
+
+/**
+ * The full enrichment diagnosis goes to the LOG, which is an operator surface.
+ * This is the pairing that matters: the customer gets one generic sentence and
+ * the operator gets the vendor's exact words — previously nobody got either,
+ * which is how three dead provider accounts went unnoticed for weeks.
+ */
+function logEnrichmentFailure(capability, reason, attempts) {
+  const detail = (attempts || [])
+    .map((a) => `${a.provider}:${a.code || a.skipped || "?"}${a.error ? ` (${String(a.error).slice(0, 120)})` : ""}`)
+    .join(" | ");
+  console.warn(`[DatIQ] enrichment "${capability}" failed — reason=${reason} ${detail}`);
 }
 
 // ── Structured extraction ───────────────────────────────────────────────────
@@ -715,14 +729,26 @@ export const handler = async (event) => {
           // on the retry must never overwrite an infrastructure failure from
           // the first pass — that substitution is the reported bug.
           enrichmentReason = pickReason(aiRes.reason, secondReason);
+          // ⚠️ NO provider names, NO vendor error text, NO attempt list. This
+          // response is read by every customer and every /api/v1 key holder,
+          // and the vendors' own words are our billing state, not theirs
+          // ("Your credit balance is too low…"). The client turns `reason`
+          // into one generic sentence; the full diagnosis is in the function
+          // log and on /admin/ai. See lib/aiFailure.js.
+          logEnrichmentFailure(plan.key, enrichmentReason, aiRes.attempts);
           enrichmentMeta = {
             ok: false,
             capability: plan.key,
             label: plan.label,
-            reason: enrichmentReason,
+            // COLLAPSED: every operator fault leaves as `ai_unavailable`. The
+            // specific reason (`ai_no_credit`, `ai_bad_key`, …) stays in the
+            // log line above and on /admin/ai. `no_match` and
+            // `page_no_content` pass through — those are findings about the
+            // customer's own page, and the UI says something useful for each.
+            reason: publicFailureCode(enrichmentReason),
+            // Which pages we read IS the customer's own information, and it is
+            // what makes "we found nothing" a claim they can check.
             pagesRead: [url, ...related.map((r) => r.url)],
-            // Only ever provider names + status codes, never keys.
-            attempts: aiRes.attempts || undefined,
           };
         }
       }

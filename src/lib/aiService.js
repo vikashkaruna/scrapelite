@@ -24,6 +24,7 @@
 import { hasAI, hasFirecrawl, AI_MODEL } from "./config.js";
 import { apiClient } from "./apiClient.js";
 import { hostOf } from "./utils.js";
+import { userFacingMessage } from "./aiFailureCopy.js";
 import { categoryOf, isCategory, CATEGORY_KEYS } from "./linkCategorizer.js";
 import { PERSONA_BY_ID } from "./personaConfig.js";
 
@@ -50,31 +51,19 @@ async function callAI(messages, max_tokens = 1024, opts = {}) {
 }
 
 /**
- * Normalise a thrown apiClient error into the same { code, hint } vocabulary
- * /api/ai returns, so the UI has one thing to render whether the failure was a
- * 502 with a body or a network drop with none.
+ * Normalise a thrown apiClient error into a `code` the UI can branch on.
+ *
+ * ⚠️ NO `hint`. This value travels into `ai_summary_error` and is rendered on
+ * a customer's screen; the wording is chosen at render time by
+ * aiFailureCopy.userFacingMessage(), which cannot name a vendor, a key or a
+ * bill. The server no longer sends a hint either — see
+ * netlify/functions/lib/aiFailure.js for why the redaction happens in both
+ * places rather than trusting either one alone.
  */
 function describeAiFailure(err) {
-  // apiClient lifts the server's `code`/`hint` onto the Error itself.
   const code = err?.code || (err?.status === 503 ? "no_key" : "error");
-  const hint = err?.hint || AI_FAILURE_HINTS[code] || AI_FAILURE_HINTS.error;
-  return { ok: false, code, hint, status: err?.status ?? null };
+  return { ok: false, code, status: err?.status ?? null };
 }
-
-// Mirrors PROVIDER_ERROR_COPY server-side. Duplicated rather than imported
-// because this file must stay importable in the browser bundle without
-// pulling in the Netlify function tree.
-export const AI_FAILURE_HINTS = {
-  no_key:        "AI is not configured on this server. An administrator needs to set an AI provider key.",
-  bad_key:       "The AI provider rejected the API key. An administrator needs to reissue it.",
-  no_credit:     "The AI provider account is out of credit. An administrator needs to top up billing.",
-  rate_limited:  "The AI provider is rate-limiting requests. Try again in a moment.",
-  bad_model:     "The configured AI model is unavailable. An administrator needs to change it.",
-  provider_down: "The AI provider is having an outage. Try again shortly.",
-  timeout:       "The AI provider did not respond in time. Try again.",
-  network:       "Could not reach the AI provider.",
-  error:         "The AI request failed.",
-};
 
 // ── Summarize ─────────────────────────────────────────────────────────────────
 
@@ -489,7 +478,10 @@ export async function generateContentDetailed(extraction, format) {
 export async function generateContent(extraction, format) {
   const r = await generateContentDetailed(extraction, format);
   if (!r.ok) {
-    const err = new Error(r.hint || "AI content generation is unavailable.");
+    // Generic message: every caller of this surfaces `err.message` in a toast
+    // or an error modal, i.e. straight to the customer. `code` rides along for
+    // callers that want to branch, and the operator detail is in the log.
+    const err = new Error(userFacingMessage(r.code, { what: "this content" }));
     err.code = r.code;
     err.aiUnavailable = true;
     throw err;

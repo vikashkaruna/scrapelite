@@ -86,10 +86,12 @@ async function request(path, method = "GET", body) {
     // unavailable) whose user-facing wording the SERVER owns, so the two can
     // never drift into describing the same verdict differently.
     if (errData.reason) e.reason = errData.reason;
-    // An operator-actionable explanation the server already computed (e.g.
-    // "the AI provider account is out of credit"). Carried verbatim so the UI
-    // never has to re-derive it from a status code.
-    if (errData.hint) e.hint = errData.hint;
+    // ⚠️ Deliberately NOT lifting an operator `hint` off the body. Customer-
+    // facing endpoints no longer send one (see netlify/functions/lib/
+    // aiFailure.js), and re-adding this plumbing is how an operator string
+    // finds its way back onto a customer's screen: the UI would render it the
+    // moment some endpoint started returning it again. Admin screens read
+    // their detail from the admin-gated endpoints instead.
     if (isHtml) e.edgeAccess = true;
     throw e;
   }

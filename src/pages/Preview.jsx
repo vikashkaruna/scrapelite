@@ -6,6 +6,7 @@ import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
 import StructuredFacts from "../components/StructuredFacts.jsx";
+import { userFacingMessage, isOperatorFault } from "../lib/aiFailureCopy.js";
 import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 import ContentView from "../components/ContentView.jsx";
 import ExtractionCharts from "../components/ExtractionCharts.jsx";
@@ -146,45 +147,32 @@ function isEmptyEnrichmentData(data) {
 // actionable case (an unset env var) looked exactly like the two where the
 // user should just move on. `reason` is set by /api/extract; older saved
 // entries have none and keep the original wording.
-export function emptyEnrichmentMessage(reason) {
-  switch (reason) {
-    case "ai_not_configured":
-      return "AI extraction isn't configured on this server. An administrator needs to set GEMINI_API_KEY, AI_API_KEY, or OPENAI_API_KEY.";
-    // The three that a dead provider account actually produces. Each names the
-    // operator action, because for weeks these were all reported as "the AI
-    // read this page and found nothing" — a statement about the user's page
-    // that was really a statement about our billing.
-    case "ai_no_credit":
-      return "The AI provider account is out of credit, so nothing could be extracted. An administrator needs to top up billing. This is not a problem with your page.";
-    case "ai_bad_key":
-      return "The AI provider rejected our API key, so nothing could be extracted. An administrator needs to reissue it. This is not a problem with your page.";
-    case "ai_rate_limited":
-      return "The AI provider is rate-limiting us right now. Try Refresh in a moment — your page is fine.";
-    case "ai_chain_failed":
-      return "The AI provider couldn't be reached for this extraction. Try Refresh in a moment.";
-    case "ai_unparseable":
-      return "The AI answered but not in a readable form. Try Refresh — this usually succeeds on a retry.";
-    case "ai_empty_reply":
-      return "The AI returned an empty answer. Try Refresh in a moment.";
-    case "page_no_content":
-      return "We couldn't read any text from this page. It may render entirely in JavaScript — try again with JS rendering enabled.";
-    case "no_match":
-      return "The AI read this page and the pages it links to, and found nothing matching this capability.";
-    default:
-      return "No data returned for this capability.";
-  }
+/**
+ * What an EMPTY enrichment tab says to a CUSTOMER.
+ *
+ * ⚠️ Two wrong versions preceded this one, in opposite directions:
+ *   1. "No data returned for this capability" — identical for a dead provider
+ *      account and a page that genuinely has no pricing. It made a total
+ *      outage indistinguishable from a normal result, for weeks.
+ *   2. "The AI provider account is out of credit. An administrator needs to
+ *      top up billing." — true, actionable, and none of a customer's business.
+ *      It leaked our billing state, our vendors and our env var names to
+ *      people who could do nothing with any of it.
+ *
+ * The split is now explicit and lives in src/lib/aiFailureCopy.js: customers
+ * get one honest generic sentence, operators get the full diagnosis on
+ * /admin/ai and /admin/health. Do not reintroduce a per-code customer message.
+ */
+export function emptyEnrichmentMessage(reason, opts = {}) {
+  return userFacingMessage(reason, { what: opts.what || "this capability" });
 }
 
 /**
- * Is this empty tab OUR fault or the page's? Drives whether the UI offers
- * "Retry" (transient, ours) or explains that the page simply lacks the data.
- * Anything that names an operator action is ours.
+ * Is this empty tab OUR fault or the page's? Drives whether the UI frames it
+ * as a temporary problem worth retrying, or as a finding about the page.
  */
 export function isEnrichmentOurFault(reason) {
-  return [
-    "ai_not_configured", "ai_no_credit", "ai_bad_key", "ai_rate_limited",
-    "ai_chain_failed", "ai_unparseable", "ai_empty_reply", "page_no_content",
-  ].includes(reason);
+  return isOperatorFault(reason);
 }
 
 export default function Preview() {
@@ -770,7 +758,9 @@ export default function Preview() {
                 <div className="empty-mini empty-mini-fault">
                   <Icon name="alert-circle" size={15} />
                   <span>
-                    {data.ai_summary_error.hint || "The AI summary could not be generated."}
+                    {/* Generic by construction — this used to render the
+                        server's operator hint, which named our billing state. */}
+                    {userFacingMessage(data.ai_summary_error.code, { what: "this page" })}
                     {" "}The extracted data below is unaffected.
                   </span>
                 </div>
@@ -951,7 +941,15 @@ export default function Preview() {
                 {isEmptyEnrichmentData(activeEntry.data) ? (
                   <div className={`empty-mini${isEnrichmentOurFault(activeEntry.reason) ? " empty-mini-fault" : ""}`}>
                     {isEnrichmentOurFault(activeEntry.reason) ? <Icon name="alert-circle" size={15} /> : null}
-                    <span>{emptyEnrichmentMessage(activeEntry.reason)}</span>
+                    {/* Name the capability, so "we found nothing matching
+                        Pricing & Plans" is a claim the reader can check
+                        against the pages listed below it. */}
+                    <span>{emptyEnrichmentMessage(activeEntry.reason, { what: activeEntry.label })}</span>
+                    {!isEnrichmentOurFault(activeEntry.reason) && activeEntry.pages?.length > 1 ? (
+                      <span className="empty-mini-pages">
+                        {" "}Pages read: {activeEntry.pages.map((u) => u.replace(/^https?:\/\//, "")).join(", ")}.
+                      </span>
+                    ) : null}
                   </div>
                 ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
                   // Content-kind (or any entry whose data is a {text} blob)

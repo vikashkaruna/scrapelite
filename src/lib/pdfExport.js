@@ -13,6 +13,7 @@ import { jsPDF } from "jspdf";
 import { hostOf, pathOf, fmtDate, flattenJson } from "./utils.js";
 import { buildBrandingContext, brandingPdfHeader, brandingPdfFooter } from "./exportBranding.js";
 import { toPdfSafe } from "./invoicePdf.js";
+import { userFacingMessage } from "./aiFailureCopy.js";
 
 const MARGIN = 48; // pt
 const LINE = 14; // base line height
@@ -173,7 +174,12 @@ export function buildExtractionsPdf(items, { template = null, generatedAt = null
         sectionTitle(en.label || en.key);
         const flat = en.data == null ? [] : flattenJson(en.data);
         if (flat.length === 0) {
-          write("No data returned for this capability.", { size: 9, color: [140, 145, 158], indent: 6 });
+          // A PDF is the most forwarded surface we have — a client reads it
+          // months later, out of context. It gets the same customer-facing
+          // wording as the screen: whose fault it was, never our billing
+          // state or our vendors' names.
+          write(userFacingMessage(en.reason, { what: en.label || "this capability" }),
+            { size: 9, color: [140, 145, 158], indent: 6 });
         } else {
           flat.forEach(({ path, value }) =>
             write(`${path}:  ${value}`, { size: 9, color: [55, 58, 70], gap: 1, indent: 6 }),

@@ -555,7 +555,11 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       }));
       const body = JSON.parse((await h(emptyPageEvent)).body);
       expect(body._enrichment.ok).toBe(false);
-      expect(body._enrichment.reason).toBe("ai_not_configured");
+      // COLLAPSED on the way out. The specific reason (ai_not_configured) is
+      // in the function log and on /admin/ai; a customer-facing body carries
+      // one opaque code, because `code: "no_credit"` in a network tab says
+      // what the prose was rewritten to stop saying.
+      expect(body._enrichment.reason).toBe("ai_unavailable");
       expect(runChainMock).not.toHaveBeenCalled();
     });
 
@@ -564,7 +568,7 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       const runChainMock = vi.fn().mockRejectedValue(new Error("upstream 500"));
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment.reason).toBe("ai_chain_failed");
+      expect(body._enrichment.reason).toBe("ai_unavailable");
     });
 
     // The production outage: three keys PRESENT, all three dead. The chain
@@ -577,9 +581,14 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
         attempts: [{ provider: "anthropic", code: "no_credit", error: "credit balance is too low" }],
       });
       const h = await loadHandlerWithAI(runChainMock);
-      const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment.reason).toBe("ai_no_credit");
-      expect(body._enrichment.attempts[0].provider).toBe("anthropic");
+      const r = await h(emptyPageEvent);
+      const body = JSON.parse(r.body);
+      expect(body._enrichment.reason).toBe("ai_unavailable");
+      // ⚠️ `attempts` used to travel here carrying the vendor's own words —
+      // "Your credit balance is too low…" — to every customer and /api/v1 key
+      // holder. Nothing in the body may name a vendor or our billing state.
+      expect(body._enrichment.attempts).toBeUndefined();
+      expect(r.body).not.toMatch(/credit|anthropic|gemini|openai/i);
     });
 
     it("reason=ai_bad_key when the key is present and rejected", async () => {
@@ -587,7 +596,7 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       const runChainMock = vi.fn().mockResolvedValue({ ok: false, errorCode: "bad_key" });
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment.reason).toBe("ai_bad_key");
+      expect(body._enrichment.reason).toBe("ai_unavailable");
     });
 
     it("reason=ai_unparseable when the model answers with prose", async () => {
@@ -597,7 +606,7 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       });
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment.reason).toBe("ai_unparseable");
+      expect(body._enrichment.reason).toBe("ai_unavailable");
     });
 
     it("reason=page_no_content when the scrape produced nothing readable", async () => {
@@ -766,7 +775,7 @@ describe("extract — related-page gathering (enrichKey)", () => {
       }),
     });
     const body = JSON.parse(r.body);
-    expect(body._enrichment.reason).toBe("ai_chain_failed");
+    expect(body._enrichment.reason).toBe("ai_unavailable");
     expect(body._relatedPagesScanned).toBeUndefined();
     expect(runChainMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2); // robots.txt + base scrape only
@@ -800,7 +809,11 @@ describe("extract — related-page gathering (enrichKey)", () => {
         options: { customPrompt: "Extract every pricing tier.", enrichKey: "pricing" },
       }),
     })).body);
-    expect(body._enrichment.reason).toBe("ai_no_credit");
+    // The contract under test is "OURS, not THEIRS" — that a fruitless
+    // related-page scan cannot relabel an infrastructure failure as a finding
+    // about the customer's page. The specific cause is redacted on the way
+    // out; the distinction that matters is not.
+    expect(body._enrichment.reason).toBe("ai_unavailable");
     expect(body._enrichment.reason).not.toBe("no_match");
   });
 
@@ -819,7 +832,7 @@ describe("extract — related-page gathering (enrichKey)", () => {
         options: { customPrompt: "Extract social links.", enrichKey: "social" },
       }),
     })).body);
-    expect(body._enrichment.reason).toBe("ai_bad_key");
+    expect(body._enrichment.reason).toBe("ai_unavailable");
     expect(fetchMock).toHaveBeenCalledTimes(2); // robots + base scrape, nothing more
   });
 

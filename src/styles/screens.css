@@ -10294,3 +10294,7 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   background: var(--accent); color: var(--accent-contrast);
 }
 .tpl-cmp-null { color: var(--text-muted); font-style: italic; }
+
+/* Which pages we read behind a "found nothing" claim — the thing that makes
+   it checkable rather than just asserted. */
+.empty-mini-pages { color: var(--text-muted); }

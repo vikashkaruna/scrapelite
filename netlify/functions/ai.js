@@ -17,12 +17,20 @@
 // falls back to the global chain rather than being rejected, because a client
 // that is one deploy behind must not lose AI entirely.
 //
-// A failure now returns a machine-readable `code` (no_credit / bad_key /
-// rate_limited / …) alongside the prose. The browser used to see only a 502
-// and silently substituted locally-generated placeholder text, so a dead
-// provider account looked exactly like a working one.
+// A failure returns a machine-readable `code` (no_credit / bad_key /
+// rate_limited / …) and NOTHING ELSE. The browser used to see only a 502 and
+// silently substituted locally-generated placeholder text, so a dead provider
+// account looked exactly like a working one — hence the code.
+//
+// ⚠️ The code is all a customer gets. No `hint`, no provider names, no vendor
+// error text, no attempt list: this endpoint is reachable by every signed-in
+// user and by /api/v1 key holders, and "Your credit balance is too low to
+// access the Anthropic API" is our billing state, not theirs. The full
+// diagnosis goes to the server log and to the admin-gated endpoints. See
+// lib/aiFailure.js.
 
-import { runChain, keyPresence, PROVIDER_ERROR_COPY } from "./lib/aiProviders.js";
+import { runChain, keyPresence } from "./lib/aiProviders.js";
+import { publicFailure, logChainFailure } from "./lib/aiFailure.js";
 import { AI_AREA_KEYS, MODEL_TIER } from "../../src/lib/providerRegistry.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
@@ -125,24 +133,20 @@ export const handler = async (event) => {
   // aiService.js falls back to its local mock content.
   const present = keyPresence();
   if (!Object.values(present).some(Boolean)) {
-    return respond(503, {
-      error: "AI service not configured on this server",
-      code: "no_key",
-      hint: PROVIDER_ERROR_COPY.no_key,
-    });
+    // Generic prose + the code. An operator reads the real cause in
+    // /admin/ai; a customer can act on neither wording, so they get the one
+    // that discloses nothing.
+    return respond(503, { error: "AI is temporarily unavailable.", code: "no_key" });
   }
 
   try {
     const result = await runChain(safeMessages, max_tokens, { area, tier });
     if (!result.ok) {
-      // `code` is the actionable half. "All AI providers failed" told an
-      // operator nothing; "no_credit" tells them to top up billing.
-      return respond(502, {
-        error: result.error,
-        code: result.errorCode || "error",
-        hint: PROVIDER_ERROR_COPY[result.errorCode] || PROVIDER_ERROR_COPY.error,
-        detail: { attempts: result.attempts },
-      });
+      // The full diagnosis goes to the LOG (an operator surface) and the code
+      // alone goes to the caller. `detail.attempts` used to travel here
+      // carrying each vendor's own error prose.
+      logChainFailure("/api/ai", result);
+      return respond(502, { error: "AI is temporarily unavailable.", ...publicFailure(result) });
     }
     // Normalize to the Anthropic messages shape the browser already parses.
     return respond(200, {

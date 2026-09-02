@@ -59,7 +59,11 @@ describe("live mode never fabricates", () => {
     // The failing string from the old fixture generator. Its absence is the test.
     expect(r.text).not.toMatch(/organized across|centers on/);
     expect(r.code).toBe("no_credit");
-    expect(r.hint).toBe("hint:no_credit");
+    // ⚠️ NO `hint`. It used to be the operator sentence ("the account is out
+    // of credit — top up billing"), and it was rendered straight onto the
+    // customer's screen. Wording is now chosen at render time by
+    // aiFailureCopy, which cannot name a vendor, a key or a bill.
+    expect(r.hint).toBeUndefined();
   });
 
   it("summarize() returns '' rather than inventing, so a careless caller renders nothing", async () => {
@@ -77,7 +81,10 @@ describe("live mode never fabricates", () => {
   it("generateContent THROWS instead of returning invented analysis", async () => {
     rejectWith("no_credit");
     const fmt = CONTENT_FORMATS.find((f) => f.key === "competitor-summary");
-    await expect(generateContent(PAGE, fmt)).rejects.toThrow(/credit/i);
+    // The thrown message is what every caller puts in a toast, so it must be
+    // the CUSTOMER sentence — generic, and never our billing state.
+    await expect(generateContent(PAGE, fmt)).rejects.toThrow(/temporarily unavailable/i);
+    await expect(generateContent(PAGE, fmt)).rejects.not.toThrow(/credit|billing|api key/i);
     const detailed = await generateContentDetailed(PAGE, fmt);
     expect(detailed.ok).toBe(false);
     // The old fixture's invented gap analysis.

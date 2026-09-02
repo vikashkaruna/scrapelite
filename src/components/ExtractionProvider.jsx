@@ -219,11 +219,16 @@ export function ExtractionProvider({ children }) {
           ...structure,
           links,
           ai_summary,
-          // Carries WHY the summary is missing, so the UI can say "the AI
-          // provider is out of credit" instead of rendering a blank card or,
-          // worse, fabricated prose that reads like a real analysis.
+          // Carries the failure CODE so the UI can show the right generic
+          // message — "it's us, not your page" — instead of a blank card or,
+          // worse, fabricated prose that reads like real analysis. The code is
+          // already redacted server-side; the wording is chosen at render time
+          // by aiFailureCopy, which cannot name a vendor, a key or a bill.
           ...(summaryRes && summaryRes.ok === false
-            ? { ai_summary_error: { code: summaryRes.code, hint: summaryRes.hint } }
+            // `code` only — the customer-facing wording is chosen at render
+            // time by aiFailureCopy, so an operator hint can never be stored
+            // on an extraction and later rendered somewhere that forgot.
+            ? { ai_summary_error: { code: summaryRes.code } }
             : {}),
           id: uid(),
           created_at: new Date().toISOString(),

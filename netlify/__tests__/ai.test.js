@@ -110,20 +110,24 @@ describe("ai — multi-provider chain (C-05)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("all providers fail → 502 with detail.attempts", async () => {
-    process.env.GEMINI_API_KEY = "gem";
-    process.env.AI_API_KEY = "ant";
-    process.env.OPENAI_API_KEY = "oai";
-    fetchMock.mockResolvedValue(new Response("server error", { status: 500 }));
+  it("all providers fail → 502 carrying the CODE and nothing else", async () => {
+    // ⚠️ `detail.attempts` used to travel here, carrying each vendor's own
+    // error prose — "Your credit balance is too low to access the Anthropic
+    // API" — to every signed-in user and every /api/v1 key holder. That is our
+    // billing state, not theirs. The code is all the client needs to pick a
+    // generic message; the diagnosis goes to the log and to /admin/ai.
+    process.env.GEMINI_API_KEY = "AIza";
+    process.env.AI_API_KEY = "sk-ant";
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { message: "credit balance is too low" } }), { status: 400 }));
     const h = await loadHandler();
-    const r = await h({
-      method: "POST",
-      httpMethod: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
-    });
+    const r = await h({ httpMethod: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }) });
     expect(r.statusCode).toBe(502);
     const body = JSON.parse(r.body);
-    expect(body.detail.attempts.length).toBe(3);
+    expect(body.code).toBeTruthy();
+    expect(body.detail).toBeUndefined();
+    expect(body.hint).toBeUndefined();
+    // Nothing in the whole body names a vendor or our billing.
+    expect(r.body).not.toMatch(/credit|anthropic|gemini|openai|api key/i);
   });
 });
 
@@ -152,16 +156,15 @@ describe("ai — client model is ignored (C-06)", () => {
 });
 
 describe("ai — 503 when no key is set (C-07)", () => {
-  it("returns 503 with 'not configured' message", async () => {
-    // No GEMINI_API_KEY, no AI_API_KEY, no OPENAI_API_KEY
+  it("returns 503 with a generic message and a machine-readable code", async () => {
     const h = await loadHandler();
-    const r = await h({
-      method: "POST",
-      httpMethod: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
-    });
+    const r = await h({ httpMethod: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }) });
     expect(r.statusCode).toBe(503);
-    expect(JSON.parse(r.body).error).toMatch(/not configured/);
+    const body = JSON.parse(r.body);
+    expect(body.code).toBe("no_key");
+    // The customer is told it is unavailable, NOT which env vars to set.
+    expect(body.error).toMatch(/temporarily unavailable/i);
+    expect(r.body).not.toMatch(/API_KEY|administrator/i);
   });
 });
 

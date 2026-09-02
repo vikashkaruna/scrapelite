@@ -111,6 +111,45 @@ check:prerender 23 pages / 69 refs · security clean · readiness **5 pass / 2
 warn / 0 fail** (both pre-existing). Providers console and the new rendering
 browser-verified in light and dark.
 
+### 6b. CORRECTION, same session — the first fix over-corrected
+
+The replacement for "no data returned" told the **customer** the truth:
+
+> *"The AI provider account is out of credit. An administrator needs to top up
+> billing."* · *"An administrator needs to set GEMINI_API_KEY, AI_API_KEY, or
+> OPENAI_API_KEY."*
+
+Accurate, actionable, and **none of a customer's business** — it disclosed our
+billing state, our vendors and our env var names to people who could act on
+none of it. Flagged by the owner; fixed properly:
+
+- **`src/lib/aiFailureCopy.js`** (new) owns the two-audience split. Customers
+  get ONE generic sentence for every operator fault — *"AI enrichment is
+  temporarily unavailable. This is a problem on our side, not with your page —
+  try again shortly."* Operators keep the full diagnosis on `/admin/ai` and
+  `/admin/health`, both admin-token gated.
+- **Redacted at the SOURCE, not just in the UI.** `/api/ai` and `/api/extract`
+  no longer send `hint`, `detail.attempts`, provider names or vendor error
+  text — a customer with the network tab open, an `/api/v1` key holder, a
+  support screenshot and a log aggregator all read those bodies.
+- **The `code` itself is collapsed.** Every operator fault leaves as
+  `ai_unavailable`; `code: "no_credit"` in a network tab said exactly what the
+  prose had just been rewritten to stop saying. `no_match` and
+  `page_no_content` pass through — those are findings about the customer's own
+  page, and each gets its own useful copy.
+- **Fails safe:** an unrecognised code is treated as OUR fault, never as "your
+  page is empty". Wrongly telling someone their page has no pricing on it is
+  the costlier mistake, and it is exactly how the original outage stayed hidden.
+- Applies to **PDF exports** too — the most forwarded surface we have.
+- 59 new tests (`aiFailureCopy.test.js`) sweep every code in both vocabularies
+  against a forbidden-pattern list (`/credit/`, `/API_KEY/`, vendor names, …),
+  so the boundary cannot be re-crossed one well-meaning code at a time.
+
+**304 files / 4877 tests / 0 failed.** Verified in a browser: an operator fault
+renders the generic amber notice; a genuine `no_match` renders *"We read this
+page and the pages it links to, and found nothing matching Pricing & Plans.
+Pages read: acme.com, acme.com/pricing."*
+
 ### 7. Open
 
 - 🔴 Reissue/top up the three AI provider accounts. **Nothing works until then.**
