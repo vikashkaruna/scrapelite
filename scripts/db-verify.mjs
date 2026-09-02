@@ -98,10 +98,23 @@ grant usage on schema public to anon, authenticated;
 // functions (set_account_frozen, request_account_deletion,
 // cancel_account_deletion, set_workspace_member_paused), taking these to
 // 60 / 32 / 11. No new trigger.
+//
+// 0036_workflow_templates.sql  +3 tables (workflow_templates, template_runs,
+//   template_run_sources) +2 functions (publish_template_version,
+//   workflow_templates_immutable) +1 trigger.
+// 0037_credit_ledger.sql       +2 tables (credit_ledger, credit_estimates)
+//   +3 functions (credit_spend, credit_balance, credit_ledger_append_only)
+//   +1 trigger.
+// 0038_field_provenance.sql    +2 tables (extracted_fields, field_provenance).
+//   No functions, no triggers — it is pure storage.
+// 0039_report_access.sql       +3 tables (reports, report_grants,
+//   report_access_log) +5 functions (mint_report_slug, set_report_visibility,
+//   revoke_report, resolve_report_access, reports_touch_updated_at) +1 trigger.
+// Taking these to 70 / 42 / 14.
 const EXPECT = {
-  tables: 60,
-  functions: 32,
-  triggers: 11,
+  tables: 70,
+  functions: 42,
+  triggers: 14,
   tablesWithoutRls: 0,
 };
 
@@ -1223,6 +1236,337 @@ group("usage RLS — no client-reachable policy left on usage_records/usage_aler
      where table_schema='public' and table_name in ('usage_records','usage_alerts')
        and grantee in ('anon','authenticated')`);
   eq("no anon/authenticated table-level GRANT survives on either table", grants.length, 0);
+}
+
+
+// ── 0036: workflow templates — versioning + immutability ────────────────────
+group("workflow templates — publish, supersede, freeze");
+{
+  const author = (await one(`insert into auth.users (email) values ('tpl-author@x.com') returning id`)).id;
+
+  const bad = await one(`select public.publish_template_version('acct_brief', $1::jsonb, $2) v`,
+    [JSON.stringify({ summary: "no title here" }), author]);
+  eq("publishing without a title is refused", bad.v.reason, "title_required");
+
+  const def1 = JSON.stringify({
+    title: "Account Brief", persona: "sales", summary: "v1",
+    prompt_bundle: { extract: "PROMPT V1" },
+    credit_cost: { base: 1, per_page: 1, per_ai_call: 2 },
+    plan_entitlement: "template.run", min_plan: "free",
+  });
+  const v1 = await one(`select public.publish_template_version('acct_brief', $1::jsonb, $2) v`, [def1, author]);
+  check("first publish returns ok", v1.v.ok === true);
+  eq("first publish is version 1", v1.v.version, 1);
+
+  const def2 = JSON.stringify({ title: "Account Brief", persona: "sales", summary: "v2",
+    prompt_bundle: { extract: "PROMPT V2" } });
+  const v2 = await one(`select public.publish_template_version('acct_brief', $1::jsonb, $2) v`, [def2, author]);
+  eq("second publish increments to version 2", v2.v.version, 2);
+
+  const statuses = await q(
+    `select version, status from public.workflow_templates where template_key='acct_brief' order by version`);
+  eq("v1 was superseded by the v2 publish", statuses[0].status, "superseded");
+  eq("v2 is the published one", statuses[1].status, "published");
+
+  const published = await one(
+    `select count(*)::int c from public.workflow_templates where template_key='acct_brief' and status='published'`);
+  eq("exactly one published version per key", published.c, 1);
+
+  // The immutability trigger: a published row's definition cannot be edited.
+  const frozen = await throws(
+    `update public.workflow_templates set prompt_bundle='{"extract":"TAMPERED"}'::jsonb
+      where template_key='acct_brief' and version=2`);
+  check("editing a PUBLISHED version's prompt is refused", !!frozen && /immutable/.test(frozen), frozen || "no error raised");
+
+  const titleFrozen = await throws(
+    `update public.workflow_templates set title='Renamed' where template_key='acct_brief' and version=2`);
+  check("renaming a published version is refused", !!titleFrozen, titleFrozen || "no error raised");
+
+  // Superseded rows are NOT frozen for status, and archiving is allowed.
+  await db.query(`update public.workflow_templates set status='archived'
+                   where template_key='acct_brief' and version=2`);
+  const archived = await one(
+    `select status from public.workflow_templates where template_key='acct_brief' and version=2`);
+  eq("a published version may still be archived (status is the one mutable field)", archived.status, "archived");
+
+  // Re-publish so the composite FK below has a live target.
+  await db.query(`select public.publish_template_version('acct_brief', $1::jsonb, $2)`, [def2, author]);
+}
+
+// ── 0036: template_runs pins an existing version ────────────────────────────
+group("template_runs — the composite FK is what makes a run reproducible");
+{
+  const runner = (await one(`insert into auth.users (email) values ('tpl-runner@x.com') returning id`)).id;
+
+  const ghost = await throws(
+    `insert into public.template_runs (id, template_key, template_version, user_id)
+     values ('trun_ghost', 'acct_brief', 99, $1)`, [runner]);
+  check("a run cannot pin a template version that does not exist", !!ghost, ghost || "no error raised");
+
+  const unknownKey = await throws(
+    `insert into public.template_runs (id, template_key, template_version, user_id)
+     values ('trun_nokey', 'no_such_template', 1, $1)`, [runner]);
+  check("a run cannot pin an unknown template key", !!unknownKey, unknownKey || "no error raised");
+
+  await db.query(
+    `insert into public.template_runs (id, template_key, template_version, user_id, status)
+     values ('trun_ok', 'acct_brief', 1, $1, 'queued')`, [runner]);
+  const ok = await one(`select template_version, status from public.template_runs where id='trun_ok'`);
+  eq("a run pinning a real version is accepted", ok.template_version, 1);
+  eq("...and starts queued", ok.status, "queued");
+
+  const badStatus = await throws(`update public.template_runs set status='wat' where id='trun_ok'`);
+  check("an unknown run status is refused", !!badStatus, badStatus || "no error raised");
+
+  await db.query(`update public.template_runs set status='needs_review' where id='trun_ok'`);
+  const nr = await one(`select status from public.template_runs where id='trun_ok'`);
+  eq("needs_review is a first-class run status (PRD 3's review queue)", nr.status, "needs_review");
+
+  await db.query(
+    `insert into public.template_run_sources (run_id, url, content_hash, provider, http_status)
+     values ('trun_ok', 'https://acme.com/pricing', 'hash-abc', 'firecrawl', 200)`);
+  const src = await one(`select content_hash from public.template_run_sources where run_id='trun_ok'`);
+  eq("a run records the page it fetched, with the hash used as the re-run pre-filter", src.content_hash, "hash-abc");
+
+  await db.query(`delete from public.template_runs where id='trun_ok'`);
+  const orphan = await one(`select count(*)::int c from public.template_run_sources where run_id='trun_ok'`);
+  eq("deleting a run cascades to its sources", orphan.c, 0);
+}
+
+// ── 0037: the ledger is append-only and the balance is derived ──────────────
+group("credit ledger — append-only truth, derived balance");
+{
+  const u = (await one(`insert into auth.users (email) values ('credit-user@x.com') returning id`)).id;
+
+  const zero = await one(`select public.credit_spend($1, null, 'page_fetch', 0) v`, [u]);
+  eq("a zero-credit event writes no row (a cache hit is not a charge)", zero.v.reason, "zero_credits");
+
+  const badReason = await one(`select public.credit_spend($1, null, 'not_a_reason', 5) v`, [u]);
+  eq("an unknown reason is refused rather than silently recorded", badReason.v.reason, "invalid_reason_or_unit");
+
+  const s1 = await one(`select public.credit_spend($1, 'trun_x', 'page_fetch', 3, 'page', 3) v`, [u]);
+  check("a real spend is appended", s1.v.ok === true);
+  await db.query(`select public.credit_spend($1, 'trun_x', 'ai_call', 4, 'ai_call', 2)`, [u]);
+
+  const bal = await one(`select public.credit_balance($1) b`, [u]);
+  eq("the balance is the SUM of the ledger, not a stored counter", bal.b, 7);
+
+  // A correction is a compensating negative row, never an edit.
+  await db.query(`select public.credit_spend($1, 'trun_x', 'refund', -4, 'ai_call', 2)`, [u]);
+  const afterRefund = await one(`select public.credit_balance($1) b`, [u]);
+  eq("a refund is a negative row and the balance follows it", afterRefund.b, 3);
+
+  const upd = await throws(`update public.credit_ledger set credits=999 where user_id=$1`, [u]);
+  check("UPDATE on the ledger is refused", !!upd && /append-only/.test(upd), upd || "no error raised");
+
+  const del = await throws(`delete from public.credit_ledger where user_id=$1`, [u]);
+  check("DELETE on the ledger is refused", !!del && /append-only/.test(del), del || "no error raised");
+
+  const rows = await one(`select count(*)::int c from public.credit_ledger where user_id=$1`, [u]);
+  eq("...and the ledger still holds every original row", rows.c, 3);
+
+  const monthed = await one(
+    `select public.credit_balance($1, to_char(now(),'YYYY-MM')) b`, [u]);
+  eq("the balance can be scoped to a month", monthed.b, 3);
+  const otherMonth = await one(`select public.credit_balance($1, '1999-01') b`, [u]);
+  eq("a month with no spend reads 0, not null", otherMonth.b, 0);
+
+  await db.query(
+    `insert into public.credit_estimates (user_id, run_id, template_key, template_version, estimated_credits, breakdown)
+     values ($1, 'trun_x', 'acct_brief', 1, 9, '[{"unit":"page","qty":3}]'::jsonb)`, [u]);
+  const est = await one(`select estimated_credits from public.credit_estimates where run_id='trun_x'`);
+  eq("the pre-run estimate is stored separately so drift stays measurable", est.estimated_credits, 9);
+}
+
+// ── 0038: unknown is never zero ─────────────────────────────────────────────
+group("extracted fields — 'unknown' and 'zero' are different values");
+{
+  const runner2 = (await one(`insert into auth.users (email) values ('field-user@x.com') returning id`)).id;
+  await db.query(
+    `insert into public.template_runs (id, template_key, template_version, user_id)
+     values ('trun_f', 'acct_brief', 1, $1)`, [runner2]);
+
+  const unknownId = (await one(
+    `insert into public.extracted_fields (run_id, entity_key, field_path, field_group, confidence)
+     values ('trun_f','acme.com','firmographics.headcount','firmographics', null) returning id`)).id;
+  const measured = await one(
+    `insert into public.extracted_fields (run_id, entity_key, field_path, value_number, confidence)
+     values ('trun_f','acme.com','firmographics.revenue', 0, 0) returning id, confidence`);
+  const unknown = await one(`select confidence from public.extracted_fields where id=$1`, [unknownId]);
+  check("an unmeasured field stores NULL confidence, not 0", unknown.confidence === null);
+  eq("a genuinely-zero confidence is still storable and distinct", Number(measured.confidence), 0);
+
+  const over = await throws(
+    `insert into public.extracted_fields (run_id, field_path, confidence)
+     values ('trun_f','bad.conf', 1.5)`);
+  check("a confidence above 1 is refused", !!over, over || "no error raised");
+
+  const dupe = await throws(
+    `insert into public.extracted_fields (run_id, field_path) values ('trun_f','firmographics.headcount')`);
+  check("one value per field per run is enforced", !!dupe, dupe || "no error raised");
+
+  const badMethod = await throws(
+    `insert into public.field_provenance (field_id, method) values ($1, 'vibes')`, [unknownId]);
+  check("an unknown provenance method is refused", !!badMethod, badMethod || "no error raised");
+
+  for (const m of ["observed", "inferred", "ai_generated", "user_provided"]) {
+    await db.query(
+      `insert into public.field_provenance (field_id, method, extractor, source_url)
+       values ($1, $2, 'test', 'https://acme.com')`, [unknownId, m]);
+  }
+  const methods = await q(
+    `select distinct method from public.field_provenance where field_id=$1 order by 1`, [unknownId]);
+  eq("all four methods are storable, keeping fact and AI-generated separable",
+    methods.map((r) => r.method), ["ai_generated", "inferred", "observed", "user_provided"]);
+
+  await db.query(`delete from public.extracted_fields where id=$1`, [unknownId]);
+  const provGone = await one(`select count(*)::int c from public.field_provenance where field_id=$1`, [unknownId]);
+  eq("deleting a field cascades to its provenance", provGone.c, 0);
+}
+
+// ── 0039: the report visibility state machine (§2.2a / decision D3) ─────────
+group("report access — private by default, publish/unpublish/revoke");
+{
+  const owner  = (await one(`insert into auth.users (email) values ('rep-owner@x.com') returning id`)).id;
+  const mate   = (await one(`insert into auth.users (email) values ('rep-mate@x.com') returning id`)).id;
+  const rando  = (await one(`insert into auth.users (email) values ('rep-rando@x.com') returning id`)).id;
+
+  const repId = (await one(
+    `insert into public.reports (owner_id, title, source_url) values ($1,'Acme brief','https://acme.com')
+     returning id`, [owner])).id;
+  const fresh = await one(`select visibility, slug from public.reports where id=$1`, [repId]);
+  eq("a new report is private", fresh.visibility, "private");
+  check("a private report has NO slug — there is no URL to leak", fresh.slug === null);
+
+  // publish → mints
+  const pub = await one(`select public.set_report_visibility($1,'link',$2) v`, [repId, owner]);
+  check("publishing returns ok and a slug", pub.v.ok === true && !!pub.v.slug);
+  const slug1 = pub.v.slug;
+
+  const notOwner = await one(`select public.set_report_visibility($1,'public',$2) v`, [repId, rando]);
+  eq("a non-owner cannot change visibility", notOwner.v.reason, "not_owner");
+
+  // D3: unpublish KEEPS the slug, republish REUSES it.
+  const unpub = await one(`select public.set_report_visibility($1,'private',$2) v`, [repId, owner]);
+  eq("unpublishing returns to private", unpub.v.visibility, "private");
+  const kept = await one(`select slug from public.reports where id=$1`, [repId]);
+  eq("...and the slug is RETAINED, not burned (D3: unpublish is reversible)", kept.slug, slug1);
+
+  const republished = await one(`select public.set_report_visibility($1,'link',$2) v`, [repId, owner]);
+  eq("re-publishing REUSES the original slug, so an already-sent link revives", republished.v.slug, slug1);
+
+  // resolve: link is readable by anyone
+  const anon = await one(`select public.resolve_report_access($1, null, null, false) v`, [slug1]);
+  check("a 'link' report resolves for an anonymous viewer", anon.v.ok === true);
+  eq("...and is NOT indexable", anon.v.report?.indexable, false);
+
+  // private denies everyone but the owner
+  await db.query(`select public.set_report_visibility($1,'private',$2)`, [repId, owner]);
+  const denied = await one(`select public.resolve_report_access($1, null, null, false) v`, [slug1]);
+  eq("a private report denies a stranger holding the old link", denied.v.reason, "private");
+  const ownerSees = await one(`select public.resolve_report_access($1, $2, null, false) v`, [slug1, owner]);
+  check("...but the owner still sees their own report", ownerSees.v.ok === true);
+
+  // public is the only indexable state
+  await db.query(`select public.set_report_visibility($1,'public',$2)`, [repId, owner]);
+  const pubRes = await one(`select public.resolve_report_access($1, null, null, false) v`, [slug1]);
+  eq("only a 'public' report is indexable", pubRes.v.report?.indexable, true);
+
+  // expiry
+  await db.query(`update public.reports set expires_at = now() - interval '1 hour' where id=$1`, [repId]);
+  const expired = await one(`select public.resolve_report_access($1, null, null, false) v`, [slug1]);
+  eq("an expired report denies access", expired.v.reason, "expired");
+  await db.query(`update public.reports set expires_at = null where id=$1`, [repId]);
+
+  // named grants are email-bound
+  const namedId = (await one(
+    `insert into public.reports (owner_id, title) values ($1,'Named only') returning id`, [owner])).id;
+  await db.query(`select public.set_report_visibility($1,'named',$2)`, [namedId, owner]);
+  const namedSlug = (await one(`select slug from public.reports where id=$1`, [namedId])).slug;
+  await db.query(`insert into public.report_grants (report_id, email, granted_by) values ($1,'MATE@x.com',$2)`,
+    [namedId, owner]);
+
+  const wrongEmail = await one(`select public.resolve_report_access($1,$2,'someone@else.com',false) v`,
+    [namedSlug, rando]);
+  eq("a named report denies an address it was not sent to", wrongEmail.v.reason, "not_granted");
+  const rightEmail = await one(`select public.resolve_report_access($1,$2,'mate@x.com',false) v`,
+    [namedSlug, mate]);
+  check("...and allows the granted address, case-insensitively", rightEmail.v.ok === true);
+
+  // org visibility follows workspace membership
+  const wsId = (await one(`select public.create_workspace($1,'Rep WS') id`, [owner])).id;
+  const orgId = (await one(
+    `insert into public.reports (owner_id, workspace_id, title) values ($1,$2,'Org only') returning id`,
+    [owner, wsId])).id;
+  await db.query(`select public.set_report_visibility($1,'org',$2)`, [orgId, owner]);
+  const orgSlug = (await one(`select slug from public.reports where id=$1`, [orgId])).slug;
+  const outsider = await one(`select public.resolve_report_access($1,$2,null,false) v`, [orgSlug, rando]);
+  eq("an org report denies a non-member", outsider.v.reason, "not_in_workspace");
+
+  // revoke is terminal and burns the slug
+  const rev = await one(`select public.revoke_report($1,$2,'leaked') v`, [repId, owner]);
+  check("revoke succeeds", rev.v.ok === true);
+  const afterRev = await one(`select public.resolve_report_access($1,$2,null,false) v`, [slug1, owner]);
+  eq("a revoked report denies even its own owner", afterRev.v.reason, "revoked");
+  const resurrect = await one(`select public.set_report_visibility($1,'link',$2) v`, [repId, owner]);
+  eq("a revoked report can NEVER be re-published — revoke is terminal", resurrect.v.reason, "revoked");
+  const burned = await one(`select slug from public.reports where id=$1`, [repId]);
+  eq("the revoked row KEEPS its slug, which is what stops it being reissued", burned.slug, slug1);
+
+  const grantsRevoked = await one(
+    `select count(*)::int c from public.report_grants where report_id=$1 and revoked_at is null`, [namedId]);
+  eq("(grants on a different report are untouched by that revoke)", grantsRevoked.c, 1);
+
+  // access logging
+  await db.query(`select public.resolve_report_access($1,$2,'mate@x.com',true)`, [namedSlug, mate]);
+  await db.query(`select public.resolve_report_access($1,$2,null,true)`, [namedSlug, rando]);
+  const logged = await q(
+    `select event from public.report_access_log where report_id=$1 and event in ('viewed','denied') order by event`,
+    [namedId]);
+  eq("both a successful view and a denial are logged", logged.map((r) => r.event), ["denied", "viewed"]);
+  const views = await one(`select view_count from public.reports where id=$1`, [namedId]);
+  eq("a permitted view increments the counter; a denial does not", views.view_count, 1);
+
+  const stateLog = await q(
+    `select event from public.report_access_log where report_id=$1 and event not in ('viewed','denied')
+      order by created_at`, [repId]);
+  check("every state change is audit-logged (published/unpublished/revoked)",
+    stateLog.some((r) => r.event === "published") &&
+    stateLog.some((r) => r.event === "unpublished") &&
+    stateLog.some((r) => r.event === "revoked"),
+    JSON.stringify(stateLog.map((r) => r.event)));
+
+  const missing = await one(`select public.resolve_report_access('nosuchslug', null, null, false) v`);
+  eq("an unknown slug reports not_found", missing.v.reason, "not_found");
+}
+
+// ── 0039: the migration of existing shared reports ──────────────────────────
+group("report migration — live links keep working, gallery is unchanged");
+{
+  // Rows inserted here go through the same code path the migration used, so
+  // this asserts the RULE, not the historical data.
+  await db.query(
+    `insert into public.public_reports (slug, title, url, data, is_public, curated)
+     values ('legacy01','Legacy shared','https://legacy.com','{}'::jsonb, true, false),
+            ('legacy02','Legacy curated','https://curated.com','{}'::jsonb, true, true)`);
+
+  await db.exec(`
+    insert into public.reports (slug, title, source_url, data, visibility, published_at, created_at, updated_at)
+    select p.slug, coalesce(nullif(btrim(p.title),''),'Shared report'), p.url, coalesce(p.data,'{}'::jsonb),
+           case when coalesce(p.curated,false) then 'public' else 'link' end,
+           p.created_at, p.created_at, p.updated_at
+      from public.public_reports p
+     where p.slug is not null
+       and not exists (select 1 from public.reports r where r.slug = p.slug);`);
+
+  const shared  = await one(`select visibility from public.reports where slug='legacy01'`);
+  const curated = await one(`select visibility from public.reports where slug='legacy02'`);
+  eq("an already-shared report lands on 'link' — the live URL keeps working", shared.visibility, "link");
+  eq("a curated gallery report lands on 'public' — /gallery is unchanged", curated.visibility, "public");
+
+  const stillReadable = await one(`select public.resolve_report_access('legacy01', null, null, false) v`);
+  check("...and the migrated link actually resolves", stillReadable.v.ok === true);
+  eq("...but is not indexable, because it was never a gallery entry", stillReadable.v.report?.indexable, false);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

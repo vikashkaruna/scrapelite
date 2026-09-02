@@ -421,6 +421,14 @@ export default function TopBar() {
     // page <h1> and every piece of copy stay "Discoverability" — this is the
     // nav label only, where space is the constraint and the icon plus context
     // carry the rest of the meaning.
+    // Templates is the activation path (PRD 1): the fastest route from "I have
+    // a job to do" to a finished piece of work. It earns a primary slot because
+    // it is where a new user's first successful session starts — the catalogue
+    // is also a public acquisition surface, so it must be reachable without
+    // already knowing it exists. "Templates" is 9 chars, matching Dashboard and
+    // Schedules, so it does not repeat the tablet-breakpoint crowding that made
+    // "Discoverability" become "Discover".
+    { to: "/templates",   label: "Templates",   icon: "layout-list", match: (p) => p.startsWith("/templates") },
     { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Workspace moved into the signed-in user menu (2026-08-28), same

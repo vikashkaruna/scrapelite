@@ -235,6 +235,43 @@ run_step "build"             npm run --silent build
 run_step "check:prerender"   npm run --silent check:prerender
 run_step "test:security"     npm run --silent test:security
 
+# ── Conditional e2e smoke ─────────────────────────────────────────────
+# WHY THIS EXISTS, measured rather than assumed: of the last 25 Staging
+# Gate runs, 5 failed — and 4 of those 5 failed on the SAME step, "End-to-
+# end smoke tests (Playwright)". Every one of them had passed this hook
+# first, because `test-all.mjs --prepush` deliberately skips the e2e
+# suite. So the single most common way to get a red gate was to change a
+# UI file, watch nine local gates go green in ~30s, push, and find out ten
+# minutes later in CI.
+#
+# The e2e smoke specs are CONTRACT tests over rendered structure — nav
+# order, which controls exist, what a page says. That is exactly the class
+# a component edit breaks, and exactly the class no unit test here covers.
+#
+# It runs ONLY when the diff touches UI or the specs themselves, so a
+# docs, netlify/, or lib-only push still finishes in ~30s and the fast
+# hook people actually tolerate stays fast. That conditionality is the
+# whole design: a gate that adds 90s to EVERY push is a gate that gets
+# `--no-verify`'d, and this repo already has an incident about exactly
+# that habit.
+#
+# Escape hatch is explicit and says what it does, matching
+# PREPUSH_SKIP_PRERENDER above.
+if [ "${PREPUSH_SKIP_E2E:-0}" != "1" ] && [ -n "${CHANGED_FILES:-}" ]; then
+  # Same source set the prerender gate above uses, plus the specs themselves.
+  # Deliberately matched to it rather than narrowed to pages/components: if a
+  # change can make a prerendered page stale it can break a rendered-structure
+  # contract, and pricingConfig.js -> PricingMatrix -> pricing.spec.js is a real
+  # path with no component file in it. One notion of "can affect what renders",
+  # not two that drift.
+  E2E_TRIGGER="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^(src/(pages|components|styles|lib|hooks)/|e2e/|index\.html$|scripts/site-routes\.mjs$)' || true)"
+  if [ -n "$E2E_TRIGGER" ]; then
+    printf '\n%s  UI or spec files changed — running the e2e smoke contracts.%s\n' "$C_DIM" "$C_RST"
+    printf '%s  (skip with PREPUSH_SKIP_E2E=1 git push …)%s\n' "$C_DIM" "$C_RST"
+    run_step "test:e2e:smoke"  npm run --silent test:e2e:smoke
+  fi
+fi
+
 total=$(( $(date +%s) - start_ts ))
 printf '\n%s✓ pre-push: all gates green in %ds. Pushing to %s/%s.%s\n' \
   "$C_OK" "$total" "$REMOTE" "$UPSTREAM" "$C_RST"

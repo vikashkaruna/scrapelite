@@ -43,6 +43,9 @@ export const PLANS = [
       priority_support: false,
       workspaces: 1,
       batch_max_urls: 5,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: false,
       integrations: false,
       browser_extension: false,
     },
@@ -88,6 +91,9 @@ export const PLANS = [
       priority_support: false,
       workspaces: 1,
       batch_max_urls: 20,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: false,
       browser_extension: false,
     },
@@ -130,6 +136,9 @@ export const PLANS = [
       priority_support: false,
       workspaces: 1,
       batch_max_urls: 50,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: true,
       browser_extension: true,
     },
@@ -172,6 +181,9 @@ export const PLANS = [
       priority_support: false,
       workspaces: 1,
       batch_max_urls: 100,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: true,
       browser_extension: true,
     },
@@ -219,6 +231,9 @@ export const PLANS = [
       priority_support: true,
       workspaces: 1,
       batch_max_urls: 250,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: true,
       browser_extension: true,
     },
@@ -264,6 +279,9 @@ export const PLANS = [
       priority_support: true,
       workspaces: 5,
       batch_max_urls: 500,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: true,
       browser_extension: true,
     },
@@ -311,6 +329,9 @@ export const PLANS = [
       priority_support: false,
       workspaces: 1,
       batch_max_urls: 500,
+      // Fork a workflow template and edit its prompts (entitlementModel:
+      // 'template.duplicate'). Free runs templates but cannot rewrite them.
+      template_duplicate: true,
       integrations: true,
       browser_extension: true,
     },

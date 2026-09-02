@@ -272,6 +272,10 @@ const MAP = {
   loader: Loader2,
   "check-square": CheckSquare,
   "x-square": XSquare,
+  // Intelligence Workflows (templates + shareable reports).
+  "x": X,
+  "share-2": Share2,
+  "lock": Lock,
   "alert-octagon": AlertOctagon,
   "file-up": FileUp,
   columns: Columns,

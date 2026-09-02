@@ -26,11 +26,33 @@
 // with a plain object as the client.
 
 const KIND_WHITELIST = new Set([
+  // ── platform events (pre-existing) ──
   "schedule.changed",
   "contact.received",
   "user.lifecycle",
   "payment.captured",
   "op.alert",
+  // ── canonical intelligence events ────────────────────────────────────────
+  // PRD 5 names these explicitly: "Build an internal canonical event model
+  // before expanding integrations." They exist so a signal-routing rule
+  // subscribes to ONE stable event shape rather than to whichever subsystem
+  // happened to produce it — which is what makes adding the sixth integration
+  // cost the same as adding the second.
+  //
+  // This stays a WHITELIST on purpose: an unknown kind is a typo or a stale
+  // producer, and silently queueing it would mean an event nothing ever
+  // dispatches sitting "pending" for ever with no error anywhere.
+  "template.run.completed",
+  "extraction.completed",
+  "enrichment.completed",
+  "enrichment.failed",
+  "account.score_changed",
+  "monitor.change_detected",
+  "monitor.digest_ready",
+  "report.shared",
+  "report.viewed",
+  "integration.action_failed",
+  "usage.limit_approaching",
 ]);
 
 export const STATE = Object.freeze({
