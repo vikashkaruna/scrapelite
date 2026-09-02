@@ -652,7 +652,13 @@ export async function probeAiProviders({ force = false } = {}) {
   const startedAt = Date.now();
   let pings = [];
   try {
-    pings = await Promise.all(keyed.map((l) => pingProvider(l.key)));
+    const raw = await Promise.all(keyed.map((l) => pingProvider(l.key)));
+    // Normalise defensively. A probe must NEVER throw — that is rule 4 in this
+    // file's header — and a malformed result from one provider adapter must
+    // not take the whole health dashboard down with it.
+    pings = raw.map((r, i) => (r && typeof r === "object")
+      ? { provider: r.provider || keyed[i].key, ...r, ok: r.ok === true }
+      : { provider: keyed[i].key, ok: false, code: "error", error: "Probe returned no result." });
   } catch {
     // pingProvider never throws, but a Promise.all that somehow does must not
     // take the whole health dashboard with it.

@@ -8,6 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let fetchMock;
 let probes;
+// probeAiProviders now makes a REAL provider call. Mock it at the module
+// boundary so the suite never spends a token or depends on the network.
+const pingMock = vi.fn();
+vi.mock("../../functions/lib/aiProviders.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, pingProvider: (...args) => pingMock(...args) };
+});
 
 // Shared with admin-health.test.js and integrations-notion.test.js. This list
 // used to live here and was missing VITE_SUPABASE_URL, so on a machine with a
@@ -23,6 +30,7 @@ beforeEach(async () => {
   vi.resetModules();
   clearServerEnv(ENV_KEYS);
   fetchMock = vi.fn();
+  pingMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   probes = await import("../../functions/lib/healthProbes.js");
 });
@@ -365,27 +373,63 @@ describe("probeResend (P-06)", () => {
 // ── Fallback chains ──────────────────────────────────────────────────────────
 
 describe("provider chain probes (P-07)", () => {
-  it("reports the AI chain as unconfigured when no key is set", () => {
-    const r = probes.probeAiProviders();
+  // ── THE PROBE THAT USED TO LIE ────────────────────────────────────────────
+  // probeAiProviders was key-presence only. In production all three AI keys
+  // were PRESENT and all three were dead — Anthropic out of credit, Gemini
+  // key invalid, OpenAI out of credit — and this probe reported "operational"
+  // while every enrichment in the product silently returned nothing. It now
+  // makes a real completion per provider. Key presence is the one thing that
+  // never breaks; validity and billing are what do.
+
+  it("reports the AI chain as not checked when no key is set — never as down", async () => {
+    const r = await probes.probeAiProviders();
     expect(r.configured).toBe(false);
-    expect(r.note).toMatch(/Gemini → Claude → OpenAI/);
+    // Unconfigured is UNKNOWN, not DOWN, in both directions.
+    expect(r.status).toBeUndefined();
+    expect(r.note).toMatch(/Google Gemini → Anthropic Claude → OpenAI/);
   });
 
-  it("names the provider that answers first", () => {
+  it("is DOWN when every configured provider is dead, and names the cause", async () => {
     process.env.AI_API_KEY = "sk-ant";
     process.env.OPENAI_API_KEY = "sk";
-    const r = probes.probeAiProviders();
-    expect(r.detail.primary).toBe("Claude");
-    expect(r.detail.configured).toBe("Claude, OpenAI");
-    expect(r.status).toBe("ok");
+    // Real production failures: out of credit, and out of credit.
+    pingMock
+      .mockResolvedValueOnce({ provider: "anthropic", ok: false, code: "no_credit", error: "credit balance is too low" })
+      .mockResolvedValueOnce({ provider: "openai", ok: false, code: "no_credit", error: "no credits remaining" });
+    const r = await probes.probeAiProviders({ force: true });
+    expect(r.status).toBe("down");
+    expect(r.reachable).toBe(false);
+    // The operator action, on the dashboard, without opening a log.
+    expect(r.note).toMatch(/out of credit/i);
+    expect(r.detail.providers).toHaveLength(2);
   });
 
-  // One provider is not a fallback chain — the next outage has nowhere to go.
-  it("is degraded when only one AI provider is configured", () => {
-    process.env.GEMINI_API_KEY = "AIza";
-    const r = probes.probeAiProviders();
+  it("is DEGRADED when some providers are dead but the chain still answers", async () => {
+    process.env.AI_API_KEY = "sk-ant";
+    process.env.OPENAI_API_KEY = "sk";
+    pingMock
+      .mockResolvedValueOnce({ provider: "anthropic", ok: false, code: "bad_key", error: "invalid api key" })
+      .mockResolvedValueOnce({ provider: "openai", ok: true, code: "ok", latencyMs: 210 });
+    const r = await probes.probeAiProviders({ force: true });
     expect(r.status).toBe("degraded");
-    expect(r.note).toMatch(/no fallback/i);
+    expect(r.reachable).toBe(true);
+    expect(r.note).toMatch(/1 of 2/);
+  });
+
+  it("is OK only when every configured provider actually answers", async () => {
+    process.env.AI_API_KEY = "sk-ant";
+    pingMock.mockResolvedValueOnce({ provider: "anthropic", ok: true, code: "ok", latencyMs: 180 });
+    const r = await probes.probeAiProviders({ force: true });
+    expect(r.status).toBe("ok");
+    expect(r.detail.live).toBe(true);
+  });
+
+  it("never throws, even if the ping layer explodes", async () => {
+    process.env.GEMINI_API_KEY = "AIza";
+    pingMock.mockRejectedValueOnce(new Error("boom"));
+    const r = await probes.probeAiProviders({ force: true });
+    expect(r.status).toBe("degraded");
+    expect(r.note).toMatch(/could not run/i);
   });
 
   // Direct fetch needs no key, so extraction degrades but never stops.

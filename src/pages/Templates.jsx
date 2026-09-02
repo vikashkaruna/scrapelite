@@ -24,6 +24,8 @@ import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
 import { createReport } from "../lib/reports/reportsClient.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
+import StructuredFacts from "../components/StructuredFacts.jsx";
+import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 
 export default function Templates() {
   const [params, setParams] = useSearchParams();
@@ -325,6 +327,7 @@ function FieldInput({ field, value, onChange }) {
 
 function RunResult({ result, template, onShare }) {
   const blocks = template.output_schema?.blocks || [];
+  const talkingPoints = result.talking_points || result.output?.talking_points || null;
   return (
     <div className="card tpl-result">
       <div className="tpl-result-head">
@@ -344,12 +347,41 @@ function RunResult({ result, template, onShare }) {
         </section>
       )}
 
+      {/* Talking points were declared by every seed template's output_schema
+          and could never be populated, because nothing ran prompt_bundle
+          .talking_points. They render now. */}
+      {Array.isArray(talkingPoints) && talkingPoints.length ? (
+        <section className="tpl-block">
+          <h3>{blocks.find((b) => b.kind === "list")?.title || "Talking points"}</h3>
+          <ol className="tpl-points">
+            {talkingPoints.map((p, i) => <li key={i}>{p}</li>)}
+          </ol>
+          <p className="tpl-ai-note">Written by AI from the extracted facts below.</p>
+        </section>
+      ) : null}
+
       {result.output?.fields && (
         <section className="tpl-block">
-          <h3>Extracted facts</h3>
-          <pre className="tpl-json">{JSON.stringify(result.output.fields, null, 2)}</pre>
+          <h3>{blocks.find((b) => b.kind === "fields")?.title || "Extracted facts"}</h3>
+          {/* Grouped, tabulated and evidence-backed — not a JSON dump. The
+              groups come from the capability schema when the template maps to
+              one; otherwise StructuredFacts infers sections from the keys. */}
+          <StructuredFacts
+            data={result.output.fields}
+            groups={CAPABILITY_SCHEMAS[template.template_key]?.groups}
+            meta={result.output.extraction}
+            title={result.output.title}
+          />
         </section>
       )}
+
+      {result.partial ? (
+        <p className="tpl-partial">
+          <Icon name="alert-circle" size={14} />
+          This run is incomplete — some of what this template promises could not be
+          produced from the pages we could read. Treat it as a starting point, not a finished brief.
+        </p>
+      ) : null}
 
       <section className="tpl-block">
         <h3>Sources</h3>

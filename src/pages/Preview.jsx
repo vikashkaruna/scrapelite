@@ -5,6 +5,8 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import StructuredData from "../components/StructuredData.jsx";
+import StructuredFacts from "../components/StructuredFacts.jsx";
+import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 import ContentView from "../components/ContentView.jsx";
 import ExtractionCharts from "../components/ExtractionCharts.jsx";
 import ExtractSimilarCard from "../components/ExtractSimilarCard.jsx";
@@ -932,7 +934,10 @@ export default function Preview() {
               </div>
               <div className="card-pad">
                 {isEmptyEnrichmentData(activeEntry.data) ? (
-                  <div className="empty-mini">{emptyEnrichmentMessage(activeEntry.reason)}</div>
+                  <div className={`empty-mini${isEnrichmentOurFault(activeEntry.reason) ? " empty-mini-fault" : ""}`}>
+                    {isEnrichmentOurFault(activeEntry.reason) ? <Icon name="alert-circle" size={15} /> : null}
+                    <span>{emptyEnrichmentMessage(activeEntry.reason)}</span>
+                  </div>
                 ) : activeEntry.kind === "content" || typeof activeEntry.data?.text === "string" ? (
                   // Content-kind (or any entry whose data is a {text} blob)
                   // renders via ContentView — markdown + Copy button. The
@@ -940,7 +945,16 @@ export default function Preview() {
                   // and older entries that only have the {text} shape.
                   <ContentView text={activeEntry.data.text || ""} />
                 ) : (
-                  <StructuredData data={activeEntry.data} />
+                  // Grouped sections, tables for repeated records, and the
+                  // evidence quotes behind each fact — not a JSON dump. The
+                  // groups come from the capability's own schema, so a pricing
+                  // tab renders as plans and a leadership tab as people.
+                  <StructuredFacts
+                    data={activeEntry.data}
+                    groups={CAPABILITY_SCHEMAS[activeEntry.key]?.groups}
+                    meta={activeEntry.meta}
+                    title={activeEntry.label}
+                  />
                 )}
               </div>
             </div>

@@ -230,8 +230,14 @@ describe("I-35 — Preview: Generate content in-page section", () => {
     const tab = screen.getByRole("tab", { name: /Leadership & Board/i });
     act(() => fireEvent.click(tab));
     await act(async () => { await Promise.resolve(); });
-    // The structured contact renders.
-    expect(screen.getByText(/Jane Doe/)).toBeInTheDocument();
+    // The structured contact renders — twice, deliberately: once in the
+    // human-readable table and once inside the collapsed "Raw JSON" details.
+    // getAllByText, not getByText: keeping the raw payload one disclosure away
+    // is a feature (it is what an engineer debugging an extraction reaches
+    // for), so an exact-match assertion here would fight the design.
+    expect(screen.getAllByText(/Jane Doe/).length).toBeGreaterThan(0);
+    // Rendered as real structure, not a JSON dump: the field label is present.
+    expect(screen.getByText(/^Name$/i)).toBeInTheDocument();
     // The Copy-content button is NOT present (this is structured data,
     // not markdown). If a future refactor flips the branch, the test
     // catches it.

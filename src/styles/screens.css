@@ -10183,3 +10183,96 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   .prov-area-body { grid-template-columns: 1fr; gap: 16px; }
   .prov-section-head { flex-direction: column; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   StructuredFacts — schema-shaped extraction output rendered for people.
+   Replaces the <pre>{JSON.stringify(…)}</pre> that made a pricing table and a
+   leadership roster look identical (and both look like a debug view).
+   ══════════════════════════════════════════════════════════════════════════ */
+.sf { display: flex; flex-direction: column; gap: 18px; }
+
+.sf-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.sf-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-on-dark); border: 1px solid transparent;
+}
+.sf-chip-ok  { background: var(--success-soft); color: var(--success); }
+.sf-chip-dim { background: var(--surface-2); color: var(--text-muted); border-color: var(--border); }
+
+.sf-section { display: flex; flex-direction: column; gap: 8px; }
+.sf-section-title {
+  margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+
+.sf-null { color: var(--text-muted); font-style: italic; }
+.sf-link { color: var(--accent); text-decoration: none; word-break: break-word; }
+.sf-link:hover { text-decoration: underline; }
+
+/* Tables scroll inside their own container — the page body must never scroll
+   sideways, which is the rule the pinned pricing matrix already follows. */
+.sf-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+.sf-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.sf-table th {
+  text-align: left; padding: 9px 12px; background: var(--surface-2);
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); font-weight: 700; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.sf-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; min-width: 0; }
+.sf-table tr:last-child td { border-bottom: 0; }
+.sf-cell-list, .sf-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.sf-list { font-size: 13px; }
+
+.sf-dl { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.sf-dl-row { display: grid; grid-template-columns: minmax(120px, 210px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.sf-dl dt { font-size: 12.5px; color: var(--text-muted); }
+.sf-dl dd { margin: 0; font-size: 13.5px; min-width: 0; word-break: break-word; }
+
+.sf-notfound {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: 12.5px; color: var(--text-muted);
+  background: var(--surface-2); border-radius: 8px; padding: 8px 11px;
+}
+
+.sf-evidence { border-top: 1px solid var(--border); padding-top: 12px; }
+.sf-evidence-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--accent);
+}
+.sf-evidence-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.sf-evidence-list li { display: flex; flex-direction: column; gap: 4px; }
+.sf-evidence-field { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.sf-evidence-list blockquote {
+  margin: 0; padding: 7px 11px; border-left: 3px solid var(--accent);
+  background: var(--surface-2); border-radius: 0 8px 8px 0;
+  font-size: 13px; line-height: 1.55;
+}
+
+.sf-raw { border-top: 1px solid var(--border); padding-top: 10px; }
+.sf-raw summary { cursor: pointer; font-size: 12.5px; color: var(--text-muted); }
+.sf-raw pre {
+  margin: 10px 0 0; padding: 12px; background: var(--surface-2); border-radius: 8px;
+  font-size: 11.5px; line-height: 1.5; overflow-x: auto; max-height: 380px;
+}
+
+@media (max-width: 640px) {
+  .sf-dl-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
+.tpl-points { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.6; }
+.tpl-partial {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  padding: 10px 13px; border-radius: 10px; font-size: 13px; line-height: 1.55;
+  background: var(--warn-soft); color: var(--warning); border: 1px solid var(--warning);
+}
+
+/* An empty tab that is OUR fault reads as a fault, not as a fact about the
+   user's page. The distinction is the whole point of the reason vocabulary. */
+.empty-mini-fault {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: var(--warn-soft); color: var(--warning);
+  border: 1px solid var(--warning); border-radius: 10px; padding: 11px 13px;
+  font-style: normal; line-height: 1.55;
+}
