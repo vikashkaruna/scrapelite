@@ -20,7 +20,7 @@
 
 ## 2026-09-02 14:05 IST — Intelligence Workflows, Phases 0–2 (templates, credit ledger, shareable reports)
 
-> **Branch:** `feat/intelligence-workflows` @ `fe18179` · **Merged to:** `staging` · **`main`: untouched, deliberately**
+> **Branch:** `feat/intelligence-workflows` @ `c890170` · **Merged to:** `staging` · **`main`: untouched, deliberately**
 > **PR:** [#136](https://github.com/vikashkaruna/scrapelite/pull/136) — kept open; Phases 3–7 continue on this branch.
 > **Staging Gate:** all checks green.
 
@@ -104,31 +104,58 @@ Migrations verified against **real Postgres** (not just PGlite) in a rolled-back
 - [ ] **Phase 3** (PQL + integration recipe gallery) is the next build — ~1–2 sessions, cheapest remaining.
 - [ ] Phases 4–7 pending (~12–16 sessions). Phase 4 (bulk) is the heaviest and needs the durable runner.
 
-### 6a. ⚠️ Branch topology at close — read before promoting to `main`
+### 6a. Branch topology at close — ✅ RESOLVED
+
+> **Updated 2026-09-02, later the same session.** This section originally warned
+> that `main` carried 4 commits `staging` lacked, including a Dependabot
+> security bump, so promotion would be a real merge against a `staging` that was
+> missing it. **That has now been fixed** — `main` was merged into `staging` at
+> the owner's request. The original warning is kept below, corrected rather than
+> deleted, because the reasoning still matters next time the two diverge.
 
 | Ref | SHA | State |
 |---|---|---|
-| `feat/intelligence-workflows` | `fe18179` | **kept open** for Phases 3–7; fixes land here |
-| `staging` | `fe18179` | **identical to the branch** |
-| `main` | `398b0cd` | **untouched by this work** — contains no Phase 0–2 file |
+| `feat/intelligence-workflows` | `c890170` | **kept open** for Phases 3–7; fixes land here |
+| `staging` | `c890170` | identical to the branch, and **now contains `main`** |
+| `main` | `398b0cd` | **untouched by this work** — carries no Phase 0–2 file |
 
-🔴 **Promotion will be a REAL MERGE, not a fast-forward.** `main` carries **4
-commits `staging` does not have**:
+**What the merge brought in:** commit `8bae7e0`, a Dependabot dev-dependency
+bump — **`package-lock.json` only**, no `package.json` change. Seven transitive
+build-toolchain packages moved:
 
-```
-398b0cd Merge pull request #133 from vikashkaruna/staging
-5461cb3 Merge pull request #132 from dependabot/npm_and_yarn-db5b772463
-8bae7e0 build(deps-dev): bump the npm_and_yarn group (2 updates)
-e9cef39 Merge pull request #130 from vikashkaruna/staging
-```
+| Package | Before → After |
+|---|---|
+| `browserslist` | 4.28.2 → 4.28.8 |
+| `caniuse-lite` | 1.0.30001793 → 1.0.30001810 |
+| `postcss-selector-parser` | 6.1.2 → 6.1.4 |
+| `baseline-browser-mapping` | 2.10.33 → 2.11.20 |
+| `electron-to-chromium` | 1.5.368 → 1.5.419 |
+| `node-releases` | 2.0.47 → 2.0.54 |
+| `update-browserslist-db` | 1.3.x → 1.3.2 |
 
-`8bae7e0` is a **Dependabot security bump applied directly to `main`**, so
-`staging` is currently *missing* it — which is why pushes from this branch keep
-printing *"GitHub found 2 vulnerabilities on the default branch"*. Merge `main`
-into `staging` (or let the promotion PR carry it) rather than assuming
-`staging` is strictly newer.
+⚠️ **The lockfile updating is not the same as the tree updating.** Immediately
+after the merge, `package-lock.json` named the new versions while `node_modules`
+still held the old ones — so running the suite at that moment would have
+verified the *wrong dependency tree* and called the merge green on evidence that
+did not apply. `npm install --cache <scratch>` (the scratch cache is required —
+`~/.npm/_cacache` has root-owned entries on this machine) reconciled 8 packages
+before anything was re-run.
 
-### 7. Decisions recorded (D1–D6, resolved with the owner)
+**Re-verified after the merge, on the new tree:** unit **2585** · contract
+**1753** (+14 skipped) · integration **405** · system **8** · db **39 migrations
+/ 340 assertions** · build clean · `check:prerender` clean · security clean ·
+**`npm audit`: 0 vulnerabilities** (was 2 high — this merge is what cleared the
+"2 vulnerabilities on the default branch" warning that every push had been
+printing).
+
+`browserslist` drives build targets, so the risk worth checking was whether the
+emitted bundle changed and left the committed prerendered pages stale. It did
+not: **0 references repointed, 0 committed pages changed.**
+
+**Promotion to `main` is now a clean fast-forward** — `main` is an ancestor of
+`staging`, and `staging` is 13 commits ahead.
+
+### 7. Decisions recorded### 7. Decisions recorded (D1–D6, resolved with the owner)
 
 | # | Resolution |
 |---|---|
