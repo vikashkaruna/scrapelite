@@ -1,7 +1,8 @@
 # DatIQ Intelligence Workflows — Implementation Plan
 
 > Source: `DatIQ - Persona Specific Templates & Shareable Reports.pdf` (BRD + PRD 1–5).
-> Status: **PLAN ONLY — nothing built.** Decisions D1–D6 resolved 2026-09-02 (see §5).
+> **Status: Phases 0, 1 and 2 SHIPPED to `staging`. Phases 3–7 PENDING.**
+> Live delivery status: **[§2.0 Status board](#20-status-board)**. Decisions D1–D6 resolved (see §5).
 > Written 2026-09-02 against `claude/datiq-implementation-plan-6caf6f`
 > (= `main`/`staging` tip `e9cef39`).
 > Read this after `CLAUDE.md`. Companion docs: `docs/DISCOVERABILITY-MODULE.md` (the closest
@@ -146,12 +147,52 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 
 ---
 
+## 2.0 Status board
+
+> Single source of truth for what exists. Updated at the end of every session.
+> Last updated **2026-09-02**.
+
+| Phase | Scope | Status | Evidence |
+|---|---|---|---|
+| **0** | Spine — versioned templates, credit ledger, field provenance, shared pure models | ✅ **DONE** | `0036`–`0038` applied to staging · `templateModel` / `creditModel` / `visibilityModel` + 86 unit tests |
+| **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 5 templates live on staging + 1 draft · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
+| **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
+| **3** | Activation instrumentation (PQL) + integration recipe gallery | ⬜ **PENDING** | — |
+| **4** | PRD 3 — bulk account intelligence ⚠️ heaviest | ⬜ **PENDING** | `bulk_icp_enrichment` seeded as `draft`, awaiting its durable runner |
+| **5** | PRD 4 — competitor watchlists & change intelligence | ⬜ **PENDING** | — |
+| **6** | PRD 5 — native signal routing | 🟡 **PARTIAL** | Event model shipped (`KIND_WHITELIST` 5→16). Rules layer + UI pending |
+| **7** | Packaging, GTM surfaces, release collateral | 🟡 **PARTIAL** | Entitlements + plan limits done. Pricing page, persona landing pages, help/changelog pending |
+
+**Effort remaining: ~12–16 sessions** of the original 20–28.
+
+### What is DONE but deliberately not yet exposed
+
+| Item | Where | Why it is not live |
+|---|---|---|
+| `bulk_icp_enrichment` template | seeded `status='draft'` | Its durable runner is Phase 4. A template whose runner 404s is worse than an absent one. |
+| `template.duplicate` entitlement | `entitlementModel.js`, gated Go+ | The fork/edit UI is a Phase 7 follow-up. The gate exists so pricing copy cannot drift ahead of it. |
+| `report.branding` entitlement | gated Business+ | Server-side enforcement is live; the Brand Kit picker for reports is a follow-up. |
+| `extracted_fields` / `field_provenance` | `0038`, live on staging | Written by Phases 4 and 5. Phase 1 runs store provenance in the run's `output` blob for now. |
+| `credit_estimates` drift tracking | `0037`, live | Rows accumulate now so estimate-vs-actual drift is measurable *before* anyone tunes a price. |
+
+### Known gaps inside the shipped phases — tracked, not forgotten
+
+| Gap | Phase | Consequence today |
+|---|---|---|
+| Runs orchestrated client-side | 1 | Closing the tab mid-run abandons it. Phase 4 brings the durable server runner. |
+| No `/reports` management screen | 2 | `GET /api/reports` works; sharing is driven from the run screen only. |
+| Report export (PDF/CSV/email) not wired to `reports` | 2 | PRD 2 lists it "Later if not already supported". |
+| `report_access_log` recorded but not surfaced | 2 | Engagement analytics fill correctly; no UI reads them. |
+| Schema drift on staging | ops | `account_deletion_audit` + `delete_user_account` exist in no migration. Reconcile before promoting to prod. |
+
+---
+
 ## 2. Phased build plan
 
 Migrations are numbered from `0036` (current head is `0035`). Every phase ends green on
 `npm run test:prepush` and merges to `staging` only — `main` stays a separate, deliberate call.
 
-### Phase 0 — Spine (no user-visible feature)
+### Phase 0 — Spine (no user-visible feature) — ✅ DONE
 *Everything after this is cheaper. Nothing after this is safe without it.*
 
 | Item | Detail |
@@ -166,7 +207,7 @@ Migrations are numbered from `0036` (current head is `0035`). Every phase ends g
 
 **Est. 2–3 sessions.** Highest test density (pure modules, cheap to test exhaustively).
 
-### Phase 1 — PRD 1: Workflow Templates & Guided Onboarding
+### Phase 1 — PRD 1: Workflow Templates & Guided Onboarding — ✅ DONE
 | Item | Detail |
 |---|---|
 | Seed 6 templates | Account Brief · Bulk ICP Enrichment · Competitor Pricing Tracker · SEO/GEO/AEO Audit · Pre-Meeting Due Diligence · Customer Proof Extractor. **Six only** — the PRD explicitly warns against 30 templates before observing adoption |
@@ -181,7 +222,7 @@ zero prompt authoring**, and every output carries source URLs + an extraction ti
 
 **Est. 3–4 sessions.**
 
-### Phase 2 — PRD 2: Shareable Intelligence Reports
+### Phase 2 — PRD 2: Shareable Intelligence Reports — ✅ DONE
 | Item | Detail |
 |---|---|
 | `0039_report_access.sql` | `reports` (supersedes `public_reports`, with migration), `report_grants`, `report_access_log`. Visibility state machine per §2.2a |
@@ -240,7 +281,7 @@ Migrating them to `private` would silently break links already sent to third par
 `link` (reachable, unlisted, `noindex`); the `curated = true` subset that is already surfaced in
 `/gallery` lands on `public`, preserving the gallery exactly as it stands.
 
-### Phase 3 — Activation instrumentation + integration recipe gallery
+### Phase 3 — Activation instrumentation + integration recipe gallery — ⬜ PENDING (next)
 *Small, cheap, and the PRD is right that it must land before scaling acquisition.*
 
 | Item | Detail |
@@ -254,7 +295,7 @@ Migrating them to `private` would silently break links already sent to third par
 
 **Est. 1–2 sessions.**
 
-### Phase 4 — PRD 3: Bulk Account Intelligence ⚠️ *heaviest*
+### Phase 4 — PRD 3: Bulk Account Intelligence — ⬜ PENDING ⚠️ *heaviest*
 | Item | Detail |
 |---|---|
 | `0041_bulk_enrichment.sql` | `lists`, `list_records`, `canonical_entities`, `enrichment_jobs`, `enrichment_job_items`, `icp_score_rules`, `review_queue` (7 tables) |
@@ -273,7 +314,7 @@ editor per D6). Still the heaviest phase; the durable runner now dominates it al
 **Phase 4b — import connectors (Sheets / Airtable / HubSpot): +1.5 sessions**, schedulable any time
 after Phase 4 and safe to defer indefinitely.
 
-### Phase 5 — PRD 4: Competitor Watchlists & Change Intelligence
+### Phase 5 — PRD 4: Competitor Watchlists & Change Intelligence — ⬜ PENDING
 | Item | Detail |
 |---|---|
 | `0042_watchlists.sql` | `watchlists`, `watchlist_targets`, `monitored_pages`, `entity_snapshots`, `field_changes`, `change_feedback` |
@@ -294,7 +335,7 @@ alert volume*.
 
 **Phase 5b — remaining 4 signal types: +1 session**, additive.
 
-### Phase 6 — PRD 5: Native Signal Routing
+### Phase 6 — PRD 5: Native Signal Routing — 🟡 PARTIAL (event model done)
 | Item | Detail |
 |---|---|
 | `0043_signal_rules.sql` | `signal_rules`, `rule_executions` |
@@ -307,7 +348,7 @@ alert volume*.
 
 **Est. 3–4 sessions.** Cheapest of the five — the durable dispatch substrate is done.
 
-### Phase 7 — Packaging, GTM surfaces, release collateral
+### Phase 7 — Packaging, GTM surfaces, release collateral — 🟡 PARTIAL
 | Item | Detail |
 |---|---|
 | Pricing (**D5** — confirmed) | PRD **Team → existing `business`**; PRD **Business → existing `agency`**. **No tier is renamed** — `pricingConfig.js`, `entitlementModel.js`, `PricingMatrix`, invoices, and live coupons all key on the current ids, so a rename would break redemption of coupons already issued |
@@ -329,15 +370,17 @@ half-day to a day of your calendar time including review.
 
 | Phase | Sessions | Notes |
 |---|---|---|
-| 0 — Spine | 2–3 | Prerequisite for everything |
-| 1 — Templates (PRD 1) | 3–4 | |
-| 2 — Reports (PRD 2) | 2–3 | Includes the RLS fix |
+| 0 — Spine | ~~2–3~~ | ✅ **DONE** |
+| 1 — Templates (PRD 1) | ~~3–4~~ | ✅ **DONE** |
+| 2 — Reports (PRD 2) | ~~2–3~~ | ✅ **DONE** — includes the RLS fix |
 | 3 — PQL + recipe gallery | 1–2 | |
 | 4 — Bulk (PRD 3) | 5–6 | ⚠️ Heaviest. −1.5 (D2 CSV-only) · +1 (D6 ICP editor) |
 | 5 — Watchlists (PRD 4) | 3–4 | −1 (D4 — 3 signal types) |
 | 6 — Routing (PRD 5) | 3–4 | |
 | 7 — Packaging + release | 2–3 | |
 | **Total** | **20–28 sessions** | |
+| **Delivered so far** | **Phases 0–2** | shipped to `staging` 2026-09-02 |
+| **Remaining** | **~12–16 sessions** | Phases 3–7 |
 | *Phase 4b — import connectors* | *+1.5* | *Optional, off critical path* |
 | *Phase 5b — remaining 4 signals* | *+1* | *Optional, additive* |
 

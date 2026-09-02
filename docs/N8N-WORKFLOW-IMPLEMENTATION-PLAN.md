@@ -431,7 +431,7 @@ For specialized domain walkthroughs, integration setup, and runbooks, refer to t
 
 1. **Manual Verification & Integrations Runbook**: [`docs/MANUAL-VERIFICATION-AND-INTEGRATION-GUIDE.md`](./MANUAL-VERIFICATION-AND-INTEGRATION-GUIDE.md)
    - Step-by-step setup for Slack, Resend, HubSpot, Notion, Airtable, Zapier, manual verification scenarios, diagnostic SQL queries, and complete Edge Access / Auth troubleshooting.
-2. **Active Milestone Session Handoff**: [`docs/sessions/SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md`](./sessions/SESSION-HANDOFF-2026-08-30-WORKFLOW-OPTIMIZATION-AND-CALLBACK-API.md)
+2. **Active Milestone Session Handoff**: [`docs/sessions/SESSION-LOG.md`](./sessions/SESSION-LOG.md)
 3. **Master Consolidated Session Archive (70 Sessions)**: [`docs/sessions/SESSIONS-HISTORY.md`](./sessions/SESSIONS-HISTORY.md)
 4. **17 n8n Workflows Specification**: [`docs/N8N-WORKFLOWS.md`](./N8N-WORKFLOWS.md)
 5. **Model Context Protocol (MCP) Tools Reference**: [`docs/MCP-TOOLS.md`](./MCP-TOOLS.md)

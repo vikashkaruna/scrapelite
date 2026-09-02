@@ -19,21 +19,39 @@ In this codebase, continuous multi-agent and multi-session development relies on
 
 ## 1. Storage Standards & File Organization
 
-- **Directory**: All session handoffs and session records **must** be stored in `docs/sessions/`.
-- **Filename Convention**:
-  - Handoff records: `docs/sessions/SESSION-HANDOFF-YYYY-MM-DD-<TOPIC-SLUG>.md`
-  - Milestone wrap-ups / cutovers: `docs/sessions/SESSION-END-YYYY-MM-DD-<TOPIC-SLUG>.md`
-- **Never place loose session files in `docs/` root**.
-- **Archive & Index**: `docs/sessions/README.md` maintains a categorized reverse-chronological index of all session records.
+> **⚠️ CONVENTION CHANGED 2026-09-02. Read this before writing anything.**
+>
+> The old rule — one `SESSION-HANDOFF-YYYY-MM-DD-<TOPIC>.md` per session — is
+> **retired**. It produced 70+ archived records plus a growing tail of loose
+> files, and the owner reported it as unmanageable. Session records are read
+> newest-first far more often than individually, so the format now matches that.
 
----
+- **Directory**: `docs/sessions/` — and it contains exactly **three** files:
 
-## 2. Standard Session Handoff Template
+  | File | Role |
+  |---|---|
+  | `SESSION-LOG.md` | **The active log.** Newest entry first. Append here. |
+  | `SESSIONS-HISTORY.md` | Frozen deep archive (70 sessions to 2026-08-30). Never append. |
+  | `README.md` | Index + this convention. |
 
-Every new session record must follow this structured markdown template:
+- **To record a session**: **PREPEND** a `## YYYY-MM-DD HH:MM TZ — <headline>`
+  block to `SESSION-LOG.md`, directly under the file header. Use the entry
+  template at the bottom of that file.
+
+- **DO NOT create a new `SESSION-HANDOFF-*.md` file.** If you find one, fold it
+  into `SESSION-LOG.md` and delete it.
+
+- **DO NOT rewrite an existing entry** except to correct a factual error, and
+  say so inline when you do. A record that quietly changes is worse than none.
+
+- **Never place loose session files in `docs/` root.**
+
+## 2. Standard Session Entry Template
+
+Every new entry prepended to `SESSION-LOG.md` follows this shape:
 
 ```markdown
-# Session Handoff — YYYY-MM-DD — <Headline / Summary Topic>
+## YYYY-MM-DD HH:MM TZ — <Headline / Summary Topic>
 
 > **Branch:** `<branch-name>` @ `<commit-hash>`  
 > **Target:** `<staging | main | feature-branch>`  
@@ -99,11 +117,10 @@ Actionable checklist for the next session or operator:
 
 ## 3. Automation Scripts
 
-### 1. Generating a New Handoff
-To create a pre-populated session handoff file with current git branch and status:
-```bash
-node .agents/skills/session-handoff-management/scripts/new-session.mjs --title "<topic-name>"
-```
+### 1. Generating a New Entry
+⚠️ `scripts/new-session.mjs` still writes a **separate file**, which is the retired
+convention. Either prepend to `SESSION-LOG.md` by hand, or use the script and
+immediately fold its output into `SESSION-LOG.md` and delete the file it made.
 
 ### 2. Updating the Session Index
 To regenerate the index in `docs/sessions/README.md`:
@@ -116,6 +133,8 @@ node .agents/skills/session-handoff-management/scripts/index-sessions.mjs
 ## 4. Updating Pointers in `CLAUDE.md` and `AGENTS.md`
 
 Whenever completing a session:
-1. Place the new handoff in `docs/sessions/SESSION-HANDOFF-YYYY-MM-DD-<TOPIC>.md`.
-2. Update the `Active handoff` pointer in `AGENTS.md` and `CLAUDE.md` to reference `docs/sessions/...`.
-3. Update `docs/sessions/README.md` index.
+1. **Prepend** the entry to `docs/sessions/SESSION-LOG.md` (newest first).
+2. Update the `Last updated` pointer at the top of `CLAUDE.md` to summarise the
+   session and link to `docs/sessions/SESSION-LOG.md`.
+3. `docs/sessions/README.md` needs no per-session edit — it indexes the log, not
+   individual files.
