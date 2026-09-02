@@ -20,8 +20,13 @@
 
 ## 2026-09-02 23:10 IST — The AI outage nobody could see: schema-guided extraction, honest failures, and the Providers console
 
-> **Branch:** `claude/custom-extraction-enrichment-debug-711d74` · **Merged to:** nothing yet — review first.
+> **Branch:** `claude/custom-extraction-enrichment-debug-711d74`
+> **Merged to:** `staging` **and `main`** — both at the same commit, on the owner's explicit instruction.
 > **Reported as:** "custom extraction and every enrichment return nothing; multiple fixes attempted, none solved it."
+>
+> 🔴 **`main` DOES NOT AUTO-RELEASE.** Netlify production is locked by design; a
+> release needs (a) a manual unlock in the Netlify UI and (b) an `approved`
+> comment on the phase-gate approval issue. See §8.
 
 ### 1. The root cause was not in the code
 
@@ -150,7 +155,24 @@ renders the generic amber notice; a genuine `no_match` renders *"We read this
 page and the pages it links to, and found nothing matching Pricing & Plans.
 Pages read: acme.com, acme.com/pricing."*
 
-### 7. Open
+### 7. Merge record
+
+| Ref | Commit | How |
+|---|---|---|
+| `origin/staging` | `7eab992` → `ae48a7b` → `159b133` → merge | two fast-forwards, then the `main` merge |
+| `origin/main` | `85183e4` → merge | merge commit; 8 commits landed |
+
+`main` carried one commit `staging` lacked — `85183e4`, the content-free merge
+commit from PR #137 — so this was **not** a fast-forward. Verified before
+pushing that merging `origin/main` into the branch left the tree **byte-identical**
+(`75fd17d` before and after), i.e. the merge changed no file. Both refs now
+point at the same commit.
+
+**No migrations in this branch** (`git diff --name-only origin/main...origin/staging
+-- supabase/migrations/` is empty), so there is no database step before a
+production release — unusual for a change this size, and worth stating plainly.
+
+### 8. Open
 
 - 🔴 Reissue/top up the three AI provider accounts. **Nothing works until then.**
 - ⚠️ Check `app_config` `key='ai'` for a stale model override.
@@ -161,6 +183,33 @@ Pages read: acme.com, acme.com/pricing."*
 - Structured output is verified against each vendor's documented contract and by
   unit test, **not against a live key**. First run after the accounts are
   restored should be watched.
+
+**Releasing to production — two human acts, by design:**
+
+1. Unlock production in the Netlify UI ("Stop auto publishing" is what keeps a
+   push to `main` from shipping).
+2. Comment `approved` on the phase-gate approval issue.
+
+⚠️ **Do NOT "fix" a lock error with `--prod-if-unlocked`.** While locked that
+makes a DRAFT deploy, the smoke job then passes against the OLD production, and
+the run reports a release that never shipped. This repo has done it once.
+
+**Order of operations for the release, and it matters:** restore the three AI
+provider accounts *first*, verify with `/admin/ai → Test all providers` on
+staging, and only then unlock production. Shipping this to production with the
+accounts still dead would replace one honest failure message with the same
+honest failure message, in front of more people.
+
+### 9. Start-here for the next session
+
+1. `/admin/ai → Test all providers` — the fastest read on whether anything is
+   actually working. Three red badges means the accounts are still dead and
+   nothing downstream will behave.
+2. If they are green, run one real extraction with a Quick-enrichment
+   capability and check `_enrichment.structured === true` in the response. That
+   is the first live exercise of the native structured-output adapters, which
+   have never run against a real key.
+3. `git log --oneline -12` and this entry's §4 for what changed and why.
 
 ---
 

@@ -2,7 +2,8 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-02 (late) — THE ENRICHMENT OUTAGE WAS THREE DEAD PROVIDER ACCOUNTS, AND FOUR DEFECTS THAT MADE IT INVISIBLE. Branch `claude/custom-extraction-enrichment-debug-711d74`, NOT MERGED.**
+> **Last updated: 2026-09-03 — THE ENRICHMENT OUTAGE WAS THREE DEAD PROVIDER ACCOUNTS, AND FOUR DEFECTS THAT MADE IT INVISIBLE. MERGED TO `staging` AND `main` (both at the same commit), on the owner's explicit instruction.**
+> 🔴 **`main` DOES NOT AUTO-RELEASE — production is locked by design.** A release needs a manual unlock in the Netlify UI *plus* an `approved` comment on the phase-gate issue. **Restore the AI provider accounts FIRST and confirm with `/admin/ai → Test all providers` on staging; shipping this to production with the accounts still dead would only put the same honest failure message in front of more people.** ⚠️ Never "fix" a lock error with `--prod-if-unlocked` — while locked that makes a DRAFT deploy, smoke then passes against OLD production, and the run claims a release that never shipped. ✅ **No migrations in this branch**, so there is no database step before the release.
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 >
 > 🔴 **ROOT CAUSE, PROVEN AGAINST PRODUCTION, NOT INFERRED:** `POST https://datiq.app/api/ai` returns **502** with `anthropic: "Your credit balance is too low"`, `gemini: "API key not valid"`, `openai: "You have no credits remaining"`. **All three AI providers are dead.** Every "custom extraction returns nothing" report traces here. No code change fixes it — which is exactly why several rounds of code fixes did not. **OPERATOR ACTION OUTSTANDING: reissue the Gemini key, top up Anthropic and OpenAI.** ⚠️ **Also check the Supabase `app_config` row `key='ai'`** — operator config OVERRIDES code, so a prior model-naming fix could have shipped correctly and had zero effect.
@@ -163,8 +164,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-08-29 (latest session): `main` and `staging` are **identical**, both at `f05b30f` — `staging` was fast-forwarded to `main` right after this session's fixes landed. `workflow-implementation-and-optimization` is the standing branch for v2 workflow-pipeline / ecosystem-integration work, periodically fast-forwarded from `staging`. **Do not trust this row without re-checking `git branch -r`** — it has gone stale for weeks at a time before. |
-| **Latest commit** | `f05b30f` on both `main` and `staging` — prerender regen after this session's batch-enrichment/related-page-scanning/tour-mock fixes, from 2026-08-29 (latest session). |
+| **Branches** | As of 2026-09-03: `main` and `staging` are **identical**, both carrying the AI-provider/enrichment work. `feat/intelligence-workflows` continues Phases 3–7 (PR #136, open). **Do not trust this row without re-checking `git branch -r`** — it has gone stale for weeks at a time before. |
+| **Latest commit** | The merge of `claude/custom-extraction-enrichment-debug-711d74` into both `main` and `staging`, 2026-09-03. Run `git log --oneline -12` for the eight commits it carries. |
 | **Verify the schema locally** | `npm run test:db` — applies all 17 migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy. ~5s, no Docker, no network, no credentials. Run it after ANY migration change. |
 
 ---
