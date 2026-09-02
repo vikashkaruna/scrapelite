@@ -9,35 +9,56 @@
 
 ## 0. Before you start — READ THIS FIRST
 
-### 0.1 Apply the migrations, or most of this guide will not work
+### 0.1 Migrations — ✅ APPLIED to staging 2026-09-02
 
-Migrations **`0036`–`0039`** have only ever run against **PGlite** (in-process
-WASM Postgres via `npm run test:db`). PGlite has no GoTrue, no PostgREST and
-shimmed roles, so a green `test:db` proves the SQL is *valid* — **not** that it
-works against real Supabase.
+`0036`–`0039` are **applied and verified on `DatIQ-dev` (`aubwooslkkrprdxuiyvj`)**,
+the staging/dev Supabase project. Nothing to do here.
 
-```bash
-PROD_SUPABASE_DB_URL='<staging Direct connection string, port 5432>' npm run migrate:prod -- --dry-run
+| Check | Result |
+|---|---|
+| Object counts | **71 tables / 43 functions / 14 triggers** |
+| New tables | all 10, each with RLS on and exactly one `service_role` policy |
+| New functions | all 10 present |
+| Template catalogue | **5 published + 1 draft** (`bulk_icp_enrichment` stays draft until Phase 4) |
+| Existing shared reports | **10 migrated to `link`** — every live link still works |
+| Re-seed idempotency | re-running the seed produced **no v2** |
+
+Behaviour was verified against **real Postgres**, not just PGlite, inside a
+transaction that was rolled back (zero residue): composite-FK version pinning,
+the published-template immutability trigger, the append-only ledger trigger,
+D3 slug reuse across unpublish → republish, and terminal revoke.
+
+> ⚠️ **Production (`sikkfxysjhirmtwkumpt`, DatIQ-prod) was NOT touched** and still
+> lacks `0036`–`0039`. Apply them there as part of promoting to `main`.
+
+#### Schema drift found while applying — worth knowing, not blocking
+
+Staging carries two objects that exist in **no migration** `0001`–`0035`:
+
+```
++ table    account_deletion_audit
++ function delete_user_account
 ```
 
-The dry run connects, prints `current_database`, and aborts **without writing**.
-Confirm it names the *staging* project (`aubwooslkkrprdxuiyvj`), then re-run
-without `--dry-run`.
+They were applied out of band (SQL editor), so for this project the repo is not
+the complete source of truth. That is why staging reads 71/43 where a clean
+PGlite build of the same migrations reads 70/42. Nothing in `0036`–`0039`
+touches either object. Worth reconciling into a migration before the next
+production promotion, so prod and staging do not diverge further.
 
-**What you should see afterwards — 70 tables / 42 functions / 14 triggers** (was
-60 / 32 / 11). Verify:
+#### If you ever need to re-apply
 
-```sql
-select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';  -- 70
-select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public';      -- 42
-```
+⚠️ **Do not run a bare `npm run migrate:prod`.** `--include=` is *additive*, not
+restrictive, so a bare run replays **all 39** migrations — fine on a scratch
+project, wrong on a database with real users. Use the subset one-liner in
+[`DB-MIGRATION-RUNBOOK.md`](DB-MIGRATION-RUNBOOK.md) §4, naming only the files
+you want.
 
-**Until the migrations are applied:**
-- `/templates` still renders — it falls back to the bundled seeds and flags
-  itself `degraded`. This is deliberate: a catalogue that renders empty makes a
-  working feature look broken in every environment without a service key.
-- **Everything in §3 (reports) returns 503.** That is the correct behaviour,
-  not a bug to chase.
+⚠️ **`supabase db push` is also wrong here.** It tracks state in
+`supabase_migrations.schema_migrations`, which this repo's custom runner never
+writes — so it would believe *none* of `0001`–`0035` were applied and try to
+replay everything. It also targets the **linked** project, which is currently
+`DatIQ-prod`.
 
 ### 0.2 Where to test
 
@@ -123,7 +144,7 @@ Open **Sales-ready Account Brief**.
 
 ## 3. Reports — the sharing state machine
 
-> Needs migration `0039`. Without it these all return 503.
+> ✅ `0039` is applied on staging, so these work there now.
 
 Run any template while signed in, then click **Create shareable report**.
 
@@ -196,7 +217,7 @@ Run any template while signed in, then click **Create shareable report**.
 
 ## 4. Credits — the ledger
 
-> Needs migration `0037`.
+> ✅ `0037` is applied on staging.
 
 | # | Do this | Expect |
 |---|---|---|
