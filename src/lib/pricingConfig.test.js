@@ -36,6 +36,10 @@ const ALLOWED_LIMIT_KEYS = new Set([
   "integrations",
   // Entitlement flag only — no shipping extension yet. Select and up.
   "browser_extension",
+  // Fork a workflow template and edit its prompts. Go and up — Free can RUN
+  // every template (that is PRD 1's activation path and is deliberately
+  // ungated) but cannot rewrite one.
+  "template_duplicate",
 ]);
 
 const ALLOWED_EXPORT_FORMATS = new Set(["csv", "pdf", "markdown", "json", "jsonl"]);
