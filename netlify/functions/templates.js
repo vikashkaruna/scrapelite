@@ -99,9 +99,29 @@ async function handleGet(event) {
   await ensureSeeded(SEED_TEMPLATES);
   const { ok, rows, reason } = await listTemplates();
   if (!ok) {
-    // Supabase unconfigured (local dev) → serve the seeds so the catalogue
-    // still renders. Degrading to an empty page would make a working feature
-    // look broken in every environment without a service key.
+    // Supabase unconfigured/unreachable, or `workflow_templates` missing on
+    // this environment → serve the seeds so the catalogue still renders.
+    // Degrading to an empty page would make a working feature look broken in
+    // every environment without a service key.
+    //
+    // `qs.key` MUST be handled INSIDE this branch. It used to fall straight to
+    // the `templates` array below and return before the single-template lookup
+    // ever ran — so /templates?key=<anything> answered 200 with a `templates`
+    // array and NO `template` field, and the runner, reasonably trusting the
+    // field that 200 promised, died on `r.template.input_schema`. One missing
+    // migration therefore broke EVERY template link in the product and
+    // reported it as a TypeError instead of as the outage it was. The
+    // catalogue kept listing all six cards throughout, because it is served
+    // from these same seeds — which is exactly why it looked like a
+    // per-template bug rather than a store that was down.
+    if (qs.key) {
+      const seed = SEED_TEMPLATES.find((t) => t.template_key === qs.key && t.status === "published");
+      if (!seed) return json(404, { error: "Template not found" });
+      return json(200, {
+        template: publicShape({ ...seed, version: 1 }, { includePrompts: true }),
+        degraded: true, reason,
+      });
+    }
     return json(200, {
       templates: SEED_TEMPLATES.filter((t) => t.status === "published").map((t) => publicShape({ ...t, version: 1 })),
       degraded: true, reason,

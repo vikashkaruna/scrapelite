@@ -137,6 +137,11 @@ function TemplateRunner({ templateKey, onBack }) {
 
   const [template, setTemplate] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  // True when the server served this template from its built-in seeds because
+  // the template store was unreachable. The template renders and reads
+  // correctly, but a RUN needs the store, so promising one silently would be
+  // the same lie in a new place.
+  const [degraded, setDegraded] = useState(false);
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -149,7 +154,18 @@ function TemplateRunner({ templateKey, onBack }) {
     api.getTemplate(templateKey)
       .then((r) => {
         if (!alive) return;
+        // A 200 carrying no `template` is the endpoint breaking its own
+        // contract, not a template. Dereferencing it put a raw
+        // "Cannot read properties of undefined (reading 'input_schema')" on
+        // screen — which tells the user nothing they can act on and points
+        // whoever debugs it at this component instead of at the server. Fail
+        // with a sentence a human can read; the operator-facing cause stays
+        // server-side, where diagnostics belong.
+        if (!r?.template) {
+          throw new Error("This template couldn't be loaded right now. Please try again in a moment.");
+        }
         setTemplate(r.template);
+        setDegraded(r.degraded === true);
         const seed = {};
         for (const f of r.template.input_schema?.fields || []) {
           if (f.default !== undefined) seed[f.name] = f.default;
@@ -251,6 +267,13 @@ function TemplateRunner({ templateKey, onBack }) {
         <p className="tpl-sub">{template.summary}</p>
       </header>
 
+      {degraded && (
+        <div className="card tpl-error" role="status">
+          This template is showing in preview only — running it is temporarily unavailable.
+          Your inputs and credits are untouched. Please try again shortly.
+        </div>
+      )}
+
       <div className="card tpl-form">
         {fields.map((f) => (
           <FieldInput
@@ -264,7 +287,7 @@ function TemplateRunner({ templateKey, onBack }) {
         )}
 
         <div className="tpl-run-row">
-          <Button onClick={run} disabled={busy}>
+          <Button onClick={run} disabled={busy || degraded}>
             {busy ? "Running…" : "Run this template"}
           </Button>
           {estimate && (

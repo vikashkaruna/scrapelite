@@ -106,7 +106,7 @@ export const handler = async (event) => {
   if (event.httpMethod === "GET") {
     const auth = verifyAdminToken(bearerFromEvent(event));
     if (!auth.ok) return respond(401, { ok: false, error: auth.reason || "Unauthorized" });
-    const config = await loadAiConfig();
+    const config = await loadAiConfig({ fresh: true });
     // EFFECTIVE settings, resolved exactly the way runChain() resolves them.
     // The console previously showed stored config only, so an area running on
     // a registry default looked unconfigured — and an operator could not tell

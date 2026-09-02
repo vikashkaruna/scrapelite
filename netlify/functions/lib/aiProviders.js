@@ -336,9 +336,21 @@ let _cacheAt = 0;
 const TTL_MS = 60_000;
 
 /** Resolve effective AI config (cached 60s per warm container). Never throws. */
-export async function loadAiConfig() {
+/**
+ * Resolve the effective AI config. Cached 60s per warm container.
+ *
+ * @param {{fresh?: boolean}} [opts] `fresh` bypasses the cache entirely. The
+ *   admin screen passes it, because that screen exists to answer "did my
+ *   change land?" — and invalidateAiConfigCache() alone cannot answer it:
+ *   it only clears the container that served the POST, while Netlify is free
+ *   to route the operator's very next GET to a DIFFERENT warm container whose
+ *   own cache is up to a minute stale. The operator then sees their old
+ *   settings, concludes the save failed, and saves again. One extra Supabase
+ *   read on an admin page is a cheap price for a screen that cannot lie.
+ */
+export async function loadAiConfig(opts = {}) {
   const now = Date.now();
-  if (_cache && now - _cacheAt < TTL_MS) return _cache;
+  if (!opts.fresh && _cache && now - _cacheAt < TTL_MS) return _cache;
   const ov = await fetchConfigRow();
   _cache = merge(defaults(), ov);
   _cacheAt = now;
