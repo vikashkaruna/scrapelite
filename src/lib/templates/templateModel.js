@@ -32,6 +32,12 @@ export const INPUT_KINDS = Object.freeze([
 /** Output blocks a template may emit. Drives the run view and the report. */
 export const OUTPUT_BLOCKS = Object.freeze([
   "summary", "fields", "table", "list", "sources", "recommendations",
+  // `comparison` is a table whose ROWS are entities (your company and each
+  // competitor) and whose columns are the axes they are compared on. It is
+  // distinct from `table`, which renders one entity's repeated records
+  // (pricing tiers, people) — the renderers and the empty-cell semantics
+  // differ: a blank cell in a comparison is a finding, in a table it is a gap.
+  "comparison",
 ]);
 
 /** Mirrors template_runs.status in 0036. Keep in sync with the CHECK. */
@@ -45,6 +51,12 @@ export const RUN_STATUS = Object.freeze({
 export const FIELD_GROUPS = Object.freeze([
   "identity", "firmographics", "commercial", "gtm", "people",
   "technology", "signals", "qualification", "governance",
+  // Added with the AI Visibility Brief. `positioning` is how a company frames
+  // itself (mission, category, target customer) — distinct from `gtm`, which is
+  // how it goes to market. `evidence` is the proof it offers for its own
+  // claims (named customers, metrics, awards), which is the half a competitive
+  // comparison actually turns on.
+  "positioning", "evidence",
 ]);
 
 export const TEMPLATE_STATUS = Object.freeze({

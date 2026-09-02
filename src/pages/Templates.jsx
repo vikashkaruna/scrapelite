@@ -360,6 +360,45 @@ function RunResult({ result, template, onShare }) {
         </section>
       ) : null}
 
+      {/* The comparison grid — rows are companies, columns are the axes they
+          were compared on. A blank cell here is a FINDING ("they don't say"),
+          not a rendering gap, which is why it reads "not stated" rather than
+          being left empty. */}
+      {result.output?.comparison?.rows?.length ? (
+        <section className="tpl-block">
+          <h3>{blocks.find((b) => b.kind === "comparison")?.title || "Side by side"}</h3>
+          <div className="tpl-cmp-wrap">
+            <table className="tpl-cmp">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  {(result.output.comparison.axes || []).map((a) => <th key={a}>{a}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {result.output.comparison.rows.map((row, i) => (
+                  <tr key={i} className={row.company === result.output.target ? "tpl-cmp-self" : ""}>
+                    <th scope="row">
+                      {row.company}
+                      {row.company === result.output.target ? <span className="tpl-cmp-you">you</span> : null}
+                    </th>
+                    {(result.output.comparison.axes || []).map((a) => {
+                      const v = row.values?.[a];
+                      return <td key={a}>{v == null || v === "" ? <em className="tpl-cmp-null">not stated</em> : String(v)}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {result.output.unread?.length ? (
+            <p className="tpl-ai-note">
+              Not read, so absent from this comparison: {result.output.unread.join(", ")}.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {result.output?.fields && (
         <section className="tpl-block">
           <h3>{blocks.find((b) => b.kind === "fields")?.title || "Extracted facts"}</h3>

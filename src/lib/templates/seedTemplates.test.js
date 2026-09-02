@@ -4,8 +4,8 @@ import { validateTemplate, estimateCredits, validateInput, capabilityFor } from 
 import { PERSONAS } from "../personaConfig.js";
 
 describe("seed templates", () => {
-  it("ships exactly six — the PRD warns against 30 before observing adoption", () => {
-    expect(SEED_TEMPLATES).toHaveLength(6);
+  it("ships seven — six launch templates plus the positioning brief", () => {
+    expect(SEED_TEMPLATES).toHaveLength(7);
   });
 
   it("every seed is a valid template definition", () => {
@@ -27,8 +27,8 @@ describe("seed templates", () => {
     }
   });
 
-  it("only five are runnable today — bulk waits for Phase 4's durable runner", () => {
-    expect(PUBLISHED_SEEDS).toHaveLength(5);
+  it("only bulk_icp_enrichment waits for Phase 4's durable runner", () => {
+    expect(PUBLISHED_SEEDS).toHaveLength(6);
     expect(seedByKey("bulk_icp_enrichment").status).toBe("draft");
   });
 

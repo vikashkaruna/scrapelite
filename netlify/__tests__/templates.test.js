@@ -8,6 +8,7 @@
 //   - one user cannot read another's run (404, not 403 — no enumeration)
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SEED_TEMPLATES } from "../../src/lib/templates/seedTemplates.js";
 
 let fetchMock;
 const FREE_ENT = { plan_id: "free", status: "active", source: "signup", period_end: "2999-01-01" };
@@ -91,7 +92,11 @@ describe("templates — catalogue", () => {
     const b = JSON.parse(r.body);
     expect(r.statusCode).toBe(200);
     expect(b.degraded).toBe(true);
-    expect(b.templates.length).toBe(5); // the five published seeds
+    // Derived from the seeds, not a literal: adding a template should not
+    // fail a test about degraded-mode rendering.
+    expect(b.templates.length).toBe(
+      SEED_TEMPLATES.filter((t) => t.status === "published").length
+    );
   });
 
   it("rejects an unknown method", async () => {

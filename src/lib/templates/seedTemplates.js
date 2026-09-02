@@ -6,11 +6,22 @@
 // PRD 1's technical considerations ask for ("store template definitions as
 // versioned JSON/configuration, not hard-coded UI logic").
 //
-// ── SIX. NOT THIRTY. ────────────────────────────────────────────────────────
+// ── SEVEN, AND THE SEVENTH IS THE POSITIONING BET ───────────────────────────
 // The PRD is explicit: "Build first: 6 templates only. Avoid creating 30
 // templates before observing adoption." Every extra template dilutes the
-// signal about which job-to-be-done actually deserves deeper investment, and
-// each one is a surface we then have to keep working.
+// signal about which job-to-be-done deserves deeper investment.
+//
+// `ai_visibility_brief` is the deliberate exception, and it is not a seventh
+// variation on "read a page" — it is the product's positioning made runnable.
+// "Extract any URL" is a commodity: Firecrawl and Jina do it as infrastructure
+// for less, and a chat model reads a URL for free. What DatIQ has that none of
+// them do is the four-pillar SEO/AEO/GEO engine plus schema-validated,
+// evidence-backed extraction — and the question that combination answers is
+// one nobody else can: "how do we and our competitors appear to buyers AND to
+// AI answer engines, and what do we change first?"
+//
+// It is the only template that reads MULTIPLE companies in one run and
+// compares them, which is why it carries a per-competitor credit cost.
 //
 // ── bulk_icp_enrichment SHIPS AS A DRAFT, ON PURPOSE ────────────────────────
 // Its definition is here so Phase 4 only has to publish it, but its status is
@@ -272,6 +283,87 @@ export const SEED_TEMPLATES = [
         "industries, and the outcome they lead with.",
     },
     credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 1 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
+
+  {
+    // ── THE POSITIONING TEMPLATE ─────────────────────────────────────────────
+    // Reads your own site and up to four competitors, extracts each one's
+    // positioning and pricing under the SAME schema (so the comparison is
+    // like-for-like rather than four differently-shaped summaries), then writes
+    // a brief about where you actually stand and what to change.
+    template_key: "ai_visibility_brief",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "AI Visibility & Competitive Brief",
+    persona: "competitive-intel",
+    summary:
+      "How you and your competitors describe, price and position yourselves — and what an AI answer engine would say about each of you. One brief, with the evidence behind every claim.",
+    input_schema: {
+      fields: [
+        { name: "domain", kind: "domain", required: true, label: "Your domain",
+          placeholder: "yourcompany.com",
+          help: "We read your public site — positioning, pricing and proof points." },
+        { name: "competitors", kind: "domain_list", label: "Competitors (up to 4)", max: 4,
+          placeholder: "competitor-a.com, competitor-b.com",
+          help: "Each competitor is read with the same schema, so the comparison is like-for-like." },
+        { name: "audience", kind: "choice", label: "Who is this brief for", default: "gtm",
+          options: [
+            { value: "gtm", label: "Go-to-market team" },
+            { value: "founder", label: "Founder / exec" },
+            { value: "marketing", label: "Marketing & content" },
+          ] },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "positioning", group: "positioning" },
+        { name: "values", group: "positioning" },
+        { name: "proof", group: "evidence" },
+        { name: "plans", group: "commercial" },
+        { name: "commercial", group: "commercial" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "Where you stand" },
+        { kind: "list", title: "What to change first", from: "talking_points" },
+        { kind: "comparison", title: "Side by side", from: "comparison" },
+        { kind: "fields", title: "Your positioning and pricing", groups: ["positioning", "commercial", "evidence"] },
+        { kind: "sources", title: "Where this came from" },
+      ],
+    },
+    prompt_bundle: {
+      // The extraction runs under the `mission` capability schema, so this
+      // string is an addendum, not the whole instruction — see
+      // resolveExtractionPlan() in extractionSchemas.js.
+      extract:
+        "Also capture how this company would answer 'what do you do and who is it for' in one sentence, " +
+        "and any claim they make that a competitor could contest. " +
+        "Return null for anything the pages do not state — never guess a positioning or a price, because " +
+        "this brief is read side by side with competitors and one invented cell corrupts every comparison.",
+      summarize:
+        "Write a 5-7 sentence positioning brief. Say: what this company claims to be, who it says it is for, " +
+        "how its pricing is structured, and — comparing against the competitor facts supplied — where it is " +
+        "genuinely differentiated versus where it says the same thing as everyone else. Name the competitor " +
+        "you are comparing against in each contrast. Where the evidence is thin, say the evidence is thin " +
+        "rather than softening the claim.",
+      talking_points:
+        "List the 3-5 highest-leverage changes this company should make to how it presents itself, ordered " +
+        "by impact. Each must (a) name the specific page or claim to change, (b) say what to change it to, " +
+        "and (c) cite the extracted fact or competitor comparison that justifies it. " +
+        "No generic advice — 'improve your messaging' is a failed answer. If the evidence does not support " +
+        "five recommendations, give fewer.",
+      comparison:
+        "Build a like-for-like comparison across these companies on exactly these axes: category they claim, " +
+        "target customer, pricing model, entry price, headline differentiator, and strongest proof point. " +
+        "One row per company. Use null where a company does not state something — an empty cell is a finding " +
+        "in itself, and inventing one destroys the comparison's value.",
+    },
+    // Per-competitor: each one is its own page read plus its share of the
+    // synthesis. `pages_per_unit` covers the related-page gathering that
+    // positioning extraction does (/about, /pricing) on each domain.
+    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 1 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },

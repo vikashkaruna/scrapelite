@@ -114,7 +114,171 @@ async function synthesise(prompt, { facts, target, title, pageText, label }) {
  * failure is recorded with its flag and creditModel drops it — the user is
  * never billed for a page we did not read, or an AI call that did not land.
  */
+// ── Multi-company runs ───────────────────────────────────────────────────────
+// The AI Visibility Brief reads your site AND up to four competitors under the
+// SAME capability schema. That sameness is the whole point: four differently
+// shaped summaries are not a comparison, they are four summaries. Reading them
+// like-for-like is what lets the synthesis say "you and Competitor B both
+// claim the mid-market; only they price for it."
+
+const COMPARISON_CAPABILITY = "mission";
+
+/** Read one company's positioning + pricing. Never throws — a competitor we
+ *  could not read is reported as unread, not as having nothing. */
+async function readCompany(domain, promptExtra) {
+  const target = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+  try {
+    const scraped = await extractStructure(target, {
+      customPrompt: promptExtra,
+      enrichKey: COMPARISON_CAPABILITY,
+    });
+    return {
+      domain, target, ok: true,
+      facts: scraped?.custom_extraction ?? null,
+      title: scraped?.page_title || domain,
+      pageText: scraped?.page_text || "",
+      pagesRead: [target, ...(scraped?.related_pages_scanned || [])],
+      reason: scraped?.custom_extraction_reason || null,
+      meta: scraped?.enrichment_meta || null,
+    };
+  } catch (err) {
+    return { domain, target, ok: false, error: err?.message || "Could not read this site", pagesRead: [] };
+  }
+}
+
+/**
+ * Execute the AI Visibility Brief: read every company, then synthesise a
+ * comparison, a positioning brief and a prioritised change list from the
+ * combined facts.
+ */
+async function executeVisibilityBrief({ template, input, onProgress }) {
+  const say = (msg, pct) => onProgress?.({ message: msg, percent: pct });
+  const events = [];
+  const sources = [];
+
+  const own = String(input.domain || "").trim();
+  if (!own) throw new Error("This brief needs your own domain to run against.");
+  const competitors = (Array.isArray(input.competitors) ? input.competitors : [])
+    .map((d) => String(d).trim()).filter(Boolean).slice(0, 4);
+
+  say(competitors.length
+    ? `Reading ${competitors.length + 1} companies…`
+    : "Reading your site…", 15);
+
+  const extra = template.prompt_bundle?.extract;
+  // Concurrent: five independent sites, and a serial walk would put a
+  // five-company brief well past any reasonable wait.
+  const companies = await Promise.all([own, ...competitors].map((d) => readCompany(d, extra)));
+  const [self, ...rivals] = companies;
+
+  for (const c of companies) {
+    events.push({ unit: "page", credits: Math.max(1, c.pagesRead.length), quantity: Math.max(1, c.pagesRead.length), failed: !c.ok });
+    for (const url of c.pagesRead) {
+      sources.push({ url, canonical_url: c.domain, fetched_at: new Date().toISOString(), http_status: 200 });
+    }
+  }
+
+  if (!self.ok || !self.facts) {
+    // Without our own positioning there is nothing to compare AGAINST, and a
+    // brief built on competitors alone would be a different (and unrequested)
+    // deliverable.
+    throw new Error(
+      self.reason
+        ? `We could not read enough from ${own} to build a brief (${self.reason}).`
+        : `We could not read ${own}.`
+    );
+  }
+
+  say("Comparing positioning…", 55);
+
+  const factsBlock = companies
+    .filter((c) => c.ok && c.facts)
+    .map((c) => `### ${c.domain}${c.domain === own ? " (YOUR COMPANY)" : " (competitor)"}\n${JSON.stringify(c.facts, null, 2).slice(0, 7000)}`)
+    .join("\n\n");
+  const unread = companies.filter((c) => !c.ok || !c.facts).map((c) => c.domain);
+  const unreadNote = unread.length
+    ? `\n\nNOT READ (do not invent facts for these, and say they were not read if they matter): ${unread.join(", ")}`
+    : "";
+
+  const bundle = template.prompt_bundle || {};
+  const audienceLine = {
+    gtm: "a go-to-market team deciding where to focus next quarter",
+    founder: "a founder deciding what to change about how the company presents itself",
+    marketing: "a marketing team about to rewrite the site's core pages",
+  }[input.audience] || "a go-to-market team";
+
+  const synthCtx = {
+    facts: null, target: own, title: self.title,
+    pageText: `Written for ${audienceLine}.\n\nCOMPANY FACTS:\n${factsBlock}${unreadNote}`,
+  };
+
+  const [summary, points, comparisonRaw] = await Promise.all([
+    synthesise(bundle.summarize, { ...synthCtx, label: "summarize" }),
+    synthesise(bundle.talking_points, { ...synthCtx, label: "talking_points" }),
+    // The comparison is asked for as JSON so it renders as a real grid rather
+    // than prose that happens to mention several companies.
+    synthesiseJson(bundle.comparison, synthCtx),
+  ]);
+  for (const r of [summary, points, comparisonRaw]) if (r) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
+
+  say("Done", 100);
+
+  const output = {
+    target: own,
+    title: self.title,
+    fields: self.facts,
+    evidence: Array.isArray(self.facts?.evidence) ? self.facts.evidence : null,
+    extraction: self.meta,
+    comparison: comparisonRaw || null,
+    companies: companies.map((c) => ({
+      domain: c.domain, ok: c.ok, pagesRead: c.pagesRead,
+      reason: c.reason || (c.ok ? null : c.error),
+    })),
+    unread,
+  };
+  if (points) output.talking_points = splitPoints(points);
+
+  return {
+    output, summary,
+    talking_points: output.talking_points || null,
+    events, sources,
+    // Honest about a competitor we could not read: the brief is real, but it
+    // is not the brief the user asked for if a competitor is missing from it.
+    partial: !summary || unread.length > 0,
+    needsReview: unread.length > 0,
+  };
+}
+
+/** Synthesis that must come back as JSON (the comparison grid). */
+async function synthesiseJson(prompt, ctx) {
+  const text = await synthesise(
+    prompt
+      ? `${prompt}\n\nReturn ONLY a JSON object: {"axes": string[], "rows": [{"company": string, "values": {"<axis>": string|null}}]}. No prose, no markdown fences.`
+      : null,
+    { ...ctx, label: "comparison" },
+  );
+  if (!text) return null;
+  try {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    const parsed = JSON.parse(text.slice(start, end + 1));
+    return Array.isArray(parsed?.rows) && parsed.rows.length ? parsed : null;
+  } catch {
+    // A comparison we cannot parse is dropped, not shown as broken JSON — the
+    // rest of the brief is still worth reading.
+    return null;
+  }
+}
+
 export async function executeRun({ template, input, onProgress }) {
+  // Multi-company templates take their own path — one target cannot produce a
+  // comparison, and bolting competitors onto the single-target flow would make
+  // both harder to follow.
+  if (template.template_key === "ai_visibility_brief") {
+    return executeVisibilityBrief({ template, input, onProgress });
+  }
+
   const events = [];
   const sources = [];
   const say = (msg, pct) => onProgress?.({ message: msg, percent: pct });

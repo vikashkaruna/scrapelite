@@ -14,9 +14,15 @@ const CONCURRENCY = 3;
 // page scanning (see extract.js) gets the precise key instead of guessing
 // one from the prompt text.
 function withEnrichKey(options) {
-  if (!options.customPrompt || options.enrichKey) return options;
-  const meta = enrichMetaForIntent(options.intent, options.customPrompt);
-  return meta ? { ...options, enrichKey: meta.key } : options;
+  // `deep: false` opts OUT of the server's related-page gathering. A single
+  // extraction happily spends 2-3 extra fetches to find pricing on /pricing;
+  // a 200-URL batch would spend 400-600, and latency per row is what the user
+  // actually feels there. The capability key still travels, so a batch row
+  // whose base page DOES carry the data is unaffected.
+  const base = { deep: false, ...options };
+  if (!base.customPrompt || base.enrichKey) return base;
+  const meta = enrichMetaForIntent(base.intent, base.customPrompt);
+  return meta ? { ...base, enrichKey: meta.key } : base;
 }
 
 // Build the SAME { [capabilityKey]: entry } tab map that a single-URL
@@ -45,6 +51,12 @@ function buildBatchEnrichments({ options, structure, generatedContentText, creat
         ...(structure.custom_extraction_reason
           ? { reason: structure.custom_extraction_reason }
           : {}),
+        // Same provenance a single-URL run records — provider, model, whether
+        // the schema was enforced natively, and which pages were read. Batch
+        // rows are the ones most likely to be exported straight into a CRM,
+        // so they are the LAST place that should lose their evidence trail.
+        ...(structure.enrichment_meta ? { meta: structure.enrichment_meta } : {}),
+        ...(structure.related_pages_scanned ? { pages: structure.related_pages_scanned } : {}),
         created_at: createdAt,
       };
       enrichments[meta.key] = entry;
