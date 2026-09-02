@@ -7,14 +7,30 @@
 // Netlify Function and is never bundled or sent from the browser.
 // The "anthropic-dangerous-direct-browser-access" header is no longer needed.
 //
-// Mock path: no key configured → simulated delay + fixture content.
-// Real path: key configured → POST /api/ai → Claude on the server.
+// ── MOCK MODE IS NOW EXPLICIT, NOT A FAILURE HANDLER ─────────────────────────
+// Every AI call used to `catch` and silently return locally-generated fixture
+// prose. That meant a dead provider account produced text that LOOKED like a
+// real AI summary — "This page from acme.com centers on …, organized across 16
+// headings" — with a provenance badge saying ai_generated. The product was
+// asserting things about a customer's page that nothing had read.
+//
+// Mocks now run ONLY in mock mode (extraction itself mocked, i.e.
+// VITE_ENABLE_EXTRACT unset). In live mode a failure is REPORTED: the
+// *Detailed() functions return { ok:false, code, hint } and the UI shows a
+// degraded state naming the cause. Degrading the experience is fine.
+// Fabricating a claim about someone's data is not.
 
-import { hasAI, AI_MODEL } from "./config.js";
+
+import { hasAI, hasFirecrawl, AI_MODEL } from "./config.js";
 import { apiClient } from "./apiClient.js";
 import { hostOf } from "./utils.js";
 import { categoryOf, isCategory, CATEGORY_KEYS } from "./linkCategorizer.js";
 import { PERSONA_BY_ID } from "./personaConfig.js";
+
+// True when the whole pipeline is in fixture mode. Tied to the extraction flag
+// because a mocked summary of a real page is the failure this file exists to
+// prevent, while a mocked summary of a mocked page is coherent.
+const MOCK_MODE = !hasFirecrawl;
 
 const MOCK_DELAY_MS = 1200;
 
@@ -23,16 +39,42 @@ function delay(ms) {
 }
 
 // ── Shared helper — calls /api/ai and extracts the text content ───────────────
-async function callAI(messages, max_tokens = 1024) {
-  const data = await apiClient.ai({ model: AI_MODEL, max_tokens, messages });
-  return (
-    data?.content
-      ?.map((b) => b.text)
-      .filter(Boolean)
-      .join("\n")
-      .trim() || ""
-  );
+async function callAI(messages, max_tokens = 1024, opts = {}) {
+  const data = await apiClient.ai({
+    model: AI_MODEL, max_tokens, messages,
+    ...(opts.area ? { area: opts.area } : {}),
+    ...(opts.tier ? { tier: opts.tier } : {}),
+  });
+  const text = (data?.content?.map((b) => b.text).filter(Boolean).join("\n").trim()) || "";
+  return { text, provider: data?._provider, model: data?._model, tier: data?._tier };
 }
+
+/**
+ * Normalise a thrown apiClient error into the same { code, hint } vocabulary
+ * /api/ai returns, so the UI has one thing to render whether the failure was a
+ * 502 with a body or a network drop with none.
+ */
+function describeAiFailure(err) {
+  // apiClient lifts the server's `code`/`hint` onto the Error itself.
+  const code = err?.code || (err?.status === 503 ? "no_key" : "error");
+  const hint = err?.hint || AI_FAILURE_HINTS[code] || AI_FAILURE_HINTS.error;
+  return { ok: false, code, hint, status: err?.status ?? null };
+}
+
+// Mirrors PROVIDER_ERROR_COPY server-side. Duplicated rather than imported
+// because this file must stay importable in the browser bundle without
+// pulling in the Netlify function tree.
+export const AI_FAILURE_HINTS = {
+  no_key:        "AI is not configured on this server. An administrator needs to set an AI provider key.",
+  bad_key:       "The AI provider rejected the API key. An administrator needs to reissue it.",
+  no_credit:     "The AI provider account is out of credit. An administrator needs to top up billing.",
+  rate_limited:  "The AI provider is rate-limiting requests. Try again in a moment.",
+  bad_model:     "The configured AI model is unavailable. An administrator needs to change it.",
+  provider_down: "The AI provider is having an outage. Try again shortly.",
+  timeout:       "The AI provider did not respond in time. Try again.",
+  network:       "Could not reach the AI provider.",
+  error:         "The AI request failed.",
+};
 
 // ── Summarize ─────────────────────────────────────────────────────────────────
 
@@ -63,33 +105,64 @@ function audienceLine(personaId) {
  *   is for (persona) and what they asked for (intent), so the prompt reads
  *   contextually instead of one generic wording for every user and mode.
  */
+// How much page body to put in a prompt. The body is the ONLY reason these
+// summaries can say anything specific; before it existed, every summary was
+// written from a heading list and a link dump, which is why they read like a
+// table of contents and why "Competitor Summary" was an LLM guessing about a
+// company from its navigation menu.
+const SUMMARY_BODY_CHARS = 18_000;
+const CONTENT_BODY_CHARS = 24_000;
+
+/** The page body, if the server sent one. Falls back to pasted raw text. */
+function bodyTextOf(extraction, limit) {
+  const text = extraction?.page_text || extraction?.raw_text || "";
+  return String(text).slice(0, limit);
+}
+
 function buildSummaryPrompt(extraction, context = {}) {
   const audience = audienceLine(context.personaId);
   const focus = intentFocusLine(context.intent);
-  const headings = (extraction.headings || [])
-    .map((h) => `${h.tag}: ${h.text}`)
-    .join("\n");
-  const links = (extraction.links || [])
-    .map((l) => `- ${l.text} → ${l.href}`)
-    .join("\n");
-  // Paste-anything: when the user pasted raw text/HTML, summarize the actual
-  // content (capped) rather than just the derived headings/links.
-  if (extraction.raw_text) {
+  const body = bodyTextOf(extraction, SUMMARY_BODY_CHARS);
+  const headings = (extraction.headings || []).slice(0, 60).map((h) => `${h.tag}: ${h.text}`).join("\n");
+
+  // Paste-anything keeps its own framing — there is no URL or structure to
+  // describe, only the content the user handed us.
+  if (extraction.raw_text && !extraction.page_text) {
     return (
       `You are summarizing pasted content for ${audience}.\n` +
       `Write a single concise paragraph (3–5 sentences) describing what the content is about, ` +
       `its key points, and its apparent intent.${focus} Do not use markdown.\n\n` +
-      `Content:\n${String(extraction.raw_text).slice(0, 6000)}\n`
+      `Content:\n${body}\n`
     );
   }
+
+  if (!body) {
+    // Degraded input: structure only. Say so in the prompt rather than letting
+    // the model invent specifics it has no basis for — an unsupported claim in
+    // a summary gets copied into a deck and never questioned again.
+    return (
+      `You are summarizing a web page for ${audience}.\n` +
+      `You have ONLY the page's structure (title, headings, links) — not its body text. ` +
+      `Write 2–3 sentences describing what the page appears to cover and how it is organised. ` +
+      `Do not state specific facts, figures, names or claims you cannot see.${focus} Do not use markdown.\n\n` +
+      `URL: ${extraction.url}\nTitle: ${extraction.page_title}\n\nHeadings:\n${headings}\n`
+    );
+  }
+
   return (
-    `You are summarizing a web page for ${audience}.\n` +
-    `Write a single concise paragraph (3–5 sentences) describing what the page is about, ` +
-    `how it is structured, and its apparent intent.${focus} Do not use markdown.\n\n` +
+    `You are a research analyst writing for ${audience}.\n\n` +
+    `Write a substantive 4–6 sentence brief on this page. Cover, in this order and only where the ` +
+    `content supports it: what the organisation or page actually offers; who it is for; how it is ` +
+    `positioned or priced; and the single most notable specific detail on the page (a named customer, ` +
+    `a figure, a differentiator, a constraint).${focus}\n\n` +
+    `Rules:\n` +
+    `- Be specific. Name things. A summary that would fit any company in the category is a failed summary.\n` +
+    `- Every claim must be supported by the content below. Do not use outside knowledge of this company.\n` +
+    `- If the page is thin, say what it is and stop. Do not pad.\n` +
+    `- Plain prose, no markdown, no headings, no bullet points.\n\n` +
     `URL: ${extraction.url}\n` +
     `Title: ${extraction.page_title}\n\n` +
-    `Headings:\n${headings}\n\n` +
-    `Links:\n${links}\n`
+    `PAGE CONTENT:\n${body}\n`
   );
 }
 
@@ -107,28 +180,40 @@ async function mockSummary(extraction) {
   );
 }
 
-async function realSummary(extraction, context = {}) {
+/**
+ * Summarize an extraction, reporting HOW it went.
+ * @returns {Promise<{ok:boolean, text:string, code?:string, hint?:string, provider?:string, model?:string, mocked?:boolean}>}
+ */
+export async function summarizeDetailed(extraction, context = {}) {
+  if (MOCK_MODE) {
+    return { ok: true, text: await mockSummary(extraction), mocked: true };
+  }
   try {
-    const text = await callAI(
+    const r = await callAI(
       [{ role: "user", content: buildSummaryPrompt(extraction, context) }],
-      400
+      700,
+      { area: "synthesis" },
     );
-    return text || (await mockSummary(extraction));
+    if (r.text) return { ok: true, text: r.text, provider: r.provider, model: r.model };
+    // A 200 with no text is still a failure — it must not become fixture prose.
+    return { ok: false, text: "", code: "empty", hint: "The AI returned an empty summary." };
   } catch (err) {
-    console.warn("[DatIQ] AI summary unavailable, using fallback:", err?.message);
-    return mockSummary(extraction);
+    const failure = describeAiFailure(err);
+    console.warn("[DatIQ] AI summary failed:", failure.code, err?.message);
+    return { ...failure, text: "" };
   }
 }
 
 /**
  * Summarize an extraction.
- * @param {object} extraction
- * @param {{personaId?: string, intent?: string}} [context] - persona + intent
- *   so the prompt is tailored to who's asking and what they asked for.
+ *
+ * Returns "" when AI is unavailable in live mode — deliberately, so a caller
+ * that ignores the failure renders nothing rather than fabricated prose. Use
+ * summarizeDetailed() when you can surface the reason (every UI caller should).
  * @returns {Promise<string>}
  */
 export async function summarize(extraction, context = {}) {
-  return hasAI ? realSummary(extraction, context) : mockSummary(extraction);
+  return (await summarizeDetailed(extraction, context)).text;
 }
 
 // Exposed for tests — not part of the public summarization API.
@@ -165,9 +250,13 @@ function parseCategoryArray(text) {
 }
 
 async function aiCategorize(links, baseUrl) {
-  const text = await callAI(
+  // Deliberately the FAST tier: this is bulk classification with a fixed
+  // six-way answer space. Frontier pricing buys nothing here, and the budget
+  // is better spent on synthesis.
+  const { text } = await callAI(
     [{ role: "user", content: buildCategorizePrompt(links, baseUrl) }],
-    Math.min(1024, links.length * 6 + 60)
+    Math.min(2048, links.length * 8 + 120),
+    { area: "classification", tier: "fast" },
   );
   return parseCategoryArray(text);
 }
@@ -183,7 +272,11 @@ export async function categorizeLinks(links, baseUrl) {
     ...l,
     category: categoryOf(l.href, baseUrl),
   }));
-  if (!hasAI || base.length === 0 || base.length > MAX_AI_LINKS) return base;
+  // Unlike summaries, falling back here is honest: `categoryOf()` is a real
+  // deterministic classifier, not fixture prose, and every link keeps a valid
+  // category either way. This is a refinement that may be skipped, not a
+  // claim that may be fabricated.
+  if (!hasAI || MOCK_MODE || base.length === 0 || base.length > MAX_AI_LINKS) return base;
 
   try {
     const aiCats = await aiCategorize(base, baseUrl);
@@ -253,17 +346,32 @@ export const CONTENT_FORMATS = [
 ];
 
 function buildContentPrompt(extraction, format) {
-  const headings = (extraction.headings || [])
-    .map((h) => `${h.tag}: ${h.text}`)
-    .join("\n");
+  const body = bodyTextOf(extraction, CONTENT_BODY_CHARS);
+  const headings = (extraction.headings || []).slice(0, 60).map((h) => `${h.tag}: ${h.text}`).join("\n");
+  // Structured enrichment already extracted from this page is the highest-
+  // confidence material available — it was schema-validated and evidence-backed.
+  // Feeding it back in stops the generator re-deriving (and re-guessing) facts
+  // the extractor already established.
+  const facts = extraction.custom_extraction
+    ? `\nVERIFIED EXTRACTED FACTS (schema-validated from this page — prefer these over your own reading):\n${
+        JSON.stringify(extraction.custom_extraction).slice(0, 6000)}\n`
+    : "";
+
   return (
-    `You are a content marketer working from data scraped from a web page.\n` +
+    `You are a senior analyst producing a deliverable a client will read.\n\n` +
     `${format.instruction}\n\n` +
-    `Base everything strictly on the material below — do not invent facts.\n\n` +
+    `Non-negotiable rules:\n` +
+    `- Ground every statement in the material below. Do not use outside knowledge of this company.\n` +
+    `- Be concrete: name products, plans, prices, customers and figures where the material gives them.\n` +
+    `- Where the material does not support a section, write "Not stated on this page" rather than inventing.\n` +
+    `- No hedging filler ("leverages cutting-edge solutions"). Every sentence must carry information.\n\n` +
     `URL: ${extraction.url}\n` +
-    `Title: ${extraction.page_title}\n\n` +
-    `AI summary of the page:\n${extraction.ai_summary || "(none)"}\n\n` +
-    `Headings:\n${headings || "(none)"}\n`
+    `Title: ${extraction.page_title}\n` +
+    (extraction.ai_summary ? `\nAnalyst summary of the page:\n${extraction.ai_summary}\n` : "") +
+    facts +
+    (body
+      ? `\nPAGE CONTENT:\n${body}\n`
+      : `\nPage structure only (no body text was captured — stay descriptive, claim nothing specific):\n${headings || "(none)"}\n`)
   );
 }
 
@@ -341,27 +449,52 @@ async function mockContent(extraction, format) {
   );
 }
 
-async function realContent(extraction, format) {
+/**
+ * Generate marketing/analysis content, reporting HOW it went.
+ * @returns {Promise<{ok:boolean, text:string, code?:string, hint?:string, mocked?:boolean}>}
+ */
+export async function generateContentDetailed(extraction, format) {
+  if (MOCK_MODE) {
+    return { ok: true, text: await mockContent(extraction, format), mocked: true };
+  }
   try {
-    const text = await callAI(
+    const r = await callAI(
       [{ role: "user", content: buildContentPrompt(extraction, format) }],
-      1024
+      // Raised from 1024: a competitive brief or SEO outline truncated
+      // mid-sentence reads as a broken product, and the tokens are cheap
+      // relative to a deliverable somebody forwards to a client.
+      4096,
+      { area: "synthesis" },
     );
-    return text || (await mockContent(extraction, format));
+    if (r.text) return { ok: true, text: r.text, provider: r.provider, model: r.model };
+    return { ok: false, text: "", code: "empty", hint: "The AI returned no content." };
   } catch (err) {
-    console.warn("[DatIQ] AI content generation unavailable, using fallback:", err?.message);
-    return mockContent(extraction, format);
+    const failure = describeAiFailure(err);
+    console.warn("[DatIQ] AI content generation failed:", failure.code, err?.message);
+    return { ...failure, text: "" };
   }
 }
 
 /**
- * Generate marketing content from a saved extraction.
+ * Generate content from a saved extraction.
+ *
+ * THROWS in live mode when AI is unavailable, because every caller of this
+ * function renders its result as the user's requested deliverable — silently
+ * substituting fixture prose there is the fabrication this refactor removes.
+ * Callers already have try/catch around it.
  * @param {object} extraction
  * @param {{key:string, instruction:string}} format - one of CONTENT_FORMATS
  * @returns {Promise<string>} markdown content
  */
 export async function generateContent(extraction, format) {
-  return hasAI ? realContent(extraction, format) : mockContent(extraction, format);
+  const r = await generateContentDetailed(extraction, format);
+  if (!r.ok) {
+    const err = new Error(r.hint || "AI content generation is unavailable.");
+    err.code = r.code;
+    err.aiUnavailable = true;
+    throw err;
+  }
+  return r.text;
 }
 
 // Re-export so callers can import categorization helpers from one place.

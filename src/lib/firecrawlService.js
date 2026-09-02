@@ -108,17 +108,28 @@ async function realScrape(url, options = {}) {
     page_title: data.metadata?.title || parsed.page_title,
     headings: parsed.headings,
     links: parsed.links,
+    // THE PAGE BODY. Structure-preserving text from the server (headings,
+    // list items, table rows intact). Every client-side AI prompt used to see
+    // only `headings` and `links`, which is why summaries described a table of
+    // contents and generated content had no facts to work from.
+    page_text: data.text || "",
+    page_text_meta: data.textMeta || null,
   };
-  if (options.customPrompt) {
+  if (options.customPrompt || options.enrichKey) {
     result.custom_extraction =
       data.json || data.extract || data.llm_extraction || null;
-    // Carry WHY an extraction came back empty. Without this the UI can only
-    // say "No data returned", which reads identically whether the server has
-    // no AI key, the AI chain errored, or the page genuinely has nothing to
-    // extract — three very different things to act on.
-    if (raw?._enrichment?.reason) {
-      result.custom_extraction_reason = raw._enrichment.reason;
+    // Carry WHY an extraction came back empty, and HOW a successful one was
+    // produced. Without this the UI can only say "No data returned", which
+    // reads identically whether the server has no AI key, the provider account
+    // is out of credit, the reply was unparseable, or the page genuinely has
+    // nothing — four different things to act on.
+    if (raw?._enrichment) {
+      result.enrichment_meta = raw._enrichment;
+      if (raw._enrichment.ok === false && raw._enrichment.reason) {
+        result.custom_extraction_reason = raw._enrichment.reason;
+      }
     }
+    if (raw?._relatedPagesScanned) result.related_pages_scanned = raw._relatedPagesScanned;
   }
   // F36 — headless attribution. Surfaced in the UI so the user knows
   // whether JS was actually executed.

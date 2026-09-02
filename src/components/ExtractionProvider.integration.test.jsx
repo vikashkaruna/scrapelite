@@ -48,8 +48,13 @@ vi.mock("../lib/firecrawlService.js", () => ({
 // wall-clock time.
 vi.mock("../lib/aiService.js", () => ({
   summarize: vi.fn(async () => "Mock summary"),
+  // summarizeDetailed is what the provider actually calls now: the summary
+  // carries whether it SUCCEEDED, so a provider outage can be reported rather
+  // than papered over with fixture prose.
+  summarizeDetailed: vi.fn(async () => ({ ok: true, text: "Mock summary" })),
   categorizeLinks: vi.fn(async (links) => links || []),
   generateContent: vi.fn(async () => "Mock generated content"),
+  generateContentDetailed: vi.fn(async () => ({ ok: true, text: "Mock generated content" })),
   CONTENT_FORMATS: [],
 }));
 

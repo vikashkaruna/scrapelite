@@ -281,11 +281,16 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     // contains the customPrompt as the instruction.
     expect(runChainMock).toHaveBeenCalledTimes(1);
     const messages = runChainMock.mock.calls[0][0];
-    expect(messages).toHaveLength(1);
-    expect(messages[0].role).toBe("user");
-    expect(messages[0].content).toMatch(/INSTRUCTION:/);
-    expect(messages[0].content).toMatch(/Extract the names/);
-    expect(messages[0].content).toMatch(/Acme Inc/); // the page title made it through
+    // A system turn now carries the "report only what the page states, an
+    // honest empty field beats an invented one" contract, and the user turn
+    // carries the instruction plus the page content.
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).toMatch(/never/i);
+    expect(messages[1].role).toBe("user");
+    expect(messages[1].content).toMatch(/USER INSTRUCTION:/);
+    expect(messages[1].content).toMatch(/Extract the names/);
+    expect(messages[1].content).toMatch(/Acme Inc/); // the page title made it through
   });
 
   it("tolerates a ```json fenced AI reply (parses the inner JSON anyway)", async () => {
@@ -515,13 +520,20 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     expect(JSON.parse(r.body).data.json).toBeUndefined();
   });
 
-  // 2026-08-13. An empty enrichment used to be a single indistinguishable
-  // outcome: "No data returned for this capability", shown identically whether
-  // the server had no AI key at all, the provider was down, or the page simply
-  // had no pricing on it. Only the first is actionable, and it was the likely
-  // cause all along — so users kept reporting "none of the Quick enrichment
-  // buttons work" while every fix addressed a different layer.
-  describe("empty enrichment carries WHY (2026-08-13)", () => {
+  // An empty enrichment used to be a single indistinguishable outcome: "No
+  // data returned for this capability", shown identically whether the server
+  // had no AI key, the provider was down, the account was out of credit, the
+  // reply was unparseable, or the page simply had no pricing on it. Only some
+  // of those are actionable, and collapsing them is why "none of the Quick
+  // enrichment buttons work" survived several rounds of fixes.
+  describe("empty enrichment carries WHY", () => {
+    // Real content, not "<html></html>" — a document with no readable text is
+    // now its OWN reason (page_no_content), so an empty fixture would test the
+    // content gate instead of the reason under test.
+    const PAGE = "<html><head><title>Acme</title></head><body><main>" +
+      "<h1>Acme Inc</h1><p>We sell widgets to enterprise buyers across Europe " +
+      "and North America. Our platform handles procurement end to end.</p>" +
+      "</main></body></html>";
     const emptyPageEvent = {
       httpMethod: "POST",
       body: JSON.stringify({
@@ -536,45 +548,94 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
     });
 
     it("reason=ai_not_configured when no provider key is set", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
       const runChainMock = vi.fn();
       const h = await loadHandlerWithAI(runChainMock, () => ({
         gemini: false, anthropic: false, openai: false,
       }));
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment).toEqual({ ok: false, reason: "ai_not_configured" });
+      expect(body._enrichment.ok).toBe(false);
+      expect(body._enrichment.reason).toBe("ai_not_configured");
       expect(runChainMock).not.toHaveBeenCalled();
     });
 
     it("reason=ai_chain_failed when the provider throws", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
       const runChainMock = vi.fn().mockRejectedValue(new Error("upstream 500"));
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment).toEqual({ ok: false, reason: "ai_chain_failed" });
+      expect(body._enrichment.reason).toBe("ai_chain_failed");
     });
 
-    it("reason=no_match when the AI answers but finds nothing", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+    // The production outage: three keys PRESENT, all three dead. The chain
+    // reports errorCode "no_credit"; the user must be told to top up, not
+    // told their page is empty.
+    it("reason=ai_no_credit when every provider is out of credit", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
+      const runChainMock = vi.fn().mockResolvedValue({
+        ok: false, errorCode: "no_credit",
+        attempts: [{ provider: "anthropic", code: "no_credit", error: "credit balance is too low" }],
+      });
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment.reason).toBe("ai_no_credit");
+      expect(body._enrichment.attempts[0].provider).toBe("anthropic");
+    });
+
+    it("reason=ai_bad_key when the key is present and rejected", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
+      const runChainMock = vi.fn().mockResolvedValue({ ok: false, errorCode: "bad_key" });
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment.reason).toBe("ai_bad_key");
+    });
+
+    it("reason=ai_unparseable when the model answers with prose", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
+      const runChainMock = vi.fn().mockResolvedValue({
+        ok: true, text: "I'm sorry, I could not find that on the page.",
+      });
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment.reason).toBe("ai_unparseable");
+    });
+
+    it("reason=page_no_content when the scrape produced nothing readable", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("<html><body></body></html>", { status: 200 }));
+      const runChainMock = vi.fn();
+      const h = await loadHandlerWithAI(runChainMock);
+      const body = JSON.parse((await h(emptyPageEvent)).body);
+      expect(body._enrichment.reason).toBe("page_no_content");
+      // No point spending a model call on a page with no text.
+      expect(runChainMock).not.toHaveBeenCalled();
+    });
+
+    it("reason=no_match only when the AI genuinely read the page and found nothing", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
       const runChainMock = vi.fn().mockResolvedValue({ ok: true, text: "{}" });
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body._enrichment).toEqual({ ok: false, reason: "no_match" });
+      expect(body._enrichment.reason).toBe("no_match");
     });
 
-    it("is ABSENT on success, so existing clients are unaffected", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
-      const runChainMock = vi
-        .fn()
-        .mockResolvedValue({ ok: true, text: JSON.stringify({ plans: ["free"] }) });
+    it("reports ok:true with provider, model and fact count on success", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
+      const runChainMock = vi.fn().mockResolvedValue({
+        ok: true, provider: "gemini", model: "gemini-2.5-pro", structured: true,
+        json: { plans: [{ name: "Free" }] },
+        text: JSON.stringify({ plans: [{ name: "Free" }] }),
+      });
       const h = await loadHandlerWithAI(runChainMock);
       const body = JSON.parse((await h(emptyPageEvent)).body);
-      expect(body.data.json).toEqual({ plans: ["free"] });
-      expect(body._enrichment).toBeUndefined();
+      expect(body.data.json).toEqual({ plans: [{ name: "Free" }] });
+      expect(body._enrichment.ok).toBe(true);
+      expect(body._enrichment.provider).toBe("gemini");
+      expect(body._enrichment.structured).toBe(true);
+      expect(body._enrichment.facts).toBeGreaterThan(0);
     });
 
-    it("is ABSENT when no customPrompt was asked for", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
+    it("is ABSENT when no customPrompt or enrichKey was asked for", async () => {
+      fetchMock.mockResolvedValueOnce(new Response(PAGE, { status: 200 }));
       const h = await loadHandlerWithAI(vi.fn());
       const r = await h({
         httpMethod: "POST",
@@ -583,18 +644,41 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       expect(JSON.parse(r.body)._enrichment).toBeUndefined();
     });
   });
+
+  // The page body is what every downstream AI prompt was missing.
+  describe("returns the page body text", () => {
+    it("carries structure-preserving text alongside the raw html", async () => {
+      process.env.SCRAPE_PROVIDER_ORDER = "direct";
+      delete process.env.FIRECRAWL_API_KEY;
+      fetchMock.mockResolvedValueOnce(new Response(
+        "<html><head><title>Acme</title></head><body><nav>Home About</nav><main>" +
+        "<h2>Plans</h2><table><tr><th>Plan</th><th>Price</th></tr>" +
+        "<tr><td>Pro</td><td>$29</td></tr></table>" +
+        "<p>Acme sells procurement software to enterprise buyers worldwide, " +
+        "covering sourcing, contracting and supplier management.</p>" +
+        "</main></body></html>", { status: 200 }));
+      const h = await loadHandlerWithAI(vi.fn());
+      const body = JSON.parse((await h({
+        httpMethod: "POST",
+        body: JSON.stringify({ url: "https://example.com" }),
+      })).body);
+      expect(body.data.text).toContain("## Plans");
+      // The table's row/column relationship survives — this is what makes a
+      // pricing grid extractable instead of "Pro $29 Business $79" soup.
+      expect(body.data.text).toContain("| Pro | $29 |");
+      expect(body.data.textMeta.chars).toBeGreaterThan(0);
+    });
+  });
 });
 
-// ── Related-page scanning ─────────────────────────────────────────────────────
+// ── Related-page gathering ────────────────────────────────────────────────────
 //
-// "Pricing & Plans" run against a homepage that has no pricing on it
-// (plans live on /pricing) used to report "no data returned" even though
-// the site plainly has the answer one link away. When the base page's own
-// AI extraction comes up empty AND the caller told us which capability this
-// is (options.enrichKey), the handler now looks at the base page's own links
-// for a same-domain match (RELATED_PAGE_HINTS) and gives the combined text
-// one more shot before giving up.
-describe("extract — related-page scanning (enrichKey)", () => {
+// "Pricing & Plans" run against a homepage that has no pricing on it (plans
+// live on /pricing) used to report "no data returned" even though the site
+// plainly has the answer one link away. Entity capabilities now gather their
+// same-domain subpages BEFORE the model call, so one AI call reasons over the
+// whole company surface instead of one page at a time.
+describe("extract — related-page gathering (enrichKey)", () => {
   async function loadHandlerWithAI(runChainImpl) {
     vi.doMock("../functions/lib/aiProviders.js", () => ({
       runChain: runChainImpl,
@@ -603,65 +687,76 @@ describe("extract — related-page scanning (enrichKey)", () => {
     return loadHandler();
   }
 
-  it("finds pricing on a linked /pricing page when the homepage has none", async () => {
+  const HOME =
+    "<html><head><title>Acme Inc</title></head><body><main>" +
+    "<h1>Acme Inc</h1><p>We build procurement software for enterprise teams.</p>" +
+    '<a href="/pricing">See our plans</a>' +
+    "</main></body></html>";
+  const PRICING =
+    "<html><head><title>Acme Pricing</title></head><body><main>" +
+    "<h1>Plans</h1>" +
+    "<p>Starter: $10/mo for small teams getting started with procurement.</p>" +
+    "<p>Pro: $30/mo per seat, adds approvals, supplier scoring and SSO.</p>" +
+    "<p>Enterprise: contact us for volume pricing and a dedicated CSM.</p>" +
+    "</main></body></html>";
+
+  it("reads the linked /pricing page in the SAME AI call as the homepage", async () => {
     process.env.SCRAPE_PROVIDER_ORDER = "direct";
     delete process.env.FIRECRAWL_API_KEY;
-
-    // Base page: no pricing content, but links to /pricing.
-    const homeHtml =
-      "<html><head><title>Acme Inc</title></head><body>" +
-      "<h1>Acme Inc</h1><p>We build software.</p>" +
-      '<a href="/pricing">See our plans</a>' +
-      "</body></html>";
-    // The related page: the actual pricing table.
-    const pricingHtml =
-      "<html><head><title>Acme Pricing</title></head><body>" +
-      "<p>Starter: $10/mo. Pro: $30/mo. Enterprise: contact us.</p>" +
-      "</body></html>";
-
     fetchMock
-      .mockResolvedValueOnce(new Response(homeHtml, { status: 200 })) // base scrape (direct)
-      .mockResolvedValueOnce(new Response(pricingHtml, { status: 200 })); // related-page fetch
+      .mockResolvedValueOnce(new Response(HOME, { status: 200 }))     // base scrape
+      .mockResolvedValueOnce(new Response(PRICING, { status: 200 })); // related fetch
 
-    const aiJson = { plans: ["Starter $10/mo", "Pro $30/mo", "Enterprise: contact us"] };
-    const runChainMock = vi
-      .fn()
-      // 1st call: base page alone — nothing to extract.
-      .mockResolvedValueOnce({ ok: false, error: "empty response" })
-      // 2nd call: base + related page combined — finds it.
-      .mockResolvedValueOnce({ ok: true, text: JSON.stringify(aiJson) });
+    const aiJson = { plans: [{ name: "Starter", price: "$10" }, { name: "Pro", price: "$30" }] };
+    const runChainMock = vi.fn().mockResolvedValue({ ok: true, json: aiJson, text: JSON.stringify(aiJson) });
     const h = await loadHandlerWithAI(runChainMock);
     const r = await h({
       httpMethod: "POST",
       body: JSON.stringify({
         url: "https://acme.com",
-        options: {
-          customPrompt: "Extract every pricing tier.",
-          enrichKey: "pricing",
-        },
+        options: { customPrompt: "Extract every pricing tier.", enrichKey: "pricing" },
       }),
     });
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.body);
     expect(body.data.json).toEqual(aiJson);
-    expect(body._aiExtractFallback).toBe(true);
     expect(body._relatedPagesScanned).toEqual(["https://acme.com/pricing"]);
-    expect(runChainMock).toHaveBeenCalledTimes(2);
-    // The second (successful) call's prompt carries text from BOTH pages.
-    const secondCallText = runChainMock.mock.calls[1][0][0].content;
-    expect(secondCallText).toMatch(/We build software/);
-    expect(secondCallText).toMatch(/Starter: \$10\/mo/);
-    // The related fetch went to the resolved absolute URL, not a relative path.
+    // ONE call, not two: the subpage is gathered up front, not after a failure.
+    expect(runChainMock).toHaveBeenCalledTimes(1);
+    const prompt = runChainMock.mock.calls[0][0].at(-1).content;
+    expect(prompt).toMatch(/We build procurement software/);
+    expect(prompt).toMatch(/Starter: \$10\/mo/);
+    // Page markers let the model attribute evidence to the right URL.
+    expect(prompt).toMatch(/--- PAGE: https:\/\/acme\.com\/pricing ---/);
     expect(fetchMock.mock.calls[2][0]).toBe("https://acme.com/pricing");
   });
 
-  it("does not scan related pages when no enrichKey was supplied", async () => {
+  it("drives the model with the capability's JSON Schema", async () => {
     process.env.SCRAPE_PROVIDER_ORDER = "direct";
     delete process.env.FIRECRAWL_API_KEY;
-    const homeHtml =
-      '<html><head><title>Acme</title></head><body><a href="/pricing">Plans</a></body></html>';
-    fetchMock.mockResolvedValueOnce(new Response(homeHtml, { status: 200 }));
-    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    fetchMock
+      .mockResolvedValueOnce(new Response(HOME, { status: 200 }))
+      .mockResolvedValueOnce(new Response(PRICING, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValue({ ok: true, json: { plans: [{ name: "Pro" }] } });
+    const h = await loadHandlerWithAI(runChainMock);
+    await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: { customPrompt: "Extract every pricing tier.", enrichKey: "pricing" },
+      }),
+    });
+    const opts = runChainMock.mock.calls[0][2];
+    expect(opts.area).toBe("enrichment");
+    expect(opts.schema.properties.plans).toBeTruthy();
+    expect(opts.schema.properties.evidence).toBeTruthy();
+  });
+
+  it("does not gather related pages when no enrichKey was supplied", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    fetchMock.mockResolvedValueOnce(new Response(HOME, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValue({ ok: false, errorCode: "error" });
     const h = await loadHandlerWithAI(runChainMock);
     const r = await h({
       httpMethod: "POST",
@@ -671,56 +766,79 @@ describe("extract — related-page scanning (enrichKey)", () => {
       }),
     });
     const body = JSON.parse(r.body);
-    expect(body._enrichment).toEqual({ ok: false, reason: "ai_chain_failed" });
+    expect(body._enrichment.reason).toBe("ai_chain_failed");
     expect(body._relatedPagesScanned).toBeUndefined();
-    // Only ONE AI call (the base page) and only ONE scrape fetch — no
-    // related-page fetch was attempted.
     expect(runChainMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2); // robots.txt + base scrape only
   });
 
-  it("reports no_match (not a second AI call) when no related link matches the hints", async () => {
+  // ── THE REGRESSION THAT HID A TOTAL AI OUTAGE ─────────────────────────────
+  // `enrichmentReason = relatedRes.reason || aiRes.reason || "no_match"` let a
+  // related-page scan that found no candidate links overwrite a real
+  // ai_chain_failed with "no_match". In production, with all three AI keys
+  // dead, that reported "the AI read this page and found nothing" for every
+  // capability whose hints matched no link — which is most of them. The user
+  // was told their pages were empty for weeks while the real cause was
+  // billing. Infrastructure reasons must outrank absence reasons.
+  it("does NOT let a fruitless related-page scan mask an AI failure", async () => {
     process.env.SCRAPE_PROVIDER_ORDER = "direct";
     delete process.env.FIRECRAWL_API_KEY;
-    // No link on the page matches any pricing-related hint.
-    const homeHtml =
-      '<html><head><title>Acme</title></head><body><a href="/about">About us</a></body></html>';
-    fetchMock.mockResolvedValueOnce(new Response(homeHtml, { status: 200 }));
-    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    // No link matches any pricing hint, so the scan finds nothing to read.
+    fetchMock.mockResolvedValueOnce(new Response(
+      "<html><head><title>Acme</title></head><body><main><h1>Acme</h1>" +
+      "<p>We build procurement software for enterprise teams worldwide.</p>" +
+      '<a href="/careers">Careers</a></main></body></html>', { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValue({
+      ok: false, errorCode: "no_credit",
+      attempts: [{ provider: "anthropic", code: "no_credit" }],
+    });
     const h = await loadHandlerWithAI(runChainMock);
-    const r = await h({
+    const body = JSON.parse((await h({
       httpMethod: "POST",
       body: JSON.stringify({
         url: "https://acme.com",
         options: { customPrompt: "Extract every pricing tier.", enrichKey: "pricing" },
       }),
-    });
-    const body = JSON.parse(r.body);
-    // scanRelatedPages found no candidate link at all, so it reports its own
-    // "no_match" rather than the base page's ai_chain_failed reason.
-    expect(body._enrichment).toEqual({ ok: false, reason: "no_match" });
-    expect(body._relatedPagesScanned).toBeUndefined();
-    expect(runChainMock).toHaveBeenCalledTimes(1); // no related page to scan → no 2nd AI call
+    })).body);
+    expect(body._enrichment.reason).toBe("ai_no_credit");
+    expect(body._enrichment.reason).not.toBe("no_match");
+  });
+
+  it("does not burn extra fetches retrying when the failure is infrastructure", async () => {
+    process.env.SCRAPE_PROVIDER_ORDER = "direct";
+    delete process.env.FIRECRAWL_API_KEY;
+    // `social` has no hints, so nothing is gathered up front; the old code
+    // would still have run the consolation scan and relabelled the reason.
+    fetchMock.mockResolvedValueOnce(new Response(HOME, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValue({ ok: false, errorCode: "bad_key" });
+    const h = await loadHandlerWithAI(runChainMock);
+    const body = JSON.parse((await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        url: "https://acme.com",
+        options: { customPrompt: "Extract social links.", enrichKey: "social" },
+      }),
+    })).body);
+    expect(body._enrichment.reason).toBe("ai_bad_key");
+    expect(fetchMock).toHaveBeenCalledTimes(2); // robots + base scrape, nothing more
   });
 
   it("rejects an enrichKey that isn't a known capability", async () => {
     process.env.SCRAPE_PROVIDER_ORDER = "direct";
     delete process.env.FIRECRAWL_API_KEY;
-    fetchMock.mockResolvedValueOnce(new Response("<html></html>", { status: 200 }));
-    const runChainMock = vi.fn().mockResolvedValueOnce({ ok: false, error: "empty response" });
+    fetchMock.mockResolvedValueOnce(new Response(HOME, { status: 200 }));
+    const runChainMock = vi.fn().mockResolvedValue({ ok: false, errorCode: "error" });
     const h = await loadHandlerWithAI(runChainMock);
-    const r = await h({
+    const body = JSON.parse((await h({
       httpMethod: "POST",
       body: JSON.stringify({
         url: "https://acme.com",
         options: { customPrompt: "x", enrichKey: "'; DROP TABLE extractions;--" },
       }),
-    });
-    const body = JSON.parse(r.body);
-    // Unwhitelisted enrichKey is dropped silently — behaves exactly as if
-    // none was supplied, never reaches the related-page scanner.
+    })).body);
+    // Unwhitelisted key is dropped silently and behaves as if none was given.
     expect(body._relatedPagesScanned).toBeUndefined();
-    expect(runChainMock).toHaveBeenCalledTimes(1);
+    expect(body._enrichment.capability).toBe("custom");
   });
 });
 

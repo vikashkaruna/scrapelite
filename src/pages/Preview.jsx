@@ -148,13 +148,41 @@ export function emptyEnrichmentMessage(reason) {
   switch (reason) {
     case "ai_not_configured":
       return "AI extraction isn't configured on this server. An administrator needs to set GEMINI_API_KEY, AI_API_KEY, or OPENAI_API_KEY.";
+    // The three that a dead provider account actually produces. Each names the
+    // operator action, because for weeks these were all reported as "the AI
+    // read this page and found nothing" — a statement about the user's page
+    // that was really a statement about our billing.
+    case "ai_no_credit":
+      return "The AI provider account is out of credit, so nothing could be extracted. An administrator needs to top up billing. This is not a problem with your page.";
+    case "ai_bad_key":
+      return "The AI provider rejected our API key, so nothing could be extracted. An administrator needs to reissue it. This is not a problem with your page.";
+    case "ai_rate_limited":
+      return "The AI provider is rate-limiting us right now. Try Refresh in a moment — your page is fine.";
     case "ai_chain_failed":
       return "The AI provider couldn't be reached for this extraction. Try Refresh in a moment.";
+    case "ai_unparseable":
+      return "The AI answered but not in a readable form. Try Refresh — this usually succeeds on a retry.";
+    case "ai_empty_reply":
+      return "The AI returned an empty answer. Try Refresh in a moment.";
+    case "page_no_content":
+      return "We couldn't read any text from this page. It may render entirely in JavaScript — try again with JS rendering enabled.";
     case "no_match":
-      return "The AI read this page but found nothing matching this capability.";
+      return "The AI read this page and the pages it links to, and found nothing matching this capability.";
     default:
       return "No data returned for this capability.";
   }
+}
+
+/**
+ * Is this empty tab OUR fault or the page's? Drives whether the UI offers
+ * "Retry" (transient, ours) or explains that the page simply lacks the data.
+ * Anything that names an operator action is ours.
+ */
+export function isEnrichmentOurFault(reason) {
+  return [
+    "ai_not_configured", "ai_no_credit", "ai_bad_key", "ai_rate_limited",
+    "ai_chain_failed", "ai_unparseable", "ai_empty_reply", "page_no_content",
+  ].includes(reason);
 }
 
 export default function Preview() {

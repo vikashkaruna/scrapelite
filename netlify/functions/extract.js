@@ -2,21 +2,52 @@
 // Keeps all API keys server-side; never bundled into the browser.
 //
 // POST /api/extract
-//   Body: { url: string, options: { renderJs?, customPrompt?, mapMode? } }
-//   Response: normalised scrape JSON (html + metadata) or map (mapLinks[])
+//   Body: { url, options: { renderJs?, customPrompt?, mapMode?, enrichKey?, deep? } }
+//   Response: normalised scrape JSON (html + text + metadata) or map (mapLinks[])
 //
-// Provider chain (default): Firecrawl → Spider.cloud → Jina AI → Direct fetch
-// Override with SCRAPE_PROVIDER_ORDER env var (comma-separated, e.g. "spider,jina,direct").
-// Each provider is skipped automatically when its API key is absent (except Jina + Direct,
-// which work without a key at reduced rate limits).
+// Provider chain default: Firecrawl → Spider.cloud → Jina AI → Direct fetch.
+// See src/lib/providerRegistry.js — the shared catalogue the admin console and
+// the runtime both read. Override with SCRAPE_PROVIDER_ORDER.
 //
 // SSRF guard (C-01): every inbound URL is run through isPublicHttpUrl
-// before any provider HTTP call. Private IPs, non-HTTP(S) schemes, and
-// malformed URLs are rejected with 400.
+// before any provider HTTP call.
+//
+// ── WHAT CHANGED IN THE EXTRACTION BRAIN, AND WHY ───────────────────────────
+//
+// 1. SCHEMA-GUIDED, NOT PROSE-GUIDED. Capabilities now drive the model with a
+//    real JSON Schema through each provider's native structured-output mode
+//    (see extractionSchemas.js). The old path asked for JSON in prose and ran
+//    the reply through a loose parser; when the parser lost, the user was told
+//    "the AI read this page and found nothing" — a sentence about our parser,
+//    reported as a fact about their page.
+//
+// 2. THE REASON NO LONGER LIES. `enrichmentReason` used to be
+//    `relatedRes.reason || aiRes.reason || "no_match"`, so a related-page scan
+//    that found no candidate links OVERWROTE a genuine `ai_chain_failed` with
+//    `no_match`. With all three AI providers dead in production, every
+//    capability whose hints came up empty (custom, social, and any page
+//    without a matching subpage) reported "this page has nothing" while the
+//    truth was "the AI account is out of credit". Infrastructure reasons now
+//    outrank absence reasons, always — see pickReason().
+//
+// 3. RELATED PAGES ARE READ UP FRONT, NOT AS A CONSOLATION PRIZE. Leadership
+//    lives on /about, pricing on /pricing, contacts on /contact. Scanning them
+//    only after the homepage failed meant the good answer cost two round trips
+//    and usually never happened. Entity capabilities now gather their subpages
+//    before the single AI call, so the model reasons over the whole company
+//    surface at once instead of one page at a time.
+//
+// 4. THE PAGE BODY IS RETURNED. `data.text` carries structure-preserving
+//    content (headings, list items, table rows) so the browser's summariser
+//    and content generator stop working from a table of contents.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
 import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
 import { RELATED_PAGE_HINTS } from "../../src/lib/extractionPresets.js";
+import {
+  resolveExtractionPlan, isSchemaResultEmpty, countSchemaFacts,
+} from "../../src/lib/extractionSchemas.js";
+import { extractPageContent } from "./lib/pageContent.js";
 import { getCached, setCached } from "./lib/resultCacheStore.js";
 import { buildCacheKey, isCacheable } from "../../src/lib/resultCache.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -42,93 +73,170 @@ function respond(statusCode, body, extraHeaders = {}) {
   };
 }
 
-// HTML → plain text (used by the AI-extraction fallback so the prompt
-// stays within the model context window). Tags stripped, scripts/styles
-// removed first so we don't pay tokens for JS/CSS. Whitespace is
-// collapsed; entities are decoded. Returns "" on any failure.
-function htmlToPlainText(html) {
-  if (!html || typeof html !== "string") return "";
-  try {
-    return html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, " ")
-      .trim();
-  } catch {
-    return "";
+// ── Budgets ─────────────────────────────────────────────────────────────────
+// Generous on purpose. The old 24k-character cap was sized for a flash model
+// and a flat word-bag; with structure-preserving text and a deep-tier model,
+// truncating a pricing page mid-table is the expensive mistake, not the tokens.
+const AI_EXTRACT_MAX_TOKENS   = 8192;
+const AI_EXTRACT_TEXT_CHARS   = 90_000;  // whole-page budget across base + related
+const BASE_PAGE_TEXT_CHARS    = 45_000;
+const RELATED_PAGE_TEXT_CHARS = 18_000;
+const RELATED_PAGE_MAX        = 3;
+const RELATED_FETCH_TIMEOUT_MS = 9000;
+
+// Capabilities whose answer routinely lives on a DIFFERENT page of the same
+// site than the one the user pasted. These gather subpages before the AI call
+// rather than after a failure. `social` is absent deliberately — profile links
+// sit in the header/footer of every page, so a subpage adds cost and nothing
+// else. `custom` is absent because free text has no reliable subpage signal.
+const ENTITY_CAPABILITIES = new Set(["contacts", "leadership", "mission", "pricing"]);
+
+// ── Reason vocabulary ───────────────────────────────────────────────────────
+// Split out of the single overloaded "no_match", which used to mean any of:
+// the AI never ran, the AI returned nothing, the AI returned unparseable text,
+// or the page genuinely lacks the data. Those are four different actions for
+// the operator and the user, and collapsing them is why a total provider
+// outage was invisible for weeks.
+export const ENRICH_REASON = {
+  NOT_CONFIGURED: "ai_not_configured", // no provider key set at all
+  CHAIN_FAILED:   "ai_chain_failed",   // providers reachable-ish but all failed
+  NO_CREDIT:      "ai_no_credit",      // key valid, account unfunded
+  BAD_KEY:        "ai_bad_key",        // key present and rejected
+  RATE_LIMITED:   "ai_rate_limited",
+  EMPTY_REPLY:    "ai_empty_reply",    // model answered with nothing
+  UNPARSEABLE:    "ai_unparseable",    // model answered, we could not read it
+  NO_CONTENT:     "page_no_content",   // the scrape produced no readable text
+  ABSENT:         "no_match",          // the page genuinely does not have it
+};
+
+// Infrastructure reasons describe US; absence reasons describe THEIR page.
+// A reason about us must never be replaced by a reason about them — that
+// substitution is the exact bug this ordering exists to prevent.
+const INFRA_REASONS = new Set([
+  ENRICH_REASON.NOT_CONFIGURED, ENRICH_REASON.CHAIN_FAILED, ENRICH_REASON.NO_CREDIT,
+  ENRICH_REASON.BAD_KEY, ENRICH_REASON.RATE_LIMITED, ENRICH_REASON.EMPTY_REPLY,
+  ENRICH_REASON.UNPARSEABLE, ENRICH_REASON.NO_CONTENT,
+]);
+
+/** Pick the most informative reason from a set of attempts. Infra always wins. */
+export function pickReason(...reasons) {
+  const seen = reasons.filter(Boolean);
+  const infra = seen.find((r) => INFRA_REASONS.has(r));
+  return infra || seen[0] || ENRICH_REASON.ABSENT;
+}
+
+/** Map an aiProviders error code onto the enrichment vocabulary. */
+function reasonForChainCode(code) {
+  switch (code) {
+    case "no_credit":     return ENRICH_REASON.NO_CREDIT;
+    case "bad_key":       return ENRICH_REASON.BAD_KEY;
+    case "rate_limited":  return ENRICH_REASON.RATE_LIMITED;
+    case "no_key":        return ENRICH_REASON.NOT_CONFIGURED;
+    default:              return ENRICH_REASON.CHAIN_FAILED;
   }
 }
 
-// AI-extraction fallback for customPrompt when the scrape chain returned
-// no customExtraction. Only Firecrawl (and Spider, theoretically) support
-// server-side JSON extraction; Spider/Jina/Direct all return null. Without
-// this fallback, "Find Contact Info" / "Leadership & Board" / etc. silently
-// saved an empty enrichment on any chain that fell through to a
-// non-Firecrawl provider — the user saw "No data returned for this
-// capability" even on a perfectly valid URL. Now the function asks the
-// multi-provider AI chain to extract the JSON from the page text using the
-// user's customPrompt as the schema instruction.
-const AI_EXTRACT_MAX_TOKENS = 2048;
-const AI_EXTRACT_TEXT_CHARS = 24000; // ~6k tokens of plain text — well within every model
+// ── Structured extraction ───────────────────────────────────────────────────
 
-async function extractJsonWithAI({ prompt, title, text }) {
+/**
+ * Drive the AI chain with a capability schema over the gathered page text.
+ * Returns { ok, data, reason?, provider?, model?, structured? }.
+ */
+async function extractStructuredWithAI({ plan, title, url, text, pagesRead }) {
   const presence = keyPresence();
   if (!Object.values(presence).some(Boolean)) {
-    return { ok: false, reason: "ai_not_configured" };
+    return { ok: false, reason: ENRICH_REASON.NOT_CONFIGURED };
   }
-  const trimmed = (text || "").slice(0, AI_EXTRACT_TEXT_CHARS);
+  if (!text || text.trim().length < 40) {
+    return { ok: false, reason: ENRICH_REASON.NO_CONTENT };
+  }
+
+  const sourceNote = pagesRead && pagesRead.length > 1
+    ? `\n\nThe content below is ${pagesRead.length} pages from this site, separated by "--- PAGE: <url> ---" markers. ` +
+      `Treat them as one company surface. Attribute each evidence quote to the page it came from.`
+    : "";
+
   const messages = [
+    {
+      role: "system",
+      content:
+        "You are a precise B2B data extractor working for an intelligence platform. " +
+        "You only report what the supplied page content actually states. " +
+        "You never infer a fact from prior knowledge of the company, and you never " +
+        "fill a field to look complete. An honest empty field is correct; an invented one is a defect.",
+    },
     {
       role: "user",
       content:
-        `You are a precise data extractor. Apply the instruction below to the page ` +
-        `content and return ONLY a JSON object. No markdown fences, no explanations, ` +
-        `no preamble — just the JSON.\n\n` +
-        `INSTRUCTION:\n${prompt}\n\n` +
-        `PAGE TITLE: ${title || ""}\n\n` +
-        `PAGE CONTENT (truncated):\n${trimmed}`,
+        `${plan.instruction}${sourceNote}\n\n` +
+        `PAGE URL: ${url}\n` +
+        `PAGE TITLE: ${title || "(untitled)"}\n\n` +
+        `PAGE CONTENT:\n${text}`,
     },
   ];
+
   let r;
   try {
-    r = await runChain(messages, AI_EXTRACT_MAX_TOKENS);
+    r = await runChain(messages, AI_EXTRACT_MAX_TOKENS, {
+      area: "enrichment",
+      schema: plan.schema,
+    });
   } catch (err) {
-    console.warn("[DatIQ] AI extraction runChain threw:", err?.message || err);
-    return { ok: false, reason: "ai_chain_failed" };
+    console.warn("[DatIQ] enrichment runChain threw:", err?.message || err);
+    return { ok: false, reason: ENRICH_REASON.CHAIN_FAILED };
   }
   if (!r || !r.ok) {
-    console.warn("[DatIQ] AI extraction provider chain failed:", r?.error, r?.attempts);
-    return { ok: false, reason: "ai_chain_failed", attempts: r?.attempts };
+    console.warn("[DatIQ] enrichment chain failed:", r?.errorCode, JSON.stringify(r?.attempts || []));
+    return { ok: false, reason: reasonForChainCode(r?.errorCode), attempts: r?.attempts };
   }
-  if (!r.text || !r.text.trim()) {
-    return { ok: false, reason: "no_match" };
+
+  // Native structured output hands back a parsed object; everything else still
+  // goes through the loose parser, which is now a fallback rather than the
+  // primary mechanism.
+  const parsed = r.json ?? parseJsonLoose(r.text);
+  if (parsed == null) {
+    console.warn("[DatIQ] enrichment reply unparseable from", r.provider, r.model);
+    return { ok: false, reason: ENRICH_REASON.UNPARSEABLE, provider: r.provider, model: r.model };
   }
-  const parsed = parseJsonLoose(r.text);
-  if (!parsed || isEmptyExtraction(parsed)) {
-    return { ok: false, reason: "no_match" };
+  // The custom schema wraps its payload; capability schemas do not.
+  const payload = unwrapCustomResult(parsed);
+  if (isSchemaResultEmpty(payload)) {
+    return { ok: false, reason: ENRICH_REASON.ABSENT, provider: r.provider, model: r.model };
   }
-  return { ok: true, data: parsed };
+  return {
+    ok: true, data: payload,
+    provider: r.provider, model: r.model, structured: Boolean(r.structured),
+    facts: countSchemaFacts(payload),
+  };
+}
+
+/**
+ * The custom schema returns { result, items, not_found, evidence }. Flatten it
+ * so a free-text extraction renders like any other tab, while keeping `items`
+ * (the listing case — a Product Hunt homepage is 30 products, not one) and the
+ * evidence contract intact.
+ */
+function unwrapCustomResult(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
+  const hasWrapper = "result" in parsed || "items" in parsed;
+  if (!hasWrapper) return parsed;
+  const out = {};
+  if (parsed.result && typeof parsed.result === "object" && Object.keys(parsed.result).length) {
+    Object.assign(out, parsed.result);
+  }
+  if (Array.isArray(parsed.items) && parsed.items.length) out.items = parsed.items;
+  if (Array.isArray(parsed.not_found) && parsed.not_found.length) out.not_found = parsed.not_found;
+  if (Array.isArray(parsed.evidence) && parsed.evidence.length) out.evidence = parsed.evidence;
+  return Object.keys(out).length ? out : parsed;
 }
 
 function parseJsonLoose(text) {
   if (!text) return null;
   const trimmed = String(text).trim();
-  // Fast path: the whole reply IS JSON.
   try {
     const v = JSON.parse(trimmed);
     return v && typeof v === "object" ? v : null;
   } catch { /* fall through to the loose extractors */ }
-  // Strip ```json ... ``` or ``` ... ``` fences the model sometimes adds
-  // despite the explicit "no fences" instruction.
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) {
     try {
@@ -136,7 +244,6 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* fall through */ }
   }
-  // Find the outermost JSON object OR array in the reply.
   const firstObj = trimmed.indexOf("{");
   const lastObj = trimmed.lastIndexOf("}");
   const firstArr = trimmed.indexOf("[");
@@ -150,8 +257,6 @@ function parseJsonLoose(text) {
       return v && typeof v === "object" ? v : null;
     } catch { /* try the next candidate */ }
   }
-
-  // Structured key-value lines fallback (requires at least 2 distinct key-value pairs)
   const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   if (lines.length >= 2 || lines.some((l) => /^[-*•]/.test(l))) {
     const kvObj = {};
@@ -159,108 +264,81 @@ function parseJsonLoose(text) {
     for (const line of lines) {
       const m = line.match(/^[-*•]?\s*([A-Za-z0-9_ ]{2,40})\s*:\s*(.+)$/);
       if (m && m[1] && m[2]) {
-        const k = m[1].trim().toLowerCase().replace(/\s+/g, "_");
-        kvObj[k] = m[2].trim();
+        kvObj[m[1].trim().toLowerCase().replace(/\s+/g, "_")] = m[2].trim();
         count++;
       }
     }
-    if (count >= 2) {
-      return kvObj;
-    }
+    if (count >= 2) return kvObj;
   }
-
   return null;
 }
 
-// ── Related-page scanning ───────────────────────────────────────────────────
-//
-// A capability like "Pricing & Plans" or "Leadership & Board" is routinely
-// asked of a homepage that does not itself carry that data — plans live on
-// /pricing, leadership on /about or /team. Extracting from the ONE URL the
-// user gave us and reporting "no data returned" when the site plainly has
-// the answer one click away is the gap this closes: when the base page's own
-// content comes up empty, look at that page's OWN links for a same-domain
-// subpage matching the requested capability (RELATED_PAGE_HINTS, shared with
-// the client so labeling and scanning agree), fetch up to a couple of them,
-// and give the combined text one more shot through the AI extractor before
-// giving up.
-const RELATED_PAGE_MAX_CANDIDATES = 2;
-const RELATED_PAGE_FETCH_TIMEOUT_MS = 8000;
-const RELATED_PAGE_TEXT_CHARS_EACH = 8000; // keeps 2 related pages + the base page within AI_EXTRACT_TEXT_CHARS
+// ── Related-page gathering ──────────────────────────────────────────────────
 
-// Decode the handful of HTML entities link text realistically contains.
-function decodeEntities(s) {
+function decodeAnchorEntities(s) {
   return String(s || "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 }
 
-// Pull same-domain candidate links out of the base page's own HTML and score
-// them against the capability's hint keywords (checked against both the URL
-// path and the visible link text — a "Meet the team" link with an href of
-// /people/ matches on text, not path). Returns URLs sorted best-match-first.
-function findRelatedPageLinks(html, baseUrl, hints) {
+/**
+ * Score the base page's OWN same-domain links against the capability's hint
+ * keywords, checked against both the path and the visible link text — a
+ * "Meet the team" link with href /people/ matches on text, not path.
+ */
+export function findRelatedPageLinks(html, baseUrl, hints, limit = RELATED_PAGE_MAX) {
   if (!html || !hints || hints.length === 0) return [];
   let origin;
-  try {
-    origin = new URL(baseUrl).origin;
-  } catch {
-    return [];
-  }
-  const seen = new Map(); // absolute url -> best score
+  try { origin = new URL(baseUrl).origin; } catch { return []; }
+  const seen = new Map();
   const anchorRe = /<a\s[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = anchorRe.exec(html))) {
-    const rawHref = m[1];
-    const text = decodeEntities(m[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim().toLowerCase();
+    const text = decodeAnchorEntities(m[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim().toLowerCase();
     let abs;
-    try {
-      abs = new URL(rawHref, baseUrl);
-    } catch {
-      continue;
-    }
-    if (abs.origin !== origin) continue; // same domain only — "related pages" means this site
+    try { abs = new URL(m[1], baseUrl); } catch { continue; }
+    if (abs.origin !== origin) continue;
     if (!/^https?:$/.test(abs.protocol)) continue;
     abs.hash = "";
     const absStr = abs.toString();
     if (absStr === baseUrl) continue;
+    // Skip obvious non-content endpoints that match on a stray keyword.
+    if (/\.(pdf|zip|png|jpe?g|gif|svg|webp|mp4|css|js)$/i.test(abs.pathname)) continue;
     const haystack = `${abs.pathname.toLowerCase()} ${text}`;
     let bestScore = 0;
     for (let i = 0; i < hints.length; i++) {
-      if (haystack.includes(hints[i])) {
-        // Earlier hints are more specific (see RELATED_PAGE_HINTS ordering);
-        // score them higher so "pricing" outranks a looser fallback term.
-        bestScore = Math.max(bestScore, hints.length - i);
-      }
+      if (haystack.includes(hints[i])) bestScore = Math.max(bestScore, hints.length - i);
     }
     if (bestScore > 0) {
-      const prev = seen.get(absStr) || 0;
-      if (bestScore > prev) seen.set(absStr, bestScore);
+      // A shallow path is a better bet than a deep one: /about beats
+      // /blog/2019/about-our-rebrand for "who runs this company".
+      const depth = abs.pathname.split("/").filter(Boolean).length;
+      const score = bestScore * 10 - Math.min(depth, 5);
+      if (score > (seen.get(absStr) || -Infinity)) seen.set(absStr, score);
     }
   }
-  return [...seen.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, RELATED_PAGE_MAX_CANDIDATES)
-    .map(([url]) => url);
+  return [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([url]) => url);
 }
 
-// Best-effort fetch of one related page's plain text. Never throws — a
-// candidate that fails (blocked, slow, 404) is simply skipped; this is a
-// bonus attempt on top of an extraction that already failed, not a new
-// entry point that needs its own error surface.
+/** Best-effort fetch of one related page's readable text. Never throws. */
 async function fetchRelatedPageText(url) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), RELATED_PAGE_FETCH_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), RELATED_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetchPublicUrl(url, { signal: ctrl.signal });
+    const res = await fetchPublicUrl(url, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; DatIQBot/1.0; +https://datiq.app)",
+        Accept: "text/html,application/xhtml+xml,*/*",
+      },
+      redirect: "follow",
+    });
     if (!res.ok) return null;
     const html = await res.text();
-    const text = htmlToPlainText(html).slice(0, RELATED_PAGE_TEXT_CHARS_EACH);
-    return text || null;
+    const { text } = extractPageContent(html, { maxChars: RELATED_PAGE_TEXT_CHARS });
+    // 80 chars filters redirect stubs, error shells and empty SPA frames
+    // without discarding a genuinely terse contact or team page.
+    return text && text.length > 80 ? { url, text } : null;
   } catch {
     return null;
   } finally {
@@ -268,38 +346,40 @@ async function fetchRelatedPageText(url) {
   }
 }
 
-// Try the requested capability again against 1-2 related same-domain pages,
-// combined with the base page's own text for context. Returns the same
-// shape as extractJsonWithAI's result, plus `pagesScanned` on success.
-async function scanRelatedPages({ baseUrl, baseHtml, baseText, enrichKey, prompt, title }) {
+/**
+ * Gather up to RELATED_PAGE_MAX same-domain subpages for a capability, in
+ * parallel. Returns [] when the capability has no hints or nothing matched.
+ */
+async function gatherRelatedPages(baseHtml, baseUrl, enrichKey) {
   const hints = RELATED_PAGE_HINTS[enrichKey];
+  if (!hints || hints.length === 0) return [];
   const candidates = findRelatedPageLinks(baseHtml, baseUrl, hints);
-  if (candidates.length === 0) return { ok: false, reason: "no_match" };
+  if (candidates.length === 0) return [];
+  const settled = await Promise.allSettled(candidates.map(fetchRelatedPageText));
+  return settled
+    .filter((s) => s.status === "fulfilled" && s.value)
+    .map((s) => s.value);
+}
 
-  const fetched = [];
-  for (const url of candidates) {
-    const text = await fetchRelatedPageText(url);
-    if (text) fetched.push({ url, text });
+/** Join base + related page text into one budgeted corpus with page markers. */
+function buildCorpus(baseUrl, baseText, related) {
+  const parts = [`--- PAGE: ${baseUrl} ---\n${baseText}`];
+  let used = parts[0].length;
+  const pagesRead = [baseUrl];
+  for (const r of related) {
+    const chunk = `\n\n--- PAGE: ${r.url} ---\n${r.text}`;
+    if (used + chunk.length > AI_EXTRACT_TEXT_CHARS) break;
+    parts.push(chunk);
+    used += chunk.length;
+    pagesRead.push(r.url);
   }
-  if (fetched.length === 0) return { ok: false, reason: "no_match" };
-
-  const combinedText = [baseText, ...fetched.map((f) => f.text)]
-    .filter(Boolean)
-    .join("\n\n---\n\n")
-    .slice(0, AI_EXTRACT_TEXT_CHARS);
-  const aiRes = await extractJsonWithAI({ prompt, title, text: combinedText });
-  if (aiRes.ok) return { ...aiRes, pagesScanned: fetched.map((f) => f.url) };
-  return aiRes;
+  return { text: parts.join(""), pagesRead };
 }
 
 // True when a customPrompt-driven extraction actually found something.
-// Firecrawl's prompt-only JSON extraction (no schema) frequently comes back
-// as `{}` when it can't confidently match the prompt — an EMPTY OBJECT is
-// truthy in JS, so `!result.customExtraction` alone let a genuinely empty
-// extraction masquerade as "already handled" and skip the AI-extraction
-// fallback below, leaving the user with a "No data returned" tab even
-// though the requested info was on the page. Null/undefined/empty-object/
-// empty-array all count as "nothing found" and should still fall through.
+// Firecrawl's prompt-only JSON extraction frequently returns `{}` when it
+// cannot confidently match — an empty object is truthy, so `!customExtraction`
+// alone let a genuinely empty extraction masquerade as "already handled".
 function isEmptyExtraction(v) {
   if (v == null) return true;
   if (Array.isArray(v)) return v.length === 0;
@@ -336,6 +416,10 @@ export const handler = async (event) => {
         renderJs: rawOptions.renderJs === true,
         mapMode: rawOptions.mapMode === true,
         noCache: rawOptions.noCache === true,
+        // Opt OUT of related-page gathering. Defaults to on for entity
+        // capabilities; batch runs at scale pass false because latency per
+        // row dominates there and the extra fetches multiply across the run.
+        ...(rawOptions.deep === false ? { deep: false } : {}),
         ...(rawOptions.customPrompt == null ? {} : { customPrompt: String(rawOptions.customPrompt).trim().slice(0, 12000) }),
         // Whitelisted against the known capability keys (not free text) —
         // this only ever selects which RELATED_PAGE_HINTS bucket to scan,
@@ -532,57 +616,104 @@ export const handler = async (event) => {
       });
     }
 
-    // AI-extraction fallback. Only Firecrawl supports server-side JSON
-    // extraction from a customPrompt. If the chain fell through to Spider,
-    // Jina, or Direct (no API key, quota, transient error, …) the result
-    // has customExtraction === null even though we have valid HTML. Without
-    // this fallback the user's enrichment tab saves as null and shows
-    // "No data returned for this capability" — the bug the user
-    // reported. Call the multi-provider AI chain to do the extraction
-    // server-side; the response is best-effort and never blocks the
-    // response (any failure leaves customExtraction as null, which the
-    // client already handles as "no data").
+    // ── Enrichment: schema-guided structured extraction ────────────────────
+    //
+    // The chain only ever fills `customExtraction` when Firecrawl handled it
+    // natively. Every other provider returns null, so this is the primary path
+    // in most deployments — which is why an unfunded AI account presented as a
+    // total enrichment outage rather than a degradation.
     let aiExtractionUsed = false;
-    // WHY an empty enrichment happened, in the response. Every distinct cause
-    // used to collapse into one blank tab reading "No data returned for this
-    // capability", which is why "none of the Quick enrichment buttons work"
-    // survived several rounds of fixes: a server with no AI key configured and
-    // a page that genuinely has no pricing table were indistinguishable from
-    // the UI, from the logs, and from each other.
     let enrichmentReason = null;
+    let enrichmentMeta = null;
     let relatedPagesScanned = null;
-    if (options.customPrompt && isEmptyExtraction(result.customExtraction)) {
-      const baseText = htmlToPlainText(result.html || "");
-      const aiRes = await extractJsonWithAI({
-        prompt: options.customPrompt,
-        title: result.title || "",
-        text: baseText,
+
+    const wantsEnrichment = Boolean(options.customPrompt || options.enrichKey);
+    const page = extractPageContent(result.html || "", { maxChars: BASE_PAGE_TEXT_CHARS });
+
+    if (wantsEnrichment && isEmptyExtraction(result.customExtraction)) {
+      const plan = resolveExtractionPlan(options.enrichKey, options.customPrompt);
+
+      // Gather subpages BEFORE the model call for entity capabilities, so the
+      // one AI call reasons over the whole company surface. `deep:false` opts
+      // out (batch runs at scale, where latency per row dominates).
+      let related = [];
+      const deepAllowed = options.deep !== false;
+      if (deepAllowed && options.enrichKey && ENTITY_CAPABILITIES.has(options.enrichKey)) {
+        try {
+          related = await gatherRelatedPages(result.html || "", url, options.enrichKey);
+        } catch (err) {
+          console.warn("[DatIQ] related-page gather failed (continuing):", err?.message);
+        }
+      }
+
+      const corpus = buildCorpus(url, page.text, related);
+      const aiRes = await extractStructuredWithAI({
+        plan, title: result.title || "", url,
+        text: corpus.text, pagesRead: corpus.pagesRead,
       });
-      if (aiRes.ok && aiRes.data && !isEmptyExtraction(aiRes.data)) {
+
+      if (aiRes.ok) {
         result.customExtraction = aiRes.data;
         aiExtractionUsed = true;
-      } else if (options.enrichKey) {
-        // The requested capability wasn't on THIS page — try 1-2 same-domain
-        // pages this page itself links to (e.g. /pricing, /about, /team)
-        // before reporting "no data returned". Best-effort: any failure here
-        // falls back to the base-page reason, same as before this existed.
-        const relatedRes = await scanRelatedPages({
-          baseUrl: url,
-          baseHtml: result.html || "",
-          baseText,
-          enrichKey: options.enrichKey,
-          prompt: options.customPrompt,
-          title: result.title || "",
-        });
-        if (relatedRes.ok && relatedRes.data && !isEmptyExtraction(relatedRes.data)) {
-          result.customExtraction = relatedRes.data;
-          aiExtractionUsed = true;
-          relatedPagesScanned = relatedRes.pagesScanned || null;
-        } else {
-          enrichmentReason = relatedRes.reason || aiRes.reason || "no_match";
-        }
+        enrichmentMeta = {
+          ok: true,
+          capability: plan.key,
+          label: plan.label,
+          groups: plan.groups || undefined,
+          provider: aiRes.provider,
+          model: aiRes.model,
+          structured: aiRes.structured,
+          facts: aiRes.facts,
+          pagesRead: corpus.pagesRead,
+        };
+        if (corpus.pagesRead.length > 1) relatedPagesScanned = corpus.pagesRead.slice(1);
       } else {
-        enrichmentReason = aiRes.reason || "no_match";
+        // SECOND CHANCE, and only for a genuine absence. When the reason is
+        // infrastructure there is nothing to retry against — walking more
+        // pages would spend three more fetches to reach the same dead chain.
+        let secondReason = null;
+        if (aiRes.reason === ENRICH_REASON.ABSENT && deepAllowed && related.length === 0
+            && options.enrichKey && RELATED_PAGE_HINTS[options.enrichKey]?.length) {
+          try {
+            const late = await gatherRelatedPages(result.html || "", url, options.enrichKey);
+            if (late.length) {
+              const c2 = buildCorpus(url, page.text, late);
+              const retry = await extractStructuredWithAI({
+                plan, title: result.title || "", url, text: c2.text, pagesRead: c2.pagesRead,
+              });
+              if (retry.ok) {
+                result.customExtraction = retry.data;
+                aiExtractionUsed = true;
+                relatedPagesScanned = c2.pagesRead.slice(1);
+                enrichmentMeta = {
+                  ok: true, capability: plan.key, label: plan.label,
+                  groups: plan.groups || undefined, provider: retry.provider,
+                  model: retry.model, structured: retry.structured,
+                  facts: retry.facts, pagesRead: c2.pagesRead,
+                };
+              } else {
+                secondReason = retry.reason;
+              }
+            }
+          } catch (err) {
+            console.warn("[DatIQ] related-page retry failed:", err?.message);
+          }
+        }
+        if (!aiExtractionUsed) {
+          // pickReason(), not `secondReason || aiRes.reason`. An absence found
+          // on the retry must never overwrite an infrastructure failure from
+          // the first pass — that substitution is the reported bug.
+          enrichmentReason = pickReason(aiRes.reason, secondReason);
+          enrichmentMeta = {
+            ok: false,
+            capability: plan.key,
+            label: plan.label,
+            reason: enrichmentReason,
+            pagesRead: [url, ...related.map((r) => r.url)],
+            // Only ever provider names + status codes, never keys.
+            attempts: aiRes.attempts || undefined,
+          };
+        }
       }
     }
 
@@ -590,6 +721,15 @@ export const handler = async (event) => {
     const responseBody = {
       data: {
         html: result.html,
+        // THE PAGE BODY. Every client-side AI prompt (summary, generated
+        // content, template synthesis, briefs) previously saw only headings
+        // and a link list, because realScrape() parsed the HTML and threw it
+        // away. That is why summaries read like a table of contents and a
+        // "Competitor Summary" was an LLM guessing from a nav menu. Structure
+        // is preserved (headings, list items, table rows) so a pricing grid
+        // stays legible instead of collapsing into word soup.
+        text: page.text || undefined,
+        textMeta: page.text ? { chars: page.chars, truncated: page.truncated, mode: page.mode } : undefined,
         metadata: { title: result.title || "" },
         json: isEmptyExtraction(result.customExtraction) ? undefined : result.customExtraction,
       },
@@ -597,7 +737,12 @@ export const handler = async (event) => {
       _providerAttempts: result.attempts,
       // Present ONLY when a customPrompt was asked for and came back empty.
       // Absent on success, so existing clients are unaffected.
-      ...(enrichmentReason ? { _enrichment: { ok: false, reason: enrichmentReason } } : {}),
+      // Full enrichment telemetry: which capability ran, which provider and
+      // model answered, whether structured output was native, how many facts
+      // came back, and which pages were read. On failure it carries the
+      // specific reason plus the provider attempts, so an outage is legible
+      // from the response instead of only from the function logs.
+      ...(enrichmentMeta ? { _enrichment: enrichmentMeta } : {}),
       // True when the AI-extraction fallback produced the custom_extraction
       // (the chain itself didn't have a provider that supports it). Useful
       // for debug + so future tests can pin the regression fix. Stays

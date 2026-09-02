@@ -3,9 +3,13 @@
 // verify the fallback content for each new format renders sensible markdown.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Force the mockContent path by making hasAI false (no API key).
+// Force the fixture path. `hasFirecrawl: false` is what puts the whole
+// pipeline in mock mode now — fixture prose is no longer a failure handler,
+// so it only appears when extraction itself is mocked.
 vi.mock("./config.js", () => ({
   hasAI: false,
+  hasFirecrawl: false,
+  AI_MODEL: "test",
   VITE_AI_MODEL: "test",
   VITE_AI_API_KEY: "",
 }));

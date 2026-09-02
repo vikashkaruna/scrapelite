@@ -86,6 +86,10 @@ async function request(path, method = "GET", body) {
     // unavailable) whose user-facing wording the SERVER owns, so the two can
     // never drift into describing the same verdict differently.
     if (errData.reason) e.reason = errData.reason;
+    // An operator-actionable explanation the server already computed (e.g.
+    // "the AI provider account is out of credit"). Carried verbatim so the UI
+    // never has to re-derive it from a status code.
+    if (errData.hint) e.hint = errData.hint;
     if (isHtml) e.edgeAccess = true;
     throw e;
   }

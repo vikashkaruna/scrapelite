@@ -4,19 +4,37 @@
 //   Body: { model?, max_tokens?, messages: Array<{role, content}> }
 //   Response: Anthropic-shaped { content: [{ type:"text", text }] }
 //
-// The chain (Gemini → Anthropic → OpenAI by default) is resolved server-side from
-// admin-managed config (Supabase app_config 'ai' row) with env/static fallback —
-// see lib/aiProviders.js. Provider keys stay server-side. The client-sent `model`
-// is IGNORED (per-provider models come from config); only `max_tokens` (the
-// per-call budget) and `messages` are honored.
+// The chain is resolved server-side from admin-managed config (Supabase
+// app_config 'ai' row) over the shared registry defaults — see
+// lib/aiProviders.js and src/lib/providerRegistry.js. Provider keys stay
+// server-side. The client-sent `model` is IGNORED (per-provider models come
+// from config); `max_tokens`, `messages`, and now `area` are honored.
+//
+// `area` names the FUNCTION AREA this call belongs to (synthesis,
+// classification, …). It selects an independently configurable chain and
+// model tier, so writing a competitive brief and tagging 60 links stop
+// sharing one model. It is validated against the allowlist — an unknown area
+// falls back to the global chain rather than being rejected, because a client
+// that is one deploy behind must not lose AI entirely.
+//
+// A failure now returns a machine-readable `code` (no_credit / bad_key /
+// rate_limited / …) alongside the prose. The browser used to see only a 502
+// and silently substituted locally-generated placeholder text, so a dead
+// provider account looked exactly like a working one.
 
-import { runChain, keyPresence } from "./lib/aiProviders.js";
+import { runChain, keyPresence, PROVIDER_ERROR_COPY } from "./lib/aiProviders.js";
+import { AI_AREA_KEYS, MODEL_TIER } from "../../src/lib/providerRegistry.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 
 const MAX_MESSAGES = 50;
-const MAX_MESSAGE_CHARS = 20_000;
-const MAX_TOTAL_CHARS = 100_000;
+// Raised from 20k/100k. The old ceiling predates sending page BODY text: a
+// link-heavy page's summary prompt could exceed 20k characters on its own,
+// which returned 400 → the browser caught it → the user silently got
+// fabricated placeholder prose. The limits exist to bound abuse, not to
+// bound legitimate page content.
+const MAX_MESSAGE_CHARS = 120_000;
+const MAX_TOTAL_CHARS = 200_000;
 const MAX_TOKENS = 8192;
 
 function normalizeMessages(messages) {
@@ -75,7 +93,12 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { max_tokens, messages, workspaceId } = reqBody && typeof reqBody === "object" ? reqBody : {};
+  const { max_tokens, messages, workspaceId, area: rawArea, tier: rawTier } =
+    reqBody && typeof reqBody === "object" ? reqBody : {};
+  // Unknown area → global chain, never a rejection. A stale client must
+  // degrade to the default, not lose AI.
+  const area = AI_AREA_KEYS.includes(rawArea) ? rawArea : undefined;
+  const tier = (rawTier === MODEL_TIER.FAST || rawTier === MODEL_TIER.DEEP) ? rawTier : undefined;
 
   const safeMessages = normalizeMessages(messages);
   if (!safeMessages) {
@@ -102,19 +125,32 @@ export const handler = async (event) => {
   // aiService.js falls back to its local mock content.
   const present = keyPresence();
   if (!Object.values(present).some(Boolean)) {
-    return respond(503, { error: "AI service not configured on this server" });
+    return respond(503, {
+      error: "AI service not configured on this server",
+      code: "no_key",
+      hint: PROVIDER_ERROR_COPY.no_key,
+    });
   }
 
   try {
-    const result = await runChain(safeMessages, max_tokens);
+    const result = await runChain(safeMessages, max_tokens, { area, tier });
     if (!result.ok) {
-      return respond(502, { error: result.error, detail: { attempts: result.attempts } });
+      // `code` is the actionable half. "All AI providers failed" told an
+      // operator nothing; "no_credit" tells them to top up billing.
+      return respond(502, {
+        error: result.error,
+        code: result.errorCode || "error",
+        hint: PROVIDER_ERROR_COPY[result.errorCode] || PROVIDER_ERROR_COPY.error,
+        detail: { attempts: result.attempts },
+      });
     }
     // Normalize to the Anthropic messages shape the browser already parses.
     return respond(200, {
       content: [{ type: "text", text: result.text }],
       _provider: result.provider,
       _model: result.model,
+      _tier: result.tier,
+      _area: area || null,
     });
   } catch (err) {
     return respond(502, { error: `Upstream fetch failed: ${err.message}` });

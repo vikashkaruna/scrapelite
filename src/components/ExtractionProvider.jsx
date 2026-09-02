@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { extractStructure } from "../lib/firecrawlService.js";
-import { summarize, categorizeLinks, generateContent, CONTENT_FORMATS } from "../lib/aiService.js";
+import { summarize, summarizeDetailed, categorizeLinks, generateContent, CONTENT_FORMATS } from "../lib/aiService.js";
 import { saveExtraction, updateEnrichments } from "../lib/extractionsRepo.js";
 import {
   readEnrichments,
@@ -195,7 +195,11 @@ export function ExtractionProvider({ children }) {
         };
       } else {
         // Standard (and custom-extraction) mode: summarize, AI-tag, and optional content generation concurrently.
-        const summarizePromise = summarize(structure, { personaId, intent: options.intent });
+        // summarizeDetailed, not summarize: a failed summary must be REPORTED,
+        // not silently replaced with locally-generated placeholder prose. That
+        // substitution is why a dead provider account produced pages full of
+        // confident-looking text nothing had actually read.
+        const summarizePromise = summarizeDetailed(structure, { personaId, intent: options.intent });
         const categorizePromise = categorizeLinks(structure.links, structure.url);
         const contentPromise = options.generateContent
           ? generateContent(structure, options.generateContent).catch((err) => {
@@ -204,16 +208,23 @@ export function ExtractionProvider({ children }) {
             })
           : null;
 
-        const [ai_summary, links, genContentText] = await Promise.all([
+        const [summaryRes, links, genContentText] = await Promise.all([
           summarizePromise,
           categorizePromise,
           contentPromise,
         ]);
+        const ai_summary = summaryRes?.text || "";
         if (reqId.current !== id) return; // superseded by a newer extraction
         result = {
           ...structure,
           links,
           ai_summary,
+          // Carries WHY the summary is missing, so the UI can say "the AI
+          // provider is out of credit" instead of rendering a blank card or,
+          // worse, fabricated prose that reads like a real analysis.
+          ...(summaryRes && summaryRes.ok === false
+            ? { ai_summary_error: { code: summaryRes.code, hint: summaryRes.hint } }
+            : {}),
           id: uid(),
           created_at: new Date().toISOString(),
         };
@@ -236,6 +247,12 @@ export function ExtractionProvider({ children }) {
             ...(result.custom_extraction_reason
               ? { reason: result.custom_extraction_reason }
               : {}),
+            // Provider, model, whether structured output was native, the fact
+            // count, the pages read, and the evidence contract — everything a
+            // user needs to decide whether to trust the tab, and everything an
+            // operator needs to diagnose it without opening the function logs.
+            ...(result.enrichment_meta ? { meta: result.enrichment_meta } : {}),
+            ...(result.related_pages_scanned ? { pages: result.related_pages_scanned } : {}),
             created_at: result.created_at,
           };
           enrichments[meta.key] = entry;
@@ -422,6 +439,12 @@ export function ExtractionProvider({ children }) {
       ...(structure.custom_extraction_reason
         ? { reason: structure.custom_extraction_reason }
         : {}),
+      // Provenance for a tab that DID return data: which provider and model,
+      // whether the schema was enforced natively, how many facts, and which
+      // pages were read. A user pasting leadership names into a CRM should be
+      // able to see where each one came from.
+      ...(structure.enrichment_meta ? { meta: structure.enrichment_meta } : {}),
+      ...(structure.related_pages_scanned ? { pages: structure.related_pages_scanned } : {}),
       created_at: new Date().toISOString(),
     };
     saveEnrichment(url, entry); // local cache (keyed by URL)

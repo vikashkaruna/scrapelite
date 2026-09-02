@@ -3,6 +3,7 @@
 // loadAiConfig(); client `model` ignored; 503 when no key is set.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultModel } from "../../src/lib/providerRegistry.js";
 
 let fetchMock;
 let handler;
@@ -142,7 +143,10 @@ describe("ai — client model is ignored (C-06)", () => {
       }),
     });
     const body = JSON.parse(r.body);
-    expect(body._model).toBe("claude-3-5-haiku-20241022"); // configured default
+    // Asserted against the REGISTRY, not a literal, so raising a default model
+    // is a one-line change rather than a test failure. The contract under test
+    // is "the client's model is ignored", not "the default is this string".
+    expect(body._model).toBe(defaultModel("anthropic", "deep"));
     expect(body._model).not.toBe("client-pretends-this-exists");
   });
 });
