@@ -209,7 +209,7 @@ async function executeVisibilityBrief({ template, input, onProgress }) {
 
   const synthCtx = {
     facts: null, target: own, title: self.title,
-    pageText: `Written for ${audienceLine}.\n\nCOMPANY FACTS:\n${factsBlock}${unreadNote}`,
+    pageText: `Written for ${audienceLine}.${inputContext(template, input)}\n\nCOMPANY FACTS:\n${factsBlock}${unreadNote}`,
   };
 
   const [summary, points, comparisonRaw] = await Promise.all([
@@ -269,6 +269,44 @@ async function synthesiseJson(prompt, ctx) {
     // rest of the brief is still worth reading.
     return null;
   }
+}
+
+/**
+ * Render the template's OWN inputs as prompt context.
+ *
+ * 🔴 THIS EXISTED NOWHERE, AND THAT WAS A REAL BUG. `account_brief` declares an
+ * `angle` input ("Discovery call" / "Displacing an incumbent" / "Expansion") —
+ * it is shown, validated, stored on the run, and CHARGED FOR. It was never
+ * read. The user picked "Displacing an incumbent", paid 8 credits, and got a
+ * brief written as though they had picked nothing, because the model was never
+ * told. Nothing failed; the output was simply answering a different question.
+ *
+ * Driven off `input_schema.fields` rather than a per-template list, so a new
+ * template's inputs reach its prompt the day it is seeded. A hand-maintained
+ * list is how `angle` came to be forgotten in the first place.
+ *
+ * `domain`/`url` are excluded: they are the TARGET, already stated in the
+ * prompt, and repeating them as "preferences" invites the model to treat the
+ * address as a topic.
+ */
+function inputContext(template, input) {
+  const fields = template?.input_schema?.fields;
+  if (!Array.isArray(fields) || !input) return "";
+  const lines = [];
+  for (const f of fields) {
+    if (!f?.name || f.name === "domain" || f.name === "url") continue;
+    const raw = input[f.name];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const value = Array.isArray(raw) ? raw.join(", ") : String(raw);
+    if (!value.trim()) continue;
+    // Show the human LABEL for a choice, not the stored value — the model
+    // reasons better about "Displacing an incumbent" than about "displacement".
+    const opt = Array.isArray(f.options) ? f.options.find((o) => o.value === raw) : null;
+    lines.push(`- ${f.label || f.name}: ${opt?.label || value}`);
+  }
+  return lines.length
+    ? `\n\nWHAT THE USER ASKED FOR (shape the output to this — it is why they ran the template):\n${lines.join("\n")}\n`
+    : "";
 }
 
 export async function executeRun({ template, input, onProgress }) {
@@ -339,7 +377,9 @@ export async function executeRun({ template, input, onProgress }) {
   const bundle = template.prompt_bundle || {};
   const ctx = {
     facts, target, title: output.title,
-    pageText: scraped?.page_text || "",
+    // The user's own choices come FIRST in the material, before the page text:
+    // they are the instruction, the page is the evidence.
+    pageText: `${inputContext(template, input)}${scraped?.page_text || ""}`,
   };
   // Concurrent: they read the same facts and neither depends on the other.
   const [summary, talkingPoints] = await Promise.all([
@@ -353,17 +393,49 @@ export async function executeRun({ template, input, onProgress }) {
 
   if (talkingPoints) output.talking_points = splitPoints(talkingPoints);
 
-  // The run is PARTIAL when the facts came back empty or the synthesis the
-  // template promised could not be produced — saying so is what stops a thin
-  // report being read as a complete one.
+  // 🔴 "WE FAILED" AND "THIS SITE DOES NOT PUBLISH THAT" ARE DIFFERENT
+  // ANSWERS, AND ONLY ONE OF THEM IS OUR FAULT.
+  //
+  // This used to be `partial = !facts || …`, so a Competitor Pricing Tracker
+  // run against a company that simply does not publish pricing was labelled
+  // "some of what this template promises could not be produced from the pages
+  // we could read" — telling the user the tool had fallen short when it had in
+  // fact done its job and returned a true, useful finding: this company keeps
+  // its pricing off its website. The report even SAID so, immediately above a
+  // banner contradicting it.
+  //
+  // The reason vocabulary already draws this line (see ENRICH_REASON in
+  // netlify/functions/extract.js and the note in aiFailureCopy.js: "`no_match`
+  // is a real finding"). `no_match` means we read the pages fine and the
+  // information is not there. Everything else — an unreadable page, an AI
+  // fault — is genuinely incomplete and retrying may help.
+  const reason = scraped?.custom_extraction_reason || null;
+  // An `ai_*` code or an unreadable page is OUR fault and retrying may help.
+  // Everything else is either a stated finding (`no_match`) or no reason at all.
+  const operatorFault = /^ai_/.test(reason || "") || reason === "page_no_content";
+  //
+  // TWO INDEPENDENT SIGNALS THAT THE INFORMATION SIMPLY IS NOT PUBLISHED:
+  //
+  //   1. The server said so outright (`no_match`).
+  //   2. The SYNTHESIS SUCCEEDED. This one matters because the server does not
+  //      always record a reason, and a coherent, specific summary about the
+  //      company is proof we read the page perfectly well. If we could write
+  //      about it and only the STRUCTURED extraction came back empty, the
+  //      template's fields are not on that site — a finding, not a failure.
+  //      Without this, a Customer Proof Extractor run against a company with
+  //      no published case studies produced an accurate summary saying exactly
+  //      that, directly above a banner claiming we had fallen short.
+  const informationAbsent = !facts && !operatorFault && Boolean(summary);
   const wantedSummary = Boolean(bundle.summarize);
-  const partial = !facts || (wantedSummary && !summary);
+  const partial = (!facts && !informationAbsent) || (wantedSummary && !summary);
   const needsReview = Boolean(
-    scraped?.custom_extraction_reason || (facts && Array.isArray(facts.not_found) && facts.not_found.length)
+    (reason && !informationAbsent) || (facts && Array.isArray(facts.not_found) && facts.not_found.length)
   );
 
   say("Done", 100);
-  return { output, summary, events, sources, partial, needsReview };
+  // Surfaced separately from `partial` so the UI can say the true thing:
+  // "this site does not publish that" instead of "we could not produce it".
+  return { output, summary, events, sources, partial, needsReview, informationAbsent };
 }
 
 /**

@@ -638,9 +638,17 @@ describe("extract — AI extraction fallback (customPrompt without a JSON-aware 
       const body = JSON.parse((await h(emptyPageEvent)).body);
       expect(body.data.json).toEqual({ plans: [{ name: "Free" }] });
       expect(body._enrichment.ok).toBe(true);
-      expect(body._enrichment.provider).toBe("gemini");
-      expect(body._enrichment.structured).toBe(true);
       expect(body._enrichment.facts).toBeGreaterThan(0);
+      // INVERTED 2026-09-03. This used to assert `provider === "gemini"` and
+      // `structured === true` — encoding the leak as a contract. Those three
+      // fields describe OUR STACK, not the customer's page, and the UI rendered
+      // them as an `openai · gpt-4o-mini` chip on the customer's own report.
+      // Redacted at the source by publicProvenance(); see
+      // netlify/__tests__/provenance-redaction.test.js.
+      expect(body._enrichment).not.toHaveProperty("provider");
+      expect(body._enrichment).not.toHaveProperty("model");
+      expect(body._enrichment).not.toHaveProperty("structured");
+      expect(JSON.stringify(body)).not.toMatch(/gemini|openai|anthropic/i);
     });
 
     it("is ABSENT when no customPrompt or enrichKey was asked for", async () => {

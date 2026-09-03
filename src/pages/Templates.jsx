@@ -154,6 +154,27 @@ function personaLabel(id) {
 
 // ── runner ──────────────────────────────────────────────────────────────────
 
+// Templates that HAND OFF to a purpose-built module instead of running here.
+//
+// The SEO/GEO/AEO audit is a full four-pillar engine at /discoverability with
+// its own profiles, devices, page types, history, trends and re-audit
+// comparison. Re-running a thin version of it inside the template runner gave
+// the user a worse audit AND spent a template credit for it, while the real
+// module sat one click away.
+//
+// PREFILL, NEVER AUTO-RUN — the same contract /discoverability already
+// enforces for the Home composer's hand-off: "auto-running would spend an
+// audit credit on defaults they never saw, which is the kind of surprise a
+// quota makes expensive."
+const HANDOFF = {
+  discoverability_audit: {
+    to: "/discoverability",
+    label: "Open in Discoverability",
+    why: "This audit runs in the Discoverability module, which has the full four-pillar engine, history and re-audit comparison.",
+    state: (input) => ({ auditUrl: input.domain ? `https://${input.domain}` : input.url }),
+  },
+};
+
 function TemplateRunner({ templateKey, onBack }) {
   const showToast = useToast();
   const navigate = useNavigate();
@@ -210,6 +231,13 @@ function TemplateRunner({ templateKey, onBack }) {
 
   async function run() {
     if (!template) return;
+    // Hand off before spending anything: no credits, no run row, no partial
+    // report. The user lands on the real module with their domain prefilled.
+    const handoff = HANDOFF[template.template_key];
+    if (handoff) {
+      navigate(handoff.to, { state: handoff.state(values) });
+      return;
+    }
     const v = validateInput(template, values);
     if (!v.ok) { setErrors(v.errors); return; }
     setErrors([]);
@@ -290,6 +318,7 @@ function TemplateRunner({ templateKey, onBack }) {
   if (!template) return <div className="page container tpl-page"><div className="card tpl-empty">Loading…</div></div>;
 
   const fields = template.input_schema?.fields || [];
+  const handoff = HANDOFF[template.template_key] || null;
 
   return (
     <div className="page container tpl-page">
@@ -323,13 +352,18 @@ function TemplateRunner({ templateKey, onBack }) {
 
         <div className="tpl-run-row">
           <Button onClick={run} disabled={busy || degraded}>
-            {busy ? "Running…" : "Run this template"}
+            {handoff ? handoff.label : busy ? "Running…" : "Run this template"}
           </Button>
-          {estimate && (
+          {/* A hand-off spends nothing HERE, so showing this template's credit
+              estimate beside it would be a straightforward lie about what the
+              button does. The module states its own audit cost on arrival. */}
+          {handoff ? (
+            <span className="tpl-estimate">{handoff.why}</span>
+          ) : estimate ? (
             <span className="tpl-estimate" title="Estimated before the run; you are charged for what actually runs.">
               {describeEstimate(estimate)}
             </span>
-          )}
+          ) : null}
         </div>
 
         {progress && (
@@ -472,6 +506,18 @@ function RunResult({ result, template, onShare }) {
         </section>
       )}
 
+      {/* Two different answers, and only one of them is our fault. Saying
+          "we could not produce it" when the truth is "they do not publish it"
+          reports a successful run as a failure — and contradicts the report
+          immediately above, which says so in plain words. */}
+      {result.informationAbsent && !result.partial ? (
+        <p className="tpl-finding">
+          <Icon name="info" size={14} />
+          This site doesn’t publish the information this template looks for — that itself is the
+          finding. Everything below was read from the pages listed under Sources.
+        </p>
+      ) : null}
+
       {result.partial ? (
         <p className="tpl-partial">
           <Icon name="alert-circle" size={14} />
@@ -486,8 +532,14 @@ function RunResult({ result, template, onShare }) {
           {(result.sources || []).map((s, i) => (
             <li key={i}>
               <a href={s.url} target="_blank" rel="noreferrer noopener">{s.url}</a>
+              {/* The SCRAPE vendor (Firecrawl / Spider / Jina / direct) was
+                  rendered here as "· via firecrawl". Same boundary as the AI
+                  provider: which vendor fetched the page is our infrastructure
+                  choice, changes per request as the fallback chain walks, and
+                  a customer can act on none of it. The timestamp stays — it is
+                  a fact about THEIR page and it is what makes the source
+                  verifiable. */}
               <span className="tpl-src-meta">
-                {s.provider ? ` · via ${s.provider}` : ""}
                 {s.fetched_at ? ` · read ${new Date(s.fetched_at).toLocaleString()}` : ""}
               </span>
             </li>

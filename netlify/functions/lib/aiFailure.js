@@ -1,6 +1,15 @@
 // aiFailure.js — strip operator diagnostics out of any response a CUSTOMER
 // can read.
 //
+// ⚠️ THIS FILE ORIGINALLY COVERED ONLY THE FAILURE PATH, AND THAT WAS HALF THE
+// BOUNDARY. A successful extraction shipped `provider: "openai"` and
+// `model: "gpt-4o-mini"` in its provenance, which the UI rendered as a chip
+// reading `openai · gpt-4o-mini` on the customer's own report — disclosing the
+// same vendor identity the failure path had just been rewritten to hide, on
+// the path that runs far more often. `publicProvenance` below closes it.
+// Anything added to a customer-visible body from here on gets the same
+// question: who reads this, and what do they do with it?
+//
 // ── DEFENCE IN DEPTH, NOT BELT-AND-BRACES ────────────────────────────────────
 // The UI already shows customers a generic message (see src/lib/aiFailureCopy
 // .js). This exists because the UI is not the only reader of an API response.
@@ -62,4 +71,52 @@ export function logChainFailure(label, chainResult) {
     .map((a) => `${a.provider}:${a.code || a.skipped || "?"}${a.error ? ` (${String(a.error).slice(0, 120)})` : ""}`)
     .join(" | ");
   console.warn(`[DatIQ] ${label} failed — code=${chainResult?.errorCode || "error"} ${attempts}`);
+}
+
+// ── The SUCCESS path ─────────────────────────────────────────────────────────
+
+/**
+ * Reduce an extraction's provenance to what a customer may see.
+ *
+ * WHAT SURVIVES is what says something about THEIR page:
+ *   capability / label — which extraction this is
+ *   facts             — how much was found
+ *   pagesRead         — which of their URLs we read; they can verify every one
+ *   ok                — whether it worked
+ *
+ * WHAT DOES NOT is what says something about OUR STACK:
+ *   provider / model  — vendor identity and the exact model id. A customer can
+ *                       act on neither, it changes without notice as the admin
+ *                       chain is re-ordered, and publishing it invites "why am
+ *                       I paying for gpt-4o-mini?" about a routing decision
+ *                       that is ours to make.
+ *   structured        — whether the provider enforced a JSON schema natively.
+ *                       Pure implementation detail; it rendered as a
+ *                       "Schema-validated" badge that meant nothing to a
+ *                       reader and would silently flip meaning the day a
+ *                       provider gains or loses that capability.
+ *
+ * Redacted where the body is BUILT, not in the UI, for the reason this whole
+ * module exists: the UI is not the only reader of a response.
+ *
+ * @param {object|null} meta the internal enrichment meta
+ * @returns {object|null} the customer-safe subset
+ */
+export function publicProvenance(meta) {
+  if (!meta || typeof meta !== "object") return null;
+  const out = {};
+  // Allowlist, never a denylist. A denylist silently ships every field someone
+  // adds later — which is precisely how provider/model survived the first pass.
+  for (const key of ["ok", "capability", "label", "groups", "facts", "reason", "pagesRead"]) {
+    if (meta[key] !== undefined) out[key] = meta[key];
+  }
+  return out;
+}
+
+/**
+ * The full provenance, for admin-gated endpoints and server logs only.
+ * Never pass the result of this to a non-admin response body.
+ */
+export function operatorProvenance(meta) {
+  return meta || null;
 }

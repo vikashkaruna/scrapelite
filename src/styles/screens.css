@@ -10372,3 +10372,13 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 .pqlf-table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .pqlf-table tbody th { font-weight: 600; }
 .pqlf-row-empty { opacity: .55; }
+
+/* A FINDING, not a failure: "this site doesn't publish that" is a successful
+   run reporting a true fact, and must not be styled like the incomplete
+   warning it used to be conflated with. */
+.tpl-finding {
+  display: flex; gap: 8px; align-items: flex-start;
+  margin: 14px 0 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-2);
+  font-size: .86rem; line-height: 1.5;
+}
