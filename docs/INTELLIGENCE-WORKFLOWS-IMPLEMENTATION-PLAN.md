@@ -157,7 +157,7 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | **0** | Spine — versioned templates, credit ledger, field provenance, shared pure models | ✅ **DONE** | `0036`–`0038` applied to staging · `templateModel` / `creditModel` / `visibilityModel` + 86 unit tests |
 | **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 5 templates live on staging + 1 draft · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
 | **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
-| **3** | Activation instrumentation (PQL) + integration recipe gallery | 🟡 **PARTIAL** | Spine done: `0040_pql.sql` written + verified on WASM PG · `pqlModel.js` (9 signals, threshold 50, per-persona activation) + 24 unit tests + 18 db assertions. **Pending:** ~15 analytics event kinds, activation wiring, recipe gallery, founder funnel |
+| **3** | Activation instrumentation (PQL) + integration recipe gallery | 🟡 **PARTIAL** | Spine done: `0040_pql.sql` verified on WASM PG · `pqlModel.js` transcribed from the PRD (9 signals / **130 points** / threshold **50 raw**) + 25 unit tests + 18 db assertions. **Pending:** ~15 analytics event kinds, activation wiring, recipe gallery, founder funnel |
 | **4** | PRD 3 — bulk account intelligence ⚠️ heaviest | ⬜ **PENDING** | `bulk_icp_enrichment` seeded as `draft`, awaiting its durable runner |
 | **5** | PRD 4 — competitor watchlists & change intelligence | ⬜ **PENDING** | — |
 | **6** | PRD 5 — native signal routing | 🟡 **PARTIAL** | Event model shipped (`KIND_WHITELIST` 5→16). Rules layer + UI pending |
@@ -174,7 +174,7 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | `report.branding` entitlement | gated Business+ | Server-side enforcement is live; the Brand Kit picker for reports is a follow-up. |
 | `extracted_fields` / `field_provenance` | `0038`, live on staging | Written by Phases 4 and 5. Phase 1 runs store provenance in the run's `output` blob for now. |
 | `credit_estimates` drift tracking | `0037`, live | Rows accumulate now so estimate-vs-actual drift is measurable *before* anyone tunes a price. |
-| `pqlModel.js` weight table | `src/lib/pql/`, no caller yet | ⚠️ The weights are a **hypothesis, not a measurement** — nobody has observed which behaviours predict DatIQ revenue. The PRD's own 9-signal table is not in this repo, so these nine were designed from the product's instrumented surface and await owner review. |
+| `pqlModel.js` | `src/lib/pql/`, no caller yet | Transcribed from the PRD (see §PRD source tables below). Wiring it to real events is the rest of Phase 3. |
 
 ### Known gaps inside the shipped phases — tracked, not forgotten
 
@@ -187,6 +187,91 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | Schema drift on staging | ops | `account_deletion_audit` + `delete_user_account` exist in no migration. Reconcile before promoting to prod. |
 
 ---
+
+---
+
+## 2.1 PRD source tables (transcribed — the PRD itself is not in this repo)
+
+> Added 2026-09-03. A prior session had to **guess** the PQL table because the plan referenced
+> "the PRD's 9-signal scoring table" while the PRD lived only as a PDF outside the repo. The guess
+> was materially wrong. These transcriptions exist so that cannot happen again.
+>
+> Source: *DatIQ — Persona Specific Templates & Shareable Reports*, §PQL Rules for DatIQ and
+> §Recommended Activation Definitions. `src/lib/pql/pqlModel.js` implements them, and
+> `pqlModel.test.js` asserts the transcription so code and PRD cannot drift.
+
+### PQL signal table
+
+⚠️ **Sums to 130, not 100. The threshold is 50 RAW POINTS, not 50%.** Normalising to a percentage
+re-scales the threshold to 65/130 — materially stricter than the PRD asks.
+
+| Signal | Points | Measurable today? |
+|---|---|---|
+| Used a persona template | +10 | ✅ |
+| Completed two or more meaningful extractions | +10 | ✅ |
+| Created a shareable report | +10 | ✅ |
+| Connected HubSpot, Slack, Notion, Airtable, or Zapier | +20 | ✅ |
+| Created a recurring monitor | +20 | ✅ |
+| Imported/enriched 10+ companies | +20 | ❌ needs Phase 4 |
+| Invited a teammate | +15 | ✅ |
+| Visited pricing page twice within seven days | +10 | ✅ |
+| Company is in ICP: B2B SaaS / relevant size / target geography | +15 | ❌ firmographic data we do not hold |
+
+**PQL threshold: 50 points.** Above it, the PRD calls for a *founder* email offering help with the
+user's exact observed workflow — explicitly not a generic sales email.
+
+⚠️ 35 of 130 points are unmeasurable today, so the exclude-and-redistribute rule in `pqlModel.js`
+is load-bearing immediately: scoring them 0 would cap every user at 95/130 and then produce a
+phantom company-wide PQL surge on the day Phase 4 ships.
+
+### Activation definitions
+
+> PRD: *"Do not use 'a user extracted one URL' as activation. That creates a misleading vanity
+> metric."* Every definition is compound.
+
+| Persona | Activated when | Why it matters |
+|---|---|---|
+| Sales / SDR | Runs an Account Brief template, exports/routes it, and saves or monitors the account | They have produced actionable sales intelligence |
+| RevOps | Uploads/imports at least 10 accounts, enriches them, and sends results to CRM/Sheet/Airtable | They have established a pipeline workflow |
+| Product / PMM | Adds at least 3 competitors, monitors relevant pages, and shares/receives first digest | They have created a recurring intelligence loop |
+| SEO / Content | Runs an audit and exports a content/optimization brief | They have created a production asset |
+| VC / Analyst | Generates and shares/saves a company due-diligence brief | They have replaced a manual research task |
+| Agency | Runs a client-branded report and connects an export destination | They can monetize it with clients |
+
+⚠️ **The PRD defines SIX groups; the app ships SEVEN personas.** `recruiter` has no PRD equivalent —
+the PRD's persona table does not cover recruiting. It is mapped to the closest DEFINED behaviour
+(`vc-analyst`) in `PERSONA_TO_ACTIVATION`, flagged rather than given an invented definition.
+
+### Watchlist signal types (PRD §4) — for Phase 5
+
+| Signal type | Example detection | Business interpretation |
+|---|---|---|
+| Pricing | Price, plan, billing period, feature entitlement changed | Packaging, discounting, upmarket/downmarket move |
+| Product | New product/module/integration/changelog item | Competitive gap or positioning response |
+| Positioning | Homepage headline, ideal customer, vertical messaging changed | Target-segment shift |
+| Customer proof | New case study, logo, industry, quantified outcome | Segment traction and sales-battlecard evidence |
+| Hiring | New role family, leadership vacancy, geography | Growth, expansion, product investment, GTM push |
+| Partnerships | New technology or channel partner | Ecosystem strategy change |
+| Security / compliance | SOC 2, ISO, DPA, policy, terms-page update | Enterprise-readiness or vendor-risk indicator |
+
+> Decision **D4** ships the first three (pricing, product, positioning) in Phase 5; the remaining
+> four are additive config in Phase 5b, not new architecture.
+>
+> 🔴 PRD: *"Do not alert on every DOM change. Alert only when a **normalized business field**
+> changes. Then explain why that change may matter."*
+
+### Signal-routing condition/action pairs (PRD §5) — for Phase 6
+
+| Condition | Action |
+|---|---|
+| A monitored competitor changes a pricing field | Notify selected Slack channel and add a Notion battlecard update |
+| Account ICP score is 80+ | Create/update HubSpot company and assign an owner |
+| DatIQ identifies a leadership/contact candidate | Add to Airtable review table with confidence/source |
+| A target account creates an enterprise sales job role | Add a "growth signal" property to HubSpot and notify SDR |
+| Domain score drops due to a changed criterion | Add it to a requalification queue |
+| SEO/GEO/AEO audit score is below threshold | Create an audit report and send it to the content owner |
+| A new customer case study is published | Add evidence to a competitor proof repository |
+
 
 ## 2. Phased build plan
 

@@ -101,14 +101,63 @@ an integration each cost the user something and precede a purchase. `hit_plan_li
 than pay. ⚠️ **These weights are a hypothesis, not a measurement** — nobody has observed which
 behaviours predict DatIQ revenue yet. They are deliberately in one table so tuning is a one-line diff.
 
-⚠️ **The PRDs are not in this repo.** The plan references "the PRD's 9-signal scoring table" and
-"per-persona activation definitions per the PRD's table"; neither exists in `docs/`. The nine
-signals and seven activation definitions here were **designed from the product's actual
-instrumented surface** and are flagged for owner review, not transcribed from the PRD.
+🔴 **CORRECTION, same session.** The paragraph originally here said the PRD was unavailable and
+that the nine signals had been *designed* from the product's instrumented surface. The owner then
+supplied the PRD ("DatIQ — Persona Specific Templates & Shareable Reports"), and the guessed table
+was **materially wrong** — it lacked "used a persona template" and firmographic ICP fit entirely,
+and invented a `multi_domain`/`habitual_return` pair the PRD does not use. It has been replaced
+with the PRD's actual table, transcribed verbatim, and a test now asserts the transcription so the
+two cannot drift. **The PRD's key tables are now copied into
+[INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md](../INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md)
+§PRD source tables**, so the next session does not have to guess or ask.
+
+⚠️ **THE POINTS SUM TO 130, NOT 100, AND THE THRESHOLD IS 50 RAW POINTS.** The first implementation
+normalised to a percentage, which silently re-scales the PRD's threshold to 65/130 — materially
+stricter than written, suppressing the founder outreach the PRD wants triggered. Do not "tidy" this
+into a percentage.
+
+⚠️ **Two of the nine cannot be measured today** — `imported_enriched_10_companies` needs Phase 4,
+`icp_fit` is firmographic data we do not hold. That is 35 of 130 points, so the
+exclude-and-redistribute rule is load-bearing immediately, not theoretical: scoring them 0 would cap
+every user at 95/130. `MEASURABLE_TODAY` in `pqlModel.js` is the one place that list lives.
+
+⚠️ **Persona gap:** the PRD defines SIX activation groups; the app ships SEVEN personas.
+`recruiter` has no PRD equivalent and is mapped to the closest DEFINED behaviour (`vc-analyst`)
+rather than given an invented definition. Flagged in `PERSONA_TO_ACTIVATION`.
 
 **Two real bugs caught by tests before they shipped:** `signalsFromEvents` threw on a `null` row
 (analytics arrive from both Supabase and a localStorage flush buffer); and the column was named
 `excluded`, which is the pseudo-table `ON CONFLICT DO UPDATE` binds.
+
+### The vulnerability discrepancy — a blind spot on the release path
+
+GitHub reported high advisories on the default branch while root `npm audit` reported none. **Both
+were right.** `scripts/check-vulnerabilities.mjs` ran `npm audit` with `cwd: repoRoot` only;
+Dependabot scans every lockfile. The unscanned one was `tools/netlify-cli/` — **the single tree that
+runs with production deploy credentials.**
+
+| Action | Result |
+|---|---|
+| `qs` 6.15.2 → 6.16.0 (a **prod** dep via `stripe`) | root audit clean |
+| `netlify-cli` **27.1.2 → 27.4.2** | 2 of 7 highs resolved; tree **388 packages smaller** |
+| Gate audits BOTH trees, labelled, failing loudly if one is absent | the disagreement cannot recur |
+| Remaining 5 (sharp → libvips) | bypassed, TODO + 2026-12-03 expiry |
+
+🔴 **CLAUDE.md recorded that pin as immovable** — `@netlify/dev` required `@netlify/ai@^1.0.1`,
+which had never been published and killed a production deploy. **It has since shipped.** Re-checking
+instead of trusting the note is what unlocked the bump — this repo's own "re-read the advisory
+before renewing a bypass" lesson, paying off a second time.
+
+⚠️ **The bypass reasoning was WRONG in draft and is corrected in the file.** The first version
+claimed the vulnerable binary is never installed because the workflow uses `--ignore-scripts`. That
+is false: modern `sharp` ships prebuilt binaries as **optional dependencies**, not a postinstall
+download, so libvips *is* on disk. The surviving claim is narrower and was tested — with `@img` and
+`sharp` deleted from a complete install, `netlify deploy --help` still loads and `netlify deploy`
+reaches its own argument validation.
+
+⚠️ **`approvedBy` is `pending-owner-review`.** A bypass is a risk acceptance and that is the owner's
+call. There is **no forward fix**: npm's only remedy is a MAJOR DOWNGRADE to netlify-cli 23.13.5 on
+the tool that publishes production.
 
 ### Verified
 Full gate **9/9**. db **40 migrations / 359 assertions / 0 failed** (+18) · unit **2689** ·
