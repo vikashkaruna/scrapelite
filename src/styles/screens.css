@@ -10298,3 +10298,43 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 /* Which pages we read behind a "found nothing" claim — the thing that makes
    it checkable rather than just asserted. */
 .empty-mini-pages { color: var(--text-muted); }
+
+/* ── Integration recipe gallery ─────────────────────────────────────────────
+   Outcome-first cards. The destination name is deliberately the SMALLEST
+   thing on the card — the PRD's point is that nobody buys a logo grid. */
+.recipe-gallery { margin: 40px 0; }
+.recipe-gallery-head h2 { font-size: 1.25rem; margin: 0 0 4px; }
+.recipe-gallery-sub { color: var(--text-2); margin: 0 0 18px; font-size: .92rem; }
+.recipe-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.recipe-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; min-width: 0; }
+.recipe-card-soon { opacity: .72; }
+.recipe-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.recipe-provider {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .74rem; font-weight: 600; letter-spacing: .02em;
+  color: var(--text-2); text-transform: uppercase;
+}
+.recipe-tag {
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.recipe-tag-live   { background: var(--ok-soft, rgba(5,150,105,.14)); color: var(--ok, #059669); }
+.recipe-tag-manual { background: var(--accent-soft); color: var(--accent-on-dark); }
+.recipe-tag-soon   { background: var(--surface-2); color: var(--text-2); }
+.recipe-title { font-size: 1rem; margin: 2px 0 0; line-height: 1.35; }
+.recipe-outcome { margin: 0; color: var(--text-2); font-size: .9rem; line-height: 1.45; }
+.recipe-flow {
+  margin: 6px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+  font-size: .84rem; align-items: baseline;
+}
+.recipe-flow dt {
+  font-weight: 700; color: var(--text-3, var(--text-2)); text-transform: uppercase;
+  font-size: .68rem; letter-spacing: .04em;
+}
+.recipe-flow dd { margin: 0; color: var(--text-1); min-width: 0; }
+.recipe-cta { margin-top: auto; align-self: flex-start; }
+.recipe-cta-soon { margin: auto 0 0; font-size: .8rem; color: var(--text-2); font-style: italic; }

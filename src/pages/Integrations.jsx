@@ -1,5 +1,7 @@
 // Integrations.jsx — /integrations catalog page
 import { useState } from "react";
+import RecipeGallery from "../components/RecipeGallery.jsx";
+import { usePersona } from "../components/PersonaProvider.jsx";
 import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -119,6 +121,11 @@ const STATUS_META = {
 };
 
 export default function Integrations() {
+  // `|| {}` is load-bearing: /integrations is a PRERENDERED public marketing
+  // page, rendered outside the provider tree by scripts/prerender and by its
+  // own tests. usePersona() returns null there, and a marketing page must
+  // never fail to render because a personalisation hook had no context.
+  const { personaId } = usePersona() || {};
   // Title, description, canonical and JSON-LD for this route.
   // Ported from the hand-written public/integrations/index.html this page now owns.
   useSeo(seoFor("/integrations"));
@@ -162,6 +169,15 @@ export default function Integrations() {
           </div>
 
           {/* Integration cards */}
+          {/* Outcomes BEFORE the logo grid. The PRD's point is that nobody
+              buys a logo grid — "customers do not buy DatIQ because it has a
+              Zapier integration". Personalised when we know the persona, so a
+              recruiter is not led with a CRM recipe. */}
+          <RecipeGallery
+            personaId={personaId || null}
+            heading={personaId ? "Recipes for your workflow" : "What you can wire up"}
+          />
+
           <div className="int-grid fade">
             {INTEGRATIONS.map((item) => {
               const meta = STATUS_META[item.status];
