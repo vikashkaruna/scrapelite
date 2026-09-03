@@ -10382,3 +10382,7 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   background: var(--surface-2); color: var(--text-2);
   font-size: .86rem; line-height: 1.5;
 }
+
+/* When the stored AI config was last written. "Saved" and "live everywhere"
+   are different moments — see the comment beside this in AdminAI.jsx. */
+.prov-savedat { font-size: .78rem; color: var(--text-2); margin-left: 10px; }
