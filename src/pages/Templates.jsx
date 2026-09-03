@@ -22,6 +22,7 @@ import { PERSONAS } from "../lib/personaConfig.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
+import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
 import { createReport } from "../lib/reports/reportsClient.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
 import StructuredFacts from "../components/StructuredFacts.jsx";
@@ -49,16 +50,38 @@ function TemplateGalleryView({ onPick }) {
     description:
       "Ready-to-run workflows for sales, competitive intelligence, SEO and research. Give one domain, get a source-backed account brief, pricing tracker, audit or due-diligence brief — no prompt writing.",
   });
-  const [templates, setTemplates] = useState(null);
+  // Paint from the prefetched catalogue on the very first render — a lazy
+  // useState initialiser, so there is no flash of the spinner before an effect
+  // gets a chance to run. `null` still means "nothing to show yet" and keeps
+  // the loading state below working unchanged for a cold visitor.
+  const [templates, setTemplates] = useState(() => readTemplatesCache()?.templates || null);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState(personaId || "all");
 
   useEffect(() => {
     let alive = true;
+    // Always revalidate, cache hit or not. That is what makes a browser
+    // refresh a real reload from the database rather than a re-read of
+    // whatever this browser happened to store — the cache only ever buys the
+    // first paint.
     api.listTemplates()
-      .then((r) => { if (alive) setTemplates(r.templates || []); })
-      .catch((e) => { if (alive) setError(e.message); });
+      .then((r) => {
+        if (!alive) return;
+        const list = r.templates || [];
+        // A degraded response is the server's built-in seed fallback, not the
+        // catalogue. Rendering it is fine; REPLACING a good list with it is
+        // not, because the visitor would silently lose templates that exist.
+        // writeTemplatesCache refuses to store it for the same reason.
+        if (r.degraded && templates?.length) return;
+        setTemplates(list);
+        writeTemplatesCache(r);
+      })
+      // A network failure with a warm cache is not an error the visitor needs
+      // to see — the page is already rendering a usable catalogue, and the
+      // revalidation is invisible by design. Only a cold load surfaces it.
+      .catch((e) => { if (alive && !templates?.length) setError(e.message); });
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const shown = useMemo(() => {
