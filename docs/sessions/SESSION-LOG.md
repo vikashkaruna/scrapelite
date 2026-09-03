@@ -164,10 +164,60 @@ Full gate **9/9**. db **40 migrations / 359 assertions / 0 failed** (+18) · uni
 e2e smoke **131 passed** on the `main` push. The 7 behavioural templates assertions were confirmed
 **RED** against the pre-fix handler; the catalogue assertion correctly stayed green.
 
+### Phase 3 — ✅ COMPLETE (89 tests)
+
+| Piece | Detail |
+|---|---|
+| `pqlModel.js` + `0040_pql.sql` | PRD's 9 signals / **130 points** / threshold **50 raw** |
+| `activationEvents.js` | 15-kind vocabulary + `conditionsFromEvents` + **6 drift guards** |
+| `/api/pql` | intake + scoring, 13 contract tests |
+| `RecipeGallery` | 7 recipes on `/integrations`, readiness-tiered |
+| `PqlFunnel` | activation funnel on `/admin/revenue` |
+
+🔴 **A PRIVACY LEAK CAUGHT WHILE WIRING THE EVENTS, AND IT WOULD HAVE PASSED REVIEW.** The obvious
+implementation was `analyticsService.track()` — what every other event in the product uses. That
+writes to `analytics_events`, which `0005` made **world-readable** (`USING (true)`) on the stated
+grounds that it holds *"non-PII, no user content"*. True of a page view; **false the moment an event
+carries `domain`, `templateKey` or `count`**, because those say WHICH COMPANIES a user researched.
+A recruiter's sourcing list, readable by anyone holding the publishable key. Activation events now
+go to `activation_events` (service-key only, FK'd, cascading). ⚠️ **The justification for a
+three-year-old RLS policy silently stopped applying when the data changed shape** — worth re-reading
+`0005`'s reasoning before adding any further event kind.
+
+🔴 **THE DRIFT GUARDS EARNED THEIR PLACE ON THEIR FIRST RUN**, catching two real defects:
+`enrichment_completed` produced `sourced_across_3_companies` but never declared it (recruiter
+activation looked unsatisfiable), and `signalsFromEvents` read `workflow_run_completed` while the
+vocabulary declared `template_run_completed` — **two names for one event**, precisely the bug that
+made every recorded `monitor_created` `undefined/undefined`. Six tests now make that a build failure
+in both directions.
+
+⚠️ **`analyticsService.lifecycle`'s helpers had almost no callers.** Only `pageView` was wired —
+`extractionSucceeded`, `saved`, `exported`, `monitorCreated` existed and nothing called them. The
+funnel existed and nothing fed it. Another "built but never wired" instance, same shape as
+`discoverability.createSchedule`.
+
+### Security — both lockfiles now audit CLEAN, zero bypasses
+
+GitHub reported highs on the default branch while root `npm audit` reported none. **Both right:**
+`check-vulnerabilities.mjs` audited only the repo root; Dependabot scans every lockfile. The
+unscanned one was `tools/netlify-cli/` — **the single tree that runs with production deploy
+credentials.** The gate now audits both.
+
+🔴 **"`npm audit fix` offers only a downgrade" does NOT mean unfixable** — it means the TOP-LEVEL
+package has no newer release, and says nothing about the vulnerable TRANSITIVE dependency. The
+advisory patched at `sharp>=0.35.0`; 0.35.4 was published; the tree sat on 0.34.5 only because
+`ipx@3.1.1` declares `^0.34.3`. An `overrides` entry cleared all five. **Always check the advisory's
+patched range against the registry before concluding a fix does not exist** — this repo has now been
+caught by that assumption three times.
+
+Also: `netlify-cli` **27.1.2 → 27.4.2** (CLAUDE.md recorded that pin as immovable; `@netlify/ai@1.0.1`
+has since shipped) and the tree is **388 packages smaller**. ⚠️ `--ignore-scripts` is **not** a
+security control — modern sharp ships prebuilt binaries as optional dependencies.
+
 ### Open / next
 
-1. **Phase 3 remainder:** ~15 new analytics event kinds, activation wiring, the integration recipe
-   gallery, and the founder funnel on `/admin/revenue`.
+1. **Phase 4 (bulk account intelligence) is next and is the heaviest** — 5–6 sessions, and every
+   later phase waits on its durable runner.
 2. **Phases 4 → 5 → 6 → 7**, phase by phase with a checkpoint each (owner's chosen cadence).
 3. **Migrations `0041`–`0043` are not written yet.** Per owner decision, all new migrations are
    handed over as **one consolidated paste-ready SQL at the end**, not applied from a session.
