@@ -10471,3 +10471,29 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   border-radius: 7px; padding: 3px 10px; font-size: .8rem; font-weight: 600; cursor: pointer;
 }
 .tpl-domain-suggest .tpl-domain-dismiss { background: none; color: var(--text-2); border-color: var(--border); }
+
+/* Pre-tier config warning on /admin/ai. The migration is OFFERED, never
+   applied automatically — it changes which model real extractions run on. */
+.prov-legacy {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 0 0 16px; padding: 12px 14px; border-radius: 9px;
+  background: var(--warn-soft, rgba(217,119,6,.12));
+  color: var(--text-1); font-size: .88rem; line-height: 1.55;
+}
+.prov-legacy-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 9px; }
+.prov-legacy-actions span { font-size: .8rem; color: var(--text-2); }
+
+/* Takedown confirmation. Deliberately heavier than "Remove from showcase":
+   uncurate leaves the page publicly readable, takedown revokes the link for
+   everyone holding it. */
+.admin-gallery-takedown {
+  margin-top: 12px; padding: 12px 14px; border-radius: 9px;
+  background: rgba(185,28,28,.07); border: 1px solid rgba(185,28,28,.25);
+}
+.admin-gallery-takedown p { margin: 0 0 10px; font-size: .86rem; line-height: 1.55; }
+.admin-gallery-takedown label { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; color: var(--text-2); }
+.admin-gallery-takedown input {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-1);
+  border-radius: 7px; padding: 6px 9px; font-size: .86rem;
+}
+.admin-gallery-takedown-actions { display: flex; gap: 8px; margin-top: 10px; }

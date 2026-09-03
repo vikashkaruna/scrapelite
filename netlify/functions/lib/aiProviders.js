@@ -283,9 +283,31 @@ function merge(base, ov) {
       pillars[key] = { ...(base.pillars[key] || {}), ...sanitizePillarEntry(ov.pillars[key]) };
     }
   }
+  // ── A PRE-TIER STORED CONFIG IS DETECTED, NOT SILENTLY REINTERPRETED ──────
+  // Tiering added `modelsFast`. A stored row with `models` and NO `modelsFast`
+  // therefore predates it, and in that world there was ONE model per provider
+  // — and the shipped defaults were the FAST ones (gemini-2.0-flash,
+  // claude-3-5-haiku, gpt-4o-mini).
+  //
+  // The merge below deliberately applies that single map to BOTH tiers, so a
+  // live operator setting is never quietly retired. The cost is that DEEP work
+  // — extraction, summaries, briefs — then runs on what used to be the fast
+  // model, which is invisible from every screen.
+  //
+  // Guessing either way is wrong: reinterpreting it as fast-only would discard
+  // a setting the operator made, and leaving it silent has already produced a
+  // real complaint ("why is my deep tier on gpt-4o-mini?"). So we do neither —
+  // the shape is FLAGGED, /admin/ai says so plainly, and the operator gets a
+  // one-click split. The decision stays theirs; only the invisibility goes.
+  const storedModels = ov.models && Object.keys(ov.models).length > 0;
+  const storedFast = ov.modelsFast && Object.keys(ov.modelsFast).length > 0;
+
   return {
     // Surfaced by /admin/ai so an operator can confirm which write is live.
     updatedAt: ov.updatedAt || base.updatedAt || null,
+    // True when the stored row predates tiering — see above. The UI turns this
+    // into a banner and a migration button; nothing acts on it automatically.
+    legacyModelConfig: Boolean(storedModels && !storedFast),
     order: order.length ? order : base.order,
     models:     { ...base.models,     ...(ov.models || {}) },
     // A stored `models` map also lands on the FAST tier unless `modelsFast` is

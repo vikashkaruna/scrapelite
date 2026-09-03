@@ -89,7 +89,7 @@ Word; "tidying" it into semantic CSS breaks Outlook silently.
 their hand-rolled markup, so once all were converted it matched nothing and passed. Rewritten to
 detect SENDERS (a file posting `html:` to Resend), which then found two more and an eighth.
 
-### The owner's six items — FOUR done, TWO NOT STARTED
+### The owner's six items — ALL SIX DONE
 
 | # | Item | Status |
 |---|---|---|
@@ -97,18 +97,26 @@ detect SENDERS (a file posting `html:` to Resend), which then found two more and
 | 3 | Verify credits upfront | ✅ Blocks before the run row and any fetch; 402 with needed/remaining/shortBy/allowance. Allowance = `plan.limits.extractions` (Developer's 10000 = its own "10,000 row credits/month"). Client mirrors via the SAME pure function. |
 | 4 | Delete published page from admin | ✅ `takedown` action reusing the existing `revoke_report` RPC (`p_actor: null` already modelled the admin case). ⚠️ **REVOKE, not DELETE** — the access log and audit trail survive, which is the point of a takedown. Written reason mandatory. |
 | 6 | Recipes → workflow template library | ✅ Points instead of repeating |
-| **2** | **Run history + Dashboard filters + Account summary** | ⬜ **NOT STARTED** |
-| **5** | **Mandatory domain + smart company entry** | ⬜ **NOT STARTED** — owner chose: type a name → resolve domain on demand → prefill, all editable. NOT live-as-you-type (fires lookups on partial input). |
+| 2 | Run history + Dashboard filters + Account summary | ✅ 🔴 **template_runs has persisted since 0036 and `listRuns` had NO CALLER** — every run a user paid credits for was written and unreachable. FOURTH instance of that pattern. New `runHistory.js` (PURE), `?view=runs` tab, Account summary. ⚠️ A **partial** run is its own bucket, never folded either way. ⚠️ `creditsSpent` ignores ESTIMATES — a guess on a billing surface with no ledger row behind it. ⚠️ successRate over FINISHED runs only, else it dips whenever a run starts. |
+| 5 | Mandatory domain + smart company entry | ✅ `competitors` now required on the *competitive* brief. ⚠️ An **empty array read as "contains no valid domains"** — malformed, to someone who typed nothing. Now "is required". Smart entry guesses candidates and CONFIRMS each by fetching; first token tried before the full name (companies shorten); `.in` included because the PRD ships an Indian-SMB builder. Hard-capped, no credits, weak matches reported as **"best guess"** — a wrongly-resolved domain yields a confident brief about the wrong company. |
 
 ### Open / next
 
 1. **Items 2 and 5**, then Phases 4 → 5 → 6 → 7.
-2. ⚠️ **A pre-tier stored `app_config.ai` row is read as the DEEP model map**, silently downgrading
-   every deep-tier call to the old single model. **Reproduced, NOT fixed** — needs the owner's
-   `/admin/ai` → Models tab to confirm before overriding operator config they chose to keep
-   authoritative.
+2. ✅ **The pre-tier config downgrade is now VISIBLE rather than fixed by guessing.** A previous
+   session had already reasoned about this and chose to apply a stored `models` map to BOTH tiers so
+   a live operator setting is never quietly retired — sound, and the cause of deep work running on a
+   fast model. Both concerns are real, so neither is guessed: `merge()` now flags
+   `legacyModelConfig` (stored `models` with no `modelsFast` predates tiering), `/admin/ai` shows a
+   banner saying deep work may be on a fast model, and offers a **one-click split** that keeps the
+   operator's model on FAST and restores recommended DEEP models. Nothing is applied automatically —
+   it changes which model real extractions run on, and that stays the operator's call.
 3. `0041`–`0043` unwritten. All migrations are handed over as consolidated SQL, per owner decision.
 4. ⚠️ **I cannot enter passwords.** Live testing as `demo@datiq.app` needs the owner to type it.
+5. ✅ **Admin takedown now has a UI** on `/admin/gallery`. ⚠️ Styled as danger and gated behind a
+   typed reason because it is **a different act from "Remove from showcase"**: uncurate takes a
+   report out of `/gallery` and it stays publicly readable at its own link; takedown REVOKES the
+   link for everyone holding it. Someone tidying the showcase must not be one misclick from that.
 5. ~15 blog posts agreed for the end, once features are green on staging.
 
 ---
