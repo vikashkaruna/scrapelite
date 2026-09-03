@@ -23,6 +23,7 @@
 // Nothing here ever returns a key, only a masked fingerprint.
 
 import { verifyAdminToken, bearerFromEvent } from "./lib/adminToken.js";
+import { pageSpeedKeyAdvice, isCredentialRejection, googleKeyKind } from "./lib/googleApiKey.js";
 import { pingProvider, PROVIDER_ERROR_COPY, classifyProviderError } from "./lib/aiProviders.js";
 import { SCRAPE_PROVIDERS } from "./lib/scrapeProviders.js";
 import {
@@ -44,7 +45,12 @@ const respond = (statusCode, body) => ({ statusCode, headers: HEADERS, body: JSO
 // choice: IANA-operated, no robots restrictions, ~1KB, and it will outlive us.
 const SCRAPE_TEST_URL = "https://example.com";
 const PAGESPEED_TEST_URL = "https://example.com";
-const SCRAPE_TIMEOUT_MS = 15_000;
+// Matches the per-provider ceiling in scrapeProviders.js (TIMEOUT_MS). It was
+// 15s, i.e. STRICTER than production — so a provider the extraction chain
+// would happily have waited for could fail its own test, and the console said
+// "the provider rejected the request" about a stopwatch we set ourselves.
+// A verdict here has to mean what a verdict in the chain means.
+const SCRAPE_TIMEOUT_MS = 20_000;
 
 /** Never reveal a key — only enough to tell two keys apart in a screenshot. */
 function fingerprint(key) {
@@ -90,10 +96,17 @@ async function testScrapeProvider(providerKey) {
         },
       };
     }
+    const code = classifyProviderError(r);
     return {
       provider: providerKey, ok: false, latencyMs, configured: true,
-      code: classifyProviderError(r), status: r.status,
+      code, status: r.status,
       error: String(r.error || "empty result").slice(0, 200),
+      // A timeout here is OUR deadline expiring, and the operator action is
+      // nothing like the one for a rejected key — so say which it was.
+      advice: code === "timeout"
+        ? `${PROVIDERS[providerKey].label} did not answer within ${SCRAPE_TIMEOUT_MS / 1000}s. The key is not implicated: `
+          + "check the provider's own status and rate limits, then retry — an uncached render can legitimately exceed this."
+        : undefined,
     };
   } catch (err) {
     return {
@@ -107,24 +120,49 @@ async function testScrapeProvider(providerKey) {
 
 async function testPageSpeed() {
   const key = readKey("pagespeed", process.env);
-  const url = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
-  url.searchParams.set("url", PAGESPEED_TEST_URL);
-  url.searchParams.set("strategy", "mobile");
-  if (key) url.searchParams.set("key", key);
+  const psiUrl = (withKey) => {
+    const url = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
+    url.searchParams.set("url", PAGESPEED_TEST_URL);
+    url.searchParams.set("strategy", "mobile");
+    if (withKey) url.searchParams.set("key", withKey);
+    return url.toString();
+  };
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 25_000);
   const startedAt = Date.now();
   try {
-    const res = await fetch(url.toString(), { signal: ctrl.signal });
+    const res = await fetch(psiUrl(key), { signal: ctrl.signal });
     const latencyMs = Date.now() - startedAt;
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = data?.error?.message || `HTTP ${res.status}`;
+      // Google answers a key of the wrong KIND with "API keys are not
+      // supported by this API" — true, and read as a generic bad key it sends
+      // the operator to reissue a credential that was never the right shape.
+      // The remedy is a Cloud `AIza…` key, not a fresh AI Studio one.
+      const advice = key ? pageSpeedKeyAdvice(key) : null;
+      let note = "";
+      if (key && isCredentialRejection(res.status, data)) {
+        // Prove whether the SERVICE is fine, so the operator knows whether
+        // audits are degraded or dead. Vitals fall back to keyless.
+        const keyless = await fetch(psiUrl(null), { signal: ctrl.signal }).catch(() => null);
+        if (keyless?.ok) {
+          note = "PageSpeed itself is reachable — audits fall back to the keyless quota, so Core Web Vitals still measure, at a rate limit that fails under load.";
+        } else if (keyless) {
+          note = `PageSpeed answered ${keyless.status} without a key either, so Core Web Vitals will read "not measured".`;
+        }
+        // A thrown probe (our own 25s abort, a network blip) establishes
+        // NOTHING about the keyless path, so it says nothing. Reporting an
+        // unproven "it fails without a key too" is how a diagnosis becomes a
+        // second wrong lead.
+      }
       return {
         provider: "pagespeed", ok: false, latencyMs, configured: Boolean(key),
         code: classifyProviderError({ status: res.status, error: msg }),
         status: res.status, error: String(msg).slice(0, 200),
+        keyKind: key ? googleKeyKind(key) : "none",
+        advice: advice ? `${advice}${note ? ` ${note}` : ""}` : (note || undefined),
       };
     }
     const perf = data?.lighthouseResult?.categories?.performance?.score;
@@ -159,7 +197,13 @@ export async function testProvider(providerKey, opts = {}) {
     ...result,
     kind: meta.kind,
     label: meta.label,
-    hint: result.ok ? (result.note || PROVIDER_ERROR_COPY.ok) : (PROVIDER_ERROR_COPY[result.code] || result.error),
+    // `advice` is the remedy a test established for CERTAIN; the code copy is
+    // the generic fallback. Preferring the generic line is how "reissue the
+    // key and update the env var" got shown for a key whose only problem was
+    // being the wrong KIND of key.
+    hint: result.ok
+      ? (result.note || PROVIDER_ERROR_COPY.ok)
+      : (result.advice || PROVIDER_ERROR_COPY[result.code] || result.error),
     // What breaks if this provider is down — the question a status page should
     // answer and almost never does.
     areas: areasForProvider(providerKey).map((a) => ({ key: a, label: FUNCTION_AREAS[a].label })),

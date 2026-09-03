@@ -577,6 +577,12 @@ export function classifyProviderError(r) {
   if (status === 401 || status === 403) return "bad_key";
   if (status === 429) return /credit|billing|balance/.test(msg) ? "no_credit" : "rate_limited";
   if (/not found|does not exist|unsupported model|unknown model/.test(msg)) return "bad_model";
+  // OUR OWN deadline, not the provider's verdict. The abort surfaces as a
+  // returned message rather than a thrown AbortError whenever an adapter
+  // catches it internally, and "This operation was aborted" matches none of
+  // the patterns above — so it used to land on `error`, i.e. "the provider
+  // rejected the request", about a provider that had merely been slow.
+  if (/\baborted\b|\babort\b|timed out|timeout/.test(msg)) return "timeout";
   if (status >= 500) return "provider_down";
   return "error";
 }

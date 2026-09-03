@@ -50,7 +50,7 @@ const CODE_COPY = {
   bad_model:     { tone: "bad",  text: "That model id isn't available to this key." },
   provider_down: { tone: "bad",  text: "The provider returned a server error." },
   truncated:     { tone: "bad",  text: "The model reasoned past its output budget before answering — raise max tokens, or run a non-reasoning model here." },
-  timeout:       { tone: "bad",  text: "No response before the timeout." },
+  timeout:       { tone: "bad",  text: "No answer before OUR deadline — the provider refused nothing. Check its status and rate limits, then retry." },
   network:       { tone: "bad",  text: "Could not reach the provider." },
   error:         { tone: "bad",  text: "The provider rejected the request." },
 };
@@ -383,9 +383,17 @@ function ModelsTab({
                 <ResultPill result={r} busy={busy[p.key]} />
               </header>
 
+              {/* The server's `advice` is a remedy the test established for
+                  CERTAIN — which key format this API wants, whose stopwatch
+                  ran out — and it OUTRANKS the local copy below. Showing the
+                  generic line instead is how a PageSpeed key that was simply
+                  the wrong KIND of Google key read as "reissue it", and a
+                  provider slower than our own 15s deadline read as "the
+                  provider rejected the request". CODE_COPY stays as the
+                  fallback for when the endpoint itself is unreachable. */}
               {r && !r.ok ? (
                 <div className="prov-error">
-                  <strong>{(CODE_COPY[r.code] || CODE_COPY.error).text}</strong>
+                  <strong>{r.advice || (CODE_COPY[r.code] || CODE_COPY.error).text}</strong>
                   {r.error ? <div className="prov-error-raw">{r.error}</div> : null}
                 </div>
               ) : null}

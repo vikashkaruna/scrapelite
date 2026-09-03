@@ -32,6 +32,34 @@ function abortAfter(ms) {
   return { signal: ctrl.signal, clear: () => clearTimeout(t) };
 }
 
+/**
+ * Turn a thrown fetch error into a CLASSIFIED failure.
+ *
+ * ⚠️ WHY THIS EXISTS. Every adapter used to return the bare
+ * `{ ok:false, error: err.message }`, so OUR OWN abort came back as the
+ * uninterpretable string "This operation was aborted" — and because the
+ * adapter RETURNS rather than throws, the caller's own AbortError branch never
+ * ran. /admin/ai therefore reported a provider that had simply been slower
+ * than our stopwatch as "The provider rejected the request", which is the one
+ * sentence guaranteed to send an operator after the key and the bill instead
+ * of the timeout. A deadline we imposed is our decision, not the provider's
+ * verdict, and it has to read that way everywhere — the admin console, the
+ * function log, and the `_providerAttempts` list on every extraction.
+ *
+ * @param {unknown} err  the thrown error
+ * @param {string} label provider name for the message
+ * @param {number} ms    the budget that was in force
+ */
+function failure(err, label, ms) {
+  if (err?.name === "AbortError") {
+    return {
+      ok: false, code: "timeout",
+      error: `${label} did not answer within ${ms}ms (request aborted by DatIQ, not refused by ${label}).`,
+    };
+  }
+  return { ok: false, code: "network", error: `${label}: ${err?.message || "fetch error"}` };
+}
+
 // Basic markdown → HTML conversion so browser-side parseHtml() (DOMParser) can
 // extract headings and anchor links from Jina's markdown output.
 function mdToBasicHtml(md) {
@@ -87,7 +115,7 @@ async function scrapeFirecrawl(url, options, apiKey) {
     };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Firecrawl", options.timeoutMs || TIMEOUT_MS);
   }
 }
 
@@ -121,8 +149,29 @@ async function scrapeSpider(url, options, apiKey) {
     };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Spider", options.timeoutMs || TIMEOUT_MS);
   }
+}
+
+/**
+ * Build the Reader URL.
+ *
+ * Reader takes the target as a RAW path suffix — `https://r.jina.ai/https://
+ * example.com` — which is the form in every one of its own examples. We had
+ * been sending `encodeURIComponent(url)`, i.e. `https%3A%2F%2Fexample.com`,
+ * so what arrived was a single opaque path segment rather than a URL; whether
+ * the edge in front of Reader decodes it is not ours to depend on, and a
+ * target it cannot parse is a request that waits on someone else's timeout
+ * rather than failing fast. Only the characters that would genuinely break a
+ * path are escaped: a `#` would truncate the target at its fragment, and raw
+ * whitespace or control bytes are not legal in a request line.
+ *
+ * The URL has already passed the SSRF guard (isPublicHttpUrl) before any
+ * provider is called, so it is a parsed, public http(s) URL by this point.
+ */
+function jinaReaderUrl(url) {
+  return `${JINA_BASE}/${String(url).replace(/[#\s\u0000-\u001f\u007f]/g, (c) =>
+    encodeURIComponent(c))}`;
 }
 
 async function scrapeJina(url, options, apiKey) {
@@ -131,12 +180,19 @@ async function scrapeJina(url, options, apiKey) {
     "X-Return-Format": "markdown",
   };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  // Hint to Jina to wait for JS rendering when requested (best-effort)
-  if (options.renderJs) headers["X-Wait-For-Selector"] = "body";
+  // Reader's default engine does not run JavaScript, so asking it to render
+  // means naming the browser engine. The previous `X-Wait-For-Selector: body`
+  // was a no-op dressed as one: `body` exists the instant a document parses,
+  // so the wait always ended immediately and nothing was ever rendered.
+  if (options.renderJs) headers["X-Engine"] = "browser";
+  // ⚠️ Do NOT add `X-Timeout` to bound this call. It does the opposite of what
+  // the name suggests: with it set, Reader stops returning early and waits for
+  // network idle or the full timeout, so it makes a slow page slower. Our own
+  // AbortController is the bound, and `failure()` reports it as ours.
 
   const { signal, clear } = abortAfter(options.timeoutMs || TIMEOUT_MS);
   try {
-    const res = await fetch(`${JINA_BASE}/${encodeURIComponent(url)}`, { headers, signal });
+    const res = await fetch(jinaReaderUrl(url), { headers, signal });
     clear();
     if (!res.ok) return { ok: false, status: res.status, error: `Jina ${res.status}` };
     const data = await res.json();
@@ -157,7 +213,7 @@ async function scrapeJina(url, options, apiKey) {
     };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Jina", options.timeoutMs || TIMEOUT_MS);
   }
 }
 
@@ -187,7 +243,7 @@ async function scrapeDirect(url, _options, _apiKey) {
     };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Direct fetch", _options?.timeoutMs || TIMEOUT_MS);
   }
 }
 
@@ -213,7 +269,7 @@ async function mapFirecrawl(url, apiKey) {
     return { ok: true, source: "firecrawl", mapLinks };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Firecrawl map", TIMEOUT_MS);
   }
 }
 
@@ -237,7 +293,7 @@ async function mapSpider(url, apiKey) {
     return { ok: true, source: "spider", mapLinks };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Spider crawl", TIMEOUT_MS);
   }
 }
 
@@ -269,7 +325,7 @@ async function mapDirect(url, _apiKey) {
     return { ok: true, source: "direct", mapLinks };
   } catch (err) {
     clear();
-    return { ok: false, error: err?.message || "fetch error" };
+    return failure(err, "Direct map", TIMEOUT_MS);
   }
 }
 
@@ -364,9 +420,9 @@ export async function runScrapeChain(url, options = {}) {
       if (result.ok && result.html) {
         return { ...result, attempts };
       }
-      attempts.push({ provider: providerKey, error: result.error || "empty result", status: result.status });
+      attempts.push({ provider: providerKey, error: result.error || "empty result", status: result.status, code: result.code });
     } catch (err) {
-      attempts.push({ provider: providerKey, error: err?.message || "exception" });
+      attempts.push({ provider: providerKey, error: err?.message || "exception", code: err?.name === "AbortError" ? "timeout" : "network" });
     }
   }
 
@@ -425,3 +481,6 @@ export function scrapeProviderStatus() {
   }
   return out;
 }
+
+// Pure helpers, exported for tests only — the wire adapters need a network.
+export const _internal = { jinaReaderUrl, failure };

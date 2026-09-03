@@ -6,7 +6,10 @@
 // with a ten-second budget and no Chrome binary can do neither. PageSpeed
 // Insights exposes both: CrUX field data from real Chrome users, plus a lab
 // Lighthouse run. It works without an API key at low volume; PAGESPEED_API_KEY
-// raises the quota.
+// raises the quota — and if that key is rejected we drop back to keyless
+// rather than losing the measurement, because a misconfigured key must never
+// be worse than an empty one. It must be a Cloud API key (`AIza…`), NOT the
+// AI Studio `AQ.` key the Gemini API uses; see ../googleApiKey.js.
 //
 // ── FIELD DATA BEATS LAB DATA ──────────────────────────────────────────────
 // Where CrUX has data for the URL we use it, because it is what real users on
@@ -21,6 +24,8 @@
 // Returning a low score on a failed lookup would subtract ~7.5 points from
 // every audit during an outage and then show a phantom "+7.5 improvement" when
 // service resumed — inventing the trend the validation loop exists to measure.
+
+import { isCredentialRejection, googleKeyKind } from "../googleApiKey.js";
 
 const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
@@ -97,14 +102,37 @@ export async function fetchWebVitals(url, opts = {}) {
   const strategy = opts.strategy === "desktop" ? "desktop" : "mobile";
   const fetchImpl = opts.fetchImpl || fetch;
 
-  const params = new URLSearchParams({ url, strategy, category: "performance" });
   const key = env.PAGESPEED_API_KEY || env.GOOGLE_PAGESPEED_KEY;
-  if (key) params.set("key", key);
+  const buildUrl = (withKey) => {
+    const params = new URLSearchParams({ url, strategy, category: "performance" });
+    if (withKey) params.set("key", withKey);
+    return `${PSI_ENDPOINT}?${params}`;
+  };
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || PSI_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(`${PSI_ENDPOINT}?${params}`, { signal: ctrl.signal });
+    let res = await fetchImpl(buildUrl(key), { signal: ctrl.signal });
+    if (!res.ok && key && (res.status === 400 || res.status === 401 || res.status === 403)) {
+      // ── A WRONG KEY MUST NOT BE WORSE THAN NO KEY ─────────────────────────
+      // PSI works unauthenticated at low volume, so a rejected key should cost
+      // quota, not the measurement. Before this, a key of the wrong KIND (an
+      // AI Studio `AQ.` key pasted into PAGESPEED_API_KEY — see
+      // ../googleApiKey.js) failed EVERY lookup, so LCP/INP/CLS read "not
+      // measured" on every audit while the technical pillar quietly lost 30%
+      // of its evidence and nothing on any screen said why.
+      // Read the body off the failed response directly — nothing downstream
+      // needs it again, and an injected test double need not implement clone().
+      const body = await (typeof res.clone === "function" ? res.clone() : res).json().catch(() => ({}));
+      if (isCredentialRejection(res.status, body)) {
+        console.warn(
+          `[DatIQ] PageSpeed rejected PAGESPEED_API_KEY (${googleKeyKind(key)} key, HTTP ${res.status}): `
+          + `${String(body?.error?.message || "").slice(0, 160)} — retrying without a key at reduced quota. `
+          + `Fix it on /admin/ai → Data services.`
+        );
+        res = await fetchImpl(buildUrl(null), { signal: ctrl.signal });
+      }
+    }
     clearTimeout(timer);
     if (!res.ok) {
       return { error: `PageSpeed returned ${res.status}`, unavailable: true };

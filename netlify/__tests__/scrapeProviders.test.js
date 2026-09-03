@@ -199,3 +199,104 @@ describe("SCRAPE_PROVIDERS registry", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /admin/ai, 2026-09-03: "Jina AI Reader — Error · 15000ms — The provider
+// rejected the request. This operation was aborted."
+//
+// Jina rejected nothing. 15000ms is the admin test's OWN deadline, and the
+// abort was ours; the adapter returned the raw message, which matched none of
+// the classifier's patterns and so landed on `error` — the same verdict a dead
+// key gets. Fixed at both ends: the request now uses the URL form Reader
+// documents, and our own deadline reports as a timeout everywhere.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Jina Reader request shape", () => {
+  it("appends the target URL raw, as Reader's own examples do", async () => {
+    const { _internal } = await load();
+    expect(_internal.jinaReaderUrl("https://example.com"))
+      .toBe("https://r.jina.ai/https://example.com");
+  });
+
+  it("keeps a query string intact — it is part of the target, not of our request", async () => {
+    const { _internal } = await load();
+    expect(_internal.jinaReaderUrl("https://acme.io/p?plan=pro&x=1"))
+      .toBe("https://r.jina.ai/https://acme.io/p?plan=pro&x=1");
+  });
+
+  it("escapes only what would break the path: a fragment must not truncate the target", async () => {
+    const { _internal } = await load();
+    const built = _internal.jinaReaderUrl("https://acme.io/app#/route");
+    expect(built).not.toContain("#");
+    expect(built).toContain("%23/route");
+  });
+
+  it("sends the key as a bearer token and asks for markdown", async () => {
+    process.env.JINA_API_KEY = "jina-key";
+    process.env.SCRAPE_PROVIDER_ORDER = "jina";
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({ data: { content: "# Hi\n\n[a](https://x.io)", title: "Hi" } }),
+      { status: 200 },
+    ));
+    const { runScrapeChain: run } = await load();
+    const r = await run("https://example.com");
+    expect(r.ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://r.jina.ai/https://example.com");
+    expect(init.headers.Authorization).toBe("Bearer jina-key");
+    expect(init.headers["X-Return-Format"]).toBe("markdown");
+    // X-Timeout makes Reader wait for network idle INSTEAD of returning
+    // early, so it would make this slower, not safer.
+    expect(init.headers).not.toHaveProperty("X-Timeout");
+  });
+
+  it("asks for the browser engine when JS rendering is requested", async () => {
+    process.env.JINA_API_KEY = "jina-key";
+    process.env.SCRAPE_PROVIDER_ORDER = "jina";
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({ data: { content: "# Hi" } }), { status: 200 },
+    ));
+    const { runScrapeChain: run } = await load();
+    await run("https://example.com", { renderJs: true });
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.headers["X-Engine"]).toBe("browser");
+    // `body` exists the moment a document parses, so waiting for it rendered
+    // nothing — it only looked like a render switch.
+    expect(init.headers).not.toHaveProperty("X-Wait-For-Selector");
+  });
+});
+
+describe("our deadline is not the provider's verdict", () => {
+  it("classifies an aborted request as a timeout, naming whose deadline it was", async () => {
+    const { _internal } = await load();
+    const abort = Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
+    const f = _internal.failure(abort, "Jina", 15000);
+    expect(f.code).toBe("timeout");
+    expect(f.error).toMatch(/15000ms/);
+    expect(f.error).toMatch(/not refused by Jina/i);
+  });
+
+  it("a genuine network error is not reported as a timeout", async () => {
+    const { _internal } = await load();
+    const f = _internal.failure(new TypeError("fetch failed"), "Spider", 20000);
+    expect(f.code).toBe("network");
+  });
+
+  it("the chain records the classification, so _providerAttempts says which it was", async () => {
+    process.env.JINA_API_KEY = "jina-key";
+    process.env.SCRAPE_PROVIDER_ORDER = "jina,direct";
+    fetchMock.mockImplementation(async () => {
+      throw Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
+    });
+    const { runScrapeChain: run } = await load();
+    const r = await run("https://example.com");
+    expect(r.ok).toBe(false);
+    expect(r.attempts.find((a) => a.provider === "jina")?.code).toBe("timeout");
+  });
+
+  it("and the shared classifier agrees, so the admin console stops saying 'rejected'", async () => {
+    const { classifyProviderError } = await import("../functions/lib/aiProviders.js");
+    expect(classifyProviderError({ error: "This operation was aborted" })).toBe("timeout");
+    expect(classifyProviderError({ code: "timeout", error: "x" })).toBe("timeout");
+  });
+});
