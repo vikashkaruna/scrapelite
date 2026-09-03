@@ -880,7 +880,12 @@ export default function Dashboard() {
         <div className="dash-tabs" role="tablist" aria-label="Dashboard views">
           <button role="tab" aria-selected={dashView === "saved"}
             className={"dash-tab" + (dashView === "saved" ? " active" : "")}
-            onClick={() => setDashView("saved")}>Saved pages</button>
+            // "Extractions", not "Saved pages": the page's own eyebrow already
+            // reads "Saved", so a tab containing that word was both redundant
+            // on screen and ambiguous to anything matching on it. It also
+            // pairs better with "Workflow runs" — extractions and runs are the
+            // two different objects this page holds.
+            onClick={() => setDashView("saved")}>Extractions</button>
           <button role="tab" aria-selected={dashView === "runs"}
             className={"dash-tab" + (dashView === "runs" ? " active" : "")}
             onClick={() => setDashView("runs")}>Workflow runs</button>
