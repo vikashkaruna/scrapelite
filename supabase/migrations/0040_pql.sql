@@ -55,6 +55,9 @@ create index if not exists activation_events_session_idx on public.activation_ev
 create table if not exists public.pql_scores (
   user_id      uuid primary key references auth.users(id) on delete cascade,
   -- NULL is a legal, meaningful value: nothing measurable. See the header.
+  -- Scale is 0..130, NOT 0..100 — the PRD's nine signals sum to 130 and its
+  -- threshold is 50 RAW POINTS. Storing a percentage here would re-scale that
+  -- threshold to 65 points without anyone noticing.
   score        integer,
   -- Fraction of the signal weight that was measurable, 0..1.
   coverage     numeric(4,3) not null default 1.000,
@@ -72,7 +75,7 @@ create table if not exists public.pql_scores (
   -- happen the first time anyone writes an upsert against this table.
   excluded_signals text[] not null default '{}',
   computed_at  timestamptz not null default now(),
-  constraint pql_scores_score_chk    check (score is null or (score >= 0 and score <= 100)),
+  constraint pql_scores_score_chk    check (score is null or (score >= 0 and score <= 130)),
   constraint pql_scores_coverage_chk check (coverage >= 0 and coverage <= 1),
   -- A NULL score cannot be a PQL. Enforced here rather than trusted from the
   -- application, because "no data" quietly becoming "qualified" is the exact

@@ -73,32 +73,60 @@ function activeBypassFor(ghsaIds, pkgName) {
   });
 }
 
-// ── run npm audit ───────────────────────────────────────────────────
-let audit;
-try {
-  // npm audit exits non-zero when vulnerabilities exist — capture stdout anyway.
-  const out = execSync("npm audit --json", {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  audit = JSON.parse(out);
-} catch (e) {
-  if (e.stdout) {
-    try {
-      audit = JSON.parse(e.stdout);
-    } catch {
-      console.error("[vuln-gate] npm audit produced unparseable output");
-      process.exit(1);
+// ── every lockfile in the repo, not just the root one ───────────────
+//
+// This gate audited ONLY the repo root until 2026-09-03, and that was a blind
+// spot on the release path specifically. `tools/netlify-cli/` is a SECOND,
+// independently-locked tree — 1,000+ packages — and it is the one that runs
+// with production deploy credentials in phase-gate.yml. Auditing everything
+// except the tool that publishes production is the wrong way round.
+//
+// The blind spot was found by a disagreement, which is the only way an
+// unmonitored thing ever gets found: GitHub reported high advisories on the
+// default branch while `npm audit` at the root reported none. Dependabot scans
+// every lockfile; this gate scanned one.
+const AUDIT_ROOTS = [
+  { label: "root", cwd: repoRoot },
+  { label: "tools/netlify-cli", cwd: `${repoRoot}/tools/netlify-cli` },
+];
+
+function runAudit({ label, cwd }) {
+  try {
+    // npm audit exits non-zero when vulnerabilities exist — capture stdout anyway.
+    const out = execSync("npm audit --json", {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return JSON.parse(out);
+  } catch (e) {
+    if (e.stdout) {
+      try {
+        return JSON.parse(e.stdout);
+      } catch {
+        console.error(`[vuln-gate] npm audit produced unparseable output for ${label}`);
+        process.exit(1);
+      }
     }
-  } else {
-    console.error(`[vuln-gate] npm audit failed to run: ${e.message}`);
+    // A tree that is absent is not a tree that is clean. Fail loudly rather
+    // than silently auditing one fewer lockfile than the gate claims to cover.
+    console.error(`[vuln-gate] npm audit failed to run for ${label}: ${e.message}`);
     process.exit(1);
   }
 }
 
-const vulns = audit.vulnerabilities || {};
+// Merge every tree's advisories. A package name can legitimately appear in
+// both, so the tree label is carried through to the report — otherwise an
+// operator reading "sharp [high]" has no idea which lockfile to go and fix.
+const vulns = {};
+for (const root of AUDIT_ROOTS) {
+  const result = runAudit(root);
+  for (const [pkgName, v] of Object.entries(result.vulnerabilities || {})) {
+    const key = root.label === "root" ? pkgName : `${pkgName} (${root.label})`;
+    vulns[key] = { ...v, _tree: root.label, _pkg: pkgName };
+  }
+}
 const blocking = [];
 const bypassed = [];
 
@@ -115,7 +143,9 @@ for (const [pkgName, v] of Object.entries(vulns)) {
     })
     .filter(Boolean);
 
-  const bp = activeBypassFor(ghsaIds, pkgName);
+  // Match the bypass on the real package name, never the display key — a
+  // bypass written for "sharp" must not have to know which lockfile it lives in.
+  const bp = activeBypassFor(ghsaIds, v._pkg || pkgName);
   const entry = {
     package: pkgName,
     severity: v.severity,

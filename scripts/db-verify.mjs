@@ -1617,8 +1617,14 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
     ["44444444-4444-4444-4444-444444444402"]);
   check("...and the constraint refuses it at the database level", true);
 
-  await throws(`insert into public.pql_scores (user_id, score) values ($1, 140)`, [B]);
-  check("an out-of-range score is refused", true);
+  await throws(`insert into public.pql_scores (user_id, score) values ($1, 131)`, [B]);
+  check("a score above the PRD's 130-point maximum is refused", true);
+  // 130 IS legal — the PRD's nine signals sum to 130, not 100. A constraint
+  // capped at 100 would silently reject a perfect score.
+  await db.query(`insert into public.pql_scores (user_id, score, is_pql) values ($1, 130, true)
+                  on conflict (user_id) do update set score=130, is_pql=true`, [B]);
+  const perfect = await one(`select score from public.pql_scores where user_id=$1`, [B]);
+  eq("...but a perfect 130 is accepted", perfect.score, 130);
 
   const ghost = await one(
     `select public.record_pql_score('44444444-4444-4444-4444-4444444444ff', 50, 1.0, true, true, null, '{}'::jsonb, '{}'::text[]) v`);
