@@ -150,7 +150,7 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 ## 2.0 Status board
 
 > Single source of truth for what exists. Updated at the end of every session.
-> Last updated **2026-09-03**.
+> Last updated **2026-09-03** (second session).
 
 | Phase | Scope | Status | Evidence |
 |---|---|---|---|
@@ -159,6 +159,8 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
 | **3** | Activation instrumentation (PQL) + integration recipe gallery | ✅ **DONE** | `0040_pql.sql` (verified on WASM PG, **not yet on real Supabase**) · `pqlModel` transcribed from the PRD (9 signals / 130 pts / threshold 50 raw) · event vocabulary + 6 drift guards · `/api/pql` intake + scoring (13 contract tests) · recipe gallery on `/integrations` · activation funnel on `/admin/revenue`. **89 tests.** |
 | **4** | PRD 3 — bulk account intelligence ⚠️ heaviest | ⬜ **PENDING** | `bulk_icp_enrichment` seeded as `draft`, awaiting its durable runner |
+
+> ⚠️ **Before Phase 4 starts, two owner items remain open:** run history + Dashboard filters + Account summary (item 2), and mandatory domain + smart company entry (item 5). Both are scoped in [SESSION-LOG.md](sessions/SESSION-LOG.md).
 | **5** | PRD 4 — competitor watchlists & change intelligence | ⬜ **PENDING** | — |
 | **6** | PRD 5 — native signal routing | 🟡 **PARTIAL** | Event model shipped (`KIND_WHITELIST` 5→16). Rules layer + UI pending |
 | **7** | Packaging, GTM surfaces, release collateral | 🟡 **PARTIAL** | Entitlements + plan limits done. Pricing page, persona landing pages, help/changelog pending |

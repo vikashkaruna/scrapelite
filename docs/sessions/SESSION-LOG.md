@@ -18,6 +18,102 @@
 
 ---
 
+## 2026-09-03 (later) — Live-review fixes, email branding, and four of the owner's six items
+
+**Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree, pushed to
+**`feat/intelligence-workflows`** by explicit refspec. **`main` untouched at `1910968` throughout.**
+PR **[#143](https://github.com/vikashkaruna/scrapelite/pull/143)** → `staging`, open, CI green.
+Preview: `https://deploy-preview-143--datiqapp.netlify.app` (401 without a Netlify session — by design).
+
+⚠️ **Migration `0040` was applied to the STAGING Supabase project (`aubwooslkkrprdxuiyvj`) by the
+owner.** Production (`sikkfxysjhirmtwkumpt`) is a separate, later step. `runtime-config.js` sends
+everything except `main` to staging, so the preview and `staging.datiq.app` share that project.
+
+### 🔴 The same failure pattern, now seen THREE times — watch for it in Phases 4–6
+
+Mechanism shipped, tested, and **never wired to a caller**:
+
+| What | Found | Consequence |
+|---|---|---|
+| `discoverability.createSchedule` | earlier session | a whole subsystem unreachable |
+| `analyticsService.lifecycle.*` | this session | the funnel existed and nothing fed it |
+| **`checkAllowance()`** | this session | **credits were RECORDED but never ENFORCED** — any account could run unlimited templates |
+
+The owner reported the third as "credit checks happen later than the run". The truth was that they
+did not happen at all. **When a phase claims a capability, grep for its callers before believing it.**
+
+### 🔴 A privacy leak that would have passed review
+
+Activation events were about to be emitted through `analyticsService.track()` — what every other
+event uses. That writes to `analytics_events`, which `0005` made **world-readable** (`USING (true)`)
+on the stated grounds that it holds *"non-PII, no user content"*. True of a page view; **false once
+an event carries `domain`, `templateKey` or `count`**, which say WHICH COMPANIES a user researched.
+⚠️ **The justification for a three-year-old RLS policy silently stopped applying when the data
+changed shape.** Re-read `0005`'s reasoning before adding any further event kind.
+
+### 🔴 Vendor identity was leaking on the SUCCESS path
+
+A prior session built `aiFailure.js` to strip vendor names from ERROR responses, with a
+forbidden-pattern sweep so *"the boundary cannot be re-crossed one well-meaning code at a time"*.
+The **success** path shipped `provider`/`model` in provenance, rendering `openai · gpt-4o-mini` on
+the customer's own report — the same disclosure, on the path that runs far more often.
+⚠️ **An existing contract test asserted `_enrichment.provider === "gemini"` — it had ENCODED THE
+LEAK AS A CONTRACT**, so the suite was defending it. Inverted. New `publicProvenance()` is an
+ALLOWLIST, because a denylist ships every field someone adds later, which is how this survived.
+
+### Fixes from the owner's live review (all local until pushed)
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `openai · gpt-4o-mini`, "Schema-validated", "Raw JSON", `· via firecrawl` on customer reports | redacted at the SOURCE + UI; 10 sweep tests |
+| 2 | `account_brief`'s `angle` input collected, validated, **charged for**, and never read | `inputContext()` drives off `input_schema.fields`, so a new template's inputs reach its prompt the day it is seeded |
+| 3 | "This run is incomplete" on a site that simply doesn't publish pricing | a **successful synthesis proves the page was readable** — so empty structured facts is a FINDING, not a failure |
+| 4 | SEO/GEO/AEO template ran a thin copy of `/discoverability` | hands off with the domain prefilled, **before anything is spent**; prefill never auto-run |
+
+### Email branding — eight senders, one shell
+
+Reported from a live welcome email. The audit found **eight** independent mail builders: ONE had a
+logo, ONE had the tagline, **NOT ONE** carried the company.
+
+🔴 **The tagline existed in THREE variants across eight files.** `"Intelligence from every URL"` was
+stale and shipped on **every invoice and every dunning email DatIQ has ever sent**. Owner chose
+**"Intelligence from the Web"**; it is now defined once in `exportBranding.js`.
+
+New `src/lib/emailBranding.js`: DatIQ mark + wordmark + tagline header, **Axiom Minds Private
+Limited · axiomminds.ai** footer. ⚠️ **The logo is decorative and the wordmark is TEXT** — most
+clients block images, and branding that vanishes when images are blocked is not branding.
+⚠️ **Table-based, inline-styled, no `<style>`** — Gmail strips `<head>`, Outlook renders through
+Word; "tidying" it into semantic CSS breaks Outlook silently.
+
+⚠️ **My first sweep was VACUOUS and its own first assertion caught it** — it detected builders by
+their hand-rolled markup, so once all were converted it matched nothing and passed. Rewritten to
+detect SENDERS (a file posting `html:` to Resend), which then found two more and an eighth.
+
+### The owner's six items — FOUR done, TWO NOT STARTED
+
+| # | Item | Status |
+|---|---|---|
+| 1 | `/admin/ai` doesn't update | ✅ Save path proven CORRECT by a new integration test. Real cause: each Netlify function holds its own 60s config cache, so "saved" ≠ "live everywhere". Now stamped with `updatedAt` and surfaced. The editable model dropdown already existed (input + datalist, both tiers) — now pinned by test. |
+| 3 | Verify credits upfront | ✅ Blocks before the run row and any fetch; 402 with needed/remaining/shortBy/allowance. Allowance = `plan.limits.extractions` (Developer's 10000 = its own "10,000 row credits/month"). Client mirrors via the SAME pure function. |
+| 4 | Delete published page from admin | ✅ `takedown` action reusing the existing `revoke_report` RPC (`p_actor: null` already modelled the admin case). ⚠️ **REVOKE, not DELETE** — the access log and audit trail survive, which is the point of a takedown. Written reason mandatory. |
+| 6 | Recipes → workflow template library | ✅ Points instead of repeating |
+| **2** | **Run history + Dashboard filters + Account summary** | ⬜ **NOT STARTED** |
+| **5** | **Mandatory domain + smart company entry** | ⬜ **NOT STARTED** — owner chose: type a name → resolve domain on demand → prefill, all editable. NOT live-as-you-type (fires lookups on partial input). |
+
+### Open / next
+
+1. **Items 2 and 5**, then Phases 4 → 5 → 6 → 7.
+2. ⚠️ **A pre-tier stored `app_config.ai` row is read as the DEEP model map**, silently downgrading
+   every deep-tier call to the old single model. **Reproduced, NOT fixed** — needs the owner's
+   `/admin/ai` → Models tab to confirm before overriding operator config they chose to keep
+   authoritative.
+3. `0041`–`0043` unwritten. All migrations are handed over as consolidated SQL, per owner decision.
+4. ⚠️ **I cannot enter passwords.** Live testing as `demo@datiq.app` needs the owner to type it.
+5. ~15 blog posts agreed for the end, once features are green on staging.
+
+---
+
+
 ## 2026-09-03 — Templates outage root-caused, AI-config staleness closed, Phase 3 (PQL) spine shipped
 
 **Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree and is pushed to
