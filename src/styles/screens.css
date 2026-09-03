@@ -10338,3 +10338,37 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 .recipe-flow dd { margin: 0; color: var(--text-1); min-width: 0; }
 .recipe-cta { margin-top: auto; align-self: flex-start; }
 .recipe-cta-soon { margin: auto 0 0; font-size: .8rem; color: var(--text-2); font-style: italic; }
+
+/* ── PQL / activation funnel (/admin/revenue) ───────────────────────────────
+   "no data" is styled DIFFERENTLY from a zero on purpose: the two mean
+   different things and a founder acts on them differently. */
+.pqlf { margin-top: 20px; }
+.pqlf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pqlf-heading { margin: 0; font-size: 1.05rem; }
+.pqlf-threshold { font-size: .78rem; color: var(--text-2); }
+.pqlf-notice, .pqlf-caveat {
+  display: flex; gap: 8px; align-items: flex-start;
+  margin: 12px 0 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-2); font-size: .84rem; line-height: 1.5;
+}
+.pqlf-stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top: 14px; }
+.pqlf-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pqlf-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.pqlf-stat-accent .pqlf-stat-value { color: var(--accent); }
+.pqlf-stat-label { font-size: .78rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.pqlf-stat-hint { font-size: .76rem; color: var(--text-2); }
+.pqlf-nodata { font-size: .95rem; font-weight: 500; font-style: italic; color: var(--text-2); }
+.pqlf-bands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.pqlf-band {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 6px; border-radius: 8px; background: var(--surface-2);
+}
+.pqlf-band-atThreshold, .pqlf-band-strong { background: var(--accent-soft); }
+.pqlf-band-n { font-size: 1.15rem; font-weight: 700; }
+.pqlf-band-label { font-size: .72rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.pqlf-table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: .86rem; }
+.pqlf-caption { caption-side: top; text-align: left; color: var(--text-2); font-size: .78rem; padding-bottom: 8px; }
+.pqlf-table th, .pqlf-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.pqlf-table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.pqlf-table tbody th { font-weight: 600; }
+.pqlf-row-empty { opacity: .55; }
