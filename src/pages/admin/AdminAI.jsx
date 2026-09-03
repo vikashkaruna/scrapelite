@@ -49,6 +49,7 @@ const CODE_COPY = {
   rate_limited:  { tone: "warn", text: "Rate-limited right now. The key is fine." },
   bad_model:     { tone: "bad",  text: "That model id isn't available to this key." },
   provider_down: { tone: "bad",  text: "The provider returned a server error." },
+  truncated:     { tone: "bad",  text: "The model reasoned past its output budget before answering — raise max tokens, or run a non-reasoning model here." },
   timeout:       { tone: "bad",  text: "No response before the timeout." },
   network:       { tone: "bad",  text: "Could not reach the provider." },
   error:         { tone: "bad",  text: "The provider rejected the request." },

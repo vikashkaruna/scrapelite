@@ -95,6 +95,10 @@ const CHAIN_TO_FAILURE = {
   // operator reads them on /admin/ai — not here.
   bad_model:     AI_FAILURE.CHAIN_FAILED,
   provider_down: AI_FAILURE.CHAIN_FAILED,
+  // A model that reasoned past its output budget. Deliberately NOT mapped to
+  // EMPTY_REPLY: that one is flagged transient, and this does not clear on a
+  // retry with the same budget — it needs an operator to change a setting.
+  truncated:     AI_FAILURE.CHAIN_FAILED,
   timeout:       AI_FAILURE.CHAIN_FAILED,
   network:       AI_FAILURE.CHAIN_FAILED,
   error:         AI_FAILURE.CHAIN_FAILED,

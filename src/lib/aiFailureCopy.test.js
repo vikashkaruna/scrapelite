@@ -23,7 +23,7 @@ import {
 // Both vocabularies that reach this module: the provider chain's codes and
 // the enrichment layer's `ai_`-prefixed reasons.
 const CHAIN_CODES = ["no_credit", "bad_key", "rate_limited", "no_key", "bad_model",
-  "provider_down", "timeout", "network", "error", "empty"];
+  "provider_down", "timeout", "network", "error", "empty", "truncated"];
 const ENRICH_CODES = Object.values(AI_FAILURE);
 const ALL = [...CHAIN_CODES, ...ENRICH_CODES, undefined, null, "", "unrecognised-code"];
 

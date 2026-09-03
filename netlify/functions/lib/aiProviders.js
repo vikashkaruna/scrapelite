@@ -125,29 +125,132 @@ async function callAnthropic(messages, model, maxTokens, apiKey, opts = {}) {
     if (tool?.input) return { ok: true, status: 200, text: JSON.stringify(tool.input), json: tool.input, structured: true };
   }
   const text = blocks.map((b) => b.text).filter(Boolean).join("\n").trim();
+  if (!text && data?.stop_reason === "max_tokens") {
+    return {
+      ok: false, status: 200, code: "truncated",
+      error: `Anthropic produced no text — the ${maxTokens}-token output budget was spent before any answer (stop_reason: max_tokens).`,
+    };
+  }
   return { ok: true, status: 200, text, structured: false };
 }
 
+// OpenAI renamed the output budget: `max_tokens` is deprecated on Chat
+// Completions and REJECTED OUTRIGHT by every reasoning-era model —
+//
+//   "Unsupported parameter: 'max_tokens' is not supported with this model.
+//    Use 'max_completion_tokens' instead."
+//
+// — which is a 400 on a perfectly healthy, funded key, and reads on
+// /admin/ai as "the provider rejected the request". `max_completion_tokens`
+// is accepted by every model OpenAI currently serves, so it is what we send.
+// The one-shot retry below exists for the reverse case (an older deployment
+// or an OpenAI-compatible proxy that only knows the old name): a parameter
+// rename must not be able to take the chain down in either direction.
+const OPENAI_BUDGET_PARAM_RE = /max_completion_tokens/i;
+
 async function callOpenAI(messages, model, maxTokens, apiKey, opts = {}) {
   const { signal, schema } = opts;
-  const body = { model, max_tokens: maxTokens, messages };
   let structured = false;
+  const base = { model, messages };
   if (schema) {
-    body.response_format = {
+    base.response_format = {
       type: "json_schema",
       json_schema: { name: "extraction", strict: false, schema },
     };
     structured = true;
   }
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+
+  const post = (budgetKey) => fetch("https://api.openai.com/v1/chat/completions", {
     signal, method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...base, [budgetKey]: maxTokens }),
   });
-  const data = await res.json().catch(() => ({}));
+
+  let res = await post("max_completion_tokens");
+  let data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status === 400 && isUnsupportedParam(data?.error, OPENAI_BUDGET_PARAM_RE)) {
+    res = await post("max_tokens");
+    data = await res.json().catch(() => ({}));
+  }
   if (!res.ok) return { ok: false, status: res.status, error: data?.error?.message || `HTTP ${res.status}` };
-  const text = (data?.choices?.[0]?.message?.content || "").trim();
+
+  const choice = data?.choices?.[0];
+  const text = (choice?.message?.content || "").trim();
+  if (!text && choice?.finish_reason === "length") {
+    // A reasoning model spends hidden reasoning tokens out of the SAME budget
+    // as the answer, so a tight max_completion_tokens returns an empty
+    // message with finish_reason "length" — a truncation, not a refusal.
+    return {
+      ok: false, status: 200, code: "truncated",
+      error: `OpenAI produced no text — the ${maxTokens}-token output budget was spent before any answer (finish_reason: length).`,
+    };
+  }
   return { ok: true, status: 200, text, structured };
+}
+
+/** Is this a "that parameter is not supported" 400 about the named field? */
+function isUnsupportedParam(err, field) {
+  if (!err) return false;
+  const blob = `${err.param || ""} ${err.code || ""} ${err.message || ""}`;
+  return field.test(blob) && /unsupported|unrecognized|unknown|not supported|invalid/i.test(blob);
+}
+
+// ── Gemini thinking budgets ──────────────────────────────────────────────────
+// Gemini 2.5 and later are THINKING models: hidden reasoning tokens are drawn
+// from the SAME maxOutputTokens budget as the visible answer, and they are
+// spent FIRST. So a tight budget comes back as candidates[0] with an EMPTY
+// parts[] and finishReason MAX_TOKENS — no text, no error, and nothing wrong
+// with the key, the prompt or the account. That is exactly what /admin/ai's
+// ping produced against a healthy, funded key: "Gemini returned no text
+// (MAX_TOKENS)", classified as "the provider rejected the request".
+//
+// Two rules, because model ids move faster than deploys:
+//
+//   1. RESERVE, DON'T SHARE. Any thinking budget we allow is added ON TOP of
+//      the caller's maxTokens, so `maxTokens: 64` means 64 tokens of ANSWER
+//      rather than 64 tokens the model may spend entirely on thinking.
+//   2. TURN IT OFF WHERE THE ANSWER IS A WORD. Below THINK_OFF_BELOW the
+//      output is a label, a tag or a yes/no — reasoning buys nothing there and
+//      truncation costs everything — so we disable it in the families that
+//      allow it (2.5 Flash and Flash-Lite accept 0; 2.5 Pro's floor is 128 and
+//      cannot be disabled at all).
+//
+// A model family we do not recognise gets NO thinkingConfig (an unknown field
+// is a 400, and Gemini 3 uses `thinkingLevel`, not a budget) but DOES get
+// headroom — the failure mode we are fixing must not return the day a newer
+// model id is typed into /admin/ai.
+const GEMINI_THINK_OFF_BELOW = 512;
+const GEMINI_THINK_MIN = 128;   // 2.5 Pro's documented floor
+const GEMINI_THINK_MAX = 8192;
+const clampTokens = (n, lo, hi) => Math.max(lo, Math.min(hi, Math.round(n)));
+
+/**
+ * Decide Gemini's thinking config and the real maxOutputTokens to send.
+ * Pure, and exported through `_internal` so the rule is testable without a
+ * network call.
+ * @returns {{config: object|null, outputTokens: number, reserved: number}}
+ */
+function geminiThinkingPlan(model, maxTokens) {
+  const m = String(model || "").toLowerCase();
+  const answer = Math.max(1, Math.round(Number(maxTokens) || 1));
+
+  // Pre-2.5 families do no thinking and reject thinkingConfig outright.
+  if (/^gemini-(1\.0|1\.5|2\.0)/.test(m)) {
+    return { config: null, outputTokens: answer, reserved: 0 };
+  }
+
+  if (/^gemini-2\.5-/.test(m)) {
+    // Flash and Flash-Lite accept thinkingBudget 0; Pro does not.
+    if (/flash/.test(m) && answer < GEMINI_THINK_OFF_BELOW) {
+      return { config: { thinkingBudget: 0 }, outputTokens: answer, reserved: 0 };
+    }
+    const reserved = clampTokens(answer, GEMINI_THINK_MIN, GEMINI_THINK_MAX);
+    return { config: { thinkingBudget: reserved }, outputTokens: answer + reserved, reserved };
+  }
+
+  // Unknown / newer family: headroom only, no config we cannot verify.
+  const reserved = clampTokens(Math.max(answer, 1024), GEMINI_THINK_MIN, GEMINI_THINK_MAX);
+  return { config: null, outputTokens: answer + reserved, reserved };
 }
 
 async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
@@ -161,7 +264,9 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
     if (m.role === "system") { systemText += (systemText ? "\n" : "") + text; continue; }
     contents.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text }] });
   }
-  const generationConfig = { maxOutputTokens: maxTokens };
+  const plan = geminiThinkingPlan(model, maxTokens);
+  const generationConfig = { maxOutputTokens: plan.outputTokens };
+  if (plan.config) generationConfig.thinkingConfig = plan.config;
   let structured = false;
   if (schema) {
     generationConfig.responseMimeType = "application/json";
@@ -184,6 +289,14 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
     // refusal — reporting it as "empty response" sent callers hunting for a
     // content problem that was really a budget problem.
     const reason = cand?.finishReason || data?.promptFeedback?.blockReason || "empty response";
+    if (reason === "MAX_TOKENS") {
+      const thoughts = data?.usageMetadata?.thoughtsTokenCount;
+      return {
+        ok: false, status: 200, code: "truncated",
+        error: `Gemini produced no text — the ${plan.outputTokens}-token output budget was spent before any answer (finishReason MAX_TOKENS`
+          + `${Number.isFinite(thoughts) ? `, ${thoughts} of it on internal reasoning` : ""}). Raise max tokens or pick a lighter model.`,
+      };
+    }
     return { ok: false, status: 200, error: `Gemini returned no text (${reason})` };
   }
   return { ok: true, status: 200, text, structured };
@@ -383,14 +496,26 @@ export async function resolveProvider(provider, pillar, tier) {
   };
 }
 
+export const PING_TOKENS = 64;          // enough for "ok" on any non-reasoning model
+export const PING_RETRY_TOKENS = 2048;  // enough for a reasoning pass plus "ok"
+
 /**
  * LIVE reachability + credit check for one provider. This is the thing key
  * presence could never tell us: all three of DatIQ's AI keys were PRESENT and
  * all three were dead (invalid key, no credit, no credit) while /admin/health
  * reported "operational". One tiny completion is the only honest answer.
  *
- * Deliberately cheap: 1-4 output tokens, a 6-word prompt, and a hard timeout.
- * Never throws.
+ * Deliberately cheap: a 6-word prompt, a small output budget and a hard
+ * timeout. Never throws.
+ *
+ * ⚠️ THE BUDGET IS PART OF THE TEST, NOT AN AFTERTHOUGHT. This ping used to
+ * ask for 16 output tokens, which a reasoning model spends on hidden thinking
+ * before it writes a word — so Gemini 2.5 and the GPT-5-era models came back
+ * empty and the console reported a working, funded key as a failure. A test
+ * that cries wolf is worse than no test: it is indistinguishable from the real
+ * outage it exists to catch. So a truncation is RETRIED ONCE with a budget
+ * generous enough for any reasoning pass, and if that answers, the provider is
+ * reported as WORKING with a note about how much room the model needs.
  */
 export async function pingProvider(provider, { model, timeoutMs = 12_000 } = {}) {
   const meta = PROVIDER_META[provider];
@@ -404,13 +529,22 @@ export async function pingProvider(provider, { model, timeoutMs = 12_000 } = {})
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   const startedAt = Date.now();
+  const ask = (budget) => ADAPTERS[provider](
+    [{ role: "user", content: "Reply with the single word: ok" }],
+    useModel, budget, apiKey, { signal: ctrl.signal }
+  );
   try {
-    const r = await ADAPTERS[provider](
-      [{ role: "user", content: "Reply with the single word: ok" }],
-      useModel, 16, apiKey, { signal: ctrl.signal }
-    );
+    let r = await ask(PING_TOKENS);
+    let note = "";
+    if (!r.ok && classifyProviderError(r) === "truncated") {
+      // The key and the model are fine; the budget was not. Prove which.
+      r = await ask(PING_RETRY_TOKENS);
+      note = r.ok
+        ? `Working, but this model reasons before answering: it needed more than ${PING_TOKENS} output tokens to reply "ok". Keep max tokens generous wherever it runs.`
+        : "";
+    }
     const latencyMs = Date.now() - startedAt;
-    if (r.ok) return { provider, ok: true, code: "ok", model: useModel, latencyMs, configured: true, sample: (r.text || "").slice(0, 40) };
+    if (r.ok) return { provider, ok: true, code: "ok", model: useModel, latencyMs, configured: true, note, sample: (r.text || "").slice(0, 40) };
     return { provider, ok: false, code: classifyProviderError(r), model: useModel, latencyMs, configured: true, status: r.status, error: r.error };
   } catch (err) {
     return {
@@ -432,6 +566,10 @@ export async function pingProvider(provider, { model, timeoutMs = 12_000 } = {})
  * reissue). Collapsing them into "error" is what made the outage unreadable.
  */
 export function classifyProviderError(r) {
+  // An adapter that already KNOWS the cause says so. Regex-matching prose is a
+  // fallback for vendor text we do not control, never a way to re-derive
+  // something the call site established for certain.
+  if (r?.code && PROVIDER_ERROR_COPY[r.code]) return r.code;
   const msg = String(r?.error || "").toLowerCase();
   const status = Number(r?.status);
   if (/credit|billing|quota exceeded|insufficient|balance/.test(msg)) return "no_credit";
@@ -452,6 +590,7 @@ export const PROVIDER_ERROR_COPY = {
   rate_limited:  "Rate-limited right now. Valid key; retry shortly.",
   bad_model:     "The configured model id is not available to this key.",
   provider_down: "The provider returned a server error.",
+  truncated:     "The model spent its whole output budget on internal reasoning before answering — raise max tokens, or use a model that is not a reasoning model for this area.",
   timeout:       "No response before the timeout.",
   network:       "Could not reach the provider.",
   error:         "The provider rejected the request.",
@@ -531,4 +670,4 @@ function appendSchemaInstruction(messages, schema) {
   return copy;
 }
 
-export const _internal = { toGeminiSchema, appendSchemaInstruction, defaults, merge };
+export const _internal = { toGeminiSchema, appendSchemaInstruction, defaults, merge, geminiThinkingPlan, isUnsupportedParam };

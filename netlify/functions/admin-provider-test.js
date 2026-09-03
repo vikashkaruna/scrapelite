@@ -14,7 +14,8 @@
 //
 // A "test" button that only re-reads an env var would have changed nothing.
 // So every test here actually calls the vendor:
-//   • AI providers   → a ~16-token completion (see pingProvider)
+//   • AI providers   → a real completion, retried once with a larger budget if
+//                      the model reasons past a small one (see pingProvider)
 //   • Scrape         → a real scrape of a tiny, stable, public page
 //   • PageSpeed      → a real API call for one URL
 //
