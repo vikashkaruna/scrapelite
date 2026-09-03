@@ -81,6 +81,18 @@ export default function RecipeGallery({ personaId = null, limit = null, heading 
           );
         })}
       </ul>
+
+      {/* The recipes describe OUTCOMES and where they land. They deliberately
+          do not restate what each workflow template does — that belongs in the
+          library, which is the one place a template is described, priced and
+          run. Duplicating it here would give us two descriptions of the same
+          thing to keep in step, and they would not stay in step. */}
+      <p className="recipe-gallery-more">
+        <Link to="/templates">Browse the full workflow template library →</Link>
+        <span className="recipe-gallery-more-note">
+          Every recipe above starts from one of these.
+        </span>
+      </p>
     </section>
   );
 }

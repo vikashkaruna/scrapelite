@@ -10386,3 +10386,12 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 /* When the stored AI config was last written. "Saved" and "live everywhere"
    are different moments — see the comment beside this in AdminAI.jsx. */
 .prov-savedat { font-size: .78rem; color: var(--text-2); margin-left: 10px; }
+
+/* Pointers from the preset/recipe surfaces to the workflow template library.
+   Pointing, not repeating — one description of a template, in one place. */
+.recipe-gallery-more, .home-template-more {
+  margin: 18px 0 0; font-size: .9rem; color: var(--text-2);
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+.recipe-gallery-more a, .home-template-more a { color: var(--accent); font-weight: 600; }
+.recipe-gallery-more-note { font-size: .82rem; }

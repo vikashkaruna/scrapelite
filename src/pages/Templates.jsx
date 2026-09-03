@@ -20,6 +20,7 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { PERSONAS } from "../lib/personaConfig.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
+import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
 import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
@@ -189,6 +190,11 @@ function TemplateRunner({ templateKey, onBack }) {
   const [degraded, setDegraded] = useState(false);
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState([]);
+  // The two facts only the server knows: this plan's monthly credit budget and
+  // what has been spent against it. Fetched ONCE on load rather than on every
+  // keystroke — neither changes with the input, so re-asking per edit would be
+  // a round trip per character for an answer that cannot have moved.
+  const [budget, setBudget] = useState(null); // { allowance, spent }
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
@@ -211,6 +217,12 @@ function TemplateRunner({ templateKey, onBack }) {
         }
         setTemplate(r.template);
         setDegraded(r.degraded === true);
+        // Best-effort: a budget we cannot read must not block the runner. The
+        // server refuses independently, so the only cost of missing it here is
+        // that the user learns the shortfall a round trip later.
+        api.estimateRun(templateKey, {})
+          .then((e) => { if (alive) setBudget({ allowance: e.allowance, spent: e.spentThisMonth || 0 }); })
+          .catch(() => {});
         const seed = {};
         for (const f of r.template.input_schema?.fields || []) {
           if (f.default !== undefined) seed[f.name] = f.default;
@@ -240,6 +252,25 @@ function TemplateRunner({ templateKey, onBack }) {
     }
     const v = validateInput(template, values);
     if (!v.ok) { setErrors(v.errors); return; }
+
+    // CLIENT MIRROR of the server's affordability check. The server remains
+    // authoritative — a client gate alone is trivially bypassed by POSTing
+    // directly, which is why templates.js refuses independently — but showing
+    // the shortfall here means the user learns it without a round trip, and
+    // without a run row being created and immediately refused.
+    const needed = estimate?.credits ?? estimate?.total ?? 0;
+    if (budget && Number.isFinite(budget.allowance)) {
+      // The SAME pure checkAllowance the server calls, so the two verdicts are
+      // computed by one implementation and cannot drift.
+      const afford = checkAllowance({ spent: budget.spent, allowance: budget.allowance, estimated: needed });
+      if (!afford.ok) {
+        setErrors([
+          `This run needs ${needed} credits and you have ${afford.remaining} left this month. ` +
+          `Upgrade your plan, or wait for your allowance to reset.`,
+        ]);
+        return;
+      }
+    }
     setErrors([]);
     setBusy(true);
     setResult(null);
