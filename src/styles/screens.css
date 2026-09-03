@@ -10395,3 +10395,61 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 }
 .recipe-gallery-more a, .home-template-more a { color: var(--accent); font-weight: 600; }
 .recipe-gallery-more-note { font-size: .82rem; }
+
+/* ── Workflow run history ───────────────────────────────────────────────────
+   "partial" gets its own colour, never a shade of success or failure: it
+   produced real output AND stated a gap, and the palette should not decide
+   which of those matters more. */
+.wrh { display: flex; flex-direction: column; gap: 14px; }
+.wrh-loading, .wrh-none { color: var(--text-2); font-size: .9rem; display: flex; gap: 8px; align-items: center; }
+.wrh-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 16px; color: var(--text-2); }
+.wrh-empty p { margin: 0; }
+.wrh-error { display: flex; gap: 6px; align-items: center; font-size: .84rem; color: var(--danger, #b91c1c); }
+.wrh-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: .86rem; color: var(--text-2); }
+.wrh-stat b { color: var(--text-1); font-size: 1.05rem; margin-right: 4px; }
+.wrh-stat em { font-style: normal; font-size: .7rem; opacity: .75; margin-left: 4px; }
+.wrh-filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.wrh-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.wrh-chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  border-radius: 999px; padding: 4px 11px; font-size: .8rem; cursor: pointer;
+}
+.wrh-chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.wrh-filters select, .wrh-filters input {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-1);
+  border-radius: 8px; padding: 5px 9px; font-size: .84rem; min-width: 0;
+}
+.wrh-filters input { flex: 1 1 180px; }
+.wrh-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.wrh-row {
+  display: flex; gap: 12px; justify-content: space-between; align-items: flex-start;
+  padding: 11px 0; border-bottom: 1px solid var(--border); min-width: 0;
+}
+.wrh-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wrh-template { font-weight: 600; font-size: .92rem; }
+.wrh-target { font-size: .82rem; color: var(--text-2); }
+.wrh-summary {
+  font-size: .82rem; color: var(--text-2); margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.wrh-row-meta { display: flex; gap: 9px; align-items: center; flex-shrink: 0; font-size: .78rem; color: var(--text-2); }
+.wrh-pill { border-radius: 999px; padding: 2px 8px; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.wrh-pill-succeeded { background: var(--ok-soft, rgba(5,150,105,.14)); color: var(--ok, #059669); }
+.wrh-pill-partial   { background: var(--warn-soft, rgba(217,119,6,.15)); color: var(--warn, #b45309); }
+.wrh-pill-failed    { background: rgba(185,28,28,.12); color: #b91c1c; }
+.wrh-pill-running   { background: var(--accent-soft); color: var(--accent); }
+.wrh-pill-unknown   { background: var(--surface-2); color: var(--text-2); }
+.wrh-credits { font-variant-numeric: tabular-nums; }
+.wrh-more { margin: 4px 0 0; font-size: .85rem; }
+.wrh-compact .wrh-row { padding: 8px 0; }
+
+/* Dashboard view tabs — saved pages vs workflow runs. Two genuinely different
+   objects (a failed run is worth seeing; only successes become saved pages),
+   so they get their own view rather than one merged table. */
+.dash-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.dash-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 8px 14px; font-size: .92rem; font-weight: 600; color: var(--text-2); cursor: pointer;
+}
+.dash-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.dash-runs { margin-top: 4px; }
