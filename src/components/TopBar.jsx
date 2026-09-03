@@ -35,6 +35,14 @@ const EXPLORE_ITEMS = [
   { label: "Plans & Pricing", icon: "tag", path: "/pricing" },
   { label: "Integrations",    icon: "zap", path: "/integrations" },
   {
+    group: "Workflows",
+    items: [
+      { label: "Account Lists",  icon: "users",   path: "/lists" },
+      { label: "Watchlists",     icon: "eye",     path: "/watchlists" },
+      { label: "Signal Rules",   icon: "share-2", path: "/rules" },
+    ],
+  },
+  {
     group: "Resources",
     items: [
       { label: "Use Cases",      icon: "target",      path: "/use-cases" },
@@ -50,7 +58,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/lists", "/watchlists", "/rules", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
@@ -96,7 +104,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onLists, onWatchlists, onRules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { workspaces, currentWorkspaceId, setCurrentWorkspaceId } = useWorkspace();
@@ -162,12 +170,6 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSw
               <div className="nav-dropdown-divider" />
             </>
           )}
-          {/* Workspace and Schedules both live here rather than in the
-              primary nav. Both are signed-in destinations people reach from
-              wherever they formed the intent — the Home composer, a persona
-              switch, Dashboard's run history — so neither needs to compete
-              with the four primary verbs for space. This is the "I know it
-              exists, where was it" path. */}
           {user && (
             <button className="nav-dropdown-item" role="menuitem"
               onClick={() => { setOpen(false); onWorkspace(); }}>
@@ -194,11 +196,28 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onSw
             </div>
           )}
           {user && (
-            <button className="nav-dropdown-item" role="menuitem"
-              onClick={() => { setOpen(false); onSchedules(); }}>
-              <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
-              Schedules &amp; monitors
-            </button>
+            <>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onLists?.(); }}>
+                <span className="nav-dd-icon"><Icon name="users" size={14} /></span>
+                Account Lists
+              </button>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onWatchlists?.(); }}>
+                <span className="nav-dd-icon"><Icon name="eye" size={14} /></span>
+                Watchlists
+              </button>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onRules?.(); }}>
+                <span className="nav-dd-icon"><Icon name="share-2" size={14} /></span>
+                Signal Routing
+              </button>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onSchedules(); }}>
+                <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
+                Schedules &amp; monitors
+              </button>
+            </>
           )}
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onAccount(); }}>
@@ -504,6 +523,9 @@ export default function TopBar() {
               user={user} persona={persona}
               onWorkspace={() => navigate("/workspace")}
               onAccount={() => navigate("/account")}
+              onLists={() => navigate("/lists")}
+              onWatchlists={() => navigate("/watchlists")}
+              onRules={() => navigate("/rules")}
               onSchedules={() => navigate("/schedules")}
               onSwitchRole={handleSwitchRole}
               onSignOut={handleSignOut}

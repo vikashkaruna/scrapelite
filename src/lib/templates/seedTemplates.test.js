@@ -27,9 +27,9 @@ describe("seed templates", () => {
     }
   });
 
-  it("only bulk_icp_enrichment waits for Phase 4's durable runner", () => {
-    expect(PUBLISHED_SEEDS).toHaveLength(6);
-    expect(seedByKey("bulk_icp_enrichment").status).toBe("draft");
+  it("all seven seed templates are published including bulk_icp_enrichment", () => {
+    expect(PUBLISHED_SEEDS).toHaveLength(7);
+    expect(seedByKey("bulk_icp_enrichment").status).toBe("published");
   });
 
   it("every published seed produces a non-zero, itemised estimate — except the audit", () => {

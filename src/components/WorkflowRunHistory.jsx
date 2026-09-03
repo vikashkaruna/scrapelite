@@ -13,6 +13,7 @@ import {
   filterRuns, summariseRuns, bucketOf, templateKeysIn, monthsIn, RUN_FILTERS,
 } from "../lib/templates/runHistory.js";
 import Icon from "./Icon.jsx";
+import WorkflowRunModal from "./WorkflowRunModal.jsx";
 
 const BUCKET_LABEL = {
   succeeded: "Succeeded", partial: "Partial", failed: "Failed",
@@ -34,6 +35,7 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
   const [templateKey, setTemplateKey] = useState("all");
   const [month, setMonth] = useState("all");
   const [query, setQuery] = useState("");
+  const [selectedRun, setSelectedRun] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -116,7 +118,20 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
       ) : (
         <ul className="wrh-list">
           {shown.map((r) => (
-            <li key={r.id} className="wrh-row">
+            <li
+              key={r.id}
+              className="wrh-row wrh-row-interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedRun(r)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedRun(r);
+                }
+              }}
+              aria-label={`View details for ${humanTemplate(r.template_key)} run on ${r.input?.domain || r.input?.url || "target"}`}
+            >
               <div className="wrh-row-main">
                 <span className="wrh-template">{humanTemplate(r.template_key)}</span>
                 <span className="wrh-target">{r.input?.domain || r.input?.url || "—"}</span>
@@ -129,6 +144,9 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
                     money spent. */}
                 {Number.isFinite(r.credits_actual) && <span className="wrh-credits">{r.credits_actual} cr</span>}
                 <span className="wrh-when">{when(r.created_at)}</span>
+                <span className="wrh-open-affordance" aria-hidden="true" title="Open run">
+                  <Icon name="arrow-up-right" size={13} />
+                </span>
               </div>
             </li>
           ))}
@@ -137,6 +155,10 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
 
       {compact && runs.length > shown.length && (
         <p className="wrh-more"><Link to="/dashboard?view=runs">See all {runs.length} runs →</Link></p>
+      )}
+
+      {selectedRun && (
+        <WorkflowRunModal run={selectedRun} onClose={() => setSelectedRun(null)} />
       )}
     </div>
   );

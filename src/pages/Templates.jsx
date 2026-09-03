@@ -11,7 +11,7 @@
 // place that journey can be abandoned.
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router";
+import { useSearchParams, useNavigate, useLocation } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -33,7 +33,8 @@ import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 export default function Templates() {
   const [params, setParams] = useSearchParams();
   const key = params.get("key");
-  return key ? <TemplateRunner templateKey={key} onBack={() => setParams({})} />
+  const runId = params.get("runId");
+  return (key || runId) ? <TemplateRunner templateKey={key} runId={runId} onBack={() => setParams({})} />
              : <TemplateGalleryView onPick={(k) => setParams({ key: k })} />;
 }
 
@@ -174,64 +175,93 @@ const HANDOFF = {
     why: "This audit runs in the Discoverability module, which has the full four-pillar engine, history and re-audit comparison.",
     state: (input) => ({ auditUrl: input.domain ? `https://${input.domain}` : input.url }),
   },
+  bulk_icp_enrichment: {
+    to: "/lists",
+    label: "Open in Bulk Account Lists",
+    why: "Bulk enrichment runs in the Account Lists module, which provides deduplication, CSV/domain paste import, durable chunked execution, and ICP scoring.",
+    state: (input) => ({ initialDomains: input.domains, icpProfile: input.icp_profile }),
+  },
 };
 
-function TemplateRunner({ templateKey, onBack }) {
+function TemplateRunner({ templateKey, runId = null, onBack }) {
   const showToast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, openAuth } = useAuth();
 
+  const [activeKey, setActiveKey] = useState(templateKey);
   const [template, setTemplate] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  // True when the server served this template from its built-in seeds because
-  // the template store was unreachable. The template renders and reads
-  // correctly, but a RUN needs the store, so promising one silently would be
-  // the same lie in a new place.
   const [degraded, setDegraded] = useState(false);
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState([]);
-  // The two facts only the server knows: this plan's monthly credit budget and
-  // what has been spent against it. Fetched ONCE on load rather than on every
-  // keystroke — neither changes with the input, so re-asking per edit would be
-  // a round trip per character for an answer that cannot have moved.
-  const [budget, setBudget] = useState(null); // { allowance, spent }
+  const [budget, setBudget] = useState(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [shareFor, setShareFor] = useState(null);
 
   useEffect(() => {
+    if (templateKey) {
+      setActiveKey(templateKey);
+    }
+  }, [templateKey]);
+
+  useEffect(() => {
+    if (location.state?.prefill) {
+      setValues((v) => ({ ...v, ...location.state.prefill }));
+    }
+  }, [location.state?.prefill]);
+
+  // Load an existing run if runId is supplied
+  useEffect(() => {
+    if (!runId) return;
     let alive = true;
-    api.getTemplate(templateKey)
+    api.getRun(runId)
+      .then(async (r) => {
+        if (!alive || !r?.run) return;
+        const runData = r.run;
+        setActiveKey(runData.template_key);
+        setValues(runData.input || {});
+        setResult({
+          output: runData.output || {},
+          summary: runData.output_summary || runData.output?.summary || null,
+          talking_points: runData.output?.talking_points || null,
+          sources: runData.sources || runData.output?.sources || [],
+          run: runData,
+        });
+      })
+      .catch((e) => {
+        if (alive) setLoadError(e.message);
+      });
+    return () => { alive = false; };
+  }, [runId]);
+
+  useEffect(() => {
+    if (!activeKey) return;
+    let alive = true;
+    api.getTemplate(activeKey)
       .then((r) => {
         if (!alive) return;
-        // A 200 carrying no `template` is the endpoint breaking its own
-        // contract, not a template. Dereferencing it put a raw
-        // "Cannot read properties of undefined (reading 'input_schema')" on
-        // screen — which tells the user nothing they can act on and points
-        // whoever debugs it at this component instead of at the server. Fail
-        // with a sentence a human can read; the operator-facing cause stays
-        // server-side, where diagnostics belong.
         if (!r?.template) {
           throw new Error("This template couldn't be loaded right now. Please try again in a moment.");
         }
         setTemplate(r.template);
         setDegraded(r.degraded === true);
-        // Best-effort: a budget we cannot read must not block the runner. The
-        // server refuses independently, so the only cost of missing it here is
-        // that the user learns the shortfall a round trip later.
-        api.estimateRun(templateKey, {})
+        api.estimateRun(activeKey, {})
           .then((e) => { if (alive) setBudget({ allowance: e.allowance, spent: e.spentThisMonth || 0 }); })
           .catch(() => {});
-        const seed = {};
-        for (const f of r.template.input_schema?.fields || []) {
-          if (f.default !== undefined) seed[f.name] = f.default;
-        }
-        setValues(seed);
+        setValues((prev) => {
+          const seed = { ...prev };
+          for (const f of r.template.input_schema?.fields || []) {
+            if (f.default !== undefined && seed[f.name] === undefined) seed[f.name] = f.default;
+          }
+          return seed;
+        });
       })
       .catch((e) => { if (alive) setLoadError(e.message); });
     return () => { alive = false; };
-  }, [templateKey]);
+  }, [activeKey]);
 
   // The estimate updates as the user types, so the cost is never a surprise
   // revealed at the moment of commitment.

@@ -113,11 +113,19 @@ grant usage on schema public to anon, authenticated;
 // 0040_pql.sql                 +2 tables (activation_events, pql_scores)
 //   +1 function (record_pql_score). No triggers — pql_scores is a derived
 //   cache recomputed from activation_events, never mutated in place by the DB.
-// Taking these to 72 / 43 / 14.
+// 0041_bulk_enrichment.sql     +7 tables (lists, canonical_entities, list_records,
+//   icp_score_rules, enrichment_jobs, enrichment_job_items, review_queue)
+//   +1 function (bulk_touch_updated_at) +3 triggers.
+// 0042_watchlists.sql          +6 tables (watchlists, watchlist_targets,
+//   monitored_pages, entity_snapshots, field_changes, change_feedback)
+//   +1 function (watchlists_touch_updated_at) +1 trigger.
+// 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
+//   +1 function (signal_rules_touch_updated_at) +1 trigger.
+// Taking these to 87 / 46 / 19.
 const EXPECT = {
-  tables: 72,
-  functions: 43,
-  triggers: 14,
+  tables: 87,
+  functions: 46,
+  triggers: 19,
   tablesWithoutRls: 0,
 };
 
@@ -1647,6 +1655,173 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting the user cascades their activation events away", afterA.c, 0);
   const scoreAfter = await one(`select count(*)::int c from public.pql_scores where user_id=$1`, [A]);
   eq("...and their score", scoreAfter.c, 0);
+}
+
+// ── 0041: bulk enrichment ──────────────────────────────────────────────
+{
+  group("bulk enrichment — lists, canonical entities, records & ICP rules");
+  const U1 = "55555555-5555-5555-5555-555555555501";
+  await db.query(`insert into auth.users (id, email) values ($1, 'bulk@datiq.test') on conflict do nothing`, [U1]);
+
+  // Default ICP rules were seeded
+  const defaults = await one(`select count(*)::int c from public.icp_score_rules where is_default = true`);
+  check("default ICP score rules are seeded", defaults.c >= 4);
+
+  // Create a list
+  const list = await one(
+    `insert into public.lists (user_id, name, total_records) values ($1, 'Q4 Target Accounts', 10) returning id`,
+    [U1]
+  );
+  check("a list can be created", Boolean(list?.id));
+
+  // Canonical entity deduplication
+  await db.query(
+    `insert into public.canonical_entities (canonical_domain, company_name) values ('stripe.com', 'Stripe')`
+  );
+  const ent = await one(`select canonical_domain, company_name from public.canonical_entities where canonical_domain='stripe.com'`);
+  eq("canonical entity stores domain & name", ent.company_name, "Stripe");
+
+  // Duplicate domain refuses duplicate insertion
+  const dupErr = await throws(
+    `insert into public.canonical_entities (canonical_domain, company_name) values ('stripe.com', 'Stripe Duplicate')`
+  );
+  check("duplicate canonical domain is refused by unique constraint", Boolean(dupErr));
+
+  // Add records to list
+  const rec = await one(
+    `insert into public.list_records (list_id, raw_input, canonical_domain, status, icp_score)
+     values ($1, 'https://stripe.com', 'stripe.com', 'complete', 85.50) returning id`,
+    [list.id]
+  );
+  check("list record is inserted with score", Boolean(rec?.id));
+
+  // Review queue entry
+  const rev = await one(
+    `insert into public.review_queue (record_id, list_id, user_id, field_name, candidate_value, confidence)
+     values ($1, $2, $3, 'industry', 'Fintech', 0.650) returning id`,
+    [rec.id, list.id, U1]
+  );
+  check("review queue item created for low confidence fact", Boolean(rev?.id));
+
+  // Cascade delete list removes records and review queue items
+  await db.query(`delete from public.lists where id=$1`, [list.id]);
+  const remRec = await one(`select count(*)::int c from public.list_records where id=$1`, [rec.id]);
+  eq("deleting list cascades to records", remRec.c, 0);
+  const remRev = await one(`select count(*)::int c from public.review_queue where id=$1`, [rev.id]);
+  eq("...and cascades to review queue", remRev.c, 0);
+}
+
+// ── 0042: competitor watchlists & change intelligence ─────────────────
+{
+  group("watchlists — targets, monitored pages, snapshots, deltas & feedback");
+  const U2 = "66666666-6666-6666-6666-666666666601";
+  await db.query(`insert into auth.users (id, email) values ($1, 'ci@datiq.test') on conflict do nothing`, [U2]);
+
+  // Create a watchlist
+  const wl = await one(
+    `insert into public.watchlists (user_id, name, cadence) values ($1, 'Top 5 B2B Billing Competitors', 'daily') returning id`,
+    [U2]
+  );
+  check("a watchlist can be created", Boolean(wl?.id));
+
+  // Add target
+  const target = await one(
+    `insert into public.watchlist_targets (watchlist_id, domain, company_name) values ($1, 'stripe.com', 'Stripe') returning id`,
+    [wl.id]
+  );
+  check("a watchlist target is added", Boolean(target?.id));
+
+  // Duplicate target in same watchlist refused
+  const dupTarget = await throws(
+    `insert into public.watchlist_targets (watchlist_id, domain) values ($1, 'stripe.com')`,
+    [wl.id]
+  );
+  check("duplicate target in same watchlist is refused", Boolean(dupTarget));
+
+  // Monitored page
+  const page = await one(
+    `insert into public.monitored_pages (target_id, url, category, content_hash)
+     values ($1, 'https://stripe.com/pricing', 'pricing', 'hash_abc123') returning id`,
+    [target.id]
+  );
+  check("monitored page is registered with category and hash", Boolean(page?.id));
+
+  // Entity snapshot
+  const snap = await one(
+    `insert into public.entity_snapshots (target_id, page_id, snapshot_type, extracted_data, content_hash)
+     values ($1, $2, 'pricing', '{"starter_price": 29}'::jsonb, 'hash_abc123') returning id`,
+    [target.id, page.id]
+  );
+  check("structured entity snapshot is recorded", Boolean(snap?.id));
+
+  // Field change with fact vs interpretation separation
+  const change = await one(
+    `insert into public.field_changes (
+       target_id, watchlist_id, field_name, category, old_value, new_value,
+       materiality, fact_summary, ai_interpretation
+     ) values (
+       $1, $2, 'starter_price', 'pricing', '$29/mo', '$49/mo',
+       'critical', 'Starter price increased from $29/mo to $49/mo',
+       '69% price increase indicates movement upmarket towards enterprise'
+     ) returning id`,
+    [target.id, wl.id]
+  );
+  check("field change records separated fact and interpretation", Boolean(change?.id));
+
+  // Change feedback
+  const fb = await one(
+    `insert into public.change_feedback (field_change_id, user_id, feedback, notes)
+     values ($1, $2, 'useful', 'Critical pricing signal for sales team') returning id`,
+    [change.id, U2]
+  );
+  check("user feedback on change is captured", Boolean(fb?.id));
+
+  // Deleting watchlist cascades to targets, pages, snapshots, changes, and feedback
+  await db.query(`delete from public.watchlists where id=$1`, [wl.id]);
+  const remTargets = await one(`select count(*)::int c from public.watchlist_targets where id=$1`, [target.id]);
+  eq("deleting watchlist cascades to targets", remTargets.c, 0);
+  const remChanges = await one(`select count(*)::int c from public.field_changes where id=$1`, [change.id]);
+  eq("...and cascades to field changes", remChanges.c, 0);
+  const remFeedback = await one(`select count(*)::int c from public.change_feedback where id=$1`, [fb.id]);
+  eq("...and cascades to feedback", remFeedback.c, 0);
+}
+
+// ── 0043: native signal routing ────────────────────────────────────────
+{
+  group("signal rules — triggers, condition evaluations & audit executions");
+  const U3 = "77777777-7777-7777-7777-777777777701";
+  await db.query(`insert into auth.users (id, email) values ($1, 'router@datiq.test') on conflict do nothing`, [U3]);
+
+  // Create signal rule
+  const rule = await one(
+    `insert into public.signal_rules (
+       user_id, name, trigger_source, conditions, action_type, action_config
+     ) values (
+       $1, 'Alert Sales on Critical Competitor Pricing Delta', 'watchlist',
+       '[{"field": "materiality", "operator": "equals", "value": "critical"}]'::jsonb,
+       'slack', '{"channel": "#comp-alerts"}'::jsonb
+     ) returning id`,
+    [U3]
+  );
+  check("a signal rule can be created", Boolean(rule?.id));
+
+  // Insert execution audit log
+  const exec = await one(
+    `insert into public.rule_executions (
+       rule_id, user_id, status, event_payload, action_response, latency_ms
+     ) values (
+       $1, $2, 'success',
+       '{"domain": "stripe.com", "field": "starter_price", "materiality": "critical"}'::jsonb,
+       '{"slack_ts": "1234567890.123456"}'::jsonb, 142
+     ) returning id`,
+    [rule.id, U3]
+  );
+  check("rule execution audit row is recorded", Boolean(exec?.id));
+
+  // Deleting rule cascades to executions
+  await db.query(`delete from public.signal_rules where id=$1`, [rule.id]);
+  const remExec = await one(`select count(*)::int c from public.rule_executions where id=$1`, [exec.id]);
+  eq("deleting signal rule cascades to executions", remExec.c, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

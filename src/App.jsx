@@ -65,6 +65,9 @@ import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Templates from "./pages/Templates.jsx";
+import Lists from "./pages/Lists.jsx";
+import Watchlists from "./pages/Watchlists.jsx";
+import SignalRules from "./pages/SignalRules.jsx";
 import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import Discoverability from "./pages/Discoverability.jsx";
@@ -244,6 +247,9 @@ function Shell() {
               template (template.run is deliberately ungated) — they just
               cannot save the result. */}
           <Route path="/templates"                     element={<Templates />} />
+          <Route path="/lists"                         element={<Lists />} />
+          <Route path="/watchlists"                    element={<Watchlists />} />
+          <Route path="/rules"                         element={<SignalRules />} />
           {/* PRD 2 — a shared report. NOT under a private prefix: this page
               exists to be opened by someone without a DatIQ account, which is
               the whole acquisition loop. Indexability is decided per report
