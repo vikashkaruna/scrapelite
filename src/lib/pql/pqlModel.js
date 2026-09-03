@@ -106,6 +106,12 @@ export const ACTIVATION_CONDITIONS = Object.freeze({
   shared_or_saved_brief:    "Shared or saved the brief",
   ran_branded_report:       "Ran a client-branded report",
   connected_export_dest:    "Connected an export destination",
+  // Recruiter — see the note on the `recruiter` definition below. These follow
+  // the same shape as the PRD's own conditions: a produced artefact, then
+  // evidence it left DatIQ and entered the user's real workflow.
+  sourced_hiring_signals:   "Extracted leadership or hiring signals from a company",
+  sourced_across_3_companies:"Did so across at least 3 companies",
+  exported_or_routed_shortlist:"Exported or routed the resulting shortlist",
 });
 
 /**
@@ -143,6 +149,24 @@ export const ACTIVATION_DEFINITIONS = Object.freeze({
     why: "They can monetize it with clients",
     requires: ["ran_branded_report", "connected_export_dest"],
   },
+  // ⚠️ NOT FROM THE PRD. The PRD's persona table defines six groups and does
+  // not cover recruiting, but the app ships a `recruiter` persona with its own
+  // onboarding, quick actions (leadership / contacts / social) and examples
+  // (stripe.com/jobs, notion.so/careers). Folding it onto vc-analyst measured
+  // the wrong thing: a diligence brief is a one-off artefact, whereas sourcing
+  // is inherently repeated across companies, and a recruiter who ran one brief
+  // would have counted as activated without having sourced anybody.
+  //
+  // Constructed to the same standard as the PRD's own six — a produced
+  // artefact, evidence of repetition, and evidence it reached the user's real
+  // workflow — using only signals the shipped recruiter persona already emits.
+  // Revisit if the PRD is ever extended to cover recruiting.
+  "recruiter": {
+    label: "Sources leadership or hiring signals across 3+ companies and exports the shortlist",
+    why: "They have built a sourcing pipeline rather than looked up one company",
+    requires: ["sourced_hiring_signals", "sourced_across_3_companies", "exported_or_routed_shortlist"],
+    fromPrd: false,
+  },
 });
 
 /**
@@ -151,10 +175,11 @@ export const ACTIVATION_DEFINITIONS = Object.freeze({
  * from label similarity so a future persona rename cannot silently re-point
  * somebody's activation definition.
  *
- * `recruiter` has no PRD equivalent — the PRD's persona table does not include
- * recruiting. It is mapped to the closest DEFINED behaviour (research brief,
- * generated then kept) rather than given an invented definition of its own,
- * and flagged here so the gap is visible instead of buried.
+ * `recruiter` has no PRD equivalent — the PRD's persona table does not cover
+ * recruiting. It has its OWN definition rather than being folded onto
+ * vc-analyst, which measured the wrong thing (a one-off brief instead of a
+ * sourcing pipeline). That definition is marked `fromPrd: false` so it is
+ * always distinguishable from the six the PRD actually specifies.
  */
 export const PERSONA_TO_ACTIVATION = Object.freeze({
   "sales":             "sales-sdr",
@@ -163,7 +188,7 @@ export const PERSONA_TO_ACTIVATION = Object.freeze({
   "market-research":   "vc-analyst",
   "founder-vc":        "vc-analyst",
   "agency":            "agency",
-  "recruiter":         "vc-analyst", // ⚠️ no PRD persona for recruiting — see above
+  "recruiter":         "recruiter",  // own definition — see ACTIVATION_DEFINITIONS
 });
 
 /** Fallback for an unknown/unset persona. Never throws on a bad id. */

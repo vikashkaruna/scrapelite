@@ -239,8 +239,18 @@ phantom company-wide PQL surge on the day Phase 4 ships.
 | Agency | Runs a client-branded report and connects an export destination | They can monetize it with clients |
 
 ⚠️ **The PRD defines SIX groups; the app ships SEVEN personas.** `recruiter` has no PRD equivalent —
-the PRD's persona table does not cover recruiting. It is mapped to the closest DEFINED behaviour
-(`vc-analyst`) in `PERSONA_TO_ACTIVATION`, flagged rather than given an invented definition.
+the PRD's persona table does not cover recruiting. It has its **own** definition (owner decision,
+2026-09-03), built to the same standard as the PRD's six and marked `fromPrd: false` in
+`ACTIVATION_DEFINITIONS` so it stays distinguishable from what the PRD actually specifies:
+
+| Persona | Activated when | Why it matters |
+|---|---|---|
+| Recruiter *(not from PRD)* | Sources leadership or hiring signals across 3+ companies **and** exports the shortlist | They have built a sourcing pipeline rather than looked up one company |
+
+It was previously folded onto `vc-analyst`, which measured the wrong thing: a diligence brief is a
+one-off artefact, whereas sourcing is inherently repeated, so a recruiter who ran a single brief
+counted as activated without having sourced anybody. **Revisit if the PRD is extended to cover
+recruiting.**
 
 ### Watchlist signal types (PRD §4) — for Phase 5
 

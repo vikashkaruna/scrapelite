@@ -1,67 +1,37 @@
 {
   "_comment": [
-    "\u2500\u2500 HISTORY: the react-router entries (removed 2026-08-23) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-    "They bypassed GHSA-qwww-vcr4-c8h2 as 'no patched version exists for React",
-    "18'. Correct when written; already false when removed \u2014 the advisory had",
-    "been re-scoped, making the pinned react-router 7.18.2 the 7.x patch. The",
-    "gate had been passing on its own merits, not on the bypass.",
+    "No active vulnerability bypasses. Format and rules: see README.md here.",
     "",
-    "The lesson: a bypass records a judgement about the world at a point in",
-    "time, and advisories get re-scoped. Re-read before renewing.",
+    "\u2500\u2500 HISTORY: react-router (removed 2026-08-23) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+    "Two entries bypassed GHSA-qwww-vcr4-c8h2 as 'no patched version exists for",
+    "React 18'. Correct when written; already false when removed \u2014 the advisory",
+    "had been re-scoped, making the pinned react-router 7.18.2 the 7.x patch.",
+    "The gate had been passing on its own merits, not on the bypass.",
     "",
-    "\u2500\u2500 2026-09-03: that lesson paid off twice \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-    "1. CLAUDE.md recorded netlify-cli as un-bumpable past 27.1.2 because",
-    "   @netlify/dev@5.0.4 required @netlify/ai@^1.0.1, which had never been",
-    "   published \u2014 the floating transitive range that killed a production",
-    "   deploy. It has since shipped. Re-checking instead of trusting the note",
-    "   moved the pin 27.1.2 -> 27.4.2, which resolved 2 of 7 high advisories",
-    "   (extract-zip path traversal) and made the tree 388 packages smaller.",
-    "2. The gate itself audited ONLY the repo root, so it never saw this tree",
-    "   at all \u2014 a blind spot on the exact lockfile that runs with production",
-    "   deploy credentials. check-vulnerabilities.mjs now audits both. That is",
-    "   why these five entries appear now and did not before: they were always",
-    "   there, nothing was looking.",
+    "Lesson recorded then: a bypass records a judgement about the world at a",
+    "point in time. Re-read before renewing.",
     "",
-    "\u26a0\ufe0f approvedBy is 'pending-owner-review' \u2014 these entries were authored in a",
-    "coding session and need the repo owner's explicit sign-off. A bypass is a",
-    "risk acceptance, and that is not a decision an assistant gets to make."
+    "\u2500\u2500 2026-09-03: five entries drafted, then NOT needed \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+    "A sharp -> libvips chain (5 high) was found in tools/netlify-cli after the",
+    "gate was widened to audit that lockfile too \u2014 it had only ever audited the",
+    "repo root, a blind spot on the one tree that runs with production deploy",
+    "credentials. Bypass entries were drafted on the reasoning 'no forward fix",
+    "exists; npm's only remedy is a major DOWNGRADE to netlify-cli 23.13.5'.",
+    "",
+    "That reasoning was WRONG, and the same lesson caught it a third time. The",
+    "advisory patches at sharp >=0.35.0; sharp 0.35.4 was published. The tree",
+    "sat on 0.34.5 only because ipx@3.1.1 declares sharp@^0.34.3 \u2014 a range, not",
+    "an incompatibility. An npm `overrides` entry forces it forward without",
+    "touching the netlify-cli pin, and resolved all five. `qs` went the same",
+    "way. Both lockfiles now audit clean with NO bypasses.",
+    "",
+    "The generalisable point: 'npm audit fix offers only a downgrade' means the",
+    "top-level package has no newer release \u2014 NOT that the vulnerable",
+    "transitive dependency has no patch. Check the advisory's own patched range",
+    "against the registry before concluding a fix does not exist.",
+    "",
+    "Why the override is safe here, and the residual risk, are documented in",
+    "tools/netlify-cli/README.md."
   ],
-  "bypasses": [
-    {
-      "id": "GHSA-f88m-g3jw-g9cj",
-      "package": "sharp",
-      "reason": "netlify dev's image-transform chain (netlify-cli -> @netlify/dev -> @netlify/images -> ipx -> sharp -> libvips). This repo installs that tree for ONE purpose \u2014 `netlify deploy` in phase-gate.yml \u2014 and never runs `netlify dev`. VERIFIED, not assumed: with node_modules/@img and node_modules/sharp removed from an otherwise complete `npm ci --ignore-scripts` install, `netlify --version` succeeds, `netlify deploy --help` succeeds (loading the deploy command's own module graph \u2014 the check the workflow already runs before touching production), and `netlify deploy` reaches its own argument validation. The libvips CVEs require decoding attacker-controlled image input; the deploy step uploads an already-built directory and decodes nothing. NOTE: --ignore-scripts does NOT keep libvips off disk \u2014 modern sharp ships prebuilt binaries as optional dependencies, not a postinstall download. The earlier draft of this reason claimed otherwise and was wrong. npm offers exactly one remedy: netlify-cli 23.13.5, a MAJOR DOWNGRADE of the one tool that publishes production, which is the larger risk.",
-      "todo": "TODO: drop this bypass when sharp publishes a libvips bump that @netlify/images picks up, or when Netlify decouples image transforms from the CLI's default tree. Re-read the advisories on expiry \u2014 do not renew on the strength of this note (see the react-router entries that went stale before anyone re-checked them).",
-      "expires": "2026-12-03",
-      "approvedBy": "pending-owner-review"
-    },
-    {
-      "package": "ipx",
-      "reason": "Transitive carrier of the sharp/libvips advisory above. netlify dev's image-transform chain (netlify-cli -> @netlify/dev -> @netlify/images -> ipx -> sharp -> libvips). This repo installs that tree for ONE purpose \u2014 `netlify deploy` in phase-gate.yml \u2014 and never runs `netlify dev`. VERIFIED, not assumed: with node_modules/@img and node_modules/sharp removed from an otherwise complete `npm ci --ignore-scripts` install, `netlify --version` succeeds, `netlify deploy --help` succeeds (loading the deploy command's own module graph \u2014 the check the workflow already runs before touching production), and `netlify deploy` reaches its own argument validation. The libvips CVEs require decoding attacker-controlled image input; the deploy step uploads an already-built directory and decodes nothing. NOTE: --ignore-scripts does NOT keep libvips off disk \u2014 modern sharp ships prebuilt binaries as optional dependencies, not a postinstall download. The earlier draft of this reason claimed otherwise and was wrong. npm offers exactly one remedy: netlify-cli 23.13.5, a MAJOR DOWNGRADE of the one tool that publishes production, which is the larger risk.",
-      "todo": "TODO: drop this bypass when sharp publishes a libvips bump that @netlify/images picks up, or when Netlify decouples image transforms from the CLI's default tree. Re-read the advisories on expiry \u2014 do not renew on the strength of this note (see the react-router entries that went stale before anyone re-checked them).",
-      "expires": "2026-12-03",
-      "approvedBy": "pending-owner-review"
-    },
-    {
-      "package": "@netlify/images",
-      "reason": "Transitive carrier of the sharp/libvips advisory above. netlify dev's image-transform chain (netlify-cli -> @netlify/dev -> @netlify/images -> ipx -> sharp -> libvips). This repo installs that tree for ONE purpose \u2014 `netlify deploy` in phase-gate.yml \u2014 and never runs `netlify dev`. VERIFIED, not assumed: with node_modules/@img and node_modules/sharp removed from an otherwise complete `npm ci --ignore-scripts` install, `netlify --version` succeeds, `netlify deploy --help` succeeds (loading the deploy command's own module graph \u2014 the check the workflow already runs before touching production), and `netlify deploy` reaches its own argument validation. The libvips CVEs require decoding attacker-controlled image input; the deploy step uploads an already-built directory and decodes nothing. NOTE: --ignore-scripts does NOT keep libvips off disk \u2014 modern sharp ships prebuilt binaries as optional dependencies, not a postinstall download. The earlier draft of this reason claimed otherwise and was wrong. npm offers exactly one remedy: netlify-cli 23.13.5, a MAJOR DOWNGRADE of the one tool that publishes production, which is the larger risk.",
-      "todo": "TODO: drop this bypass when sharp publishes a libvips bump that @netlify/images picks up, or when Netlify decouples image transforms from the CLI's default tree. Re-read the advisories on expiry \u2014 do not renew on the strength of this note (see the react-router entries that went stale before anyone re-checked them).",
-      "expires": "2026-12-03",
-      "approvedBy": "pending-owner-review"
-    },
-    {
-      "package": "@netlify/dev",
-      "reason": "Transitive carrier of the sharp/libvips advisory above. netlify dev's image-transform chain (netlify-cli -> @netlify/dev -> @netlify/images -> ipx -> sharp -> libvips). This repo installs that tree for ONE purpose \u2014 `netlify deploy` in phase-gate.yml \u2014 and never runs `netlify dev`. VERIFIED, not assumed: with node_modules/@img and node_modules/sharp removed from an otherwise complete `npm ci --ignore-scripts` install, `netlify --version` succeeds, `netlify deploy --help` succeeds (loading the deploy command's own module graph \u2014 the check the workflow already runs before touching production), and `netlify deploy` reaches its own argument validation. The libvips CVEs require decoding attacker-controlled image input; the deploy step uploads an already-built directory and decodes nothing. NOTE: --ignore-scripts does NOT keep libvips off disk \u2014 modern sharp ships prebuilt binaries as optional dependencies, not a postinstall download. The earlier draft of this reason claimed otherwise and was wrong. npm offers exactly one remedy: netlify-cli 23.13.5, a MAJOR DOWNGRADE of the one tool that publishes production, which is the larger risk.",
-      "todo": "TODO: drop this bypass when sharp publishes a libvips bump that @netlify/images picks up, or when Netlify decouples image transforms from the CLI's default tree. Re-read the advisories on expiry \u2014 do not renew on the strength of this note (see the react-router entries that went stale before anyone re-checked them).",
-      "expires": "2026-12-03",
-      "approvedBy": "pending-owner-review"
-    },
-    {
-      "package": "netlify-cli",
-      "reason": "Transitive carrier of the sharp/libvips advisory above. netlify dev's image-transform chain (netlify-cli -> @netlify/dev -> @netlify/images -> ipx -> sharp -> libvips). This repo installs that tree for ONE purpose \u2014 `netlify deploy` in phase-gate.yml \u2014 and never runs `netlify dev`. VERIFIED, not assumed: with node_modules/@img and node_modules/sharp removed from an otherwise complete `npm ci --ignore-scripts` install, `netlify --version` succeeds, `netlify deploy --help` succeeds (loading the deploy command's own module graph \u2014 the check the workflow already runs before touching production), and `netlify deploy` reaches its own argument validation. The libvips CVEs require decoding attacker-controlled image input; the deploy step uploads an already-built directory and decodes nothing. NOTE: --ignore-scripts does NOT keep libvips off disk \u2014 modern sharp ships prebuilt binaries as optional dependencies, not a postinstall download. The earlier draft of this reason claimed otherwise and was wrong. npm offers exactly one remedy: netlify-cli 23.13.5, a MAJOR DOWNGRADE of the one tool that publishes production, which is the larger risk.",
-      "todo": "TODO: drop this bypass when sharp publishes a libvips bump that @netlify/images picks up, or when Netlify decouples image transforms from the CLI's default tree. Re-read the advisories on expiry \u2014 do not renew on the strength of this note (see the react-router entries that went stale before anyone re-checked them).",
-      "expires": "2026-12-03",
-      "approvedBy": "pending-owner-review"
-    }
-  ]
+  "bypasses": []
 }

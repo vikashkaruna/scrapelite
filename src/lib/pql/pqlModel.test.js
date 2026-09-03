@@ -102,9 +102,39 @@ describe("unmeasured signals are excluded, not scored zero", () => {
 });
 
 describe("activation follows the PRD's own definitions", () => {
-  it("defines all six PRD activation groups", () => {
-    expect(Object.keys(ACTIVATION_DEFINITIONS).sort())
-      .toEqual(["agency", "product-pmm", "revops", "sales-sdr", "seo-content", "vc-analyst"]);
+  it("defines all six PRD activation groups, each marked as from the PRD", () => {
+    const fromPrd = Object.entries(ACTIVATION_DEFINITIONS)
+      .filter(([, d]) => d.fromPrd !== false).map(([k]) => k).sort();
+    expect(fromPrd).toEqual(["agency", "product-pmm", "revops", "sales-sdr", "seo-content", "vc-analyst"]);
+  });
+
+  // The app ships a recruiter persona the PRD's table does not cover. It gets
+  // its own definition rather than being folded onto vc-analyst — but it must
+  // stay DISTINGUISHABLE from the six the PRD actually specifies, so nobody
+  // later cites it back as though the PRD said it.
+  it("marks the non-PRD recruiter definition as such", () => {
+    expect(ACTIVATION_DEFINITIONS.recruiter.fromPrd).toBe(false);
+    for (const k of ["sales-sdr", "revops", "product-pmm", "seo-content", "vc-analyst", "agency"]) {
+      expect(ACTIVATION_DEFINITIONS[k].fromPrd).not.toBe(false);
+    }
+  });
+
+  it("recruiter no longer borrows the vc-analyst definition", () => {
+    expect(PERSONA_TO_ACTIVATION.recruiter).toBe("recruiter");
+    expect(activationFor("recruiter")).not.toBe(ACTIVATION_DEFINITIONS["vc-analyst"]);
+  });
+
+  // Sourcing is inherently repeated across companies. A recruiter who ran one
+  // lookup must not read as activated — that is the vanity metric the PRD
+  // warns against, wearing a different hat.
+  it("recruiter activation requires repetition and an export, not one lookup", () => {
+    const one = scorePql({}, { persona: "recruiter", conditions: { sourced_hiring_signals: true } });
+    expect(one.activated).toBe(false);
+    expect(one.activation.missing).toEqual(["sourced_across_3_companies", "exported_or_routed_shortlist"]);
+
+    const full = scorePql({}, { persona: "recruiter", conditions: {
+      sourced_hiring_signals: true, sourced_across_3_companies: true, exported_or_routed_shortlist: true } });
+    expect(full.activated).toBe(true);
   });
 
   // PRD: "Do not use 'a user extracted one URL' as activation. That creates a
