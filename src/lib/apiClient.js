@@ -126,6 +126,13 @@ export const apiClient = {
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
   ai: (payload) => request("/ai", "POST", payload),
 
+  // ── Activation events / PQL ────────────────────────────────────────────────
+  // Deliberately NOT routed through the analytics table: see
+  // src/lib/pql/pqlClient.js for why these need a private, service-key-written
+  // store rather than the world-readable analytics_events.
+  pqlEvents: (payload) => request("/pql/events", "POST", payload),
+  pqlScore: (payload) => request("/pql/score", "POST", payload),
+
   // ── Contact form ───────────────────────────────────────────────────────────
   /**
    * Deliver a /contact submission as email (Resend, server-side).

@@ -10298,3 +10298,100 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 /* Which pages we read behind a "found nothing" claim — the thing that makes
    it checkable rather than just asserted. */
 .empty-mini-pages { color: var(--text-muted); }
+
+/* ── Integration recipe gallery ─────────────────────────────────────────────
+   Outcome-first cards. The destination name is deliberately the SMALLEST
+   thing on the card — the PRD's point is that nobody buys a logo grid. */
+.recipe-gallery { margin: 40px 0; }
+.recipe-gallery-head h2 { font-size: 1.25rem; margin: 0 0 4px; }
+.recipe-gallery-sub { color: var(--text-2); margin: 0 0 18px; font-size: .92rem; }
+.recipe-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.recipe-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; min-width: 0; }
+.recipe-card-soon { opacity: .72; }
+.recipe-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.recipe-provider {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .74rem; font-weight: 600; letter-spacing: .02em;
+  color: var(--text-2); text-transform: uppercase;
+}
+.recipe-tag {
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.recipe-tag-live   { background: var(--ok-soft, rgba(5,150,105,.14)); color: var(--ok, #059669); }
+.recipe-tag-manual { background: var(--accent-soft); color: var(--accent-on-dark); }
+.recipe-tag-soon   { background: var(--surface-2); color: var(--text-2); }
+.recipe-title { font-size: 1rem; margin: 2px 0 0; line-height: 1.35; }
+.recipe-outcome { margin: 0; color: var(--text-2); font-size: .9rem; line-height: 1.45; }
+.recipe-flow {
+  margin: 6px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+  font-size: .84rem; align-items: baseline;
+}
+.recipe-flow dt {
+  font-weight: 700; color: var(--text-3, var(--text-2)); text-transform: uppercase;
+  font-size: .68rem; letter-spacing: .04em;
+}
+.recipe-flow dd { margin: 0; color: var(--text-1); min-width: 0; }
+.recipe-cta { margin-top: auto; align-self: flex-start; }
+.recipe-cta-soon { margin: auto 0 0; font-size: .8rem; color: var(--text-2); font-style: italic; }
+
+/* ── PQL / activation funnel (/admin/revenue) ───────────────────────────────
+   "no data" is styled DIFFERENTLY from a zero on purpose: the two mean
+   different things and a founder acts on them differently. */
+.pqlf { margin-top: 20px; }
+.pqlf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pqlf-heading { margin: 0; font-size: 1.05rem; }
+.pqlf-threshold { font-size: .78rem; color: var(--text-2); }
+.pqlf-notice, .pqlf-caveat {
+  display: flex; gap: 8px; align-items: flex-start;
+  margin: 12px 0 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-2); font-size: .84rem; line-height: 1.5;
+}
+.pqlf-stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top: 14px; }
+.pqlf-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pqlf-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.pqlf-stat-accent .pqlf-stat-value { color: var(--accent); }
+.pqlf-stat-label { font-size: .78rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.pqlf-stat-hint { font-size: .76rem; color: var(--text-2); }
+.pqlf-nodata { font-size: .95rem; font-weight: 500; font-style: italic; color: var(--text-2); }
+.pqlf-bands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.pqlf-band {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 6px; border-radius: 8px; background: var(--surface-2);
+}
+.pqlf-band-atThreshold, .pqlf-band-strong { background: var(--accent-soft); }
+.pqlf-band-n { font-size: 1.15rem; font-weight: 700; }
+.pqlf-band-label { font-size: .72rem; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.pqlf-table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: .86rem; }
+.pqlf-caption { caption-side: top; text-align: left; color: var(--text-2); font-size: .78rem; padding-bottom: 8px; }
+.pqlf-table th, .pqlf-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.pqlf-table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.pqlf-table tbody th { font-weight: 600; }
+.pqlf-row-empty { opacity: .55; }
+
+/* A FINDING, not a failure: "this site doesn't publish that" is a successful
+   run reporting a true fact, and must not be styled like the incomplete
+   warning it used to be conflated with. */
+.tpl-finding {
+  display: flex; gap: 8px; align-items: flex-start;
+  margin: 14px 0 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-2);
+  font-size: .86rem; line-height: 1.5;
+}
+
+/* When the stored AI config was last written. "Saved" and "live everywhere"
+   are different moments — see the comment beside this in AdminAI.jsx. */
+.prov-savedat { font-size: .78rem; color: var(--text-2); margin-left: 10px; }
+
+/* Pointers from the preset/recipe surfaces to the workflow template library.
+   Pointing, not repeating — one description of a template, in one place. */
+.recipe-gallery-more, .home-template-more {
+  margin: 18px 0 0; font-size: .9rem; color: var(--text-2);
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+.recipe-gallery-more a, .home-template-more a { color: var(--accent); font-weight: 600; }
+.recipe-gallery-more-note { font-size: .82rem; }

@@ -163,6 +163,12 @@ export const handler = async (event) => {
         warning: "Supabase not configured — config not persisted server-side." });
     }
 
+    // Stamped so the console can show WHICH config is live. Without it, an
+    // operator who saves and then sees an unchanged result has no way to tell
+    // "my write did not land" from "it landed and the runtime containers have
+    // not expired their 60s cache yet" — two very different problems that look
+    // identical, which is exactly how this got reported as "does not update".
+    value.updatedAt = new Date().toISOString();
     let saved = false;
     try { saved = await upsert(value); } catch { saved = false; }
     if (!saved) return respond(502, { ok: false, error: "Failed to persist config to Supabase." });

@@ -37,6 +37,7 @@
 export const config = { schedule: "@daily" };
 
 import { withJobRun } from "./lib/jobControl.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 // Daily schedule-ran digest fires only at this UTC hour. Default 21:00 UTC
 // = ~5pm ET / 2:30am IST. Operators can override via env.
@@ -95,12 +96,9 @@ async function sendEmail({ to, subject, html }) {
 
 function digestHtml({ userName, runCount, changeCount, errorCount, topSchedule }) {
   const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Weekly digest</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">Your monitoring week</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+  const body = (
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">Weekly digest</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:20px;font-weight:800;color:#1f2330">Your monitoring week</h1>` +
     `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — here's what your DatIQ schedules did this week.</p>` +
     `<table style="border-collapse:collapse;margin-bottom:18px">` +
     `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">Schedule runs</td><td style="padding:4px 0;font-size:14px;font-weight:600">${runCount}</td></tr>` +
@@ -109,26 +107,27 @@ function digestHtml({ userName, runCount, changeCount, errorCount, topSchedule }
     `</table>` +
     (topSchedule ? `<p style="margin:0 0 14px;color:#374151;font-size:14px">Most active: <strong>${escapeHtml(topSchedule.label)}</strong> (${topSchedule.runs} checks)</p>` : "") +
     `<a href="${SITE_URL}/workspace" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Open DatIQ →</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
-    `</div></div>`
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>`
   );
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds
+  // signature come from the one shared shell (src/lib/emailBranding.js).
+  return wrapEmail(body);
 }
 
 function reengagementHtml({ userName, lastSeen }) {
   const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
   const ago = lastSeen ? new Date(lastSeen).toLocaleDateString() : "a while";
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Still watching</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">Your schedules are still running</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+  const body = (
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">Still watching</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:20px;font-weight:800;color:#1f2330">Your schedules are still running</h1>` +
     `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — you last opened DatIQ on <strong>${escapeHtml(ago)}</strong>. Your monitoring schedules are still firing in the background.</p>` +
     `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.55">Open DatIQ to see what's changed since your last visit.</p>` +
     `<a href="${SITE_URL}/workspace" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View your watchlist →</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
-    `</div></div>`
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>`
   );
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds
+  // signature come from the one shared shell (src/lib/emailBranding.js).
+  return wrapEmail(body);
 }
 
 // F49 — daily schedule-ran digest. Aggregates the day's run activity for
@@ -136,12 +135,9 @@ function reengagementHtml({ userName, lastSeen }) {
 function dailyRanHtml({ userName, runCount, changeCount, errorCount, dayKey }) {
   const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
   const hasChange = changeCount > 0;
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Daily summary</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">Your schedules ran today</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+  const body = (
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">Daily summary</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:20px;font-weight:800;color:#1f2330">Your schedules ran today</h1>` +
     `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — here&apos;s a quick recap of <strong>${escapeHtml(dayKey)}</strong>:</p>` +
     `<table style="border-collapse:collapse;margin-bottom:18px">` +
     `<tr><td style="padding:4px 14px 4px 0;color:#6b7280;font-size:13px">Schedule runs</td><td style="padding:4px 0;font-size:14px;font-weight:600">${runCount}</td></tr>` +
@@ -152,9 +148,11 @@ function dailyRanHtml({ userName, runCount, changeCount, errorCount, dayKey }) {
       ? `<p style="margin:0 0 14px;color:#374151;font-size:14px">We detected changes on ${changeCount} schedule${changeCount !== 1 ? "s" : ""} — open DatIQ to see what shifted.</p>`
       : `<p style="margin:0 0 14px;color:#374151;font-size:14px">No content changes today. Your monitors are quiet and steady.</p>`) +
     `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Open your schedules →</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
-    `</div></div>`
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>`
   );
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds
+  // signature come from the one shared shell (src/lib/emailBranding.js).
+  return wrapEmail(body);
 }
 
 // F49 — D30 abandoned-trial nudge. Suggests a sample template to
@@ -163,18 +161,17 @@ function abandonedTrialHtml({ userName, lastRun }) {
   const greeting = userName ? `Hi ${escapeHtml(userName)}` : "Hi";
   const ago = lastRun ? new Date(lastRun).toLocaleDateString() : "a while back";
   return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · 30-day check-in</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">A lot has changed in a month</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">30-day check-in</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:20px;font-weight:800;color:#1f2330">A lot has changed in a month</h1>` +
     `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">${greeting} — you last ran an extraction on <strong>${escapeHtml(ago)}</strong>. Since then, we&apos;ve shipped batch CSV import, Airtable + Notion export, and a one-click template gallery.</p>` +
     `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.55">Try a fresh template — pick a starting point and we&apos;ll pre-fill the right intent for you:</p>` +
     `<a href="${SITE_URL}/" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 20px;border-radius:9px;margin-right:8px">Browse templates →</a>` +
     `<a href="${SITE_URL}/batch" style="display:inline-block;background:#fff;color:#4f46e5;border:1px solid #4f46e5;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Try a batch</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>` +
-    `</div></div>`
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences on the Account page.</p>`
   );
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds
+  // signature come from the one shared shell (src/lib/emailBranding.js).
+  return wrapEmail(body);
 }
 
 // ── Supabase query helpers ────────────────────────────────────────────────────

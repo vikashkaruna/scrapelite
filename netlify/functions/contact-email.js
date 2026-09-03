@@ -26,6 +26,7 @@ import {
   labelForType,
   normalizeContactType,
 } from "../../src/lib/contactRouting.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -169,12 +170,11 @@ function contactHtml({ type, name, email, subject, message }) {
     `<td style="padding:5px 0;color:#111827;font-size:13px">${value}</td>` +
     `</tr>`;
 
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:12px;letter-spacing:.05em;opacity:.85;text-transform:uppercase">DatIQ · Contact form</div>` +
-    `<div style="font-size:19px;font-weight:800;margin-top:3px">${escapeHtml(labelForType(type))}</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds
+  // signature come from the one shared shell (src/lib/emailBranding.js).
+  const body = (
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">Contact form</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:19px;font-weight:800;color:#1f2330">${escapeHtml(labelForType(type))}</h1>` +
     `<table style="border-collapse:collapse;margin-bottom:16px">` +
     row("From", escapeHtml(name || "(not provided)")) +
     row("Email", `<a href="mailto:${escapeHtml(email)}" style="color:#4f46e5">${escapeHtml(email)}</a>`) +
@@ -182,7 +182,7 @@ function contactHtml({ type, name, email, subject, message }) {
     `</table>` +
     `<div style="border-top:1px solid #e5e7eb;padding-top:16px;color:#374151;font-size:14px;line-height:1.6;white-space:pre-wrap">` +
     `${escapeHtml(message)}</div>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Reply to this email to answer ${escapeHtml(email)} directly.</p>` +
-    `</div></div>`
+    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Reply to this email to answer ${escapeHtml(email)} directly.</p>`
   );
+  return wrapEmail(body, { preheader: `${labelForType(type)} from ${name || email}` });
 }

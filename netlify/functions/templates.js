@@ -30,6 +30,8 @@
 
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/requireEntitlement.js";
+import { checkAllowance } from "../../src/lib/credits/creditModel.js";
+import { getEffectivePlanById } from "../../src/lib/pricingOverrides.js";
 import {
   listTemplates, getTemplate, ensureSeeded, createRun, updateRun, getRun,
   listRuns, recordSources, recordEstimate, chargeLedger, creditBalance,
@@ -138,6 +140,26 @@ async function handleGet(event) {
   return json(200, { templates: published.map((t) => publicShape(t)) });
 }
 
+/**
+ * A plan's monthly credit budget.
+ *
+ * `limits.extractions` IS the credit allowance — the Developer plan's
+ * `extractions: 10000` is the same number its pricing page calls "10,000 row
+ * credits / month". Resolved through getEffectivePlanById so an admin price
+ * override moves the budget too, rather than the static table drifting from
+ * what checkout actually sold.
+ *
+ * Unknown plan → Infinity, deliberately. Failing OPEN here matches
+ * requireEntitlement: a plan id we cannot resolve is an infrastructure
+ * problem, and refusing a paying customer's run over it is the worse error.
+ */
+function planAllowance(resolved) {
+  const planId = resolved?.entitlement?.plan_id || resolved?.planId || "free";
+  const plan = getEffectivePlanById(planId);
+  const n = plan?.limits?.extractions;
+  return Number.isFinite(n) ? n : Infinity;
+}
+
 async function handlePost(event) {
   let body;
   try { body = JSON.parse(event.body || "{}"); }
@@ -188,9 +210,44 @@ async function handlePost(event) {
   const check = checkCapability(resolved, capabilityFor(template), {});
   if (!check.allowed) return denyResponse(check, CORS);
 
+  // ── CREDIT AFFORDABILITY, CHECKED BEFORE ANY WORK HAPPENS ────────────────
+  // 🔴 checkAllowance() shipped with the credit ledger and had ZERO CALLERS.
+  // Credits were RECORDED but never ENFORCED: a Free account whose allowance
+  // is 10 could start an 8-credit run with 3 left, spend three page fetches
+  // and two AI calls, and only discover the shortfall from the invoice. The
+  // owner reported the symptom — "credit checks happen later than the run" —
+  // and the cause was that they did not happen at all.
+  //
+  // The allowance is `plan.limits.extractions`. That is not a guess: the
+  // Developer plan carries `extractions: 10000` and its own marketing line
+  // reads "10,000 row credits / month", so extractions ARE the credit budget
+  // under a different name. Agency is Infinity, which checkAllowance already
+  // short-circuits.
+  //
+  // Ordered ABOVE the run row and every fetch, matching extract.js's rule that
+  // everything above the charge must be able to decline without doing work.
+  const allowance = planAllowance(resolved);
+  const spent = userId ? await creditBalance(userId, monthKey()) : 0;
+  const afford = checkAllowance({ spent, allowance, estimated: estimate.credits ?? estimate.total ?? 0 });
+
   if (action === "estimate") {
-    const spent = userId ? await creditBalance(userId, monthKey()) : 0;
-    return json(200, { estimate, input: v.value, spentThisMonth: spent });
+    return json(200, { estimate, input: v.value, spentThisMonth: spent, allowance, afford });
+  }
+
+  if (!afford.ok) {
+    // Refused BEFORE the run row exists, so nothing is charged and no partial
+    // report is produced. The numbers are stated plainly — a bare "insufficient
+    // credits" leaves the user unable to tell whether they need to wait for the
+    // month to roll or to upgrade.
+    return json(402, {
+      error: `This run needs ${estimate.credits ?? estimate.total} credits and you have ${afford.remaining} left this month.`,
+      code: "insufficient_credits",
+      needed: estimate.credits ?? estimate.total,
+      remaining: afford.remaining,
+      shortBy: afford.wouldExceedBy,
+      allowance,
+      upgradeUrl: "/pricing",
+    });
   }
 
   // ── start ────────────────────────────────────────────────────────────────

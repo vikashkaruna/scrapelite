@@ -1,6 +1,7 @@
 // admin-revenue.js — revenue KPIs and trend from live Supabase data.
 // GET /api/admin-revenue — token-gated; falls back to zero state when Supabase unconfigured.
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
+import { buildPqlFunnel } from "../../src/lib/pql/funnelModel.js";
 
 // Static plan prices (USD/mo) — mirrors pricingConfig.js.
 // Operator can't override these server-side without pricing_config table, which is fine
@@ -82,11 +83,15 @@ export const handler = async (event) => {
     const currentMonth = now.toISOString().slice(0, 7);
 
     // Parallel fetch: auth users, active subscriptions, payment events, coupon redemptions.
-    const [authData, subs, paymentEvents, couponRecs] = await Promise.all([
+    const [authData, subs, paymentEvents, couponRecs, pqlRows] = await Promise.all([
       sbFetch(db, "/auth/v1/admin/users?per_page=1000&page=1"),
       sbFetch(db, "/rest/v1/subscriptions?select=plan_id,status,current_period_end").catch(() => []),
       sbFetch(db, "/rest/v1/payment_events?select=amount_cents,currency,created_at,status&order=created_at.desc&limit=5000").catch(() => []),
       sbFetch(db, "/rest/v1/coupon_redemptions?select=id&limit=5000").catch(() => []),
+      // .catch(() => []) like its neighbours: an empty pql_scores table and an
+      // absent one are both "no funnel data", and neither should take down the
+      // revenue dashboard. Distinguished for the reader by `funnelAvailable`.
+      sbFetch(db, "/rest/v1/pql_scores?select=score,coverage,is_pql,activated,persona&limit=5000").catch(() => null),
     ]);
 
     const authUsers  = Array.isArray(authData?.users) ? authData.users : [];
@@ -145,7 +150,18 @@ export const handler = async (event) => {
       couponUsage,
     };
 
-    return respond(200, { metrics, trend, fromSeed: false });
+    // `funnelAvailable: false` means the table could not be read at all —
+    // usually migration 0040 not yet applied. That is a DIFFERENT statement
+    // from "zero users have activated", and the UI must be able to tell them
+    // apart or it will report an unapplied migration as a product failure.
+    const funnelAvailable = Array.isArray(pqlRows);
+    return respond(200, {
+      metrics,
+      trend,
+      fromSeed: false,
+      funnelAvailable,
+      funnel: funnelAvailable ? buildPqlFunnel(pqlRows) : null,
+    });
   } catch (err) {
     return respond(200, {
       metrics: emptyMetrics(),

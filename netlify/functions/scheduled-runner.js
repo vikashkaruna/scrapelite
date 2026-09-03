@@ -25,6 +25,7 @@ import { enqueue, buildCtx } from "./lib/workflowEnqueue.js";
 import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
 import { withJobRun } from "./lib/jobControl.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -202,7 +203,15 @@ async function enqueueChange(client, schedule, changedSummary) {
             from: process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>",
             to: [schedule.alertEmail],
             subject: `DatIQ — content changed: ${schedule.label || "Monitored URL"}`,
-            html: `<h2>Content Changed</h2><p>Your schedule <b>${schedule.label || ""}</b> detected a change.</p><p><a href="${SITE_URL}/schedules">View in DatIQ →</a></p>`,
+            // The schedule change-alert. This was three bare tags with no
+            // brand of any kind — the least branded mail DatIQ sends, and one
+            // of the most frequently received.
+            html: wrapEmail(
+              `<h1 style="margin:0 0 10px;font-size:19px;font-weight:800;color:#1f2330">Content changed</h1>` +
+              `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6">Your schedule <strong>${escapeHtml(schedule.label || "Monitored URL")}</strong> detected a change.</p>` +
+              `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View in DatIQ →</a>`,
+              { preheader: `Change detected on ${schedule.label || "a monitored URL"}` },
+            ),
           }),
         });
       }

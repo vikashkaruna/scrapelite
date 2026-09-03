@@ -49,6 +49,11 @@
 --   0033  0033_deletion_period_end_gate.sql
 --   0034  0034_usage_rls.sql — lock down usage_records and usage_alerts.
 --   0035  0035_account_state_bootstrap_entitlements.sql
+--   0036  0036_workflow_templates.sql
+--   0037  0037_credit_ledger.sql
+--   0038  0038_field_provenance.sql
+--   0039  0039_report_access.sql
+--   0040  0040_pql.sql
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -4257,6 +4262,1063 @@ begin
   select deletion_purge_after into v_after from public.entitlements where user_id = p_user_id;
   return v_after;
 end; $$;
+
+
+-- ============================================================
+-- 0036_workflow_templates.sql
+-- ============================================================
+-- 0036_workflow_templates.sql
+-- Phase 0 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md — the spine.
+--
+-- ── WHY A TABLE AT ALL, WHEN extractionTemplates.js ALREADY EXISTS ──────────
+-- src/lib/extractionTemplates.js holds 12 "recipes": an example URL, an intent,
+-- and a prompt string. That is a PROMPT-PREFILL LIBRARY — it tells the composer
+-- what to type. It cannot express what PRD 1 actually asks for: a versioned
+-- definition carrying input_schema, extraction_schema, output_schema,
+-- credit_cost and plan_entitlement, whose runs are persisted objects.
+--
+-- This migration does NOT replace that file. The 12 recipes keep serving
+-- TemplateGallery.jsx exactly as they do today and become seed rows for the
+-- new engine. Deleting them would break TemplateGallery + its tests for no
+-- gain; the engine is a superset, not a migration target.
+--
+-- ── WHY VERSIONS ARE IMMUTABLE ONCE PUBLISHED ───────────────────────────────
+-- PRD 1: "Maintain versioned prompts/extraction instructions so prior results
+-- remain reproducible." If a published template's prompt could be edited in
+-- place, every historical run silently changes meaning: a report shared in
+-- March would claim to have been produced by a template that no longer exists
+-- as it was. Worse, the change is invisible — nothing in the run row would
+-- differ. So a published version is frozen by a BEFORE UPDATE trigger and a
+-- change is a NEW VERSION, never an edit. This is the same discipline
+-- 0016_invoices.sql applies to issued invoices, for the same reason: a record
+-- that other records point at cannot be quietly rewritten.
+--
+-- ── WHY template_runs IS ONE TABLE FOR ALL FIVE PRDs ────────────────────────
+-- A single-URL template execution, one row of a bulk enrichment list, and one
+-- competitor watchlist snapshot are the same object: an execution of a pinned
+-- template version producing a structured output with provenance. Giving each
+-- its own result envelope would force PRD 2 (reports) to special-case four
+-- shapes to render one page, and PRD 5 (rules) to subscribe to four event
+-- payloads. One run object is what makes those two phases cheap.
+--
+-- ── THE COMPOSITE FK IS LOAD-BEARING ────────────────────────────────────────
+-- template_runs references (template_key, version), NOT just template_key. The
+-- database therefore refuses a run that points at a version which does not
+-- exist, and a run always records exactly which definition produced it. That is
+-- reproducibility enforced by the schema rather than by convention.
+--
+-- Adds 3 tables, 1 function, 1 trigger.
+
+-- ── the versioned definition ────────────────────────────────────────────────
+create table if not exists public.workflow_templates (
+  id                uuid primary key default gen_random_uuid(),
+  template_key      text not null,                    -- stable id: 'account_brief'
+  version           integer not null,                 -- 1, 2, 3 … monotonic per key
+  status            text not null default 'draft',
+  title             text not null,
+  persona           text,                             -- personaConfig.js id, nullable
+  summary           text,
+  -- What the user is asked for (drives the run form).
+  input_schema      jsonb not null default '{}'::jsonb,
+  -- What we try to pull out of the fetched pages.
+  extraction_schema jsonb not null default '{}'::jsonb,
+  -- How the result is laid out (drives the report + run view).
+  output_schema     jsonb not null default '{}'::jsonb,
+  -- Versioned prompt text. Frozen with the rest of the row on publish.
+  prompt_bundle     jsonb not null default '{}'::jsonb,
+  -- {base, per_page, per_ai_call} — read by src/lib/credits/creditModel.js.
+  credit_cost       jsonb not null default '{}'::jsonb,
+  -- entitlementModel.js capability string, e.g. 'template.run'.
+  plan_entitlement  text,
+  min_plan          text,                             -- pricingConfig plan id
+  published_at      timestamptz,
+  created_by        uuid references auth.users,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint workflow_templates_status_chk
+    check (status in ('draft', 'published', 'superseded', 'archived')),
+  constraint workflow_templates_version_chk check (version >= 1),
+  constraint workflow_templates_key_version_uniq unique (template_key, version)
+);
+
+create index if not exists workflow_templates_key_idx
+  on public.workflow_templates (template_key, version desc);
+create index if not exists workflow_templates_persona_idx
+  on public.workflow_templates (persona) where status = 'published';
+
+-- At most ONE published version per key. Without this, resolving "the current
+-- account_brief" is ambiguous and two concurrent publishes both win.
+create unique index if not exists workflow_templates_one_published_idx
+  on public.workflow_templates (template_key) where status = 'published';
+
+-- ── a run: one execution of one pinned version ──────────────────────────────
+create table if not exists public.template_runs (
+  id                text primary key,                 -- 'trun_' + base36, client-generatable
+  template_key      text not null,
+  template_version  integer not null,
+  user_id           uuid references auth.users,       -- nullable: guest runs
+  workspace_id      uuid references public.workspaces(id) on delete set null,
+  status            text not null default 'queued',
+  -- 'needs_review' is here, not only in the bulk tables, because PRD 3's review
+  -- queue and a low-confidence single run are the same condition.
+  input             jsonb not null default '{}'::jsonb,
+  output            jsonb,                            -- conforms to output_schema
+  output_summary    text,
+  credits_estimated integer,
+  credits_actual    integer,
+  error             text,
+  started_at        timestamptz,
+  finished_at       timestamptz,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint template_runs_status_chk check (status in (
+    'queued', 'running', 'complete', 'partial', 'failed', 'needs_review', 'cancelled'
+  )),
+  constraint template_runs_template_fk
+    foreign key (template_key, template_version)
+    references public.workflow_templates (template_key, version)
+);
+
+create index if not exists template_runs_user_idx
+  on public.template_runs (user_id, created_at desc);
+create index if not exists template_runs_status_idx
+  on public.template_runs (status, created_at desc);
+create index if not exists template_runs_template_idx
+  on public.template_runs (template_key, created_at desc);
+create index if not exists template_runs_workspace_idx
+  on public.template_runs (workspace_id, created_at desc) where workspace_id is not null;
+
+-- ── every page a run actually fetched ───────────────────────────────────────
+-- content_hash is the §1.4 pre-filter: on a re-run, an unchanged hash means we
+-- can skip extraction entirely and spend no credits and no AI call.
+create table if not exists public.template_run_sources (
+  id            uuid primary key default gen_random_uuid(),
+  run_id        text not null references public.template_runs(id) on delete cascade,
+  url           text not null,
+  canonical_url text,
+  fetched_at    timestamptz,
+  http_status   integer,
+  provider      text,                                 -- firecrawl|spider|jina|direct
+  content_hash  text,
+  bytes         integer,
+  error         text,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists template_run_sources_run_idx
+  on public.template_run_sources (run_id);
+create index if not exists template_run_sources_hash_idx
+  on public.template_run_sources (canonical_url, content_hash);
+
+-- ── publish: mint the next version and retire the previous one, atomically ──
+create or replace function public.publish_template_version(
+  p_key text, p_def jsonb, p_actor uuid default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_next integer;
+  v_id   uuid;
+begin
+  if p_key is null or btrim(p_key) = '' then
+    return jsonb_build_object('ok', false, 'reason', 'invalid_key');
+  end if;
+  if p_def is null or coalesce(btrim(p_def->>'title'), '') = '' then
+    return jsonb_build_object('ok', false, 'reason', 'title_required');
+  end if;
+
+  select coalesce(max(version), 0) + 1 into v_next
+    from public.workflow_templates where template_key = p_key;
+
+  -- Retire the incumbent FIRST: the partial unique index allows exactly one
+  -- published row per key, so inserting before superseding would deadlock
+  -- against itself on the second publish.
+  update public.workflow_templates
+     set status = 'superseded', updated_at = now()
+   where template_key = p_key and status = 'published';
+
+  insert into public.workflow_templates (
+    template_key, version, status, title, persona, summary,
+    input_schema, extraction_schema, output_schema, prompt_bundle,
+    credit_cost, plan_entitlement, min_plan, published_at, created_by
+  ) values (
+    p_key, v_next, 'published', p_def->>'title', p_def->>'persona', p_def->>'summary',
+    coalesce(p_def->'input_schema',      '{}'::jsonb),
+    coalesce(p_def->'extraction_schema', '{}'::jsonb),
+    coalesce(p_def->'output_schema',     '{}'::jsonb),
+    coalesce(p_def->'prompt_bundle',     '{}'::jsonb),
+    coalesce(p_def->'credit_cost',       '{}'::jsonb),
+    p_def->>'plan_entitlement', p_def->>'min_plan', now(), p_actor
+  ) returning id into v_id;
+
+  return jsonb_build_object('ok', true, 'id', v_id, 'version', v_next);
+end $$;
+
+-- ── a published version is frozen ───────────────────────────────────────────
+-- Only `status` (published → superseded/archived) and `updated_at` may move.
+-- Any other edit is refused outright rather than silently accepted, because a
+-- silently-edited template makes every past run's provenance a lie.
+create or replace function public.workflow_templates_immutable()
+returns trigger language plpgsql as $$
+begin
+  if old.status <> 'published' then
+    return new;
+  end if;
+  if new.template_key      is distinct from old.template_key
+  or new.version           is distinct from old.version
+  or new.title             is distinct from old.title
+  or new.persona           is distinct from old.persona
+  or new.summary           is distinct from old.summary
+  or new.input_schema      is distinct from old.input_schema
+  or new.extraction_schema is distinct from old.extraction_schema
+  or new.output_schema     is distinct from old.output_schema
+  or new.prompt_bundle     is distinct from old.prompt_bundle
+  or new.credit_cost       is distinct from old.credit_cost
+  or new.plan_entitlement  is distinct from old.plan_entitlement
+  or new.min_plan          is distinct from old.min_plan
+  or new.published_at      is distinct from old.published_at
+  then
+    raise exception 'workflow_templates: published version %/% is immutable — publish a new version instead',
+      old.template_key, old.version;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists workflow_templates_immutable_trg on public.workflow_templates;
+create trigger workflow_templates_immutable_trg
+  before update on public.workflow_templates
+  for each row execute function public.workflow_templates_immutable();
+
+-- ── RLS: service key only ───────────────────────────────────────────────────
+-- Same posture as 0029_referrals.sql and 0031_team_workspaces.sql. The browser
+-- reaches Supabase only through Netlify functions (locked architecture rule),
+-- so an anon/authenticated policy here would be unused attack surface.
+alter table public.workflow_templates    enable row level security;
+alter table public.template_runs         enable row level security;
+alter table public.template_run_sources  enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'workflow_templates' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.workflow_templates
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'template_runs' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.template_runs
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'template_run_sources' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.template_run_sources
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0037_credit_ledger.sql
+-- ============================================================
+-- 0037_credit_ledger.sql
+-- Phase 0 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md — the spine.
+--
+-- ── WHY A LEDGER AND NOT A COUNTER COLUMN ───────────────────────────────────
+-- CLAUDE.md already records this decision once, for audits:
+--
+--   "audits are counted from the audits table (status != 'failed', current
+--    month) with NO counter column, deliberately, because a counter that
+--    drifts from the rows it counts eventually bills somebody for work that
+--    is not there."
+--
+-- The same reasoning applies with more force here, because PRD 3 requires us to
+-- show an ESTIMATE before a run and the ACTUAL after it. Those two numbers only
+-- mean anything if the actual is derived from the individual cost-bearing
+-- events, not from a number some code path remembered to increment. So:
+--   credit_ledger  = append-only truth
+--   usage_records  = cache, may be rebuilt from the ledger at any time
+--
+-- ── APPEND-ONLY IS ENFORCED, NOT DOCUMENTED ─────────────────────────────────
+-- A ledger you can UPDATE is not a ledger. A correction is a COMPENSATING
+-- NEGATIVE ROW, exactly as 0016_invoices.sql makes a correction a credit note
+-- rather than an edit. The trigger below refuses both UPDATE and DELETE.
+--
+-- ── NEVER CHARGE FOR A REFUSED REQUEST ──────────────────────────────────────
+-- extract.js already orders its gates SSRF -> entitlement -> compliance ->
+-- guest charge -> rate limiter precisely so nothing above the charge can bill.
+-- Callers of credit_spend() inherit that rule: a run refused before any
+-- provider call writes NO ledger row. A run killed mid-flight writes rows only
+-- for the items that actually completed — which is why the bulk worker
+-- (§1.3a) charges per completed item rather than per job.
+--
+-- ── run_id CARRIES NO FOREIGN KEY, ON PURPOSE ───────────────────────────────
+-- The ledger is billing evidence and must outlive the run it describes.
+-- billing-purge.js already keeps invoices and payment_events when it deletes a
+-- user's content for the same reason. An FK with ON DELETE CASCADE would let a
+-- content purge silently erase the record of what was charged.
+--
+-- Adds 2 tables, 2 functions, 1 trigger.
+
+-- ── the append-only ledger ──────────────────────────────────────────────────
+create table if not exists public.credit_ledger (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid references auth.users,          -- nullable: guest / system
+  workspace_id  uuid references public.workspaces(id) on delete set null,
+  run_id        text,                                 -- template_runs.id; deliberately no FK
+  reason        text not null,
+  -- Positive = credits consumed. Negative = refund or grant. A correction is a
+  -- new negative row, never an edit to the row being corrected.
+  credits       integer not null,
+  unit          text,                                 -- what was actually metered
+  quantity      integer,
+  meta          jsonb not null default '{}'::jsonb,
+  occurred_at   timestamptz not null default now(),
+  created_at    timestamptz not null default now(),
+  constraint credit_ledger_reason_chk check (reason in (
+    'page_fetch', 'ai_call', 'enrichment', 'audit', 'monitor_check',
+    'template_run', 'refund', 'grant', 'adjustment'
+  )),
+  constraint credit_ledger_unit_chk check (unit is null or unit in (
+    'page', 'ai_call', 'enrichment', 'audit', 'monitor_check', 'run'
+  )),
+  constraint credit_ledger_credits_chk check (credits <> 0)
+);
+
+-- The hot path is "what has this user spent this month" — a range scan on
+-- (user_id, occurred_at), which is exactly how credit_balance() reads it.
+create index if not exists credit_ledger_user_time_idx
+  on public.credit_ledger (user_id, occurred_at desc);
+create index if not exists credit_ledger_run_idx
+  on public.credit_ledger (run_id) where run_id is not null;
+create index if not exists credit_ledger_workspace_time_idx
+  on public.credit_ledger (workspace_id, occurred_at desc) where workspace_id is not null;
+
+-- ── the estimate shown before the user confirms a run ───────────────────────
+-- Kept as its own row rather than a column on template_runs so that estimate
+-- drift is MEASURABLE: a template whose estimate is routinely half its actual
+-- is mispriced, and that is only visible if both numbers survive independently.
+create table if not exists public.credit_estimates (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid references auth.users,
+  run_id            text,
+  template_key      text,
+  template_version  integer,
+  estimated_credits integer not null,
+  breakdown         jsonb not null default '[]'::jsonb,
+  accepted_at       timestamptz,                      -- null = shown, never confirmed
+  created_at        timestamptz not null default now(),
+  constraint credit_estimates_credits_chk check (estimated_credits >= 0)
+);
+
+create index if not exists credit_estimates_run_idx
+  on public.credit_estimates (run_id) where run_id is not null;
+create index if not exists credit_estimates_user_idx
+  on public.credit_estimates (user_id, created_at desc);
+
+-- ── append a spend ──────────────────────────────────────────────────────────
+create or replace function public.credit_spend(
+  p_user_id  uuid,
+  p_run_id   text,
+  p_reason   text,
+  p_credits  integer,
+  p_unit     text default null,
+  p_quantity integer default null,
+  p_meta     jsonb default '{}'::jsonb,
+  p_workspace_id uuid default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if p_credits is null or p_credits = 0 then
+    -- Zero-cost work is real (a cache hit, a skipped unchanged page) and must
+    -- not create a row — an all-zero ledger is noise that hides real spend.
+    return jsonb_build_object('ok', false, 'reason', 'zero_credits');
+  end if;
+
+  begin
+    insert into public.credit_ledger (
+      user_id, workspace_id, run_id, reason, credits, unit, quantity, meta
+    ) values (
+      p_user_id, p_workspace_id, p_run_id, p_reason, p_credits, p_unit, p_quantity,
+      coalesce(p_meta, '{}'::jsonb)
+    ) returning id into v_id;
+  exception
+    when check_violation then
+      return jsonb_build_object('ok', false, 'reason', 'invalid_reason_or_unit');
+    when foreign_key_violation then
+      return jsonb_build_object('ok', false, 'reason', 'unknown_user');
+  end;
+
+  return jsonb_build_object('ok', true, 'id', v_id);
+end $$;
+
+-- ── derive the balance; never store it ──────────────────────────────────────
+-- p_month is 'YYYY-MM' (the same key usageService.js uses). NULL = all time.
+create or replace function public.credit_balance(
+  p_user_id uuid, p_month text default null
+) returns integer language sql stable security definer set search_path = public as $$
+  select coalesce(sum(credits), 0)::integer
+    from public.credit_ledger
+   where user_id = p_user_id
+     and (p_month is null or to_char(occurred_at, 'YYYY-MM') = p_month);
+$$;
+
+-- ── append-only enforcement ─────────────────────────────────────────────────
+create or replace function public.credit_ledger_append_only()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'credit_ledger is append-only — record a compensating entry (reason=''refund'' or ''adjustment'') instead of a % ', tg_op;
+end $$;
+
+drop trigger if exists credit_ledger_append_only_trg on public.credit_ledger;
+create trigger credit_ledger_append_only_trg
+  before update or delete on public.credit_ledger
+  for each row execute function public.credit_ledger_append_only();
+
+-- ── RLS: service key only ───────────────────────────────────────────────────
+alter table public.credit_ledger    enable row level security;
+alter table public.credit_estimates enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'credit_ledger' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.credit_ledger
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'credit_estimates' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.credit_estimates
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0038_field_provenance.sql
+-- ============================================================
+-- 0038_field_provenance.sql
+-- Phase 0 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md — the spine.
+--
+-- ── WHY FIELD-LEVEL STORAGE, NOT JUST A _provenance BLOB ────────────────────
+-- src/lib/provenanceService.js already attaches a `_provenance` object to an
+-- extraction in memory, and 0006_provenance.sql stores it as a jsonb column.
+-- That is enough to render a badge. It is NOT enough for either of the two
+-- phases that follow:
+--   PRD 3 needs to FILTER and SORT a list of 500 accounts by the confidence of
+--          one field, and re-run only the rows whose fields are stale.
+--   PRD 4 needs to DIFF one field against its previous value across runs.
+-- Both are queries across runs. A blob per extraction cannot answer either
+-- without reading every blob.
+--
+-- ── THE observed / inferred / ai_generated DISTINCTION IS THE PRODUCT ───────
+-- The BRD is explicit: every important output must disclose "whether a field
+-- was explicitly observed, inferred, or generated by AI", and PRD 4 requires
+-- that an AI explanation "must distinguish FACT from INTERPRETATION".
+--
+-- Making `method` a CHECK-constrained column rather than a convention is what
+-- turns that from a prompt-discipline aspiration into something the schema
+-- guarantees. A field the AI wrote can never be silently rendered as a
+-- verified fact about the source page, because the two are different values in
+-- a constrained column and the renderer branches on it.
+--
+--   observed      the value is literally present in the fetched document
+--   inferred      derived from observed content — still a claim ABOUT the source
+--   ai_generated  net-new prose the model wrote — NOT a claim about the source
+--   user_provided a human supplied or confirmed it (PRD 3's review queue)
+--
+-- ── confidence IS NULLABLE, AND NULL IS NOT ZERO ────────────────────────────
+-- This is the discoverability module's founding rule, carried over verbatim:
+-- an unmeasured signal is EXCLUDED and its weight redistributed, never scored
+-- zero. The CHECK below permits NULL and permits 0..1, so "we could not
+-- measure this" and "we measured this and it scored nothing" stay distinct
+-- values. In PRD 3 that distinction is the difference between "headcount
+-- unknown" and "0 employees, poor ICP fit" — the second would silently poison
+-- every ranked call list the product exists to produce.
+--
+-- Adds 2 tables, 0 functions, 0 triggers.
+
+-- ── the normalized value store ──────────────────────────────────────────────
+create table if not exists public.extracted_fields (
+  id          uuid primary key default gen_random_uuid(),
+  run_id      text references public.template_runs(id) on delete cascade,
+  -- Canonical entity this field describes (normalized domain, e.g.
+  -- 'stripe.com'). This is the join key that lets PRD 4 diff the same field
+  -- across two runs, and PRD 3 dedupe two spellings of one company.
+  entity_key  text,
+  field_path  text not null,                        -- 'pricing.tiers[0].amount'
+  -- PRD 3's recommended first schema categories: identity, firmographics,
+  -- commercial, gtm, people, technology, signals, qualification, governance.
+  field_group text,
+  value_text   text,
+  value_json   jsonb,
+  value_number numeric,
+  -- NULL = not measured. See the header — this is load-bearing.
+  confidence  numeric,
+  observed_at timestamptz,
+  created_at  timestamptz not null default now(),
+  constraint extracted_fields_confidence_chk
+    check (confidence is null or (confidence >= 0 and confidence <= 1)),
+  constraint extracted_fields_run_path_uniq unique (run_id, field_path)
+);
+
+create index if not exists extracted_fields_entity_idx
+  on public.extracted_fields (entity_key, field_path, observed_at desc)
+  where entity_key is not null;
+create index if not exists extracted_fields_run_idx
+  on public.extracted_fields (run_id);
+create index if not exists extracted_fields_group_idx
+  on public.extracted_fields (field_group) where field_group is not null;
+
+-- ── where each value came from and how it was produced ──────────────────────
+create table if not exists public.field_provenance (
+  id                uuid primary key default gen_random_uuid(),
+  field_id          uuid not null references public.extracted_fields(id) on delete cascade,
+  -- Which fetched page. ON DELETE SET NULL: losing the source record must not
+  -- erase the field — an orphaned value with a recorded URL is still evidence.
+  source_id         uuid references public.template_run_sources(id) on delete set null,
+  source_url        text,
+  method            text not null,
+  extractor         text,                           -- 'firecrawl' | 'ai:gemini-2.0-flash' | 'rule:pricing_v1'
+  extractor_version text,
+  -- Points back into workflow_templates.prompt_bundle, so a field produced by
+  -- a prompt can always be traced to the exact prompt text that produced it.
+  prompt_ref        text,
+  observed_at       timestamptz,
+  created_at        timestamptz not null default now(),
+  constraint field_provenance_method_chk
+    check (method in ('observed', 'inferred', 'ai_generated', 'user_provided'))
+);
+
+create index if not exists field_provenance_field_idx
+  on public.field_provenance (field_id);
+create index if not exists field_provenance_method_idx
+  on public.field_provenance (method);
+
+-- ── RLS: service key only ───────────────────────────────────────────────────
+alter table public.extracted_fields  enable row level security;
+alter table public.field_provenance  enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'extracted_fields' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.extracted_fields
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'field_provenance' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.field_provenance
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0039_report_access.sql
+-- ============================================================
+-- 0039_report_access.sql
+-- Phase 2 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md — §2.2a.
+--
+-- ── WHAT THIS REPLACES, AND THE BUG IT CLOSES ───────────────────────────────
+-- 0007_public_reports.sql made the slug the ONLY auth: "public read" is
+-- `USING (is_public = true)` and therefore exposes EVERY COLUMN — session_id
+-- included — to anyone holding the URL. CLAUDE.md already carries the warning
+-- that the obvious fix (send an x-session-id header so the "owner update"
+-- branch matches) would be strictly worse: it would let any READER of a public
+-- report rewrite or delete it.
+--
+-- The correct fix, which PRD 2 forces anyway, is to stop resolving visibility
+-- in RLS and resolve it in ONE function reading the service key. That is
+-- resolve_report_access() below, and public-reports.js is its only caller.
+--
+-- ── THE STATE MACHINE (decision D3, resolved 2026-09-02) ────────────────────
+--   private ──publish(link|org|named|public)──▶ shared   [slug minted on FIRST publish]
+--   shared  ──unpublish()─────────────────────▶ private  [slug RETAINED]
+--   shared  ──set_visibility(state)───────────▶ shared   [no slug change]
+--   any     ──revoke()────────────────────────▶ revoked  [TERMINAL; slug burned]
+--   any     ──expires_at passes───────────────▶ denied   [owner may re-publish]
+--
+-- ── WHY unpublish AND revoke ARE DIFFERENT VERBS ────────────────────────────
+-- Collapsing them forces a user to choose between convenience and safety on
+-- every click, so they pick convenience and stop using the safe one.
+--   unpublish  reversible. The slug is kept, so re-publishing revives the link
+--              a colleague already has. This is what "hide this for now" means.
+--   revoke     terminal. The slug is burned and can never be reissued.
+--
+-- ── HOW A BURNED SLUG STAYS BURNED, WITH NO EXTRA TABLE ─────────────────────
+-- A revoked report KEEPS its slug and its row. Because `slug` is UNIQUE, the
+-- revoked row permanently occupies that slug and mint_report_slug() can never
+-- hand it out again. Deleting the row instead would silently return the slug
+-- to the pool — and the next report to receive it would be readable by
+-- everyone who still had the old link.
+--
+-- ── REVOCATION MUST BE IMMEDIATE, SO NOTHING MAY BE CACHED ──────────────────
+-- PRD 2: "Revoking a link blocks access immediately." That is unachievable if
+-- the report body is edge-cached, so resolve_report_access() is called PER
+-- REQUEST and public-reports.js must send no-store on report bodies.
+--
+-- ── MIGRATION OF EXISTING public_reports ROWS ───────────────────────────────
+-- Every existing row exists BECAUSE A USER PRESSED SHARE — that is "make it
+-- public" already having been exercised, so sending them to `private` would
+-- silently break links already in third parties' hands. They land on `link`
+-- (reachable, unlisted, noindex). The `curated = true` subset already surfaced
+-- in /gallery lands on `public`, so the gallery is unchanged by this migration.
+--
+-- Adds 3 tables, 5 functions, 1 trigger.
+
+-- ── the report ──────────────────────────────────────────────────────────────
+create table if not exists public.reports (
+  id            uuid primary key default gen_random_uuid(),
+  -- NULL until first publish. A private report has no URL, so there is
+  -- nothing to guess at and nothing to leak.
+  slug          text unique,
+  owner_id      uuid references auth.users,
+  workspace_id  uuid references public.workspaces(id) on delete set null,
+  run_id        text references public.template_runs(id) on delete set null,
+  -- Denormalised so a report still renders if its run is purged.
+  title         text not null,
+  source_url    text,
+  template_key  text,
+  data          jsonb not null default '{}'::jsonb,
+  visibility    text not null default 'private',
+  expires_at    timestamptz,
+  revoked_at    timestamptz,
+  published_at  timestamptz,
+  -- Free tier keeps DatIQ attribution. Enforced at RENDER, not at publish, so
+  -- a plan downgrade cannot leave an unbranded page live.
+  branding      jsonb not null default '{}'::jsonb,
+  view_count    integer not null default 0,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint reports_visibility_chk check (visibility in (
+    'private', 'link', 'org', 'named', 'public', 'revoked'
+  )),
+  -- Any state that is reachable by a URL must actually have one.
+  constraint reports_shared_needs_slug_chk check (
+    visibility in ('private', 'revoked') or slug is not null
+  )
+);
+
+create index if not exists reports_owner_idx      on public.reports (owner_id, created_at desc);
+create index if not exists reports_workspace_idx  on public.reports (workspace_id, created_at desc) where workspace_id is not null;
+create index if not exists reports_run_idx        on public.reports (run_id) where run_id is not null;
+create index if not exists reports_public_idx     on public.reports (published_at desc) where visibility = 'public';
+
+-- ── named collaborators ─────────────────────────────────────────────────────
+create table if not exists public.report_grants (
+  id          uuid primary key default gen_random_uuid(),
+  report_id   uuid not null references public.reports(id) on delete cascade,
+  -- Email, not user_id: you grant access to someone who may not have an
+  -- account yet. Matched against the accepting session's own verified JWT
+  -- email server-side, exactly as 0031's workspace invites are.
+  email       text not null,
+  granted_by  uuid references auth.users,
+  revoked_at  timestamptz,
+  created_at  timestamptz not null default now(),
+  constraint report_grants_uniq unique (report_id, email)
+);
+
+create index if not exists report_grants_report_idx on public.report_grants (report_id) where revoked_at is null;
+
+-- ── who opened what, and when ───────────────────────────────────────────────
+-- PRD 2 asks for access logging AND report engagement analytics; one table
+-- serves both. Retained rather than pruned, because "who saw this before we
+-- revoked it" is the question this table exists to answer.
+create table if not exists public.report_access_log (
+  id          uuid primary key default gen_random_uuid(),
+  report_id   uuid not null references public.reports(id) on delete cascade,
+  event       text not null,
+  viewer_id   uuid references auth.users,
+  viewer_hint text,                                  -- coarse: never a raw IP
+  visibility  text,                                  -- state AT the time
+  actor_id    uuid references auth.users,            -- who made a state change
+  reason      text,
+  created_at  timestamptz not null default now(),
+  constraint report_access_log_event_chk check (event in (
+    'viewed', 'denied', 'published', 'unpublished', 'revoked',
+    'visibility_changed', 'expired', 'grant_added', 'grant_revoked'
+  ))
+);
+
+create index if not exists report_access_log_report_idx on public.report_access_log (report_id, created_at desc);
+create index if not exists report_access_log_event_idx  on public.report_access_log (event, created_at desc);
+
+-- ── slug minting ────────────────────────────────────────────────────────────
+-- 8 chars of base36. Retries on collision; a revoked row still owns its slug,
+-- so a burned slug is never reissued.
+create or replace function public.mint_report_slug()
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_alphabet constant text := '0123456789abcdefghijklmnopqrstuvwxyz';
+  v_slug text;
+  v_i    integer;
+  v_try  integer := 0;
+begin
+  loop
+    v_try := v_try + 1;
+    v_slug := '';
+    for v_i in 1..8 loop
+      v_slug := v_slug || substr(v_alphabet, 1 + floor(random() * 36)::int, 1);
+    end loop;
+    exit when not exists (select 1 from public.reports where slug = v_slug);
+    if v_try > 24 then
+      raise exception 'mint_report_slug: could not find a free slug after % attempts', v_try;
+    end if;
+  end loop;
+  return v_slug;
+end $$;
+
+-- ── publish / change visibility ─────────────────────────────────────────────
+-- D3 RESOLVED: REUSE. A report that was previously shared keeps its original
+-- slug when re-published, so the link a colleague already holds starts working
+-- again. Burning a link is the separate, explicit revoke_report() action.
+create or replace function public.set_report_visibility(
+  p_report_id uuid, p_visibility text, p_actor uuid default null, p_expires_at timestamptz default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.reports%rowtype;
+begin
+  select * into r from public.reports where id = p_report_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'not_found');
+  end if;
+  if r.visibility = 'revoked' then
+    -- Terminal by design: a revoked link must not be resurrectable, or
+    -- "revoke" would be indistinguishable from "unpublish" to an attacker
+    -- who already holds the URL.
+    return jsonb_build_object('ok', false, 'reason', 'revoked');
+  end if;
+  if p_actor is not null and r.owner_id is not null and r.owner_id <> p_actor then
+    return jsonb_build_object('ok', false, 'reason', 'not_owner');
+  end if;
+  if p_visibility not in ('private', 'link', 'org', 'named', 'public') then
+    return jsonb_build_object('ok', false, 'reason', 'invalid_visibility');
+  end if;
+
+  if p_visibility = 'private' then
+    -- unpublish: keep the slug so a later publish revives the same URL.
+    update public.reports
+       set visibility = 'private', expires_at = null, updated_at = now()
+     where id = p_report_id;
+    insert into public.report_access_log (report_id, event, actor_id, visibility)
+      values (p_report_id, 'unpublished', p_actor, 'private');
+    return jsonb_build_object('ok', true, 'visibility', 'private', 'slug', r.slug);
+  end if;
+
+  -- Mint on FIRST publish only; reuse thereafter (D3).
+  if r.slug is null then
+    r.slug := public.mint_report_slug();
+  end if;
+
+  update public.reports
+     set visibility   = p_visibility,
+         slug         = r.slug,
+         expires_at   = p_expires_at,
+         published_at = coalesce(published_at, now()),
+         updated_at   = now()
+   where id = p_report_id;
+
+  insert into public.report_access_log (report_id, event, actor_id, visibility)
+    values (p_report_id,
+            case when r.visibility = 'private' then 'published' else 'visibility_changed' end,
+            p_actor, p_visibility);
+
+  return jsonb_build_object('ok', true, 'visibility', p_visibility, 'slug', r.slug);
+end $$;
+
+-- ── revoke: terminal, burns the slug ────────────────────────────────────────
+create or replace function public.revoke_report(
+  p_report_id uuid, p_actor uuid default null, p_reason text default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.reports%rowtype;
+begin
+  select * into r from public.reports where id = p_report_id;
+  if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if p_actor is not null and r.owner_id is not null and r.owner_id <> p_actor then
+    return jsonb_build_object('ok', false, 'reason', 'not_owner');
+  end if;
+  if r.visibility = 'revoked' then
+    return jsonb_build_object('ok', true, 'visibility', 'revoked', 'already', true);
+  end if;
+
+  -- The slug is KEPT on the revoked row. That is what burns it: the UNIQUE
+  -- index means mint_report_slug() can never hand it out again.
+  update public.reports
+     set visibility = 'revoked', revoked_at = now(), expires_at = null, updated_at = now()
+   where id = p_report_id;
+
+  update public.report_grants set revoked_at = now()
+   where report_id = p_report_id and revoked_at is null;
+
+  insert into public.report_access_log (report_id, event, actor_id, visibility, reason)
+    values (p_report_id, 'revoked', p_actor, 'revoked', p_reason);
+
+  return jsonb_build_object('ok', true, 'visibility', 'revoked');
+end $$;
+
+-- ── the single choke point every read goes through (§1.9) ───────────────────
+-- Returns the verdict AND the payload, so a caller cannot accidentally fetch
+-- the row by another path and skip the check.
+create or replace function public.resolve_report_access(
+  p_slug text,
+  p_viewer_id uuid default null,
+  p_viewer_email text default null,
+  p_log boolean default true
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r        public.reports%rowtype;
+  v_ok     boolean := false;
+  v_reason text    := 'not_found';
+begin
+  select * into r from public.reports where slug = p_slug;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'not_found');
+  end if;
+
+  if r.visibility = 'revoked' then
+    v_reason := 'revoked';
+  elsif r.visibility = 'private' then
+    v_reason := 'private';
+  elsif r.expires_at is not null and r.expires_at <= now() then
+    v_reason := 'expired';
+  elsif r.visibility in ('public', 'link') then
+    v_ok := true;
+  elsif r.visibility = 'org' then
+    if p_viewer_id is not null and r.workspace_id is not null and exists (
+      select 1 from public.workspace_members m
+       where m.workspace_id = r.workspace_id and m.user_id = p_viewer_id
+    ) then v_ok := true; else v_reason := 'not_in_workspace'; end if;
+  elsif r.visibility = 'named' then
+    -- Email-bound, matched against the caller's own verified JWT email —
+    -- the same rule 0031's workspace invites use, and for the same reason:
+    -- a link is useless to anyone it was not actually sent to.
+    if p_viewer_email is not null and exists (
+      select 1 from public.report_grants g
+       where g.report_id = r.id and g.revoked_at is null
+         and lower(g.email) = lower(p_viewer_email)
+    ) then v_ok := true; else v_reason := 'not_granted'; end if;
+  end if;
+
+  -- The owner always sees their own report, in any state except revoked.
+  if not v_ok and p_viewer_id is not null and r.owner_id = p_viewer_id
+     and r.visibility <> 'revoked' then
+    v_ok := true; v_reason := 'owner';
+  end if;
+
+  if p_log then
+    insert into public.report_access_log (report_id, event, viewer_id, visibility, reason)
+      values (r.id, case when v_ok then 'viewed' else 'denied' end,
+              p_viewer_id, r.visibility, case when v_ok then null else v_reason end);
+    if v_ok then
+      update public.reports set view_count = view_count + 1 where id = r.id;
+    end if;
+  end if;
+
+  if not v_ok then
+    return jsonb_build_object('ok', false, 'reason', v_reason);
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'report', jsonb_build_object(
+      'id', r.id, 'slug', r.slug, 'title', r.title, 'source_url', r.source_url,
+      'template_key', r.template_key, 'data', r.data, 'visibility', r.visibility,
+      'branding', r.branding, 'published_at', r.published_at,
+      'created_at', r.created_at, 'updated_at', r.updated_at,
+      -- Only `public` is indexable. Everything else carries noindex.
+      'indexable', (r.visibility = 'public')
+    )
+  );
+end $$;
+
+create or replace function public.reports_touch_updated_at()
+returns trigger language plpgsql as $$
+begin new.updated_at := now(); return new; end $$;
+
+drop trigger if exists reports_touch_updated_at_trg on public.reports;
+create trigger reports_touch_updated_at_trg
+  before update on public.reports
+  for each row execute function public.reports_touch_updated_at();
+
+-- ── carry the existing shared reports across ────────────────────────────────
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+              where table_schema = 'public' and table_name = 'public_reports') then
+    insert into public.reports (
+      slug, owner_id, title, source_url, data, visibility, published_at, created_at, updated_at
+    )
+    select p.slug,
+           case when p.user_id ~ '^[0-9a-fA-F-]{36}$' then p.user_id::uuid else null end,
+           coalesce(nullif(btrim(p.title), ''), 'Shared report'),
+           p.url,
+           coalesce(p.data, '{}'::jsonb),
+           -- curated rows are already listed in /gallery -> stay public.
+           -- everything else was shared by an explicit user action -> `link`.
+           case when coalesce(p.curated, false) then 'public' else 'link' end,
+           p.created_at, p.created_at, p.updated_at
+      from public.public_reports p
+     where p.slug is not null
+       and not exists (select 1 from public.reports r where r.slug = p.slug);
+  end if;
+end $$;
+
+-- ── RLS: service key only. The "public read" policy on public_reports is
+-- deliberately NOT reproduced here — resolve_report_access() is the only path.
+alter table public.reports           enable row level security;
+alter table public.report_grants     enable row level security;
+alter table public.report_access_log enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'reports' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.reports
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'report_grants' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.report_grants
+             for all to service_role using (true) with check (true)';
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'report_access_log' and policyname = 'service full access') then
+    execute 'create policy "service full access" on public.report_access_log
+             for all to service_role using (true) with check (true)';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0040_pql.sql
+-- ============================================================
+-- 0040_pql.sql
+-- Phase 3 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md —
+-- activation instrumentation (PQL).
+--
+-- ── WHY A SEPARATE TABLE AND NOT A COLUMN ON entitlements ───────────────────
+-- A PQL score is a DERIVED OPINION about a user, recomputed as the weight
+-- table is tuned. `entitlements` is authorization state: what somebody paid
+-- for. Mixing a mutable marketing score into the row every gate reads would
+-- put a number nobody validates on the same path as the ones that decide
+-- whether a request is allowed — and would make a scoring backfill an UPDATE
+-- against the billing table.
+--
+-- ── activation_events IS APPEND-ONLY; pql_scores IS A CACHE ─────────────────
+-- Same split as 0037: the events are the truth, the score is derived and may
+-- be rebuilt from them at any time. That is what makes tuning PQL_SIGNALS
+-- safe — a weight change is a recompute, never a data migration.
+--
+-- ── coverage IS STORED, AND NULL SCORES ARE LEGAL ───────────────────────────
+-- src/lib/pql/pqlModel.js excludes signals this deployment cannot MEASURE and
+-- redistributes their weight, rather than scoring them zero. A score computed
+-- from three of nine signals is not the same claim as one computed from all
+-- nine, so `coverage` travels with every row and `score` is NULLABLE: nothing
+-- measurable means no score, which must not be storable as a 0 that later
+-- reads as "unqualified". This mirrors the rule the discoverability module is
+-- built on.
+--
+-- ── NO user_id FOREIGN KEY CASCADE ON activation_events ─────────────────────
+-- Unlike the ledger, these ARE user content and SHOULD be purged with the
+-- account, so both tables cascade. They are listed in billing-purge.js's
+-- PURGE_TABLES for exactly that reason. Recording that here so the next person
+-- to read this file does not have to re-derive the difference from 0037.
+--
+-- Adds 2 tables, 1 function, 0 triggers.
+
+-- ── append-only activation events ──────────────────────────────────────────
+create table if not exists public.activation_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users(id) on delete cascade,
+  session_id  text,
+  name        text not null,
+  properties  jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now(),
+  created_at  timestamptz not null default now(),
+  -- Either an account or an anonymous session must identify the row; a row
+  -- attributable to neither can never be scored and is pure noise.
+  constraint activation_events_subject_chk check (user_id is not null or session_id is not null)
+);
+
+create index if not exists activation_events_user_idx on public.activation_events (user_id, occurred_at desc);
+create index if not exists activation_events_name_idx on public.activation_events (name, occurred_at desc);
+create index if not exists activation_events_session_idx on public.activation_events (session_id, occurred_at desc)
+  where session_id is not null;
+
+-- ── the derived score cache ────────────────────────────────────────────────
+create table if not exists public.pql_scores (
+  user_id      uuid primary key references auth.users(id) on delete cascade,
+  -- NULL is a legal, meaningful value: nothing measurable. See the header.
+  -- Scale is 0..130, NOT 0..100 — the PRD's nine signals sum to 130 and its
+  -- threshold is 50 RAW POINTS. Storing a percentage here would re-scale that
+  -- threshold to 65 points without anyone noticing.
+  score        integer,
+  -- Fraction of the signal weight that was measurable, 0..1.
+  coverage     numeric(4,3) not null default 1.000,
+  is_pql       boolean not null default false,
+  activated    boolean not null default false,
+  persona      text,
+  -- The signal map the score was computed from, so a score is always
+  -- explainable after the fact — including after the weights change.
+  signals      jsonb not null default '{}'::jsonb,
+  -- Which signals were excluded as unmeasurable at compute time. Without this,
+  -- a low score from a partially-instrumented deployment is indistinguishable
+  -- from a genuinely disengaged user, months later, with no way to tell.
+  -- NOT named `excluded`: that is the pseudo-table name ON CONFLICT DO UPDATE
+  -- binds, so `excluded = excluded.excluded` is a parse error waiting to
+  -- happen the first time anyone writes an upsert against this table.
+  excluded_signals text[] not null default '{}',
+  computed_at  timestamptz not null default now(),
+  constraint pql_scores_score_chk    check (score is null or (score >= 0 and score <= 130)),
+  constraint pql_scores_coverage_chk check (coverage >= 0 and coverage <= 1),
+  -- A NULL score cannot be a PQL. Enforced here rather than trusted from the
+  -- application, because "no data" quietly becoming "qualified" is the exact
+  -- failure that would put sales in front of a user who has done nothing.
+  constraint pql_scores_null_not_pql_chk check (score is not null or is_pql = false)
+);
+
+create index if not exists pql_scores_pql_idx on public.pql_scores (is_pql, score desc) where is_pql;
+
+-- ── RLS: service key only ──────────────────────────────────────────────────
+-- Same posture as 0029_referrals.sql and 0031_team_workspaces.sql. The browser
+-- only ever reaches Supabase through apiClient.js -> Netlify Functions, so an
+-- anon/authenticated policy would be unused attack surface. A PQL score is
+-- also commercially sensitive: a user must never be able to read how the
+-- product scores them as a sales target.
+alter table public.activation_events enable row level security;
+alter table public.pql_scores        enable row level security;
+
+-- ── upsert one computed score ──────────────────────────────────────────────
+-- Takes the ALREADY-COMPUTED values rather than computing here: scorePql lives
+-- in src/lib/pql/pqlModel.js and is imported by both React and netlify/, so
+-- reimplementing the weights in PL/pgSQL would create a second, silently
+-- diverging definition of what a PQL is. This function only persists.
+create or replace function public.record_pql_score(
+  p_user_id   uuid,
+  p_score     integer,
+  p_coverage  numeric,
+  p_is_pql    boolean,
+  p_activated boolean,
+  p_persona   text,
+  p_signals   jsonb,
+  p_excluded_signals text[]
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_user_id is null then
+    return 'no_user';
+  end if;
+  -- A score with no data is not a qualification. Belt and braces with the
+  -- CHECK constraint above: the constraint stops a bad row being written, this
+  -- stops a caller having to think about it.
+  insert into public.pql_scores (user_id, score, coverage, is_pql, activated, persona, signals, excluded_signals)
+  values (p_user_id, p_score, coalesce(p_coverage, 1.000),
+          coalesce(p_is_pql, false) and p_score is not null,
+          coalesce(p_activated, false), p_persona,
+          coalesce(p_signals, '{}'::jsonb), coalesce(p_excluded_signals, '{}'))
+  on conflict (user_id) do update set
+    score       = excluded.score,
+    coverage    = excluded.coverage,
+    is_pql      = excluded.is_pql,
+    activated   = excluded.activated,
+    persona     = excluded.persona,
+    signals     = excluded.signals,
+    excluded_signals = excluded.excluded_signals,
+    computed_at = now();
+  return 'ok';
+exception
+  when foreign_key_violation then
+    return 'no_user';
+end;
+$$;
+
+revoke all on function public.record_pql_score(uuid, integer, numeric, boolean, boolean, text, jsonb, text[]) from public, anon, authenticated;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

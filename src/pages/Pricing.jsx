@@ -18,6 +18,7 @@ import TopupBundleModal from "../components/TopupBundleModal.jsx";
 import OffersBanner from "../components/OffersBanner.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useSeo } from "../hooks/useSeo.js";
+import { lifecycle } from "../lib/analyticsService.js";
 import { seoFor } from "../lib/pageSeo.js";
 
 function CurrencyPicker({ value, onChange }) {
@@ -290,6 +291,10 @@ function TopupCard({ bundle, currency, onBuy, loading }) {
 }
 
 export default function Pricing() {
+  // PQL: "visited pricing page twice within seven days" (+10). The seven-day
+  // window is computed at scoring time from the event timestamps, so this only
+  // has to record the visit — see pqlModel.signalsFromEvents.
+  useEffect(() => { void lifecycle.pricingViewed({}); }, []);
   // Title, description, canonical and JSON-LD for this route.
   // Ported from the hand-written public/pricing/index.html this page now owns.
   useSeo(seoFor("/pricing"));

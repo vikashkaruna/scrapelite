@@ -100,6 +100,7 @@ export default function AdminAI() {
   const [error, setError] = useState("");
   const [persisted, setPersisted] = useState(true);
   const [catalogue, setCatalogue] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
   const [effective, setEffective] = useState({});
 
   // Editable global chain
@@ -121,6 +122,7 @@ export default function AdminAI() {
       const data = await getAiConfig();
       const cfg = data.config || {};
       setCatalogue(data.catalogue || null);
+      setSavedAt(data.config?.updatedAt || null);
       setEffective(data.effective || {});
       setPersisted(data.persisted !== false);
       setOrder(cfg.order || AI_AREA_KEYS.length ? (cfg.order || []) : []);
@@ -188,7 +190,7 @@ export default function AdminAI() {
       });
       showToast?.(res.persisted === false
         ? (res.warning || "Saved locally — Supabase is not configured, so this will not persist.")
-        : "Provider configuration saved.");
+        : "Saved. Live on this screen now; other functions pick it up within 60 seconds.");
       // Re-read so the screen shows the EFFECTIVE values the server resolved,
       // not the ones we optimistically typed.
       await load();
@@ -198,6 +200,14 @@ export default function AdminAI() {
       setSaving(false);
     }
   }, [order, models, modelsFast, enabled, maxTokens, areas, showToast, load]);
+
+  // "Saved" and "live everywhere" are different moments, and conflating them
+  // is what made a working save look broken: each Netlify function holds its
+  // own 60s config cache, so a template run can still use the previous model
+  // for up to a minute after the console already shows the new one.
+  const savedLabel = savedAt
+    ? `Stored config last written ${new Date(savedAt).toLocaleString()}`
+    : "No stored config — running on built-in defaults";
 
   const providerRows = useMemo(() => {
     if (catalogue?.providers?.length) return catalogue.providers;
@@ -317,7 +327,7 @@ export default function AdminAI() {
           modelsFast={modelsFast} setModelsFast={setModelsFast}
           enabled={enabled} setEnabled={setEnabled}
           maxTokens={maxTokens} setMaxTokens={setMaxTokens}
-          saving={saving} onSave={save}
+          saving={saving} onSave={save} savedLabel={savedLabel}
           onTestAll={() => runAllTests(AI_PROVIDERS)}
         />
       ) : null}
@@ -334,7 +344,7 @@ export default function AdminAI() {
         <AreasTab
           effective={effective} areas={areas} setAreas={setAreas}
           byKey={byKey} results={results}
-          saving={saving} onSave={save}
+          saving={saving} onSave={save} savedLabel={savedLabel}
         />
       ) : null}
     </div>
@@ -344,7 +354,7 @@ export default function AdminAI() {
 // ── AI models ────────────────────────────────────────────────────────────────
 function ModelsTab({
   providers, results, busy, onTest, models, setModels, modelsFast, setModelsFast,
-  enabled, setEnabled, maxTokens, setMaxTokens, saving, onSave, onTestAll,
+  enabled, setEnabled, maxTokens, setMaxTokens, saving, onSave, onTestAll, savedLabel,
 }) {
   return (
     <section className="prov-section">
@@ -453,6 +463,11 @@ function ModelsTab({
           />
         </label>
         <Button onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save models"}</Button>
+        {/* "Saved" and "live everywhere" are different moments. Each Netlify
+            function holds its own 60s config cache, so a run can still use the
+            previous model for up to a minute after this screen shows the new
+            one — which is what made a working save look broken. */}
+        <span className="prov-savedat" title="Each function caches this config for up to 60 seconds, so a change reaches every code path within a minute.">{savedLabel}</span>
       </div>
     </section>
   );
@@ -547,7 +562,7 @@ function ServicesTab({ providers, results, busy, onTest, onTestAll }) {
 // ── Function areas ───────────────────────────────────────────────────────────
 // The "regions" view: which chain and tier each product feature runs on, shown
 // as the EFFECTIVE value with its default clearly labelled, and changeable.
-function AreasTab({ effective, areas, setAreas, byKey, results, saving, onSave }) {
+function AreasTab({ effective, areas, setAreas, byKey, results, saving, onSave, savedLabel }) {
   const setArea = (key, patch) =>
     setAreas((a) => ({ ...a, [key]: { ...(a[key] || {}), ...patch } }));
   const resetArea = (key) => setAreas((a) => ({ ...a, [key]: null }));

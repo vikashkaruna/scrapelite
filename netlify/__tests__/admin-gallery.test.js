@@ -188,3 +188,36 @@ describe("admin-gallery — misc", () => {
     expect(r.statusCode).toBe(405);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin takedown of a published page.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("admin-gallery — takedown", () => {
+  // Same token + dynamic-import pattern the suite above uses: beforeEach calls
+  // vi.resetModules(), so the handler must be imported inside each test.
+  const post = async (body) => {
+    const { handler } = await import("../functions/admin-gallery.js");
+    return handler({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify(body),
+    });
+  };
+
+  // Mandatory, matching every other operator mutation here — ops_audit_log
+  // enforces the same thing with a CHECK constraint.
+  it("refuses a takedown with no written reason", async () => {
+    const r = await post({ action: "takedown", id: "r1" });
+    expect(r.statusCode).toBe(400);
+    expect(JSON.parse(r.body).error).toMatch(/reason/i);
+    expect(JSON.parse(r.body).error).not.toMatch(/undefined/);
+  });
+
+  it("refuses a blank reason, not just a missing one", async () => {
+    expect((await post({ action: "takedown", id: "r1", reason: "   " })).statusCode).toBe(400);
+  });
+
+  it("still requires an id", async () => {
+    expect((await post({ action: "takedown", reason: "spam" })).statusCode).toBe(400);
+  });
+});

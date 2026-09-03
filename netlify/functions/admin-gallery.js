@@ -5,6 +5,7 @@
 //                                             → sets curated=true, persona,
 //                                               reviewed_at, reviewed_by
 //   POST /api/admin-gallery  { action: "uncurate", id }         → reverses it
+//   POST /api/admin-gallery  { action: "takedown", id, reason } → revoke a published page
 //
 // public_reports (0007_public_reports.sql) already lets anyone share and
 // anyone read is_public rows — that makes /gallery a feed, not a showcase.
@@ -109,6 +110,42 @@ export const handler = async (event) => {
       };
     } else if (action === "uncurate") {
       patch = { curated: false };
+    } else if (action === "takedown") {
+      // ── ADMIN TAKEDOWN of a published page ────────────────────────────────
+      // Reuses the SAME revoke_report RPC a user's own revoke goes through
+      // (0039), rather than a second delete path that could drift from it.
+      // The RPC already models the admin case: `p_actor = null` skips the
+      // ownership check, so an operator can take down anyone's page while a
+      // signed-in user still cannot touch someone else's.
+      //
+      // REVOKE, NOT DELETE. Revoking burns the slug and blocks access
+      // immediately while keeping the row, so the access log and the audit
+      // trail survive — which is the whole point of taking something down. A
+      // hard DELETE would erase the evidence of what was published and who
+      // looked at it, at exactly the moment that evidence matters most.
+      //
+      // A reason is MANDATORY, matching every other operator mutation in this
+      // codebase (ops_audit_log has a CHECK for the same thing).
+      const reason = String(body.reason || "").trim();
+      if (!reason) {
+        return respond(400, { ok: false, error: "A written reason is required to take down a published page." });
+      }
+      const db0 = getDb();
+      if (!db0) return respond(502, { ok: false, error: "Supabase not configured — nothing to take down." });
+      try {
+        const res = await sbFetch(db0, `/rest/v1/rpc/revoke_report`, {
+          method: "POST",
+          body: JSON.stringify({ p_report_id: id, p_actor: null, p_reason: reason }),
+        });
+        const verdict = Array.isArray(res) ? res[0] : res;
+        if (verdict && verdict.ok === false) {
+          return respond(verdict.reason === "not_found" ? 404 : 400,
+            { ok: false, error: "Could not take down that page.", reason: verdict.reason });
+        }
+        return respond(200, { ok: true, action: "takedown", id, visibility: "revoked" });
+      } catch (err) {
+        return respond(502, { ok: false, error: `Takedown failed: ${err.message}` });
+      }
     } else {
       return respond(400, { ok: false, error: `Unknown action: ${action}` });
     }

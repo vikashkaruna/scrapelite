@@ -23,6 +23,7 @@ import {
 import { pickDueNotice, noticeCopy } from "../../src/lib/billingNotices.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 import { withJobRun } from "./lib/jobControl.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -168,19 +169,20 @@ function escapeHtml(s) {
 }
 
 function noticeHtml({ heading, body, cta }, ctaUrl, urgent) {
-  return `<!doctype html><html><body style="margin:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:${urgent ? "#b91c1c" : "#4f46e5"};border-radius:12px 12px 0 0;padding:20px 24px">
-      <div style="color:#fff;font-size:18px;font-weight:700">DatIQ</div>
-      <div style="color:#e0e7ff;font-size:12px">Intelligence from every URL</div>
-    </div>
-    <div style="background:#fff;border:1px solid #e1e3e9;border-top:none;border-radius:0 0 12px 12px;padding:24px">
-      <h1 style="margin:0 0 10px;font-size:17px;color:#20222c">${escapeHtml(heading)}</h1>
-      <p style="margin:0 0 20px;font-size:14px;color:#4b5162;line-height:1.6">${escapeHtml(body)}</p>
-      <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600">${escapeHtml(cta)}</a>
-    </div>
-    <p style="text-align:center;color:#9aa0af;font-size:11px;margin-top:16px">Questions? Just reply to this email.</p>
-  </div></body></html>`;
+  // These are DUNNING emails — the ones a customer reads when their
+  // subscription is lapsing — and they carried the stale "Intelligence from
+  // every URL" tagline. `urgent` still tints the header red; the mark, the
+  // wordmark, the real tagline and the Axiom Minds signature come from the
+  // one shared shell.
+  const html =
+    `<h1 style="margin:0 0 10px;font-size:17px;color:#20222c">${escapeHtml(heading)}</h1>` +
+    `<p style="margin:0 0 20px;font-size:14px;color:#4b5162;line-height:1.6">${escapeHtml(body)}</p>` +
+    `<a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600">${escapeHtml(cta)}</a>`;
+  return wrapEmail(html, {
+    accent: urgent ? "#b91c1c" : undefined,
+    preheader: heading,
+    footerExtra: "Questions? Just reply to this email.",
+  });
 }
 
 async function sendNotice({ to, kind, copy, siteUrl, urgent }) {

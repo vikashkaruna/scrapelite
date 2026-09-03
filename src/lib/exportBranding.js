@@ -25,6 +25,15 @@ export const SITE_URL = "https://datiq.app";
 export const TAGLINE = "Intelligence from the Web";
 export const FAVICON_URL = `${SITE_URL}/favicon.png`;
 export const DEFAULT_ACCENT = "#4f46e5"; // --accent, matches the brand
+export const LOGO_URL = `${SITE_URL}/favicon.png`;
+
+// The legal entity behind the product. DatIQ is the PRODUCT brand and leads
+// every surface; Axiom Minds is the company and signs the footer. Kept as
+// constants here — the one place the brand is defined — rather than typed into
+// each of the six mail builders, which is how the tagline came to disagree
+// with itself across five files.
+export const COMPANY = "Axiom Minds Private Limited";
+export const COMPANY_URL = "https://axiomminds.ai";
 
 const KIND_TITLES = {
   extraction: "Extraction Report",
@@ -302,6 +311,14 @@ export function brandingEmailHtml(ctx, { heading, bodyHtml = "", attachmentLabel
         ${ctx.brand !== BRAND ? `${escapeHtml(ctx.poweredByLine)}<br>` : ""}
         This email was sent from your ${escapeHtml(BRAND)} account.
       </p>
+      <!-- The legal entity signs every email we send, white-labelled or not.
+           A Brand Kit can replace the PRODUCT brand in the header; it cannot
+           remove the company that sent the mail, for the same reason
+           poweredByLine is hard-coded into buildBrandingContext. -->
+      <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #eceef3;font-size:11px;color:#9aa0af;line-height:1.6">
+        <span style="color:#5b6070;font-weight:600">${escapeHtml(COMPANY)}</span><br>
+        <a href="${escapeHtml(COMPANY_URL)}" style="color:#9aa0af">${escapeHtml(COMPANY_URL.replace(/^https?:\/\//, ""))}</a>
+      </p>
     </div>
   </div></body></html>`;
 }
@@ -316,5 +333,6 @@ export function brandingEmailText(ctx, { heading, bodyText = "", attachmentLabel
   lines.push(`Exported via ${ctx.brand} — ${ctx.website || SITE_URL}`);
   if (ctx.footerText) lines.push(ctx.footerText);
   if (ctx.brand !== BRAND) lines.push(ctx.poweredByLine);
+  lines.push("", "—", COMPANY, COMPANY_URL);
   return lines.join("\n");
 }

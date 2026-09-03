@@ -9,7 +9,7 @@
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
@@ -110,7 +110,7 @@ function GuideTip({ tip, onDismiss }) {
 
 export default function Home() {
   useSeo({
-    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from Web",
+    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from the Web",
     description:
       "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
     canonical: "https://datiq.app/",
@@ -840,6 +840,15 @@ export default function Home() {
         </h2>
         <div className="rise" style={{ animationDelay: ".28s", width: "100%", maxWidth: 1080, marginTop: 8 }}>
           <TemplateGallery onSelect={handleTemplateSelect} />
+          {/* These are extraction PRESETS — one prompt, one page. The workflow
+              templates are a different, larger thing (multi-page, synthesised,
+              credit-costed, saved as a run), and a visitor who only ever sees
+              this list never learns the product does that. Pointing rather
+              than repeating: the library describes them once. */}
+          <p className="home-template-more">
+            Looking for finished business outputs rather than a single extraction?{" "}
+            <Link to="/templates">See the workflow templates →</Link>
+          </p>
         </div>
 
         {/* Social proof */}

@@ -1,6 +1,7 @@
 // AdminRevenue.jsx — revenue dashboard loaded from live Supabase data.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getRevenueData } from "../../lib/adminConfigService.js";
+import PqlFunnel from "./PqlFunnel.jsx";
 import { getEffectivePlanById } from "../../lib/pricingOverrides.js";
 import { useBilling } from "../../components/BillingProvider.jsx";
 import { formatPrice, convertPrice } from "../../lib/currencyService.js";
@@ -70,6 +71,11 @@ export default function AdminRevenue() {
 
   const [metrics, setMetrics] = useState(null);
   const [trend,   setTrend]   = useState(null);
+  // `null` funnel and `funnelAvailable:false` are DIFFERENT states — see
+  // PqlFunnel. Kept as two values rather than collapsed into one truthiness
+  // check, because "table unreadable" must not render as "nobody activated".
+  const [funnel, setFunnel] = useState(null);
+  const [funnelAvailable, setFunnelAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
   const [warning, setWarning] = useState("");
@@ -92,6 +98,11 @@ export default function AdminRevenue() {
       if (!alive.current) return;
       setMetrics(data.metrics);
       setTrend(data.trend);
+      setFunnel(data.funnel ?? null);
+      // Absent field (an older deploy of the function) is treated as available
+      // so the panel simply renders nothing, rather than accusing the operator
+      // of a missing migration that may be perfectly well applied.
+      setFunnelAvailable(data.funnelAvailable !== false);
       setFromSeed(!!data.fromSeed);
       setWarning(data.warning || "");
     } catch (e) {
@@ -149,6 +160,8 @@ export default function AdminRevenue() {
           <Icon name="alert-circle" size={15} /><span>{error}</span>
         </div>
       )}
+
+      <PqlFunnel funnel={funnel} available={funnelAvailable} />
 
       <div className="admin-kpi-grid">
         <KpiCard

@@ -284,6 +284,8 @@ function merge(base, ov) {
     }
   }
   return {
+    // Surfaced by /admin/ai so an operator can confirm which write is live.
+    updatedAt: ov.updatedAt || base.updatedAt || null,
     order: order.length ? order : base.order,
     models:     { ...base.models,     ...(ov.models || {}) },
     // A stored `models` map also lands on the FAST tier unless `modelsFast` is
