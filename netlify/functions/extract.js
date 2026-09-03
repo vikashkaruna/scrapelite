@@ -42,6 +42,7 @@
 //    and content generator stop working from a table of contents.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
+import { publicProvenance } from "./lib/aiFailure.js";
 import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
 import { RELATED_PAGE_HINTS } from "../../src/lib/extractionPresets.js";
 import {
@@ -779,7 +780,13 @@ export const handler = async (event) => {
       // came back, and which pages were read. On failure it carries the
       // specific reason plus the provider attempts, so an outage is legible
       // from the response instead of only from the function logs.
-      ...(enrichmentMeta ? { _enrichment: enrichmentMeta } : {}),
+      // REDACTED AT THE SOURCE. enrichmentMeta carries `provider`, `model` and
+      // `structured` for the server's own logging; none of the three is any of
+      // a customer's business, and the UI is not the only reader of this body
+      // (network tab, /api/v1 key holders, support screenshots, log
+      // aggregators). Same boundary the failure path already enforces — this
+      // was the success-path door, left open.
+      ...(enrichmentMeta ? { _enrichment: publicProvenance(enrichmentMeta) } : {}),
       // True when the AI-extraction fallback produced the custom_extraction
       // (the chain itself didn't have a provider that supports it). Useful
       // for debug + so future tests can pin the regression fix. Stays

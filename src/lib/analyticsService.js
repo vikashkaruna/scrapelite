@@ -16,6 +16,7 @@
 import { supabase } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
 import { apiClient } from "./apiClient.js";
+import { recordActivationEvent } from "./pql/pqlClient.js";
 
 export const ANALYTICS_TABLE = "analytics_events";
 const LS_KEY = "datiq.analytics";
@@ -288,6 +289,29 @@ export function computeFunnel(events, opts = {}) {
 
 // ── One-call lifecycle helpers ────────────────────────────────────────────────
 
+// The ONLY way anything should emit a PQL/activation event.
+//
+// Each helper below carries, in its signature, the properties the event MUST
+// have to be useful — see ACTIVATION_EVENTS.requires in src/lib/pql/
+// activationEvents.js. That matters more than it looks: a count-based signal
+// with a missing property reads as 0 rather than as an error, so an event can
+// be recorded perfectly and satisfy nothing, forever, with nothing logged.
+// This repo has shipped that bug before — every monitor_created event ever
+// recorded was undefined/undefined because the caller passed {url, name} to
+// something reading {target, label} (CLAUDE.md).
+//
+// `emitActivation` is deliberately NOT exported: a free-text track() call is
+// how a name drifts. Add a helper here instead, and the drift guard in
+// activationEvents.test.js will hold you to the vocabulary.
+function emitActivation(name, properties) {
+  // NOT track(). track() writes to `analytics_events`, which 0005 made
+  // world-readable (`USING (true)`) as "non-PII, no user content" — true of a
+  // page view, false of an event carrying `domain`, `templateKey` or `count`,
+  // which say which companies a user researched and how many accounts they
+  // enriched. These go to the private activation_events table instead.
+  return recordActivationEvent(name, properties);
+}
+
 export const lifecycle = {
   extractionSucceeded(properties) { return track("extraction_success", properties); },
   extractionFailed(properties)    { return track("extraction_failed", properties); },
@@ -296,6 +320,28 @@ export const lifecycle = {
   monitorCreated(properties)      { return track(FUNNEL.MONITOR, properties); },
   firstInsight(properties)        { return track(FUNNEL.FIRST_INSIGHT, properties); },
   pageView(properties)            { return track("page_view", properties); },
+
+  // ── PQL / activation vocabulary ─────────────────────────────────────────
+  /** @param {{templateKey: string, branded?: boolean}} p — templateKey decides which activation condition this satisfies. */
+  templateRunCompleted(p)   { return emitActivation("template_run_completed", p); },
+  /** @param {{provider: string}} p — provider decides whether this counts as reaching a CRM. */
+  integrationConnected(p)   { return emitActivation("integration_connected", p); },
+  /** @param {{provider: string}} p */
+  integrationPushed(p)      { return emitActivation("integration_push", p); },
+  /** @param {{target: string}} p */
+  watchlistCreated(p)       { return emitActivation("watchlist_created", p); },
+  /** @param {{count: number}} p — WITHOUT `count` this can never satisfy the 10+ threshold. */
+  bulkEnrichmentCompleted(p){ return emitActivation("bulk_enrichment_completed", p); },
+  /** @param {{capability: string, domain: string}} p — `domain` is what makes "3+ distinct companies" measurable. */
+  enrichmentCompleted(p)    { return emitActivation("enrichment_completed", p); },
+  reportPublished(p)        { return emitActivation("report_published", p); },
+  reportShared(p)           { return emitActivation("report_shared", p); },
+  teammateInvited(p)        { return emitActivation("teammate_invited", p); },
+  pricingViewed(p)          { return emitActivation("pricing_viewed", p); },
+  /** @param {{format: string}} p — md/pdf additionally count as a content brief. */
+  extractionExported(p)     { return emitActivation("extraction_exported", p); },
+  extractionSaved(p)        { return emitActivation("extraction_saved", p); },
+  digestReceived(p)         { return emitActivation("digest_received", p); },
 };
 
 // Stop the flush timer (used in tests to prevent open handles).

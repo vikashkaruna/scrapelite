@@ -26,6 +26,7 @@ import { withJobRun } from "./lib/jobControl.js";
 import {
   classifyProbe, summarizeHealth, componentById, HEALTH_STATUS, healthStatusMeta,
 } from "../../src/lib/healthModel.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -146,20 +147,20 @@ export function buildAlertEmail(transitions, summary, siteUrl) {
     .join("");
 
   return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto">` +
-    `<div style="background:${worst ? "#b91c1c" : "#047857"};color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ · Platform health</div>` +
-    `<div style="font-size:20px;font-weight:800;margin-top:4px">${escapeHtml(title)}</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px 22px;background:#fff">` +
+    `<div style="font-size:12px;letter-spacing:.05em;color:#6b7280;text-transform:uppercase">Platform health</div>` +
+    `<h1 style="margin:3px 0 16px;font-size:20px;font-weight:800;color:#1f2330">${escapeHtml(title)}</h1>` +
     `<table style="border-collapse:collapse;margin-bottom:16px;width:100%">${rows}</table>` +
     `<p style="margin:0 0 16px;color:#374151;font-size:13px">` +
     `${summary.ok} operational · ${summary.degraded} degraded · ${summary.down} down · ${summary.unknown} not checked.</p>` +
     `<a href="${escapeHtml(siteUrl)}/admin/health" style="display:inline-block;background:#4f46e5;color:#fff;` +
     `text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Open the health dashboard →</a>` +
     `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px">` +
-    `Sent because OPS_ALERT_EMAIL is set. Only critical components trigger this, and only when their state changes.</p>` +
-    `</div></div>`
+    `Sent because OPS_ALERT_EMAIL is set. Only critical components trigger this, and only when their state changes.</p>`
   );
+  // An OPERATOR alert, not a customer email — but it is still mail sent by
+  // DatIQ, so it wears the same shell. One rule with no exceptions is easier
+  // to keep true than one with a carve-out nobody remembers.
+  return wrapEmail(body, { accent: worst ? "#b91c1c" : "#047857", preheader: title });
 }
 
 async function sendAlert(transitions, summary) {

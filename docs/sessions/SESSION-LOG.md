@@ -18,6 +18,322 @@
 
 ---
 
+## 2026-09-03 (later) — Live-review fixes, email branding, and four of the owner's six items
+
+**Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree, pushed to
+**`feat/intelligence-workflows`** by explicit refspec. **`main` untouched at `1910968` throughout.**
+PR **[#143](https://github.com/vikashkaruna/scrapelite/pull/143)** → `staging`, open, CI green.
+Preview: `https://deploy-preview-143--datiqapp.netlify.app` (401 without a Netlify session — by design).
+
+⚠️ **Migration `0040` was applied to the STAGING Supabase project (`aubwooslkkrprdxuiyvj`) by the
+owner.** Production (`sikkfxysjhirmtwkumpt`) is a separate, later step. `runtime-config.js` sends
+everything except `main` to staging, so the preview and `staging.datiq.app` share that project.
+
+### 🔴 The same failure pattern, now seen THREE times — watch for it in Phases 4–6
+
+Mechanism shipped, tested, and **never wired to a caller**:
+
+| What | Found | Consequence |
+|---|---|---|
+| `discoverability.createSchedule` | earlier session | a whole subsystem unreachable |
+| `analyticsService.lifecycle.*` | this session | the funnel existed and nothing fed it |
+| **`checkAllowance()`** | this session | **credits were RECORDED but never ENFORCED** — any account could run unlimited templates |
+
+The owner reported the third as "credit checks happen later than the run". The truth was that they
+did not happen at all. **When a phase claims a capability, grep for its callers before believing it.**
+
+### 🔴 A privacy leak that would have passed review
+
+Activation events were about to be emitted through `analyticsService.track()` — what every other
+event uses. That writes to `analytics_events`, which `0005` made **world-readable** (`USING (true)`)
+on the stated grounds that it holds *"non-PII, no user content"*. True of a page view; **false once
+an event carries `domain`, `templateKey` or `count`**, which say WHICH COMPANIES a user researched.
+⚠️ **The justification for a three-year-old RLS policy silently stopped applying when the data
+changed shape.** Re-read `0005`'s reasoning before adding any further event kind.
+
+### 🔴 Vendor identity was leaking on the SUCCESS path
+
+A prior session built `aiFailure.js` to strip vendor names from ERROR responses, with a
+forbidden-pattern sweep so *"the boundary cannot be re-crossed one well-meaning code at a time"*.
+The **success** path shipped `provider`/`model` in provenance, rendering `openai · gpt-4o-mini` on
+the customer's own report — the same disclosure, on the path that runs far more often.
+⚠️ **An existing contract test asserted `_enrichment.provider === "gemini"` — it had ENCODED THE
+LEAK AS A CONTRACT**, so the suite was defending it. Inverted. New `publicProvenance()` is an
+ALLOWLIST, because a denylist ships every field someone adds later, which is how this survived.
+
+### Fixes from the owner's live review (all local until pushed)
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `openai · gpt-4o-mini`, "Schema-validated", "Raw JSON", `· via firecrawl` on customer reports | redacted at the SOURCE + UI; 10 sweep tests |
+| 2 | `account_brief`'s `angle` input collected, validated, **charged for**, and never read | `inputContext()` drives off `input_schema.fields`, so a new template's inputs reach its prompt the day it is seeded |
+| 3 | "This run is incomplete" on a site that simply doesn't publish pricing | a **successful synthesis proves the page was readable** — so empty structured facts is a FINDING, not a failure |
+| 4 | SEO/GEO/AEO template ran a thin copy of `/discoverability` | hands off with the domain prefilled, **before anything is spent**; prefill never auto-run |
+
+### Email branding — eight senders, one shell
+
+Reported from a live welcome email. The audit found **eight** independent mail builders: ONE had a
+logo, ONE had the tagline, **NOT ONE** carried the company.
+
+🔴 **The tagline existed in THREE variants across eight files.** `"Intelligence from every URL"` was
+stale and shipped on **every invoice and every dunning email DatIQ has ever sent**. Owner chose
+**"Intelligence from the Web"**; it is now defined once in `exportBranding.js`.
+
+New `src/lib/emailBranding.js`: DatIQ mark + wordmark + tagline header, **Axiom Minds Private
+Limited · axiomminds.ai** footer. ⚠️ **The logo is decorative and the wordmark is TEXT** — most
+clients block images, and branding that vanishes when images are blocked is not branding.
+⚠️ **Table-based, inline-styled, no `<style>`** — Gmail strips `<head>`, Outlook renders through
+Word; "tidying" it into semantic CSS breaks Outlook silently.
+
+⚠️ **My first sweep was VACUOUS and its own first assertion caught it** — it detected builders by
+their hand-rolled markup, so once all were converted it matched nothing and passed. Rewritten to
+detect SENDERS (a file posting `html:` to Resend), which then found two more and an eighth.
+
+### The owner's six items — FOUR done, TWO NOT STARTED
+
+| # | Item | Status |
+|---|---|---|
+| 1 | `/admin/ai` doesn't update | ✅ Save path proven CORRECT by a new integration test. Real cause: each Netlify function holds its own 60s config cache, so "saved" ≠ "live everywhere". Now stamped with `updatedAt` and surfaced. The editable model dropdown already existed (input + datalist, both tiers) — now pinned by test. |
+| 3 | Verify credits upfront | ✅ Blocks before the run row and any fetch; 402 with needed/remaining/shortBy/allowance. Allowance = `plan.limits.extractions` (Developer's 10000 = its own "10,000 row credits/month"). Client mirrors via the SAME pure function. |
+| 4 | Delete published page from admin | ✅ `takedown` action reusing the existing `revoke_report` RPC (`p_actor: null` already modelled the admin case). ⚠️ **REVOKE, not DELETE** — the access log and audit trail survive, which is the point of a takedown. Written reason mandatory. |
+| 6 | Recipes → workflow template library | ✅ Points instead of repeating |
+| **2** | **Run history + Dashboard filters + Account summary** | ⬜ **NOT STARTED** |
+| **5** | **Mandatory domain + smart company entry** | ⬜ **NOT STARTED** — owner chose: type a name → resolve domain on demand → prefill, all editable. NOT live-as-you-type (fires lookups on partial input). |
+
+### Open / next
+
+1. **Items 2 and 5**, then Phases 4 → 5 → 6 → 7.
+2. ⚠️ **A pre-tier stored `app_config.ai` row is read as the DEEP model map**, silently downgrading
+   every deep-tier call to the old single model. **Reproduced, NOT fixed** — needs the owner's
+   `/admin/ai` → Models tab to confirm before overriding operator config they chose to keep
+   authoritative.
+3. `0041`–`0043` unwritten. All migrations are handed over as consolidated SQL, per owner decision.
+4. ⚠️ **I cannot enter passwords.** Live testing as `demo@datiq.app` needs the owner to type it.
+5. ~15 blog posts agreed for the end, once features are green on staging.
+
+---
+
+
+## 2026-09-03 — Templates outage root-caused, AI-config staleness closed, Phase 3 (PQL) spine shipped
+
+**Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree and is pushed to
+**`feat/intelligence-workflows`** by explicit refspec — that branch is checked out in
+`branch-deploy-test-9894f8`, so it cannot be checked out here. `main` was touched once,
+deliberately and with approval, then left alone.
+
+### 🔴 The `/templates` crash was a store outage wearing a TypeError
+
+`https://datiq.app/templates?key=<anything>` showed *"Cannot read properties of undefined
+(reading 'input_schema')"* — for **every** template, not one. `handleGet` in
+`netlify/functions/templates.js` returned the **catalogue** and exited before it ever looked at
+`qs.key` whenever `listTemplates()` came back `ok:false`. So a `?key=` request got a 200 carrying
+a `templates` array and **no `template` field**, and the runner dereferenced the field that 200
+had promised.
+
+**Why it looked like a per-template bug:** the catalogue is served from the same six built-in
+seeds in that same degraded branch, so every card kept rendering. The list looked healthy while
+every link into it was dead.
+
+**The actual cause on production:** `workflow_templates` comes from migration `0036`, which had
+only ever been applied to **staging** Supabase while the code had since been promoted to `main`.
+The owner applied `0036`–`0039` to production manually this session. **The code fix does not make
+templates work — it makes the failure honest.**
+
+⚠️ **This was unfixed on `staging` too**, so it was not a stale-branch artifact.
+
+### 🔴 A correction worth carrying: I rebuilt work that already existed
+
+Asked to add per-role model configuration to `/admin/ai`, I built a whole parallel implementation —
+chain profiles, live provider testing, key fingerprints — **before discovering the branch was 11
+commits behind `main`/`staging`, where all of it had already shipped** (`providerRegistry.js`,
+`FUNCTION_AREAS`, `MODEL_TIER`, `admin-provider-test.js`, a Providers console with a Reload
+button). CLAUDE.md's own rule covers this exactly — *answer "does X exist?" with `git grep <ref>`
+across EVERY ref, never against the checked-out tree* — and running it first would have saved the
+whole detour. The duplicate work was reset (`89bef6b` in reflog) and `origin/staging` merged instead.
+
+**So: Phases 3–7 aside, per-area model selection is DONE.** `/admin/ai` → **Models** tab sets a
+`fast` and a `deep` model id per provider; **Where they're used** sets each area's provider order
+and tier. Areas today: `enrichment`, `synthesis`, `classification`, `discoverability`, `citations`.
+
+### The Gemini "key change has no effect" report — three causes, only one in code
+
+| Cause | Fixable in code? |
+|---|---|
+| Netlify injects Function env vars **at deploy time** — a key changed in the UI needs a **redeploy** | ⚠️ no |
+| Variable **Scopes** must include *Functions*; a Builds-only var is invisible to `netlify/functions/**` forever | ⚠️ no |
+| Admin GET read through the 60s `_cache`, so **Reload could show a pre-save config** | ✅ fixed |
+
+`invalidateAiConfigCache()` was already called on write, but it clears only the container that
+served the POST — Netlify may route the next GET to a **different** warm container whose own cache
+is up to a minute stale. `loadAiConfig()` now takes `{ fresh: true }` and the admin GET uses it; a
+fresh read *repopulates* the cache rather than disabling it, so no other caller pays for it.
+**Nothing caches keys** — `readKey()` reads `process.env` every call — so use the key fingerprint
+already on that screen to tell "the new value never arrived" from "the key or model is wrong".
+
+### Shipped this session
+
+| Item | Detail |
+|---|---|
+| `templates.js` degraded `?key=` | Serves the seed (`degraded: true`) or a real 404, never the catalogue |
+| `Templates.jsx` | A 200 without `template` is a contract breach, not a template — readable message, operator diagnostics stay server-side; degraded mode is surfaced and **Run is disabled** rather than promising a run the store cannot do |
+| `templatesCache.js` | **NEW.** Catalogue prefetched to localStorage for first paint, always revalidated. **A degraded response is never cached and never overwrites a good cache** — otherwise an outage would persist past its own end and silently drop templates a workspace really has (the failure `extractionsRepo` already learned) |
+| `pqlModel.js` + `0040_pql.sql` | Phase 3 spine — see below |
+
+### Phase 3 (PQL) — spine done, UI pending
+
+`src/lib/pql/pqlModel.js` is PURE and imported by both React and `netlify/`. Nine signals summing
+to 100, threshold 50, per-persona activation definitions.
+
+🔴 **The rule it inherits: an unmeasured signal is not a zero.** A signal is absent either because
+the user never did it (scores 0) or because **nothing in this deployment records it yet**
+(EXCLUDED, weight redistributed). Collapsing those makes every account look unqualified the moment
+an instrumentation gap appears, then produces a phantom company-wide PQL surge on the day someone
+ships the missing tracking. Every score carries `coverage`; nothing measurable yields a **NULL**
+score, never 0, and a CHECK constraint refuses `is_pql` on a NULL score.
+
+**Weighting principle: commitment over activity.** Sharing a report, creating a monitor, pushing to
+an integration each cost the user something and precede a purchase. `hit_plan_limit` is weighted
+**lowest of the nine** — it is the signal most easily produced by someone about to churn rather
+than pay. ⚠️ **These weights are a hypothesis, not a measurement** — nobody has observed which
+behaviours predict DatIQ revenue yet. They are deliberately in one table so tuning is a one-line diff.
+
+🔴 **CORRECTION, same session.** The paragraph originally here said the PRD was unavailable and
+that the nine signals had been *designed* from the product's instrumented surface. The owner then
+supplied the PRD ("DatIQ — Persona Specific Templates & Shareable Reports"), and the guessed table
+was **materially wrong** — it lacked "used a persona template" and firmographic ICP fit entirely,
+and invented a `multi_domain`/`habitual_return` pair the PRD does not use. It has been replaced
+with the PRD's actual table, transcribed verbatim, and a test now asserts the transcription so the
+two cannot drift. **The PRD's key tables are now copied into
+[INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md](../INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md)
+§PRD source tables**, so the next session does not have to guess or ask.
+
+⚠️ **THE POINTS SUM TO 130, NOT 100, AND THE THRESHOLD IS 50 RAW POINTS.** The first implementation
+normalised to a percentage, which silently re-scales the PRD's threshold to 65/130 — materially
+stricter than written, suppressing the founder outreach the PRD wants triggered. Do not "tidy" this
+into a percentage.
+
+⚠️ **Two of the nine cannot be measured today** — `imported_enriched_10_companies` needs Phase 4,
+`icp_fit` is firmographic data we do not hold. That is 35 of 130 points, so the
+exclude-and-redistribute rule is load-bearing immediately, not theoretical: scoring them 0 would cap
+every user at 95/130. `MEASURABLE_TODAY` in `pqlModel.js` is the one place that list lives.
+
+⚠️ **Persona gap:** the PRD defines SIX activation groups; the app ships SEVEN personas.
+`recruiter` has no PRD equivalent and is mapped to the closest DEFINED behaviour (`vc-analyst`)
+rather than given an invented definition. Flagged in `PERSONA_TO_ACTIVATION`.
+
+**Two real bugs caught by tests before they shipped:** `signalsFromEvents` threw on a `null` row
+(analytics arrive from both Supabase and a localStorage flush buffer); and the column was named
+`excluded`, which is the pseudo-table `ON CONFLICT DO UPDATE` binds.
+
+### The vulnerability discrepancy — a blind spot on the release path
+
+GitHub reported high advisories on the default branch while root `npm audit` reported none. **Both
+were right.** `scripts/check-vulnerabilities.mjs` ran `npm audit` with `cwd: repoRoot` only;
+Dependabot scans every lockfile. The unscanned one was `tools/netlify-cli/` — **the single tree that
+runs with production deploy credentials.**
+
+| Action | Result |
+|---|---|
+| `qs` 6.15.2 → 6.16.0 (a **prod** dep via `stripe`) | root audit clean |
+| `netlify-cli` **27.1.2 → 27.4.2** | 2 of 7 highs resolved; tree **388 packages smaller** |
+| Gate audits BOTH trees, labelled, failing loudly if one is absent | the disagreement cannot recur |
+| Remaining 5 (sharp → libvips) | bypassed, TODO + 2026-12-03 expiry |
+
+🔴 **CLAUDE.md recorded that pin as immovable** — `@netlify/dev` required `@netlify/ai@^1.0.1`,
+which had never been published and killed a production deploy. **It has since shipped.** Re-checking
+instead of trusting the note is what unlocked the bump — this repo's own "re-read the advisory
+before renewing a bypass" lesson, paying off a second time.
+
+⚠️ **The bypass reasoning was WRONG in draft and is corrected in the file.** The first version
+claimed the vulnerable binary is never installed because the workflow uses `--ignore-scripts`. That
+is false: modern `sharp` ships prebuilt binaries as **optional dependencies**, not a postinstall
+download, so libvips *is* on disk. The surviving claim is narrower and was tested — with `@img` and
+`sharp` deleted from a complete install, `netlify deploy --help` still loads and `netlify deploy`
+reaches its own argument validation.
+
+⚠️ **`approvedBy` is `pending-owner-review`.** A bypass is a risk acceptance and that is the owner's
+call. There is **no forward fix**: npm's only remedy is a MAJOR DOWNGRADE to netlify-cli 23.13.5 on
+the tool that publishes production.
+
+### Verified
+Full gate **9/9**. db **40 migrations / 359 assertions / 0 failed** (+18) · unit **2689** ·
+e2e smoke **131 passed** on the `main` push. The 7 behavioural templates assertions were confirmed
+**RED** against the pre-fix handler; the catalogue assertion correctly stayed green.
+
+### Phase 3 — ✅ COMPLETE (89 tests)
+
+| Piece | Detail |
+|---|---|
+| `pqlModel.js` + `0040_pql.sql` | PRD's 9 signals / **130 points** / threshold **50 raw** |
+| `activationEvents.js` | 15-kind vocabulary + `conditionsFromEvents` + **6 drift guards** |
+| `/api/pql` | intake + scoring, 13 contract tests |
+| `RecipeGallery` | 7 recipes on `/integrations`, readiness-tiered |
+| `PqlFunnel` | activation funnel on `/admin/revenue` |
+
+🔴 **A PRIVACY LEAK CAUGHT WHILE WIRING THE EVENTS, AND IT WOULD HAVE PASSED REVIEW.** The obvious
+implementation was `analyticsService.track()` — what every other event in the product uses. That
+writes to `analytics_events`, which `0005` made **world-readable** (`USING (true)`) on the stated
+grounds that it holds *"non-PII, no user content"*. True of a page view; **false the moment an event
+carries `domain`, `templateKey` or `count`**, because those say WHICH COMPANIES a user researched.
+A recruiter's sourcing list, readable by anyone holding the publishable key. Activation events now
+go to `activation_events` (service-key only, FK'd, cascading). ⚠️ **The justification for a
+three-year-old RLS policy silently stopped applying when the data changed shape** — worth re-reading
+`0005`'s reasoning before adding any further event kind.
+
+🔴 **THE DRIFT GUARDS EARNED THEIR PLACE ON THEIR FIRST RUN**, catching two real defects:
+`enrichment_completed` produced `sourced_across_3_companies` but never declared it (recruiter
+activation looked unsatisfiable), and `signalsFromEvents` read `workflow_run_completed` while the
+vocabulary declared `template_run_completed` — **two names for one event**, precisely the bug that
+made every recorded `monitor_created` `undefined/undefined`. Six tests now make that a build failure
+in both directions.
+
+⚠️ **`analyticsService.lifecycle`'s helpers had almost no callers.** Only `pageView` was wired —
+`extractionSucceeded`, `saved`, `exported`, `monitorCreated` existed and nothing called them. The
+funnel existed and nothing fed it. Another "built but never wired" instance, same shape as
+`discoverability.createSchedule`.
+
+### Security — both lockfiles now audit CLEAN, zero bypasses
+
+GitHub reported highs on the default branch while root `npm audit` reported none. **Both right:**
+`check-vulnerabilities.mjs` audited only the repo root; Dependabot scans every lockfile. The
+unscanned one was `tools/netlify-cli/` — **the single tree that runs with production deploy
+credentials.** The gate now audits both.
+
+🔴 **"`npm audit fix` offers only a downgrade" does NOT mean unfixable** — it means the TOP-LEVEL
+package has no newer release, and says nothing about the vulnerable TRANSITIVE dependency. The
+advisory patched at `sharp>=0.35.0`; 0.35.4 was published; the tree sat on 0.34.5 only because
+`ipx@3.1.1` declares `^0.34.3`. An `overrides` entry cleared all five. **Always check the advisory's
+patched range against the registry before concluding a fix does not exist** — this repo has now been
+caught by that assumption three times.
+
+Also: `netlify-cli` **27.1.2 → 27.4.2** (CLAUDE.md recorded that pin as immovable; `@netlify/ai@1.0.1`
+has since shipped) and the tree is **388 packages smaller**. ⚠️ `--ignore-scripts` is **not** a
+security control — modern sharp ships prebuilt binaries as optional dependencies.
+
+### Open / next
+
+1. **Phase 4 (bulk account intelligence) is next and is the heaviest** — 5–6 sessions, and every
+   later phase waits on its durable runner.
+2. **Phases 4 → 5 → 6 → 7**, phase by phase with a checkpoint each (owner's chosen cadence).
+3. **Migrations `0041`–`0043` are not written yet.** Per owner decision, all new migrations are
+   handed over as **one consolidated paste-ready SQL at the end**, not applied from a session.
+   `0040` is written and verified against WASM Postgres but **has never run on real Supabase**.
+4. **Branch deploys:** `feat/intelligence-workflows` is **not** in Netlify's `allowed_branches`, so
+   pushing it deploys nothing. Agreed route is a **PR to `staging`** — deploy previews bypass the list.
+5. ⚠️ **I cannot enter passwords.** Live testing as `demo@datiq.app` needs the owner to type the
+   password in the browser pane; the session drives it from there.
+6. **~15 blog posts** (feature announcements + per-template) agreed for the end, once features are
+   green on staging.
+7. ⚠️ **Stale local refs in other worktrees** after this session's remote pushes:
+   `fix_staging_gate_errors` (`staging`) and `branch-deploy-test-9894f8`
+   (`feat/intelligence-workflows`) both need `git pull --ff-only`. The
+   `audit-storage-error-003fa6` worktree holds `claude/custom-extraction-enrichment-debug-711d74`,
+   whose **remote branch was deleted this session** (verified contained in `main` first) — that
+   worktree should be removed and the local branch deleted by the owner.
+
+---
+
+
 ## 2026-09-02 23:10 IST — The AI outage nobody could see: schema-guided extraction, honest failures, and the Providers console
 
 > **Branch:** `claude/custom-extraction-enrichment-debug-711d74`

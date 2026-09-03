@@ -121,7 +121,7 @@ export default function About() {
             <Icon name="target" size={14} />
             Our Mission
           </div>
-          <h2>Intelligence from Web</h2>
+          <h2>Intelligence from the Web</h2>
           <p>
             The web holds an enormous amount of structured knowledge — company pages, pricing tables, contact directories,
             product documentation, research articles — yet extracting that knowledge has traditionally required writing scrapers,

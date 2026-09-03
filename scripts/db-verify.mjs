@@ -110,10 +110,13 @@ grant usage on schema public to anon, authenticated;
 // 0039_report_access.sql       +3 tables (reports, report_grants,
 //   report_access_log) +5 functions (mint_report_slug, set_report_visibility,
 //   revoke_report, resolve_report_access, reports_touch_updated_at) +1 trigger.
-// Taking these to 70 / 42 / 14.
+// 0040_pql.sql                 +2 tables (activation_events, pql_scores)
+//   +1 function (record_pql_score). No triggers — pql_scores is a derived
+//   cache recomputed from activation_events, never mutated in place by the DB.
+// Taking these to 72 / 43 / 14.
 const EXPECT = {
-  tables: 70,
-  functions: 42,
+  tables: 72,
+  functions: 43,
   triggers: 14,
   tablesWithoutRls: 0,
 };
@@ -1567,6 +1570,83 @@ group("report migration — live links keep working, gallery is unchanged");
   const stillReadable = await one(`select public.resolve_report_access('legacy01', null, null, false) v`);
   check("...and the migrated link actually resolves", stillReadable.v.ok === true);
   eq("...but is not indexable, because it was never a gallery entry", stillReadable.v.report?.indexable, false);
+}
+
+// ── 0040: a PQL score with no data is not a score of zero ───────────────────
+group("pql — 'no data' and 'unqualified' must not be the same row");
+{
+  await db.query(
+    `insert into auth.users (id, email) values
+       ('44444444-4444-4444-4444-444444444401','pql-a@x.com'),
+       ('44444444-4444-4444-4444-444444444402','pql-b@x.com')`);
+  const A = "44444444-4444-4444-4444-444444444401";
+  const B = "44444444-4444-4444-4444-444444444402";
+
+  const ok = await one(
+    `select public.record_pql_score($1, 72, 1.000, true, true, 'sales', '{"completed_workflow":true}'::jsonb, '{}'::text[]) v`, [A]);
+  eq("a computed score is recorded", ok.v, "ok");
+
+  const row = await one(`select score, is_pql, coverage, activated from public.pql_scores where user_id=$1`, [A]);
+  eq("...with its score", row.score, 72);
+  eq("...and its PQL verdict", row.is_pql, true);
+
+  // Upsert, not insert-only: the score is a CACHE recomputed whenever the
+  // weight table is tuned, so a second write must replace rather than fail.
+  await one(`select public.record_pql_score($1, 30, 1.000, false, true, 'sales', '{}'::jsonb, '{}'::text[]) v`, [A]);
+  const rescored = await one(`select score, is_pql from public.pql_scores where user_id=$1`, [A]);
+  eq("recomputing replaces rather than duplicating", rescored.score, 30);
+  eq("...and can demote a former PQL", rescored.is_pql, false);
+  const n = await one(`select count(*)::int c from public.pql_scores where user_id=$1`, [A]);
+  eq("...leaving exactly one row", n.c, 1);
+
+  // THE RULE. Nothing measurable means no score. Storing that as 0 would read
+  // as "unqualified" forever after, which is a claim we did not make.
+  const nul = await one(
+    `select public.record_pql_score($1, null, 0.000, false, false, 'seo', '{}'::jsonb, '{completed_workflow,shared_report}'::text[]) v`, [B]);
+  eq("a null score is legal — it means 'not measurable'", nul.v, "ok");
+  const nullRow = await one(`select score, coverage, is_pql, excluded_signals from public.pql_scores where user_id=$1`, [B]);
+  eq("...and is stored as NULL, never 0", nullRow.score, null);
+  eq("...with zero coverage", Number(nullRow.coverage), 0);
+  eq("...and which signals were unmeasurable", JSON.stringify(nullRow.excluded_signals), JSON.stringify(["completed_workflow","shared_report"]));
+
+  // A score nobody could compute must never put sales in front of a user who
+  // has done nothing. Enforced by CHECK, not merely by the application.
+  eq("a NULL score cannot be flagged as a PQL", nullRow.is_pql, false);
+  await throws(
+    `insert into public.pql_scores (user_id, score, is_pql) values ($1, null, true)`,
+    ["44444444-4444-4444-4444-444444444402"]);
+  check("...and the constraint refuses it at the database level", true);
+
+  await throws(`insert into public.pql_scores (user_id, score) values ($1, 131)`, [B]);
+  check("a score above the PRD's 130-point maximum is refused", true);
+  // 130 IS legal — the PRD's nine signals sum to 130, not 100. A constraint
+  // capped at 100 would silently reject a perfect score.
+  await db.query(`insert into public.pql_scores (user_id, score, is_pql) values ($1, 130, true)
+                  on conflict (user_id) do update set score=130, is_pql=true`, [B]);
+  const perfect = await one(`select score from public.pql_scores where user_id=$1`, [B]);
+  eq("...but a perfect 130 is accepted", perfect.score, 130);
+
+  const ghost = await one(
+    `select public.record_pql_score('44444444-4444-4444-4444-4444444444ff', 50, 1.0, true, true, null, '{}'::jsonb, '{}'::text[]) v`);
+  eq("scoring a user who does not exist reports no_user, it does not crash", ghost.v, "no_user");
+
+  // An event attributable to neither an account nor a session can never be
+  // scored, so it is refused rather than accumulated as noise.
+  await throws(`insert into public.activation_events (name) values ('workflow_run_completed')`);
+  check("an activation event with no subject is refused", true);
+
+  await db.query(
+    `insert into public.activation_events (user_id, name, properties) values ($1,'workflow_run_completed','{"domain":"a.com"}'::jsonb)`, [A]);
+  const ev = await one(`select count(*)::int c from public.activation_events where user_id=$1`, [A]);
+  eq("an attributable event is stored", ev.c, 1);
+
+  // These are user content and must leave with the account, unlike the billing
+  // ledger which deliberately survives a purge (see 0037's header).
+  await db.query(`delete from auth.users where id=$1`, [A]);
+  const afterA = await one(`select count(*)::int c from public.activation_events where user_id=$1`, [A]);
+  eq("deleting the user cascades their activation events away", afterA.c, 0);
+  const scoreAfter = await one(`select count(*)::int c from public.pql_scores where user_id=$1`, [A]);
+  eq("...and their score", scoreAfter.c, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

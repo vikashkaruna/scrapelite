@@ -135,7 +135,7 @@ export function renderInvoicePdf(model, { template = null } = {}) {
   textAt("DatIQ", MARGIN, y + 4, { size: 18, style: "bold", color: ACCENT });
   textAt(model.title, rightX, y + 4, { size: 15, style: "bold", align: "right" });
   y += 22;
-  textAt("DatIQ — Intelligence from Web", MARGIN, y, { size: 9, color: MUTED });
+  textAt("DatIQ — Intelligence from the Web", MARGIN, y, { size: 9, color: MUTED });
   textAt(model.invoiceNo, rightX, y, { size: 10, style: "bold", align: "right" });
   y += 14;
   rule();

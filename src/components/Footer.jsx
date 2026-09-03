@@ -44,7 +44,7 @@ export default function Footer() {
 
         {/* Copyright centre + version tag */}
         <span className="footer-copy">
-          © {new Date().getFullYear()} DatIQ · The Unified Web Intelligence Platform · Intelligence from Web
+          © {new Date().getFullYear()} DatIQ · The Unified Web Intelligence Platform · Intelligence from the Web
           <a
             className="footer-version-tag"
             href="/changelog"

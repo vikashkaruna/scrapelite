@@ -9,7 +9,7 @@
 // - Notify-me on coming-soon items still works
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import Integrations from "./Integrations.jsx";
 
@@ -50,18 +50,25 @@ function renderPage(initialPath = "/integrations") {
 }
 
 describe("Integrations — catalog", () => {
+  // Scoped to the catalogue grid. The page now also renders the recipe
+  // gallery above it, which legitimately names the same destinations — an
+  // unscoped getByText would be ambiguous about which section it means, and
+  // "HubSpot appears somewhere on the page" was never what this asserted.
+  const inGrid = () => within(document.querySelector(".int-grid"));
+
   it("renders all 10 cards", () => {
     renderPage();
-    expect(screen.getByText("CSV Export")).toBeInTheDocument();
-    expect(screen.getByText("PDF Export")).toBeInTheDocument();
-    expect(screen.getByText("Webhook / n8n")).toBeInTheDocument();
-    expect(screen.getByText("Email Share")).toBeInTheDocument();
-    expect(screen.getByText("HubSpot")).toBeInTheDocument();
-    expect(screen.getByText("Salesforce")).toBeInTheDocument();
-    expect(screen.getByText("Airtable")).toBeInTheDocument();
-    expect(screen.getByText("Notion")).toBeInTheDocument();
-    expect(screen.getByText("Google Sheets")).toBeInTheDocument();
-    expect(screen.getByText("Slack")).toBeInTheDocument();
+    const grid = inGrid();
+    expect(grid.getByText("CSV Export")).toBeInTheDocument();
+    expect(grid.getByText("PDF Export")).toBeInTheDocument();
+    expect(grid.getByText("Webhook / n8n")).toBeInTheDocument();
+    expect(grid.getByText("Email Share")).toBeInTheDocument();
+    expect(grid.getByText("HubSpot")).toBeInTheDocument();
+    expect(grid.getByText("Salesforce")).toBeInTheDocument();
+    expect(grid.getByText("Airtable")).toBeInTheDocument();
+    expect(grid.getByText("Notion")).toBeInTheDocument();
+    expect(grid.getByText("Google Sheets")).toBeInTheDocument();
+    expect(grid.getByText("Slack")).toBeInTheDocument();
   });
 
   it("marks the Webhook card as 'Available'", () => {
@@ -109,7 +116,10 @@ describe("Integrations — Webhook modal wiring (F-44)", () => {
       fireEvent.click(screen.getByRole("button", { name: /send test event/i }));
     });
     expect(globalThis.fetch).toHaveBeenCalled();
-    expect(screen.getByText(/delivered/i)).toBeInTheDocument();
+    // Scoped to the modal: the Zapier recipe card also contains the word
+    // "delivered", so an unscoped match no longer identifies this result.
+    const modal = document.querySelector(".modal, [role='dialog']") || document.body;
+    expect(within(modal).getAllByText(/delivered/i).length).toBeGreaterThan(0);
   });
 
   it("closing the WebhookSetupModal removes it from the DOM", () => {

@@ -203,12 +203,19 @@ export default function StructuredFacts({ data, groups, meta, title }) {
       {meta ? (
         <div className="sf-meta">
           {typeof meta.facts === "number" ? <span className="sf-chip">{meta.facts} facts</span> : null}
-          {meta.structured ? (
-            <span className="sf-chip sf-chip-ok" title="The provider enforced the output schema — this shape is guaranteed, not parsed out of prose.">
-              Schema-validated
-            </span>
-          ) : null}
-          {meta.provider ? <span className="sf-chip sf-chip-dim">{meta.provider}{meta.model ? ` · ${meta.model}` : ""}</span> : null}
+          {/* DELIBERATELY ABSENT: the AI provider, the model id, and whether
+              the provider enforced the schema natively.
+              `openai · gpt-4o-mini` rendered on a customer's own report told
+              them nothing they could act on, exposed a routing decision that
+              is ours to make and changes whenever the admin chain is
+              re-ordered, and invited "why am I paying for gpt-4o-mini?" about
+              a model we chose. "Schema-validated" was the same class: an
+              implementation detail that would silently flip meaning the day a
+              provider gains or loses that capability.
+              Redacted at the SOURCE too — see publicProvenance in
+              netlify/functions/lib/aiFailure.js — because the UI is not the
+              only reader of a response body. This comment is the guard
+              against someone helpfully adding it back. */}
           {Array.isArray(meta.pagesRead) && meta.pagesRead.length > 1 ? (
             <span className="sf-chip sf-chip-dim" title={meta.pagesRead.join("\n")}>
               {meta.pagesRead.length} pages read
@@ -239,7 +246,11 @@ export default function StructuredFacts({ data, groups, meta, title }) {
       <Evidence items={evidence} />
 
       <details className="sf-raw" open={rawOpen} onToggle={(e) => setRawOpen(e.currentTarget.open)}>
-        <summary>Raw JSON{title ? ` — ${title}` : ""}</summary>
+        {/* "Raw JSON" is a developer's name for the customer's own data. The
+            title is dropped too: it repeated the report heading directly above
+            it, so the row read as a stray debug artefact rather than a way to
+            see every field. */}
+        <summary>All extracted fields</summary>
         <pre>{JSON.stringify(data, null, 2)}</pre>
       </details>
     </div>

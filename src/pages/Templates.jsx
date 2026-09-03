@@ -20,9 +20,12 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { PERSONAS } from "../lib/personaConfig.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
+import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
+import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
 import { createReport } from "../lib/reports/reportsClient.js";
+import { lifecycle } from "../lib/analyticsService.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
 import StructuredFacts from "../components/StructuredFacts.jsx";
 import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
@@ -49,16 +52,38 @@ function TemplateGalleryView({ onPick }) {
     description:
       "Ready-to-run workflows for sales, competitive intelligence, SEO and research. Give one domain, get a source-backed account brief, pricing tracker, audit or due-diligence brief — no prompt writing.",
   });
-  const [templates, setTemplates] = useState(null);
+  // Paint from the prefetched catalogue on the very first render — a lazy
+  // useState initialiser, so there is no flash of the spinner before an effect
+  // gets a chance to run. `null` still means "nothing to show yet" and keeps
+  // the loading state below working unchanged for a cold visitor.
+  const [templates, setTemplates] = useState(() => readTemplatesCache()?.templates || null);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState(personaId || "all");
 
   useEffect(() => {
     let alive = true;
+    // Always revalidate, cache hit or not. That is what makes a browser
+    // refresh a real reload from the database rather than a re-read of
+    // whatever this browser happened to store — the cache only ever buys the
+    // first paint.
     api.listTemplates()
-      .then((r) => { if (alive) setTemplates(r.templates || []); })
-      .catch((e) => { if (alive) setError(e.message); });
+      .then((r) => {
+        if (!alive) return;
+        const list = r.templates || [];
+        // A degraded response is the server's built-in seed fallback, not the
+        // catalogue. Rendering it is fine; REPLACING a good list with it is
+        // not, because the visitor would silently lose templates that exist.
+        // writeTemplatesCache refuses to store it for the same reason.
+        if (r.degraded && templates?.length) return;
+        setTemplates(list);
+        writeTemplatesCache(r);
+      })
+      // A network failure with a warm cache is not an error the visitor needs
+      // to see — the page is already rendering a usable catalogue, and the
+      // revalidation is invisible by design. Only a cold load surfaces it.
+      .catch((e) => { if (alive && !templates?.length) setError(e.message); });
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const shown = useMemo(() => {
@@ -130,6 +155,27 @@ function personaLabel(id) {
 
 // ── runner ──────────────────────────────────────────────────────────────────
 
+// Templates that HAND OFF to a purpose-built module instead of running here.
+//
+// The SEO/GEO/AEO audit is a full four-pillar engine at /discoverability with
+// its own profiles, devices, page types, history, trends and re-audit
+// comparison. Re-running a thin version of it inside the template runner gave
+// the user a worse audit AND spent a template credit for it, while the real
+// module sat one click away.
+//
+// PREFILL, NEVER AUTO-RUN — the same contract /discoverability already
+// enforces for the Home composer's hand-off: "auto-running would spend an
+// audit credit on defaults they never saw, which is the kind of surprise a
+// quota makes expensive."
+const HANDOFF = {
+  discoverability_audit: {
+    to: "/discoverability",
+    label: "Open in Discoverability",
+    why: "This audit runs in the Discoverability module, which has the full four-pillar engine, history and re-audit comparison.",
+    state: (input) => ({ auditUrl: input.domain ? `https://${input.domain}` : input.url }),
+  },
+};
+
 function TemplateRunner({ templateKey, onBack }) {
   const showToast = useToast();
   const navigate = useNavigate();
@@ -144,6 +190,11 @@ function TemplateRunner({ templateKey, onBack }) {
   const [degraded, setDegraded] = useState(false);
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState([]);
+  // The two facts only the server knows: this plan's monthly credit budget and
+  // what has been spent against it. Fetched ONCE on load rather than on every
+  // keystroke — neither changes with the input, so re-asking per edit would be
+  // a round trip per character for an answer that cannot have moved.
+  const [budget, setBudget] = useState(null); // { allowance, spent }
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
@@ -166,6 +217,12 @@ function TemplateRunner({ templateKey, onBack }) {
         }
         setTemplate(r.template);
         setDegraded(r.degraded === true);
+        // Best-effort: a budget we cannot read must not block the runner. The
+        // server refuses independently, so the only cost of missing it here is
+        // that the user learns the shortfall a round trip later.
+        api.estimateRun(templateKey, {})
+          .then((e) => { if (alive) setBudget({ allowance: e.allowance, spent: e.spentThisMonth || 0 }); })
+          .catch(() => {});
         const seed = {};
         for (const f of r.template.input_schema?.fields || []) {
           if (f.default !== undefined) seed[f.name] = f.default;
@@ -186,8 +243,34 @@ function TemplateRunner({ templateKey, onBack }) {
 
   async function run() {
     if (!template) return;
+    // Hand off before spending anything: no credits, no run row, no partial
+    // report. The user lands on the real module with their domain prefilled.
+    const handoff = HANDOFF[template.template_key];
+    if (handoff) {
+      navigate(handoff.to, { state: handoff.state(values) });
+      return;
+    }
     const v = validateInput(template, values);
     if (!v.ok) { setErrors(v.errors); return; }
+
+    // CLIENT MIRROR of the server's affordability check. The server remains
+    // authoritative — a client gate alone is trivially bypassed by POSTing
+    // directly, which is why templates.js refuses independently — but showing
+    // the shortfall here means the user learns it without a round trip, and
+    // without a run row being created and immediately refused.
+    const needed = estimate?.credits ?? estimate?.total ?? 0;
+    if (budget && Number.isFinite(budget.allowance)) {
+      // The SAME pure checkAllowance the server calls, so the two verdicts are
+      // computed by one implementation and cannot drift.
+      const afford = checkAllowance({ spent: budget.spent, allowance: budget.allowance, estimated: needed });
+      if (!afford.ok) {
+        setErrors([
+          `This run needs ${needed} credits and you have ${afford.remaining} left this month. ` +
+          `Upgrade your plan, or wait for your allowance to reset.`,
+        ]);
+        return;
+      }
+    }
     setErrors([]);
     setBusy(true);
     setResult(null);
@@ -209,11 +292,19 @@ function TemplateRunner({ templateKey, onBack }) {
       if (runId) {
         const done = await api.finishRun(runId, exec);
         setResult({ ...exec, run: done.run, reconciliation: done.reconciliation });
+        // PQL: "used a persona template" (+10) and, via templateKey, the
+        // per-persona activation condition. Fire-and-forget — analytics must
+        // never be able to fail a run the user already paid credits for.
+        void lifecycle.templateRunCompleted({ templateKey: template.template_key });
         if (done.reconciliation?.needsDisclosure) {
           showToast(`This run used ${done.charged} credits — more than the ${done.run.credits_estimated} we estimated.`);
         }
       } else {
         setResult(exec);
+        // Same event on the path where reconciliation did not happen: the
+        // user still completed a template run, and scoring must not depend on
+        // an accounting detail they never see.
+        void lifecycle.templateRunCompleted({ templateKey: template.template_key });
       }
       setProgress(null);
     } catch (e) {
@@ -239,6 +330,9 @@ function TemplateRunner({ templateKey, onBack }) {
         data: { output: result.output, summary: result.summary, sources: result.sources },
       });
       setShareFor(r.report);
+      // PQL: "created a shareable report" (+10), and the activation condition
+      // for SEO/VC/agency personas.
+      void lifecycle.reportPublished({ templateKey: template.template_key });
     } catch (e) {
       showToast(`Couldn't create the report: ${e.message}`);
     }
@@ -255,6 +349,7 @@ function TemplateRunner({ templateKey, onBack }) {
   if (!template) return <div className="page container tpl-page"><div className="card tpl-empty">Loading…</div></div>;
 
   const fields = template.input_schema?.fields || [];
+  const handoff = HANDOFF[template.template_key] || null;
 
   return (
     <div className="page container tpl-page">
@@ -288,13 +383,18 @@ function TemplateRunner({ templateKey, onBack }) {
 
         <div className="tpl-run-row">
           <Button onClick={run} disabled={busy || degraded}>
-            {busy ? "Running…" : "Run this template"}
+            {handoff ? handoff.label : busy ? "Running…" : "Run this template"}
           </Button>
-          {estimate && (
+          {/* A hand-off spends nothing HERE, so showing this template's credit
+              estimate beside it would be a straightforward lie about what the
+              button does. The module states its own audit cost on arrival. */}
+          {handoff ? (
+            <span className="tpl-estimate">{handoff.why}</span>
+          ) : estimate ? (
             <span className="tpl-estimate" title="Estimated before the run; you are charged for what actually runs.">
               {describeEstimate(estimate)}
             </span>
-          )}
+          ) : null}
         </div>
 
         {progress && (
@@ -437,6 +537,18 @@ function RunResult({ result, template, onShare }) {
         </section>
       )}
 
+      {/* Two different answers, and only one of them is our fault. Saying
+          "we could not produce it" when the truth is "they do not publish it"
+          reports a successful run as a failure — and contradicts the report
+          immediately above, which says so in plain words. */}
+      {result.informationAbsent && !result.partial ? (
+        <p className="tpl-finding">
+          <Icon name="info" size={14} />
+          This site doesn’t publish the information this template looks for — that itself is the
+          finding. Everything below was read from the pages listed under Sources.
+        </p>
+      ) : null}
+
       {result.partial ? (
         <p className="tpl-partial">
           <Icon name="alert-circle" size={14} />
@@ -451,8 +563,14 @@ function RunResult({ result, template, onShare }) {
           {(result.sources || []).map((s, i) => (
             <li key={i}>
               <a href={s.url} target="_blank" rel="noreferrer noopener">{s.url}</a>
+              {/* The SCRAPE vendor (Firecrawl / Spider / Jina / direct) was
+                  rendered here as "· via firecrawl". Same boundary as the AI
+                  provider: which vendor fetched the page is our infrastructure
+                  choice, changes per request as the fallback chain walks, and
+                  a customer can act on none of it. The timestamp stays — it is
+                  a fact about THEIR page and it is what makes the source
+                  verifiable. */}
               <span className="tpl-src-meta">
-                {s.provider ? ` · via ${s.provider}` : ""}
                 {s.fetched_at ? ` · read ${new Date(s.fetched_at).toLocaleString()}` : ""}
               </span>
             </li>

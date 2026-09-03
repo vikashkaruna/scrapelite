@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useSeo } from "./useSeo.js";
 
-const SITE_TITLE = "DatIQ: The Unified Web Intelligence Platform | Intelligence from Web";
+const SITE_TITLE = "DatIQ: The Unified Web Intelligence Platform | Intelligence from the Web";
 const SITE_DESCRIPTION =
   "DatIQ is the unified web intelligence platform — extract, enrich and operationalize data from any public URL, batch, or scheduled run.";
 
