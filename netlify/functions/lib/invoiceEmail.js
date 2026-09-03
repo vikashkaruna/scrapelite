@@ -10,6 +10,7 @@
 import { buildInvoiceDoc } from "../../../src/lib/invoiceModel.js";
 import { invoiceFilename, invoicePdfBuffer } from "../../../src/lib/invoicePdf.js";
 import { claimInvoiceEmail } from "./invoiceService.js";
+import { wrapEmail, textSignature } from "../../../src/lib/emailBranding.js";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const REPLY_TO = "hello@datiq.app";
@@ -68,14 +69,11 @@ export function invoiceEmailHtml(model, { downloadUrl } = {}) {
     )
     .join("");
 
-  return `<!doctype html><html><body style="margin:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#4f46e5;border-radius:12px 12px 0 0;padding:20px 24px">
-      <div style="color:#fff;font-size:18px;font-weight:700">DatIQ</div>
-      <div style="color:#c7d2fe;font-size:12px">Intelligence from every URL</div>
-    </div>
-    <div style="background:#fff;border:1px solid #e1e3e9;border-top:none;border-radius:0 0 12px 12px;padding:24px">
-      <h1 style="margin:0 0 4px;font-size:17px;color:#20222c">${escapeHtml(model.title)} ${escapeHtml(model.invoiceNo)}</h1>
+  // ⚠️ This hand-rolled header carried a THIRD tagline — "Intelligence from
+  // every URL" — which is stale. Every invoice DatIQ has ever sent went out
+  // with it. That is the cost of five surfaces each holding their own literal,
+  // and why the shell below reads the brand from one place.
+  const body = `<h1 style="margin:0 0 4px;font-size:17px;color:#20222c">${escapeHtml(model.title)} ${escapeHtml(model.invoiceNo)}</h1>
       <p style="margin:0 0 18px;font-size:13px;color:#6e7484">
         Thanks for your payment. Your ${escapeHtml(model.title.toLowerCase())} is attached as a PDF.
       </p>
@@ -89,12 +87,11 @@ export function invoiceEmailHtml(model, { downloadUrl } = {}) {
       }
       <p style="margin:20px 0 0;font-size:11px;color:#9aa0af;line-height:1.6">
         ${model.notes.map((n) => escapeHtml(n)).join("<br>")}
-      </p>
-    </div>
-    <p style="text-align:center;color:#9aa0af;font-size:11px;margin-top:16px">
-      Questions? Just reply to this email.
-    </p>
-  </div></body></html>`;
+      </p>`;
+  return wrapEmail(body, {
+    preheader: `${model.title} ${model.invoiceNo}`,
+    footerExtra: "Questions? Just reply to this email.",
+  });
 }
 
 export function invoiceEmailText(model) {
@@ -106,7 +103,7 @@ export function invoiceEmailText(model) {
     ...model.totals.map((t) => `${t.label}: ${t.value}`),
     "",
     ...model.notes,
-  ].join("\n");
+  ].join("\n") + textSignature();
 }
 
 /**

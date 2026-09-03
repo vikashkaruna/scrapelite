@@ -110,7 +110,7 @@ function GuideTip({ tip, onDismiss }) {
 
 export default function Home() {
   useSeo({
-    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from Web",
+    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from the Web",
     description:
       "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
     canonical: "https://datiq.app/",

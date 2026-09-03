@@ -10,6 +10,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
+import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -109,12 +110,12 @@ function escapeHtml(s) {
 
 function welcomeHtml({ greeting, planLabel, siteUrl }) {
   const plan = planLabel || "Free";
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
-    `<div style="background:#4f46e5;color:#fff;padding:20px 22px;border-radius:12px 12px 0 0">` +
-    `<div style="font-size:13px;letter-spacing:.04em;opacity:.85;text-transform:uppercase">DatIQ</div>` +
-    `<div style="font-size:22px;font-weight:800;margin-top:4px">Welcome, ${escapeHtml(greeting)}!</div></div>` +
-    `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:22px;background:#fff">` +
+  // Body only — the DatIQ mark, wordmark, tagline and the Axiom Minds footer
+  // come from the one shared shell (src/lib/emailBranding.js). This used to
+  // hand-roll a purple band reading "DATIQ" with no mark, no tagline and no
+  // company signature, which is what a new customer saw first.
+  const body =
+    `<h1 style="margin:0 0 14px;font-size:21px;line-height:1.3;font-weight:800;color:#1f2330">Welcome, ${escapeHtml(greeting)}!</h1>` +
     `<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.55">You&apos;re on the <strong>${escapeHtml(plan)}</strong> plan. Here are three quick ways to get value from DatIQ today:</p>` +
     `<ol style="margin:0 0 18px;padding-left:22px;color:#374151;font-size:14px;line-height:1.7">` +
     `<li><strong>Extract a single page</strong> — paste a URL, get headings, links, and an AI summary in seconds.</li>` +
@@ -122,8 +123,9 @@ function welcomeHtml({ greeting, planLabel, siteUrl }) {
     `<li><strong>Set up a schedule</strong> — track a page for changes; we&apos;ll email or Slack you when content shifts.</li>` +
     `</ol>` +
     `<a href="${siteUrl}/" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 20px;border-radius:9px;margin-right:8px">Extract a page →</a>` +
-    `<a href="${siteUrl}/batch" style="display:inline-block;background:#fff;color:#4f46e5;border:1px solid #4f46e5;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Try a batch</a>` +
-    `<p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">Manage notification preferences anytime on the Account page.</p>` +
-    `</div></div>`
-  );
+    `<a href="${siteUrl}/batch" style="display:inline-block;background:#fff;color:#4f46e5;border:1px solid #4f46e5;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">Try a batch</a>`;
+  return wrapEmail(body, {
+    preheader: `You're on the ${plan} plan — three ways to get value today.`,
+    footerExtra: "Manage notification preferences anytime on the Account page.",
+  });
 }
