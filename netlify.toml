@@ -199,6 +199,15 @@
 # generic /api/* catch-all. Note this is PATH-based, not `?splat=:splat` — the
 # query-param form silently failed in production for every integrations
 # provider once already (fixed in 87f5597) and again for discoverability.
+# resolve-company is a single endpoint (no sub-path routing), so the generic
+# /api/* rule below would handle it — declared explicitly anyway so the route
+# is greppable next to its siblings rather than implied.
+[[redirects]]
+  from = "/api/resolve-company"
+  to = "/.netlify/functions/resolve-company"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/api/pql/*"
   to = "/.netlify/functions/pql/:splat"

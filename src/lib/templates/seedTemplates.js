@@ -304,7 +304,7 @@ export const SEED_TEMPLATES = [
         { name: "domain", kind: "domain", required: true, label: "Your domain",
           placeholder: "yourcompany.com",
           help: "We read your public site — positioning, pricing and proof points." },
-        { name: "competitors", kind: "domain_list", label: "Competitors (up to 4)", max: 4,
+        { name: "competitors", required: true, kind: "domain_list", label: "Competitors (up to 4)", max: 4,
           placeholder: "competitor-a.com, competitor-b.com",
           help: "Each competitor is read with the same schema, so the comparison is like-for-like." },
         { name: "audience", kind: "choice", label: "Who is this brief for", default: "gtm",

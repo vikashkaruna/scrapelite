@@ -439,12 +439,91 @@ function FieldInput({ field, value, onChange }) {
                   onChange={(e) => onChange(e.target.value)} />
       ) : field.kind === "boolean" ? (
         <input id={id} type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
+      ) : field.kind === "domain" ? (
+        <DomainField id={id} field={field} value={value} onChange={onChange} />
       ) : (
         <input id={id} type="text" value={value ?? ""} placeholder={field.placeholder}
                onChange={(e) => onChange(e.target.value)} />
       )}
       {field.help && <p className="tpl-help">{field.help}</p>}
     </div>
+  );
+}
+
+/**
+ * A domain field that also accepts a company NAME.
+ *
+ * Type "Protean", press Enter or leave the field, and we look up a likely
+ * domain and offer it. The field stays FREE TEXT and nothing is applied
+ * silently — a wrongly-resolved domain would produce a confident brief about
+ * the wrong company, which is worse than no resolution at all.
+ *
+ * Lookup fires on COMMIT (Enter / blur), never per keystroke: each attempt is
+ * a real fetch, and a debounced as-you-type version would spend requests on
+ * every partial word the user never finishes.
+ */
+function DomainField({ id, field, value, onChange }) {
+  const [looking, setLooking] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+  const [missed, setMissed] = useState(false);
+
+  const looksLikeDomain = (v) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(v || "").trim());
+
+  async function maybeResolve() {
+    const raw = String(value || "").trim();
+    // Already a domain, or too short to be a name worth a network call.
+    if (!raw || raw.length < 3 || looksLikeDomain(raw)) { setSuggestion(null); setMissed(false); return; }
+    setLooking(true); setMissed(false);
+    try {
+      const r = await api.resolveCompany(raw);
+      if (r?.best?.domain) setSuggestion(r.best);
+      else { setSuggestion(null); setMissed(true); }
+    } catch {
+      // A failed lookup is not an error the user needs to see — they can type
+      // the domain, which is what they would have done anyway.
+      setSuggestion(null); setMissed(true);
+    } finally {
+      setLooking(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="tpl-domain-row">
+        <input
+          id={id} type="text" value={value ?? ""}
+          placeholder={field.placeholder || "acme.com — or type the company name"}
+          onChange={(e) => { onChange(e.target.value); setSuggestion(null); setMissed(false); }}
+          onBlur={maybeResolve}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); maybeResolve(); } }}
+        />
+        {looking && <span className="tpl-domain-status"><Icon name="loader" size={13} className="spin" /> Looking up…</span>}
+      </div>
+
+      {suggestion && (
+        <div className="tpl-domain-suggest">
+          <Icon name={suggestion.confirmed ? "check-circle" : "alert-circle"} size={13} />
+          <span>
+            {suggestion.confirmed ? "Found" : "Best guess"}:{" "}
+            <strong>{suggestion.domain}</strong>
+            {suggestion.title ? <em> — {suggestion.title}</em> : null}
+          </span>
+          {/* Applied only on an explicit click. The whole point of resolving is
+              to save typing, not to decide for the user which company they
+              meant. */}
+          <button type="button" onClick={() => { onChange(suggestion.domain); setSuggestion(null); }}>
+            Use this
+          </button>
+          <button type="button" className="tpl-domain-dismiss" onClick={() => setSuggestion(null)}>Ignore</button>
+        </div>
+      )}
+
+      {missed && (
+        <p className="tpl-help">
+          Couldn’t find a domain for that name — type it directly (for example <code>acme.com</code>).
+        </p>
+      )}
+    </>
   );
 }
 
