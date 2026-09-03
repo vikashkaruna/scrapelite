@@ -150,14 +150,14 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 ## 2.0 Status board
 
 > Single source of truth for what exists. Updated at the end of every session.
-> Last updated **2026-09-02**.
+> Last updated **2026-09-03**.
 
 | Phase | Scope | Status | Evidence |
 |---|---|---|---|
 | **0** | Spine — versioned templates, credit ledger, field provenance, shared pure models | ✅ **DONE** | `0036`–`0038` applied to staging · `templateModel` / `creditModel` / `visibilityModel` + 86 unit tests |
 | **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 5 templates live on staging + 1 draft · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
 | **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
-| **3** | Activation instrumentation (PQL) + integration recipe gallery | ⬜ **PENDING** | — |
+| **3** | Activation instrumentation (PQL) + integration recipe gallery | 🟡 **PARTIAL** | Spine done: `0040_pql.sql` written + verified on WASM PG · `pqlModel.js` (9 signals, threshold 50, per-persona activation) + 24 unit tests + 18 db assertions. **Pending:** ~15 analytics event kinds, activation wiring, recipe gallery, founder funnel |
 | **4** | PRD 3 — bulk account intelligence ⚠️ heaviest | ⬜ **PENDING** | `bulk_icp_enrichment` seeded as `draft`, awaiting its durable runner |
 | **5** | PRD 4 — competitor watchlists & change intelligence | ⬜ **PENDING** | — |
 | **6** | PRD 5 — native signal routing | 🟡 **PARTIAL** | Event model shipped (`KIND_WHITELIST` 5→16). Rules layer + UI pending |
@@ -174,6 +174,7 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | `report.branding` entitlement | gated Business+ | Server-side enforcement is live; the Brand Kit picker for reports is a follow-up. |
 | `extracted_fields` / `field_provenance` | `0038`, live on staging | Written by Phases 4 and 5. Phase 1 runs store provenance in the run's `output` blob for now. |
 | `credit_estimates` drift tracking | `0037`, live | Rows accumulate now so estimate-vs-actual drift is measurable *before* anyone tunes a price. |
+| `pqlModel.js` weight table | `src/lib/pql/`, no caller yet | ⚠️ The weights are a **hypothesis, not a measurement** — nobody has observed which behaviours predict DatIQ revenue. The PRD's own 9-signal table is not in this repo, so these nine were designed from the product's instrumented surface and await owner review. |
 
 ### Known gaps inside the shipped phases — tracked, not forgotten
 

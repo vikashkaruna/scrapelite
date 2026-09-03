@@ -18,6 +18,127 @@
 
 ---
 
+## 2026-09-03 — Templates outage root-caused, AI-config staleness closed, Phase 3 (PQL) spine shipped
+
+**Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree and is pushed to
+**`feat/intelligence-workflows`** by explicit refspec — that branch is checked out in
+`branch-deploy-test-9894f8`, so it cannot be checked out here. `main` was touched once,
+deliberately and with approval, then left alone.
+
+### 🔴 The `/templates` crash was a store outage wearing a TypeError
+
+`https://datiq.app/templates?key=<anything>` showed *"Cannot read properties of undefined
+(reading 'input_schema')"* — for **every** template, not one. `handleGet` in
+`netlify/functions/templates.js` returned the **catalogue** and exited before it ever looked at
+`qs.key` whenever `listTemplates()` came back `ok:false`. So a `?key=` request got a 200 carrying
+a `templates` array and **no `template` field**, and the runner dereferenced the field that 200
+had promised.
+
+**Why it looked like a per-template bug:** the catalogue is served from the same six built-in
+seeds in that same degraded branch, so every card kept rendering. The list looked healthy while
+every link into it was dead.
+
+**The actual cause on production:** `workflow_templates` comes from migration `0036`, which had
+only ever been applied to **staging** Supabase while the code had since been promoted to `main`.
+The owner applied `0036`–`0039` to production manually this session. **The code fix does not make
+templates work — it makes the failure honest.**
+
+⚠️ **This was unfixed on `staging` too**, so it was not a stale-branch artifact.
+
+### 🔴 A correction worth carrying: I rebuilt work that already existed
+
+Asked to add per-role model configuration to `/admin/ai`, I built a whole parallel implementation —
+chain profiles, live provider testing, key fingerprints — **before discovering the branch was 11
+commits behind `main`/`staging`, where all of it had already shipped** (`providerRegistry.js`,
+`FUNCTION_AREAS`, `MODEL_TIER`, `admin-provider-test.js`, a Providers console with a Reload
+button). CLAUDE.md's own rule covers this exactly — *answer "does X exist?" with `git grep <ref>`
+across EVERY ref, never against the checked-out tree* — and running it first would have saved the
+whole detour. The duplicate work was reset (`89bef6b` in reflog) and `origin/staging` merged instead.
+
+**So: Phases 3–7 aside, per-area model selection is DONE.** `/admin/ai` → **Models** tab sets a
+`fast` and a `deep` model id per provider; **Where they're used** sets each area's provider order
+and tier. Areas today: `enrichment`, `synthesis`, `classification`, `discoverability`, `citations`.
+
+### The Gemini "key change has no effect" report — three causes, only one in code
+
+| Cause | Fixable in code? |
+|---|---|
+| Netlify injects Function env vars **at deploy time** — a key changed in the UI needs a **redeploy** | ⚠️ no |
+| Variable **Scopes** must include *Functions*; a Builds-only var is invisible to `netlify/functions/**` forever | ⚠️ no |
+| Admin GET read through the 60s `_cache`, so **Reload could show a pre-save config** | ✅ fixed |
+
+`invalidateAiConfigCache()` was already called on write, but it clears only the container that
+served the POST — Netlify may route the next GET to a **different** warm container whose own cache
+is up to a minute stale. `loadAiConfig()` now takes `{ fresh: true }` and the admin GET uses it; a
+fresh read *repopulates* the cache rather than disabling it, so no other caller pays for it.
+**Nothing caches keys** — `readKey()` reads `process.env` every call — so use the key fingerprint
+already on that screen to tell "the new value never arrived" from "the key or model is wrong".
+
+### Shipped this session
+
+| Item | Detail |
+|---|---|
+| `templates.js` degraded `?key=` | Serves the seed (`degraded: true`) or a real 404, never the catalogue |
+| `Templates.jsx` | A 200 without `template` is a contract breach, not a template — readable message, operator diagnostics stay server-side; degraded mode is surfaced and **Run is disabled** rather than promising a run the store cannot do |
+| `templatesCache.js` | **NEW.** Catalogue prefetched to localStorage for first paint, always revalidated. **A degraded response is never cached and never overwrites a good cache** — otherwise an outage would persist past its own end and silently drop templates a workspace really has (the failure `extractionsRepo` already learned) |
+| `pqlModel.js` + `0040_pql.sql` | Phase 3 spine — see below |
+
+### Phase 3 (PQL) — spine done, UI pending
+
+`src/lib/pql/pqlModel.js` is PURE and imported by both React and `netlify/`. Nine signals summing
+to 100, threshold 50, per-persona activation definitions.
+
+🔴 **The rule it inherits: an unmeasured signal is not a zero.** A signal is absent either because
+the user never did it (scores 0) or because **nothing in this deployment records it yet**
+(EXCLUDED, weight redistributed). Collapsing those makes every account look unqualified the moment
+an instrumentation gap appears, then produces a phantom company-wide PQL surge on the day someone
+ships the missing tracking. Every score carries `coverage`; nothing measurable yields a **NULL**
+score, never 0, and a CHECK constraint refuses `is_pql` on a NULL score.
+
+**Weighting principle: commitment over activity.** Sharing a report, creating a monitor, pushing to
+an integration each cost the user something and precede a purchase. `hit_plan_limit` is weighted
+**lowest of the nine** — it is the signal most easily produced by someone about to churn rather
+than pay. ⚠️ **These weights are a hypothesis, not a measurement** — nobody has observed which
+behaviours predict DatIQ revenue yet. They are deliberately in one table so tuning is a one-line diff.
+
+⚠️ **The PRDs are not in this repo.** The plan references "the PRD's 9-signal scoring table" and
+"per-persona activation definitions per the PRD's table"; neither exists in `docs/`. The nine
+signals and seven activation definitions here were **designed from the product's actual
+instrumented surface** and are flagged for owner review, not transcribed from the PRD.
+
+**Two real bugs caught by tests before they shipped:** `signalsFromEvents` threw on a `null` row
+(analytics arrive from both Supabase and a localStorage flush buffer); and the column was named
+`excluded`, which is the pseudo-table `ON CONFLICT DO UPDATE` binds.
+
+### Verified
+Full gate **9/9**. db **40 migrations / 359 assertions / 0 failed** (+18) · unit **2689** ·
+e2e smoke **131 passed** on the `main` push. The 7 behavioural templates assertions were confirmed
+**RED** against the pre-fix handler; the catalogue assertion correctly stayed green.
+
+### Open / next
+
+1. **Phase 3 remainder:** ~15 new analytics event kinds, activation wiring, the integration recipe
+   gallery, and the founder funnel on `/admin/revenue`.
+2. **Phases 4 → 5 → 6 → 7**, phase by phase with a checkpoint each (owner's chosen cadence).
+3. **Migrations `0041`–`0043` are not written yet.** Per owner decision, all new migrations are
+   handed over as **one consolidated paste-ready SQL at the end**, not applied from a session.
+   `0040` is written and verified against WASM Postgres but **has never run on real Supabase**.
+4. **Branch deploys:** `feat/intelligence-workflows` is **not** in Netlify's `allowed_branches`, so
+   pushing it deploys nothing. Agreed route is a **PR to `staging`** — deploy previews bypass the list.
+5. ⚠️ **I cannot enter passwords.** Live testing as `demo@datiq.app` needs the owner to type the
+   password in the browser pane; the session drives it from there.
+6. **~15 blog posts** (feature announcements + per-template) agreed for the end, once features are
+   green on staging.
+7. ⚠️ **Stale local refs in other worktrees** after this session's remote pushes:
+   `fix_staging_gate_errors` (`staging`) and `branch-deploy-test-9894f8`
+   (`feat/intelligence-workflows`) both need `git pull --ff-only`. The
+   `audit-storage-error-003fa6` worktree holds `claude/custom-extraction-enrichment-debug-711d74`,
+   whose **remote branch was deleted this session** (verified contained in `main` first) — that
+   worktree should be removed and the local branch deleted by the owner.
+
+---
+
+
 ## 2026-09-02 23:10 IST — The AI outage nobody could see: schema-guided extraction, honest failures, and the Providers console
 
 > **Branch:** `claude/custom-extraction-enrichment-debug-711d74`
