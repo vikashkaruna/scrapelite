@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  fetchGalleryReports, curateGalleryReport, uncurateGalleryReport,
+  fetchGalleryReports, curateGalleryReport, uncurateGalleryReport, takedownGalleryReport,
 } from "../../lib/adminConfigService.js";
 import { PERSONAS, PERSONA_BY_ID } from "../../lib/personaConfig.js";
 import PublicReportArticle from "../../components/PublicReportArticle.jsx";
@@ -27,7 +27,9 @@ function timeAgo(iso) {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-function ReportRow({ report, onCurated, onUncurated }) {
+function ReportRow({ report, onCurated, onUncurated, onTakenDown }) {
+  const [takedown, setTakedown] = useState(false);
+  const [reason, setReason] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [persona, setPersona] = useState(report.persona || "");
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,21 @@ function ReportRow({ report, onCurated, onUncurated }) {
       onCurated(report.id, persona);
     } catch (e) {
       showToast(e.message || "Curate failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleTakedown() {
+    if (!reason.trim()) return;
+    setBusy(true);
+    try {
+      await takedownGalleryReport(report.id, reason.trim());
+      showToast("Page taken down — the public link no longer resolves.");
+      setTakedown(false);
+      onTakenDown?.(report.id);
+    } catch (e) {
+      showToast(e.message || "Takedown failed.");
     } finally {
       setBusy(false);
     }
@@ -116,7 +133,43 @@ function ReportRow({ report, onCurated, onUncurated }) {
             Remove from showcase
           </Button>
         )}
+        {/* ⚠️ A DIFFERENT ACT FROM "Remove from showcase", and the distinction
+            is the whole reason this is styled as danger and gated behind a
+            typed reason. Uncurate takes a report out of /gallery and it STAYS
+            PUBLICLY READABLE at its own link. Takedown REVOKES the link — the
+            customer's live share stops working for everyone holding it.
+            Someone tidying the showcase must not be one misclick from that. */}
+        <Button variant="danger" size="sm" onClick={() => setTakedown(true)} disabled={busy}>
+          Take down
+        </Button>
       </div>
+
+      {takedown && (
+        <div className="admin-gallery-takedown">
+          <p>
+            <Icon name="alert-triangle" size={14} />{" "}
+            <strong>Revoke this page?</strong> The public link stops working immediately for
+            everyone who has it. The report itself is kept, along with its access log — this is a
+            revoke, not a delete.
+          </p>
+          <label>
+            Reason (recorded, and required)
+            <input
+              type="text" value={reason} autoFocus
+              placeholder="e.g. customer request, contains personal data"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+          <div className="admin-gallery-takedown-actions">
+            <Button variant="danger" size="sm" onClick={handleTakedown} disabled={busy || !reason.trim()}>
+              {busy ? "Taking down…" : "Revoke the link"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { setTakedown(false); setReason(""); }} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -234,6 +287,10 @@ export default function AdminGallery() {
               report={r}
               onCurated={(id, persona) => patchLocal(id, { curated: true, persona })}
               onUncurated={(id) => patchLocal(id, { curated: false })}
+              // Removed from the list entirely, not just flagged: the page it
+              // described no longer resolves, so leaving a row that offers to
+              // curate it would be offering something that cannot happen.
+              onTakenDown={(id) => setReports((rs) => rs.filter((x) => x.id !== id))}
             />
           ))}
         </div>

@@ -102,6 +102,10 @@ export default function AdminAI() {
   const [persisted, setPersisted] = useState(true);
   const [catalogue, setCatalogue] = useState(null);
   const [savedAt, setSavedAt] = useState(null);
+  // True when the stored row predates fast/deep tiers — see merge() in
+  // aiProviders.js. Surfaced as a banner with a migration the operator runs;
+  // nothing acts on it automatically.
+  const [legacyConfig, setLegacyConfig] = useState(false);
   const [effective, setEffective] = useState({});
 
   // Editable global chain
@@ -124,6 +128,7 @@ export default function AdminAI() {
       const cfg = data.config || {};
       setCatalogue(data.catalogue || null);
       setSavedAt(data.config?.updatedAt || null);
+      setLegacyConfig(data.config?.legacyModelConfig === true);
       setEffective(data.effective || {});
       setPersisted(data.persisted !== false);
       setOrder(cfg.order || AI_AREA_KEYS.length ? (cfg.order || []) : []);
@@ -179,6 +184,30 @@ export default function AdminAI() {
       setBusy({});
     }
   }, [catalogue, showToast]);
+
+  // One-click split of a pre-tier config. Keeps the operator's stored model on
+  // the FAST tier — that is what a single pre-tier entry meant, since the
+  // shipped defaults then were the fast models — and restores registry deep
+  // defaults for deep work. Deliberately an explicit action, never automatic:
+  // it changes which model real extractions run on, and that is the operator's
+  // call to make and to see happen.
+  const splitTiers = useCallback(async () => {
+    setSaving(true);
+    try {
+      const fast = { ...models };                 // what they had = fast
+      const deep = {};
+      for (const p of Object.keys(models)) deep[p] = defaultModel(p, MODEL_TIER.DEEP);
+      const res = await saveAiConfig({ order, models: deep, modelsFast: fast, enabled, maxTokens });
+      showToast?.(res.persisted === false
+        ? (res.warning || "Split locally — Supabase is not configured, so this will not persist.")
+        : "Split into fast and deep tiers. Deep work now uses the deep models below.");
+      await load();
+    } catch (e) {
+      showToast?.(e.message || "Could not split the tiers");
+    } finally {
+      setSaving(false);
+    }
+  }, [order, models, enabled, maxTokens, showToast, load]);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -324,6 +353,7 @@ export default function AdminAI() {
         <ModelsTab
           providers={providerRows.filter((p) => p.kind === "ai")}
           results={results} busy={busy} onTest={runTest}
+          legacyConfig={legacyConfig} onSplitTiers={splitTiers}
           models={models} setModels={setModels}
           modelsFast={modelsFast} setModelsFast={setModelsFast}
           enabled={enabled} setEnabled={setEnabled}
@@ -355,10 +385,35 @@ export default function AdminAI() {
 // ── AI models ────────────────────────────────────────────────────────────────
 function ModelsTab({
   providers, results, busy, onTest, models, setModels, modelsFast, setModelsFast,
+  legacyConfig, onSplitTiers,
   enabled, setEnabled, maxTokens, setMaxTokens, saving, onSave, onTestAll, savedLabel,
 }) {
   return (
     <section className="prov-section">
+      {/* A stored config written before fast/deep tiers existed holds ONE model
+          per provider, and the shipped defaults then were the FAST ones. It is
+          applied to both tiers so a live operator setting is never quietly
+          retired — but that means DEEP work (extraction, summaries, briefs)
+          runs on a fast model, which was invisible from every screen until
+          this banner. The split is offered, never applied automatically: it
+          changes which model real extractions use. */}
+      {legacyConfig && (
+        <div className="prov-legacy">
+          <Icon name="alert-triangle" size={15} />
+          <div>
+            <strong>Your saved configuration predates fast/deep tiers.</strong>{" "}
+            It holds one model per provider, so <em>deep</em> work — extraction,
+            summaries and briefs — is currently running on it too. If that model
+            was your old default, deep work is running on a fast model.
+            <div className="prov-legacy-actions">
+              <Button variant="secondary" size="sm" onClick={onSplitTiers} disabled={saving}>
+                Split into fast &amp; deep
+              </Button>
+              <span>Keeps your model on <em>fast</em> and restores recommended deep models. You can edit both afterwards.</span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="prov-section-head">
         <p className="muted">
           Each provider runs two model tiers. <strong>Fast</strong> handles bulk classification

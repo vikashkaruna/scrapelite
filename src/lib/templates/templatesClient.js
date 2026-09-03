@@ -463,3 +463,22 @@ export function finishRun(runId, { output, summary, events, sources, partial, ne
 export function failRun(runId, error) {
   return call("", { method: "POST", body: { action: "fail", runId, error: String(error).slice(0, 500) } });
 }
+
+/**
+ * Resolve a typed company NAME to a confirmed domain.
+ *
+ * Returns `{ best, candidates }` where `best` may be null — a miss is the
+ * expected outcome for any company whose domain does not derive from its name,
+ * and the caller must treat it as "type it yourself", never as an error.
+ */
+export async function resolveCompany(name) {
+  // Its own endpoint, not a /api/templates action: it charges nothing, needs no
+  // template, and runs while the user is still deciding what to research.
+  const res = await fetch("/api/resolve-company", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+  return res.json();
+}

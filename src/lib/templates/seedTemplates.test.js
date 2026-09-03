@@ -56,11 +56,38 @@ describe("seed templates", () => {
   });
 
   it("every published seed accepts a realistic input", () => {
-    const sample = { domain: "stripe.com", url: "https://stripe.com/pricing" };
+    // Every field kind a seed can declare, so adding a required field to any
+    // template is caught here rather than by a user hitting a wall. This test
+    // caught `competitors` becoming required on ai_visibility_brief.
+    const sample = {
+      domain: "stripe.com",
+      url: "https://stripe.com/pricing",
+      domains: "stripe.com\nadyen.com",
+      competitors: "adyen.com\ncheckout.com",
+    };
     for (const t of PUBLISHED_SEEDS) {
       const r = validateInput(t, sample);
       expect(r.ok, `${t.template_key}: ${r.errors.join("; ")}`).toBe(true);
     }
+  });
+
+  // Owner decision, 2026-09-03: a "competitive" brief with no competitors is
+  // not the thing the template promises, so the field is required rather than
+  // silently producing a single-company report under a comparison heading.
+  it("the visibility brief requires competitors, not just a domain", () => {
+    const t = SEED_TEMPLATES.find((x) => x.template_key === "ai_visibility_brief");
+    expect(validateInput(t, { domain: "stripe.com" }).ok).toBe(false);
+    expect(validateInput(t, { domain: "stripe.com", competitors: "adyen.com" }).ok).toBe(true);
+  });
+
+  // An empty list is MISSING, not malformed — "contains no valid domains"
+  // sends someone who typed nothing looking for a formatting mistake.
+  it("an empty required list reads as 'required', not as invalid", () => {
+    const t = SEED_TEMPLATES.find((x) => x.template_key === "ai_visibility_brief");
+    const r = validateInput(t, { domain: "stripe.com", competitors: [] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/required/i);
+    expect(r.errors.join(" ")).not.toMatch(/no valid domains/i);
   });
 
   it("every output block names a title, so no report renders an unlabelled slab", () => {

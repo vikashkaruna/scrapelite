@@ -1,5 +1,6 @@
 // Account.jsx — V5 billing & usage: plan details, usage, alerts, coupon, payment history.
 import { useEffect, useState } from "react";
+import WorkflowRunHistory from "../components/WorkflowRunHistory.jsx";
 import { useNavigate } from "react-router";
 import { getEffectivePlans, getEffectivePlanById } from "../lib/pricingOverrides.js";
 import { formatPrice, convertPrice } from "../lib/currencyService.js";
@@ -983,6 +984,29 @@ export default function Account() {
                 </div>
               )}
             </div>
+
+            {/* Workflow runs — every template execution the user paid credits
+                for. Persisted since 0036 and unreachable from anywhere in the
+                product until now.
+
+                Deliberately placed AFTER quick stats: Account.integration.test
+                pins the order of the four .account-aside children (top-up CTA,
+                white-label, coupon, quick stats) with a dated comment saying a
+                reorder should be caught. Inserting into that run would have
+                been exactly the change it exists to catch, so this goes at the
+                end instead.
+
+                Compact here — counts plus the most recent few; the Dashboard
+                carries the filtered view. */}
+            {/* (marker) — every template execution the user paid credits
+                for. These were persisted from day one and unreachable from
+                anywhere in the product until now. Compact here (counts plus
+                the most recent few); the Dashboard carries the filtered view. */}
+            <div className="card card-pad">
+              <div className="card-section-title"><Icon name="layout-list" size={15} />Workflow runs</div>
+              <WorkflowRunHistory compact limit={5} />
+            </div>
+
           </div>
         </div>
       </div>

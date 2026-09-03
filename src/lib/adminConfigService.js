@@ -271,6 +271,27 @@ export async function curateGalleryReport(id, persona) {
   return data;
 }
 
+/**
+ * TAKE DOWN a published page — revoke the link entirely.
+ *
+ * ⚠️ Different in kind from uncurate. Uncurate removes a report from the
+ * showcase and it STAYS PUBLICLY READABLE at its own URL; takedown revokes the
+ * link so nobody can reach it. Conflating them is how someone means to tidy
+ * the gallery and instead kills a customer's live share link.
+ *
+ * The reason is mandatory — the server refuses without one.
+ */
+export async function takedownGalleryReport(id, reason) {
+  const res = await fetch(GALLERY_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ action: "takedown", id, reason }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || `Takedown failed (${res.status})`);
+  return data;
+}
+
 /** Remove a report from the curated showcase (it stays shared/public). */
 export async function uncurateGalleryReport(id) {
   const res = await fetch(GALLERY_ENDPOINT, {

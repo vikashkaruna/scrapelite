@@ -1,6 +1,7 @@
 // Dashboard.jsx — historical view of saved extractions (route "/dashboard").
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import WorkflowRunHistory from "../components/WorkflowRunHistory.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
@@ -460,6 +461,23 @@ export default function Dashboard() {
   // naturally restores it. Other dashboard filters stay in local state — only
   // the search box is part of the BH-01 back/forward contract today.
   const [searchParams, setSearchParams] = useSearchParams();
+  // Two things live on this page now: SAVED EXTRACTIONS (rows) and WORKFLOW
+  // RUNS (template executions). They are genuinely different objects — a run
+  // can fail and be worth seeing, while only successes are ever saved as
+  // extractions — so they get their own view rather than one merged table
+  // that would have to explain which kind each row is.
+  //
+  // Driven by ?view= so a link to the run history is shareable and survives a
+  // reload, the same reason /batch?run= and /discoverability?view=history are.
+  // `dashView`, not `view` — useExtraction() already exports a `view`, and
+  // shadowing it would have been a silent bug rather than a compile error
+  // if the two had happened to be used in different scopes.
+  const dashView = searchParams.get("view") === "runs" ? "runs" : "saved";
+  const setDashView = (next) => {
+    const p = new URLSearchParams(searchParams);
+    if (next === "runs") p.set("view", "runs"); else p.delete("view");
+    setSearchParams(p, { replace: true });
+  };
   const [query, setQueryState] = useState(() => searchParams.get("q") || "");
   const setQuery = (value) => {
     setQueryState(value);
@@ -859,6 +877,36 @@ export default function Dashboard() {
         {/* Guest rows live in localStorage only — say so, and claim them on
             sign-in. See extractionsRepo.shouldFallback's 401 branch. */}
         <LocalDataNotice onClaimed={refreshData} />
+        <div className="dash-tabs" role="tablist" aria-label="Dashboard views">
+          <button role="tab" aria-selected={dashView === "saved"}
+            className={"dash-tab" + (dashView === "saved" ? " active" : "")}
+            // "Extractions", not "Saved pages": the page's own eyebrow already
+            // reads "Saved", so a tab containing that word was both redundant
+            // on screen and ambiguous to anything matching on it. It also
+            // pairs better with "Workflow runs" — extractions and runs are the
+            // two different objects this page holds.
+            onClick={() => setDashView("saved")}>Extractions</button>
+          <button role="tab" aria-selected={dashView === "runs"}
+            className={"dash-tab" + (dashView === "runs" ? " active" : "")}
+            onClick={() => setDashView("runs")}>Workflow runs</button>
+        </div>
+
+        {dashView === "runs" ? (
+          <section className="card card-pad dash-runs">
+            <div className="dash-header">
+              <div>
+                <div className="eyebrow"><Icon name="layout-list" size={13} /> Workflow runs</div>
+                <h1 className="dash-h1">Every template run</h1>
+                <p className="dash-sub">
+                  Including the ones that failed — those were never saved as extractions,
+                  so this is the only place they appear.
+                </p>
+              </div>
+            </div>
+            <WorkflowRunHistory />
+          </section>
+        ) : (
+        <>
         <div className="dash-header">
           <div>
             <div className="eyebrow">
@@ -1093,6 +1141,8 @@ export default function Dashboard() {
             </div>
             <Pager page={page} totalPages={totalPages} start={start} shown={pageItems.length} total={filtered.length} onPage={setPage} />
           </>
+        )}
+        </>
         )}
       </div>
 

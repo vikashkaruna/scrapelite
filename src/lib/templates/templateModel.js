@@ -210,7 +210,13 @@ export function validateInput(template, input) {
 
   for (const f of fields) {
     const raw = src[f.name];
-    const missing = raw === undefined || raw === null || raw === "";
+    // An EMPTY ARRAY is missing, not malformed. Without this, leaving a
+    // required domain_list blank reported "contains no valid domains" — which
+    // reads as "what you typed was wrong" to someone who typed nothing, and
+    // sends them looking for a formatting mistake that does not exist.
+    const missing =
+      raw === undefined || raw === null || raw === "" ||
+      (Array.isArray(raw) && raw.filter((x) => String(x ?? "").trim()).length === 0);
 
     if (missing) {
       if (f.required) errors.push(`${f.label || f.name} is required`);

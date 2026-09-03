@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { publicProvenance, operatorProvenance } from "../functions/lib/aiFailure.js";
@@ -103,5 +103,45 @@ describe("customer-facing components render no vendor identity", () => {
     // enrichmentMeta is the bug this whole file exists to prevent.
     expect(src).toMatch(/_enrichment: publicProvenance\(enrichmentMeta\)/);
     expect(src).not.toMatch(/_enrichment: enrichmentMeta\b/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A pre-tier stored config is DETECTED, not silently reinterpreted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("legacy (pre-tier) AI config detection", () => {
+  const ORIGINAL_FETCH = globalThis.fetch;
+  const withStored = async (row) => {
+    vi.resetModules();
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "k";
+    globalThis.fetch = async () => ({ ok: true, json: async () => [{ value: row }] });
+    const m = await import("../functions/lib/aiProviders.js");
+    return m.loadAiConfig({ fresh: true });
+  };
+  afterAll?.(() => { globalThis.fetch = ORIGINAL_FETCH; });
+
+  it("flags a row that has models but no modelsFast", async () => {
+    const cfg = await withStored({ models: { openai: "gpt-4o-mini" } });
+    expect(cfg.legacyModelConfig).toBe(true);
+  });
+
+  it("does not flag a row that already carries both tiers", async () => {
+    const cfg = await withStored({ models: { openai: "gpt-4o" }, modelsFast: { openai: "gpt-4o-mini" } });
+    expect(cfg.legacyModelConfig).toBe(false);
+  });
+
+  it("does not flag an absent config — defaults are not legacy", async () => {
+    const cfg = await withStored({});
+    expect(cfg.legacyModelConfig).toBe(false);
+  });
+
+  // The operator's stored model is still APPLIED — we surface the shape, we do
+  // not quietly retire a live setting. Guessing either way is the bug; the fix
+  // is that the operator can now SEE it and choose.
+  it("still honours the stored model rather than overriding it", async () => {
+    const cfg = await withStored({ models: { openai: "gpt-4o-mini" } });
+    expect(cfg.models.openai).toBe("gpt-4o-mini");
+    expect(cfg.modelsFast.openai).toBe("gpt-4o-mini");
   });
 });
