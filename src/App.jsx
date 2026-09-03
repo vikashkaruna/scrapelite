@@ -1,5 +1,12 @@
 // App.jsx — root: providers, top bar, routes, and the loading overlay.
 import { useState, useEffect } from "react";
+import { configurePqlClient } from "./lib/pql/pqlClient.js";
+import { apiClient as _api } from "./lib/apiClient.js";
+
+// Wire the activation-event transport once, at module scope rather than in
+// an effect: an event emitted during the very first render would otherwise
+// be buffered with nowhere to go and dropped on the first flush.
+configurePqlClient((payload) => _api.pqlEvents(payload));
 import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ThemeProvider } from "./components/ThemeProvider.jsx";
 import { ToastProvider } from "./components/Toast.jsx";

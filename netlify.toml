@@ -194,6 +194,17 @@
   status = 200
   force = true
 
+# Same shape, same reason: pql.js routes internally on the sub-path after
+# /pql/ (events | score), so it needs a path-based forwarding rule ahead of the
+# generic /api/* catch-all. Note this is PATH-based, not `?splat=:splat` — the
+# query-param form silently failed in production for every integrations
+# provider once already (fixed in 87f5597) and again for discoverability.
+[[redirects]]
+  from = "/api/pql/*"
+  to = "/.netlify/functions/pql/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/api/v1/*"
   to = "/.netlify/functions/api-v1/:splat"

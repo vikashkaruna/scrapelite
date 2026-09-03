@@ -16,6 +16,7 @@
 import { supabase } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
 import { apiClient } from "./apiClient.js";
+import { recordActivationEvent } from "./pql/pqlClient.js";
 
 export const ANALYTICS_TABLE = "analytics_events";
 const LS_KEY = "datiq.analytics";
@@ -303,7 +304,12 @@ export function computeFunnel(events, opts = {}) {
 // how a name drifts. Add a helper here instead, and the drift guard in
 // activationEvents.test.js will hold you to the vocabulary.
 function emitActivation(name, properties) {
-  return track(name, properties);
+  // NOT track(). track() writes to `analytics_events`, which 0005 made
+  // world-readable (`USING (true)`) as "non-PII, no user content" — true of a
+  // page view, false of an event carrying `domain`, `templateKey` or `count`,
+  // which say which companies a user researched and how many accounts they
+  // enriched. These go to the private activation_events table instead.
+  return recordActivationEvent(name, properties);
 }
 
 export const lifecycle = {
