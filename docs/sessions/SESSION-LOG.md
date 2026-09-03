@@ -18,6 +18,184 @@
 
 ---
 
+## 2026-09-03 22:57 IST — Four provider "rejections" on `/admin/ai`, none of which was a rejection
+
+> **Branch:** `claude/session-w7kxmu` @ `62136bd` · **Merged to:** `staging` **and** `main` — both now at
+> `62136bd`, identical · **Production:** NOT deployed. Phase-Gate run
+> [33784391636](https://github.com/vikashkaruna/scrapelite/actions/runs/33784391636) queued on that SHA and
+> waits for a manual Netlify unlock **plus** an `approved` comment. ✅ **No migration step** —
+> `git diff origin/main origin/staging -- supabase/migrations/` was empty; `0036`–`0040` were already on `main`.
+
+### 1. Quick orientation
+
+The owner ran **Test all providers** on `/admin/ai` with keys they had just verified and funded, and four
+cards came back red. Every one of the four had **a different real cause**, and **all four rendered the same
+sentence**: *"The provider rejected the request."* Not one of them was a rejection.
+
+| Card | What the console said | What was actually true |
+|---|---|---|
+| OpenAI | provider rejected the request | we sent a parameter the API renamed |
+| Gemini | provider rejected the request | the answer budget was spent on hidden reasoning |
+| Jina | provider rejected the request | **our own** 15s stopwatch expired |
+| PageSpeed | key rejected — reissue it | the key is valid, and the wrong **kind** of Google key |
+
+🔴 **The through-line is the one this repo keeps rediscovering: a correct decision, or our own limit,
+reported as somebody else's fault.** Two of the four sent the operator after a key and a bill that were
+fine. Fixing the four calls was the easy half; the half worth keeping is that each now reports **whose**
+problem it is.
+
+### 2. What was accomplished
+
+**`2fd75b9` — OpenAI's renamed budget, and Gemini's thinking tax**
+
+- **OpenAI:** `max_tokens` is deprecated on Chat Completions and rejected outright by reasoning-era models
+  (*"Use 'max_completion_tokens' instead"*), so **every** call through that adapter was a 400. Now sends
+  `max_completion_tokens`, retrying once with the old name only if a deployment or compatible proxy rejects
+  the new one — ⚠️ **a parameter rename must not be able to take the chain down in either direction.**
+- **Gemini:** 2.5+ models draw hidden reasoning tokens from the **same** `maxOutputTokens` budget as the
+  answer, **and spend them first**, so the 16-token ping returned an empty `parts[]` with
+  `finishReason: MAX_TOKENS`. The adapter now **reserves** any thinking budget *on top of* the caller's, so
+  `maxTokens: N` means N tokens of answer; under 512 — a tag, a label, a one-word ping — it turns thinking
+  off in the families that allow it (2.5 Flash/Flash-Lite accept `thinkingBudget: 0`; 2.5 Pro's floor is
+  128). ⚠️ **An unrecognised model id gets headroom but no config we cannot verify**, so this does not
+  return the day a newer id is typed into `/admin/ai`.
+- Both truncations became their own code, **`truncated`**, and the ping proves it by retrying once at a
+  larger budget and reporting the provider as **working, with a note about the room it needs**.
+  Customer-facing copy is unchanged — `truncated` collapses to `ai_unavailable` like every other operator
+  fault, per the redaction boundary.
+
+**`3b23bab` — a wrong PageSpeed key, and a timeout that blamed Jina**
+
+- **New `netlify/functions/lib/googleApiKey.js`** — tells Google's two incompatible key formats apart.
+  `PAGESPEED_API_KEY` held `AQ.A…bWeQ`, an **AI Studio auth key** (the format AI Studio now issues, and the
+  same shape as the working `GEMINI_API_KEY`). Those work on the Gemini API's own endpoints and **nowhere
+  else in Google**; PageSpeed wants a Cloud `AIza…` key, so it answered *"API keys are not supported by this
+  API."* Read as a generic bad key, the console said **"reissue it"** — and a fresh AI Studio key would have
+  failed identically.
+- 🔴 **AND THE WRONG KEY WAS WORSE THAN NO KEY.** PSI works unauthenticated at low volume, so an **empty**
+  var costs quota while a **rejected** one failed every lookup — LCP/INP/CLS read *"not measured"* on every
+  audit, the Technical pillar quietly redistributed 30% of its weight, and **nothing on any screen said
+  why**. `fetchWebVitals` now falls back to keyless on a credential rejection (never on a 429 — the keyless
+  path shares that limit) and logs the remedy.
+- **Jina:** 15000ms was the admin test's **own** deadline. Every scrape adapter returned the bare
+  `err.message`, so our abort arrived as *"This operation was aborted"*, matched none of the classifier's
+  patterns, and landed on `error`. All eight adapters now classify through a shared `failure()`, the chain
+  carries the code into `_providerAttempts`, and the console's stopwatch went 15s → **20s to match the
+  ceiling production actually runs under** — it had been *stricter* than production, so a provider the
+  extraction chain would happily have waited for could fail its own test.
+- Two real Jina bugs found while reading that adapter: the target URL was sent **percent-encoded**
+  (`https%3A%2F%2Fexample.com`) where Reader documents a **raw path suffix**, so what arrived was one opaque
+  segment rather than a URL — and a target Reader cannot parse waits on *its* timeout instead of failing
+  fast. And `renderJs` set `X-Wait-For-Selector: body`, **satisfied the instant a document parses**: the
+  option promised JS rendering and got none. Now the documented form (only `#` and whitespace escaped, so a
+  hash-routed SPA target is not truncated) plus `X-Engine: browser`.
+  ⚠️ **`X-Timeout` is deliberately NOT used** — it stops Reader returning early and waits for network idle,
+  so it makes a slow page *slower* ([jina-ai/reader#1101](https://github.com/jina-ai/reader/issues/1101)).
+- **A remedy a test established for certain now outranks the generic copy**, server-side (`result.advice`
+  in `testProvider`) and in `AdminAI.jsx` (`r.advice || CODE_COPY[r.code]`). Showing the generic line is
+  precisely how "reissue the key" got printed for a key whose only problem was its kind.
+
+### 3. Root cause analyses
+
+| # | Symptom | Root cause | Resolution |
+|---|---|---|---|
+| 1 | OpenAI 400 on a funded key | `max_tokens` renamed to `max_completion_tokens`; we sent the retired name | send the new name, one-shot fallback to the old |
+| 2 | Gemini "returned no text (MAX_TOKENS)" | 2.5+ spends hidden reasoning tokens from the answer budget, first | reserve thinking on top of the caller's budget; disable it under 512 where the family allows |
+| 3 | Jina "aborted" at exactly 15000ms | our AbortController; adapters returned an unclassifiable message, and returned rather than threw, so the caller's own AbortError branch never ran | shared `failure()` → `code: "timeout"`, propagated into the chain and the classifier |
+| 4 | PageSpeed "API keys are not supported by this API" | an AI Studio `AQ.` key in a slot that needs a Cloud `AIza` key | name the kind, keyless fallback so vitals survive, precise operator advice |
+
+⚠️ **A note on #3 that outlived the bug:** the adapter *returning* `{ok:false, error}` instead of throwing
+is why the caller's AbortError branch was dead code. **A catch that flattens a typed error into a string
+disarms every classifier downstream of it.**
+
+### 4. Verification evidence
+
+Run on the merged tree (`62136bd`), the exact tree that landed on both branches:
+
+- `npm run test:unit` — **166 files / 2847 passed**
+- `npm run test:contract` — **104 files / 1886 passed** (+14 skipped)
+- `npm run test:integration` — **49 files / 411 passed**
+- `npm run test:system` — 5 files / 8 passed
+- `npm run test:db` — **40 migrations applied · 360 assertions** + `verify-referral` 17
+- `npm run build` · `npm run check:prerender` — 23 pages / **92 asset refs, all present**
+- `npm run test:security` — passed
+- `npm run test:e2e:smoke` — **131 passed / 1 skipped / 0 failed**
+- `npm run readiness` — **5 pass · 2 warn · 0 fail** (warns are the standing pair: stale screenshots after
+  `src/pages` changed, and gallery/persona coverage, which is runtime-populated and can never clear)
+
+**30 new tests, 20 confirmed red against the pre-fix code first.** The other 10 are invariants that must
+hold either way — no `thinkingConfig` on a pre-2.5 model, no retry on an unrelated 400, no retry on a dead
+key, no keyless retry on a quota error, no retry when there was no key to blame, a genuine network error is
+not a timeout.
+
+⚠️ **`netlify/functions/lib/audit/webVitals.js` had NO tests at all** before this session, which is exactly
+how "a wrong key measures nothing, for ever" stayed invisible. It has seven now.
+
+### 5. Environment state after this session
+
+- **`main` == `staging` == `62136bd`.** The merge to `main` was a clean fast-forward (`d83b942..62136bd`,
+  11 commits); nothing was on `main` that `staging` lacked.
+- Those 11 commits also carry a **concurrent session's** work that was already on `staging`: workflow run
+  history on Dashboard/Account, template mandatory inputs + company resolver, the pre-tier AI-config banner
+  with a one-click tier split, gallery takedown UI, and a dependabot bump. That session edited
+  **`aiProviders.js` and `AdminAI.jsx` — both files this session touched.** Git auto-merged with no
+  conflicts; **both halves were then verified by reading, not by trusting the clean merge** — their
+  `legacyModelConfig`/`splitTiers` and this session's `r.advice` override and reworded `timeout` copy are
+  all intact, and the changes are orthogonal.
+- **`PAGESPEED_API_KEY` was replaced with a Cloud key by the owner at the end of this session.** ⚠️ **Not
+  verified from here** — confirm with `/admin/ai → Test all providers`, and remember Netlify injects
+  Function env vars **at deploy time**, so a key changed in the UI needs a redeploy and its **Scopes must
+  include Functions**.
+- ⚠️ **The remote branch `claude/session-w7kxmu` still exists.** `git push origin --delete` returns
+  **HTTP 403** on three attempts — the session credential can push branches but not delete refs, and no
+  branch-deletion tool exists in the GitHub MCP set. The local branch is deleted. Remove the remote with
+  `git push origin --delete claude/session-w7kxmu` or the branches page.
+
+⚠️ **Two container facts that cost time and are not repo problems.** (1) **No `.git/hooks/pre-push` exists
+in a fresh remote clone** — hooks are not cloned, so a successful push here is **not** evidence any gate
+ran; every suite above was run by hand instead. (2) **Playwright cannot launch out of the box**: the image
+ships browser build **1194** while `@playwright/test` 1.62.1 wants **1234**, so all 132 smoke specs fail in
+~4ms on a missing `chrome-headless-shell`. The fix is a throwaway config that points chromium at the
+pre-installed binary — delete it after, never commit it:
+
+```js
+// playwright.localbrowser.config.mjs  (untracked, temporary)
+import base from "./playwright.config.js";
+export default { ...base, projects: base.projects.map((p) =>
+  p.name === "chromium"
+    ? { ...p, use: { ...p.use, launchOptions: { executablePath: "/opt/pw-browsers/chromium" } } }
+    : p) };
+```
+
+⚠️ **The egress proxy blocks `r.jina.ai`**, so the Jina URL-form fix is reasoned from Reader's own docs and
+unit tests, **not from a live reproduction**. Watch the first real run.
+
+🔴 **A mistake worth carrying: `git push … | tail -3` reports `tail`'s exit code, so a rejected push looked
+like a successful one** — the retry loop broke on failure and the following `git fetch` printed a range that
+read like a push result. `staging` had moved under me. **Never pipe a push.** This is the same trap
+CLAUDE.md already records for Playwright, hit on a different command.
+
+### 6. Open items for the next session
+
+- [ ] **Delete the remote branch `claude/session-w7kxmu`** — blocked here by a 403, see above.
+- [ ] **Production is not deployed.** Unlock production in the Netlify UI, then comment `approved` on the
+      phase-gate issue. ⚠️ Never "fix" a lock error with `--prod-if-unlocked`: while locked that makes a
+      DRAFT deploy, smoke then passes against OLD production, and the run claims a release that never
+      shipped.
+- [ ] **Confirm all four providers green on `/admin/ai`** after the PageSpeed key change and the next
+      deploy — this session's evidence is unit tests and vendor documentation, not live keys.
+- [ ] **Screenshots are stale** (`node docs/capture-screenshots.mjs` with a dev server up). Driven by the
+      concurrent session's Dashboard/Templates/Account changes; this session's own UI edit was admin-only,
+      and admin pages are never captured into `public/help`.
+- [ ] Consider whether `X-Engine: browser` should also be the default for `renderJs` on other providers —
+      Jina is now the only one whose render switch actually renders.
+- [x] ⚠️ **`session-handoff-management/scripts/index-sessions.mjs` is retired and was destructive** — it
+      indexes one file per session, so it overwrote `docs/sessions/README.md` (which documents the
+      consolidated convention) with a two-row table reading *"Total Sessions Archived: 2"*. Reverted, and
+      the skill now warns against it the way it already warned against `new-session.mjs`.
+
+---
+
 ## 2026-09-03 (later) — Live-review fixes, email branding, and four of the owner's six items
 
 **Branch:** work happens in the `gemini-refresh-model-config-ef9e28` worktree, pushed to

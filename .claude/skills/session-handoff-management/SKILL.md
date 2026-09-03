@@ -123,10 +123,11 @@ convention. Either prepend to `SESSION-LOG.md` by hand, or use the script and
 immediately fold its output into `SESSION-LOG.md` and delete the file it made.
 
 ### 2. Updating the Session Index
-To regenerate the index in `docs/sessions/README.md`:
-```bash
-node .agents/skills/session-handoff-management/scripts/index-sessions.mjs
-```
+⚠️ **`scripts/index-sessions.mjs` is RETIRED — do not run it.** It indexes one
+file per session, which no longer exists, so it overwrites the README that
+documents this convention with a two-row table reading *"Total Sessions
+Archived: 2"* (verified 2026-09-03). `docs/sessions/README.md` is hand-written
+and needs **no** per-session edit: it indexes the log, not individual files.
 
 ---
 
