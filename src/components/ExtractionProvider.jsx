@@ -12,6 +12,7 @@ import {
   readCurrent,
 } from "../lib/enrichmentStore.js";
 import { enrichMeta } from "../lib/extractionPresets.js";
+import { hostOf } from "../lib/utils.js";
 import { lifecycle as analytics } from "../lib/analyticsService.js";
 import { attachProvenance } from "../lib/provenanceService.js";
 import { useErrorModal } from "./ErrorModal.jsx";
@@ -433,6 +434,11 @@ export function ExtractionProvider({ children }) {
     const id = ++reqId.current;
     const structure = await extractStructure(url, { customPrompt: preset.prompt, enrichKey: preset.key });
     if (reqId.current !== id) return null; // superseded by a newer run
+    // Activation: recruiter sourcing is measured from these. `domain` is what
+    // makes "across 3+ distinct companies" computable at all — without it the
+    // event records that sourcing happened but never that it happened broadly,
+    // and the recruiter definition becomes unsatisfiable in practice.
+    void analytics.enrichmentCompleted({ capability: preset.key, domain: hostOf(url) });
     const entry = {
       key: preset.key,
       label: preset.label,

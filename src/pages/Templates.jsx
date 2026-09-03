@@ -24,6 +24,7 @@ import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
 import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
 import { createReport } from "../lib/reports/reportsClient.js";
+import { lifecycle } from "../lib/analyticsService.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
 import StructuredFacts from "../components/StructuredFacts.jsx";
 import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
@@ -232,11 +233,19 @@ function TemplateRunner({ templateKey, onBack }) {
       if (runId) {
         const done = await api.finishRun(runId, exec);
         setResult({ ...exec, run: done.run, reconciliation: done.reconciliation });
+        // PQL: "used a persona template" (+10) and, via templateKey, the
+        // per-persona activation condition. Fire-and-forget — analytics must
+        // never be able to fail a run the user already paid credits for.
+        void lifecycle.templateRunCompleted({ templateKey: template.template_key });
         if (done.reconciliation?.needsDisclosure) {
           showToast(`This run used ${done.charged} credits — more than the ${done.run.credits_estimated} we estimated.`);
         }
       } else {
         setResult(exec);
+        // Same event on the path where reconciliation did not happen: the
+        // user still completed a template run, and scoring must not depend on
+        // an accounting detail they never see.
+        void lifecycle.templateRunCompleted({ templateKey: template.template_key });
       }
       setProgress(null);
     } catch (e) {
@@ -262,6 +271,9 @@ function TemplateRunner({ templateKey, onBack }) {
         data: { output: result.output, summary: result.summary, sources: result.sources },
       });
       setShareFor(r.report);
+      // PQL: "created a shareable report" (+10), and the activation condition
+      // for SEO/VC/agency personas.
+      void lifecycle.reportPublished({ templateKey: template.template_key });
     } catch (e) {
       showToast(`Couldn't create the report: ${e.message}`);
     }

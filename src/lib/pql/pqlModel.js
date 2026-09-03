@@ -290,7 +290,13 @@ export function signalsFromEvents(events = [], now = Date.now()) {
 
   // PRD wording is "two or more MEANINGFUL extractions" — a failed extraction
   // is not meaningful, so extraction_failed is deliberately not counted.
-  const meaningful = named("extraction_success").length + named("workflow_run_completed").length;
+  //
+  // ONE name for a template run: `template_run_completed`. This read
+  // `workflow_run_completed` until the vocabulary drift guard in
+  // activationEvents.test.js caught that nothing declares that name — two
+  // aliases for one event is the precise shape of the bug that made every
+  // recorded monitor_created undefined (CLAUDE.md).
+  const meaningful = named("extraction_success").length + named("template_run_completed").length;
 
   const pricingViews = named("pricing_viewed").map(at).filter((t) => t > 0).sort((a, b) => a - b);
   const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
@@ -300,7 +306,7 @@ export function signalsFromEvents(events = [], now = Date.now()) {
   }
 
   return {
-    used_persona_template: startsWith("template_run").length > 0,
+    used_persona_template: named("template_run_completed").length > 0,
     two_meaningful_extractions: meaningful >= 2,
     created_shareable_report: named("report_published").length > 0 || named("report_shared").length > 0,
     connected_integration: named("integration_connected").length > 0,
