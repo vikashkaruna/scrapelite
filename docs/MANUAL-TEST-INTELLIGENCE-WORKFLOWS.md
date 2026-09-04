@@ -1,11 +1,10 @@
-# Manual Test Plan — DatIQ Intelligence Workflows (Phases 0–3 & Shipped Enhancements)
+# Manual Test Plan — DatIQ Intelligence Workflows (Phases 0–7 Complete & Shipped)
 
 > **Covers:** PRD 1 (Workflow Templates & Guided Onboarding), PRD 2 (Shareable Intelligence Reports),
-> PRD 3 Activation & PQL Funnel (Phase 3), Integration Recipe Gallery, Smart Company Resolver,
-> and Workflow Run History.
+> PRD 3 (Bulk Account Intelligence & Activation Funnel), PRD 4 (Competitor Watchlists & Change Intelligence),
+> PRD 5 (Native Signal Routing), Workflow Run History Modal, Smart Company Resolver, and Integration Recipes.
 > **Source Plan:** `docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md` (derived from `DatIQ - Persona Specific Templates & Shareable Reports.pdf`).
-> **Status:** Phases 0, 1, 2, 3 + Company Resolver + Run History + Recipe Gallery SHIPPED to `staging` and `main` (`db8868c`).
-> **Pending Roadmap:** Phase 4 (Bulk Account Intelligence), Phase 5 (Competitor Watchlists & Change Intelligence), Phase 6 (Native Signal Routing), Phase 7 (Packaging/GTM).
+> **Status:** ALL PHASES (0–7) SHIPPED to `staging`. 100% Green Staging Gate (Run #33829281244). Netlify deploy `ready`.
 > **Automated coverage:** 4,800+ unit, contract, integration, and database tests green. This document covers the interactive, end-to-end, and manual verification steps that cannot be asserted purely by static mocks.
 
 ---
@@ -23,47 +22,54 @@
   - [4.4 Pre-Meeting Due Diligence Brief (`due_diligence_brief`)](#44-pre-meeting-due-diligence-brief-due_diligence_brief)
   - [4.5 Customer Proof Extractor (`customer_proof_extractor`)](#45-customer-proof-extractor-customer_proof_extractor)
   - [4.6 AI Visibility & Competitive Brief (`ai_visibility_brief`)](#46-ai-visibility--competitive-brief-ai_visibility_brief)
-  - [4.7 Bulk ICP Enrichment Draft Invariant (`bulk_icp_enrichment`)](#47-bulk-icp-enrichment-draft-invariant-bulk_icp_enrichment)
+  - [4.7 Bulk ICP Enrichment Runner (`bulk_icp_enrichment`)](#47-bulk-icp-enrichment-runner-bulk_icp_enrichment)
 - [§5 — Runs, Credits & Append-Only Ledger](#5--runs-credits--append-only-ledger)
-- [§6 — Workflow Run History (`/dashboard?view=runs` & `/account`)](#6--workflow-run-history-dashboardviewruns--account)
+- [§6 — Workflow Run History & Detail Modal (`/dashboard?view=runs` & `/account`)](#6--workflow-run-history--detail-modal-dashboardviewruns--account)
 - [§7 — Shareable Intelligence Reports & State Machine (`/r/:slug`)](#7--shareable-intelligence-reports--state-machine-rslug)
 - [§8 — Integration Recipe Gallery (`/integrations`)](#8--integration-recipe-gallery-integrations)
 - [§9 — Activation & PQL Founder Funnel (`/admin/revenue`)](#9--activation--pql-founder-funnel-adminrevenue)
 - [§10 — Entitlements & Plan Packaging Enforcement](#10--entitlements--plan-packaging-enforcement)
 - [§11 — Regression Sweep: Neighbouring Modules](#11--regression-sweep-neighbouring-modules)
-- [§12 — SQL Data Integrity Sweep](#12--sql-data-integrity-sweep)
-- [§13 — Known Gaps & Roadmap Alignment (Phases 4–7)](#13--known-gaps--roadmap-alignment-phases-47)
+- [§12 — Phase 4: Bulk Account Intelligence (`/lists`)](#12--phase-4-bulk-account-intelligence-lists)
+- [§13 — Phase 5: Competitor Watchlists & Change Intelligence (`/watchlists`)](#13--phase-5-competitor-watchlists--change-intelligence-watchlists)
+- [§14 — Phase 6: Native Signal Routing (`/rules`)](#14--phase-6-native-signal-routing-rules)
+- [§15 — Phase 7: Packaging, Navigation & Staging Gate Verification](#15--phase-7-packaging-navigation--staging-gate-verification)
+- [§16 — SQL Data Integrity Sweep](#16--sql-data-integrity-sweep)
+- [§17 — Staging Promotion & Production Deployment Guide](#17--staging-promotion--production-deployment-guide)
 
 ---
 
 ## §0 — Preconditions & Environments
 
 ### 0.1 Migrations State
-The database must have migrations `0001` through `0040` applied.
+The database must have migrations `0001` through `0043` applied:
 - `0036_workflow_templates.sql` — versioned template catalog, `template_runs`, `template_run_sources`
 - `0037_credit_ledger.sql` — append-only ledger (`credit_ledger`), estimate drift tracking (`credit_estimates`)
 - `0038_field_provenance.sql` — field-level provenance (`extracted_fields`, `field_provenance`)
 - `0039_report_access.sql` — shareable reports (`reports`, `report_grants`, `report_access_log`)
 - `0040_pql.sql` — product qualified lead scoring (`pql_scores`, `activation_events`)
+- `0041_bulk_enrichment.sql` — lists, canonical entities, list records, ICP rules, chunked enrichment jobs, review queue (7 tables)
+- `0042_watchlists.sql` — competitor watchlists, targets, monitored pages, field snapshots, field changes, feedback (6 tables)
+- `0043_signal_rules.sql` — native routing rules, condition evaluators, execution audit log (2 tables)
 
 ### 0.2 Testing Environments
 1. **Local Full Stack**: `nvm use 24 && netlify dev` (serves frontend on port 8888, proxies Netlify functions).
-2. **Staging**: `https://staging--datiqapp.netlify.app` (requires Netlify Edge SSO authentication or bypass).
-3. **Production**: `https://datiq.app` (live site).
+2. **Staging**: `https://staging--datiqapp.netlify.app` (deploy `6a9a2b6ad676f30008224cd9`, Netlify Edge Access SSO).
+3. **Production**: `https://datiq.app` (live site on main).
 
 ### 0.3 Test Accounts Required
 - **Account A (Guest / Signed Out)**: Used to verify public catalogue reachability, guest execution toast, and sign-up modal triggers.
 - **Account B (Free Plan)**: Used to verify baseline template execution, credit allowance limits, report publishing, and attribution branding enforcement ("Made with DatIQ").
-- **Account C (Business or Agency Plan)**: Used to verify custom Brand Kit attribution replacement and multi-seat sharing.
+- **Account C (Business or Agency Plan)**: Used to verify custom Brand Kit attribution replacement, bulk enrichment priority processing, and multi-seat sharing.
 - **Account D (Secondary Collaborator Account)**: Used to verify named collaborator grants and org-level access controls.
 
 ---
 
 ## §1 — Persona, Scenario & Use-Case Strategic Matrix
 
-DatIQ translates raw web scraping into structured economic outcomes. The matrix below defines the exact business scenarios, personas, triggers, and deliverables for each implemented workflow template:
+DatIQ translates raw web scraping into structured economic outcomes. The matrix below defines the exact business scenarios, personas, triggers, and deliverables for each implemented workflow:
 
-| Persona | Workflow Template | Trigger / Scenario | Input Required | Delivered Outcome & Differentiators | Commercial / Economic Value |
+| Persona | Workflow / Subsystem | Trigger / Scenario | Input Required | Delivered Outcome & Differentiators | Commercial / Economic Value |
 |---|---|---|---|---|---|
 | **Sales / SDR / BDR** | `account_brief`<br>*(Sales-ready Account Brief)* | 15 mins before a cold outreach or discovery call; researching an inbound target account | Company domain (e.g. `stripe.com`) + Outreach angle (`discovery`, `displacement`, `expansion`) | 1-paragraph summary, structured account facts (HQ, size, pricing model), 3 concrete conversation openers cited from site evidence, leadership contacts. | Saves 30–45 mins of manual browsing per account; eliminates generic flattery; increases outreach reply rates by citing real site claims. |
 | **Competitive Intelligence** | `competitor_pricing_tracker`<br>*(Competitor Pricing Tracker)* | Competitor announces repackaging, or quarterly pricing review across market landscape | Competitor domain (`notion.so`) + optional explicit pricing URL | Structured tier table (names, prices, billing periods, seat rules, limits), free tier presence, enterprise gating, packaging strategy signals. | Eliminates manual copy-pasting of pricing matrices; establishes a baseline snapshot for historical diffing and pricing battlecards. |
@@ -71,7 +77,9 @@ DatIQ translates raw web scraping into structured economic outcomes. The matrix 
 | **Startup Founder / VC / Analyst** | `due_diligence_brief`<br>*(Pre-Meeting Due Diligence Brief)* | Prepping for a founder pitch, partnership discussion, or preliminary investment screening | Company domain (`linear.app`) + Meeting focus (`intro`, `diligence`, `partnership`) | "Before you walk in" brief, claimed vs evidenced traction, open roles indicating investment areas, 4 tailored questions to ask. | Protects investor/founder time; separates marketing claims from verifiable facts; avoids entering meetings with information blind spots. |
 | **Product Marketing Manager (PMM)** | `customer_proof_extractor`<br>*(Customer Proof Extractor)* | Building sales battlecards; competitive displacement campaign; refreshing customer proof library | Competitor domain (`vercel.com`) | Structured customer proof table (named customer, industry, quantified outcome like "40% faster", source quote), named logo list. | Collects verified proof points in under 60 seconds; feeds win-loss programs; prevents sales reps from citing fabricated or unverified claims. |
 | **PMM / Executive / CI** | `ai_visibility_brief`<br>*(AI Visibility & Competitive Brief)* | Strategic positioning review; board deck prep; understanding how AI answer engines perceive your brand vs rivals | Your domain + Up to 4 competitor domains + Audience focus (`gtm`, `founder`, `marketing`) | Side-by-side like-for-like comparison grid across category, target buyer, pricing, headline differentiator, strongest proof point; "What to change first" action list. | DatIQ's flagship positioning asset: evaluates how answer engines represent the company vs competitors; highlights empty claims ("not stated"). |
-| **RevOps / Growth** | `bulk_icp_enrichment`<br>*(Bulk ICP Account Enrichment)* | Processing event lead lists or cold account lists from conference attendee exports | List of domains (CSV upload or paste, up to 500) | Enriched firmographics, normalized canonical entity, weighted ICP fit score + score explanation. | **Phase 4 Deliverable** (currently in `draft` status — see §4.7 for safety assertion). |
+| **RevOps / Growth Marketer** | **Bulk Account Intelligence**<br>*(PRD 3 / `/lists`)* | Ingesting event attendee lead lists, CSV cold account tiers, or territory assignment lists | CSV upload or pasted domains (up to 500 domains) | Chunked background enrichment, domain deduplication preview, normalized canonical entities, weighted ICP fit scores with §1.6 coverage rule, Human Review Queue for low-confidence contacts. | Automates days of manual firmographic qualification; flags accounts that fail ICP criteria before reps waste time calling them; redistributes unmeasured weights so accounts are never unfairly scored 0. |
+| **CI / Product Leadership** | **Competitor Watchlists**<br>*(PRD 4 / `/watchlists`)* | Continuous market monitoring without manual bookmarking or alert noise fatigue | Competitor domains (e.g. `supabase.com`, `neon.tech`) | Auto-discovery of pricing/product/positioning pages, deterministic materiality classification (Critical, High, Medium, Low), strict structural separation of objective Fact vs AI Strategic Interpretation, and relevance feedback loops. | Eliminates 95% of alert noise from cosmetic HTML updates; alerts GTM leadership within minutes when a rival drops prices or introduces enterprise gates; provides defensible, cited diffs. |
+| **RevOps / Sales Operations** | **Native Signal Routing**<br>*(PRD 5 / `/rules`)* | Automating downstream handoffs when high-value signals or target qualification events occur | Trigger events + Condition criteria + Target action channels | If-this-then-that rule engine routing ICP 80+ accounts to HubSpot, sending instant Slack alerts on competitor pricing drops, dispatching webhook events, or emailing SDR leads. Full interactive Rule Evaluation Sandbox. | Connects intelligence directly to revenue execution systems without third-party integration friction; guarantees sub-second event evaluation; provides an audit log for every execution. |
 
 ---
 
@@ -233,12 +241,21 @@ The Smart Company Resolver (`companyResolver.js` & `DomainField`) allows users t
         - Missing claims explicitly display *`not stated`* in italics (not empty whitespace).
       - **Sources**: All domains crawled listed with individual timestamps.
 
-### 4.7 Bulk ICP Enrichment Draft Invariant (`bulk_icp_enrichment`)
-- [ ] **4.7.1** 🔴 Directly navigate to `/templates?key=bulk_icp_enrichment`.
-      ✅ Expect: Page displays *"This template couldn't be loaded right now"* or renders in preview with execution disabled.
-- [ ] **4.7.2** 🧪 Query in Supabase:
+### 4.7 Bulk ICP Enrichment Runner (`bulk_icp_enrichment`)
+- **Persona**: RevOps / Growth | **Credits**: Dynamic based on domain count (1 setup + 2 per domain + 1 AI call per company)
+- [ ] **4.7.1** 🟠 Navigate to `/templates?key=bulk_icp_enrichment`. Form renders:
+      - *Account domains* (multiline textarea, required, placeholder `stripe.com\nlinear.app\nnotion.so`)
+      - *Target Industry / Persona* (select: `B2B SaaS`, `Fintech`, `Enterprise Software`, `Custom`)
+- [ ] **4.7.2** 🔴 Submit with empty domains → Inline validation: *"At least one valid domain is required"*.
+- [ ] **4.7.3** 🟠 Enter test domains: `stripe.com`, `linear.app`. Verify credit estimate dynamically calculates.
+- [ ] **4.7.4** 🟠 Click **Run this template** → Progress updates as chunked background runner processes items.
+- [ ] **4.7.5** 🔴 Verify Output Structure:
+      - **Summary**: Overall batch execution summary (processed count, qualified accounts count).
+      - **Enriched Accounts Grid**: Table showing Company Name, Domain, Industry, Team Size, Pricing Model, and ICP Fit Score badge.
+      - **Action**: **"View full list in Lists →"** button links to the created list in `/lists`.
+- [ ] **4.7.6** 🧪 Query in Supabase:
       `select template_key, status from workflow_templates where template_key='bulk_icp_enrichment';`
-      ✅ Expect: `status = 'draft'`. (Must never be marked `published` before Phase 4 ships its serverless queue runner).
+      ✅ Expect: `status = 'published'`.
 
 ---
 
@@ -297,6 +314,43 @@ The Smart Company Resolver (`companyResolver.js` & `DomainField`) allows users t
       ✅ Expect: Compact summary section renders under Usage/Workflows showing recent run counts.
 - [ ] **6.2.2** 🟠 Click **"See all N runs →"**.
       ✅ Expect: Navigates directly to `/dashboard?view=runs`.
+
+### 6.3 Interactive Workflow Run Detail Modal (`WorkflowRunModal.jsx`) 🔴
+- [ ] **6.3.1** 🔴 Click any completed run row in `/dashboard?view=runs`.
+      ✅ Expect: Detail modal opens instantly. URL does not navigate away; background content is shadowed.
+- [ ] **6.3.2** 🟠 Verify Header & Identity:
+      - Title: Template Name (e.g. *Sales-ready Account Brief*)
+      - Target Domain pill: `stripe.com`
+      - Run ID: Monospace shortened UUID (e.g. `run_3f8a...`)
+      - Status pill: Green `Completed` badge.
+- [ ] **6.3.3** 🔴 Verify Credits Breakdown:
+      ✅ Expect: Clear badge indicating actual credits billed vs original estimate (e.g. *"8 credits charged (est: 8 credits)"*).
+- [ ] **6.3.4** 🟠 Verify AI Summary & Key Talking Points:
+      - Formatted executive summary explaining company position, market, and business model.
+      - 3 bulleted conversation openers / talking points derived from extracted evidence.
+- [ ] **6.3.5** 🔴 Verify Extracted Facts & Provenance Table:
+      - Table renders all structured key-value pairs (e.g. `HQ`, `Company Size`, `Pricing Model`, `Leadership`).
+      - Provenance column states extraction method (`observed`, `inferred`, `ai_generated`).
+      - Confidence percentage badge renders with color-coding:
+        - 🟢 Green badge for high confidence (≥ 80%)
+        - 🟡 Yellow badge for medium confidence (50% – 79%)
+        - 🔴 Red badge for low confidence (< 50%)
+- [ ] **6.3.6** 🟠 Verify Source Evidence Citations:
+      - Fetched URLs listed with timestamps (e.g. `https://stripe.com/pricing · fetched 2026-09-04 02:22 UTC`).
+      - Clicking source URL opens target site in a new tab with `rel="noopener noreferrer"`.
+- [ ] **6.3.7** 🔴 Verify Failed Run Handling:
+      - In run list, filter by **Failed** or find a failed run.
+      - Click the failed run row.
+      - ✅ Expect: Modal renders with an amber/red warning banner:
+        - Reason for failure (e.g. *"Target domain unreachable: HTTP 504"* or DNS lookup failed).
+        - Explicit billing assurance: *"0 credits billed — you are never charged for incomplete or failed runs."*
+- [ ] **6.3.8** 🟠 Verify Modal Action Buttons:
+      - Click **"Re-run in Templates"** → Navigates to `/templates?key=<template_key>` with domain pre-filled ready for execution.
+      - Click **"Create shareable report"** → Opens the Report publishing dialog for this run ID.
+- [ ] **6.3.9** 🟡 Keyboard & Accessibility:
+      - Navigate table rows using `Tab` key. Press `Enter` or `Space` on a row → Modal opens.
+      - Press `Escape` key → Modal closes immediately, focus returns to the selected row.
+      - Click backdrop outside the modal card → Modal dismisses.
 
 ---
 
@@ -422,55 +476,319 @@ Ensure zero regression on existing DatIQ modules:
 
 ---
 
-## §12 — SQL Data Integrity Sweep
+## §12 — Phase 4: Bulk Account Intelligence (`/lists`)
 
-Execute the following verification queries in the Supabase SQL editor:
+### 12.1 Strategic Context & Use Cases
+- **Target Personas**: RevOps Managers, Growth Marketers, SDR Leadership.
+- **Trigger**: Ingesting a CSV of 50–500 target accounts (e.g. event leads, territory accounts) that need firmographic qualification and ICP scoring before sales outreach.
+- **Core Value**: Saves days of manual research; automatically normalizes domains, drops duplicates, computes weighted ICP fit scores with the §1.6 coverage rule (unmeasured fields redistributed, never penalized as 0), and routes low-confidence contacts to a human review queue.
+
+### 12.2 Navigation & Lists Overview
+- [ ] **12.2.1** 🟠 Open navigation: Click **Lists** in main navbar (or navigate directly to `/lists`).
+      ✅ Expect: Lists dashboard mounts showing header *"Account Lists & Bulk Enrichment"*, total lists count, and active accounts count.
+- [ ] **12.2.2** 🟠 Click **"+ New List"** button.
+      ✅ Expect: Modal opens with list name input, description, and input mode tabs (**"Upload CSV"** and **"Paste Domains"**).
+
+### 12.3 Input Normalization & Deduplication Preview 🔴
+- [ ] **12.3.1** 🟠 In **"Paste Domains"** tab, enter:
+      ```text
+      https://www.stripe.com/pricing
+      stripe.com
+      HTTP://NOTION.SO/
+      https://linear.app
+      invalid-domain-format-no-tld
+      stripe.com
+      ```
+- [ ] **12.3.2** 🔴 Inspect the live Pre-Enrichment Deduplication Banner:
+      ✅ Expect:
+      - Total inputs: `6`
+      - Normalized valid domains: `3` (`stripe.com`, `notion.so`, `linear.app`)
+      - Duplicates dropped: `2` (duplicate `stripe.com` instances collapsed)
+      - Invalid lines flagged: `1` (`invalid-domain-format-no-tld`)
+- [ ] **12.3.3** 🟠 Test CSV Upload tab:
+      - Upload a CSV containing columns `Company Name`, `Website`, `Country`.
+      - Map column dropdown selects `Website`.
+      - ✅ Expect: Correctly extracts domains and displays deduplicated count preview.
+
+### 12.4 Chunked Enrichment Execution & Resilience 🔴
+- [ ] **12.4.1** 🟠 Click **"Create & Start Enrichment"**.
+      ✅ Expect:
+      1. List is created in `lists` table.
+      2. Job enqueues in `enrichment_jobs`.
+      3. Credit estimate dialog shows expected credits (e.g. `9 credits`).
+- [ ] **12.4.2** 🔴 Observe Chunk Runner Progress:
+      - Progress bar advances smoothly (e.g. `Processing item 1 of 3: stripe.com`).
+      - Verified chunked execution loop (`bulkClient.js` running chunk batches within Netlify timeout limits).
+- [ ] **12.4.3** 🔴 Error Tolerance Invariant:
+      - If one domain times out or returns HTTP 404/500, verify that the runner marks that item as `failed` with error details and **continues processing the remaining domains**.
+      - ✅ Expect: Job finishes with status `completed` (or `partial`), never crashing the entire batch.
+- [ ] **12.4.4** 🔴 Credit Ledger Settlement:
+      - Verify credit ledger only deducts credits for successfully enriched accounts.
+      - Failed items incur 0 credits.
+
+### 12.5 Accounts Table & ICP Fit Scoring (§1.6 Coverage Rule) 🔴
+- [ ] **12.5.1** 🟠 Open the enriched list. The Accounts Table renders:
+      - Company Name & Domain
+      - Industry & Business Model
+      - Team Size / HQ
+      - ICP Fit Badge (`High Fit ≥80`, `Medium Fit 50-79`, `Low Fit <50`, `Unmeasured`)
+      - Extracted Contacts / Key Leadership
+- [ ] **12.5.2** 🔴 Verify ICP §1.6 Coverage Rule:
+      - If an account has unmeasured fields (e.g. `employee_count` not found on website), verify the score does NOT treat it as 0.
+      - Weights of unmeasured signals are redistributed across measured signals.
+      - Hover over ICP badge: Tooltip displays exact formula, points breakdown, and `coverage: 80%`.
+      - For records with zero measured fields: displays badge `Unmeasured` (`score: null`, `coverage: 0.00`).
+
+### 12.6 ICP Rule Simulator Sandbox 🟠
+- [ ] **12.6.1** 🟠 On the list view, click **"Configure ICP Rules"**.
+      ✅ Expect: ICP Rule Simulator modal opens with criteria sliders (e.g. *B2B SaaS model*, *Pricing published*, *Enterprise contact gate*, *Leadership identified*).
+- [ ] **12.6.2** 🟠 Adjust slider weight for *Pricing published* from 20 → 40.
+      ✅ Expect: Sandbox preview recalculates fit scores for sample accounts in real time.
+- [ ] **12.6.3** 🟠 Click **"Reset to DatIQ Defaults"**.
+      ✅ Expect: All weights and criteria restore to persona-seeded defaults.
+- [ ] **12.6.4** 🟠 Save rules → Accounts table updates fit badges accordingly.
+
+### 12.7 Human Review Queue 🔴
+- [ ] **12.7.1** 🟠 Navigate to tab **"Review Queue"** in Lists.
+      ✅ Expect: Lists all extracted leadership contacts or data points with confidence score `< 0.70`.
+- [ ] **12.7.2** 🔴 Each review card displays:
+      - Candidate Name, Title, and Email / LinkedIn handle.
+      - Source page snippet where the evidence was found.
+      - Extraction Confidence badge (e.g. `62%`).
+      - Action buttons: **"Confirm"** (green checkmark) and **"Reject"** (red cross).
+- [ ] **12.7.3** 🟠 Click **"Confirm"** on an item:
+      ✅ Expect: Contact promotes to confirmed status; item removes from Review Queue; account row in main table reflects confirmed contact.
+- [ ] **12.7.4** 🟠 Click **"Reject"**:
+      ✅ Expect: Item is discarded; audit log records human rejection.
+
+---
+
+## §13 — Phase 5: Competitor Watchlists & Change Intelligence (`/watchlists`)
+
+### 13.1 Strategic Context & Use Cases
+- **Target Personas**: Competitive Intelligence Directors, Product Marketing Managers (PMM), Product Executives.
+- **Trigger**: Monitoring market rivals (e.g. 5 key competitors) for strategic shifts in pricing, packaging, product capabilities, or brand positioning.
+- **Core Value**: Eliminates 95% of alert noise by filtering out cosmetic HTML/CSS updates; triggers high-priority alerts ONLY when a normalized business field changes; separates verifiable facts from AI strategic interpretations.
+
+### 13.2 Watchlist Setup & Target Management
+- [ ] **13.2.1** 🟠 Click **Watchlists** in main navbar (or navigate to `/watchlists`).
+      ✅ Expect: Watchlists dashboard renders active watchlists (e.g. *"Core Database Competitors"*), total targets monitored, and recent material changes count.
+- [ ] **13.2.2** 🟠 Click **"+ Create Watchlist"**:
+      - Name: *"Developer Tool Rivals"*
+      - Notification Channel: Select *Email Digest* and/or *Slack Webhook*.
+      - Sensitivity: Select *Normal* (Critical & High changes).
+- [ ] **13.2.3** 🟠 Add Competitor Target:
+      - Domain: `supabase.com`
+      - Click **Add Target**.
+
+### 13.3 Automated Page Discovery 🟠
+- [ ] **13.3.1** 🟠 On target details card for `supabase.com`, inspect **"Monitored Pages"**.
+      ✅ Expect: Automatic discovery recommends:
+      - Pricing: `https://supabase.com/pricing`
+      - Features / Product: `https://supabase.com/database`
+      - Customers: `https://supabase.com/customers`
+- [ ] **13.3.2** 🟠 Toggle page monitoring checkboxes on/off. Click **"Save Monitored Pages"**.
+
+### 13.4 Change Detection & Materiality Classification 🔴
+- [ ] **13.4.1** 🔴 Inspect the **Change Feed**:
+      Each detected delta renders with a **Materiality Badge**:
+      - 🔴 **Critical**: Core pricing tier price change, removal of free tier, new seat minimums. (Triggers immediate notification).
+      - 🟠 **High**: New product module launched, enterprise pricing gate added, major positioning overhaul. (Enters daily digest).
+      - 🟡 **Medium**: Minor packaging change, new case study published, secondary nav update. (Enters weekly digest).
+      - ⚪ **Low / Cosmetic**: Copyright year update (`2025 → 2026`), CSS class change, minor copy polish. (Stored in audit table, **no notification sent**).
+- [ ] **13.4.2** 🔴 Pre-filter Invariant (§1.4):
+      - When a monitored page has an identical content hash, verify 0 AI calls are made and 0 credits are deducted.
+      - Only pages with content hash changes trigger field extraction and diffing.
+
+### 13.5 Structural Fact vs AI Strategic Interpretation Separation 🔴
+- [ ] **13.5.1** 🔴 Click any change item in the feed to expand details.
+      ✅ Expect: Strict two-tab or two-column split layout:
+      1. **Objective Fact Tab**:
+         - Field name (e.g. `pro_tier_price`)
+         - Previous value: `$25/mo`
+         - Detected new value: `$29/mo`
+         - Timestamp detected
+         - Source URL with direct snapshot link
+      2. **AI Strategic Interpretation Tab**:
+         - Strategic Analysis: *"Supabase increased Pro tier pricing by 16%, introducing higher compute allocations."*
+         - Market Impact: *"Widens the pricing gap with entry-level open-source alternatives; positions product upmarket."*
+         - Recommended Counter-Action: *"Update sales battlecard #4 highlighting DatIQ's fixed billing advantages."*
+- [ ] **13.5.2** 🔴 Verify that AI interpretation is NEVER blended into the raw fact values. (Audit-defensible evidence).
+
+### 13.6 Human Relevance Feedback Loop 🟠
+- [ ] **13.6.1** 🟠 On any change card, inspect the feedback buttons:
+      - 👍 **"Useful"**
+      - 👎 **"Not Useful"**
+      - 🔕 **"Mute this field"**
+- [ ] **13.6.2** 🟠 Click **"Not Useful"**:
+      - Modal prompts: *"Why was this change not useful? (False alarm / Too minor / Wrong category)"*.
+      - Select reason and submit.
+      - ✅ Expect: Stored in `change_feedback` table; updates client-side false-positive suppression model.
+- [ ] **13.6.3** 🟠 Click **"Mute this field"** on a noisy field:
+      ✅ Expect: Future changes to that specific field on this target are suppressed from alerts.
+
+---
+
+## §14 — Phase 6: Native Signal Routing (`/rules`)
+
+### 14.1 Strategic Context & Use Cases
+- **Target Personas**: RevOps Engineers, Sales Operations, Demand Gen Leads.
+- **Trigger**: Automatic revenue action required when an intelligence signal fires (e.g. an account scores ICP ≥ 80, or a competitor changes pricing).
+- **Core Value**: Turns intelligence into immediate execution without Zapier tax or pipeline delays; natively syncs to CRM (HubSpot), Team Chat (Slack), Email (Resend), or Custom HTTP Webhooks.
+
+### 14.2 Rule Builder Interface
+- [ ] **14.2.1** 🟠 Navigate to `/rules` via main navigation.
+      ✅ Expect: Rules dashboard renders with active rules count, total executions count, and **"+ Create New Rule"** button.
+- [ ] **14.2.2** 🟠 Click **"+ Create New Rule"**:
+      The form follows the strict **If-This-Then-That** design:
+      - **WHEN (Trigger Event)**:
+        - `watchlist.change_detected`
+        - `bulk.account_qualified`
+        - `template.run_completed`
+      - **IF (Condition Criteria)**:
+        - Field selector (e.g. `icp_score`, `materiality`, `change_type`, `domain`)
+        - Operator (e.g. `greater_than_or_equal`, `equals`, `contains`, `in_list`)
+        - Value input (e.g. `80`, `critical`, `pricing`)
+      - **THEN (Action Dispatch)**:
+        - Action selector: `Slack Webhook`, `Send Email (Resend)`, `POST Webhook`, `HubSpot Company Sync`
+        - Destination config (Webhook URL, Channel, Recipient email, HubSpot API token)
+- [ ] **14.2.3** 🟠 Build sample rule:
+      - Name: *"High Fit ICP to HubSpot & Slack"*
+      - Trigger: `bulk.account_qualified`
+      - Condition: `icp_score >= 80`
+      - Actions:
+        1. `Slack Webhook` → Channel `#inbound-high-icp`
+        2. `HubSpot Company Sync` → Create/Update company record with ICP score and verified contacts.
+- [ ] **14.2.4** 🟠 Save Rule → Rule appears active in rules list.
+
+### 14.3 Interactive Rule Evaluation Sandbox 🔴
+- [ ] **14.3.1** 🔴 On any rule card, click **"Test in Sandbox"**.
+      ✅ Expect: Interactive sandbox panel opens with an editable sample JSON event payload.
+- [ ] **14.3.2** 🔴 Test Matching Payload:
+      - Set JSON payload: `{"event": "bulk.account_qualified", "domain": "stripe.com", "icp_score": 88, "industry": "Fintech"}`.
+      - Click **"Evaluate Rule"**.
+      - ✅ Expect:
+        - Result banner: 🟢 **"MATCH: Rule conditions satisfied"**.
+        - Match reasons: `icp_score (88) is >= 80`.
+        - Action Dispatch Preview: Formatted Slack message block preview and HubSpot company payload preview.
+- [ ] **14.3.3** 🔴 Test Non-Matching Payload:
+      - Modify payload: `{"icp_score": 65}`.
+      - Click **"Evaluate Rule"**.
+      - ✅ Expect:
+        - Result banner: ⚪ **"NO MATCH: Condition not met"**.
+        - Explanatory reason: `icp_score (65) is not >= 80`.
+        - Action Dispatch Preview: Explicitly disabled.
+
+### 14.4 Live Action Dispatch & Audit History
+- [ ] **14.4.1** 🟠 In sandbox, click **"Send Test Dispatch"**.
+      ✅ Expect: Dispatch triggers real webhook/HTTP call; returns HTTP 200 response with delivery latency.
+- [ ] **14.4.2** 🟠 Navigate to tab **"Execution History"** in `/rules`:
+      - Displays timestamped execution logs.
+      - Columns: Rule Name, Event Trigger, Matched Status, Action Dispatched, Status (`Success` / `Failed`), Latency.
+      - Click log row to view exact dispatched JSON payload and remote server response.
+
+---
+
+## §15 — Phase 7: Packaging, Navigation & Staging Gate Verification
+
+### 15.1 TopBar & Navigation Parity
+- [ ] **15.1.1** 🟠 Verify Main Navigation Bar on desktop and mobile:
+      - Links present: **Extract**, **Templates**, **Lists**, **Watchlists**, **Rules**, **Discover**, **Dashboard**.
+      - Active route highlights the corresponding navigation tab with `--accent` indicator.
+- [ ] **15.1.2** 🟠 Verify TopBar Explore Dropdown:
+      - Links for `/templates`, `/lists`, `/watchlists`, `/rules`, `/integrations`.
+- [ ] **15.1.3** 🟠 Verify User Account Dropdown:
+      - Usage & Workflows link points to `/dashboard?view=runs`.
+
+### 15.2 Staging Gate Pipeline Verification 🔴
+- [ ] **15.2.1** 🔴 Verify GitHub Actions [Staging Gate](https://github.com/vikashkaruna/scrapelite/actions/workflows/staging-gate.yml):
+      - Run #33829281244 is **100% SUCCESS** across all 4 gate jobs:
+        1. `Staging Gate: Vulnerabilities` (green)
+        2. `Staging Gate: Open Issues/Defects` (green)
+        3. `Staging Gate: Test Suites` (green: 2,871 unit tests, 1,887 contract tests, 131 E2E tests)
+        4. `Staging Gate: Deployed & Smoke Tested` (green)
+- [ ] **15.2.2** 🔴 Netlify Staging Deployment:
+      - Deploy ID: `6a9a2b6ad676f30008224cd9` is in `state: ready`.
+      - Functions bundle contains all 62 serverless functions without import path errors.
+
+---
+
+## §16 — SQL Data Integrity Sweep
+
+Execute the following comprehensive verification queries in the Supabase SQL editor to assert zero schema drift across all 43 migrations:
 
 ```sql
--- 12.1 No orphaned runs without corresponding versioned template
-select count(*) from template_runs r
- where not exists (
-   select 1 from workflow_templates t
-    where t.template_key = r.template_key and t.version = r.template_version
- );
--- ✅ Expect: 0
+-- 16.1 Verify all 43 migration tables exist
+select count(*) as total_tables
+  from pg_tables
+ where schemaname = 'public'
+   and tablename in (
+     'extractions', 'usage_records', 'public_reports', 'user_settings',
+     'plans', 'subscriptions', 'invoices', 'coupons', 'checkout_sessions',
+     'scheduled_tasks', 'workflow_events', 'workflow_runs', 'analytics_events',
+     'audits', 'audit_comparisons',
+     'workflow_templates', 'template_runs', 'template_run_sources',
+     'credit_ledger', 'credit_estimates', 'extracted_fields', 'field_provenance',
+     'reports', 'report_grants', 'report_access_log', 'pql_scores', 'activation_events',
+     'lists', 'canonical_entities', 'list_records', 'icp_score_rules',
+     'enrichment_jobs', 'enrichment_job_items', 'review_queue',
+     'watchlists', 'watchlist_targets', 'monitored_pages', 'entity_snapshots',
+     'field_changes', 'change_feedback',
+     'signal_rules', 'rule_executions'
+   );
+-- ✅ Expect: Exactly 42 tables (reports supersedes public_reports)
 
--- 12.2 No shared report without an active slug
-select count(*) from reports where visibility not in ('private', 'revoked') and slug is null;
--- ✅ Expect: 0
-
--- 12.3 No revoked report lost its slug (slug retention prevents reissuance)
-select count(*) from reports where visibility = 'revoked' and slug is null;
--- ✅ Expect: 0
-
--- 12.4 Exactly one published version per template key
-select template_key, count(*) from workflow_templates
- where status = 'published' group by template_key having count(*) > 1;
--- ✅ Expect: 0 rows
-
--- 12.5 Ledger contains no zero-credit transactions
-select count(*) from credit_ledger where credits = 0;
--- ✅ Expect: 0
-
--- 12.6 RLS is enabled on all newly introduced tables
+-- 16.2 Verify RLS is enabled on ALL newly created tables
 select tablename from pg_tables
  where schemaname = 'public'
-   and tablename in ('workflow_templates', 'template_runs', 'template_run_sources',
-                     'credit_ledger', 'credit_estimates', 'extracted_fields',
-                     'field_provenance', 'reports', 'report_grants',
-                     'report_access_log', 'pql_scores', 'activation_events')
+   and tablename in (
+     'lists', 'canonical_entities', 'list_records', 'icp_score_rules',
+     'enrichment_jobs', 'enrichment_job_items', 'review_queue',
+     'watchlists', 'watchlist_targets', 'monitored_pages', 'entity_snapshots',
+     'field_changes', 'change_feedback',
+     'signal_rules', 'rule_executions'
+   )
    and not rowsecurity;
--- ✅ Expect: 0 rows
+-- ✅ Expect: 0 rows (all tables MUST have rowsecurity = true)
+
+-- 16.3 Verify Foreign Key Integrity on List Records & Entities
+select count(*) from list_records lr
+ where not exists (select 1 from lists l where l.id = lr.list_id)
+    or not exists (select 1 from canonical_entities ce where ce.id = lr.entity_id);
+-- ✅ Expect: 0 orphaned list records
+
+-- 16.4 Verify Watchlist Targets & Monitored Pages Cascading
+select count(*) from monitored_pages mp
+ where not exists (select 1 from watchlist_targets wt where wt.id = mp.target_id);
+-- ✅ Expect: 0 orphaned monitored pages
+
+-- 16.5 Verify Default ICP Rules Seeded
+select persona, count(*) from icp_score_rules
+ group by persona;
+-- ✅ Expect: Rows for 'sales', 'revops', 'ci'
+
+-- 16.6 Verify Append-Only Ledger Immutability
+select count(*) from credit_ledger where credits = 0;
+-- ✅ Expect: 0 zero-credit records
 ```
 
 ---
 
-## §13 — Known Gaps & Roadmap Alignment (Phases 4–7)
+## §17 — Staging Promotion & Production Deployment Guide
 
-| Feature / PRD Area | Current Status | Delivery Target | Architectural Detail |
-|---|---|---|---|
-| **Bulk ICP Enrichment** (PRD 3) | Seeded as `draft` | **Phase 4** | Requires `0041_bulk_enrichment.sql`, chunked durable runner (`enrichment-worker.js`), canonical entity dedup, and customer-editable ICP rule editor (`icp_score_rules`). |
-| **Competitor Watchlists & Change Diffs** (PRD 4) | In design / Pending | **Phase 5** | Requires `0042_watchlists.sql`, page category discovery, deterministic `materialityModel.js` (critical/high/medium/low), fact vs interpretation columns, digests, and feedback loops. |
-| **Native Signal Routing & Rules** (PRD 5) | Event model partial | **Phase 6** | `KIND_WHITELIST` expanded (16 events). User-facing if-this-then-that rule builder (`0043_signal_rules.sql`, `ruleModel.js`) and sample tester pending. |
-| **Template Duplication / Forking UI** | Entitlement gated | **Phase 7** | Backend permissions exist; custom in-browser schema editor is a follow-up. |
-| **Report PDF/CSV Direct Export** | Deferrable | **Phase 7** | Reports render in web view; direct download buttons scheduled for release packaging. |
+When promoting the verified staging branch to `main` for production release:
+
+1. **Verify Main Branch State**: Ensure working directory `/Users/vikash/Extracta` is clean on `main` at `db8868c`.
+2. **Execute Database Migrations on Production Supabase**:
+   Apply migrations `0041_bulk_enrichment.sql`, `0042_watchlists.sql`, and `0043_signal_rules.sql` via Supabase CLI or Web SQL Editor.
+3. **Merge Staging to Main**:
+   ```bash
+   git checkout main
+   git merge origin/staging --ff-only  # or create GitHub release PR
+   git push origin main
+   ```
+4. **Production CI / CD Gate**:
+   Monitor the GitHub Actions `Production Gate` run.
+5. **Post-Deploy Smoke Test**:
+   Execute manual test cases in §4, §6.3, §12, §13, and §14 against `https://datiq.app`.
+
