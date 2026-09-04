@@ -466,6 +466,32 @@
   for = "/workspace"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
+# Intelligence Workflows: a signed-in-only workspace holding the customer's
+# own lists / watchlists / routing rules.
+[[headers]]
+  for = "/lists"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/lists/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/watchlists"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/watchlists/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/rules"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/rules/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
 [[headers]]
   for = "/collections"
   [headers.values]

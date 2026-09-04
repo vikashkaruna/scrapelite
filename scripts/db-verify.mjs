@@ -1824,6 +1824,57 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting signal rule cascades to executions", remExec.c, 0);
 }
 
+// ── 0044: workflow RLS lockdown (Phases 4-6) ────────────────────────────────
+// 0041-0043 shipped `grant all ... to anon` plus a policy whose
+// `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making
+// all fifteen tables world-readable and world-writable with the publishable
+// anon key that ships in every browser bundle. Verified exploitable against the
+// staging project before the fix. These assertions pin the lockdown so no
+// future migration can reopen it one table at a time.
+group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
+{
+  const LOCKED = [
+    "lists", "canonical_entities", "list_records", "icp_score_rules",
+    "enrichment_jobs", "enrichment_job_items", "review_queue",
+    "watchlists", "watchlist_targets", "monitored_pages", "entity_snapshots",
+    "field_changes", "change_feedback",
+    "signal_rules", "rule_executions",
+  ];
+
+  for (const t of LOCKED) {
+    // 1. RLS on.
+    const rls = (await one(
+      `select relrowsecurity from pg_class where oid = ('public.' || $1)::regclass`, [t]
+    ))?.relrowsecurity;
+    check(`${t}: row level security is enabled`, rls === true, `relrowsecurity=${rls}`);
+
+    // 2. Exactly one policy, and it is the service-role one. Any extra policy
+    //    is a re-opened door — this is the assertion that fails loudest.
+    const pol = await q(
+      `select policyname from pg_policies where schemaname='public' and tablename=$1`, [t]);
+    eq(`${t}: has exactly one policy`, pol.length, 1);
+    eq(`${t}: that policy is the service-role one`,
+       pol[0]?.policyname, "service full access");
+
+    // 3. No policy anywhere still carries the `auth.uid() is null` escape.
+    //    Checked on the stored expression, so a rewritten-but-equivalent
+    //    policy is caught too.
+    const leaky = await q(
+      `select policyname from pg_policies
+        where schemaname='public' and tablename=$1
+          and (coalesce(qual,'') like '%uid() IS NULL%'
+            or coalesce(with_check,'') like '%uid() IS NULL%')`, [t]);
+    eq(`${t}: no policy grants access when auth.uid() is null`, leaky.length, 0);
+
+    // 4. Neither anon nor authenticated holds any privilege on the table.
+    const grants = await q(
+      `select grantee, privilege_type from information_schema.role_table_grants
+        where table_schema='public' and table_name=$1
+          and grantee in ('anon','authenticated')`, [t]);
+    eq(`${t}: anon and authenticated hold no grants`, grants.length, 0);
+  }
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"─".repeat(62)}`);
 console.log(`[db-verify] ${files.length} migrations applied · ${pass} assertions passed · ${fail} failed`);

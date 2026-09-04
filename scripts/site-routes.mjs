@@ -140,6 +140,15 @@ export const PRIVATE_PREFIXES = [
   "/schedules",
   "/discoverability",
   "/workspace",
+  // Intelligence Workflows (PRD 3, 4, 5). Each is a signed-in-only workspace
+  // holding a customer's own account lists, competitor watchlists and routing
+  // rules. They were shipped without being added here, so they were indexable.
+  // NOTE the shareable-report route /r/:slug is deliberately NOT listed: its
+  // `public` visibility state is MEANT to be indexable, so Report.jsx writes
+  // the robots meta per report instead of a blanket disallow here.
+  "/lists",
+  "/watchlists",
+  "/rules",
   "/collections",
   "/payment",
   "/reset-password",

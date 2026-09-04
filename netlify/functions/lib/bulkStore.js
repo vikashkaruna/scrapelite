@@ -23,15 +23,47 @@ export function serviceDb(env = process.env) {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-export async function listLists(userId, env = process.env) {
+
+// Service-key queries bypass RLS, so an absent user id must refuse rather than
+// return an unfiltered result set. `review_queue` in particular holds
+// unverified CONTACT data — names, titles and email addresses scraped from
+// third-party sites — which is the most sensitive table in this feature.
+const NO_OWNER = { ok: false, reason: "unauthenticated", status: 401 };
+const ownerless = (userId) => !userId || typeof userId !== "string";
+
+/**
+ * Confirms `userId` owns the list behind `jobId`. Enrichment jobs are driven by
+ * a client POST (`process_chunk`), so without this any signed-in user could
+ * advance — and spend the credits of — another tenant's job.
+ */
+export async function assertJobOwner(jobId, userId, env = process.env) {
+  if (ownerless(userId) || !jobId) return false;
   const db = serviceDb(env);
   if (!db) {
-    const userLists = Array.from(_localLists.values()).filter((l) => !userId || l.user_id === userId);
+    const job = _localJobs.get(jobId);
+    if (!job) return false;
+    const list = _localLists.get(job.list_id);
+    return !!list && list.user_id === userId;
+  }
+  const { data, error } = await db
+    .from("enrichment_jobs")
+    .select("id")
+    .eq("id", jobId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !error && !!data;
+}
+
+export async function listLists(userId, env = process.env) {
+  if (ownerless(userId)) return { ...NO_OWNER, lists: [] };
+  const db = serviceDb(env);
+  if (!db) {
+    const userLists = Array.from(_localLists.values()).filter((l) => l.user_id === userId);
     return { ok: true, lists: userLists };
   }
 
   let q = db.from("lists").select("*").order("created_at", { ascending: false });
-  if (userId) q = q.eq("user_id", userId);
+  q = q.eq("user_id", userId);
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, lists: [] };
@@ -39,6 +71,7 @@ export async function listLists(userId, env = process.env) {
 }
 
 export async function getList(listId, userId, env = process.env) {
+  if (ownerless(userId)) return null;
   const db = serviceDb(env);
   if (!db) {
     const list = _localLists.get(listId);
@@ -48,7 +81,7 @@ export async function getList(listId, userId, env = process.env) {
   }
 
   let listQuery = db.from("lists").select("*").eq("id", listId);
-  if (userId) listQuery = listQuery.eq("user_id", userId);
+  listQuery = listQuery.eq("user_id", userId);
 
   const { data: listData, error: listError } = await listQuery.single();
   if (listError || !listData) return null;
@@ -63,6 +96,7 @@ export async function getList(listId, userId, env = process.env) {
 }
 
 export async function createList(userId, { name, description = "", domains = [], persona = "sales" }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
   const deduped = dedupeEntries(domains);
   if (deduped.length === 0) {
     throw new Error("No valid domains could be extracted from input.");
@@ -76,7 +110,7 @@ export async function createList(userId, { name, description = "", domains = [],
   if (!db) {
     const newList = {
       id: listId,
-      user_id: userId || "usr_demo",
+      user_id: userId,
       name: name || `Import ${new Date().toLocaleDateString()}`,
       description,
       status: "pending",
@@ -128,7 +162,7 @@ export async function createList(userId, { name, description = "", domains = [],
     _localJobs.set(jobId, {
       id: jobId,
       list_id: listId,
-      user_id: userId || "usr_demo",
+      user_id: userId,
       status: "queued",
       cursor: 0,
       total_items: deduped.length,
@@ -192,6 +226,8 @@ export async function createList(userId, { name, description = "", domains = [],
 }
 
 export async function getIcpRules(userId, persona = "default", env = process.env) {
+  if (ownerless(userId)) return { ...NO_OWNER, rules: null };
+
   const db = serviceDb(env);
   if (!db) {
     const key = `${userId || "default"}_${persona}`;
@@ -209,11 +245,16 @@ export async function getIcpRules(userId, persona = "default", env = process.env
     };
   }
 
-  // Prefer user's custom rule for persona, fallback to default
+  // Prefer this user's custom rule for the persona, else the shared default.
+  // The query used to select every row for the persona regardless of owner and
+  // then fall back to `data[0]` — which handed the caller ANOTHER tenant's
+  // custom ICP criteria whenever they had none of their own. Scoping it in SQL
+  // (own rule OR a genuine shared default) removes the fallback entirely.
   const { data, error } = await db
     .from("icp_score_rules")
     .select("*")
     .eq("persona", persona)
+    .or(`user_id.eq.${userId},is_default.is.true`)
     .order("is_default", { ascending: true }); // user rule (is_default: false) first
 
   if (error || !data || data.length === 0) {
@@ -231,10 +272,11 @@ export async function getIcpRules(userId, persona = "default", env = process.env
   }
 
   const userRule = data.find((r) => r.user_id === userId);
-  return userRule || data[0];
+  return userRule || data.find((r) => r.is_default === true) || null;
 }
 
 export async function saveIcpRules(userId, { persona, name, criteria, threshold }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
   const db = serviceDb(env);
   if (!db) {
     const key = `${userId || "default"}_${persona || "default"}`;
@@ -453,16 +495,17 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 }
 
 export async function getReviewQueue(userId, listId = null, env = process.env) {
+  if (ownerless(userId)) return { ...NO_OWNER, items: [] };
   const db = serviceDb(env);
   if (!db) {
     const items = Array.from(_localReview.values()).filter(
-      (r) => (!userId || r.user_id === userId) && (!listId || r.list_id === listId) && r.status === "pending"
+      (r) => r.user_id === userId && (!listId || r.list_id === listId) && r.status === "pending"
     );
     return { ok: true, items };
   }
 
   let q = db.from("review_queue").select("*, list_records(canonical_domain)").eq("status", "pending");
-  if (userId) q = q.eq("user_id", userId);
+  q = q.eq("user_id", userId);
   if (listId) q = q.eq("list_id", listId);
 
   const { data, error } = await q.order("created_at", { ascending: false });
@@ -471,12 +514,13 @@ export async function getReviewQueue(userId, listId = null, env = process.env) {
 }
 
 export async function resolveReviewItem(userId, { reviewId, action, resolvedValue }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
   const db = serviceDb(env);
   const now = new Date().toISOString();
 
   if (!db) {
     const item = _localReview.get(reviewId);
-    if (!item) return { ok: false, reason: "item_not_found" };
+    if (!item || item.user_id !== userId) return { ok: false, reason: "item_not_found" };
     item.status = action === "reject" ? "rejected" : (action === "edit" ? "edited" : "accepted");
     item.resolved_value = resolvedValue || item.candidate_value;
     item.resolved_at = now;
@@ -499,6 +543,10 @@ export async function resolveReviewItem(userId, { reviewId, action, resolvedValu
       resolved_at: now,
     })
     .eq("id", reviewId)
+    // Scoped by owner: the update used to match on id alone, so any signed-in
+    // user could accept or reject another tenant's review items and write an
+    // arbitrary `resolvedValue` into their enriched record.
+    .eq("user_id", userId)
     .select()
     .single();
 

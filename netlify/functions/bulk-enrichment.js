@@ -11,7 +11,9 @@
 //   POST /api/bulk-enrichment { action: "resolve_review", reviewId, action, resolvedValue }
 
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/requireEntitlement.js";
 import {
+  assertJobOwner,
   listLists,
   getList,
   createList,
@@ -49,8 +51,13 @@ export const handler = async (event) => {
 
 async function handleGet(event) {
   const qs = event.queryStringParameters || {};
+  // Auth failure refuses. Previously it fell through with userId=null and the
+  // store ran an unfiltered service-key query — exposing every tenant's account
+  // lists, ICP criteria and, worst of all, the review queue, which holds
+  // unverified CONTACT data scraped from third-party sites.
   const auth = await authenticateBearer(event, { label: "bulk-enrichment" });
-  const userId = auth.ok ? auth.user?.id : null;
+  if (!auth.ok) return json(auth.status, auth.body);
+  const userId = auth.user.id;
 
   if (qs.listId) {
     const list = await getList(qs.listId, userId);
@@ -75,7 +82,8 @@ async function handleGet(event) {
 
 async function handlePost(event) {
   const auth = await authenticateBearer(event, { label: "bulk-enrichment" });
-  const userId = auth.ok ? auth.user?.id : null;
+  if (!auth.ok) return json(auth.status, auth.body);
+  const userId = auth.user.id;
 
   let body = {};
   try {
@@ -92,13 +100,33 @@ async function handlePost(event) {
       return json(400, { error: "Domains are required to create a list." });
     }
 
+    // PRD 3 requires "usage cap and plan enforcement" before a job is accepted.
+    // Gated on the row count the caller is asking us to crawl, checked BEFORE
+    // the list is written so a refused request costs nothing — the same gate
+    // ordering extract.js documents.
+    const rowCount = Array.isArray(domains)
+      ? domains.length
+      : String(domains).split(/[\s,;]+/).filter(Boolean).length;
+    const resolved = await resolveRequestEntitlement(event);
+    const gate = checkCapability(resolved, "bulk.enrich", { rowCount });
+    if (!gate.allowed) return denyResponse(gate, CORS);
+
     const res = await createList(userId, { name, description, domains, persona });
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
     return json(201, res);
   }
 
   if (action === "process_chunk") {
     const { jobId } = body;
     if (!jobId) return json(400, { error: "jobId is required." });
+
+    // The chunk runner is driven by a client POST, so ownership has to be
+    // proven here: without it any signed-in user could advance — and spend the
+    // credits of — another tenant's enrichment job.
+    if (!(await assertJobOwner(jobId, userId))) {
+      return json(404, { error: "Job not found" });
+    }
+
     const res = await processJobChunk(jobId, 8000);
     return json(200, res);
   }
@@ -106,6 +134,7 @@ async function handlePost(event) {
   if (action === "save_rules") {
     const { persona, name, criteria, threshold } = body;
     const res = await saveIcpRules(userId, { persona, name, criteria, threshold });
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
     return json(200, res);
   }
 

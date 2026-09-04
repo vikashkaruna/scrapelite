@@ -9,6 +9,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
+import SignedInRequired from "../components/SignedInRequired.jsx";
 import { MATERIALITY, CADENCE_FOR_MATERIALITY } from "../lib/watchlist/materialityModel.js";
 import * as watchlistApi from "../lib/watchlist/watchlistClient.js";
 
@@ -127,6 +128,12 @@ export default function Watchlists() {
       showToast(err.message);
     }
   };
+
+  // These endpoints are signed-in only: they return 401 rather than another
+  // tenant's rows. Render the reason, not the client SDK's thrown error.
+  if (!user) {
+    return <SignedInRequired title="Competitor watchlists" reason="Track competitors' pricing, product and positioning and get told only what materially changed. A watchlist runs on a schedule and builds a history over time, which needs somewhere to live." />;
+  }
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>

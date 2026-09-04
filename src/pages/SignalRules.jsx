@@ -8,6 +8,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
+import SignedInRequired from "../components/SignedInRequired.jsx";
 import { TRIGGER_SOURCES, ACTION_TYPES, evaluateSignalRule, formatActionPayload } from "../lib/rules/ruleModel.js";
 import * as rulesApi from "../lib/rules/rulesClient.js";
 
@@ -125,6 +126,12 @@ export default function SignalRules() {
       showToast("Invalid JSON in sample payload: " + err.message);
     }
   };
+
+  // These endpoints are signed-in only: they return 401 rather than another
+  // tenant's rows. Render the reason, not the client SDK's thrown error.
+  if (!user) {
+    return <SignedInRequired title="Signal routing rules" reason="Turn a detected change or a high-fit account into an action in Slack, HubSpot or your own webhook. Rules run against your own watchlists and lists, so they are tied to your account." />;
+  }
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>

@@ -10,6 +10,7 @@ import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
+import SignedInRequired from "../components/SignedInRequired.jsx";
 import { dedupeEntries } from "../lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD } from "../lib/bulk/icpModel.js";
 import * as bulkApi from "../lib/bulk/bulkClient.js";
@@ -184,6 +185,12 @@ export default function Lists() {
     const evalRes = evaluateIcp(sampleFields, rules.criteria, rules.threshold);
     setSamplePreview(evalRes);
   };
+
+  // These endpoints are signed-in only: they return 401 rather than another
+  // tenant's rows. Render the reason, not the client SDK's thrown error.
+  if (!user) {
+    return <SignedInRequired title="Bulk account intelligence" reason="Import a list of company domains and get them enriched, scored against your ICP, and routed onward. Lists, enrichment history and review decisions persist to your account, so an account is what makes the work worth doing twice." />;
+  }
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>

@@ -21,15 +21,46 @@ export function serviceDb(env = process.env) {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-export async function listWatchlists(userId, env = process.env) {
+
+// These queries run under the SERVICE key, which bypasses RLS entirely. A
+// missing user id is therefore a refusal, never an unfiltered query — the
+// previous `if (userId) q = q.eq("user_id", userId)` returned every tenant's
+// watchlists to an unauthenticated caller.
+const NO_OWNER = { ok: false, reason: "unauthenticated", status: 401 };
+const ownerless = (userId) => !userId || typeof userId !== "string";
+
+/**
+ * Confirms `userId` owns `watchlistId` before any nested write. Field changes
+ * and snapshots hang off a watchlist rather than carrying their own user_id, so
+ * without this a caller could inject fabricated competitor "changes" into
+ * another tenant's intelligence feed just by knowing a watchlist id.
+ */
+export async function assertWatchlistOwner(watchlistId, userId, env = process.env) {
+  if (ownerless(userId) || !watchlistId) return false;
   const db = serviceDb(env);
   if (!db) {
-    const list = Array.from(_localWatchlists.values()).filter((w) => !userId || w.user_id === userId);
+    const wl = _localWatchlists.get(watchlistId);
+    return !!wl && wl.user_id === userId;
+  }
+  const { data, error } = await db
+    .from("watchlists")
+    .select("id")
+    .eq("id", watchlistId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !error && !!data;
+}
+
+export async function listWatchlists(userId, env = process.env) {
+  if (ownerless(userId)) return { ...NO_OWNER, watchlists: [] };
+  const db = serviceDb(env);
+  if (!db) {
+    const list = Array.from(_localWatchlists.values()).filter((w) => w.user_id === userId);
     return { ok: true, watchlists: list };
   }
 
   let q = db.from("watchlists").select("*, watchlist_targets(count)").order("created_at", { ascending: false });
-  if (userId) q = q.eq("user_id", userId);
+  q = q.eq("user_id", userId);
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, watchlists: [] };
@@ -37,6 +68,7 @@ export async function listWatchlists(userId, env = process.env) {
 }
 
 export async function getWatchlist(watchlistId, userId, env = process.env) {
+  if (ownerless(userId)) return null;
   const db = serviceDb(env);
   if (!db) {
     const wl = _localWatchlists.get(watchlistId);
@@ -47,7 +79,7 @@ export async function getWatchlist(watchlistId, userId, env = process.env) {
   }
 
   let q = db.from("watchlists").select("*").eq("id", watchlistId);
-  if (userId) q = q.eq("user_id", userId);
+  q = q.eq("user_id", userId);
 
   const { data: wl, error: wlErr } = await q.single();
   if (wlErr || !wl) return null;
@@ -63,6 +95,7 @@ export async function getWatchlist(watchlistId, userId, env = process.env) {
 }
 
 export async function createWatchlist(userId, { name, description = "", cadence = "daily", domains = [] }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
   const db = serviceDb(env);
   const wlId = "wl_" + Math.random().toString(36).slice(2, 10);
   const now = new Date().toISOString();
@@ -72,7 +105,7 @@ export async function createWatchlist(userId, { name, description = "", cadence 
   if (!db) {
     const newWl = {
       id: wlId,
-      user_id: userId || "usr_demo",
+      user_id: userId,
       name: name || "Competitor Watchlist",
       description,
       cadence,
@@ -188,6 +221,7 @@ export async function recordFieldChange(watchlistId, targetId, { targetDomain, f
 }
 
 export async function submitChangeFeedback(userId, { fieldChangeId, feedback, notes = "" }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
   const db = serviceDb(env);
   const now = new Date().toISOString();
 
@@ -196,7 +230,7 @@ export async function submitChangeFeedback(userId, { fieldChangeId, feedback, no
     const fb = {
       id: fbId,
       field_change_id: fieldChangeId,
-      user_id: userId || "usr_demo",
+      user_id: userId,
       feedback,
       notes,
       created_at: now,

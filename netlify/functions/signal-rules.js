@@ -7,6 +7,7 @@
 //   POST /api/signal-rules { action: "test", rule, samplePayload }
 
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/requireEntitlement.js";
 import {
   listRules,
   createRule,
@@ -40,15 +41,21 @@ export const handler = async (event) => {
 };
 
 async function handleGet(event) {
+  // A failed authentication is a REFUSAL, not an anonymous request. The
+  // previous `auth.ok ? auth.user?.id : null` fell through to a service-key
+  // query with no user filter, so an unauthenticated GET returned every user's
+  // rules — `action_config` and all, which is where Slack webhook URLs live.
   const auth = await authenticateBearer(event, { label: "signal-rules" });
-  const userId = auth.ok ? auth.user?.id : null;
-  const res = await listRules(userId);
+  if (!auth.ok) return json(auth.status, auth.body);
+
+  const res = await listRules(auth.user.id);
   return json(200, res);
 }
 
 async function handlePost(event) {
   const auth = await authenticateBearer(event, { label: "signal-rules" });
-  const userId = auth.ok ? auth.user?.id : null;
+  if (!auth.ok) return json(auth.status, auth.body);
+  const userId = auth.user.id;
 
   let body = {};
   try {
@@ -62,6 +69,13 @@ async function handlePost(event) {
   if (action === "create") {
     const { name, trigger_source, conditions, action_type, action_config } = body;
     if (!name?.trim()) return json(400, { error: "Rule name is required." });
+
+    // A rule's only purpose is to dispatch into an integration, so it answers
+    // to the integrations entitlement. Checked before the write, not after.
+    const resolved = await resolveRequestEntitlement(event);
+    const gate = checkCapability(resolved, "rule.create");
+    if (!gate.allowed) return denyResponse(gate, CORS);
+
     const res = await createRule(userId, {
       name,
       trigger_source,
@@ -69,6 +83,8 @@ async function handlePost(event) {
       action_type,
       action_config,
     });
+    // A rejected destination URL is the caller's mistake, not a server fault.
+    if (!res.ok) return json(res.status || 400, { error: res.reason });
     return json(201, res);
   }
 
