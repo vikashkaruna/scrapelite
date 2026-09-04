@@ -21,7 +21,7 @@
     "test:contract": "vitest run netlify",
     "test:integration": "vitest run 'integration.test'",
     "test:system": "vitest run 'src/__tests__/system'",
-    "test:db": "node scripts/db-verify.mjs && npm run verify:referral",
+    "test:db": "node scripts/db-verify.mjs && npm run verify:referral && npm run verify:workflows",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --project=chromium e2e/smoke.spec.js e2e/smoke/",
@@ -49,7 +49,8 @@
     "sync:prerender": "node scripts/sync-prerender-assets.mjs",
     "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs",
     "test:workflow": "node scripts/test-workflow-pipeline.mjs",
-    "verify:rls": "node scripts/verify-workflow-rls.mjs"
+    "verify:rls": "node scripts/verify-workflow-rls.mjs",
+    "verify:workflows": "node scripts/verify-workflows-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

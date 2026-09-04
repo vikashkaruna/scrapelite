@@ -25,16 +25,20 @@
 | TS-4 System | 8 | 8 | 0 | ✅ |
 | TS-5 Database (WASM Postgres, 45 migrations) | 461 | 461 | 0 | ✅ |
 | TS-6 Referral E2E (real Postgres) | 17 | 17 | 0 | ✅ |
+| **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **39** | **39** | **0** | ✅ **new — see §5a** |
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
-| **TS-9 Live staging, authenticated** | 24 | — | — | ⏸ **operator-run — see §6** |
+| **TS-9 Live staging, authenticated (browser)** | 7 | — | — | ⏸ **operator-run, spec shipped — see §6** |
 | **TS-10 Live staging, unauthenticated (security)** | 15 | 15 | 0 | ✅ **`0044` applied — verified live, see §7** |
 
-**Automated total: 5 753 assertions across 8 suites, 0 failures. TS-10 verified live: 15/15.**
-TS-9 remains operator-run: it needs a signed-in staging session, and account creation and password
-handling are outside what this agent may do. It is recorded ⏸ rather than passed because marking it
-green on the strength of the automated suites would be the same "the pipeline said success" mistake
-this whole review exists to correct. See §8 Deviations.
+**Automated total: 5 792 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
+TS-9 remains operator-run: account creation and password handling are outside what this agent may
+do. **Its scope shrank from 24 cases to 7**, because most of what an authenticated pass proves is
+data-layer truth — cross-tenant isolation, cadence, ownership, the ledger — and TS-11 now asserts
+all of that against real Postgres with two real tenants and the real handlers. What is left in TS-9
+is genuinely browser-only: sign-in itself, and that the pages render the workspace rather than the
+signed-out gate. A ready-to-run spec ships at `e2e/journeys/workflows-authenticated.spec.js`; it
+**skips** without credentials, so it is safe in CI and needs no secret committed to stay green.
 
 ---
 
@@ -195,6 +199,62 @@ Browser-verified by hand in addition to the suite:
 
 ---
 
+## 5a. TS-11 · Workflows E2E — real Postgres, real handlers, two real tenants
+
+Run: `npm run verify:workflows` (also runs inside `npm run test:db`, so the gate enforces it)
+
+This suite exists for the reason `verify-referral-e2e.mjs` does, and the reason is worth restating:
+the contract tests mock Supabase, so they prove the **handler** behaves but would pass happily if a
+store selected a column that does not exist or filtered on `userId` where the schema says `user_id`;
+`db-verify.mjs` proves the **schema** but never sees a handler. A mismatch between the two falls
+through both suites and only breaks in production. This drives the real store modules against real
+SQL with **two real tenants — Alice, and Mallory, who every isolation assertion defends against.**
+
+| ID | Scenario | Input | Expected | Result |
+|---|---|---|---|---|
+| E-BULK-01 | `createList` works against the real schema | 3 domains, one duplicated | List created | ✅ |
+| E-BULK-02 | Owner sees their list | Alice | 1 list | ✅ |
+| E-BULK-03 | Deduplication happens before the insert | `acme.com` ×2 + `globex.com` | **2** `list_records` rows, not 3 | ✅ |
+| E-BULK-04 | 🔴 Cross-tenant list read | Mallory lists | **0 rows** | ✅ |
+| E-BULK-05 | 🔴 Cross-tenant `getList` by id | Mallory, Alice's list id | `null` | ✅ |
+| E-BULK-06 | Unauthenticated read | `userId = null` | Refused, **not** unfiltered | ✅ |
+| E-BULK-07 | 🔴 Cross-tenant review resolution | Mallory resolves Alice's item | Refused | ✅ |
+| E-BULK-08 | …and the row is untouched | — | Still `pending` | ✅ |
+| E-ICP-01 | 🔴 ICP criteria do not leak | Mallory saves a custom rule; Alice reads hers | Alice never sees Mallory's | ✅ |
+| E-ICP-02 | …she gets a genuine default | — | `is_default = true` | ✅ |
+| E-WL-01..04 | Watchlist create / owner read / cross-tenant read / unauthenticated | Alice vs Mallory | Owner 1, other 0, anon refused | ✅ |
+| E-WL-05 | 🔴 `assertWatchlistOwner` refuses the other tenant | Mallory, Alice's watchlist | `false` | ✅ |
+| E-WL-06 | …and accepts the owner | Alice | `true` | ✅ |
+| E-WL-07 | Daily cadence honoured | checked 1h ago | **not** due | ✅ |
+| E-WL-08 | …and due a day later | +25h | due | ✅ |
+| E-WL-09 | Never-checked target is due | `null` | due | ✅ |
+| E-WL-10 | `createWatchlist` really created its target | domain given | 1 target row | ✅ |
+| E-WL-11 | A field change round-trips | pricing tier added | Row written | ✅ |
+| E-WL-12 | Materiality is classified | — | Not null | ✅ |
+| E-WL-13 | 🔴 Fact is stored separately from interpretation | — | `fact_summary ≠ ai_interpretation`, both present | ✅ |
+| E-RULE-01 | A valid rule is created | Slack webhook | Created | ✅ |
+| E-RULE-02 | 🔴 Cloud-metadata destination refused at write | `169.254.169.254` | Refused | ✅ |
+| E-RULE-03 | …and no row written | — | Count unchanged | ✅ |
+| E-RULE-04..06 | Owner read / cross-tenant read / unauthenticated | — | 1, 0, refused | ✅ |
+| E-RULE-07 | 🔴 Cross-tenant delete | Mallory deletes Alice's rule | Row survives | ✅ |
+| E-RULE-08 | Execution recorded | success, 42 ms | Row written | ✅ |
+| E-RULE-09..11 | …status, latency, and `0045`'s `attempt` column | — | `success`, `42`, `1` | ✅ |
+| E-RULE-12 | Owner CAN delete | Alice | Row gone | ✅ |
+| E-RULE-13 | …and the execution cascades | — | 0 executions | ✅ |
+| E-LEDGER-01 | `monitor_check` entry written | 3 pages | 1 ledger row | ✅ |
+| E-LEDGER-02 | …charged for pages actually read | — | `credits = 3` | ✅ |
+| E-LEDGER-03 | …against the unit `0037` already defined | — | `unit = monitor_check` | ✅ |
+
+**39 assertions passed · 0 failed**, across 45 migrations.
+
+> Building this harness found two bugs in the harness itself before it found none in the code — a
+> `.single()` call needs PostgREST's singular `Accept` header honoured, and supabase-js passes a
+> real `Headers` instance rather than a plain object, so property access silently read `undefined`.
+> Both would have manufactured failures the product does not have. Worth recording because the
+> instinct on seeing that first `null value in column "list_id"` is to go and "fix" the store.
+
+---
+
 ## 6. TS-9 · Live staging, authenticated — ⏸ OPERATOR-RUN
 
 **Why this section is unexecuted and not marked pass.** Creating an account and signing in with a
@@ -220,6 +280,33 @@ the seeded signal rule; without it the rule is created **paused**, so a fixture 
 destination the operator did not choose.
 
 ### 6.2 Cases to record
+
+> **Scope reduced.** The 24 cases originally listed here have been narrowed to the 7 below. The
+> other 17 were data-layer assertions — cross-tenant isolation, cadence, ownership, the ledger,
+> fact-vs-interpretation — and are now covered by **TS-11** against real Postgres with two real
+> tenants, which is stronger evidence than a single-tenant click-through would have produced.
+> Run the shipped spec:
+>
+> ```bash
+> STAGING_URL=https://staging--datiqapp.netlify.app \
+> STAGING_TEST_EMAIL=<the account> STAGING_TEST_PASSWORD=<its password> \
+>   npx playwright test --project=chromium e2e/journeys/workflows-authenticated.spec.js
+> ```
+>
+> It skips cleanly without those variables, so it is safe in CI and no secret is ever committed.
+> Trace, video and screenshots are disabled for that file so the password field is never captured.
+
+| ID | Scenario | Expected | Result |
+|---|---|---|---|
+| S-01 | Sign in, plan shown on `/account` | Agency/Business | ⏸ |
+| S-02 | `/templates` renders for a signed-in user | Cards visible | ⏸ |
+| S-07 | `/lists` shows the workspace | Not the signed-out gate | ⏸ |
+| S-13 | `/watchlists` shows the workspace | Not the signed-out gate | ⏸ |
+| S-20 | `/rules` shows the builder | "New Routing Rule" visible | ⏸ |
+| S-24 | `/admin/monitoring` lists both new crons | Watchlist monitor + Bulk runner | ⏸ |
+| X-01 | `/lists`, `/watchlists`, `/rules` are noindex | `<meta robots>` contains noindex | ⏸ |
+
+<details><summary>Superseded by TS-11 — the original 24-case list</summary>
 
 | ID | Scenario | Steps | Expected | Result |
 |---|---|---|---|---|
@@ -247,6 +334,8 @@ destination the operator did not choose.
 | S-22 | Failed dispatch recorded | Point the rule at a URL returning 500 | Recorded `failed` with the status, run itself OK | ⏸ |
 | S-23 | Credit debit for monitoring | After S-15 | `monitor_check` entries in the ledger | ⏸ |
 | S-24 | Admin visibility | `/admin/monitoring` | Both new crons listed, with run history | ⏸ |
+
+</details>
 
 ---
 
@@ -311,7 +400,7 @@ these tables, and before any production promotion (`npm run verify:rls -- --prod
 | # | Item | Owner |
 |---|---|---|
 | O-01 | ✅ `0044` applied to **staging** and verified 15/15. **Still required on production** before any promotion — run `npm run verify:rls -- --prod` to confirm. | Operator |
-| O-02 | Create the staging test account and run §6 | Operator |
+| O-02 | Create the staging test account and run the 7-case browser spec in §6 (the other 17 cases are now covered by TS-11) | Operator |
 | O-03 | Retry sweeper for failed dispatches (D-06) | Next session |
 | O-04 | Automatic watchlist page discovery (D-05) | Next session |
 | O-05 | Bring `icpModel` / `materialityModel` / `ruleModel` up to the test density of the Phase 0–3 models (5/5/4 vs 40/26/20/28) | Next session |
