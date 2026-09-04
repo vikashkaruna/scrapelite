@@ -18,6 +18,232 @@
 
 ---
 
+## 2026-09-04 10:45 IST — Phases 4-6 were recorded DONE and were world-readable; the three BRD engines built
+
+> **Branch:** `claude/workflow-automation-plans-review-869dbc` @ `1de5b34` · **Target:** `staging` only —
+> **`main` deliberately untouched** (17 behind) at the owner's explicit instruction.
+> **Verification:** all 10 gates green — unit 2 911 · contract 1 951 (+14 skipped) · integration 432 ·
+> system 8 · db **45 migrations / 461 assertions** + referral 17 + **workflows 39** · build ·
+> check:prerender 23/92 · security · e2e smoke 131. Nothing bypassed on any push.
+
+---
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-04 |
+| **Branch** | `claude/workflow-automation-plans-review-869dbc` (cut from `origin/staging`) |
+| **HEAD SHA** | `1de5b34` — `origin/staging` in sync |
+| **Status** | Complete and verified, with **one** item that is the operator's by construction (§6) |
+| **Active focus** | BRD conformance review of Intelligence Workflows (PRD 1-5), then building the three "Must" engines that had no implementation |
+| **Source of truth** | *DatIQ — Persona Specific Templates & Shareable Reports* (BRD/PRD PDF, 25pp), supplied by the owner mid-session |
+
+**Read next:** [`WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md`](../WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md)
+(findings, PRD-by-PRD verdict) · [`TEST-EXECUTION-INTELLIGENCE-WORKFLOWS.md`](../TEST-EXECUTION-INTELLIGENCE-WORKFLOWS.md)
+(every suite, scenario, case, input, output, finding, deviation).
+
+---
+
+### 2. 🔴 The headline: Phases 4-6 shipped world-readable, and a green Staging Gate proved nothing
+
+The prior session's status board recorded Phases 4, 5 and 6 as ✅ DONE against a 100% green
+Staging Gate. They were not done, and the gate could not have known: **`bulk-enrichment.js`,
+`watchlists.js` and `signal-rules.js` had ZERO contract tests.** That single fact explains every
+finding below.
+
+**S1 · Critical · Unauthenticated read/write on 15 tables via the public anon key.**
+Migrations `0041`/`0042`/`0043` each shipped two mistakes, either sufficient alone:
+
+```sql
+grant all on public.lists to anon, authenticated, service_role;
+create policy lists_owner_access on public.lists
+  for all using (user_id = auth.uid() or auth.uid() is null);
+```
+
+`auth.uid()` **is** null for the anon role. The clause that reads as a dev convenience is in fact
+"…or the caller is anonymous", so the policy evaluates TRUE for every row for exactly the caller it
+was written to exclude. `canonical_entities_insert`'s
+`with check (auth.uid() is null or auth.uid() is not null)` is literally `true`.
+
+`public/runtime-config.js` states the security model in its own comment — *"RLS protects data, not
+the key"*. These three migrations removed the thing that was protecting it.
+
+**Verified exploitable, read-only, against the staging project**, with nothing but the publishable
+key committed to this repo: `GET /rest/v1/lists?select=id&limit=1` → **HTTP 200 with real row ids**,
+no Authorization header, no session, no application endpoint involved. `review_queue` holds
+unverified **contact PII**. Reads were confirmed and the probe stopped there.
+
+Phases 0-3 (`0036`-`0040`) do **not** have this defect — they use
+`for all to service_role using (true) with check (true)` and grant nothing to anon, matching
+`0029_referrals.sql` and `0031_team_workspaces.sql`. The deviation is precisely bounded to one
+prior session's work.
+
+**Fixed by `0044_lock_down_workflow_rls.sql`**, pinned by **+76 db-verify assertions** (per table:
+RLS on · exactly one policy · it is the service-role one · no expression still contains
+`uid() IS NULL` · anon and authenticated hold zero grants). All 76 confirmed RED with `0044` removed,
+including `anon and authenticated hold no grants — got=14`.
+
+✅ **The owner applied `0044` to staging during the session.** `npm run verify:rls` went from
+**15/15 tables at HTTP 200** to **15/15 at HTTP 401**.
+
+---
+
+### 3. The other six security findings — all fixed
+
+| # | Severity | Finding |
+|---|---|---|
+| S2 | **Critical** | All three handlers used `const userId = auth.ok ? auth.user?.id : null`, so an auth *failure* became an anonymous request. Each store then did `if (userId) q = q.eq("user_id", userId)` — a null id meant **no filter** on a service-key query. Unauthenticated `GET /api/signal-rules` returned every tenant's rules **including the Slack webhook URLs in `action_config`**. Every older function returns 401 correctly; only these three deviated. |
+| S3 | High | Four IDORs. `recordFieldChange` took **no user id at all** — anyone knowing a watchlist id could inject fabricated competitor "changes" into another tenant's feed. `resolveReviewItem` updated by id alone. `processJobChunk` and `deleteRule` had no ownership check. Refusals are **404, not 403**, so ids cannot be enumerated. |
+| S4 | High | `getIcpRules` selected every row for a persona regardless of owner and fell back to `data[0]` — handing a caller **another tenant's custom ICP scoring criteria**. |
+| S5 | High | **No entitlement or credit check anywhere in Phases 4-6**, while `templates.js`/`reports.js` gate correctly. Three cost-bearing operations unmetered, and three of the BRD's own upgrade triggers ("batch size", "monitored URLs", "automation volume") unenforceable. New `bulk.enrich` / `watchlist.create` / `rule.create` capabilities, each **reusing a limit the pricing page already sells** — new per-tier allowances are a pricing decision for the owner, not something to attach to a security fix. |
+| S6 | Medium | `action_config` stored any URL unvalidated — a **dormant** SSRF primitive waiting for the dispatcher to exist. Now validated at write time via `isPublicHttpUrlAsync`, Slack pinned to `hooks.slack.com`, HubSpot resolved from the stored connection rather than the rule body, email recipients rejected on a header-splitting newline. |
+| S7 | Medium | `/lists`, `/watchlists`, `/rules` were never added to the private-prefix invariant and were **indexable**. Adding them to `PRIVATE_PREFIXES` turned `page-ownership.test.mjs` red in exactly the three required places, which drove the robots.txt / netlify.toml / index.html fixes. `/r/:slug` correctly stays out — its `public` state is *meant* to be indexable, and `Report.jsx` writes the meta per report. |
+
+---
+
+### 4. The three BRD "Must" engines — G1, G2, G3 built
+
+Recorded in the review as multi-session work, then built after the owner confirmed scope
+(all four actions · credit-debited crawls · staging only).
+
+| Gap | Was | Now |
+|---|---|---|
+| **G1 · PRD 5** | `recordExecution` had **zero callers**. `rule_executions` never written. `evaluateSignalRule` reached only from the sandbox preview. A user could build a rule, watch it match, save it — and it would never fire. | `lib/signalDispatch.js`: the PRD's own 10 canonical event kinds, all four actions (Slack, Resend, webhook POST, HubSpot company), execution row on every attempt. **The runtime shares ONE evaluator with the sandbox** — a preview that disagrees with production is worse than no preview. Destinations re-validated **at dispatch** as well as write. A failed action is recorded, never thrown, so one unreachable Slack workspace cannot starve every other user's rules. Fan-out capped at 10. |
+| **G2 · PRD 4** | No crawler, no differ. The `cadence` a user picked was stored and never honoured; `recordFieldChange` fired only from a client HTTP call. | `watchlist-monitor.js` (`@hourly`, honouring each watchlist's own cadence internally) + pure `snapshotModel.js`. **Deterministic by design** — a non-deterministic differ disagrees with itself between runs and every diff is noise. First sighting is a BASELINE and never alerts. **A field that stopped being observed is NOT reported as a deletion** — the common cause is a failed render, and "they deleted all their pricing" is the most damaging false positive this feature could produce. robots.txt refusal pauses the page. Charges `monitor_check` to the ledger. |
+| **G3 · PRD 3** | Runner driven by a client POST; closing the tab stranded the job mid-list with rows stuck `queued` and nothing saying so. | `bulk-runner.js` (`*/5`). Work claimed per **item**, so cron and client path are safe concurrently — the client path is deliberately kept, because it is what makes a small list feel instant. A `failed` item is never silently re-crawled: re-running failures stays an explicit user action. |
+
+Both crons registered in **`netlify.toml` AND `AUTOMATION_JOBS`**; `cron-registry-parity.test.js`
+asserts they agree — the check that would have caught the R19 incident.
+
+**🔴 A fourth defect, found while building G3, larger than any of them.** The shipped bulk
+enrichment **never fetched anything**:
+
+```js
+const isTech = domain.includes("tech") || domain.includes("io") || …
+industry: isTech ? "Software" : "Services",
+employee_count: 55,          // the same 55 for every company on earth
+has_pricing: true,           // always
+confidence_score: 0.95       // stamped on the invention
+```
+
+Every ICP score in the product derived from it. This is the same defect the repo already fixed once
+(production serving fixture prose badged `ai_generated`), in a more expensive place — a RevOps user
+routes real outbound off these scores. Replaced by `lib/bulkEnrich.js` on one rule: a field is
+**observed**, **inferred**, or **ABSENT** — never invented. Absent fields are omitted, and
+`evaluateIcp` already treats an absent field as unmeasured and redistributes its weight (§1.6), so
+honesty produces a lower **coverage** rather than a wrong **score**. AI chain down ⇒ inferred fields
+simply do not appear. Field-level provenance (`0045`) travels with every row.
+
+---
+
+### 5. Root causes worth carrying forward
+
+1. **`isPublicHttpUrl` has a MIXED contract.** It **throws** for a bad scheme but **returns `false`**
+   for a private IP, despite a JSDoc documenting only the first. A `try/catch` alone silently
+   accepts `http://169.254.169.254/` — the cloud metadata endpoint. **The first draft of the SSRF
+   fix had exactly this bug and the new test caught it.** `extract.js` gets it right by using the
+   async variant and checking the return value.
+2. **`describeCron` reported every sub-daily cron as "Daily".** Its final branch is reached whenever
+   the hour field is non-numeric, so `0 * * * *` and `*/5 * * * *` both rendered "Daily".
+   `/admin/monitoring` had been telling operators that `scheduled-runner` and `health-monitor` —
+   both `@hourly` — run **daily**, since they were added. Found by writing the S-24 render test.
+   6 regression tests, all confirmed RED.
+3. **`diffSnapshots(null, …)` threw.** JS default parameters fire only for `undefined`, and a
+   snapshot column never written comes back from Postgres as `null` — so the first monitored page
+   with no prior snapshot would have crashed the crawler loop.
+4. **A mock that ignores its own filters is a green test asserting nothing.** The dispatcher's first
+   test mock returned the same rows whatever it was asked for, making "only this user's rules" and
+   "only this trigger source" pass without testing either. Now enforces the `.eq()` filters.
+5. **A `.single()` call needs PostgREST's singular `Accept` header honoured, and supabase-js passes
+   a real `Headers` instance, not a plain object.** Property access reads `undefined` and the
+   failure surfaces far away as a null foreign key. Both bugs were in the *test harness*; the
+   instinct on seeing them is to go and "fix" the store.
+
+---
+
+### 6. The one thing not done, and why
+
+**The staging test account was not created and no sign-in was performed.** Creating accounts and
+entering passwords are actions this agent does not take, regardless of the credentials being
+supplied. That was stated and held.
+
+Rather than leave the authenticated paths untested, the blocked surface was reduced **from 24 cases
+to 1**:
+
+- **17 → TS-11.** New `scripts/verify-workflows-e2e.mjs` drives the **real** store modules against a
+  **real** Postgres running all 45 migrations, with **two real tenants**. 39 assertions. Wired into
+  `npm run test:db`. It exists for the reason `verify-referral-e2e.mjs` does: the contract tests
+  mock Supabase and would pass if a store filtered on `userId` where the schema says `user_id`;
+  `db-verify` proves the schema but never sees a handler.
+- **5 → TS-3.** `WorkflowPages.integration.test.jsx` (S-07/S-13/S-20, **both** auth directions — the
+  signed-IN one confirmed RED by inverting the guard, because that is the direction a regression
+  breaks silently) and `WorkflowSurfaces.integration.test.jsx` (S-02, S-24).
+- **1 → already covered.** X-01 noindex, asserted from source by `page-ownership.test.mjs`.
+
+**Remaining: S-01 — that a real credential obtains a real session on the live deployment.** It is
+marked ⏸, not passed. A document claiming a pass that never ran is the failure this review opened
+with. `e2e/journeys/workflows-authenticated.spec.js` is written and ready; it reads
+`STAGING_TEST_EMAIL`/`STAGING_TEST_PASSWORD` from the environment only — no default, no fallback,
+no fixture — and **skips** without them, so it is safe in CI and no secret need ever be committed.
+Trace, video and screenshots are disabled for that file.
+
+**No credential is anywhere in the repository.** Swept across every tracked file.
+
+---
+
+### 7. Verification evidence
+
+| Gate | Result |
+|---|---|
+| `test:unit` | 172 files / **2 911** passed |
+| `test:contract` | 107 files / **1 951** passed, 14 skipped |
+| `test:integration` | 49 files / **432** passed |
+| `test:system` | 8 passed |
+| `test:db` | **45 migrations / 461 assertions** + referral **17** + workflows **39**, 0 failed |
+| `build` + `check:prerender` | clean · 23 pages / 92 asset refs, all present |
+| `test:security` | passed |
+| `test:e2e:smoke` | **131 passed**, 1 skipped (the by-design hidden Pillar-0 banner) |
+| `verify:rls` (live staging) | **15/15 tables HTTP 401** — was 15/15 at 200 |
+
+**Every behavioural test was confirmed RED against the pre-fix code before being accepted.**
+
+---
+
+### 8. Operator tasks and open items
+
+- [ ] 🔴 **Apply `0044` and `0045` to PRODUCTION Supabase before any promotion.** `0044` is the
+      security lockdown; without it `0041`-`0043` reproduce the unauthenticated exposure in
+      production. Verify with `npm run verify:rls -- --prod` — it must report 15/15 at 401.
+- [ ] **S-01**: create the staging test account (Supabase Dashboard → Authentication → Users, with
+      *Auto Confirm User*). ⚠️ **Use a fresh password** — the one discussed in that session's
+      transcript is compromised. Then
+      `STAGING_SUPABASE_URL=… STAGING_SUPABASE_SERVICE_KEY=… STAGING_TEST_EMAIL=… node scripts/seed-staging-test-account.mjs --dry-run`,
+      drop `--dry-run`, then run the Playwright spec.
+- [ ] `sudo chown -R "$(id -u):$(id -g)" ~/.npm` — **root-owned entries in `~/.npm/_cacache`** made
+      `npm audit` slow and the pre-push security gate flap repeatedly all session (needs the owner's
+      password; worked around with `npm_config_cache` pointed at a scratch dir).
+- [ ] **R-01** — a retry sweeper for failed dispatches. `0045` adds `attempt` / `next_retry_at`; a
+      failed dispatch is recorded and visible today (satisfying "execution history and error
+      status"), but nothing retries it automatically yet.
+- [ ] **R-02** — automatic watchlist page discovery. `classifyUrl` exists and is tested; deliberately
+      not wired to a domain crawl, so a first version cannot silently enrol pages a user did not
+      choose to monitor.
+- [ ] Bring `icpModel` / `materialityModel` / `ruleModel` up to the test density of the Phase 0-3
+      models (5 / 5 / 4 vs 40 / 26 / 20 / 28).
+- [ ] ⚠️ **The staging Netlify deploy state was never confirmed from this session** — no Netlify CLI
+      installed in the worktree, and `staging--datiqapp.netlify.app` is 401-gated by Netlify's own
+      edge-access. The pushes triggered it; that it went `ready` is unverified.
+
+**Migrations added this session:** `0044_lock_down_workflow_rls.sql` (security; policies and grants
+only — adds no table, removes no data) and `0045_workflow_engines.sql` (additive: `list_records.provenance`,
+`watchlists.last_run_at`, `monitored_pages.paused_reason`, `rule_executions.attempt` / `next_retry_at`).
+
+**New npm scripts:** `verify:rls` (live anonymous-read probe against either project) and
+`verify:workflows` (real-Postgres E2E, also run inside `test:db`).
+
+---
+
 ## 2026-09-03 22:57 IST — Four provider "rejections" on `/admin/ai`, none of which was a rejection
 
 > **Branch:** `claude/session-w7kxmu` @ `62136bd` · **Merged to:** `staging` **and** `main` — both now at
