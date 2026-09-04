@@ -23,9 +23,9 @@
 | TS-2 Contract (Netlify functions) | 1 951 | 1 951 | 0 | ✅ (+14 skipped) |
 | TS-3 Integration | 432 | 432 | 0 | ✅ (+21 workflow surface render) |
 | TS-4 System | 8 | 8 | 0 | ✅ |
-| TS-5 Database (WASM Postgres, 46 migrations) | 462 | 462 | 0 | ✅ |
+| TS-5 Database (WASM Postgres, 47 migrations) | 463 | 463 | 0 | ✅ |
 | TS-6 Referral E2E (real Postgres) | 17 | 17 | 0 | ✅ |
-| **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **50** | **50** | **0** | ✅ **+11 execution-status coverage** |
+| **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **56** | **56** | **0** | ✅ **+17 (execution statuses, page discovery)** |
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
 | **TS-9 Live staging, authenticated (browser)** | 1 | — | — | ⏸ **irreducible — needs a real credential, see §6** |
@@ -263,7 +263,7 @@ SQL with **two real tenants — Alice, and Mallory, who every isolation assertio
 | E-LEDGER-02 | …charged for pages actually read | — | `credits = 3` | ✅ |
 | E-LEDGER-03 | …against the unit `0037` already defined | — | `unit = monitor_check` | ✅ |
 
-**50 assertions passed · 0 failed**, across 46 migrations.
+**56 assertions passed · 0 failed**, across 47 migrations.
 
 > Building this harness found two bugs in the harness itself before it found none in the code — a
 > `.single()` call needs PostgREST's singular `Accept` header honoured, and supabase-js passes a
@@ -397,6 +397,8 @@ these tables, and before any production promotion (`npm run verify:rls -- --prod
 
 | # | Found by | Finding |
 |---|---|---|
+| F-07 | Building R-02 (page discovery) | 🔴 **PRD 4 was inert end to end.** `watchlistStore` never wrote a `monitored_pages` row, and `watchlist-monitor` reads that table per target — so a user could create a watchlist, add a competitor, and the crawler had **nothing to crawl**. The feature only worked at all because the seeding script inserted pages by hand. Fixed by discovery in the cron. |
+| F-08 | The `strips query strings` test | The href regex excluded `#` in its character class, which looks like "skip fragment-only links" but actually made the pattern fail to match **any** href containing a fragment — `/pricing?x=1#top` was never discovered at all. The fragment is now stripped by the URL parser, where that belongs. |
 | F-06 | Building R-01 (the retry sweeper) | 🔴 **Every SSRF refusal was silently missing from the audit trail.** `0043` constrained `rule_executions.status` to three values; the dispatcher produces a fourth, `refused`. The insert violated the CHECK, and `dispatchSignal` catches bookkeeping errors so they cannot break a dispatch — so the row vanished with a `console.error`. **Neither suite could see it:** the contract tests mock `recordExecution`, and the real-Postgres E2E only ever recorded `success`. *An end-to-end test that walks only the happy path has the same blind spot as a mock.* Fixed by `0046`; the E2E now asserts every status the dispatcher can produce, confirmed RED without it. |
 | F-01 | New SSRF test (C-TEN-10) | The **first draft of the fix itself** accepted `http://169.254.169.254/`. `isPublicHttpUrl` **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc documenting only the first. A `try/catch` alone is not enough; both channels must be handled. Now uses `isPublicHttpUrlAsync` and checks the return value. |
 | F-02 | New unit test (U-SNAP-10) | `diffSnapshots(null, …)` threw. JS default parameters fire only for `undefined`, and a snapshot column never written comes back from Postgres as `null` — so the first monitored page with no prior snapshot would have crashed the crawler loop. |

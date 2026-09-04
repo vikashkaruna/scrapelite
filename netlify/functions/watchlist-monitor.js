@@ -55,7 +55,7 @@ import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { serviceDb } from "./lib/watchlistStore.js";
 import { chargeLedger } from "./lib/templateStore.js";
 import { dispatchSignal } from "./lib/signalDispatch.js";
-import { extractSnapshot, snapshotHash, diffSnapshots } from "../../src/lib/watchlist/snapshotModel.js";
+import { extractSnapshot, snapshotHash, diffSnapshots, discoverPages, MAX_DISCOVERED_PAGES } from "../../src/lib/watchlist/snapshotModel.js";
 import { buildChangeRecord, MATERIALITY } from "../../src/lib/watchlist/materialityModel.js";
 
 const JOB_ID = "watchlist-monitor";
@@ -142,15 +142,93 @@ async function snapshotPage(page, deadlineAt) {
   return { ok: true, fields, hash: snapshotHash(fields), type, source: scraped?.source || null };
 }
 
+
+/**
+ * Give a target its monitored pages, the first time it is crawled.
+ *
+ * PRD 4's "domain mapping to recommend relevant pages". Without this a user adds
+ * a competitor to a watchlist and the monitor has **nothing to crawl** — the
+ * whole feature is inert until somebody inserts `monitored_pages` rows by hand.
+ *
+ * ── WHY DISCOVERY LIVES IN THE CRON, NOT IN createWatchlist ─────────────────
+ *
+ * Discovering pages means fetching the competitor's homepage. Doing that inside
+ * the user's own create request makes a form submission wait on a third party
+ * that may be slow, may be down, and may refuse us — and a watchlist that
+ * failed to save because a competitor's site was down is a bad trade. Here it
+ * is retried on the next tick for free, and a target simply has no pages until
+ * discovery succeeds.
+ *
+ * ── AND WHY EACH PAGE IS LABELLED `auto` ────────────────────────────────────
+ *
+ * PRD 4 also says the user chooses what is monitored. Every discovered page is
+ * a recurring crawl they did not explicitly ask for, so `source: 'auto'` (0047)
+ * keeps the distinction visible: the UI can present them as suggestions to
+ * prune, rather than silently mixing them in with the user's own choices.
+ */
+async function discoverPagesFor(db, target, deadlineAt) {
+  const url = `https://${target.domain}`;
+
+  try {
+    if (!(await isPublicHttpUrlAsync(url))) return { ok: false, reason: "url_not_public", added: 0 };
+  } catch (e) {
+    return { ok: false, reason: `url_rejected: ${e.message}`, added: 0 };
+  }
+
+  // The same robots.txt rule the crawl itself follows — discovery is a fetch,
+  // and a site that has asked us not to read it has not made an exception for
+  // the request where we decide what to read.
+  try {
+    const verdict = await checkCompliance(url);
+    if (verdict && verdict.allowed === false) {
+      return { ok: false, reason: verdict.code || "robots_disallowed", added: 0, compliance: true };
+    }
+  } catch { /* fails open by design — see complianceEngine.js */ }
+
+  let scraped;
+  try {
+    scraped = await runScrapeChain(url, { deadlineAt });
+  } catch (e) {
+    return { ok: false, reason: `fetch_failed: ${e.message}`, added: 0 };
+  }
+  const html = scraped?.data?.html || "";
+  if (!html) return { ok: false, reason: "empty_response", added: 0 };
+
+  const pages = discoverPages(html, url).slice(0, MAX_DISCOVERED_PAGES);
+  if (pages.length === 0) return { ok: false, reason: "no_pages_found", added: 0 };
+
+  // `monitored_pages_unique_url` makes this idempotent: a re-run adds nothing.
+  const { error } = await db.from("monitored_pages").insert(
+    pages.map((p) => ({ target_id: target.id, url: p.url, category: p.category, source: "auto" })),
+  );
+  if (error) return { ok: false, reason: error.message, added: 0 };
+
+  return { ok: true, added: pages.length };
+}
+
 /** Everything one target needs, in one pass. Returns a per-target summary. */
 async function processTarget(db, watchlist, target, deadlineAt) {
-  const summary = { domain: target.domain, pages: 0, changes: 0, alerts: 0, errors: [] };
+  const summary = { domain: target.domain, pages: 0, changes: 0, alerts: 0, discovered: 0, errors: [] };
 
-  const { data: pages } = await db
+  let { data: pages } = await db
     .from("monitored_pages")
     .select("*")
     .eq("target_id", target.id)
     .limit(MAX_PAGES_PER_TARGET);
+
+  // A target with no pages has never been discovered for. Do it now, then crawl
+  // what we found in this same run, so a newly added competitor produces a
+  // baseline on the first tick rather than waiting a whole cadence.
+  if (!pages || pages.length === 0) {
+    const found = await discoverPagesFor(db, target, deadlineAt);
+    summary.discovered = found.added;
+    if (!found.ok) summary.errors.push(`discovery ${target.domain}: ${found.reason}`);
+    if (found.added > 0) {
+      const re = await db.from("monitored_pages").select("*")
+        .eq("target_id", target.id).limit(MAX_PAGES_PER_TARGET);
+      pages = re.data;
+    }
+  }
 
   for (const page of pages || []) {
     if (Date.now() >= deadlineAt) break;
@@ -279,7 +357,7 @@ async function run() {
   if (error) throw new Error(`could not read watchlists: ${error.message}`);
 
   const now = Date.now();
-  const totals = { targets: 0, pages: 0, changes: 0, alerts: 0, credits: 0, errors: [] };
+  const totals = { targets: 0, pages: 0, changes: 0, alerts: 0, discovered: 0, credits: 0, errors: [] };
 
   outer:
   for (const wl of watchlists || []) {
@@ -297,6 +375,7 @@ async function run() {
       totals.targets += 1;
       const s = await processTarget(db, wl, target, deadlineAt);
       totals.pages += s.pages;
+      totals.discovered += s.discovered || 0;
       totals.changes += s.changes;
       totals.alerts += s.alerts;
       if (s.errors.length) totals.errors.push(...s.errors.slice(0, 3));

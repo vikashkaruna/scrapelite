@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractSnapshot, snapshotHash, diffSnapshots, classifyUrl, normalise, SNAPSHOT_TYPES,
+  discoverPages, MAX_DISCOVERED_PAGES,
 } from "./snapshotModel.js";
 
 const pricingPage = {
@@ -157,5 +158,97 @@ describe("normalise", () => {
   });
   it("caps runaway values so one bloated field cannot dominate a snapshot", () => {
     expect(normalise("x".repeat(5000)).length).toBeLessThanOrEqual(240);
+  });
+});
+
+// ── discoverPages — PRD 4's "domain mapping to recommend relevant pages" ────
+// Without this a user adds a competitor and the crawler has nothing to crawl.
+// The assertions that matter are the ones that stop it enrolling more than the
+// user bargained for: every page here becomes a recurring, charged crawl.
+describe("discoverPages", () => {
+  const HTML = `
+    <a href="/pricing">Pricing</a>
+    <a href="/plans">Plans</a>
+    <a href="/features">Features</a>
+    <a href="/customers">Customers</a>
+    <a href="/about">About</a>
+    <a href="https://twitter.com/rival">Twitter</a>
+    <a href="https://docs.rival.com/api">Docs</a>
+    <a href="mailto:sales@rival.com">Email</a>
+    <a href="/blog/some-post">Blog</a>`;
+
+  it("always includes the homepage — the user named this domain explicitly", () => {
+    const pages = discoverPages(HTML, "https://rival.com/");
+    expect(pages[0]).toEqual({ url: "https://rival.com/", category: "positioning" });
+  });
+
+  it("finds the pricing and product pages", () => {
+    const cats = discoverPages(HTML, "https://rival.com/").map((p) => p.category);
+    expect(cats).toContain("pricing");
+    expect(cats).toContain("product");
+  });
+
+  it("🔴 never exceeds the per-target cap", () => {
+    // Every enrolled page is a recurring crawl charged to the customer. A
+    // generous discovery quietly multiplies a watchlist's cost.
+    expect(discoverPages(HTML, "https://rival.com/").length).toBeLessThanOrEqual(MAX_DISCOVERED_PAGES);
+  });
+
+  it("🔴 never leaves the origin", () => {
+    // "Watch rival.com" must not become an open-ended crawler pointed at
+    // Twitter, a docs subdomain, or any third party who never consented.
+    for (const p of discoverPages(HTML, "https://rival.com/")) {
+      expect(new URL(p.url).origin).toBe("https://rival.com");
+    }
+  });
+
+  it("takes one page per category, spending the budget on breadth", () => {
+    // /pricing and /plans are two views of the same fact; filling the budget
+    // with both costs the product and customer-proof signals.
+    const pages = discoverPages(HTML, "https://rival.com/");
+    expect(pages.filter((p) => p.category === "pricing")).toHaveLength(1);
+  });
+
+  it("the homepage does not block the customer-proof page", () => {
+    // Both are positioning-shaped, but /customers carries a signal the BRD
+    // names in its own right. Letting the homepage consume the slot would drop
+    // it from every watchlist by accident.
+    const urls = discoverPages(HTML, "https://rival.com/").map((p) => p.url);
+    expect(urls).toContain("https://rival.com/customers");
+  });
+
+  it("ignores links it cannot classify", () => {
+    const urls = discoverPages(HTML, "https://rival.com/").map((p) => p.url);
+    expect(urls.some((u) => u.includes("/blog/"))).toBe(false);
+  });
+
+  it("strips query strings and fragments", () => {
+    // A session id in a query would make the URL unique on every crawl and
+    // enrol the same page repeatedly.
+    const pages = discoverPages('<a href="/pricing?ref=nav&sid=abc#top">P</a>', "https://rival.com/");
+    expect(pages.map((p) => p.url)).toContain("https://rival.com/pricing");
+  });
+
+  it("does not throw on mailto:, javascript: or malformed hrefs", () => {
+    expect(() => discoverPages('<a href="javascript:void(0)">x</a><a href="::::">y</a>', "https://rival.com/"))
+      .not.toThrow();
+  });
+
+  it("returns nothing for a malformed base URL rather than throwing", () => {
+    expect(discoverPages(HTML, "not a url")).toEqual([]);
+  });
+
+  it("returns just the homepage when a page links nowhere useful", () => {
+    const pages = discoverPages("<p>no links here</p>", "https://rival.com/");
+    expect(pages).toHaveLength(1);
+    expect(pages[0].category).toBe("positioning");
+  });
+
+  it("only ever emits categories the schema accepts", () => {
+    // monitored_pages.category has a CHECK: pricing|product|positioning|terms|other
+    const allowed = new Set(["pricing", "product", "positioning", "terms", "other"]);
+    for (const p of discoverPages(HTML, "https://rival.com/")) {
+      expect(allowed.has(p.category), `${p.category} must satisfy the CHECK`).toBe(true);
+    }
   });
 });

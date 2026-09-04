@@ -210,4 +210,94 @@ export function diffSnapshots(previous = {}, current = {}, category = "other") {
   return changes;
 }
 
+
+/** Per-target ceiling on auto-discovered pages. See `discoverPages`. */
+export const MAX_DISCOVERED_PAGES = 4;
+
+/**
+ * Recommend which of a domain's pages are worth monitoring, from its homepage.
+ *
+ * PRD 4: *"Domain mapping to recommend relevant pages — Must."*
+ *
+ * ── WHY THIS IS CAPPED, AND WHY THE CAP IS SMALL ────────────────────────────
+ *
+ * Every enrolled page is a recurring crawl, for ever, charged to the customer.
+ * A generous discovery that finds twelve plausible pages quietly multiplies a
+ * watchlist's cost by twelve, and the user never asked for eleven of them. Four
+ * is enough to cover the three snapshot types with one spare, and small enough
+ * that a wrong guess is cheap to notice and remove.
+ *
+ * ── ONE PAGE PER CATEGORY ───────────────────────────────────────────────────
+ *
+ * A site with `/pricing`, `/pricing/enterprise` and `/plans` would otherwise
+ * fill the whole budget with three views of the same fact. Taking the first
+ * match per category spends the budget on BREADTH — what changed about their
+ * pricing, their product, their positioning — which is what the change feed is
+ * for.
+ *
+ * ── SAME ORIGIN ONLY ────────────────────────────────────────────────────────
+ *
+ * A homepage links to Twitter, a status page, a docs subdomain, a CDN. The user
+ * asked to monitor a competitor's site, not everything it references — and
+ * following off-origin links would turn "watch rival.com" into an open-ended
+ * crawler pointed at third parties who never consented to it.
+ *
+ * @param {string} html      The homepage's HTML.
+ * @param {string} baseUrl   Absolute URL the HTML was fetched from.
+ * @returns {Array<{url: string, category: string}>} Homepage first, then one per category.
+ */
+export function discoverPages(html, baseUrl) {
+  let origin = "";
+  try {
+    origin = new URL(baseUrl).origin;
+  } catch {
+    return [];
+  }
+
+  // The homepage always leads: the user explicitly named this domain, so
+  // monitoring it is exactly what they asked for and needs no inference.
+  const out = [{ url: `${origin}/`, category: "positioning" }];
+  // The homepage does NOT consume the positioning slot. It is positioning-shaped,
+  // but /customers is positioning-shaped too and carries a different signal the
+  // BRD names in its own right — customer proof: a new case study, logo, or
+  // quantified outcome. Letting the homepage block it would drop that signal
+  // from every watchlist by accident.
+  const seenCategory = new Set();
+  const seenUrl = new Set([`${origin}/`]);
+
+  // Capture the whole href, fragment included. Excluding `#` in the character
+  // class looks like it skips fragment-only links, but it actually makes the
+  // pattern fail to match ANY href containing a fragment — `/pricing?x=1#top`
+  // simply does not match, so the page is never discovered. The fragment is
+  // stripped below by the URL parser, which is the right place for it.
+  for (const m of String(html || "").matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi)) {
+    if (out.length >= MAX_DISCOVERED_PAGES) break;
+
+    let abs;
+    try {
+      abs = new URL(m[1], baseUrl);
+    } catch {
+      continue; // a mailto:, a javascript:, a malformed href
+    }
+    if (abs.origin !== origin) continue;
+
+    // Query strings and fragments are the same page wearing a hat, and a
+    // session id in a query would make the URL unique on every crawl.
+    abs.search = "";
+    abs.hash = "";
+    const url = abs.toString().replace(/\/$/, "") || `${origin}/`;
+    if (seenUrl.has(url)) continue;
+
+    const hit = classifyUrl(url);
+    if (!hit) continue;
+    if (seenCategory.has(hit.category)) continue;
+
+    seenUrl.add(url);
+    seenCategory.add(hit.category);
+    out.push({ url, category: hit.category });
+  }
+
+  return out;
+}
+
 export const _internal = { PRICE_RE, PLAN_WORDS, MAX_ITEMS };
