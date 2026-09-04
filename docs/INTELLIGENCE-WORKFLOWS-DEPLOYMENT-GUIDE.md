@@ -4,7 +4,39 @@
 > **Source Plan:** `docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md` (derived from BRD & PRDs 1–5).
 > **Verification Companion:** `docs/MANUAL-TEST-INTELLIGENCE-WORKFLOWS.md`.
 > **Target Branches:** `staging` (current tip, deployed & verified) → `main` (production promotion target).
-> **Status:** All 8 phases implemented, tested (4,800+ automated tests green), and validated on Staging with a 100% green GitHub Actions Staging Gate (Run `#33829281244`).
+> **Status:** ⚠️ **CORRECTED 2026-09-04 after a BRD-conformance, security and coverage review.**
+> This guide was written against a status board that recorded Phases 4-6 as complete. They are
+> **partial**, and they shipped a critical vulnerability. Read §0 before following any step here.
+
+---
+
+## 0. STOP — read this before promoting anything
+
+A review on 2026-09-04 found that migrations `0041`, `0042` and `0043` grant **full read and write
+on 15 tables to the anonymous role**, via `grant all … to anon` combined with a policy reading
+`using (user_id = auth.uid() or auth.uid() is null)` — and `auth.uid()` **is** null for the anon
+role. The anon key is public by design and ships in every browser bundle.
+
+**Verified exploitable, read-only, against staging:** `GET /rest/v1/lists?select=id&limit=1` with
+only the committed publishable key returned HTTP 200 and real row ids, with no Authorization
+header and no session. `review_queue` holds unverified contact PII.
+
+**Consequences for this runbook:**
+
+1. **The migration range is `0036`–`0044`, not `0036`–`0043`.** `0044_lock_down_workflow_rls.sql`
+   is the fix. Applying `0041`–`0043` to production **without** `0044` reproduces the vulnerability
+   in production. Never run this runbook's §3 as originally written.
+2. **`0044` must be applied to the STAGING project immediately.** Staging is exposed today.
+   Verify afterwards: the probe above must return **401**, not 200.
+3. **Phases 4-6 are NOT complete.** Three BRD "Must" requirements have no implementation:
+   PRD 5 never dispatches (`recordExecution` has zero callers, so the "execution audit logging"
+   this guide's Phase 6 row claims does not exist); PRD 4 has no scheduled crawler or differ, so a
+   chosen cadence is stored and never honoured; PRD 3's chunk runner is browser-driven and strands
+   a job when the tab closes.
+4. **A green Staging Gate proved none of this.** The three endpoints had zero contract tests.
+
+Full detail, with the fixes applied and what remains:
+[`docs/WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md`](WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md).
 
 ---
 
@@ -20,7 +52,7 @@ DatIQ Intelligence Workflows transitions the platform from isolated web extracti
 | **Phase 3** | **Activation / PQL** | Compound activation tracking per persona, 9-signal 130-pt PQL scoring engine, revenue dashboard funnel, recipe gallery. | Migration `0040`, `pqlModel.js`, `pql-intake.js`, `/admin/revenue`, `/integrations`. |
 | **Phase 4** | **PRD 3** | Bulk Account Intelligence: CSV/Paste import, pre-enrichment dedup preview, chunked durable runner, ICP scoring with §1.6 coverage rule, ICP Rule Simulator sandbox, Human Review Queue. | Migration `0041`, `identityModel.js`, `icpModel.js`, `bulkStore.js`, `bulk-enrichment.js`, `bulkClient.js`, `/lists`. |
 | **Phase 5** | **PRD 4** | Competitor Watchlists & Change Intelligence: automatic page discovery, deterministic materiality classification (`critical`, `high`, `medium`, `low`), Fact vs AI tabs, user feedback loop. | Migration `0042`, `materialityModel.js`, `watchlistStore.js`, `watchlists.js`, `watchlistClient.js`, `/watchlists`. |
-| **Phase 6** | **PRD 5** | Native Signal Routing: If-This-Then-That rule builder, interactive Rule Evaluation Sandbox, Slack/Email/Webhook/HubSpot dispatch, execution audit logging. | Migration `0043`, `ruleModel.js`, `ruleStore.js`, `signal-rules.js`, `rulesClient.js`, `/rules`. |
+| **Phase 6** ⚠️ | **PRD 5** | Native Signal Routing: If-This-Then-That rule builder and Rule Evaluation Sandbox. ⚠️ **Dispatch and execution audit logging are NOT implemented** — `recordExecution` has zero callers and rules never fire. See §0. | Migration `0043`, `ruleModel.js`, `ruleStore.js`, `signal-rules.js`, `rulesClient.js`, `/rules`. |
 | **Phase 7** | **Packaging & Gate** | Interactive Workflow Run History Modal (`WorkflowRunModal.jsx`), TopBar navigation parity, pre-push verification, Staging Gate CI green. | `WorkflowRunModal.jsx`, `TopBar.jsx`, `App.jsx`, GitHub Actions Staging Gate `#33829281244`. |
 
 ---
@@ -58,9 +90,12 @@ ADMIN_EMAILS=vikash@...                    # Admin authorization list
 
 ---
 
-## 3. Database Migration Runbook (`0036`–`0043`)
+## 3. Database Migration Runbook (`0036`–`0044`)
 
-The workflow engine introduces 8 sequential, idempotent, additive SQL migrations. **No existing tables or columns are deleted or destructively altered.**
+> ⚠️ **`0044` is not optional and must never be skipped.** See §0: `0041`-`0043` without it leave
+> every table in this feature readable and writable by anyone holding the public anon key.
+
+The workflow engine introduces 9 sequential, idempotent SQL migrations (`0044` alters policies and grants added by `0041`-`0043`; it adds no tables and removes no data). **No existing tables or columns are deleted or destructively altered.**
 
 ### 3.1 Migration Sequence & File Manifest
 
@@ -74,6 +109,7 @@ The workflow engine introduces 8 sequential, idempotent, additive SQL migrations
 | 6 | [`0041_bulk_enrichment.sql`](file:///Users/vikash/Extracta/supabase/migrations/0041_bulk_enrichment.sql) | Bulk Account Intelligence | `lists`, `canonical_entities`, `list_records`, `icp_score_rules`, `enrichment_jobs`, `enrichment_job_items`, `review_queue` |
 | 7 | [`0042_watchlists.sql`](file:///Users/vikash/Extracta/supabase/migrations/0042_watchlists.sql) | Competitor Watchlists | `watchlists`, `watchlist_targets`, `monitored_pages`, `entity_snapshots`, `field_changes`, `change_feedback` |
 | 8 | [`0043_signal_rules.sql`](file:///Users/vikash/Extracta/supabase/migrations/0043_signal_rules.sql) | Signal Routing | `signal_rules`, `rule_executions` |
+| 9 | [`0044_lock_down_workflow_rls.sql`](file:///Users/vikash/Extracta/supabase/migrations/0044_lock_down_workflow_rls.sql) | **SECURITY — mandatory** | Revokes the anon/authenticated grants and replaces the permissive policies from `0041`-`0043` with the service-role-only pattern used by `0029`, `0031` and `0036`-`0040`, across all 15 tables |
 
 ### 3.2 Pre-Flight Local Verification (WASM PostgreSQL / PGlite)
 Before applying migrations to any remote Supabase instance, execute the in-memory database test suite:
@@ -82,12 +118,12 @@ npm run test:db
 ```
 **Expected Outcome:**
 ```text
-✓ Applied 43 migrations (0001_initial_schema.sql -> 0043_signal_rules.sql)
-✓ Passed 384 schema assertions across RLS, triggers, functions, and seed data.
+✓ Applied 44 migrations (0001_initial_schema.sql -> 0044_lock_down_workflow_rls.sql)
+✓ Passed 460 schema assertions across RLS, triggers, functions, and seed data.
 ```
 
 ### 3.3 Production Supabase Apply Procedure
-To apply migrations `0036`–`0043` directly to the production Supabase instance:
+To apply migrations `0036`–`0044` directly to the production Supabase instance (`0044` is mandatory — see §0):
 
 #### Option A: Direct Connection Migration Runner (Recommended)
 ```bash
@@ -95,7 +131,7 @@ PROD_SUPABASE_DB_URL="postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase
 ```
 
 #### Option B: Supabase Web SQL Editor
-Open **Supabase Dashboard → Project → SQL Editor**, and execute migration scripts in exact numerical order: `0036` → `0037` → `0038` → `0039` → `0040` → `0041` → `0042` → `0043`.
+Open **Supabase Dashboard → Project → SQL Editor**, and execute migration scripts in exact numerical order: `0036` → `0037` → `0038` → `0039` → `0040` → `0041` → `0042` → `0043` → **`0044`**.
 
 ### 3.4 Post-Apply SQL Data Integrity Sweep
 Run the following SQL script to confirm schema health:
