@@ -28,7 +28,7 @@ import { hostOf, pathOf, isExternal, timeAgo, csvDownload, excelDownload, openIn
 import { categoryOf, isCategory, CATEGORY_META, categoryCounts } from "../lib/linkCategorizer.js";
 import { QUICK_ACTIONS, QUICK_ACTION_BY_KEY } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
-import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
 import EmailModal from "../components/EmailModal.jsx";
 import { apiClient } from "../lib/apiClient.js";
 import { useSeo } from "../hooks/useSeo.js";
@@ -619,73 +619,13 @@ export default function Preview() {
                 </div>
               )}
             </div>
-            <PushIntegrationMenu
+            {/* One shared menu — was a hand-rolled copy of the same Download/
+                Copy/Email dropdown that Dashboard and Batch also carried. */}
+            <ExportMenu
               items={current ? [current] : []}
+              label="Download"
               buttonVariant="secondary"
             />
-            <div className="export-dropdown" ref={downloadRef}>
-              <Button
-                variant="secondary"
-                size="sm"
-                icon="download"
-                iconRight="chevron-down"
-                onClick={() => setDownloadOpen((v) => !v)}
-              >
-                Download
-              </Button>
-              {downloadOpen && (
-                <div className="export-dropdown-menu">
-                  <div className="export-dropdown-section">
-                    <div className="export-dropdown-section-label">Download</div>
-                    <button className="export-dropdown-item" onClick={() => { onDownloadCsv(); setDownloadOpen(false); }}>
-                      <Icon name="download" size={14} /> <span><b>CSV</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onDownloadExcel(); setDownloadOpen(false); }}>
-                      <Icon name="sheet" size={14} /> <span><b>Excel Worksheet (.xls)</b><span className="export-plan-hint">Native spreadsheet format</span></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onOpenInSheets(); setDownloadOpen(false); }}>
-                      <Icon name="sheet" size={14} /> <span><b>Open in Google Sheets</b><span className="export-plan-hint">Copies data + opens new Sheet (Cmd+V to paste)</span></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onDownloadPdf(); setDownloadOpen(false); }}>
-                      <Icon name="file" size={14} /> <span><b>PDF</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onDownloadMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="file-code" size={14} /> <span><b>Markdown</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onDownloadJson(); setDownloadOpen(false); }}>
-                      <Icon name="file-json" size={14} /> <span><b>JSON</b></span>
-                    </button>
-                  </div>
-                  <div className="export-dropdown-section">
-                    <div className="export-dropdown-section-label">Copy to clipboard</div>
-                    <button className="export-dropdown-item" onClick={() => { onCopySummary(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy summary</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onCopyCsv(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy CSV</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onCopyMarkdown(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy Markdown</b></span>
-                    </button>
-                    <button className="export-dropdown-item" onClick={() => { onCopyJson(); setDownloadOpen(false); }}>
-                      <Icon name="clipboard-copy" size={14} /> <span><b>Copy JSON</b></span>
-                    </button>
-                  </div>
-                  <div className="export-dropdown-section">
-                    <button
-                      className="export-dropdown-item"
-                      onClick={() => {
-                        if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setDownloadOpen(false); return; }
-                        setEmailOpen(true);
-                        setDownloadOpen(false);
-                      }}
-                    >
-                      <Icon name="mail" size={14} /> <span><b>Email…</b></span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
             <Button variant="primary" icon="bookmark" onClick={onViewDashboard}>
               View Dashboard
             </Button>

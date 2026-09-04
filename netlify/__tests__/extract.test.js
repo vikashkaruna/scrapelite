@@ -873,7 +873,7 @@ describe("extract — robots.txt refusal", () => {
   const DISALLOW_ALL = "User-agent: *\nDisallow: /\n";
   const linkedInEvent = {
     httpMethod: "POST",
-    body: JSON.stringify({ url: "https://www.linkedin.com/in/vikashkaruna" }),
+    body: JSON.stringify({ url: "https://www.linkedin.com/in/example-person" }),
   };
 
   /** Reload the handler with guestUsage + consent mocked so we can observe them. */
@@ -932,7 +932,7 @@ describe("extract — robots.txt refusal", () => {
     expect(body._complianceBlocked).toBe(true);
     expect(body.host).toBe("www.linkedin.com");
     // The path a support report needs, echoed intact.
-    expect(body.error).toContain("path=/in/vikashkaruna");
+    expect(body.error).toContain("path=/in/example-person");
   });
 
   it("does NOT consume a guest credit for a refused request", async () => {
@@ -976,7 +976,7 @@ describe("extract — robots.txt refusal", () => {
     const r = await h({
       httpMethod: "POST",
       body: JSON.stringify({
-        url: "https://www.linkedin.com/in/vikashkaruna",
+        url: "https://www.linkedin.com/in/example-person",
         consented: true,
         options: { consented: true, skipCompliance: true },
       }),

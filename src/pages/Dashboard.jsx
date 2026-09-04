@@ -10,7 +10,7 @@ import ContentModal from "../components/ContentModal.jsx";
 import FaviconDot from "../components/FaviconDot.jsx";
 import CollectionPicker from "../components/CollectionPicker.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
-import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
 import LocalDataNotice from "../components/LocalDataNotice.jsx";
 import { useExtraction } from "../components/ExtractionProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
@@ -944,30 +944,17 @@ export default function Dashboard() {
                 <Icon name="grid" size={15} />
               </button>
             </div>
+            {/* Export and Push share selection semantics (exportTargets: the
+                selection when there is one, otherwise everything filtered) —
+                which is why they are one component now. Push used to live only
+                in the floating selection bar, which is why that bar existed. */}
             {hasItems && (
-              <ExportDropdown
-                onCsv={onExportCsv}
-                onExcel={onExportExcel}
-                onPdf={onExportPdf}
-                onMarkdown={onExportMarkdown}
-                onJson={onExportJson}
-                onCopyCsv={onCopyCsv}
-                onCopyMarkdown={onCopyMarkdown}
-                onCopyJson={onCopyJson}
-                disabled={exportCount === 0}
-                label={exportLabel}
-              />
-            )}
-            {/* Push sits beside Export and shares its selection semantics
-                (exportTargets: the selection when there is one, otherwise
-                everything filtered). It used to live only in the floating
-                selection bar, which is why that bar had to exist at all. */}
-            {hasItems && (
-              <PushIntegrationMenu
+              <ExportMenu
                 items={exportItems}
+                label={exportLabel}
                 buttonVariant="secondary"
                 disabled={exportCount === 0}
-                onAdvanced={() => exportCount > 0 && setIntegrationsOpen(true)}
+                onPushAdvanced={() => exportCount > 0 && setIntegrationsOpen(true)}
               />
             )}
             <Button

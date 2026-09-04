@@ -13,7 +13,7 @@
 // Env:
 //   GH_TOKEN / GITHUB_TOKEN — token with issues:read on the repo
 //   GATE_REPO               — owner/repo (default: GITHUB_REPOSITORY or
-//                             vikashkaruna/scrapelite)
+//                             <owner>/<repo>)
 //   DEFECT_LABELS           — comma list (default: bug,defect,vulnerability,regression)
 
 import { execFileSync } from "node:child_process";

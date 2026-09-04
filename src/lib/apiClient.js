@@ -59,13 +59,29 @@ async function request(path, method = "GET", body) {
     // Access shape and surface a clear, actionable message.
     const contentType = res.headers.get("content-type") || "";
     const isHtml = contentType.includes("text/html");
+    // Edge Access is a 401 AND an HTML body. Matching on the body alone told
+    // every user of a healthy production site to "sign in again (branch
+    // deploy)" whenever ANY HTML error page came back — a Netlify function
+    // timeout (502/504), a crash, or the SPA catch-all answering an unmatched
+    // /api path with index.html. Template runs died this way: the real fault
+    // was ours, and the message sent the user to look for a login that does
+    // not exist. Blaming the reader for our own failure is the exact pattern
+    // this codebase keeps having to undo, so the status is now required.
+    const isEdgeAccess = isHtml && res.status === 401;
     let errData = {};
     if (!isHtml) {
       try { errData = await res.json(); } catch { /* not JSON */ }
     }
     let message = errData.error;
-    if (isHtml) {
+    if (isEdgeAccess) {
       message = "Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).";
+    } else if (isHtml) {
+      // An HTML body that is not Edge Access is an infrastructure error page,
+      // never something the reader can act on. Say so plainly and keep the
+      // status, which is what actually distinguishes the causes in a report.
+      message = res.status >= 500 || res.status === 0
+        ? `The server did not complete this request (${res.status}). This is a problem on our side, not with the page you asked for — try again shortly.`
+        : `This request could not be reached (${res.status}). Please refresh and try again.`;
     } else if (!message) {
       message = `API ${method} ${path} failed (${res.status})`;
     }
@@ -92,7 +108,8 @@ async function request(path, method = "GET", body) {
     // finds its way back onto a customer's screen: the UI would render it the
     // moment some endpoint started returning it again. Admin screens read
     // their detail from the admin-gated endpoints instead.
-    if (isHtml) e.edgeAccess = true;
+    if (isEdgeAccess) e.edgeAccess = true;
+    if (isHtml) e.htmlErrorPage = true;
     throw e;
   }
 

@@ -374,7 +374,7 @@ describe("ExtractionProvider.extract — carries the empty-extraction reason (Ho
 //      again" button. Offering one teaches people to hammer a wall.
 describe("ExtractionProvider.extract — robots.txt refusals are not failures", () => {
   const ROBOTS_MESSAGE =
-    "robots.txt disallows scraping for DatIQBot/1.0 (path=/in/vikashkaruna)";
+    "robots.txt disallows scraping for DatIQBot/1.0 (path=/in/example-person)";
 
   function complianceError({ consentAvailable = false } = {}) {
     const err = new Error(ROBOTS_MESSAGE);

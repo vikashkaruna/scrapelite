@@ -27,7 +27,7 @@ function renderModal(props = {}) {
   render(
     <ScrapeConsentModal
       host="linkedin.com"
-      url="https://www.linkedin.com/in/vikashkaruna"
+      url="https://www.linkedin.com/in/example-person"
       onGranted={onGranted}
       onCancel={onCancel}
       {...props}

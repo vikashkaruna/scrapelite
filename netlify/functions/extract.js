@@ -42,6 +42,7 @@
 //    and content generator stop working from a table of contents.
 
 import { runScrapeChain, runMapChain } from "./lib/scrapeProviders.js";
+import { createDeadline } from "./lib/audit/deadline.js";
 import { publicProvenance } from "./lib/aiFailure.js";
 import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
 import { RELATED_PAGE_HINTS } from "../../src/lib/extractionPresets.js";
@@ -402,7 +403,45 @@ function isEmptyExtraction(v) {
   return false;
 }
 
+/**
+ * Wall clock one /api/extract request may occupy.
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+ * The scrape chain is a SERIAL fallback — four providers at the 20s per-call
+ * ceiling is 80s of wall clock — and a Netlify synchronous function is killed
+ * at 10s (26s on paid plans). `runScrapeChain` has always accepted a
+ * `deadlineAt`; this handler simply never passed one, on the stated assumption
+ * that "extraction is not racing a deadline". It is.
+ *
+ * On a hard target (a site that blocks scrapers, so every provider is tried
+ * and each one waits out its own timeout) the function was killed mid-request.
+ * Netlify then answers with an HTML error page, which is not JSON, which the
+ * client could only report as something generic — template runs failed this way
+ * and told the user to sign in again. A budget turns that into a real JSON
+ * refusal that names the actual cause, returned by us, before the platform
+ * intervenes.
+ *
+ * ⚠️ Sized for the STOCK 10s timeout, not the 26s ceiling — the same
+ * conservative direction `AUDIT_BUDGET_MS` documents. The function timeout is
+ * site configuration no code here can read, so guessing high reintroduces the
+ * kill on any deploy where nobody raised it. With the timeout raised in
+ * Netlify, set `EXTRACT_BUDGET_MS=20000`.
+ */
+const DEFAULT_EXTRACT_BUDGET_MS = 8_000;
+
+function extractBudgetMs(env = process.env) {
+  const raw = Number(env.EXTRACT_BUDGET_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_EXTRACT_BUDGET_MS;
+  // Floor of 3s: below that no provider completes and every extraction is
+  // empty, which reads as a broken product rather than a tight budget.
+  return Math.max(3_000, Math.min(120_000, Math.round(raw)));
+}
+
 export const handler = async (event) => {
+  // Starts at the REQUEST, not at the scrape: everything before the chain
+  // (compliance, entitlement, the rate limiter) spends real time too, and a
+  // budget that ignores it is a budget that still overruns.
+  const deadline = createDeadline(extractBudgetMs());
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 204,
@@ -623,8 +662,25 @@ export const handler = async (event) => {
     }
 
     // ── Scrape mode: extract page HTML + metadata ────────────────────────────
-    const result = await runScrapeChain(url, options);
+    const result = await runScrapeChain(url, {
+      ...options,
+      deadlineAt: deadline.startedAt + deadline.totalMs,
+    });
     if (!result.ok) {
+      // A chain that ran out of time is OUR limit, not the page's fault, and it
+      // is the one failure a retry can plausibly fix. Naming it separately
+      // keeps "we gave up waiting" from reading as "this site returned
+      // nothing" — the distinction the whole aiFailureCopy split is built on.
+      const ranOutOfTime =
+        deadline.expired() ||
+        (result.attempts || []).some((a) => a.skipped === "deadline" || a.code === "timeout");
+      if (ranOutOfTime) {
+        return reply(504, {
+          error: "This page took too long to read. This is a limit on our side, not a problem with the page — try again shortly.",
+          code: "extract_timeout",
+          _providerAttempts: result.attempts,
+        });
+      }
       return reply(502, {
         error: result.error,
         _providerAttempts: result.attempts,
