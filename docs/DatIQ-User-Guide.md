@@ -653,29 +653,34 @@ simplest way to circulate an internal brief.
 
 ## 16. Exports & sharing
 
-There are exactly **two** ways to get data out, and they do not overlap:
+**One menu, three sections.** Wherever results appear — Preview, the Dashboard, Batch results and a
+workflow run — the same **Export** menu opens with the same three groups:
 
-- **Export ▾** — **downloads and clipboard.** Files you save, or text you paste somewhere.
-- **Push ▾** — **send it to another tool.** One button, one list of destinations.
+- **Download** — a file you save.
+- **Copy to clipboard** — text you paste straight into a doc or a chat.
+- **Send** — deliver it somewhere: email it to yourself, or push it into another tool.
 
-Export is available from **Preview** (**Download ▾**), the **Dashboard** (**Export ▾**), and **Batch**
-results (**Export ▾**). Push sits next to it in all three places.
+It is deliberately one component rather than a menu per screen. Three separate copies is three places for
+the format list, the plan rules and the wording to drift apart — and they had drifted, which is also how
+workflow runs ended up with no export at all until it was noticed.
 
 | Format | Best for |
 |---|---|
 | **CSV** | Spreadsheets and importing into other tools. |
+| **Excel (.xls)** | Opening straight in Microsoft Excel with the columns already typed. |
 | **PDF** | A polished, shareable report. |
 | **Markdown** | Pasting into docs, wikis, or notes. |
 | **JSON** | Structured data for further processing. |
-| **Email** | Send selected extractions straight from the Dashboard. |
-| **Copy to clipboard** | Paste Markdown / JSON / CSV straight into a doc or chat. Available from the same Export menu. |
+| **Email** | Send selected extractions to yourself, as a real file attachment. |
+| **Copy to clipboard** | Markdown, JSON or CSV, straight onto the clipboard. |
 
-Some formats are available on higher plans — the export menu shows which.
+Some formats need a paid plan — the menu shows which, and the check runs again when you click, so what
+the menu offers and what you are actually allowed are always the same answer.
 
 ### Push to your tools
 
-**Push ▾** is the single place destinations live — from Preview, Dashboard, and Batch results. Everything you
-can send to is in that one menu, so there is no second list to go hunting for.
+**Send** is the single place destinations live, inside the Export menu on every screen that shows results.
+Everything you can send to is in that one list, so there is no second menu to go hunting for.
 
 | Destination | What you push | Setup |
 |---|---|---|

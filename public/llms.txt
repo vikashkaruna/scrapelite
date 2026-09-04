@@ -25,7 +25,7 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 - Contact extraction: surface leadership names, email addresses, social profiles
 - Pricing extraction: structured pricing tiers from any pricing page
 - Content generation: SEO outlines, competitive briefs, email drafts from saved pages
-- CSV and PDF export of all data
+- Export as CSV, Excel (.xls), PDF, Markdown or JSON, from one shared Export menu with Download / Copy / Send sections
 - Billing records: every payment issues a numbered, itemized invoice or receipt, emailed as a PDF and available to view, download, or re-send from the Account screen
 - Discoverability audits: score any URL for classic search (SEO), answer engines (AEO) and generative engines (GEO) in one run, across four pillars — Answer Clarity, Entity Authority, Structural Hierarchy, Technical Accessibility
 - Prioritised remediation with copy-ready constructs: FAQPage and Organization JSON-LD generated from the page's own visible content, 40-60 word answer blocks, corrected heading outlines, robots.txt entries for answer-engine crawlers
