@@ -18,7 +18,7 @@
 //         "reason": "dev-only tooling, not shipped to browser",
 //         "todo": "TODO: bump some-dep to >=2.0 when vite 6 migration lands",
 //         "expires": "2026-09-30",
-//         "approvedBy": "vikashkaruna"
+//         "approvedBy": "<github-handle>"
 //       }
 //     ]
 //   }

@@ -211,9 +211,9 @@ describe("checkCompliance — structured verdict", () => {
     global.fetch = vi.fn(async () => ({
       ok: true, status: 200, text: async () => "User-agent: *\nDisallow: /\n",
     }));
-    const r = await checkCompliance("https://www.linkedin.com/in/vikashkaruna");
-    expect(r.path).toBe("/in/vikashkaruna");
-    expect(r.reason).toContain("path=/in/vikashkaruna");
+    const r = await checkCompliance("https://www.linkedin.com/in/example-person");
+    expect(r.path).toBe("/in/example-person");
+    expect(r.reason).toContain("path=/in/example-person");
   });
 
   it("keeps the query string in the echoed path", async () => {

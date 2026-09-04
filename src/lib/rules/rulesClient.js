@@ -75,3 +75,21 @@ export async function testRule(rule, samplePayload) {
   }
   return res.json();
 }
+
+/**
+ * Send one real message to a destination the user is configuring, before the
+ * rule is saved. Returns { ok, status, error, httpStatus } — `status` is the
+ * dispatcher's own verdict, so a `refused` here means the destination failed
+ * validation (SSRF guard, wrong Slack host) rather than simply not answering.
+ */
+export async function testDestination(action_type, action_config) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/signal-rules", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "test_destination", action_type, action_config }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Could not test the destination (${res.status})`);
+  return body;
+}

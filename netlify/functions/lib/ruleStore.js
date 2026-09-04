@@ -54,6 +54,15 @@ export async function validateActionConfig(actionType, actionConfig = {}) {
     return { ok: true };
   }
 
+  // Slack routed through the user's stored connection carries no URL in the
+  // rule body — same posture as hubspot below, and for the same reason: a
+  // webhook URL is a secret, and asking a user to paste one into a rule form
+  // both leaks it into every read of that rule and makes "is Slack connected?"
+  // unanswerable. The URL is resolved at dispatch from integration_connections.
+  if (type === "slack" && cfg.use_connection === true) {
+    return { ok: true };
+  }
+
   if (type === "hubspot") {
     // No caller-supplied URL: the HubSpot destination is resolved server-side
     // from the workspace's stored connection, never from the rule body.

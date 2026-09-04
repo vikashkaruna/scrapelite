@@ -7,6 +7,7 @@
 //   POST /api/signal-rules { action: "test", rule, samplePayload }
 
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { performAction } from "./lib/signalDispatch.js";
 import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/requireEntitlement.js";
 import {
   listRules,
@@ -102,6 +103,51 @@ async function handlePost(event) {
     }
     const res = testRuleWithPayload(rule, samplePayload);
     return json(200, res);
+  }
+
+  // ── test_destination ────────────────────────────────────────────────────
+  // Sends ONE real message to the destination the user is configuring, so
+  // "Test" answers the only question that matters: does anything arrive.
+  //
+  // It runs through `performAction`, the SAME function the cron dispatches
+  // with — not a parallel copy. That is deliberate for two reasons: a test
+  // that disagrees with production is worse than no test, and `performAction`
+  // is where the SSRF guard lives (`resolveDestination` → isPublicHttpUrlAsync),
+  // so this endpoint cannot be turned into a probe for internal addresses.
+  // Nothing is persisted and no execution row is written: a test is not part
+  // of the rule's audit trail.
+  if (action === "test_destination") {
+    const { action_type, action_config } = body;
+    if (!action_type || !action_config) {
+      return json(400, { error: "action_type and action_config are required." });
+    }
+    const probeRule = {
+      id: "test-destination",
+      name: "DatIQ destination test",
+      user_id: userId,
+      action_type,
+      action_config,
+    };
+    const probeEvent = {
+      kind: "watchlist.change_detected",
+      userId,
+      occurredAt: new Date().toISOString(),
+      payload: {
+        domain: "example.com",
+        materiality: "low",
+        summary: "This is a DatIQ test message. Your destination is configured correctly.",
+        _test: true,
+      },
+    };
+    const outcome = await performAction(probeRule, probeEvent);
+    return json(200, {
+      ok: outcome.ok === true,
+      status: outcome.status,
+      // `error` here is about the user's OWN destination (a 404 webhook, a bad
+      // channel), so it is theirs to see — unlike an AI provider fault.
+      error: outcome.error || null,
+      httpStatus: outcome.httpStatus ?? null,
+    });
   }
 
   return json(400, { error: `Unknown action: ${action}` });

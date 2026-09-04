@@ -15,6 +15,8 @@ import { useToast } from "./Toast.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 import { createReport } from "../lib/reports/reportsClient.js";
+import ExportMenu from "./ExportMenu.jsx";
+import { runToItem } from "../lib/templates/runToItems.js";
 
 const humanTemplate = (k) => String(k || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const when = (v) => (v ? new Date(v).toLocaleString() : "—");
@@ -267,6 +269,19 @@ export default function WorkflowRunModal({ run, onClose }) {
         </div>
 
         <footer className="wrm-footer">
+          {/* A completed run's output is the deliverable — until now the only
+              way out of this modal was a shareable link. A failed run has
+              nothing to export, so the menu is omitted rather than shown
+              empty. */}
+          {!isFailed && (
+            <ExportMenu
+              items={[runToItem(run)].filter(Boolean)}
+              label="Export"
+              buttonVariant="secondary"
+              showPush
+              showEmail
+            />
+          )}
           <Button variant="secondary" onClick={handleReRun}>
             <Icon name="rotate-cw" size={14} /> Re-run in Templates
           </Button>

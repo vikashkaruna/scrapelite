@@ -221,7 +221,7 @@ export default function About() {
             </div>
             <div className="about-founder-info">
               {/* Company name with the Axiom Minds logo anchored to the LEFT of the
-                  name (per Vikash's spec) — the seal sits inline so it's
+                  name — the seal sits inline so it's
                   unmistakably attached to the corporate identity, not a generic
                   "founder avatar". The icon next to the company name also
                   reinforces the brand. */}
@@ -257,7 +257,7 @@ export default function About() {
                   same source scripts/bump-version.mjs writes to — one number,
                   one place it's shown. */}
               <p className="about-version-tag">
-                DatIQ v{typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0"}
+                DatIQ V{typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0"}
               </p>
             </div>
           </div>

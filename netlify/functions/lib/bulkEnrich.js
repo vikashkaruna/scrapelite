@@ -59,9 +59,75 @@ Never guess. If the page does not say, the answer is null.
 {
   "industry": "<one of: Software, SaaS, Fintech, Ecommerce, Healthcare, Manufacturing, Services, Media, Education, Other, or null>",
   "employee_band": "<one of: 1-10, 11-50, 51-200, 201-1000, 1000+, or null>",
+  "hq_country": "<ISO 3166-1 alpha-2 code for the headquarters country if the page states an address or location, else null. Never guess from language or currency.>",
   "target_customer": "<short phrase the page itself uses, or null>",
   "confidence": <0..1, how well the text supported these answers>
 }`;
+
+/**
+ * Turn what we know about company size into the numeric `employee_count` the
+ * seeded ICP criteria compare with `gte`.
+ *
+ * ⚠️ THIS IS THE EXACT FIELD THAT CAUSED THE ORIGINAL DEFECT. The previous
+ * enricher answered `employee_count: 55` for every company on earth and
+ * stamped confidence 0.95 on it. Whatever this returns is compared with
+ * `gte 20` / `gte 50` and decides whether a real account is routed to a real
+ * sales team.
+ *
+ * What is available:
+ *   - `band`  an inferred enum: "1-10" | "11-50" | "51-200" | "201-1000" |
+ *             "1000+" | undefined. A genuine reading of the page, but a RANGE.
+ *   - `html`  the raw page, which occasionally states a headcount outright
+ *             ("we're a team of 40", "500+ employees").
+ *
+ * The trade-off to decide:
+ *   - Return a band's LOWER BOUND ("51-200" -> 51) and every account scores,
+ *     but a range is being reported as a precise count.
+ *   - Return a number only when the page literally states one, and the field
+ *     is usually ABSENT — honest, but §1.6 redistributes its weight so most
+ *     accounts still score on fewer criteria than the rule claims.
+ *   - Something else: a bounded shape the operators could express instead.
+ *
+ * @param {string|undefined} band  inferred employee_band, or undefined
+ * @param {string} html            the raw page HTML
+ * @returns {{ value: number, method: "observed"|"inferred", confidence: number } | null}
+ *          null means ABSENT — which is a valid and honest answer.
+ */
+export function deriveEmployeeCount(band, html) {
+  // DECISION: observed only. A number is returned ONLY when the page states
+  // one in words; a band is never converted into a count.
+  //
+  // The alternative — reporting "51-200" as 51 — makes every account score,
+  // and that is exactly its problem: it turns a range we inferred into a
+  // precise figure we never read, which is the shape of the defect this file
+  // exists to undo (`employee_count: 55` for every company on earth). A RevOps
+  // user routes real outbound off `employee_count gte 50`, and a fabricated 51
+  // answers that question wrongly with full confidence.
+  //
+  // Absent is the honest answer, and §1.6 already handles it: the weight is
+  // redistributed and `coverage` reports the thinness. `employee_band` remains
+  // available for criteria that want size without inventing precision.
+  if (typeof html !== "string" || !html) return null;
+
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  // "a team of 40", "we're 250 people", "500+ employees", "1,200 employees"
+  const patterns = [
+    /\b(?:team of|staff of)\s+(?:over\s+|more than\s+|about\s+|~)?([\d,]{1,7})\+?\b/i,
+    /\b([\d,]{1,7})\+?\s+(?:employees|people|staff|team members)\b/i,
+    /\b(?:we(?:'| a)?re|are)\s+(?:a team of\s+)?([\d,]{1,7})\+?\s+(?:strong|people|employees)\b/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const n = Number(String(m[1]).replace(/,/g, ""));
+    // Bounds, not guesses: a 7-digit "employee count" is a phone number or a
+    // funding figure that happened to sit next to the word.
+    if (Number.isFinite(n) && n >= 1 && n <= 500_000) {
+      return { value: n, method: "observed", confidence: 1 };
+    }
+  }
+  return null;
+}
 
 /** Tolerant JSON extraction — a model may wrap its object in prose or a fence. */
 function parseJsonObject(text) {
@@ -165,6 +231,32 @@ export async function enrichDomain(canonicalDomain, opts = {}) {
   fields.has_careers = hasCareers;
   provenance.has_careers = { method: "observed", source: url, confidence: 1 };
 
+  // A reachable way to contact a human: a real mailto:, or a linked contact
+  // page. Both are literally in the markup — no model, no guess. Recorded as
+  // false rather than omitted, because "we looked and there is none" is itself
+  // a finding a RevOps user acts on, unlike "we could not tell".
+  // Observed headcount, when the page states one. Usually absent — see
+  // deriveEmployeeCount for why a band is never converted into a count.
+  const headcount = deriveEmployeeCount(undefined, html);
+  if (headcount) {
+    fields.employee_count = headcount.value;
+    provenance.employee_count = { method: headcount.method, source: url, confidence: headcount.confidence };
+  }
+
+  const hasContact =
+    /href=["']mailto:[^"']+@[^"']+["']/i.test(html) ||
+    /href=["'][^"']*\/(contact|contact-us|get-in-touch|support)\b/i.test(html);
+  fields.has_contact = hasContact;
+  provenance.has_contact = { method: "observed", source: url, confidence: 1 };
+
+  // A self-serve demo or product tour — the clearest public signal that a
+  // product can be evaluated without talking to sales.
+  const hasTour =
+    /href=["'][^"']*\/(demo|tour|product-tour|walkthrough|try|sandbox)\b/i.test(html) ||
+    />\s*(?:book|request|watch|take)\s+a\s+(?:demo|tour)\s*</i.test(html);
+  fields.has_product_tour = hasTour;
+  provenance.has_product_tour = { method: "observed", source: url, confidence: 1 };
+
   // ── INFERRED ──────────────────────────────────────────────────────────────
   // Everything below is a model reading the page's own words. If the chain is
   // unavailable these fields stay ABSENT and the ICP coverage drops honestly.
@@ -195,6 +287,19 @@ export async function enrichDomain(canonicalDomain, opts = {}) {
         if (typeof parsed.target_customer === "string" && parsed.target_customer.trim()) {
           fields.target_customer = parsed.target_customer.trim().slice(0, 200);
           provenance.target_customer = { method: "inferred", source: url, confidence: aiConfidence };
+        }
+        // ── employee_count — DELIBERATELY NOT IMPLEMENTED HERE ──────────
+        // See `deriveEmployeeCount()` below. This is the one field where the
+        // honest answer is a judgement call, not a parse.
+
+        // Only a well-formed ISO-3166 alpha-2 code is accepted. A model asked
+        // for a country will happily answer "Global" or "Remote"; storing that
+        // would make an `in ["US","CA",…]` criterion silently unsatisfiable
+        // instead of honestly absent.
+        const cc = String(parsed.hq_country || "").trim().toUpperCase();
+        if (/^[A-Z]{2}$/.test(cc)) {
+          fields.hq_country = cc;
+          provenance.hq_country = { method: "inferred", source: url, confidence: aiConfidence };
         }
       }
     } catch {

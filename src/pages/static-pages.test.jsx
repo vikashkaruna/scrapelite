@@ -101,7 +101,7 @@ function Tree({ path, children }) {
 
 describe("F-11 — About page", () => {
   it("renders the founder block (Axiom Minds Private Limited)", async () => {
-    // The /about founder block was rebranded from 'Vikash Karuna' to
+    // The /about founder block was rebranded from the founder's personal name to
     // 'Axiom Minds Private Limited' on staging (commit 58d9b47,
     // 2026-07-27). The block now shows the company as the founder.
     const { container } = render(<Tree path="/about"><About /></Tree>);

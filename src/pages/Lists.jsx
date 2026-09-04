@@ -12,7 +12,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import SignedInRequired from "../components/SignedInRequired.jsx";
 import { dedupeEntries } from "../lib/bulk/identityModel.js";
-import { evaluateIcp, DEFAULT_THRESHOLD } from "../lib/bulk/icpModel.js";
+import { evaluateIcp, DEFAULT_THRESHOLD, sampleProfile, deadCriteria, ENRICHABLE_FIELD_NAMES } from "../lib/bulk/icpModel.js";
 import * as bulkApi from "../lib/bulk/bulkClient.js";
 
 export default function Lists() {
@@ -176,12 +176,12 @@ export default function Lists() {
 
   const handleTestSample = () => {
     if (!rules) return;
-    const sampleFields = {
-      industry: "Software",
-      employee_count: 75,
-      has_pricing: true,
-      hq_country: "US",
-    };
+    // Built from the enricher's real vocabulary, never hand-written here. The
+    // previous literal named `employee_count` and `hq_country` — fields the
+    // enricher stopped producing (and `has_contact`, which it never did) — so
+    // the simulator reported "Field 'has_contact' was not found in extracted
+    // data" for criteria that are dead in production too.
+    const sampleFields = sampleProfile();
     const evalRes = evaluateIcp(sampleFields, rules.criteria, rules.threshold);
     setSamplePreview(evalRes);
   };
@@ -405,6 +405,26 @@ export default function Lists() {
 
             {samplePreview && (
               <div style={{ marginTop: 14 }}>
+                {/* A criterion naming a field the enricher cannot produce is
+                    dead in PRODUCTION too, not just in this sandbox. Saying
+                    only "not found in extracted data" implies some other
+                    account might supply it, which is never true here — so name
+                    it, and say what it costs. */}
+                {deadCriteria(rules.criteria).length > 0 && (
+                  <p style={{
+                    marginBottom: 12, padding: "10px 12px", borderRadius: 6,
+                    background: "var(--warning-soft, #fef3c7)",
+                    color: "var(--text, #92400e)", fontSize: "0.85rem",
+                  }}>
+                    <strong>These criteria can never be measured.</strong>{" "}
+                    {deadCriteria(rules.criteria).map((d) => d.field).join(", ")}{" "}
+                    — the enricher does not produce{" "}
+                    {deadCriteria(rules.criteria).length === 1 ? "this field" : "these fields"}, so{" "}
+                    {deadCriteria(rules.criteria).reduce((n, d) => n + d.weight, 0)} weight is
+                    redistributed on every real account, not just this sample.
+                    Available fields: {ENRICHABLE_FIELD_NAMES.join(", ")}.
+                  </p>
+                )}
                 <p>
                   <strong>Score:</strong> {samplePreview.score}% ({samplePreview.passed ? "QUALIFIED" : "DISQUALIFIED"})
                 </p>
