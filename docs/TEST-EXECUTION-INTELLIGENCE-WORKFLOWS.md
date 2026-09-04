@@ -19,19 +19,19 @@
 
 | Suite | Cases | Passed | Failed | Result |
 |---|---:|---:|---:|---|
-| TS-1 Unit (pure models) | 2 905 | 2 905 | 0 | ✅ |
+| TS-1 Unit (pure models) | 2 911 | 2 911 | 0 | ✅ (+6 `describeCron`) |
 | TS-2 Contract (Netlify functions) | 1 951 | 1 951 | 0 | ✅ (+14 skipped) |
-| TS-3 Integration | 426 | 426 | 0 | ✅ (+15 workflow page render) |
+| TS-3 Integration | 432 | 432 | 0 | ✅ (+21 workflow surface render) |
 | TS-4 System | 8 | 8 | 0 | ✅ |
 | TS-5 Database (WASM Postgres, 45 migrations) | 461 | 461 | 0 | ✅ |
 | TS-6 Referral E2E (real Postgres) | 17 | 17 | 0 | ✅ |
 | **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **39** | **39** | **0** | ✅ **new — see §5a** |
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
-| **TS-9 Live staging, authenticated (browser)** | 4 | — | — | ⏸ **operator-run, spec shipped — see §6** |
+| **TS-9 Live staging, authenticated (browser)** | 1 | — | — | ⏸ **irreducible — needs a real credential, see §6** |
 | **TS-10 Live staging, unauthenticated (security)** | 15 | 15 | 0 | ✅ **`0044` applied — verified live, see §7** |
 
-**Automated total: 5 807 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
+**Automated total: 5 819 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
 TS-9 remains operator-run: account creation and password handling are outside what this agent may
 do. **Its scope shrank from 24 cases to 4**, in two steps:
 
@@ -39,15 +39,22 @@ do. **Its scope shrank from 24 cases to 4**, in two steps:
   cross-tenant isolation, cadence, ownership, the ledger, fact-vs-interpretation. TS-11 asserts all
   of it against real Postgres with two real tenants and the real handlers, which is stronger
   evidence than one signed-in user clicking through.
-* **3 cases → TS-3.** S-07 / S-13 / S-20 asked "does the page show the workspace or the signed-out
-  gate?", and that branch is decided entirely by `useAuth()`. `WorkflowPages.integration.test.jsx`
+* **5 cases → TS-3.** S-07 / S-13 / S-20 asked "does the page show the workspace or the signed-out
+  gate?", and that branch is decided entirely by `useAuth()`. S-02 (the template catalogue renders)
+  and S-24 (`/admin/monitoring` lists both new crons) are likewise render assertions decided by data
+  a test can supply. S-24 in particular closes the layer above `cron-registry-parity`: that a job
+  which IS registered actually reaches the operator's screen — a job nobody can see is only
+  marginally better than a job nobody scheduled. `WorkflowPages.integration.test.jsx`
   now asserts **both directions** for all three pages. The signed-IN direction is the one a
   regression breaks silently — an early return, or `user` read from the wrong provider, locks every
   paying customer out while the signed-out test still passes — so it was confirmed RED by inverting
   the guard before being accepted.
 
-What genuinely remains is what only a real credential against a real deployment can prove: that the
-account can obtain a session, and what renders once it has. A ready-to-run spec ships at
+**What genuinely remains is one case.** S-01: that a real credential obtains a real session against
+the live deployment. That is an assertion about Supabase auth and the deployed build, and nothing
+buildable substitutes for it. X-01 (noindex) is already asserted from source by
+`page-ownership.test.mjs` in all four required places, so it is belt-and-braces here rather than
+the only coverage. A ready-to-run spec ships at
 `e2e/journeys/workflows-authenticated.spec.js`; it **skips** without credentials, so it is safe in
 CI and needs no secret committed to stay green.
 
@@ -309,14 +316,13 @@ destination the operator did not choose.
 
 | ID | Scenario | Expected | Result |
 |---|---|---|---|
-| S-01 | 🔑 Sign in with a real credential; plan shown on `/account` | Session obtained, Agency/Business | ⏸ **only a live account can prove this** |
-| S-02 | `/templates` renders for a signed-in user | Cards visible | ⏸ |
-| S-24 | `/admin/monitoring` lists both new crons | Watchlist monitor + Bulk runner | ⏸ |
-| X-01 | `/lists`, `/watchlists`, `/rules` are noindex | `<meta robots>` contains noindex | ⏸ (also asserted from source by `page-ownership.test.mjs`) |
+| S-01 | 🔑 **Sign in with a real credential**; plan shown on `/account` | Session obtained, Agency/Business | ⏸ **irreducible — only a live account proves this** |
 
-> S-07, S-13 and S-20 were removed from this table: they are now covered in **both** directions by
-> `src/pages/WorkflowPages.integration.test.jsx` (TS-3), which runs in CI on every push. The spec
-> file still contains them, so running it re-confirms the same branch against the live build.
+> Everything else moved into CI. S-07/S-13/S-20 → `WorkflowPages.integration.test.jsx` (both auth
+> directions, the signed-IN one confirmed RED by inverting the guard). S-02/S-24 →
+> `WorkflowSurfaces.integration.test.jsx`. X-01 → `page-ownership.test.mjs`, from source, in all
+> four required places. The shipped spec still contains all of them, so running it re-confirms the
+> same branches against the live build — it just is not the only place they are checked any more.
 
 <details><summary>Superseded by TS-11 — the original 24-case list</summary>
 
@@ -394,6 +400,7 @@ these tables, and before any production promotion (`npm run verify:rls -- --prod
 | F-01 | New SSRF test (C-TEN-10) | The **first draft of the fix itself** accepted `http://169.254.169.254/`. `isPublicHttpUrl` **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc documenting only the first. A `try/catch` alone is not enough; both channels must be handled. Now uses `isPublicHttpUrlAsync` and checks the return value. |
 | F-02 | New unit test (U-SNAP-10) | `diffSnapshots(null, …)` threw. JS default parameters fire only for `undefined`, and a snapshot column never written comes back from Postgres as `null` — so the first monitored page with no prior snapshot would have crashed the crawler loop. |
 | F-03 | Code review during G3 | 🔴 **The shipped bulk enrichment was fabricated.** `industry: domain.includes("tech") ? "Software" : "Services"`, `employee_count: 55` for every company, `has_pricing: true` always — stamped `confidence_score: 0.95`. It never fetched the page. Every ICP score in the product derived from it. Replaced by `bulkEnrich.js` (observed / inferred / absent). |
+| F-05 | Writing the S-24 render test | 🔴 **`describeCron` reported every sub-daily cron as "Daily".** Its final branch is reached whenever the hour field is not numeric, so `0 * * * *` (hourly) and `*/5 * * * *` rendered as a bare "Daily". `/admin/monitoring` is where an operator answers "is this running often enough?", and it had been saying **Daily** for `scheduled-runner` and `health-monitor` — both `@hourly` — since they were added, and would have said it of a user's own hourly monitor. Fixed with an explicit sub-daily branch; 6 regression tests, all confirmed RED against the old function. |
 | F-04 | Test-quality review | The dispatcher's first test mock returned the same rows regardless of `.eq()` filters, making "only this user's rules" and "only this trigger source" green **without testing either**. The mock now enforces the filters. A green test that asserts nothing is worse than no test. |
 
 ### 8.2 Deviations from the plan
@@ -412,7 +419,7 @@ these tables, and before any production promotion (`npm run verify:rls -- --prod
 | # | Item | Owner |
 |---|---|---|
 | O-01 | ✅ `0044` applied to **staging** and verified 15/15. **Still required on production** before any promotion — run `npm run verify:rls -- --prod` to confirm. | Operator |
-| O-02 | Create the staging test account and run the 7-case browser spec in §6 (the other 17 cases are now covered by TS-11) | Operator |
+| O-02 | Create the staging test account and confirm S-01 — that the credential obtains a session. Every other case is now in CI. | Operator |
 | O-03 | Retry sweeper for failed dispatches (D-06) | Next session |
 | O-04 | Automatic watchlist page discovery (D-05) | Next session |
 | O-05 | Bring `icpModel` / `materialityModel` / `ruleModel` up to the test density of the Phase 0–3 models (5/5/4 vs 40/26/20/28) | Next session |
