@@ -59,6 +59,58 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "watchlist-monitor",
+    label: "Competitor watchlist monitor",
+    schedule: "@hourly",
+    cron: "0 * * * *",
+    expectedIntervalMs: 60 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Crawls every monitored competitor page whose watchlist cadence says it is due, extracts a " +
+      "structured snapshot of the business fields (pricing, product, positioning), diffs it against " +
+      "the previous snapshot, and routes material changes to the user's signal rules.",
+    destructive: false,
+    // Safe by hand: each target advances its own last_checked_at, so a manual
+    // run re-crawls only what is due and then falls back to its cadence.
+    manualRunAllowed: true,
+    // Runs hourly and honours each watchlist's own cadence internally, rather
+    // than three separate crons. An hourly watchlist needs an hourly tick; a
+    // weekly one simply is not due on most of them.
+  },
+  {
+    id: "bulk-runner",
+    label: "Bulk enrichment runner",
+    schedule: "*/5 * * * *",
+    cron: "*/5 * * * *",
+    expectedIntervalMs: 5 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Advances queued bulk account-enrichment jobs so a list finishes whether or not the browser " +
+      "tab that started it is still open. Claims work per item, so it is safe to run alongside the " +
+      "client-driven chunk endpoint.",
+    destructive: false,
+    // Safe by hand: work is claimed per item (queued -> running -> completed),
+    // so a manual run alongside the cron does less work, never duplicate work.
+    manualRunAllowed: true,
+  },
+  {
+    id: "signal-retry",
+    label: "Signal dispatch retry",
+    schedule: "*/5 * * * *",
+    cron: "*/5 * * * *",
+    expectedIntervalMs: 5 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Re-attempts signal-rule dispatches whose backoff has elapsed (1m, 5m, 30m, 2h, 12h, then " +
+      "settled as failed). Retries DELIVERY only — it never re-evaluates the rule's conditions, " +
+      "because the decision to act was made when the event was detected.",
+    destructive: false,
+    // Safe by hand: each row's next_retry_at is cleared before the outbound
+    // call, so a manual run alongside the cron cannot deliver the same dispatch
+    // twice.
+    manualRunAllowed: true,
+  },
+  {
     id: "reengagement",
     label: "Re-engagement digest",
     schedule: "@daily",

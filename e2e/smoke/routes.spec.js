@@ -30,6 +30,15 @@ const PUBLIC_ROUTES = [
   "/contact",
   "/integrations",
   "/use-cases",
+  // The five use-case pages added for the intelligence-workflow release. They
+  // are prerendered marketing pages whose whole purpose is to be reachable by
+  // crawlers, so "does this route serve 200" is exactly the assertion worth
+  // having — the hub's own card count is covered in use-cases.spec.js.
+  "/use-cases/account-intelligence",
+  "/use-cases/competitive-monitoring",
+  "/use-cases/ai-visibility",
+  "/use-cases/recruiting",
+  "/use-cases/investor-diligence",
   "/payment/success",
   "/payment/cancel",
 ];

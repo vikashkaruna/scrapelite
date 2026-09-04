@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+// scripts/verify-workflow-rls.mjs
+//
+// Confirms that migration 0044 is actually applied to a LIVE Supabase project,
+// by doing the thing an attacker would do: an anonymous PostgREST read of every
+// Phase 4-6 table using nothing but the publishable anon key.
+//
+// This exists because `npm run test:db` proves the migration is correct against
+// WASM Postgres, and proves nothing about whether anyone ran it. Migrations in
+// this repo are applied by hand, so "the SQL is right" and "the database is
+// safe" are two different claims and only this script checks the second.
+//
+// Expected AFTER 0044:  every table → 401 (or 404). Exit 0.
+// Expected BEFORE 0044: every table → 200 with real rows. Exit 1.
+//
+// Read-only by construction: it only ever issues `select=id&limit=1`.
+//
+// Usage:
+//   node scripts/verify-workflow-rls.mjs                    # staging, key read from runtime-config.js
+//   node scripts/verify-workflow-rls.mjs --prod             # production project
+//   SUPABASE_URL=… SUPABASE_ANON_KEY=… node scripts/verify-workflow-rls.mjs
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Every table 0041-0043 created. A table missing from this list is a table
+// nobody is checking, so keep it in step with the migrations.
+const TABLES = [
+  "lists", "canonical_entities", "list_records", "icp_score_rules",
+  "enrichment_jobs", "enrichment_job_items", "review_queue",
+  "watchlists", "watchlist_targets", "monitored_pages", "entity_snapshots",
+  "field_changes", "change_feedback",
+  "signal_rules", "rule_executions",
+];
+
+const wantProd = process.argv.includes("--prod");
+
+/** Pull the project URL and its paired anon key out of the committed runtime config. */
+function fromRuntimeConfig() {
+  const s = readFileSync(join(ROOT, "public/runtime-config.js"), "utf8");
+  const urls = [...s.matchAll(/"(https:\/\/[a-z0-9]+\.supabase\.co)"/g)].map((m) => m[1]);
+  const i = s.indexOf("supabaseAnonKey:");
+  const keys = [...s.slice(i, i + 2500).matchAll(
+    /(sb_publishable_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_.-]{60,})/g
+  )].map((m) => m[1]);
+  // runtime-config picks by `_isMain ? production : staging`, so index 0 is
+  // production and index 1 is staging in BOTH lists.
+  const idx = wantProd ? 0 : 1;
+  return { url: urls[idx], key: keys[idx] };
+}
+
+const url = process.env.SUPABASE_URL || fromRuntimeConfig().url;
+const key = process.env.SUPABASE_ANON_KEY || fromRuntimeConfig().key;
+
+if (!url || !key) {
+  console.error("Could not resolve a Supabase URL and anon key.");
+  process.exit(2);
+}
+
+const label = wantProd ? "PRODUCTION" : "STAGING";
+console.log(`\n[verify-workflow-rls] ${label} · ${url}`);
+console.log("Anonymous PostgREST read with the public anon key. 401/404 = locked down.\n");
+
+let exposed = 0;
+let unreachable = 0;
+
+for (const t of TABLES) {
+  let status = 0;
+  try {
+    const res = await fetch(`${url}/rest/v1/${t}?select=id&limit=1`, {
+      headers: { apikey: key },
+      signal: AbortSignal.timeout(20_000),
+    });
+    status = res.status;
+  } catch (e) {
+    unreachable += 1;
+    console.log(`  ?  ${t.padEnd(22)} network error: ${e.message}`);
+    continue;
+  }
+
+  if (status === 200) {
+    exposed += 1;
+    console.log(`  ✗  ${t.padEnd(22)} HTTP 200 — READABLE BY ANYONE`);
+  } else {
+    console.log(`  ✓  ${t.padEnd(22)} HTTP ${status}`);
+  }
+}
+
+console.log("\n" + "─".repeat(62));
+
+if (unreachable === TABLES.length) {
+  // Every request failed at the network layer. That is not evidence of safety —
+  // saying "locked down" here would be the fail-open mistake this whole fix is
+  // about, one level up.
+  console.log("[verify-workflow-rls] INCONCLUSIVE — the project was unreachable.");
+  process.exit(2);
+}
+
+if (exposed > 0) {
+  console.log(
+    `[verify-workflow-rls] ${exposed}/${TABLES.length} tables are readable anonymously.\n` +
+    `Migration 0044_lock_down_workflow_rls.sql has NOT been applied to this project.\n` +
+    `Apply it before anything else — see docs/WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md §S1.`
+  );
+  process.exit(1);
+}
+
+console.log(`[verify-workflow-rls] All ${TABLES.length} tables refuse anonymous reads. 0044 is applied.`);
+process.exit(0);

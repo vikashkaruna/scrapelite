@@ -536,3 +536,90 @@ describe("can() — frozen accounts and paused seats", () => {
     expect(can(purged, "export.csv", { planMap }).code).toBe("PURGED");
   });
 });
+
+// ── Intelligence Workflows capabilities (PRD 3, 4, 5) ────────────────────────
+// Added 2026-09-04. These three endpoints shipped with no entitlement check at
+// all, which made the BRD's own upgrade triggers unenforceable and left three
+// cost-bearing operations unmetered. Each reuses a limit the pricing page
+// already sells rather than inventing a new per-tier number.
+describe("bulk.enrich — answers to the batch allowance", () => {
+  const free = { plan_id: "free", status: "active" };
+  const business = { plan_id: "business", status: "active" };
+
+  it("allows a list within the plan's batch allowance", () => {
+    expect(can(free, "bulk.enrich", ctx({ rowCount: 3 })).allowed).toBe(true);
+  });
+
+  it("denies a list larger than the plan's batch allowance", () => {
+    const r = can(free, "bulk.enrich", ctx({ rowCount: 500 }));
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("PLAN_LIMIT");
+  });
+
+  it("a bigger plan allows a bigger list", () => {
+    const freeCap = PLAN_BY_ID.free.limits.batch_max_urls;
+    expect(can(free, "bulk.enrich", ctx({ rowCount: freeCap + 1 })).allowed).toBe(false);
+    expect(can(business, "bulk.enrich", ctx({ rowCount: freeCap + 1 })).allowed).toBe(true);
+  });
+
+  it("purchased batch bundles raise the bulk ceiling too", () => {
+    const cap = PLAN_BY_ID.free.limits.batch_max_urls;
+    expect(can(free, "bulk.enrich", ctx({ rowCount: cap + 10 })).allowed).toBe(false);
+    expect(
+      can(free, "bulk.enrich", ctx({ rowCount: cap + 10, bonusBatchUrls: 50 })).allowed
+    ).toBe(true);
+  });
+
+  it("reports remaining headroom so the client can show it before a run", () => {
+    const r = can(business, "bulk.enrich", ctx({ rowCount: 1 }));
+    expect(r.remaining).toBe(PLAN_BY_ID.business.limits.batch_max_urls - 1);
+  });
+});
+
+describe("watchlist.create — answers to the scheduled-monitoring allowance", () => {
+  it("denies a plan that includes no scheduled monitoring", () => {
+    // A watchlist crawls forever on a cadence. A user who may keep no
+    // schedules must not acquire the right to keep them via a different object
+    // — the same reasoning audit.schedule already documents.
+    const free = { plan_id: "free", status: "active" };
+    expect(PLAN_BY_ID.free.limits.scheduled_monitoring).toBe(0);
+    const r = can(free, "watchlist.create", ctx({ watchlistCount: 0 }));
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("PLAN_REQUIRED");
+  });
+
+  it("allows a plan that does, up to its cap", () => {
+    const select = { plan_id: "select", status: "active" };
+    const cap = PLAN_BY_ID.select.limits.scheduled_monitoring;
+    expect(can(select, "watchlist.create", ctx({ watchlistCount: cap - 1 })).allowed).toBe(true);
+    expect(can(select, "watchlist.create", ctx({ watchlistCount: cap })).allowed).toBe(false);
+  });
+
+  it("an unlimited plan is never capped", () => {
+    const agency = { plan_id: "agency", status: "active" };
+    if (PLAN_BY_ID.agency.limits.scheduled_monitoring === Infinity) {
+      expect(can(agency, "watchlist.create", ctx({ watchlistCount: 9999 })).allowed).toBe(true);
+    }
+  });
+});
+
+describe("rule.create — answers to the integrations entitlement", () => {
+  it("denies a plan without integrations", () => {
+    const free = { plan_id: "free", status: "active" };
+    const r = can(free, "rule.create", ctx());
+    expect(r.allowed).toBe(false);
+    // A rule's only purpose is pushing into HubSpot/Slack/a webhook, so gating
+    // it anywhere else would reopen the four push providers `integrations` was
+    // added to gate.
+    expect(can(free, "integrations", ctx()).allowed).toBe(false);
+  });
+
+  it("allows a plan with integrations, and agrees with the integrations gate", () => {
+    for (const planId of ["select", "pro", "business", "agency"]) {
+      const ent = { plan_id: planId, status: "active" };
+      expect(can(ent, "rule.create", ctx()).allowed).toBe(
+        can(ent, "integrations", ctx()).allowed
+      );
+    }
+  });
+});

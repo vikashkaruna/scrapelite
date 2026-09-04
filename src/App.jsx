@@ -55,6 +55,11 @@ import UseCaseLead from "./pages/UseCaseLead.jsx";
 import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
 import UseCaseSEO from "./pages/UseCaseSEO.jsx";
 import UseCaseResearch from "./pages/UseCaseResearch.jsx";
+import UseCaseAccountIntelligence from "./pages/UseCaseAccountIntelligence.jsx";
+import UseCaseCompetitiveMonitoring from "./pages/UseCaseCompetitiveMonitoring.jsx";
+import UseCaseAiVisibility from "./pages/UseCaseAiVisibility.jsx";
+import UseCaseRecruiting from "./pages/UseCaseRecruiting.jsx";
+import UseCaseDiligence from "./pages/UseCaseDiligence.jsx";
 // The five per-tool /vs/* comparisons are static-owned (hand-written HTML in
 // public/vs/<slug>/index.html) and have no React route — see
 // scripts/site-routes.mjs. Only the hub is React.
@@ -65,6 +70,9 @@ import BattleCard from "./pages/BattleCard.jsx";
 import Integrations from "./pages/Integrations.jsx";
 import Batch from "./pages/Batch.jsx";
 import Templates from "./pages/Templates.jsx";
+import Lists from "./pages/Lists.jsx";
+import Watchlists from "./pages/Watchlists.jsx";
+import SignalRules from "./pages/SignalRules.jsx";
 import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import Discoverability from "./pages/Discoverability.jsx";
@@ -244,6 +252,9 @@ function Shell() {
               template (template.run is deliberately ungated) — they just
               cannot save the result. */}
           <Route path="/templates"                     element={<Templates />} />
+          <Route path="/lists"                         element={<Lists />} />
+          <Route path="/watchlists"                    element={<Watchlists />} />
+          <Route path="/rules"                         element={<SignalRules />} />
           {/* PRD 2 — a shared report. NOT under a private prefix: this page
               exists to be opened by someone without a DatIQ account, which is
               the whole acquisition loop. Indexability is decided per report
@@ -264,6 +275,11 @@ function Shell() {
           <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
           <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
+          <Route path="/use-cases/account-intelligence"   element={<UseCaseAccountIntelligence />} />
+          <Route path="/use-cases/competitive-monitoring" element={<UseCaseCompetitiveMonitoring />} />
+          <Route path="/use-cases/ai-visibility"          element={<UseCaseAiVisibility />} />
+          <Route path="/use-cases/recruiting"             element={<UseCaseRecruiting />} />
+          <Route path="/use-cases/investor-diligence"     element={<UseCaseDiligence />} />
           <Route path="/vs/compare"                    element={<VsCompare />} />
           <Route path="/changelog"                     element={<Changelog />} />
           <Route path="/for-sales"                     element={<ProgrammaticRoute />} />

@@ -63,6 +63,28 @@ export function describeCron(cron) {
     return ` at ${hr}:${String(m).padStart(2, "0")} ${ap}`;
   };
   if (hour.startsWith("*/")) return `Every ${hour.slice(2)} hours`;
+
+  // Sub-daily crons, which every branch below this point would otherwise
+  // mislabel as "Daily" — `time()` returns "" when the hour field is not a
+  // number, so `0 * * * *` fell through and rendered as a bare "Daily".
+  //
+  // That is not cosmetic. /admin/monitoring is where an operator answers "is
+  // this job running often enough?", and it has been telling them that
+  // scheduled-runner and health-monitor (both @hourly) run DAILY since they
+  // were added. A dashboard that misreports the thing it exists to report is
+  // worse than no dashboard, because it is believed.
+  if (hour === "*" || hour === "?") {
+    if (min.startsWith("*/")) {
+      const n = min.slice(2);
+      return `Every ${n} minute${n === "1" ? "" : "s"}`;
+    }
+    if (min === "*") return "Every minute";
+    const m = parseInt(min, 10);
+    if (Number.isFinite(m)) {
+      return m === 0 ? "Hourly" : `Hourly at :${String(m).padStart(2, "0")}`;
+    }
+  }
+
   if (dow === "1-5") return `Every weekday${time()}`;
   if (dow !== "*" && dow !== "?") {
     const days = dow.split(",").map((d) => DOW_NAMES[parseInt(d, 10)] || d).join(", ");

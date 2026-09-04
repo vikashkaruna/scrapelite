@@ -154,11 +154,22 @@ async function renderAll() {
   // is a hard failure when Chrome is not installed, and this script now also runs
   // in CI as a freshness gate. Fall back to Playwright's own chromium so a missing
   // system Chrome degrades to a slower run rather than a red build.
+  //
+  // Third tier: PRERENDER_CHROMIUM_PATH. Some container images ship a Chromium
+  // build whose revision does not match the one this Playwright version expects,
+  // so the bundled fallback ALSO fails ("Executable doesn't exist at
+  // .../chromium_headless_shell-<rev>/..."). That is an environment mismatch, not
+  // a repo problem, and it must not be the reason a marketing page ships without
+  // prerendered HTML — these pages exist precisely so crawlers that do not run JS
+  // can read them. Point this at a working binary and the run proceeds.
   let browser;
+  const explicitPath = process.env.PRERENDER_CHROMIUM_PATH;
   try {
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = explicitPath
+      ? await chromium.launch({ executablePath: explicitPath, headless: true })
+      : await chromium.launch({ channel: "chrome", headless: true });
   } catch (err) {
-    console.warn(`  system Chrome unavailable (${err.message.split("\n")[0]}) — falling back to bundled chromium`);
+    console.warn(`  ${explicitPath ? "PRERENDER_CHROMIUM_PATH" : "system Chrome"} unavailable (${err.message.split("\n")[0]}) — falling back to bundled chromium`);
     browser = await chromium.launch({ headless: true });
   }
   const ctx = await browser.newContext({

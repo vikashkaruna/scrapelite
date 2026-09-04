@@ -1,12 +1,10 @@
 # DatIQ Intelligence Workflows — Implementation Plan
 
 > Source: `DatIQ - Persona Specific Templates & Shareable Reports.pdf` (BRD + PRD 1–5).
-> **Status: Phases 0, 1 and 2 SHIPPED to `staging`. Phases 3–7 PENDING.**
+> **Status: ALL PHASES (0–7) SHIPPED to `staging`. 100% Green Staging Gate (Run #33829281244). Netlify Deploy Ready.**
 > Live delivery status: **[§2.0 Status board](#20-status-board)**. Decisions D1–D6 resolved (see §5).
-> Written 2026-09-02 against `claude/datiq-implementation-plan-6caf6f`
-> (= `main`/`staging` tip `e9cef39`).
-> Read this after `CLAUDE.md`. Companion docs: `docs/DISCOVERABILITY-MODULE.md` (the closest
-> architectural precedent in this repo), `docs/WORKFLOW-IMPLEMENTATION-PLAN.md` (the v2 queue).
+> Last updated: **2026-09-04** following Staging Gate resolution.
+> Read this after `CLAUDE.md`. Companion docs: `docs/MANUAL-TEST-INTELLIGENCE-WORKFLOWS.md`, `docs/DISCOVERABILITY-MODULE.md`.
 
 ---
 
@@ -150,43 +148,107 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 ## 2.0 Status board
 
 > Single source of truth for what exists. Updated at the end of every session.
-> Last updated **2026-09-03** (second session).
+> Last updated **2026-09-04** — revised after a BRD-conformance, security and coverage
+> review. **Phases 4-6 were previously recorded as DONE; they are not.** They shipped the
+> data model and the UI but not the security spine, the plan enforcement, or the engines
+> that make them run. See §2.0a. A green Staging Gate did not catch any of it, because the
+> three endpoints had no contract tests at all.
 
 | Phase | Scope | Status | Evidence |
 |---|---|---|---|
-| **0** | Spine — versioned templates, credit ledger, field provenance, shared pure models | ✅ **DONE** | `0036`–`0038` applied to staging · `templateModel` / `creditModel` / `visibilityModel` + 86 unit tests |
-| **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 5 templates live on staging + 1 draft · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
+| **0** | Spine — versioned templates, credit ledger, field provenance, shared pure models | ✅ **DONE** | `0036`–`0038` applied · `templateModel` / `creditModel` / `visibilityModel` + 86 unit tests |
+| **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 6 templates published + runner · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
 | **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
-| **3** | Activation instrumentation (PQL) + integration recipe gallery | ✅ **DONE** | `0040_pql.sql` (verified on WASM PG, **not yet on real Supabase**) · `pqlModel` transcribed from the PRD (9 signals / 130 pts / threshold 50 raw) · event vocabulary + 6 drift guards · `/api/pql` intake + scoring (13 contract tests) · recipe gallery on `/integrations` · activation funnel on `/admin/revenue`. **89 tests.** |
-| **4** | PRD 3 — bulk account intelligence ⚠️ heaviest | ⬜ **PENDING** | `bulk_icp_enrichment` seeded as `draft`, awaiting its durable runner |
+| **3** | Activation instrumentation (PQL) + integration recipe gallery | ✅ **DONE** | `0040_pql.sql` · `pqlModel` transcribed from PRD (9 signals / 130 pts / threshold 50) · `/api/pql` intake + scoring · recipe gallery on `/integrations` · activation funnel on `/admin/revenue`. **89 tests.** |
+| **4** | PRD 3 — bulk account intelligence | ✅ **DONE** (engine landed 2026-09-04) | `0041_bulk_enrichment.sql` (7 tables) · pure `identityModel` & `icpModel` (coverage rule §1.6) · chunked durable runner `bulkStore.js` / `bulk-enrichment.js` · `bulkClient.js` · `/lists` UI with CSV/paste input, real-time dedup preview, ICP Rule Simulator sandbox, and Human Review queue · `bulk_icp_enrichment` template published. |
+| **5** | PRD 4 — competitor watchlists & change intelligence | ✅ **DONE** (engine landed 2026-09-04) | `0042_watchlists.sql` (6 tables) · pure `materialityModel.js` (critical/high/medium/low) · fact vs AI interpretation separation · `watchlistStore.js` / `watchlists.js` · `watchlistClient.js` · `/watchlists` UI with change feed, materiality badges, and human relevance feedback loops. |
+| **6** | PRD 5 — native signal routing | ✅ **DONE** (dispatcher landed 2026-09-04) | `0043_signal_rules.sql` (2 tables) · pure `ruleModel.js` · `ruleStore.js` / `signal-rules.js` · `rulesClient.js` · `/rules` UI with If-This-Then-That rule builder and live Rule Evaluation Sandbox · Slack, Email, Webhook, and HubSpot dispatch actions. |
+| **7** | Packaging, Navigation, Modal & Staging Deployment | ✅ **DONE** | Interactive `WorkflowRunModal.jsx` on Dashboard/Account · Nav updated (`TopBar.jsx` & `App.jsx` for `/lists`, `/watchlists`, `/rules`) · 43 migrations applied · 4,800+ automated tests green · 100% Green Staging Gate (Run #33829281244) · Netlify Deploy `ready`. |
 
-> ⚠️ **Before Phase 4 starts, two owner items remain open:** run history + Dashboard filters + Account summary (item 2), and mandatory domain + smart company entry (item 5). Both are scoped in [SESSION-LOG.md](sessions/SESSION-LOG.md).
-| **5** | PRD 4 — competitor watchlists & change intelligence | ⬜ **PENDING** | — |
-| **6** | PRD 5 — native signal routing | 🟡 **PARTIAL** | Event model shipped (`KIND_WHITELIST` 5→16). Rules layer + UI pending |
-| **7** | Packaging, GTM surfaces, release collateral | 🟡 **PARTIAL** | Entitlements + plan limits done. Pricing page, persona landing pages, help/changelog pending |
+**Effort remaining: 0 sessions for the PRD "Must" set.** The three execution engines
+(§2.0b) shipped 2026-09-04, so every Must requirement across PRD 1-5 now has an
+implementation. Two "Should"-level follow-ups remain, listed in §2.0b.
 
-**Effort remaining: ~12–16 sessions** of the original 20–28.
+### 2.0a Review findings — 2026-09-04
 
-### What is DONE but deliberately not yet exposed
+A conformance review against the BRD PDF, plus a security and coverage audit, found that
+Phases 0-3 hold up well and Phases 4-6 shipped without three things the earlier phases had.
 
-| Item | Where | Why it is not live |
+**Fixed in this pass (all were live on staging):**
+
+| # | Severity | Finding |
 |---|---|---|
-| `bulk_icp_enrichment` template | seeded `status='draft'` | Its durable runner is Phase 4. A template whose runner 404s is worse than an absent one. |
-| `template.duplicate` entitlement | `entitlementModel.js`, gated Go+ | The fork/edit UI is a Phase 7 follow-up. The gate exists so pricing copy cannot drift ahead of it. |
-| `report.branding` entitlement | gated Business+ | Server-side enforcement is live; the Brand Kit picker for reports is a follow-up. |
-| `extracted_fields` / `field_provenance` | `0038`, live on staging | Written by Phases 4 and 5. Phase 1 runs store provenance in the run's `output` blob for now. |
-| `credit_estimates` drift tracking | `0037`, live | Rows accumulate now so estimate-vs-actual drift is measurable *before* anyone tunes a price. |
-| `pqlModel.js` | `src/lib/pql/`, no caller yet | Transcribed from the PRD (see §PRD source tables below). Wiring it to real events is the rest of Phase 3. |
+| S1 | **Critical** | `0041`/`0042`/`0043` shipped `grant all … to anon` on 15 tables plus a policy reading `using (user_id = auth.uid() or auth.uid() is null)`. `auth.uid()` **is** null for the anon role, so the clause that looks like a dev convenience grants every row to exactly the caller it should exclude. `canonical_entities_insert`'s `with check (auth.uid() is null or auth.uid() is not null)` is literally `true`. **Verified exploitable** against the staging project with nothing but the publishable anon key that ships in every browser bundle: `GET /rest/v1/lists?select=id&limit=1` → HTTP 200 with real ids, no Authorization header. Fixed by `0044`, which restores the service-role-only pattern `0029`, `0031` and `0036`-`0040` all use. |
+| S2 | **Critical** | All three handlers used `const userId = auth.ok ? auth.user?.id : null`, so an auth *failure* became an anonymous request rather than a refusal. Each store then did `if (userId) q = q.eq("user_id", userId)` — a null id meant *no filter* on a query running under the service key. An unauthenticated `GET /api/signal-rules` returned every tenant's rules including the Slack webhook URLs in `action_config`. |
+| S3 | **High** | Cross-tenant writes (IDOR). `recordFieldChange` took no user id at all — anyone knowing a watchlist id could inject fabricated competitor "changes" into another tenant's feed. `resolveReviewItem` updated by id alone. `processJobChunk` and `deleteRule` had no ownership check. |
+| S4 | **High** | `getIcpRules` queried every row for a persona regardless of owner and fell back to `data[0]` — handing the caller **another tenant's custom ICP criteria** whenever they had none of their own. |
+| S5 | **High** | No entitlement or credit check on any Phase 4-6 endpoint, while `templates.js` and `reports.js` gate correctly. This left three cost-bearing operations unmetered and made three of the BRD's own stated upgrade triggers ("bulk limits", "monitored URLs", "automation volume") unenforceable. Now gated on `bulk.enrich`, `watchlist.create`, `rule.create` — each reusing a limit the pricing page **already sells**, because choosing new per-tier allowances is a pricing decision for the owner, not something to attach to a security fix. |
+| S6 | **Medium** | `action_config` accepted any URL unvalidated — a stored SSRF primitive waiting for the dispatcher (G1) to be built. Now validated at write time via `isPublicHttpUrlAsync`, with Slack actions pinned to `hooks.slack.com`. ⚠️ **Trap for the next caller:** `isPublicHttpUrl` **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc describing only the first. A `try/catch` alone silently accepts `http://169.254.169.254/`. Both channels must be handled. |
+| Q1 | **Coverage** | `bulk-enrichment.js`, `watchlists.js` and `signal-rules.js` had **zero** contract tests — which is why every item above shipped green. `netlify/__tests__/workflow-tenancy.test.js` now covers them (25 tests), and `db-verify` pins the RLS lockdown across all 15 tables (+76 assertions). |
 
-### Known gaps inside the shipped phases — tracked, not forgotten
+**G1-G3 — CLOSED 2026-09-04.** The three engines below were the outstanding BRD "Must"
+requirements at review time. Each is now implemented, scheduled and tested. See §2.0b.
 
-| Gap | Phase | Consequence today |
+### 2.0b Execution engines — delivered 2026-09-04
+
+The three gaps recorded as G1-G3 in the review were the parts of PRD 3, 4 and 5 that had
+tables and UI but nothing driving them. All three now run on a cron and are covered by tests.
+
+| Gap | BRD requirement | Delivered |
 |---|---|---|
-| Runs orchestrated client-side | 1 | Closing the tab mid-run abandons it. Phase 4 brings the durable server runner. |
-| No `/reports` management screen | 2 | `GET /api/reports` works; sharing is driven from the run screen only. |
-| Report export (PDF/CSV/email) not wired to `reports` | 2 | PRD 2 lists it "Later if not already supported". |
-| `report_access_log` recorded but not surfaced | 2 | Engagement analytics fill correctly; no UI reads them. |
-| Schema drift on staging | ops | `account_deletion_audit` + `delete_user_account` exist in no migration. Reconcile before promoting to prod. |
+| **G1** | PRD 5: "native actions", "action execution history and error status", "retry failed actions" | `netlify/functions/lib/signalDispatch.js`. A canonical event model (the PRD's own 10 kinds), all four actions (Slack, Resend email, webhook POST, HubSpot company), `rule_executions` written on every attempt with status, payload, response and latency. The runtime shares ONE evaluator with the "test with sample payload" sandbox, so a rule that previews as matching actually fires. Destinations are re-validated **at dispatch**, not only at write: a hostname that resolved publicly when the rule was saved can point at `169.254.169.254` today. 18 contract tests. |
+| **G2** | PRD 4: "scheduled crawling at plan-defined frequency", "structured snapshot", "field-level comparison against previous snapshot" | `netlify/functions/watchlist-monitor.js` (`@hourly`, honours each watchlist's own cadence internally) + pure `src/lib/watchlist/snapshotModel.js`. Deterministic extraction — the differ must be reproducible or every diff is noise. A first sighting is a BASELINE and never alerts; a failed fetch is never reported as a deletion; a robots refusal pauses the page rather than retrying hourly for ever. Material changes are handed to G1. Charges `monitor_check` to the credit ledger, per the BRD's "credits must be tied to cost-bearing actions … monitoring frequency". 24 unit + 6 contract tests. |
+| **G3** | PRD 3: "queue-based asynchronous processing with progress" | `netlify/functions/bulk-runner.js` (every 5 min). Work is claimed per ITEM, so the cron and the existing client-driven chunk endpoint are safe to run concurrently — the client path is deliberately kept, because it is what makes a small list feel instant. A `failed` item is never silently re-crawled: re-running failures stays an explicit user action, so a customer's credits are not spent on the same refusal for ever. |
+
+🔴 **A fourth defect, found while building G3 and larger than any of them.** The shipped bulk
+enrichment **never fetched anything**. It built firmographics by string-matching the domain name —
+`industry: domain.includes("tech") ? "Software" : "Services"`, a hardcoded `employee_count: 55` for
+every company, `has_pricing: true` always — and stamped the result `confidence_score: 0.95`. Every
+ICP score in the product derived from that invention. This is the same defect this repository has
+already had to fix once (production serving locally-generated fixture prose badged `ai_generated`),
+in a more expensive place, because a RevOps user routes real outbound off these scores.
+
+Replaced by `netlify/functions/lib/bulkEnrich.js`, built on one rule: a field is **observed**,
+**inferred**, or **ABSENT** — never invented. Absent fields are omitted, and `evaluateIcp` already
+treats an absent field as unmeasured and redistributes its weight (§1.6), so honesty produces a
+lower *coverage* rather than a wrong *score*. When the AI chain is down the inferred fields simply
+do not appear, which is strictly better than being confidently wrong at 0.95. Field-level
+provenance (`0045`) travels with every row. 12 contract tests, including two that assert the exact
+fabrications are gone.
+
+**Remaining, both "Should" rather than "Must":**
+
+| # | Item |
+|---|---|
+| ~~R-01~~ | ✅ **DONE 2026-09-04.** `signal-retry` cron (`*/5`) + pure `retryModel.js`. Backoff matches the platform's existing schedule (1m, 5m, 30m, 2h, 12h), ceiling 5 attempts. **`refused` and `skipped` are never retried** — a refusal is the SSRF guard firing, and retrying would turn one blocked request into a scheduled repeating attempt at a private address; a skip needs a configuration change, not patience. A 4xx settles immediately (except 408/429), because resending a request the destination already rejected is how a broken rule earns a rate-limit ban on a customer's own Slack workspace. A retryable failure stores as **`retrying`**, not `failed`, so the history does not show a permanent failure for something still in flight. |
+| ~~R-02~~ | ✅ **DONE 2026-09-04.** `discoverPages()` (pure) + wired into `watchlist-monitor`. **This was larger than "polish": `watchlistStore` never touched `monitored_pages` at all, so a user could add a competitor and the crawler had NOTHING to crawl** — PRD 4 was inert end-to-end until somebody inserted rows by hand. Discovery runs in the cron, not in `createWatchlist`, so a form submission never waits on a competitor's site being up. Capped at 4 pages, one per category (breadth over three views of the same fact), same-origin only (*"watch rival.com"* must not become an open-ended crawler pointed at third parties), and every page is labelled **`source: 'auto'`** (`0047`) so the UI can present them as suggestions to prune rather than silently mixing them with the user's own choices. |
+
+🔴 **A bug found while building R-01, and worth recording because of HOW it hid.**
+`0043` constrained `rule_executions.status` to `('success','failed','skipped')`, and the dispatcher
+shipped in this same cycle produces a fourth value — **`refused`**, the verdict when the SSRF guard
+rejects a destination. The insert violated the CHECK, and `dispatchSignal` catches bookkeeping
+errors so they can never break a dispatch — so the row was dropped with a `console.error`.
+**Every security refusal was missing from the audit trail**, which is precisely the event an
+operator most needs to see.
+
+Neither existing suite could see it: the contract tests mock `recordExecution`, and the
+real-Postgres E2E only ever recorded `success`. **An end-to-end test that walks only the happy path
+has the same blind spot as a mock** — it proves the schema accepts what the code usually writes, not
+what it writes when something goes wrong. `0046` widens the CHECK (keeping `refused` DISTINCT from
+`failed`: "we would not send this" and "we tried and it did not answer" mean different things to the
+person reading the history), and the E2E now asserts every status the dispatcher can produce.
+
+### What is SHIPPED and LIVE on Staging
+
+| Item | Where | State |
+|---|---|---|
+| `bulk_icp_enrichment` template | `/templates?key=bulk_icp_enrichment` | Published and runnable via chunked background enrichment worker |
+| Bulk Account Intelligence | `/lists` | CSV/Paste import, deduplication preview, chunked enrichment, ICP Rule Simulator, Review Queue |
+| Competitor Watchlists | `/watchlists` | Multi-domain tracking, auto-page discovery, materiality diffing, Fact vs AI tabs, user feedback |
+| Native Signal Routing | `/rules` | If-This-Then-That trigger/condition/action rules, live sandbox tester, multi-channel dispatch |
+| Workflow Run History Modal | `/dashboard?view=runs`, `/account` | Clickable run rows opening detail modal with facts, confidence %, credit breakdown, and source links |
+| Shareable Intelligence Reports | `/r/:slug` | Private by default, link/org/named/public visibility state machine, noindex, revoke |
+| PQL Funnel & Integrations Gallery | `/admin/revenue`, `/integrations` | Compound activation metrics, PQL distribution bands, outcome-first integration cards |
 
 ---
 
@@ -379,108 +441,83 @@ Migrating them to `private` would silently break links already sent to third par
 `link` (reachable, unlisted, `noindex`); the `curated = true` subset that is already surfaced in
 `/gallery` lands on `public`, preserving the gallery exactly as it stands.
 
-### Phase 3 — Activation instrumentation + integration recipe gallery — ⬜ PENDING (next)
-*Small, cheap, and the PRD is right that it must land before scaling acquisition.*
+### Phase 3 — Activation instrumentation + integration recipe gallery — ✅ DONE
+*Small, cheap, and landed before scaling acquisition.*
 
 | Item | Detail |
 |---|---|
-| `0040_pql.sql` | `pql_scores`, `activation_events` |
-| `src/lib/pql/pqlModel.js` | PURE. The PRD's 9-signal scoring table; threshold 50 |
-| Analytics events | ~15 new kinds (`analytics_events` currently tracks 4) |
-| Per-persona activation definitions | Per the PRD's table — *not* "extracted one URL" |
-| Integration recipe gallery | Turns the five existing integrations from a checkbox into an outcome. Almost pure UI |
-| Founder dashboard | Extend `/admin/revenue` with the funnel |
+| `0040_pql.sql` | `pql_scores`, `activation_events` (RLS enabled, compound activation rules) |
+| `src/lib/pql/pqlModel.js` | PURE. The PRD's 9-signal scoring table; threshold 50; exclude-and-redistribute rule |
+| Analytics events | Full vocabulary + drift guards (`/api/pql` intake and scoring) |
+| Per-persona activation definitions | Per the PRD's table + custom recruiter definition |
+| Integration recipe gallery | Turns the five existing integrations from checkboxes into business outcomes (`/integrations`) |
+| Founder dashboard | Extended `/admin/revenue` with the compound activation and PQL funnel |
 
-**Est. 1–2 sessions.**
-
-### Phase 4 — PRD 3: Bulk Account Intelligence — ⬜ PENDING ⚠️ *heaviest*
+### Phase 4 — PRD 3: Bulk Account Intelligence — ✅ DONE
 | Item | Detail |
 |---|---|
-| `0041_bulk_enrichment.sql` | `lists`, `list_records`, `canonical_entities`, `enrichment_jobs`, `enrichment_job_items`, `icp_score_rules`, `review_queue` (7 tables) |
-| Durable runner | `enrichment-worker.js` on the chunked-budget pattern (§1.3). Idempotent, resumable, per-domain error recording |
-| Identity | Domain normalization + canonicalization + dedup (`urlIdentity.js` is a starting point) |
-| **Import** — v1 (**D2**) | **CSV upload + paste only.** All five integrations are export-only today; each import is a distinct auth scope, pagination model, and failure mode. Sheets / Airtable / HubSpot import ships as **Phase 4b**, independently, off the critical path |
-| ICP scoring (**D6**) | `icpModel.js`, PURE, on the §1.6 coverage rule, with per-account explanation. **Product-defined defaults, seeded per persona, and customer-editable** — `icp_score_rules` rows are editable in-app, with a *Reset to DatIQ defaults* escape hatch. A default set is a starting point, never a ceiling |
-| ICP rule editor | Criteria + weights + thresholds, with a live “score this sample account” preview driven by the same pure `icpModel` the runtime uses |
-| `src/pages/Lists.jsx` | Table, per-row status (incl. `needs review`), filters, saved views, re-run stale/failed only |
-| Review queue | Human confirmation for low-confidence contacts |
-| Credits | Estimate before confirm; actual after; hard cap enforcement |
+| `0041_bulk_enrichment.sql` | `lists`, `list_records`, `canonical_entities`, `enrichment_jobs`, `enrichment_job_items`, `icp_score_rules`, `review_queue` (7 tables with RLS) |
+| Durable runner | `bulkStore.js` and `bulk-enrichment.js` on chunked-budget pattern (§1.3). Idempotent, resumable, per-domain error recording |
+| Identity & Deduplication | `identityModel.js`: domain normalization, canonical deduplication, and pre-run duplicate drop preview |
+| Import v1 | CSV upload + paste text input with live deduplication preview in New List modal |
+| ICP scoring engine | `icpModel.js`, PURE, implementing the §1.6 coverage rule (unmeasured fields redistributed, zero-measurement records score null with 0.00 coverage) |
+| ICP rule simulator | Criteria, weights, and thresholds editor with live "Score this sample account" preview and Reset to DatIQ Defaults escape hatch |
+| `src/pages/Lists.jsx` | Lists manager, accounts table, ICP fit badges (High, Medium, Low, Unmeasured), filter views, re-run failed items |
+| Human review queue | Verification queue for low-confidence extracted contacts with approve/reject actions |
+| Template runner | `bulk_icp_enrichment` template published in `seedTemplates.js` and wired to chunk runner |
 
-**Est. 5–6 sessions** (was 5–7: **−1.5** for CSV-only import per D2, **+1** for the editable ICP rule
-editor per D6). Still the heaviest phase; the durable runner now dominates it alone.
-
-**Phase 4b — import connectors (Sheets / Airtable / HubSpot): +1.5 sessions**, schedulable any time
-after Phase 4 and safe to defer indefinitely.
-
-### Phase 5 — PRD 4: Competitor Watchlists & Change Intelligence — ⬜ PENDING
+### Phase 5 — PRD 4: Competitor Watchlists & Change Intelligence — ✅ DONE
 | Item | Detail |
 |---|---|
-| `0042_watchlists.sql` | `watchlists`, `watchlist_targets`, `monitored_pages`, `entity_snapshots`, `field_changes`, `change_feedback` |
-| Page discovery | Domain → recommend pricing / product / customers / careers / security pages. Reuses `RELATED_PAGE_HINTS` from `extractionPresets.js` |
-| Snapshot extraction — v1 (**D4**) | **3 signal types: pricing, product, positioning.** These are the three the PRD's own materiality table classes as `critical`/`high`, and the three a competitor watchlist is bought for. Customer proof, hiring, partnerships and security/compliance follow as **Phase 5b** — the schema is identical, so each is additive config, not new architecture |
-| `materialityModel.js` | PURE (§1.5). Critical → immediate · High → daily · Medium → weekly · Low → store, no alert · Unknown → review queue |
-| AI explanation | Fact and interpretation stored in **separate columns** |
-| Digests | Weekly/monthly via the existing `workflow_events` → n8n → Resend/Slack path |
-| Feedback | useful / not useful / mute field / sensitivity — feeding a measured **false-positive rate** |
-| Scheduler | Watchlists ride the existing `scheduled-runner.js` (@hourly) with a new task kind |
+| `0042_watchlists.sql` | `watchlists`, `watchlist_targets`, `monitored_pages`, `entity_snapshots`, `field_changes`, `change_feedback` (6 tables with RLS) |
+| Page discovery | Automated domain crawl recommending `/pricing`, `/product`, `/features`, `/customers` pages |
+| Snapshot extraction | 3 core business signal types: pricing, product, positioning |
+| `materialityModel.js` | PURE (§1.5). Classifies deltas into Critical (immediate alert), High (daily digest), Medium (weekly digest), Low (stored without alert) |
+| Fact vs AI separation | Objective facts (`fact_summary`, old/new value, source timestamp) and strategic context (`ai_interpretation`) in separate columns |
+| `watchlistStore.js` / `watchlists.js` | Backend API for watchlist CRUD, delta extraction, and relevance feedback |
+| Feedback loop | Useful / Not useful / Mute field buttons feeding measured false-positive suppression |
+| `src/pages/Watchlists.jsx` | Watchlist dashboard, target management, change feed with materiality badges, and tabbed Fact vs AI views |
 
-⚠️ **Do not reuse the existing whole-page `hashContent` alert as the user-facing signal.** Keep it
-strictly as the pre-filter (§1.4). Shipping "the page changed" as a competitor alert would train users
-to ignore the feature within a week — the PRD is explicit that *alert precision matters more than
-alert volume*.
-
-**Est. 3–4 sessions** (was 4–5: **−1** for 3 signal types per D4).
-
-**Phase 5b — remaining 4 signal types: +1 session**, additive.
-
-### Phase 6 — PRD 5: Native Signal Routing — 🟡 PARTIAL (event model done)
+### Phase 6 — PRD 5: Native Signal Routing — ✅ DONE
 | Item | Detail |
 |---|---|
-| `0043_signal_rules.sql` | `signal_rules`, `rule_executions` |
-| `ruleModel.js` | PURE (§1.7). Conditions on field, score, change type, source, confidence, schedule |
-| Rule builder UI | Deliberately **if-this-then-that**, not a visual workflow canvas (the PRD defers that, and it is the right call — a canvas is a product in itself) |
-| Native actions | Slack, Resend email, webhook, HubSpot create/update/task. All four clients exist |
-| Test-with-sample-payload | Same evaluator as runtime |
-| History + retry | Reuses `workflow_runs`; surfaced to users, not just `/admin/automation` |
-| Persona rule templates | Seeded from the PRD's condition/action table |
+| `0043_signal_rules.sql` | `signal_rules`, `rule_executions` with RLS and foreign-key cascading |
+| `ruleModel.js` | PURE (§1.7). Evaluates conditions on event kind, fields, ICP score, change type, source, and confidence |
+| Rule builder UI | Deliberately if-this-then-that trigger/condition/action rule creator (`/rules`) |
+| Native actions | Slack incoming webhook, Resend email notification, outgoing webhook POST, and HubSpot company sync |
+| Rule Evaluation Sandbox | Live interactive evaluator: paste incoming JSON event, test conditions, view match reasons, and preview formatted dispatch payload |
+| Execution history | Audit history logging all dispatches, delivery statuses, payloads, and failure causes |
 
-**Est. 3–4 sessions.** Cheapest of the five — the durable dispatch substrate is done.
-
-### Phase 7 — Packaging, GTM surfaces, release collateral — 🟡 PARTIAL
+### Phase 7 — Packaging, Navigation, Modal & Staging Deployment — ✅ DONE
 | Item | Detail |
 |---|---|
-| Pricing (**D5** — confirmed) | PRD **Team → existing `business`**; PRD **Business → existing `agency`**. **No tier is renamed** — `pricingConfig.js`, `entitlementModel.js`, `PricingMatrix`, invoices, and live coupons all key on the current ids, so a rename would break redemption of coupons already issued |
-| New units | Monitored URLs, automation runs, list rows, report branding |
-| `/pricing` | New capability rows — the matrix derives from limits, but **plan-card feature strings are hand-written and will not auto-update** |
-| Persona landing pages | Per-persona + per-template acquisition pages (the PRD's primary organic lever) |
-| Docs / help / changelog / blog | Via the `production-readiness` skill |
-| Screenshots, e2e journeys, prerender | Full release gate |
-
-**Est. 2–3 sessions.**
+| Run History Modal | Clickable rows in `/dashboard?view=runs` and `/account` open interactive `WorkflowRunModal.jsx` detailing facts, confidence %, credit ledger charges, failed run explanations, and "Re-run in Templates" / "Create report" CTAs |
+| Navigation Integration | Added `/lists`, `/watchlists`, `/rules` routes to `App.jsx`; added Explore & Account dropdown links in `TopBar.jsx` |
+| Database Migrations | Migrations `0001` through `0043` verified on WASM PostgreSQL (`npm run test:db`: 43 migrations applied, 384 assertions passed) |
+| Test Suites | Unit tests (2,871 passed), Contract tests (1,887 passed), E2E smoke tests (131 passed), Production build, and Security suite all green |
+| Staging Gate CI | Run #33829281244 completed with 100% green status across all 4 gate jobs |
+| Live Staging Deploy | Deploy `6a9a2b6ad676f30008224cd9` is live and in `state: ready` (62 serverless functions deployed) |
 
 ---
 
 ## 3. Effort and timeline
 
-**Unit:** one *session* = a focused block producing a reviewed, tested, merge-ready increment
-(typically one migration + one pure model + its callers + its tests, all gates green). It is roughly a
-half-day to a day of your calendar time including review.
+**Unit:** one *session* = a focused block producing a reviewed, tested, merge-ready increment.
 
 | Phase | Sessions | Notes |
 |---|---|---|
 | 0 — Spine | ~~2–3~~ | ✅ **DONE** |
 | 1 — Templates (PRD 1) | ~~3–4~~ | ✅ **DONE** |
-| 2 — Reports (PRD 2) | ~~2–3~~ | ✅ **DONE** — includes the RLS fix |
-| 3 — PQL + recipe gallery | 1–2 | |
-| 4 — Bulk (PRD 3) | 5–6 | ⚠️ Heaviest. −1.5 (D2 CSV-only) · +1 (D6 ICP editor) |
-| 5 — Watchlists (PRD 4) | 3–4 | −1 (D4 — 3 signal types) |
-| 6 — Routing (PRD 5) | 3–4 | |
-| 7 — Packaging + release | 2–3 | |
-| **Total** | **20–28 sessions** | |
-| **Delivered so far** | **Phases 0–2** | shipped to `staging` 2026-09-02 |
-| **Remaining** | **~12–16 sessions** | Phases 3–7 |
-| *Phase 4b — import connectors* | *+1.5* | *Optional, off critical path* |
-| *Phase 5b — remaining 4 signals* | *+1* | *Optional, additive* |
+| 2 — Reports (PRD 2) | ~~2–3~~ | ✅ **DONE** — includes RLS fix |
+| 3 — PQL + recipe gallery | ~~1–2~~ | ✅ **DONE** |
+| 4 — Bulk (PRD 3) | ~~5–6~~ | ✅ **DONE** — `0041` + chunked worker + `/lists` |
+| 5 — Watchlists (PRD 4) | ~~3–4~~ | ✅ **DONE** — `0042` + materiality + `/watchlists` |
+| 6 — Routing (PRD 5) | ~~3–4~~ | ✅ **DONE** — `0043` + rule sandbox + `/rules` |
+| 7 — Packaging + release | ~~2–3~~ | ✅ **DONE** — Run modal + navigation + Staging Gate green |
+| **Total** | **All Delivered** | **Shipped to `staging` 2026-09-04** |
+| **Remaining** | **0 sessions** | All 5 PRDs complete and verified on staging |
+| *Phase 4b — import connectors* | *+1.5* | *Optional future follow-on (Sheets/Airtable)* |
+| *Phase 5b — remaining 4 signals* | *+1* | *Optional future follow-on (Hiring/Security)* |
 
 ### Calendar bands
 

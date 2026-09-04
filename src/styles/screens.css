@@ -3254,6 +3254,10 @@
 .uc-step-num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast); display: grid; place-items: center; font-size: .84em; font-weight: 800; flex-shrink: 0; margin-top: 2px; }
 .uc-step-body h3 { margin: 0 0 4px; font-size: .98em; font-weight: 700; }
 .uc-step-body p { margin: 0; font-size: .88em; color: var(--text-3); line-height: 1.5; }
+/* Retained, currently unused. The four use-case testimonials these styled were
+   fabricated quotes attributed to invented people and were removed 2026-09-04;
+   the rules stay so real, attributable quotes can be dropped back in. Do not
+   re-add a testimonial without a named customer who agreed to it. */
 .uc-testimonial { padding: 28px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--accent-soft); margin-top: 24px; }
 .uc-testimonial blockquote { margin: 0 0 14px; font-size: 1.05em; font-style: italic; color: var(--text); line-height: 1.6; }
 .uc-testimonial cite { font-size: .86em; color: var(--text-3); font-weight: 600; font-style: normal; }
@@ -10442,6 +10446,96 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 .wrh-credits { font-variant-numeric: tabular-nums; }
 .wrh-more { margin: 4px 0 0; font-size: .85rem; }
 .wrh-compact .wrh-row { padding: 8px 0; }
+.wrh-row-interactive {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 10px 10px;
+  margin: 0 -10px;
+  transition: background var(--transition, 0.15s ease), transform var(--transition, 0.15s ease);
+}
+.wrh-row-interactive:hover,
+.wrh-row-interactive:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.wrh-open-affordance {
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  transition: transform var(--transition, 0.15s ease), color var(--transition, 0.15s ease);
+}
+.wrh-row-interactive:hover .wrh-open-affordance {
+  color: var(--accent);
+  transform: translate(2px, -2px);
+}
+
+/* Workflow Run Modal */
+.wrm-modal {
+  max-width: 820px;
+  width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.wrm-header {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: var(--surface-1);
+}
+.wrm-title-group { display: flex; flex-direction: column; gap: 4px; }
+.wrm-eyebrow { display: flex; gap: 8px; align-items: center; }
+.wrm-id { font-family: monospace; font-size: .75rem; color: var(--text-3); }
+.wrm-title { margin: 2px 0 0; font-size: 1.25rem; font-weight: 700; color: var(--text-1); }
+.wrm-sub { font-size: .84rem; color: var(--text-2); }
+.wrm-meta-bar {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 10px 24px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+}
+.wrm-meta-item { display: flex; gap: 6px; align-items: center; }
+.wrm-meta-label { color: var(--text-3); }
+.wrm-meta-val { font-weight: 600; color: var(--text-1); }
+.wrm-meta-est { font-style: normal; color: var(--text-3); font-weight: 400; }
+.wrm-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+.wrm-section { display: flex; flex-direction: column; gap: 8px; }
+.wrm-section h3 { margin: 0; font-size: .95rem; font-weight: 600; color: var(--text-1); }
+.wrm-failed-box {
+  padding: 18px;
+  background: rgba(185, 28, 28, 0.08);
+  border: 1px solid rgba(185, 28, 28, 0.2);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wrm-failed-head { display: flex; gap: 8px; align-items: center; color: #b91c1c; }
+.wrm-failed-head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: #b91c1c; }
+.wrm-failed-msg { margin: 0; font-size: .88rem; color: var(--text-1); }
+.wrm-failed-note { margin: 0; font-size: .8rem; color: var(--text-2); }
+.wrm-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: var(--surface-1);
+}
 
 /* Dashboard view tabs — saved pages vs workflow runs. Two genuinely different
    objects (a failed run is worth seeing; only successes become saved pages),

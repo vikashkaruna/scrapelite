@@ -77,16 +77,16 @@ export default function UseCaseSEO() {
             </p>
             <div className="uc-stats">
               <div className="uc-stat">
-                <span className="uc-stat-num">10s</span>
-                <span className="uc-stat-label">average audit time</span>
+                <span className="uc-stat-num">3</span>
+                <span className="uc-stat-label">lenses: search, answer &amp; generative engines</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">25K+</span>
-                <span className="uc-stat-label">pages audited this month</span>
+                <span className="uc-stat-num">H1–H6</span>
+                <span className="uc-stat-label">full outline, links and metadata</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">Free</span>
-                <span className="uc-stat-label">to start — no credit card</span>
+                <span className="uc-stat-num">$0</span>
+                <span className="uc-stat-label">to start — no card</span>
               </div>
             </div>
           </div>
@@ -133,17 +133,6 @@ export default function UseCaseSEO() {
                   {p.label}
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Testimonial */}
-          <div className="uc-section fade">
-            <h2>What our users say</h2>
-            <div className="uc-testimonial">
-              <blockquote>
-                "DatIQ replaced our $80/month heading audit tool. I audit competitor pages in 10 seconds now."
-              </blockquote>
-              <cite>— Jamie L., SEO Lead</cite>
             </div>
           </div>
 

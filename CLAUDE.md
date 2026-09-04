@@ -2,8 +2,43 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-03 (latest) — FOUR PROVIDER "REJECTIONS" ON `/admin/ai`, AND NOT ONE OF THEM WAS A REJECTION. MERGED TO `staging` AND `main` — BOTH AT `62136bd`, IDENTICAL.**
-> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+> **Last updated: 2026-09-04 (later) — THE INTELLIGENCE WORKFLOWS HAD SHIPPED AND NOT ONE PUBLIC SURFACE DESCRIBED THEM. FIXED — AND TWO CLASSES OF PRE-EXISTING INTEGRITY DEFECT REMOVED FROM LIVE PAGES ON THE WAY. ON `staging`; `main` DELIBERATELY UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/internal/DatIQ-Product-Documentation-Internal.md §16](docs/internal/DatIQ-Product-Documentation-Internal.md).
+>
+> 🔴 **FOUR FABRICATED TESTIMONIALS, FROM NAMED PEOPLE, WERE LIVE ON THE USE-CASE PAGES.** *"Alex R., Head of Sales"*, *"Sarah M., Product Manager"*, *"Priya K., Market Research Lead"*, *"Jamie L., SEO Lead"* — alongside invented usage numbers (*"1,200+ CI analysts"*, *"50K+ competitor pages tracked"*). **This repo's own policy had hidden Home's testimonials behind `{false && …}` since R4 precisely because there was no real data behind them**; these four pages were built later and never got the same treatment. All four removed; the stat trios replaced with facts a reader can verify against `/pricing`.
+>
+> 🔴 **STALE PRICING WAS BEING SERVED AS STRUCTURED DATA TO SEARCH AND ANSWER ENGINES.** `pageSeo.js`'s lead-generation `FAQPage` JSON-LD said *"Select ($19/mo) is 100, Pro ($29/mo) is 250, Business ($79/mo) is 1,000, Agency ($299/mo)"* — **all eight figures wrong** (really $14.40/500, $20.40/1,000, $44.40/10,000, $106.80/∞) — and gated integrations to *"Business and Agency"* when `limits.integrations` is true from **Select**. `llms-full.txt` said DatIQ *"starts at $19/mo"* (it is $4.80). ⚠️ **`CLAUDE.md`'s own pricing table below carried the identical stale numbers and is the likely source** — it now warns you to re-derive from `pricingConfig.js`. ⚠️ **The readiness audit's "pricing coherence" check compares plan NAMES, not NUMBERS, and passed throughout** — a price inside a JSON-LD answer body is prose to every gate in this repo, so it can rot indefinitely while everything stays green.
+>
+> ✅ **PUBLISHED:** user guide **17 → 23 sections** (six new workflow guides; §1 rewritten from "what it extracts" to the read → reason → watch → act → share loop). ⚠️ **Eight help URLs renumbered, all 301'd** — and the pre-existing help redirects were **repointed at the FINAL numbers, not the intermediate ones**, or they would have become the two-hop chains `page-ownership.test.mjs` forbids. **Five new use-case pages** (`/account-intelligence`, `/competitive-monitoring`, `/ai-visibility`, `/recruiting`, `/investor-diligence`) closing persona coverage at 7/7, each with its own BreadcrumbList + Article + FAQPage. **Pricing** gained five workflow lines per card and an **Intelligence workflows** matrix group — ⚠️ **every cell derived from the limit `entitlementModel.js` already enforces** (`batch_max_urls`, `scheduled_monitoring`, `integrations`), never hardcoded, because hardcoding is exactly how the discoverability rows stayed missing from `/pricing` for months. Plus 4 changelog groups, 4 blog posts, 6 FAQ entries in **both** the visible list and the JSON-LD, `llms*.txt` repositioned, workflow rows on all five comparison tables.
+>
+> ⚠️ **`scripts/prerender.mjs` NOW TAKES `PRERENDER_CHROMIUM_PATH`.** This image ships Chromium **1194** while Playwright wants **1234**, so `channel:"chrome"` fails AND the bundled fallback fails — no marketing page can be prerendered at all. Use `PRERENDER_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run prerender`. ⚠️ **A fresh remote clone has no `node_modules`** — `npm ci` first or every vitest run dies on "Cannot find package 'vite'".
+>
+> **Verified:** unit **2 935 / 173 files** · contract **1 951** (+14 skipped) · integration **432 / 51** · system 8 · build · check:prerender **28 pages / 112 refs** · security · readiness **5 pass / 2 warn / 0 fail**. ⚠️ **Screenshots remain stale** (the standing WARN) — `/templates`, `/lists`, `/watchlists`, `/rules` have no captures, so help §§10-15 ship without imagery.
+>
+> Prior: 2026-09-04 — PHASES 4-6 WERE RECORDED ✅ DONE AND WERE WORLD-READABLE. FIXED, PLUS THE THREE BRD "MUST" ENGINES BUILT. ON `staging` AT `1de5b34`; `main` DELIBERATELY UNTOUCHED (17 behind).**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md](docs/WORKFLOWS-CONFORMANCE-REVIEW-2026-09-04.md) ·
+> [docs/TEST-EXECUTION-INTELLIGENCE-WORKFLOWS.md](docs/TEST-EXECUTION-INTELLIGENCE-WORKFLOWS.md).
+>
+> 🔴 **MIGRATIONS `0041`/`0042`/`0043` SHIPPED 15 TABLES READABLE AND WRITABLE BY ANYONE HOLDING THE PUBLIC ANON KEY.** Two mistakes, either sufficient alone: `grant all … to anon`, plus a policy reading `using (user_id = auth.uid() or auth.uid() is null)`. **`auth.uid()` IS null for the anon role**, so the clause that reads like a dev convenience grants every row to exactly the caller it was written to exclude; `canonical_entities_insert`'s `with check (auth.uid() is null or auth.uid() is not null)` is literally `true`. `runtime-config.js` states the model in its own comment — *"RLS protects data, not the key"* — and these three removed the thing protecting it. **Verified exploitable read-only against staging**: `GET /rest/v1/lists?select=id&limit=1` with only the committed publishable key → **HTTP 200, real row ids**, no Authorization header. `review_queue` holds unverified contact PII. **Phases 0-3 (`0036`-`0040`) do NOT have this** — they use `for all to service_role` and grant nothing to anon, matching `0029`/`0031`. **Fixed by `0044`**, pinned by **+76 db-verify assertions**, and ✅ **applied to staging by the owner — `npm run verify:rls` now reports 15/15 at HTTP 401.** ⚠️ **PRODUCTION STILL NEEDS `0044` AND `0045`** before any promotion: `npm run verify:rls -- --prod`.
+>
+> 🔴 **THE REASON IT SHIPPED: `bulk-enrichment.js`, `watchlists.js` and `signal-rules.js` HAD ZERO CONTRACT TESTS.** A 100% green Staging Gate proved nothing about them. Six further findings, all fixed: handlers used `auth.ok ? auth.user?.id : null` so an auth *failure* became an anonymous request and the stores' `if (userId) q = q.eq(...)` meant **no filter** on a service-key query (unauthenticated `GET /api/signal-rules` returned every tenant's rules **including the Slack webhook URLs in `action_config`**); four IDORs, incl. `recordFieldChange` taking **no user id at all**, so anyone knowing a watchlist id could inject fabricated competitor "changes" into another tenant's feed; `getIcpRules` falling back to `data[0]` and handing over **another tenant's ICP criteria**; **no entitlement or credit check anywhere** in Phases 4-6, leaving three cost-bearing operations unmetered and three of the BRD's own upgrade triggers unenforceable; unvalidated `action_config` URLs (a **dormant** SSRF primitive); and `/lists`, `/watchlists`, `/rules` **indexable**, never added to the private-prefix invariant.
+>
+> ✅ **THE THREE BRD "MUST" ENGINES ARE BUILT.** **G1** — PRD 5 never dispatched (`recordExecution` had zero callers; rules were sandbox-only): new `lib/signalDispatch.js`, the PRD's 10 canonical event kinds, all four actions, execution row on every attempt. **The runtime shares ONE evaluator with the sandbox** — a preview that disagrees with production is worse than no preview — and destinations are re-validated **at dispatch**, not only at write. **G2** — PRD 4 had no crawler or differ, so the chosen `cadence` was stored and never honoured: new `watchlist-monitor.js` (`@hourly`, honouring each watchlist's own cadence internally) + pure `snapshotModel.js`, **deterministic by design** because a non-deterministic differ disagrees with itself and every diff becomes noise. First sighting is a BASELINE and never alerts; **a field that stopped being observed is NOT a deletion** (the usual cause is a failed render, and "they deleted all their pricing" is the costliest false positive here). Charges `monitor_check` to the ledger. **G3** — PRD 3's runner was browser-driven: new `bulk-runner.js` (`*/5`), claiming work per **item** so it is safe alongside the client path, which is kept deliberately. Both crons are in **`netlify.toml` AND `AUTOMATION_JOBS`** — the parity test asserts they agree.
+>
+> 🔴 **A FOURTH DEFECT, FOUND WHILE BUILDING G3, LARGER THAN ANY OF THEM: THE BULK ENRICHER NEVER FETCHED ANYTHING.** It built firmographics by string-matching the domain name — `industry: domain.includes("tech") ? "Software" : "Services"`, a hardcoded **`employee_count: 55` for every company on earth**, `has_pricing: true` always — and stamped **`confidence_score: 0.95`** on the invention. **Every ICP score in the product derived from it.** Same defect this repo already fixed once (production serving fixture prose badged `ai_generated`), in a more expensive place, because a RevOps user routes real outbound off these scores. Replaced by `lib/bulkEnrich.js` on one rule: a field is **observed**, **inferred**, or **ABSENT** — never invented. Absent fields are omitted, and `evaluateIcp` already treats an absent field as unmeasured and redistributes its weight (§1.6), so honesty produces a lower **coverage** rather than a wrong **score**. Field-level provenance travels with every row (`0045`).
+>
+> ⚠️ **TWO TRAPS WORTH THE NEXT SESSION'S TIME. (1) `isPublicHttpUrl` HAS A MIXED CONTRACT** — it **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc documenting only the first. A `try/catch` alone silently accepts `http://169.254.169.254/`, the cloud metadata endpoint. **The first draft of the SSRF fix had exactly that bug and the new test caught it**; `extract.js` gets it right with the async variant. **(2) `describeCron` REPORTED EVERY SUB-DAILY CRON AS "Daily"** — its final branch is reached whenever the hour field is non-numeric, so `/admin/monitoring` had been telling operators that `scheduled-runner` and `health-monitor`, both `@hourly`, run **daily**, since they were added. Fixed; 6 regression tests, all confirmed RED.
+>
+> ⚠️ **THE STAGING TEST ACCOUNT WAS NOT CREATED AND NO SIGN-IN WAS PERFORMED** — creating accounts and entering passwords are outside what an agent here does, regardless of credentials being supplied. Instead the blocked surface went **from 24 cases to 1**: 17 moved to new `scripts/verify-workflows-e2e.mjs` (**real** stores against **real** Postgres, 45 migrations, **two real tenants**, 39 assertions, wired into `test:db`), 5 to component tests covering **both** auth directions, and 1 was already covered from source. **Only S-01 remains — that a real credential obtains a real session — and it is marked ⏸, not passed.** `e2e/journeys/workflows-authenticated.spec.js` is ready; it reads credentials from env only, has no defaults, and **skips** without them. **No credential is anywhere in the repository.**
+>
+> **Verified:** unit **2 911** · contract **1 951** (+14 skipped) · integration **432** · system 8 · db **45 migrations / 461 assertions** + referral 17 + **workflows 39** · build · check:prerender 23/92 · security · e2e smoke **131**. All 10 gates green, nothing bypassed. **Every behavioural test confirmed RED against the pre-fix code first.**
+>
+> ⚠️ **ENVIRONMENT, NOT CODE:** `~/.npm/_cacache` has **root-owned entries**, so `npm audit` re-fetches instead of caching and the pre-push security gate flapped repeatedly all session (worked around with `npm_config_cache` at a scratch dir; the real fix needs the owner's password — `sudo chown -R "$(id -u):$(id -g)" ~/.npm`). ⚠️ **The staging Netlify deploy state was never confirmed** — no CLI in the worktree and `staging--datiqapp.netlify.app` is 401-gated by Netlify's own edge access.
+>
+> Prior: 2026-09-03 — FOUR PROVIDER "REJECTIONS" ON `/admin/ai`, AND NOT ONE OF THEM WAS A REJECTION. MERGED TO `staging` AND `main` — BOTH AT `62136bd`, IDENTICAL.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md).
 > 🔴 **PRODUCTION IS NOT DEPLOYED.** Phase-Gate run [33784391636](https://github.com/vikashkaruna/scrapelite/actions/runs/33784391636) is queued on `62136bd` and stops for a manual Netlify unlock **plus** an `approved` comment. ✅ **No database step** — `git diff origin/main origin/staging -- supabase/migrations/` was empty; `0036`–`0040` were already on `main`.
 >
 > ✅ **CORRECTION TO THE ENTRY BELOW: the three AI provider accounts have been RESTORED by the owner.** Gemini and OpenAI keys are valid and funded, and `PAGESPEED_API_KEY` was replaced with a Cloud key at the end of this session. ⚠️ **None of that is verified from a session** — confirm with `/admin/ai → Test all providers`, and remember Netlify injects Function env vars **at deploy time**, so a key changed in the UI needs a redeploy and its **Scopes must include Functions**.
@@ -184,9 +219,10 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-03 (end of day): `main` and `staging` are **identical at `62136bd`**, carrying the AI-provider, PageSpeed and Jina fixes plus a concurrent session's templates/run-history work. `feat/intelligence-workflows` continues Phases 3–7. ⚠️ `claude/session-w7kxmu` is merged and dead but **still on the remote** — a 403 blocked its deletion. **Do not trust this row without re-checking `git branch -r`** — it has gone stale for weeks at a time before. |
-| **Latest commit** | `62136bd` on both `main` and `staging`, 2026-09-03 — the fast-forward that carried this session's provider fixes and a concurrent session's templates work. Run `git log --oneline -12`. |
-| **Verify the schema locally** | `npm run test:db` — applies all 17 migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy. ~5s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-04: `staging` = **`1de5b34`** (workflow security lockdown + the three BRD engines). **`main` = `db8868c`, 17 behind and deliberately untouched** — the owner asked for staging only. ⚠️ **`main` therefore still carries `0041`–`0043` WITHOUT `0044`**, i.e. the unauthenticated-exposure defect, so it must not be deployed before those migrations reach the production database. **Do not trust this row without re-checking `git branch -r`** — it has gone stale for weeks at a time before. |
+| **Latest commit** | `1de5b34` on `staging`, 2026-09-04 — `describeCron` sub-daily fix, the last of 12 commits covering the RLS lockdown, the PRD 3/4/5 engines and their test coverage. `main` is at `db8868c`. Run `git log --oneline origin/main..origin/staging`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **45** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**461 assertions**), then runs the referral (17) and workflow (39) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---
 
@@ -831,15 +867,27 @@ ThemeProvider
 
 ### Plans (R4 revised tiers)
 
-| Plan | USD/mo | USD/yr | INR/yr | Notes |
-|---|---|---|---|---|
-| Free | $0 | — | — | 10 ext/mo + 25 trial credit |
-| Select | $19 | $15/mo | ₹999/mo | |
-| Pro | $29 | $23/mo | ₹1,499/mo | badge: Recommended |
-| Business | $79 | $63/mo | ₹3,999/mo | API access |
-| Agency | $299 | $239/mo | ₹14,999/mo | 5 workspaces |
-| Developer | $49 | $39/mo | ₹2,499/mo | comingSoon — H2 2026 |
-| Enterprise | Custom (≥$1,000/mo) | — | — | Contact sales |
+> ⚠️ **This table was stale for months** (it listed Select $19 / Pro $29 / Business $79 / Agency $299,
+> none of which have been the real prices for some time) and the same stale numbers had leaked into
+> `pageSeo.js`'s public FAQ JSON-LD. Corrected 2026-09-04 against `src/lib/pricingConfig.js`, which is
+> the only source of truth. **Re-derive from that file rather than trusting this table.**
+
+| Plan | USD/mo | USD/mo annual | INR/mo annual | Extractions | Audits | Batch / list | Monitors | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Free | $0 | — | ₹0 | 10 | 3 | 5 | 0 | + 25 trial credit |
+| Go | $4.80 | $4 | ₹299 | 200 | 10 | 20 | 0 | fork templates |
+| Select | $14.40 | $12 | ₹999 | 500 | 25 | 50 | 5 | **integrations + signal routing start here** |
+| Pro | $20.40 | $17 | ₹1,499 | 1,000 | 100 | 100 | 10 | badge: Recommended |
+| Business | $44.40 | $37 | ₹3,499 | 10,000 | 500 | 250 | 25 | API access, 3 seats, white-label |
+| Agency | $106.80 | $89 | ₹8,499 | ∞ | 2,000 | 500 | ∞ | 5 workspaces |
+| Developer | $32.40 | $27 | ₹2,499 | 10,000 | 250 | 500 | 10 | comingSoon — H3 2026 |
+| Enterprise | Custom (≥$1,000/mo) | — | — | — | — | — | — | Contact sales |
+
+**Workflow surfaces reuse these same limits — no new allowances were invented.** A bulk account list
+answers to `batch_max_urls`; a competitor watchlist answers to `scheduled_monitoring`; a signal rule
+answers to `integrations`; forking a template answers to `template_duplicate`. Sharing a report is
+ungated on every plan by design. `PricingMatrix.jsx` derives every workflow cell from these limits so
+the table cannot promise what the server refuses.
 
 - Defaults in `src/lib/pricingConfig.js` — also exports `ENTERPRISE_PLAN`
 - Admin overrides via `src/lib/pricingOverrides.js` (localStorage-backed, no rebuild)

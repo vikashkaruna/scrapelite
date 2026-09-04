@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AUTOMATION_JOBS } from "./monitoringModel.js";
 import {
   DEFAULT_PRESET_KEY,
   SCHEDULE_PRESETS,
@@ -463,5 +464,59 @@ describe("saveSchedule — auth errors must not masquerade as success", () => {
     await saveSchedule(draft());
     apiClient.listSchedules.mockRejectedValueOnce({ status: 401 });
     await expect(listSchedules()).resolves.toHaveLength(1);
+  });
+});
+
+// ── describeCron: sub-daily cadences ────────────────────────────────────────
+// Added 2026-09-04. Every cron whose hour field is `*` fell through to the
+// final `Daily` branch, because `time()` returns "" for a non-numeric hour.
+// /admin/monitoring has therefore been reporting scheduled-runner and
+// health-monitor — both @hourly — as running DAILY since they were added, and
+// would have said the same of the two new workflow engines.
+//
+// A dashboard that misreports the one thing it exists to report is worse than
+// no dashboard, because it gets believed.
+describe("describeCron — sub-daily cadences are not 'Daily'", () => {
+  it("an hourly cron reads as Hourly", () => {
+    expect(describeCron("0 * * * *")).toBe("Hourly");
+  });
+
+  it("an hourly cron offset into the hour says so", () => {
+    expect(describeCron("30 * * * *")).toBe("Hourly at :30");
+  });
+
+  it("an every-N-minutes cron reads as minutes, not days", () => {
+    expect(describeCron("*/5 * * * *")).toBe("Every 5 minutes");
+    expect(describeCron("*/15 * * * *")).toBe("Every 15 minutes");
+  });
+
+  it("singular minute is not pluralised", () => {
+    expect(describeCron("*/1 * * * *")).toBe("Every 1 minute");
+  });
+
+  it("every minute is described, not defaulted", () => {
+    expect(describeCron("* * * * *")).toBe("Every minute");
+  });
+
+  it("the daily, weekly and monthly branches are unchanged", () => {
+    // The fix inserts a branch above these; regressing them would be worse
+    // than the bug it fixes, since they are the common cases.
+    expect(describeCron("0 0 * * *")).toBe("Daily at 12:00 AM");
+    expect(describeCron("0 9 * * 1-5")).toBe("Every weekday at 9:00 AM");
+    expect(describeCron("0 9 * * 1")).toBe("Weekly on Mon at 9:00 AM");
+    expect(describeCron("0 0 1 * *")).toBe("Monthly on day 1 at 12:00 AM");
+    expect(describeCron("0 */6 * * *")).toBe("Every 6 hours");
+  });
+
+  it("every registered platform cron renders a cadence that is not misleading", () => {
+    for (const job of AUTOMATION_JOBS) {
+      const text = describeCron(job.cron);
+      if (job.schedule === "@hourly") {
+        expect(text, `${job.id} is hourly`).toMatch(/hourly/i);
+      }
+      if (job.schedule === "@daily") {
+        expect(text, `${job.id} is daily`).toMatch(/daily/i);
+      }
+    }
   });
 });

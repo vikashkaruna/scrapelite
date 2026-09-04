@@ -21,8 +21,16 @@
 - **Versioning:** the major version is in the path (`/v1`). Breaking changes ship under a new version; additive changes do not.
 - **Authentication:** a secret API key sent as a bearer token (see below).
 
-The API mirrors what you can do in the app: extract a page, enrich it, generate content, run a batch,
-and manage schedules that watch pages for changes.
+The API mirrors the extraction and monitoring core of the app: extract a page, enrich it, generate content,
+run a batch, run a discoverability audit, and manage schedules that watch pages for changes.
+
+**Getting intelligence out without polling.** DatIQ's newer workflow surfaces — templates, bulk account
+lists, competitor watchlists — do not yet have public REST endpoints (see *Planned endpoints* at the end of
+this document). They are, however, already programmatically reachable in the direction most integrations
+want: a **signal routing rule** configured in the app can call **your** webhook whenever a watched
+competitor changes, an account crosses your ICP threshold, or a workflow run finishes. That is a push, so
+you receive events as they happen instead of polling for them. See **Webhooks** below for the envelope,
+signing and retry behaviour.
 
 ---
 
@@ -626,3 +634,23 @@ Record a thumbs-up / thumbs-down rating on the AI summary, optionally with a fre
 | `comment` | string | no | Free-text feedback. |
 
 This data is used to improve the AI model.
+
+---
+
+## Planned endpoints
+
+These surfaces exist in the app today and are on the roadmap for the public API. They are listed so you can
+plan around them; they are **not callable yet**, and this section will be replaced by full reference entries
+when they ship.
+
+| Area | Planned resources | What it will let you do |
+|---|---|---|
+| **Workflow templates** | `/v1/templates`, `/v1/templates/{key}/runs` | List the catalogue, start a run with an input payload, poll or receive its result. |
+| **Account lists** | `/v1/lists`, `/v1/lists/{id}/items`, `/v1/lists/{id}/runs` | Import domains, start enrichment, read back scored accounts with coverage and provenance. |
+| **ICP rules** | `/v1/icp-rules` | Read and update the weighted criteria and threshold an account list is scored against. |
+| **Watchlists** | `/v1/watchlists`, `/v1/watchlists/{id}/changes` | Create a watch, set its cadence, and read the classified change feed. |
+| **Signal rules** | `/v1/signal-rules` | Manage routing rules programmatically instead of in the app. |
+| **Reports** | `/v1/reports`, `/v1/reports/{id}/visibility` | Publish a result as a report and change or revoke its visibility. |
+
+Until they land, the supported integration pattern for these surfaces is: configure the workflow in the app,
+and route its output to your systems with a **webhook signal rule**.

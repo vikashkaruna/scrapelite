@@ -541,6 +541,81 @@ export function can(ent, capability, ctx = {}) {
             "go",
           );
 
+    // ── Intelligence Workflows, Phases 4-6 (PRD 3, 4, 5) ────────────────────
+    // These three shipped with NO entitlement check of any kind, which made
+    // three of the BRD's own headline upgrade triggers ("bulk limits",
+    // "monitored URLs", "automation volume") unenforceable, and left three
+    // cost-bearing operations unmetered.
+    //
+    // Each reuses a limit the pricing page ALREADY sells rather than inventing
+    // a new number. Choosing new per-tier allowances is a pricing decision for
+    // the owner, not something to smuggle in with a security fix — and a limit
+    // nobody has priced is worse than an honest reuse of one that is.
+
+    // A bulk list is a batch of URLs by another name, so it answers to the
+    // batch allowance. Giving it a separate, ungated path would let a user on
+    // a 5-URL batch limit enrich 500 domains by using the other screen.
+    case "bulk.enrich": {
+      const rowCount = ctx.rowCount ?? 1;
+      const effective = (L.batch_max_urls || 0) + (ctx.bonusBatchUrls || 0);
+      if (effective === 0) {
+        return deny(
+          "NOT_IN_PLAN",
+          "Bulk account intelligence is not available on your current plan.",
+          0,
+          "pro",
+        );
+      }
+      if (rowCount > effective) {
+        return deny(
+          "PLAN_LIMIT",
+          `Your plan supports up to ${effective} account${effective === 1 ? "" : "s"} per list. Reduce the list or upgrade for larger runs.`,
+          effective,
+        );
+      }
+      return ok(effective - rowCount);
+    }
+
+    // A watchlist IS a recurring monitor — it crawls on a cadence forever —
+    // so it answers to the same allowance as every other scheduled job.
+    // `audit.schedule` above reuses this limit for exactly the same reason:
+    // a user who may keep no schedules must not acquire the right to keep
+    // them by pointing them at a different object.
+    case "watchlist.create": {
+      const owned = ctx.watchlistCount ?? 0;
+      const cap = L.scheduled_monitoring || 0;
+      if (cap === 0) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Competitor watchlists require a plan that includes scheduled monitoring.",
+          0,
+          "select",
+        );
+      }
+      if (cap !== Infinity && owned >= cap) {
+        return deny(
+          "PLAN_LIMIT",
+          `You've reached your plan's limit of ${cap} monitored watchlist${cap === 1 ? "" : "s"}.`,
+          0,
+        );
+      }
+      return ok(cap === Infinity ? Infinity : cap - owned);
+    }
+
+    // A signal rule exists to push into HubSpot / Slack / a webhook. It is the
+    // integrations capability wearing a different UI, and gating it anywhere
+    // else would let a free user reach the four push providers that
+    // `integrations` was explicitly added to gate.
+    case "rule.create":
+      return L.integrations
+        ? ok()
+        : deny(
+            "NOT_IN_PLAN",
+            "Signal routing rules are available on the Select plan and above.",
+            0,
+            "select",
+          );
+
     // Sharing is likewise ungated: PRD 2's whole acquisition loop is a free
     // user sharing a report with someone who then signs up. Gating it would be
     // charging for our own distribution. What free tier does NOT get is

@@ -63,6 +63,7 @@ lockfile ships **5 high** advisories.
 |---|---|---|
 | `sharp: ^0.35.4` | sharp 0.35.4 · libvips 1.3.3 | `ipx@3.1.1` declares `sharp@^0.34.3`, and 0.34.x is inside the vulnerable range (`<0.35.0`) for GHSA-f88m-g3jw-g9cj (CVE-2026-33327/-33328/-35590/-35591). The only `ipx` release that moved to `sharp@^0.35.3` is `4.0.0-beta.1` — a **beta**, which has no business in the tool that publishes production. |
 | `qs: ^6.16.0` | qs 6.16.0 | 6.15.x is inside the array-limit-bypass / DoS advisory range. |
+| `toml: ^4.2.0` | toml 4.2.0 | `@netlify/zip-it-and-ship-it` and `netlify-cli` declare `toml@^3.0.0`, which is vulnerable to GHSA-82x6-q7mm-w9cf (recursion DoS) and GHSA-v5mp-jgw5-2x6j (prototype pollution). |
 
 **Why `npm audit fix` does not do this for you, and why that is misleading:** it
 offered exactly one remedy — `netlify-cli@23.13.5`, a **major downgrade**, four

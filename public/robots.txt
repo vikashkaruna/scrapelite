@@ -41,6 +41,9 @@ Disallow: /batch
 Disallow: /schedules
 Disallow: /discoverability
 Disallow: /workspace
+Disallow: /lists
+Disallow: /watchlists
+Disallow: /rules
 Disallow: /collections
 Disallow: /payment
 Disallow: /reset-password

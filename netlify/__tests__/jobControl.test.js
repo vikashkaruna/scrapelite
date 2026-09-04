@@ -110,8 +110,9 @@ describe("jobEnabledMap (J-02)", () => {
     }));
     const map = await mod.jobEnabledMap();
     expect(Object.keys(map).sort()).toEqual([
-      "billing-lifecycle", "billing-purge", "discoverability-monitor",
-      "health-monitor", "reengagement", "scheduled-runner",
+      "billing-lifecycle", "billing-purge", "bulk-runner",
+      "discoverability-monitor", "health-monitor", "reengagement",
+      "scheduled-runner", "signal-retry", "watchlist-monitor",
     ]);
     expect(map["billing-purge"]).toMatchObject({
       enabled: false, source: "config", reason: "migration window", changedBy: "admin",

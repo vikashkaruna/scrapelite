@@ -370,11 +370,7 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "bulk_icp_enrichment",
-    // DRAFT until Phase 4 ships the durable runner (§1.3a). The definition is
-    // here so Phase 4 is a publish, not a build; the catalogue does not offer
-    // it because a workflow that cannot finish is worse than one that is
-    // visibly not ready yet.
-    status: TEMPLATE_STATUS.DRAFT,
+    status: TEMPLATE_STATUS.PUBLISHED,
     title: "Bulk ICP Account Enrichment",
     persona: "sales",
     summary:
@@ -403,7 +399,12 @@ export const SEED_TEMPLATES = [
         { kind: "sources", title: "Where this came from" },
       ],
     },
-    prompt_bundle: { extract: "(Phase 4)" },
+    prompt_bundle: {
+      extract:
+        "Extract firmographics, company name, industry, employee range, and pricing model for each account from its homepage and about/pricing pages. " +
+        "Never invent or guess values — return null for any field that cannot be verified from the source text. " +
+        "Identify whether pricing is published and extract verifiable employee counts.",
+    },
     credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
     plan_entitlement: "extract.batch",
     min_plan: "go",
