@@ -33,5 +33,64 @@
     "Why the override is safe here, and the residual risk, are documented in",
     "tools/netlify-cli/README.md."
   ],
-  "bypasses": []
+  "bypasses": [
+    {
+      "id": "GHSA-82x6-q7mm-w9cf",
+      "package": "toml",
+      "reason": "transitive dependency of netlify-cli in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "id": "GHSA-v5mp-jgw5-2x6j",
+      "package": "toml",
+      "reason": "transitive dependency of netlify-cli in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@netlify/build",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@netlify/dev",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@netlify/functions-dev",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@netlify/functions-utils",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "@netlify/zip-it-and-ship-it",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    },
+    {
+      "package": "netlify-cli",
+      "reason": "transitive toml dependency in deploy toolchain",
+      "todo": "TODO: await upstream netlify-cli toml patch",
+      "expires": "2026-09-30",
+      "approvedBy": "vikashkaruna"
+    }
+  ]
 }
