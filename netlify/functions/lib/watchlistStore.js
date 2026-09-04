@@ -3,8 +3,8 @@
 // Manages watchlists, targets, monitored pages, snapshots, field changes, and feedback.
 
 import { createClient } from "@supabase/supabase-js";
-import { normalizeDomain } from "../../src/lib/bulk/identityModel.js";
-import { buildChangeRecord } from "../../src/lib/watchlist/materialityModel.js";
+import { normalizeDomain } from "../../../src/lib/bulk/identityModel.js";
+import { buildChangeRecord } from "../../../src/lib/watchlist/materialityModel.js";
 
 // In-memory mock storage for dev/test environments without live Supabase keys
 const _localWatchlists = new Map();

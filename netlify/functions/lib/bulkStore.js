@@ -4,8 +4,8 @@
 // enrichment_jobs, and review_queue.
 
 import { createClient } from "@supabase/supabase-js";
-import { dedupeEntries } from "../../src/lib/bulk/identityModel.js";
-import { evaluateIcp, DEFAULT_THRESHOLD } from "../../src/lib/bulk/icpModel.js";
+import { dedupeEntries } from "../../../src/lib/bulk/identityModel.js";
+import { evaluateIcp, DEFAULT_THRESHOLD } from "../../../src/lib/bulk/icpModel.js";
 
 // In-memory mock store for local/dev/offline when Supabase is not configured
 const _localLists = new Map();

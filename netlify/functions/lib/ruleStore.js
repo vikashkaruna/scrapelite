@@ -3,7 +3,7 @@
 // Manages signal_rules and rule_executions audit records.
 
 import { createClient } from "@supabase/supabase-js";
-import { evaluateSignalRule, formatActionPayload } from "../../src/lib/rules/ruleModel.js";
+import { evaluateSignalRule, formatActionPayload } from "../../../src/lib/rules/ruleModel.js";
 
 const _localRules = new Map();
 const _localExecutions = new Map();
