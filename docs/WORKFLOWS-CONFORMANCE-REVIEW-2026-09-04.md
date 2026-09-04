@@ -67,8 +67,10 @@ tables. Idempotent. Pinned by **+76 assertions** in `scripts/db-verify.mjs` cove
 RLS enabled · exactly one policy · that policy is the service-role one · no policy expression still
 contains `uid() IS NULL` · anon and authenticated hold zero grants.
 
-> ⚠️ **`0044` must be applied to the staging Supabase project.** Until it is, staging remains
-> exposed. It has been verified against WASM Postgres only (44 migrations, 460 assertions).
+> ✅ **`0044` was applied to the staging Supabase project on 2026-09-04 and verified live:**
+> `npm run verify:rls` reports 15/15 tables refusing anonymous reads (HTTP 401), against 15/15
+> returning HTTP 200 with real row ids before it. **Production still needs it** — run
+> `npm run verify:rls -- --prod` before any promotion.
 
 ### S2 · Critical · Application-layer auth fail-open
 
@@ -249,16 +251,15 @@ tenancy tests fail when the `auth.ok ? … : null` fall-through is restored.
 
 ## 6. Recommended order of work
 
-1. **Apply `0044` to the staging Supabase project.** Nothing else matters until this is done —
-   staging is exposed today. Verify with the read-only probe in §S1: it must return 401.
-2. Extend the same probe into `smoke-prod.mjs` so an anonymous PostgREST read of these tables is a
-   standing gate, not a one-off check.
-3. **G2** — the watchlist crawler and differ. Highest customer value of the three: it is what makes
-   PRD 4 a *product* rather than a data model, and the BRD ranks watchlists 4th overall.
-4. **G1** — the rule dispatcher. Depends on G2 producing real events to route. The SSRF validation
-   is already in place, so this is now safe to build.
-5. **G3** — move the chunk runner onto a cron (a `netlify.toml` block plus the existing
-   `workflow_events` queue; §1.3 of the plan already specifies the durable pattern).
+1. ✅ **Done — `0044` applied to staging and verified 15/15 (401).** The same migration is still
+   outstanding on **production** and must land before any promotion: `npm run verify:rls -- --prod`.
+2. ✅ **Done — shipped as `npm run verify:rls`** (`scripts/verify-workflow-rls.mjs`), so the check
+   is one command against either project rather than a one-off.
+3. ✅ **Done — G1, G2 and G3 all shipped 2026-09-04.** See §2.0b of the implementation plan and
+   `TEST-EXECUTION-INTELLIGENCE-WORKFLOWS.md`. A fourth defect was found while building G3 and is
+   larger than any of them: the bulk enricher **never fetched anything** — it string-matched the
+   domain name for firmographics, hardcoded `employee_count: 55`, and stamped `confidence_score:
+   0.95` on the result. Replaced by observed/inferred/absent enrichment with field-level provenance.
 6. Bring `icpModel`, `materialityModel` and `ruleModel` up to the test density of the Phase 0–3
    models.
 7. Decide whether the three new capabilities want **dedicated** per-tier allowances rather than

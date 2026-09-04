@@ -28,11 +28,13 @@
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
 | **TS-9 Live staging, authenticated** | 24 | — | — | ⏸ **operator-run — see §6** |
-| **TS-10 Live staging, unauthenticated (security)** | 15 | — | — | ⏸ **blocked on `0044` — see §7** |
+| **TS-10 Live staging, unauthenticated (security)** | 15 | 15 | 0 | ✅ **`0044` applied — verified live, see §7** |
 
-**Automated total: 5 753 assertions across 8 suites, 0 failures.**
-TS-9 and TS-10 need a signed-in staging session and an applied migration respectively; both are
-operator actions, and neither can be truthfully recorded here until run. See §8 Deviations.
+**Automated total: 5 753 assertions across 8 suites, 0 failures. TS-10 verified live: 15/15.**
+TS-9 remains operator-run: it needs a signed-in staging session, and account creation and password
+handling are outside what this agent may do. It is recorded ⏸ rather than passed because marking it
+green on the strength of the automated suites would be the same "the pipeline said success" mistake
+this whole review exists to correct. See §8 Deviations.
 
 ---
 
@@ -248,22 +250,37 @@ destination the operator did not choose.
 
 ---
 
-## 7. TS-10 · Live staging, unauthenticated (security) — ⏸ BLOCKED
+## 7. TS-10 · Live staging, unauthenticated (security) — ✅ PASSED
 
 ```bash
 npm run verify:rls          # staging
 npm run verify:rls -- --prod   # before any production promotion
 ```
 
-**Expected after `0044` is applied: 15/15 tables HTTP 401, exit 0.**
-**Measured 2026-09-04, before application: 15/15 tables HTTP 200, exit 1.**
+**Measured 2026-09-04, BEFORE `0044`: 15/15 tables HTTP 200 — exposed, exit 1.**
+**Measured 2026-09-04, AFTER `0044` was applied by the operator: 15/15 tables HTTP 401, exit 0.**
 
-| ID | Table | Expected | Last measured |
-|---|---|---|---|
-| X-01..15 | all fifteen Phase 4–6 tables | 401 anonymous | **200 — exposed** |
+| ID | Table | Expected | Before `0044` | After `0044` |
+|---|---|---|---|---|
+| X-01 | `lists` | 401 anonymous | 200 ❌ | **401 ✅** |
+| X-02 | `canonical_entities` | 401 | 200 ❌ | **401 ✅** |
+| X-03 | `list_records` | 401 | 200 ❌ | **401 ✅** |
+| X-04 | `icp_score_rules` | 401 | 200 ❌ | **401 ✅** |
+| X-05 | `enrichment_jobs` | 401 | 200 ❌ | **401 ✅** |
+| X-06 | `enrichment_job_items` | 401 | 200 ❌ | **401 ✅** |
+| X-07 | `review_queue` (contact PII) | 401 | 200 ❌ | **401 ✅** |
+| X-08 | `watchlists` | 401 | 200 ❌ | **401 ✅** |
+| X-09 | `watchlist_targets` | 401 | 200 ❌ | **401 ✅** |
+| X-10 | `monitored_pages` | 401 | 200 ❌ | **401 ✅** |
+| X-11 | `entity_snapshots` | 401 | 200 ❌ | **401 ✅** |
+| X-12 | `field_changes` | 401 | 200 ❌ | **401 ✅** |
+| X-13 | `change_feedback` | 401 | 200 ❌ | **401 ✅** |
+| X-14 | `signal_rules` (webhook URLs) | 401 | 200 ❌ | **401 ✅** |
+| X-15 | `rule_executions` | 401 | 200 ❌ | **401 ✅** |
 
-This is the single highest-priority item in this document. Until `0044` is applied, every
-authenticated test in §6 runs against a database any anonymous caller can read and write.
+The before/after pair is the evidence that matters: the same command, the same public key, the
+same fifteen tables, run either side of the migration. Re-run it after any migration touching
+these tables, and before any production promotion (`npm run verify:rls -- --prod`).
 
 ---
 
@@ -283,7 +300,7 @@ authenticated test in §6 runs against a database any anonymous caller can read 
 | # | Deviation | Reason |
 |---|---|---|
 | D-01 | TS-9 recorded as ⏸, not ✅ | Account creation and password handling are outside what this agent may do. Marking them passed on the strength of unit tests would misrepresent evidence. |
-| D-02 | TS-10 recorded as ⏸ (blocked) | `0044` requires database credentials not available in-session. The verifier is shipped so the check is one command. |
+| D-02 | ~~TS-10 blocked~~ — **RESOLVED** | `0044` was applied by the operator during this session and TS-10 now passes 15/15. The verifier ships as `npm run verify:rls` so the check stays one command. |
 | D-03 | Enrichment reads **one** page (the homepage) | The BRD's schema lists eight field categories. Multi-page crawling per account is a real cost and latency decision; one page keeps the credit model honest and the change reviewable. Extending it is additive. |
 | D-04 | `bulk.enrich` / `watchlist.create` / `rule.create` reuse existing plan limits | Choosing new per-tier allowances is a pricing decision for the owner. The gates are in place to carry dedicated numbers whenever those are set. |
 | D-05 | Watchlist page **discovery** remains manual/seeded | The crawler monitors the pages a watchlist holds. Automatic discovery exists in `classifyUrl` but is not yet wired to a domain crawl — deliberately, so the first version cannot silently enrol pages a user did not choose to monitor. |
@@ -293,7 +310,7 @@ authenticated test in §6 runs against a database any anonymous caller can read 
 
 | # | Item | Owner |
 |---|---|---|
-| O-01 | 🔴 Apply `0044` to staging, then to production before any promotion | Operator |
+| O-01 | ✅ `0044` applied to **staging** and verified 15/15. **Still required on production** before any promotion — run `npm run verify:rls -- --prod` to confirm. | Operator |
 | O-02 | Create the staging test account and run §6 | Operator |
 | O-03 | Retry sweeper for failed dispatches (D-06) | Next session |
 | O-04 | Automatic watchlist page discovery (D-05) | Next session |
