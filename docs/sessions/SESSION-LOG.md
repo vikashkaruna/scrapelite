@@ -115,6 +115,49 @@ PRERENDER_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm r
 ⚠️ Also worth knowing: **a fresh remote clone has no `node_modules`** — `npm ci` first, or every vitest
 run dies on "Cannot find package 'vite'" and looks like a repo problem.
 
+### 🔴 THE STAGING GATE CAUGHT WHAT I DID NOT: I NEVER RAN THE E2E SUITE
+
+Staging Gate run **257** went red on the merge. Nine of eleven steps passed —
+readiness audit, unit, contract, integration, system, build, prerender check,
+plus Vulnerabilities and Open Defects — and **e2e smoke failed with 2 of 131**:
+
+```
+[chromium] › e2e/smoke/use-cases.spec.js:14  → expected 4 .uc-hub-card, got 9
+[chromium] › e2e/smoke/integrations.spec.js  → expected 13 .int-card, got 14
+```
+
+Both are mine, and the cause is embarrassingly simple: **I updated the vitest
+card-count assertions in `static-pages.test.jsx` and never grepped `e2e/` for
+the same assertions.** Playwright could not launch in this container (the
+Chromium 1194 / 1234 mismatch), so I ran nine gates locally, said so, and let CI
+cover the tenth — which is a legitimate trade only if you have first checked
+whether your change touches what that gate asserts. I had not.
+
+**The rule worth carrying: when you change a rendered count, grep for the number
+in BOTH `src/**/*.test.*` AND `e2e/`.** Two suites assert the same fact about
+the same page and they live in different directories; updating one and shipping
+is how a green local run reaches a red CI.
+
+Fixed in the follow-up commit, and both specs now name every card individually
+rather than only counting, so dropping one card and adding another elsewhere
+cannot keep a bare count green. `routes.spec.js` also gained the five new
+use-case routes — they are prerendered pages whose entire purpose is to be
+reachable, so "does this serve 200" is exactly the assertion worth having.
+
+⚠️ **And the e2e suite IS runnable here** — the recipe this file has referred to
+vaguely now has a working form. A throwaway untracked config **at the repo root**
+(it must be there: `playwright.config.js`'s `webServer` command resolves relative
+to the config file's own directory, so a config in /tmp makes npm look for
+package.json in /tmp):
+
+```js
+// pw-local.config.js — delete after use
+import base from "./playwright.config.js";
+export default { ...base, projects: [{ name: "chromium",
+  use: { ...(base.projects?.[0]?.use || {}),
+         launchOptions: { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" } } }] };
+```
+
 ### ⚠️ The readiness audit caught my own wording
 
 Writing *"Team workspaces with owner/admin/member roles"* into `llms.txt` tripped the admin-leakage
