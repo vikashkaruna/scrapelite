@@ -21,9 +21,14 @@
 ## 2026-09-04 (later) — Documentation & public-surface release for the intelligence workflows: five new use-case pages, six new help sections, and two classes of pre-existing integrity defect removed
 
 > **Branch:** `claude/docs-web-pages-update-y27y0d`, cut from `staging` @ `493e5a1` · **Target:** `staging`
-> only — **`main` untouched**, per explicit instruction.
-> **Verification:** unit **2 935 / 173 files** · contract **1 951** (+14 skipped) · integration **432 / 51** ·
-> system **8** · build · check:prerender · security · readiness audit **5 pass / 2 warn / 0 fail**.
+> only — **`main` untouched**, per explicit instruction. ⚠️ **`staging` advanced to `571b267` mid-session**
+> (a concurrent session shipped watchlist page discovery, PRD 4 R-02); merged in cleanly, and §12 of the
+> user guide plus the changelog and both `llms*.txt` were extended to cover it rather than shipping docs
+> that were already one feature behind.
+> **Verification (on the merged tree, after `origin/staging` moved under a concurrent session):**
+> unit **2 947 / 173 files** · contract + integration + system **2 391** (+14 skipped) / 163 files ·
+> db **47 migrations / 463 assertions** + referral 17 + workflows 56 · build ·
+> check:prerender **28 pages / 112 refs** · security · readiness audit **5 pass / 2 warn / 0 fail**.
 
 ### Why this session existed
 

@@ -37,6 +37,7 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 - ICP scoring: customer-editable weighted criteria with required fields and a qualification threshold, testable live against a sample domain before a run
 - Review queue: low-confidence extractions are held for confirmation rather than silently entering the account table
 - Competitor watchlists: standing watches that re-read domains on a cadence, with materiality classification (critical alerts immediately, high daily, medium weekly, low never) and a silent baseline on the first run
+- Watchlist page discovery: adding a domain crawls its homepage and suggests the pages worth monitoring, kept visibly separate from pages the user added, since every monitored page is a recurring charged crawl
 - Change records that keep objective facts separate from labelled AI interpretation
 - Signal routing rules: trigger on a watchlist change, a bulk enrichment result or a workflow run; act into Slack, email, a webhook or HubSpot, with every dispatch recorded and retried on failure
 - Shareable reports with five visibility levels (private, link, workspace, named people, public); only public reports are indexable, and links can be permanently revoked or given an expiry

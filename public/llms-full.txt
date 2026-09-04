@@ -189,6 +189,7 @@ Every run shows a cost estimate before it starts and spends nothing until confir
 
 ### Competitor watchlists and change intelligence
 - Standing watches that re-read chosen competitor domains on a cadence
+- Page discovery: adding a domain crawls its homepage and suggests the pages worth monitoring; suggested pages are labelled distinctly from user-added ones, because every monitored page is a recurring crawl charged to the customer
 - Materiality classification drives delivery: **critical** (a price or tier change) alerts immediately, **high** (a feature claim or positioning shift) batches daily, **medium** weekly, **low** (whitespace, a copyright year) is recorded and never alerts, **unknown** goes to review rather than being guessed at
 - The first run of any watchlist is a silent baseline — there is nothing to compare against yet, and a tool that alerts on setup teaches users to ignore its alerts
 - A field that stopped being observed is reported as unobserved, never as a deletion, because a failed page render is far more common than a competitor removing their pricing

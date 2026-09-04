@@ -109,6 +109,7 @@ const FEATURE_GROUPS = [
     title: "Change intelligence & signal routing",
     items: [
       "Competitor watchlists — standing watches that re-read chosen domains on a cadence",
+      "Page discovery — add a domain and DatIQ suggests the pages worth watching, labelled separately from the ones you added yourself",
       "Materiality classification: critical alerts immediately, high daily, medium weekly, low never",
       "First run is always a silent baseline, so setting up a watch never fires a false alert",
       "A field that stopped being observed is reported as unobserved, never as a deletion",

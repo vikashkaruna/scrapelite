@@ -503,6 +503,19 @@ Open **Watchlists** from the top bar.
 The first run is always a **baseline**. It never alerts — there is nothing to compare it against yet, and a
 tool that fires an alert the moment you set it up teaches you to ignore its alerts.
 
+### Pages you added, and pages we suggested
+
+You do not have to know a competitor's site map to watch it usefully. When you add a domain, DatIQ reads
+its homepage and **suggests the pages worth monitoring** — pricing, product, customers, and so on.
+
+Suggested pages are labelled as such and kept visibly separate from the ones you added yourself, so
+opening a watchlist never shows you pages you did not choose with no way to tell which were which.
+Removing a suggestion is removing a suggestion; it does not undo a decision you made.
+
+This distinction is not cosmetic: **every monitored page is a recurring crawl on your allowance**, so
+being able to see what was added automatically — and prune it — is how you keep control of what a
+watchlist costs.
+
 ### Materiality — why you are not woken up for a copyright year
 
 Every detected change is classified by how much it matters, and the classification drives what happens next:
