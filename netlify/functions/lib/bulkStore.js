@@ -4,6 +4,8 @@
 // enrichment_jobs, and review_queue.
 
 import { createClient } from "@supabase/supabase-js";
+import { enrichDomain, fieldsNeedingReview } from "./bulkEnrich.js";
+import { dispatchSignal } from "./signalDispatch.js";
 import { dedupeEntries } from "../../../src/lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD } from "../../../src/lib/bulk/icpModel.js";
 
@@ -434,40 +436,84 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 
     const rec = item.list_records;
     if (rec) {
-      const domain = rec.canonical_domain || "domain.com";
-      const isTech = domain.includes("tech") || domain.includes("io") || domain.includes("app") || domain.includes("stripe");
-      const enriched = {
-        company_name: domain.split(".")[0].toUpperCase(),
-        industry: isTech ? "Software" : "Services",
-        employee_count: 55,
-        has_pricing: true,
-        hq_country: "US",
-      };
+      const domain = rec.canonical_domain;
 
-      const icp = evaluateIcp(enriched, rules.criteria, rules.threshold);
-      const isReview = !isTech;
-      const finalStatus = isReview ? "needs_review" : (icp.passed ? "complete" : "partial");
+      // REAL enrichment. This used to build firmographics by string-matching the
+      // domain name — `industry: domain.includes("tech") ? "Software" : "Services"`,
+      // a hardcoded `employee_count: 55`, `has_pricing: true` always — and stamp
+      // the result `confidence_score: 0.95`. Every ICP score in the product was
+      // computed from that invention. See bulkEnrich.js for the rule that
+      // replaced it: observed, inferred, or ABSENT — never defaulted.
+      const perDomainBudget = Math.max(2000, budgetMs - (Date.now() - startTime));
+      const enrichment = await enrichDomain(domain, {
+        deadlineAt: Date.now() + Math.min(perDomainBudget, 9000),
+      });
 
-      await db.from("list_records").update({
-        enriched_data: enriched,
-        icp_score: icp.score,
-        icp_reasons: icp.reasons,
-        confidence_score: isReview ? 0.65 : 0.95,
-        status: finalStatus,
-        credits_used: 2,
-        completed_at: new Date().toISOString(),
-      }).eq("id", rec.id);
+      if (!enrichment.ok) {
+        // A domain we could not read is FAILED, not scored. Marking it complete
+        // with empty data would put a null-coverage row in front of a user as
+        // though it had been researched.
+        await db.from("list_records").update({
+          status: "failed",
+          error: enrichment.reason,
+          credits_used: 0,
+          completed_at: new Date().toISOString(),
+        }).eq("id", rec.id);
+      } else {
+        const enriched = enrichment.fields;
+        const icp = evaluateIcp(enriched, rules.criteria, rules.threshold);
+        const review = fieldsNeedingReview(enrichment.provenance);
+        const finalStatus = review.length > 0
+          ? "needs_review"
+          : (icp.coverage > 0 ? (icp.passed ? "complete" : "partial") : "partial");
 
-      if (isReview) {
-        await db.from("review_queue").insert({
-          record_id: rec.id,
-          list_id: rec.list_id,
-          user_id: job.user_id,
-          field_name: "industry",
-          candidate_value: enriched.industry,
-          confidence: 0.65,
-          status: "pending",
-        });
+        await db.from("list_records").update({
+          enriched_data: enriched,
+          // Provenance travels with the row: source URL, method and confidence
+          // per field, which is the BRD's "data provenance is a product feature".
+          provenance: enrichment.provenance,
+          icp_score: icp.score,
+          icp_reasons: icp.reasons,
+          confidence_score: enrichment.confidence,
+          status: finalStatus,
+          credits_used: enrichment.pagesFetched + (enrichment.aiConfidence > 0 ? 1 : 0),
+          completed_at: new Date().toISOString(),
+        }).eq("id", rec.id);
+
+        // The review queue is now driven by MEASURED confidence rather than the
+        // old `if (!isTech)`, so it surfaces the rows a human can actually help
+        // with instead of a fixed arbitrary subset.
+        for (const r of review) {
+          await db.from("review_queue").insert({
+            record_id: rec.id,
+            list_id: rec.list_id,
+            user_id: job.user_id,
+            field_name: r.field,
+            candidate_value: String(enriched[r.field] ?? ""),
+            confidence: r.confidence,
+            status: "pending",
+          });
+        }
+
+        // PRD 5 producer: a scored account is a routable signal.
+        try {
+          await dispatchSignal({
+            kind: "account.score_changed",
+            userId: job.user_id,
+            payload: {
+              domain,
+              company_name: enriched.company_name || domain,
+              icp_score: icp.score,
+              coverage: icp.coverage,
+              confidence: enrichment.confidence,
+              list_id: rec.list_id,
+              source_url: enrichment.sourceUrl,
+            },
+          }, env);
+        } catch {
+          // Routing must never lose the enrichment that triggered it — the
+          // list_records row is already committed above.
+        }
       }
     }
 

@@ -60,6 +60,19 @@
 [functions."discoverability-monitor"]
   schedule = "@daily"
 
+# PRD 4's engine. Crawls monitored competitor pages, diffs structured snapshots
+# and routes material changes. Hourly, because a watchlist may choose an hourly
+# cadence; the job honours each watchlist's own cadence internally rather than
+# needing one cron per cadence.
+[functions."watchlist-monitor"]
+  schedule = "@hourly"
+
+# PRD 3's durability. Advances queued bulk-enrichment jobs so a list finishes
+# whether or not the tab that started it is still open. Every 5 minutes: work is
+# claimed per item, so this is safe alongside the client-driven chunk endpoint.
+[functions."bulk-runner"]
+  schedule = "*/5 * * * *"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

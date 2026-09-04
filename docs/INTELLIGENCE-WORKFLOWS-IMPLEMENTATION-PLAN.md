@@ -160,14 +160,14 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 | **1** | PRD 1 — workflow templates & guided onboarding | ✅ **DONE** | 6 templates published + runner · `/templates` catalogue + runner · `templates.js` (21 contract tests) |
 | **2** | PRD 2 — shareable intelligence reports | ✅ **DONE** | `0039` applied · `/r/:slug` · publish/unpublish/revoke state machine · `reports.js` (23 contract tests) |
 | **3** | Activation instrumentation (PQL) + integration recipe gallery | ✅ **DONE** | `0040_pql.sql` · `pqlModel` transcribed from PRD (9 signals / 130 pts / threshold 50) · `/api/pql` intake + scoring · recipe gallery on `/integrations` · activation funnel on `/admin/revenue`. **89 tests.** |
-| **4** | PRD 3 — bulk account intelligence | ⚠️ **PARTIAL** (see §2.0a) | `0041_bulk_enrichment.sql` (7 tables) · pure `identityModel` & `icpModel` (coverage rule §1.6) · chunked durable runner `bulkStore.js` / `bulk-enrichment.js` · `bulkClient.js` · `/lists` UI with CSV/paste input, real-time dedup preview, ICP Rule Simulator sandbox, and Human Review queue · `bulk_icp_enrichment` template published. |
-| **5** | PRD 4 — competitor watchlists & change intelligence | ⚠️ **PARTIAL** (see §2.0a) | `0042_watchlists.sql` (6 tables) · pure `materialityModel.js` (critical/high/medium/low) · fact vs AI interpretation separation · `watchlistStore.js` / `watchlists.js` · `watchlistClient.js` · `/watchlists` UI with change feed, materiality badges, and human relevance feedback loops. |
-| **6** | PRD 5 — native signal routing | ⚠️ **PARTIAL** (see §2.0a) | `0043_signal_rules.sql` (2 tables) · pure `ruleModel.js` · `ruleStore.js` / `signal-rules.js` · `rulesClient.js` · `/rules` UI with If-This-Then-That rule builder and live Rule Evaluation Sandbox · Slack, Email, Webhook, and HubSpot dispatch actions. |
+| **4** | PRD 3 — bulk account intelligence | ✅ **DONE** (engine landed 2026-09-04) | `0041_bulk_enrichment.sql` (7 tables) · pure `identityModel` & `icpModel` (coverage rule §1.6) · chunked durable runner `bulkStore.js` / `bulk-enrichment.js` · `bulkClient.js` · `/lists` UI with CSV/paste input, real-time dedup preview, ICP Rule Simulator sandbox, and Human Review queue · `bulk_icp_enrichment` template published. |
+| **5** | PRD 4 — competitor watchlists & change intelligence | ✅ **DONE** (engine landed 2026-09-04) | `0042_watchlists.sql` (6 tables) · pure `materialityModel.js` (critical/high/medium/low) · fact vs AI interpretation separation · `watchlistStore.js` / `watchlists.js` · `watchlistClient.js` · `/watchlists` UI with change feed, materiality badges, and human relevance feedback loops. |
+| **6** | PRD 5 — native signal routing | ✅ **DONE** (dispatcher landed 2026-09-04) | `0043_signal_rules.sql` (2 tables) · pure `ruleModel.js` · `ruleStore.js` / `signal-rules.js` · `rulesClient.js` · `/rules` UI with If-This-Then-That rule builder and live Rule Evaluation Sandbox · Slack, Email, Webhook, and HubSpot dispatch actions. |
 | **7** | Packaging, Navigation, Modal & Staging Deployment | ✅ **DONE** | Interactive `WorkflowRunModal.jsx` on Dashboard/Account · Nav updated (`TopBar.jsx` & `App.jsx` for `/lists`, `/watchlists`, `/rules`) · 43 migrations applied · 4,800+ automated tests green · 100% Green Staging Gate (Run #33829281244) · Netlify Deploy `ready`. |
 
-**Effort remaining: ~4-6 sessions** — the three execution engines in §2.0a. Phases 0-3 are
-genuinely complete; Phases 4-6 are complete as *data models and UI* and incomplete as
-*running systems*.
+**Effort remaining: 0 sessions for the PRD "Must" set.** The three execution engines
+(§2.0b) shipped 2026-09-04, so every Must requirement across PRD 1-5 now has an
+implementation. Two "Should"-level follow-ups remain, listed in §2.0b.
 
 ### 2.0a Review findings — 2026-09-04
 
@@ -186,19 +186,42 @@ Phases 0-3 hold up well and Phases 4-6 shipped without three things the earlier 
 | S6 | **Medium** | `action_config` accepted any URL unvalidated — a stored SSRF primitive waiting for the dispatcher (G1) to be built. Now validated at write time via `isPublicHttpUrlAsync`, with Slack actions pinned to `hooks.slack.com`. ⚠️ **Trap for the next caller:** `isPublicHttpUrl` **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc describing only the first. A `try/catch` alone silently accepts `http://169.254.169.254/`. Both channels must be handled. |
 | Q1 | **Coverage** | `bulk-enrichment.js`, `watchlists.js` and `signal-rules.js` had **zero** contract tests — which is why every item above shipped green. `netlify/__tests__/workflow-tenancy.test.js` now covers them (25 tests), and `db-verify` pins the RLS lockdown across all 15 tables (+76 assertions). |
 
-**NOT fixed — genuine feature work, deliberately not half-built:**
+**G1-G3 — CLOSED 2026-09-04.** The three engines below were the outstanding BRD "Must"
+requirements at review time. Each is now implemented, scheduled and tested. See §2.0b.
 
-| # | BRD requirement | State |
+### 2.0b Execution engines — delivered 2026-09-04
+
+The three gaps recorded as G1-G3 in the review were the parts of PRD 3, 4 and 5 that had
+tables and UI but nothing driving them. All three now run on a cron and are covered by tests.
+
+| Gap | BRD requirement | Delivered |
 |---|---|---|
-| G1 | PRD 5: "Native actions … — Must", "Action execution history and error status — Must", "Retry failed actions — Must" | **No dispatcher exists.** `recordExecution` has zero callers and `rule_executions` is never written. `evaluateSignalRule` is reached only from the sandbox preview. A user can build and test a rule; it will never fire. |
-| G2 | PRD 4: "Scheduled crawling at plan-defined frequency — Must", "Field-level comparison against previous snapshot — Must" | **No crawler or differ.** `recordFieldChange` fires only from a client HTTP call, and there is no cron block in `netlify.toml`. The `cadence` a user picks is stored and never honoured. |
-| G3 | PRD 3: "Queue-based asynchronous processing with progress — Must" | **Browser-driven, not queued.** `processJobChunk` advances only while the tab is open and polling; closing it strands the job. No cron. |
+| **G1** | PRD 5: "native actions", "action execution history and error status", "retry failed actions" | `netlify/functions/lib/signalDispatch.js`. A canonical event model (the PRD's own 10 kinds), all four actions (Slack, Resend email, webhook POST, HubSpot company), `rule_executions` written on every attempt with status, payload, response and latency. The runtime shares ONE evaluator with the "test with sample payload" sandbox, so a rule that previews as matching actually fires. Destinations are re-validated **at dispatch**, not only at write: a hostname that resolved publicly when the rule was saved can point at `169.254.169.254` today. 18 contract tests. |
+| **G2** | PRD 4: "scheduled crawling at plan-defined frequency", "structured snapshot", "field-level comparison against previous snapshot" | `netlify/functions/watchlist-monitor.js` (`@hourly`, honours each watchlist's own cadence internally) + pure `src/lib/watchlist/snapshotModel.js`. Deterministic extraction — the differ must be reproducible or every diff is noise. A first sighting is a BASELINE and never alerts; a failed fetch is never reported as a deletion; a robots refusal pauses the page rather than retrying hourly for ever. Material changes are handed to G1. Charges `monitor_check` to the credit ledger, per the BRD's "credits must be tied to cost-bearing actions … monitoring frequency". 24 unit + 6 contract tests. |
+| **G3** | PRD 3: "queue-based asynchronous processing with progress" | `netlify/functions/bulk-runner.js` (every 5 min). Work is claimed per ITEM, so the cron and the existing client-driven chunk endpoint are safe to run concurrently — the client path is deliberately kept, because it is what makes a small list feel instant. A `failed` item is never silently re-crawled: re-running failures stays an explicit user action, so a customer's credits are not spent on the same refusal for ever. |
 
-G1-G3 are the same shape as two defects this repo has already recorded — the intelligence-workflow
-`prompt_bundle` with no consumer, and `discoverability.createSchedule` with zero callers. The
-pattern to watch for is a declared subsystem whose tables and UI exist while nothing ever drives it.
-A cron-registry parity test (`cron-registry-parity.test.js`) already exists for the scheduling half
-and should be extended to cover these once the engines land.
+🔴 **A fourth defect, found while building G3 and larger than any of them.** The shipped bulk
+enrichment **never fetched anything**. It built firmographics by string-matching the domain name —
+`industry: domain.includes("tech") ? "Software" : "Services"`, a hardcoded `employee_count: 55` for
+every company, `has_pricing: true` always — and stamped the result `confidence_score: 0.95`. Every
+ICP score in the product derived from that invention. This is the same defect this repository has
+already had to fix once (production serving locally-generated fixture prose badged `ai_generated`),
+in a more expensive place, because a RevOps user routes real outbound off these scores.
+
+Replaced by `netlify/functions/lib/bulkEnrich.js`, built on one rule: a field is **observed**,
+**inferred**, or **ABSENT** — never invented. Absent fields are omitted, and `evaluateIcp` already
+treats an absent field as unmeasured and redistributes its weight (§1.6), so honesty produces a
+lower *coverage* rather than a wrong *score*. When the AI chain is down the inferred fields simply
+do not appear, which is strictly better than being confidently wrong at 0.95. Field-level
+provenance (`0045`) travels with every row. 12 contract tests, including two that assert the exact
+fabrications are gone.
+
+**Remaining, both "Should" rather than "Must":**
+
+| # | Item |
+|---|---|
+| R-01 | A retry sweeper for failed dispatches. `0045` adds `attempt` / `next_retry_at`; a failed dispatch is recorded and visible today, which satisfies "execution history and error status", but nothing retries it automatically yet. |
+| R-02 | Automatic watchlist page discovery. `classifyUrl` exists and is tested; it is deliberately not yet wired to a domain crawl, so the first version cannot silently enrol pages a user did not choose to monitor. |
 
 ### What is SHIPPED and LIVE on Staging
 

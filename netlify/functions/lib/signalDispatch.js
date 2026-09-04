@@ -1,0 +1,335 @@
+// netlify/functions/lib/signalDispatch.js — PRD 5's missing half.
+//
+// `ruleModel.js` could always EVALUATE a rule; nothing ever DISPATCHED one.
+// `recordExecution` had zero callers, `rule_executions` was never written, and
+// `evaluateSignalRule` was reached only from the "test with sample payload"
+// sandbox — so a user could build a rule, watch it match, save it, and it would
+// never fire. This module is the part that makes a saved rule real.
+//
+// ── THE SHAPE ───────────────────────────────────────────────────────────────
+//
+//   producer (watchlist-monitor, bulk-runner, …)
+//        │  emits a CANONICAL event
+//        ▼
+//   dispatchSignal(event)
+//        │  loads that user's active rules for the event's trigger source
+//        │  evaluates each with the SAME pure evaluator the sandbox uses
+//        ▼
+//   performAction()  →  Slack | Resend email | webhook POST | HubSpot company
+//        │
+//        ▼
+//   recordExecution()  →  rule_executions  (status, payload, response, latency)
+//
+// The canonical event vocabulary is the PRD's own (§"Build an internal canonical
+// event model before expanding integrations"): monitor.change_detected,
+// account.score_changed, enrichment.completed, and so on. Producers emit those
+// names and nothing else, so a new integration is a new ACTION here rather than
+// a new producer everywhere.
+//
+// ── RULES THAT KEEP THIS SAFE, EACH LEARNED THE HARD WAY ────────────────────
+//
+// 1. THE SANDBOX AND THE RUNTIME SHARE ONE EVALUATOR. `evaluateSignalRule` is
+//    imported here, not reimplemented. A rule that matches in the "test with
+//    sample payload" preview must fire in production, or the preview is a lie —
+//    and a preview nobody trusts is worse than no preview.
+//
+// 2. EVERY OUTBOUND URL IS RE-VALIDATED AT DISPATCH TIME. `ruleStore.js`
+//    validates at write time, which is where a bad destination should be
+//    refused. It is checked AGAIN here because rows predating that validation
+//    exist, and because a hostname that resolved publicly last week can resolve
+//    to 169.254.169.254 today. Write-time validation stops the mistake;
+//    dispatch-time validation stops the attack.
+//
+// 3. A FAILED ACTION IS RECORDED, NEVER THROWN. One unreachable Slack workspace
+//    must not abort the run and starve every other user's rules. Each dispatch
+//    is individually caught and written to `rule_executions` with its error.
+//
+// 4. NOTHING HERE FANS OUT WITHOUT A CAP. `MAX_ACTIONS_PER_EVENT` bounds how
+//    many rules one event can fire, so a user with fifty overlapping rules
+//    cannot turn a single pricing change into fifty outbound requests inside a
+//    function that has ten seconds to live.
+
+import { evaluateSignalRule, formatActionPayload, ACTION_TYPES } from "../../../src/lib/rules/ruleModel.js";
+import { recordExecution, validateActionConfig, serviceDb } from "./ruleStore.js";
+import { isPublicHttpUrlAsync } from "./publicUrl.js";
+import { getConnection } from "./integrationConnectionStore.js";
+
+/**
+ * The canonical event model from PRD 5. Producers emit these names; rules are
+ * written against them. Adding a kind here without a producer is harmless;
+ * emitting a kind that is NOT here is refused, so a typo in a producer surfaces
+ * as a rejected event rather than a rule that silently never matches.
+ */
+export const SIGNAL_EVENTS = Object.freeze([
+  "extraction.completed",
+  "enrichment.completed",
+  "enrichment.failed",
+  "account.score_changed",
+  "monitor.change_detected",
+  "monitor.digest_ready",
+  "report.shared",
+  "report.viewed",
+  "integration.action_failed",
+  "usage.limit_approaching",
+]);
+
+/** Which trigger_source a rule must declare to see a given event kind. */
+const EVENT_TO_SOURCE = Object.freeze({
+  "monitor.change_detected": "watchlist",
+  "monitor.digest_ready": "watchlist",
+  "account.score_changed": "account",
+  "enrichment.completed": "account",
+  "enrichment.failed": "account",
+  "extraction.completed": "extraction",
+  "report.shared": "report",
+  "report.viewed": "report",
+  "integration.action_failed": "system",
+  "usage.limit_approaching": "system",
+});
+
+/** One event may fire at most this many rules. See rule 4 above. */
+export const MAX_ACTIONS_PER_EVENT = 10;
+
+/** Outbound request ceiling. Netlify kills a synchronous function at 10s. */
+const ACTION_TIMEOUT_MS = 6000;
+
+const SLACK_WEBHOOK_HOST = "hooks.slack.com";
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const HUBSPOT_COMPANIES = "https://api.hubapi.com/crm/v3/objects/companies";
+
+async function fetchWithTimeout(url, init = {}, timeoutMs = ACTION_TIMEOUT_MS) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ac.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Load the active rules a given event could fire.
+ * Scoped to the event's own user — a rule never sees another tenant's events.
+ */
+export async function rulesForEvent(event, env = process.env) {
+  const db = serviceDb(env);
+  if (!db) return [];
+
+  const source = EVENT_TO_SOURCE[event.kind];
+  if (!source) return [];
+
+  const { data, error } = await db
+    .from("signal_rules")
+    .select("*")
+    .eq("user_id", event.userId)
+    .eq("status", "active")
+    .eq("trigger_source", source)
+    .limit(MAX_ACTIONS_PER_EVENT);
+
+  if (error) {
+    console.error("[signalDispatch] rule lookup failed:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Resolve and re-check the outbound destination for a rule. Returns the URL to
+ * call, or a refusal. See rule 2 above for why this repeats ruleStore's check.
+ */
+async function resolveDestination(rule) {
+  const type = rule.action_type || ACTION_TYPES.SLACK;
+  const cfg = rule.action_config || {};
+
+  // Shape/scheme/recipient validation, shared with the write path.
+  const shape = await validateActionConfig(type, cfg);
+  if (!shape.ok) return { ok: false, reason: shape.reason };
+
+  if (type === ACTION_TYPES.EMAIL) return { ok: true, type, to: cfg.to || cfg.email };
+  if (type === ACTION_TYPES.HUBSPOT) return { ok: true, type };
+
+  const url = String(cfg.url || cfg.webhook_url || cfg.webhookUrl || "").trim();
+
+  // Re-resolve DNS at dispatch time: a host that was public when the rule was
+  // saved can point at a private address by the time we call it.
+  let safe = false;
+  try {
+    safe = await isPublicHttpUrlAsync(url);
+  } catch (e) {
+    return { ok: false, reason: `destination rejected: ${e.message}` };
+  }
+  if (!safe) return { ok: false, reason: "destination resolves to a private or reserved address" };
+
+  if (type === ACTION_TYPES.SLACK) {
+    let host = "";
+    try { host = new URL(url).hostname.toLowerCase(); } catch { host = ""; }
+    if (host !== SLACK_WEBHOOK_HOST) {
+      return { ok: false, reason: `a slack action must post to ${SLACK_WEBHOOK_HOST}` };
+    }
+  }
+  return { ok: true, type, url };
+}
+
+/** Human-readable one-liner used as the Slack text / email subject. */
+function headline(event, payload) {
+  if (event.kind === "monitor.change_detected") {
+    return `${payload.materiality ? payload.materiality.toUpperCase() + ": " : ""}` +
+      `${payload.domain || "A monitored competitor"} changed ${payload.field || "a tracked field"}`;
+  }
+  if (event.kind === "account.score_changed") {
+    return `${payload.domain || "An account"} scored ${payload.icp_score ?? "?"} against your ICP`;
+  }
+  return `DatIQ signal: ${event.kind}`;
+}
+
+/**
+ * Perform one rule's action. Returns a result object; NEVER throws — see rule 3.
+ */
+export async function performAction(rule, event, env = process.env) {
+  const payload = formatActionPayload(rule, event.payload || {});
+  const dest = await resolveDestination(rule);
+  if (!dest.ok) {
+    return { ok: false, status: "refused", error: dest.reason, response: null };
+  }
+
+  const title = headline(event, event.payload || {});
+
+  try {
+    if (dest.type === ACTION_TYPES.SLACK) {
+      const res = await fetchWithTimeout(dest.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: title,
+          blocks: [
+            { type: "section", text: { type: "mrkdwn", text: `*${title}*` } },
+            { type: "section", text: { type: "mrkdwn", text: "```" + JSON.stringify(payload, null, 2).slice(0, 2500) + "```" } },
+          ],
+        }),
+      });
+      // Slack answers "ok" as plain text, not JSON.
+      const body = await res.text().catch(() => "");
+      return res.ok
+        ? { ok: true, status: "success", response: { code: res.status, body: body.slice(0, 200) } }
+        : { ok: false, status: "failed", error: `slack responded ${res.status}`, response: { code: res.status, body: body.slice(0, 200) } };
+    }
+
+    if (dest.type === ACTION_TYPES.WEBHOOK) {
+      const res = await fetchWithTimeout(dest.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "DatIQBot/1.0 (+https://datiq.app)" },
+        body: JSON.stringify({ event: event.kind, rule: rule.name, occurred_at: event.occurredAt, data: payload }),
+      });
+      const body = await res.text().catch(() => "");
+      return res.ok
+        ? { ok: true, status: "success", response: { code: res.status, body: body.slice(0, 200) } }
+        : { ok: false, status: "failed", error: `webhook responded ${res.status}`, response: { code: res.status } };
+    }
+
+    if (dest.type === ACTION_TYPES.EMAIL) {
+      const apiKey = env.RESEND_API_KEY;
+      // An unconfigured mailer is an operator problem, not a rule failure. It is
+      // recorded as `skipped` so it never looks like the user's rule is broken.
+      if (!apiKey) return { ok: false, status: "skipped", error: "RESEND_API_KEY is not set", response: null };
+      const from = env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
+      const res = await fetchWithTimeout(RESEND_ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from,
+          to: [dest.to],
+          subject: title,
+          text: `${title}\n\n${JSON.stringify(payload, null, 2)}\n\n— DatIQ`,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      return res.ok
+        ? { ok: true, status: "success", response: { id: body?.id || null } }
+        : { ok: false, status: "failed", error: `resend responded ${res.status}`, response: { code: res.status } };
+    }
+
+    if (dest.type === ACTION_TYPES.HUBSPOT) {
+      // The destination is the workspace's own stored connection — never a URL
+      // from the rule body, which is why validateActionConfig accepts a HubSpot
+      // action with no URL at all.
+      const conn = await getConnection({ userId: event.userId, provider: "hubspot", includeSecrets: true, env });
+      const token = conn?.connection?.access_token;
+      if (!token) return { ok: false, status: "skipped", error: "no HubSpot connection for this account", response: null };
+
+      const domain = (event.payload || {}).domain;
+      if (!domain) return { ok: false, status: "skipped", error: "event carries no domain to sync", response: null };
+
+      const res = await fetchWithTimeout(HUBSPOT_COMPANIES, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          properties: {
+            domain,
+            name: (event.payload || {}).company_name || domain,
+            datiq_last_signal: event.kind,
+            datiq_signal_summary: title.slice(0, 250),
+          },
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      return res.ok
+        ? { ok: true, status: "success", response: { id: body?.id || null } }
+        : { ok: false, status: "failed", error: `hubspot responded ${res.status}`, response: { code: res.status } };
+    }
+
+    return { ok: false, status: "refused", error: `unknown action type: ${dest.type}`, response: null };
+  } catch (e) {
+    // A timeout, a DNS failure, a TLS error. Recorded, not thrown.
+    return { ok: false, status: "failed", error: e.name === "AbortError" ? "action timed out" : e.message, response: null };
+  }
+}
+
+/**
+ * The entry point producers call.
+ *
+ * @param {{kind:string, userId:string, payload:object, occurredAt?:string}} event
+ * @returns {Promise<{ok:boolean, evaluated:number, fired:number, results:Array}>}
+ */
+export async function dispatchSignal(event, env = process.env) {
+  if (!event || !SIGNAL_EVENTS.includes(event.kind)) {
+    // An unrecognised kind is a producer bug. Surfacing it as a refusal makes a
+    // typo visible, where silently matching nothing would not.
+    return { ok: false, reason: "unknown_event_kind", evaluated: 0, fired: 0, results: [] };
+  }
+  if (!event.userId) return { ok: false, reason: "event_has_no_owner", evaluated: 0, fired: 0, results: [] };
+
+  const occurredAt = event.occurredAt || new Date().toISOString();
+  const rules = await rulesForEvent(event, env);
+  const results = [];
+  let fired = 0;
+
+  for (const rule of rules) {
+    const verdict = evaluateSignalRule(rule, event.payload || {});
+    if (!verdict.matches) continue;
+
+    fired += 1;
+    const started = Date.now();
+    const outcome = await performAction(rule, { ...event, occurredAt }, env);
+    const latencyMs = Date.now() - started;
+
+    // Bookkeeping must never break the dispatch it is recording — the same rule
+    // withJobRun follows for platform crons.
+    try {
+      await recordExecution(rule.id, event.userId, {
+        status: outcome.status,
+        eventPayload: { kind: event.kind, occurred_at: occurredAt, ...(event.payload || {}) },
+        actionResponse: outcome.response,
+        error: outcome.error || null,
+        latencyMs,
+      }, env);
+    } catch (e) {
+      console.error("[signalDispatch] could not record execution:", e.message);
+    }
+
+    results.push({ ruleId: rule.id, name: rule.name, status: outcome.status, error: outcome.error || null, latencyMs });
+  }
+
+  return { ok: true, evaluated: rules.length, fired, results };
+}
+
+export const _internal = { EVENT_TO_SOURCE, resolveDestination, headline };
