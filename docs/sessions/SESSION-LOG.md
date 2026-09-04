@@ -18,6 +18,118 @@
 
 ---
 
+## 2026-09-04 (later) — Documentation & public-surface release for the intelligence workflows: five new use-case pages, six new help sections, and two classes of pre-existing integrity defect removed
+
+> **Branch:** `claude/docs-web-pages-update-y27y0d`, cut from `staging` @ `493e5a1` · **Target:** `staging`
+> only — **`main` untouched**, per explicit instruction.
+> **Verification:** unit **2 935 / 173 files** · contract **1 951** (+14 skipped) · integration **432 / 51** ·
+> system **8** · build · check:prerender · security · readiness audit **5 pass / 2 warn / 0 fail**.
+
+### Why this session existed
+
+PRDs 1-5 had shipped — workflow templates, bulk account intelligence with ICP scoring, competitor
+watchlists, signal routing, shareable reports — and **not one customer-facing surface described any of
+it.** The user guide had 17 sections and none covered workflows. `/pricing` sold none of it. The
+changelog, the blog, the FAQ and both `llms*.txt` files were silent. A prospect reading the site would
+have concluded DatIQ was still a URL-to-fields scraper, which is the thing it had just stopped being.
+
+### 🔴 Two classes of pre-existing integrity defect, both live on public pages
+
+Neither was the assignment; both were found while doing it, and both are the kind that no gate catches.
+
+**1. Four fabricated testimonials attributed to named people.** `UseCaseLead`, `UseCaseCompetitor`,
+`UseCaseSEO` and `UseCaseResearch` each carried a quote from an invented person — *"Alex R., Head of
+Sales"*, *"Sarah M., Product Manager"*, *"Priya K., Market Research Lead"*, *"Jamie L., SEO Lead"* —
+alongside invented usage statistics (*"1,200+ CI analysts"*, *"50K+ competitor pages tracked"*,
+*"40+ agencies rely on DatIQ"*). This repo's own policy had hidden Home's testimonials behind
+`{false && …}` since R4 *specifically because* there was no real data behind them; these four pages
+were built later and never got the same treatment. **All four testimonial blocks removed**; the stat
+trios replaced with facts derived from `pricingConfig.js` and `seedTemplates.js` (accounts per list,
+materiality levels, export formats) that a reader can verify on the pricing page.
+
+**2. Stale pricing quoted as fact in structured data.** `pageSeo.js`'s lead-generation `FAQPage`
+JSON-LD told search engines and answer engines: *"Select ($19/mo) is 100, Pro ($29/mo) is 250,
+Business ($79/mo) is 1,000, and Agency ($299/mo) is unlimited."* **Every one of those eight figures was
+wrong** — the real values are Select $14.40/500, Pro $20.40/1,000, Business $44.40/10,000, Agency
+$106.80/unlimited. The same block claimed integrations were *"Business and Agency plans"* when
+`limits.integrations` has been true from **Select**. `llms-full.txt` claimed DatIQ *"starts at $19/mo"*
+(it is $4.80) and that Select includes *100 extractions* (500). **And `CLAUDE.md`'s own pricing table
+carried the identical stale numbers**, which is very likely where they were copied from — so it now
+carries a warning telling the next reader to re-derive from `pricingConfig.js` rather than trust it.
+
+⚠️ **The rule worth carrying: the readiness audit's "pricing coherence" check compares plan *names*, not
+*numbers*, and it passed throughout.** A JSON-LD answer body is prose to every automated check in this
+repo, so a price inside one can rot indefinitely while every gate stays green. Re-read the JSON-LD
+answer bodies by hand whenever pricing moves.
+
+### What was published
+
+**User guide 17 → 23 sections.** Six new: Intelligence workflows (§10), Bulk account intelligence &
+ICP scoring (§11), Competitor watchlists & change intelligence (§12), Signal routing (§13), Shareable
+reports (§14), Team workspaces (§15). §1 was rewritten from "what DatIQ extracts" to the read → reason →
+watch → act → share loop, with the observed/inferred/absent contract stated as the rule everything else
+follows. §18 gained a capability-to-allowance table and the estimate/ledger model. The glossary gained
+15 terms. Regenerated to `public/help/`.
+
+⚠️ **Eight help URLs renumbered** (old §10-17 → §16-23). Redirects added to `scripts/site-routes.mjs`
+and mirrored into `netlify.toml`. **The pre-existing help redirects were repointed at the FINAL numbers,
+not the intermediate ones** — leaving them would have produced exactly the two-hop chains
+`page-ownership.test.mjs` forbids, which is the trap the `14-faq-and-troubleshooting` entry already
+documents from the last time a section was inserted.
+
+**Five new use-case pages**, chosen to close persona coverage (all 7 personas now have a page) and to
+cover the new surfaces: `/use-cases/account-intelligence`, `/competitive-monitoring`, `/ai-visibility`,
+`/recruiting`, `/investor-diligence`. Each has its own `pageSeo.js` entry with BreadcrumbList, Article
+and a 4-question FAQPage. All prerendered, in the sitemap (60 URLs), and linked from a rewritten hub.
+
+**Pricing.** Five workflow lines on every plan card and a new **Intelligence workflows** group in
+`PricingMatrix.jsx`. ⚠️ **Every matrix cell is derived from the limit `entitlementModel.js` already
+enforces** — bulk lists from `batch_max_urls`, watchlists from `scheduled_monitoring`, signal rules
+from `integrations` — rather than hardcoded. Hardcoding is how the discoverability rows came to be
+missing from `/pricing` for months while the server enforced an audit quota all along.
+
+**Also:** four new changelog groups (13 → 17, test pins updated); four new blog posts including a
+release post and a "why we refuse to guess" piece on the evidence contract; six new FAQ entries added to
+**both** the visible `<details>` list and the `FAQPage` JSON-LD; `llms.txt` and `llms-full.txt`
+repositioned; workflow rows added to all five comparison tables with honest per-competitor values (not
+"Better" on every row); a Signal Routing card on `/integrations` and its API tier label corrected from
+"Agency Plan" to "Business plan and up".
+
+### ⚠️ Container trap, and the fix that is now in the repo
+
+`npm run prerender` could not run at all: the image ships Chromium build **1194** while the installed
+Playwright wants **1234**, so `channel:"chrome"` fails *and* the bundled-chromium fallback fails. Rather
+than the throwaway untracked config this file has documented before, `scripts/prerender.mjs` now takes a
+**`PRERENDER_CHROMIUM_PATH`** override, because an environment mismatch must not be the reason a
+marketing page ships without crawlable HTML:
+
+```bash
+PRERENDER_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run prerender
+```
+
+⚠️ Also worth knowing: **a fresh remote clone has no `node_modules`** — `npm ci` first, or every vitest
+run dies on "Cannot find package 'vite'" and looks like a repo problem.
+
+### ⚠️ The readiness audit caught my own wording
+
+Writing *"Team workspaces with owner/admin/member roles"* into `llms.txt` tripped the admin-leakage
+gate on the substring `/admin` — a false positive in meaning but a real match, and the gate is a hard
+FAIL. Reworded to "owner, admin and member roles" rather than weakening the pattern. **The gate is
+right to be blunt here**; the cost of a false positive is one reworded sentence, and the cost of a false
+negative is the admin console described on a public page.
+
+### Open
+
+- **Screenshots remain stale** (the standing readiness WARN). `/templates`, `/lists`, `/watchlists` and
+  `/rules` have no captures, so help sections 10-15 ship without imagery. Needs a dev server plus the
+  browser workaround above.
+- **Public gallery coverage** still cannot be proven from source; the personas now all have use-case
+  pages, but the gallery needs curated samples.
+- **The workflow surfaces have no public REST API.** `docs/DatIQ-Developer-API.md` now says so
+  explicitly in a *Planned endpoints* table and points integrators at webhook signal rules meanwhile.
+
+---
+
 ## 2026-09-04 10:45 IST — Phases 4-6 were recorded DONE and were world-readable; the three BRD engines built
 
 > **Branch:** `claude/workflow-automation-plans-review-869dbc` @ `1de5b34` · **Target:** `staging` only —

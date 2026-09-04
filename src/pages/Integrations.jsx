@@ -42,6 +42,13 @@ const INTEGRATIONS = [
     action: { label: "Use now", path: "/" },
   },
   {
+    icon: "zap",
+    title: "Signal Routing",
+    status: "available",
+    desc: "If-this-then-that rules over the whole platform. Trigger on a competitor watchlist change, an account crossing your ICP threshold, or a workflow run finishing — then post to Slack, send an email, call a webhook, or write to HubSpot. Available from the Select plan.",
+    action: { label: "Build a rule", path: "/rules" },
+  },
+  {
     icon: "trending-up",
     title: "HubSpot",
     slug: "hubspot",
@@ -100,7 +107,7 @@ const INTEGRATIONS = [
     icon: "code",
     title: "API Access",
     status: "agency-plan",
-    desc: "Programmatic access to all extraction and enrichment capabilities. Full REST API with JSON responses.",
+    desc: "Programmatic access to extraction, enrichment, batches, schedules and discoverability audits. Full REST API with JSON responses, included on Business, Agency and Developer plans.",
     action: { label: "See Agency plan", path: "/pricing" },
   },
   {
@@ -116,7 +123,7 @@ const STATUS_META = {
   available:    { label: "Available",     cls: "int-status-available" },
   beta:         { label: "Available (Beta)", cls: "int-status-beta" },
   "coming-soon": { label: "Coming Soon",  cls: "int-status-coming"   },
-  "agency-plan": { label: "Agency Plan",  cls: "int-status-agency"   },
+  "agency-plan": { label: "Business plan and up", cls: "int-status-agency"   },
   roadmap:       { label: "Roadmap",      cls: "int-status-roadmap"  },
 };
 

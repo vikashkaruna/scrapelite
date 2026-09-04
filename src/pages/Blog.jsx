@@ -7,43 +7,331 @@ import { useSeo } from "../hooks/useSeo.js";
 import { seoFor } from "../lib/pageSeo.js";
 
 const FEATURED_POST = {
-  slug: "introducing-datiq",
-  tag: "Product",
-  title: "Introducing DatIQ: From URL to Intelligence in Seconds",
+  slug: "from-extraction-to-execution",
+  tag: "Release",
+  title: "From Extraction to Execution: DatIQ Is Now a Platform, Not a Scraper",
   excerpt:
-    "We built DatIQ because extracting structured data from the web shouldn't require a PhD in scraping. Today we're sharing the story behind the product, the personas it was designed for, and where we're taking it next.",
-  date: "June 9, 2026",
-  readTime: "5 min read",
+    "Extraction was never the job. The job was the brief, the scored list, the competitor you needed to hear about on the day it changed. This release ships all three — workflow templates, bulk account intelligence with ICP scoring, competitor watchlists, and signal routing that puts the result where your team already works.",
+  date: "September 4, 2026",
+  readTime: "8 min read",
   coverIcon: "layers",
   fullContent: `
-DatIQ started with a frustration shared by nearly every person doing research, sales, or marketing: copying data from websites into spreadsheets — one cell at a time.
+For most of its life, DatIQ answered one question well: *what is on this page?* You pasted a URL, you got back headings, links, contacts, pricing and a summary, and then you did the actual work yourself — in a spreadsheet, in a doc, in your head.
 
-Whether it was scouting competitor pricing, building a lead list, auditing a competitor's content strategy, or just understanding what a company does before a call — the work was always manual, tedious, and error-prone.
+That gap is the whole product now.
 
-## The idea
+## The problem with stopping at extraction
 
-The premise was simple: if a human can read a web page and extract structured information from it, an AI system should be able to do the same — instantly, for any URL, without writing a line of code.
+Nobody wants fields. A salesperson wants to know which forty of these four hundred accounts are worth a call this week. A competitive intelligence lead wants to know the day a competitor changed their pricing, not the quarter. A founder wants to walk into a first meeting already knowing the company.
 
-DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.
+Extraction is step one of a five-step loop, and until now DatIQ handed you step one and wished you luck. This release ships the rest of it: **read, reason, watch, act, share.**
 
-## What we shipped in V1.0
+## Workflow templates: the finished artefact, not the raw fields
 
-The current release (V1.0) includes:
-- **Custom extraction** — describe any field in plain English ("find the pricing tiers") and the AI locates and structures it
-- **Domain mapping** — crawl an entire site and return every indexed URL
-- **Lead enrichment** — surface leadership contacts and emails from any company page
-- **Persona-adaptive workflows** — the app adapts its examples, quick actions, and AI prompts based on your role
-- **CSV, PDF, and email export** — get your data into whatever workflow you use next
+**Templates** is a catalogue of named end-to-end jobs. Each one is an input form, the fields DatIQ will read, the analysis it will run, and the output blocks you get back. Seven ship today, filtered by persona so the ones that fit your job are the ones you see first:
 
-## What's coming
+- **Sales-ready Account Brief** — a company framed for a discovery call, a displacement, or an expansion
+- **Bulk ICP Account Enrichment** — a list of domains in, a scored account table out
+- **Competitor Pricing Tracker** — a pricing page as a structured tier table you can diff later
+- **Customer Proof Extractor** — every named customer, case study, logo and quantified outcome on a site
+- **AI Visibility & Competitive Brief** — you and up to four competitors, read under one shared schema
+- **SEO / GEO / AEO Audit** — a page scored for search, answer engines and generative engines
+- **Pre-Meeting Due Diligence Brief** — a source-backed company brief before a first call
 
-We're building toward API access for developers, scheduled monitoring for change tracking, and HubSpot / Salesforce native export. If you have a use case we haven't covered yet, reach out at hello@datiq.app.
+You see a cost estimate before anything runs, and nothing is spent until you confirm. On Go and above you can fork any template and rewrite its fields, its prompts and its outputs; the shipped originals are never modified, so you always have a working baseline to fork again.
 
-Start with any URL. No sign-up required.
+## Bulk account intelligence: 500 domains, scored, with the receipts
+
+**Lists** is for the Monday morning where somebody hands you three hundred domains and asks which ones matter.
+
+Paste or upload them. DatIQ normalises and de-duplicates on the way in — three spellings of one company become one account — then reads each company's public site for firmographics, pricing model, positioning, proof points and contacts, and scores every account against ICP rules you write yourself.
+
+The rules are data, not a model you have to trust blindly: a field, an operator, a value, a weight, and a qualification threshold. Mark a criterion **required** and failing it disqualifies an account however well it scores elsewhere. Test the whole rule set against a sample domain and watch it re-score before you spend anything on a run.
+
+Runs are chunked and durable, so a 500-account list survives a closed tab or a provider having a bad minute. Low-confidence extractions go to a **review queue** rather than quietly entering your table — because a 94%-accurate list where nobody can tell which 6% is wrong is a list nobody works.
+
+## Watchlists: told on the day, not woken for nothing
+
+A one-off competitor snapshot is stale the week you take it. A **watchlist** re-reads the pages you care about on a cadence, works out what changed, and classifies how much it matters.
+
+Critical changes — a price, a tier added or removed — alert immediately. High-materiality changes like a positioning shift are batched daily. Medium goes weekly. Low-materiality noise like whitespace or a copyright year is recorded and never alerts at all.
+
+Two design decisions do most of the work here:
+
+**The first run is always a baseline and never alerts.** A tool that fires the moment you set it up is a tool you learn to ignore.
+
+**A field that stopped being observed is not a deletion.** If a pricing table was readable last week and is not today, the overwhelmingly likely cause is a failed page render, not a competitor removing their pricing. So DatIQ reports it as unobserved. "They deleted all their pricing" is the most expensive false positive this category can produce, and we would rather tell you less than tell you that.
+
+Facts and interpretation stay in separate columns, too. The old value, the new value and the page are one thing; what our AI thinks it means strategically is clearly labelled as a reading. You can take a fact into a pricing meeting. An interpretation is where a conversation starts.
+
+## Signal routing: intelligence that leaves the tool
+
+Intelligence nobody sees is intelligence nobody acts on. **Rules** is an if-this-then-that layer over everything above.
+
+Trigger on a watchlist change, a bulk enrichment result — an account crossing your ICP threshold, say — or a workflow run finishing. Add conditions. Then send it to **Slack, email, a webhook, or HubSpot.**
+
+Every rule has a *Test with sample payload* button that shows you the verdict and which conditions matched. The preview and the live runtime share the same evaluation engine, deliberately: a preview that can disagree with production is worse than no preview. Every dispatch is recorded whether it succeeded or not, unreachable destinations are retried on a backoff, and destinations are re-validated at the moment of dispatch rather than only when you saved the rule.
+
+## Reports: send the result, not a screenshot
+
+Any run, audit or extraction can be published as a **report** at its own link, with a visibility level you choose per report: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable — everything else carries a noindex instruction, so a link you meant for one client does not surface in a search result. Revoke burns a link permanently, and reports can carry an expiry date.
+
+On Business and Agency, your Brand Kit replaces DatIQ's attribution, so what you send a client looks like yours.
+
+## The rule underneath all of it
+
+Every field DatIQ returns is **observed**, **inferred and labelled as inferred**, or **absent**. There is no fourth state and no plausible-looking default.
+
+That has a cost we have chosen to pay: an honest run sometimes comes back with less than you hoped. A company that does not publish its headcount produces a brief with no headcount in it. In exchange, every score carries a **coverage** figure, and an unmeasured signal is excluded with its weight redistributed rather than scored as zero — because scoring a missing measurement as zero drags your trend line down during someone else's outage and then shows a phantom improvement when it recovers.
+
+We would rather hand you a shorter brief you can defend than a fuller one that eventually costs you a deal.
+
+## Where to start
+
+If you have never used DatIQ, start at **Templates** and run one brief against a company you know well. You will be able to check the output against what you already know, which is the fastest way to calibrate how much to trust it.
+
+If you already use DatIQ for extraction, start at **Lists**: take a list you are already working and see what an ICP score with visible coverage tells you that your spreadsheet does not.
+
+Free to start, no credit card. Questions to hello@datiq.app.
   `.trim(),
 };
 
 const POSTS = [
+  {
+    slug: "introducing-datiq",
+    tag: "Product",
+    title: "Introducing DatIQ: From URL to Intelligence in Seconds",
+    excerpt:
+      "We built DatIQ because extracting structured data from the web shouldn't require a PhD in scraping. Today we're sharing the story behind the product, the personas it was designed for, and where we're taking it next.",
+    date: "June 9, 2026",
+    readTime: "5 min read",
+    coverIcon: "layers",
+    fullContent: `
+  DatIQ started with a frustration shared by nearly every person doing research, sales, or marketing: copying data from websites into spreadsheets — one cell at a time.
+
+  Whether it was scouting competitor pricing, building a lead list, auditing a competitor's content strategy, or just understanding what a company does before a call — the work was always manual, tedious, and error-prone.
+
+  ## The idea
+
+  The premise was simple: if a human can read a web page and extract structured information from it, an AI system should be able to do the same — instantly, for any URL, without writing a line of code.
+
+  DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.
+
+  ## What we shipped in V1.0
+
+  The current release (V1.0) includes:
+  - **Custom extraction** — describe any field in plain English ("find the pricing tiers") and the AI locates and structures it
+  - **Domain mapping** — crawl an entire site and return every indexed URL
+  - **Lead enrichment** — surface leadership contacts and emails from any company page
+  - **Persona-adaptive workflows** — the app adapts its examples, quick actions, and AI prompts based on your role
+  - **CSV, PDF, and email export** — get your data into whatever workflow you use next
+
+  ## What's coming
+
+  Everything on that list has since shipped — API access, scheduled monitoring, and one-click push to HubSpot, Notion, Airtable and Slack — alongside a workflow layer we had not yet imagined when this was written. If you have a use case we haven't covered yet, reach out at hello@datiq.app.
+
+  Start with any URL. No sign-up required.
+    `.trim(),
+  },
+  {
+    slug: "the-five-hundred-domain-monday",
+    tag: "Use Case",
+    title: "The 500-Domain Monday: What to Do When Someone Hands You a List",
+    excerpt:
+      "A territory drop lands in your inbox. Five hundred domains, no context, and a quota. Here is how to turn that into forty accounts worth calling — with the reasoning visible enough that your reps actually trust the ranking.",
+    date: "September 4, 2026",
+    readTime: "6 min read",
+    coverIcon: "target",
+    fullContent: `
+Every RevOps team knows this Monday. A list arrives — from a conference, a data vendor, a new territory split — and it is five hundred rows of domain names with nothing attached. Somewhere in there are the forty accounts worth a call this quarter. Finding them by hand is a week of tab-opening that nobody has.
+
+## Step 1: stop the list lying to you before you start
+
+The first thing DatIQ does on import is boring and it matters more than anything else in this post: it **normalises and de-duplicates**. \`https://www.Acme.com/pricing\`, \`acme.com\` and \`ACME.COM\` become one account, not three.
+
+Lists arrive dirty. If you skip this, your enrichment bill is inflated, your reps work the same company twice, and your conversion maths is quietly wrong all quarter.
+
+## Step 2: write the ICP down, properly
+
+Most teams have an ICP that lives in a slide and a slightly different one that lives in each rep's head. DatIQ makes you write it as data: a field, an operator, a value and a weight.
+
+    industry is one of Software, Fintech      weight 30
+    employee count is at least 50             weight 20
+    publishes pricing publicly                weight 15
+    sells to businesses                       weight 20  (required)
+
+A **required** criterion is the important one. Mark "sells to businesses" required and an account that fails it cannot qualify however well it scores elsewhere — which is what you actually mean, and not what a pure weighted average would do.
+
+Then test it. Type in a domain you already have an opinion about and watch it score. If your best customer comes back at 41, your rules are wrong and you have found that out for free, before spending anything on a run of five hundred.
+
+## Step 3: run it, and let it be honest
+
+Enrichment reads each company's own public site. Every field comes back as **observed**, **inferred and labelled**, or **absent** — never invented. There is no hardcoded "55 employees" for a company that does not publish headcount.
+
+The consequence is worth internalising: an account with thin public information gets a **lower coverage**, not a **wrong score**. The unmeasured criterion is excluded and its weight is redistributed across the criteria that were measured.
+
+This is why the table has two numbers per row instead of one. A 78 computed from four of four criteria and a 78 computed from two of four are different claims, and a rep deciding how to spend their morning deserves to know which one they are looking at.
+
+## Step 4: work the queue, not the whole list
+
+Low-confidence extractions land in a **review queue** rather than entering your table silently. Confirm, correct, or discard them.
+
+It is tempting to skip this. Do not. The failure mode of every enrichment tool is a table that is 94% right where nobody can tell which 6% is wrong — and the rational response to that table is to distrust all of it. A visible review queue is what makes the other 94% usable.
+
+## Step 5: get it in front of the rep
+
+Export as CSV or JSON, or push straight into HubSpot, Notion, Airtable or Slack. Scores, coverage and the **source URL behind every field** travel with it.
+
+That last part is the difference between a list your reps work and a list they argue with. When someone asks "why is this account an 82?", the answer is a page and a quote, not a shrug.
+
+## Then automate the next one
+
+Once the rules are right, a **signal routing rule** means you do not have to run the list at all. Trigger on a bulk enrichment result, condition on an ICP score above your threshold, action into a Slack channel or straight into HubSpot. New accounts qualify themselves and arrive where your reps already are.
+
+Start with a handful of domains and one rule. The setup is measured in minutes, and you will know within one sample whether your ICP says what you think it says.
+    `.trim(),
+  },
+  {
+    slug: "knowing-the-day-not-the-quarter",
+    tag: "Use Case",
+    title: "Knowing the Day, Not the Quarter: Competitive Monitoring That Doesn't Cry Wolf",
+    excerpt:
+      "Most change monitoring fails the same way — it alerts on everything, so you mute it, and then you miss the price change. Materiality classification is the fix, and a silent first run is the part everyone gets wrong.",
+    date: "September 4, 2026",
+    readTime: "6 min read",
+    coverIcon: "eye",
+    fullContent: `
+Competitive intelligence has a quiet failure mode. You set up monitoring, it fires forty times in the first week for copyright years and rotated testimonials, you mute the channel, and three months later you find out about a competitor's repricing from a customer on a renewal call.
+
+The tool worked. The alerting is what failed. So that is where the design effort went.
+
+## Materiality is the whole feature
+
+Every detected change on a DatIQ watchlist is classified by how much it matters, and the classification decides what happens:
+
+| Materiality | Examples | What happens |
+|---|---|---|
+| **Critical** | A price changes, a tier is added or removed | Alerts immediately |
+| **High** | A headline feature claim changes, positioning shifts | Daily digest |
+| **Medium** | Supporting copy, a new case study | Weekly digest |
+| **Low** | Whitespace, a copyright year, a rotated quote | Recorded, never alerted |
+| **Unknown** | Cannot be classified confidently | Review, not a guess |
+
+The point is not that low-materiality changes are discarded — they are all recorded and searchable. The point is that they never interrupt you, which is what keeps the critical alert credible when it arrives.
+
+## The first run never alerts
+
+A watchlist's first reading is a **baseline**. There is nothing to compare it against yet, so it is stored and nothing is sent.
+
+This sounds obvious and almost nothing does it. A tool that fires a burst of alerts the moment you configure it teaches you, in its very first interaction, that its alerts are noise. That lesson is hard to unlearn.
+
+## The most expensive false positive we refuse to send
+
+Here is the one that shapes the rest of the architecture.
+
+Suppose a competitor's pricing table was readable last week and is not readable today. The dramatic interpretation is that they pulled their pricing — which, if true, is a genuine strategic signal.
+
+It is also almost never what happened. Far more often the page failed to render, a script timed out, or a layout change moved the table behind an interaction.
+
+So DatIQ reports the field as **unobserved**, not deleted. A field that stopped being observed is not a deletion. Getting this wrong sends an executive into a Monday meeting saying a competitor has abandoned public pricing, on the strength of a render failure — and that is a mistake a team remembers about a tool for a very long time.
+
+## Facts in one column, opinions in another
+
+A change record has two halves that never blend.
+
+The **fact** is the old value, the new value, the page and the timestamp. It is defensible; you can put it on a slide.
+
+The **interpretation** is what our AI reads into the change strategically, and it is always labelled as an AI reading. It is a good starting point for a conversation and a bad thing to quote as evidence. You can mark an interpretation useful or wrong, and that stays with the record.
+
+Keeping them apart is not modesty. It is so that the fact remains usable when the interpretation is wrong — which it sometimes will be.
+
+## Then send it where people actually are
+
+A watchlist that you have to visit is a watchlist you will stop visiting. **Signal routing rules** push the changes that clear your bar into Slack, an inbox, a webhook or HubSpot, with conditions you set — say, critical and high materiality only, for these four domains.
+
+Every dispatch is recorded whether it succeeded or not, and a destination that was unreachable is retried rather than silently dropped. "Did that fire?" has an answer.
+
+## Setting one up
+
+Add the domains, choose a cadence, let the baseline settle, and set one routing rule for critical changes only. Widen it later once you have seen a week of what the watchlist considers material.
+
+Watchlists are included from the Select plan upwards, on the same allowance as scheduled monitoring.
+    `.trim(),
+  },
+  {
+    slug: "why-we-refuse-to-guess",
+    tag: "Deep Dive",
+    title: "Why We Refuse to Guess: Observed, Inferred, or Absent",
+    excerpt:
+      "The most valuable thing an intelligence tool can do is tell you when it does not know. Here is the rule every DatIQ field obeys, the bug that taught us to enforce it, and why an honest low score beats a confident wrong one.",
+    date: "September 4, 2026",
+    readTime: "7 min read",
+    coverIcon: "shield",
+    fullContent: `
+There is a category of software defect that never throws an error, never fails a test, and quietly costs you money for months. It happens when a system that does not know something produces a plausible answer anyway.
+
+We shipped one. It is worth writing about, because the fix became the rule the whole platform now runs on.
+
+## The bug
+
+An early version of our bulk enricher was supposed to read company firmographics off each company's public site. What it actually did, for some fields, was pattern-match the domain name and fill in defaults. Every company on earth came back with the same employee count. Every company was recorded as publishing pricing.
+
+None of that is the bad part. The bad part is that it stamped a **high confidence score** on the invention, and every ICP score in the product was computed from it.
+
+A wrong field that announces itself as wrong is an inconvenience. A wrong field wearing a confidence badge is a decision you make incorrectly and never revisit — a rep working a list that was ranked by fiction, and no signal anywhere that anything was off.
+
+## The rule that replaced it
+
+Every field DatIQ returns is now exactly one of three things:
+
+- **Observed** — read directly off a page, with the page and the supporting quote recorded alongside it.
+- **Inferred** — derived from what was observed, and labelled as inferred so you can weigh it accordingly.
+- **Absent** — we could not determine it, and we say so.
+
+There is no fourth state. There is no default value. An absent field is omitted rather than filled in.
+
+## What this costs, honestly
+
+It costs completeness. A company that does not publish its headcount produces a brief with no headcount in it. Someone comparing us to a competitor that always returns a number will see fuller-looking output over there.
+
+That competitor's number is frequently a guess wearing a suit. Ours is a gap you can see. We think the gap is worth more, and here is the mechanism that makes it worth more rather than just worthy.
+
+## Coverage: the number beside the number
+
+Because fields can be absent, every score DatIQ computes travels with a **coverage** figure — what proportion of the intended signals were actually measured.
+
+A 70 computed from five of five criteria and a 70 computed from two of five are different claims about the world. Reporting them both as "70" is the same failure as inventing a headcount: it hides uncertainty behind a confident-looking number.
+
+## Never score a missing measurement as zero
+
+This is the part that is genuinely counterintuitive, and the reason it matters shows up in trend lines.
+
+Suppose an ICP criterion depends on a field we could not read. The naive implementation scores it zero and moves on. But zero is a *measurement* — it means "we looked, and this company scores nothing here." That is not what happened. What happened is we did not look successfully.
+
+So an unmeasured criterion is **excluded** from the score and its weight is **redistributed** across the criteria that were measured.
+
+If you score missing data as zero instead, here is what your customers experience: during a third-party outage every score drops several points, and when the outage resolves every score jumps back up. Your trend line — the entire reason for tracking anything over time — becomes a record of our infrastructure rather than of your market. Every "improvement" it shows is a fiction, and somebody will present one of those fictions in a meeting.
+
+## The same rule, everywhere
+
+Once you accept it in one place you have to accept it everywhere, or the exceptions become the bugs:
+
+- A **discoverability audit** excludes an unmeasured signal and redistributes its weight, rather than scoring the page zero for it.
+- A **watchlist** reports a field that stopped being observed as unobserved, never as a deletion.
+- A **competitive brief** names a competitor whose site could not be read as unread, and passes that to the model explicitly, so it cannot invent a row for them.
+- A **generated schema block** emits an explicit TODO for anything we could not observe, rather than a plausible placeholder — because these get pasted into live sites and published without being read.
+
+## What you should ask any tool in this category
+
+Three questions, and they are not rhetorical:
+
+1. **What does it do when it does not know?** If the answer is "returns a reasonable default", every downstream number is unreliable in a way you cannot detect.
+2. **Can you see where a fact came from?** If a field does not carry its source, you cannot check it, and you will eventually repeat something wrong in a meeting that matters.
+3. **What happens to a score when a signal is missing?** If it silently becomes zero, the trend line is measuring the vendor, not the market.
+
+We built DatIQ to answer all three the same way, and we would rather be caught knowing less than caught making things up.
+    `.trim(),
+  },
   {
     slug: "discoverability-seo-aeo-geo-audits",
     tag: "Release",

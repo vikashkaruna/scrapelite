@@ -76,16 +76,16 @@ export default function UseCaseCompetitor() {
             </p>
             <div className="uc-stats">
               <div className="uc-stat">
-                <span className="uc-stat-num">1,200+</span>
-                <span className="uc-stat-label">CI analysts</span>
+                <span className="uc-stat-num">4</span>
+                <span className="uc-stat-label">materiality levels, so only real changes alert</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">50K+</span>
-                <span className="uc-stat-label">competitor pages tracked</span>
+                <span className="uc-stat-num">2,000</span>
+                <span className="uc-stat-label">audits / month on Agency</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">40+</span>
-                <span className="uc-stat-label">agencies rely on DatIQ</span>
+                <span className="uc-stat-num">$0</span>
+                <span className="uc-stat-label">to start — no card</span>
               </div>
             </div>
           </div>
@@ -132,17 +132,6 @@ export default function UseCaseCompetitor() {
                   {p.label}
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Testimonial */}
-          <div className="uc-section fade">
-            <h2>What our users say</h2>
-            <div className="uc-testimonial">
-              <blockquote>
-                "We cut our competitive research time by 80%. DatIQ pulls pricing data faster than I can open a browser tab."
-              </blockquote>
-              <cite>— Sarah M., Product Manager</cite>
             </div>
           </div>
 

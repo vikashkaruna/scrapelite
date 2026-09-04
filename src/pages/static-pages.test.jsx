@@ -148,16 +148,23 @@ describe("F-14 — Terms page", () => {
 });
 
 describe("F-15 — UseCases hub", () => {
-  it("renders 4 use-case cards (lead-gen, competitor, SEO, market)", async () => {
+  it("renders all 9 use-case cards, covering every persona", async () => {
     const { container } = render(<Tree path="/use-cases"><UseCases /></Tree>);
     await act(async () => { await Promise.resolve(); });
     const cards = container.querySelectorAll(".uc-hub-card");
-    expect(cards.length).toBe(4);
+    expect(cards.length).toBe(9);
     // Scope the text assertions to the hub-grid container.
     const grid = container.querySelector(".uc-hub-grid");
     expect(grid).not.toBeNull();
     const gridText = grid.textContent;
-    for (const name of [/Lead generation/i, /Competitor research/i, /SEO audit/i, /Market research/i]) {
+    // The four original cards, plus the five added for the intelligence-workflow
+    // release. Named individually rather than counted alone, so dropping one and
+    // adding another somewhere else cannot keep this test green.
+    for (const name of [
+      /Lead generation/i, /Competitor research/i, /SEO audit/i, /Market research/i,
+      /Account intelligence/i, /Competitive monitoring/i, /AI visibility/i,
+      /Recruiting research/i, /Investor diligence/i,
+    ]) {
       expect(gridText).toMatch(name);
     }
   });
@@ -197,11 +204,11 @@ describe("F-16 — Comparison hub", () => {
 });
 
 describe("F-17 — Integrations page", () => {
-  it("renders 13 integration cards (12 original + 1 Airtable added in F18)", async () => {
+  it("renders 14 integration cards (13 prior + Signal Routing)", async () => {
     const { container } = render(<Tree path="/integrations"><Integrations /></Tree>);
     await act(async () => { await Promise.resolve(); });
     const cards = container.querySelectorAll(".int-card");
-    expect(cards.length).toBe(13);
+    expect(cards.length).toBe(14);
   });
 
   it("labels the 5 push providers as 'Available (Beta)' and Salesforce/Webhook with the right status (2026-08-11)", async () => {

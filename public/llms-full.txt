@@ -19,7 +19,17 @@ DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capit
 
 ## 2. What DatIQ Does
 
-DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive:
+DatIQ runs a five-step loop over the public web — **read, reason, watch, act, share** — and extraction is only the first step.
+
+1. **Read.** Paste a URL and receive structured data from any publicly accessible page.
+2. **Reason.** Run a workflow template that turns those fields into the finished artefact the work was for: an account brief, a competitive comparison, a scored account list, a discoverability audit.
+3. **Watch.** Put competitor pages under a watchlist that re-reads them on a cadence and classifies how much each change matters.
+4. **Act.** Route the changes and results that clear your bar into Slack, email, a webhook or a CRM.
+5. **Share.** Publish any result as a report at its own link, with a visibility level you choose per report.
+
+**The governing rule.** Every field DatIQ returns is **observed** (read off a page, with the page and the supporting quote recorded), **inferred** (derived, and explicitly labelled as inferred), or **absent**. There is no fourth state and no plausible-looking default. Consequently every score carries a **coverage** figure, and an unmeasured signal is excluded with its weight redistributed rather than scored as zero — because scoring a missing measurement as zero would depress every score during a third-party outage and then show a phantom improvement when it recovered.
+
+From step one alone, users immediately receive:
 
 - **Structured headings** (H1–H6) in document order
 - **Internal and external links**, AI-categorized
@@ -154,6 +164,67 @@ monitoring requires Pro or above; competitive benchmarks require Select or above
 DatIQ makes no claim that a score predicts rankings, citations or traffic.
 
 
+### Intelligence workflows (templates)
+A workflow template is a named end-to-end job: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks returned. Seven ship today, filtered by persona in the catalogue:
+- **Sales-ready Account Brief** (sales) — a company framed for a discovery call, a displacement, or an expansion
+- **Bulk ICP Account Enrichment** (sales / RevOps) — a list of domains in, a scored account table out
+- **Competitor Pricing Tracker** (competitive intelligence) — a pricing page as a structured tier table you can diff later
+- **Customer Proof Extractor** (competitive intelligence) — every named customer, case study, logo and quantified outcome on a site
+- **AI Visibility & Competitive Brief** (competitive intelligence / marketing) — you and up to four competitors read under one shared schema
+- **SEO / GEO / AEO Audit** (SEO) — a page scored for classic search, answer engines and generative engines
+- **Pre-Meeting Due Diligence Brief** (founder / VC) — a source-backed company brief before a first call
+
+Every run shows a cost estimate before it starts and spends nothing until confirmed. Runs are saved with their inputs, outputs and sources, and can be re-opened, exported or published as a report. On the Go plan and above, any template can be duplicated and edited — its fields, prompts and output blocks — without modifying the shipped original.
+
+### Bulk account intelligence and ICP scoring
+- Import up to 500 company domains by paste or CSV; normalised and de-duplicated on import
+- Durable chunked enrichment that survives a closed tab, a lost connection or a slow provider
+- Firmographics read from each company's own site: industry, size band, pricing model, whether pricing is published, positioning, proof points, contacts
+- Customer-editable ICP rules: field, operator, value, weight, plus required criteria and a qualification threshold (default 50)
+- Live rule testing against a sample domain before committing a run
+- Unmeasured criteria excluded and their weight redistributed, never scored as zero; coverage reported alongside every score; a zero-coverage account returns no score rather than a zero
+- Review queue holding low-confidence extractions for confirmation instead of admitting them silently
+- Export as CSV or JSON, or push to HubSpot, Notion, Airtable or Slack with scores, coverage and source URLs attached
+- Uses the plan's batch allowance: 5 accounts on Free, 20 Go, 50 Select, 100 Pro, 250 Business, 500 Agency and Developer
+
+### Competitor watchlists and change intelligence
+- Standing watches that re-read chosen competitor domains on a cadence
+- Materiality classification drives delivery: **critical** (a price or tier change) alerts immediately, **high** (a feature claim or positioning shift) batches daily, **medium** weekly, **low** (whitespace, a copyright year) is recorded and never alerts, **unknown** goes to review rather than being guessed at
+- The first run of any watchlist is a silent baseline — there is nothing to compare against yet, and a tool that alerts on setup teaches users to ignore its alerts
+- A field that stopped being observed is reported as unobserved, never as a deletion, because a failed page render is far more common than a competitor removing their pricing
+- Objective change facts (old value, new value, page, timestamp) are kept structurally separate from labelled AI interpretation, with per-record feedback
+- Uses the plan's scheduled-monitoring allowance, which starts on Select
+
+### Signal routing
+- If-this-then-that rules over the whole platform
+- Triggers: a competitor watchlist change, a bulk enrichment result (for example an account crossing the ICP threshold), or a workflow run finishing
+- Conditions combine and must all be satisfied
+- Actions: **Slack**, **email**, **webhook**, **HubSpot**
+- "Test with sample payload" shows the verdict and which conditions matched, using the same evaluator as the live runtime
+- Every dispatch is recorded whether it succeeded or not; unreachable destinations are retried on a backoff schedule; destinations are re-validated at dispatch time rather than only at save time
+- Available from the Select plan upwards, alongside integrations
+
+### Shareable reports
+- Any run, audit or extraction can be published as a report at its own link
+- Five visibility levels: **private**, **anyone with the link** (unlisted), **workspace only**, **specific people** (named email addresses), **public**
+- Only public reports are indexable; every other level ships a noindex instruction
+- Revocation is permanent and the code is never reissued; reports can also carry an expiry date
+- Business and Agency plans replace DatIQ attribution with the customer's own Brand Kit across reports, PDF exports and emailed deliverables
+- Sharing is free on every plan, including Free
+
+### Team workspaces
+- Shared containers with owner, admin and member roles; the seat count includes the owner
+- Invites are email-bound, single-use and expire after 14 days
+- A member's seat can be paused: they keep read access but cannot spend the workspace allowance
+- Reports set to workspace visibility are readable by every member
+
+### Usage and credits
+- Any job that reads more than one page shows an estimate before it starts: pages expected and AI calls expected
+- The usage ledger records what each job actually consumed, itemised, and reconciles actuals against the estimate
+- Capabilities reuse the allowance that already describes their work rather than introducing separate currencies: template runs draw on extractions, bulk lists on batch size, watchlists on scheduled monitoring, signal rules on integrations, and audits on their own monthly allowance
+
+---
+
 ## 4. Pricing (as of 2026)
 
 | Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
@@ -200,6 +271,21 @@ DatIQ is designed for seven core personas. Each has a tailored home-screen examp
 ---
 
 ## 6. Use Cases
+
+### Account Intelligence (bulk ICP scoring)
+Import up to 500 company domains, enrich each from their own public site, score them against ICP rules you control, and export or push a prioritised account table. Coverage and the source URL behind every field travel with the export, so a rep can see why an account qualified rather than only that it did.
+
+### Competitive Monitoring
+Standing watches on competitor pricing, features and positioning, with materiality classification so a price change alerts immediately and a copyright year never does. Routed to Slack, email, a webhook or HubSpot by a signal rule.
+
+### AI Visibility
+Read your site and up to four competitors under one identical schema, score each for classic search, answer engines and generative engines, and get a prioritised, evidence-backed brief on what to change first. A competitor whose site could not be read is explicitly named as unread rather than invented.
+
+### Recruiting Research
+Brief yourself on a company before a candidate call: what they build, how they position, who leads which function, and a watch on their careers pages. DatIQ surfaces only publicly published contact information and never guesses personal email addresses.
+
+### Investor Diligence
+A source-backed pre-meeting brief: product, pricing model, published traction signals, the team, and the questions worth asking — every claim carrying the page and quote behind it. Run a whole pipeline through the same template for a like-for-like comparison.
 
 ### Lead Generation
 Extract contact info, company details, and LinkedIn profiles from any public-facing business page. Build prospect lists in minutes.
@@ -285,6 +371,11 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - Competitor research: https://datiq.app/use-cases/competitor-research
 - SEO audit: https://datiq.app/use-cases/seo-audit
 - Market research: https://datiq.app/use-cases/market-research
+- Account intelligence: https://datiq.app/use-cases/account-intelligence
+- Competitive monitoring: https://datiq.app/use-cases/competitive-monitoring
+- AI visibility: https://datiq.app/use-cases/ai-visibility
+- Recruiting research: https://datiq.app/use-cases/recruiting
+- Investor diligence: https://datiq.app/use-cases/investor-diligence
 
 ### Programmatic SEO
 - Extract pricing from any page: https://datiq.app/extract-pricing
@@ -304,7 +395,16 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 
 ---
 - https://datiq.app/discoverability — SEO / AEO / GEO audit engine (sign-in required)
-- https://datiq.app/help/11-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
+- https://datiq.app/templates — workflow template catalogue and runner (sign-in required)
+- https://datiq.app/lists — bulk account intelligence and ICP scoring (sign-in required)
+- https://datiq.app/watchlists — competitor watchlists and change intelligence (sign-in required)
+- https://datiq.app/rules — signal routing rules (sign-in required)
+- https://datiq.app/help/10-intelligence-workflows-templates-that-finish-the-job.html — workflow templates guide
+- https://datiq.app/help/11-bulk-account-intelligence-and-icp-scoring.html — bulk enrichment and ICP guide
+- https://datiq.app/help/12-competitor-watchlists-and-change-intelligence.html — watchlists and materiality guide
+- https://datiq.app/help/13-signal-routing-getting-the-right-change-to-the-right-place.html — signal routing guide
+- https://datiq.app/help/14-shareable-reports.html — report visibility guide
+- https://datiq.app/help/17-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
 
 ## 8. FAQ (12 questions and answers)
 
@@ -315,7 +415,7 @@ DatIQ is a no-code web intelligence platform that turns any public URL into stru
 DatIQ combines plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export in one no-code product. It is significantly cheaper than Clay, simpler than Firecrawl, and more feature-rich than Browse.ai.
 
 **Q3. How much does DatIQ cost?**
-DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $4.80 / month (Go). Select is $14.40 / month (100 extractions + PDF export), Pro $20.40 / month, Business $44.40 / month, Agency $106.80 / month. Annual billing is cheaper again. INR pricing is available.
+DatIQ is free to start — 10 extractions per month, no credit card. Paid plans start at $4.80 / month (Go). Select is $14.40 / month (500 extractions, PDF export, scheduled monitoring, integrations and signal routing), Pro $20.40 / month, Business $44.40 / month, Agency $106.80 / month. Annual billing is cheaper again. INR pricing is available.
 
 **Q4. Do I need to write code to use DatIQ?**
 No. DatIQ is zero-code — paste a URL, describe any field you want in plain English, and the AI extracts it. Custom extraction is configurable in the UI without scripting.
@@ -371,7 +471,7 @@ Full reference: /help/index.html (DatIQ-Developer-API section)
 ## 10. Competitive Context
 
 DatIQ is a no-code alternative to:
-- **Clay** — 10× cheaper; DatIQ starts at $19/mo vs Clay's $149/mo. DatIQ's enrichment is built into the extraction, not bolted on.
+- **Clay** — an order of magnitude cheaper; DatIQ's paid plans start at $4.80/mo vs Clay's $149/mo. DatIQ's enrichment is built into the extraction rather than bolted on, and it reads each company's own live site instead of serving a purchased database, so every field carries the page and quote it came from.
 - **Browse.ai** — More feature-rich (custom extraction, AI enrichment tabs, scheduled monitoring, white-label PDF).
 - **Firecrawl** — Simpler. No API key management, no scraping infrastructure to maintain.
 - **Diffbot** — Much cheaper. Plain-English config vs ontology training.
@@ -447,6 +547,18 @@ Full contact page: https://datiq.app/contact
 ---
 
 ## 16. Recent releases (2026)
+
+**September 2026 — Intelligence workflows.** The platform layer above
+extraction: workflow templates that return a finished artefact rather than raw
+fields, bulk account intelligence with customer-editable ICP scoring and a
+review queue, competitor watchlists with materiality classification and a silent
+baseline, native signal routing into Slack / email / webhooks / HubSpot, and
+shareable reports with five visibility levels. Five new use-case pages cover
+account intelligence, competitive monitoring, AI visibility, recruiting research
+and investor diligence. The evidence contract — observed, inferred, or absent,
+never invented — is now enforced across every surface, with coverage reported
+alongside every score.
+
 
 **August 2026 — Discoverability module.** SEO, AEO and GEO audits with a
 four-pillar scoring engine, prioritised fixes with copy-ready implementation

@@ -5,11 +5,15 @@
 > there are no code samples, database details, or setup instructions here. If you build software and
 > want to call DatIQ programmatically, see the separate **[Developer API reference](developers.html)**.
 
-DatIQ turns any public web page into structured, usable data — headings, links, contacts, pricing,
-and a plain-language AI summary — in seconds. No code, no browser extensions, no scrapers to configure.
-Paste a URL (or many), choose what you want, and DatIQ does the rest.
+DatIQ turns the public web into the work your team was going to do by hand. It reads any public page into
+structured, usable data — headings, links, contacts, pricing, firmographics, and a plain-language AI summary —
+then runs the workflow that turns that data into a finished brief, a scored account list, or a monitored
+competitor, and routes what matters to wherever your team already works. No code, no browser extensions,
+no scrapers to configure.
 
 ### Table of contents
+
+**Getting data**
 
 1. What DatIQ is
 2. Quick start — your first extraction
@@ -20,24 +24,48 @@ Paste a URL (or many), choose what you want, and DatIQ does the rest.
 7. Batch extraction
 8. Scheduling & change monitoring
 9. Your Dashboard
-10. Exports & sharing
-11. Discoverability — SEO, AEO & GEO audits
-12. Plans, usage & billing
-13. Accounts, trial & sign-in
-14. Privacy & your data
-15. FAQ & troubleshooting
-16. Keyboard shortcuts
-17. Glossary
+
+**Turning data into decisions**
+
+10. Intelligence workflows — templates that finish the job
+11. Bulk account intelligence & ICP scoring
+12. Competitor watchlists & change intelligence
+13. Signal routing — getting the right change to the right place
+14. Shareable reports
+15. Team workspaces
+
+**Distribution, audits & account**
+
+16. Exports & sharing
+17. Discoverability — SEO, AEO & GEO audits
+18. Plans, usage & billing
+19. Accounts, trial & sign-in
+20. Privacy & your data
+21. Troubleshooting
+22. Keyboard shortcuts
+23. Glossary
 
 ---
 
 ## 1. What DatIQ is
 
-DatIQ is **The Unified Web Intelligence Platform** — a zero-code web-extraction and enrichment platform
-organised as a stack of named pillars. Its foundation, **Pillar 0 — Web Intelligence (Core)**, is the
-proven single, batch, and scheduled URL-extraction engine that the rest of the platform is built on.
-Its promise is simple: **Intelligence from Web.** Give it a web address and it returns clean, structured
-information you can read, filter, enrich, export, or monitor over time.
+DatIQ is **the unified web intelligence platform** — it turns the public web into the specific piece of
+work your team was going to do by hand, and then keeps doing it.
+
+Most tools in this space stop at extraction: they hand you fields and leave the thinking to you. DatIQ
+runs the whole loop.
+
+1. **Read** — give it a web address and it returns clean, structured information: headings, links,
+   contacts, pricing, firmographics, or anything else you can describe in plain English.
+2. **Reason** — a workflow template turns those fields into the finished artefact: an account brief, a
+   competitive comparison, a scored account list, a discoverability audit.
+3. **Watch** — a watchlist re-reads what matters on a cadence and works out what actually changed.
+4. **Act** — a routing rule pushes the change that matters into Slack, your inbox, a webhook, or your CRM.
+5. **Share** — any result becomes a report at its own link, with the access level you choose.
+
+No code, no browser extensions, no scrapers to configure. If you only want step 1, step 1 works on its own
+and always will — but the reason teams keep DatIQ is that steps 2 through 5 remove the work between having
+data and having a decision.
 
 Typical things people pull out of a page:
 
@@ -45,27 +73,37 @@ Typical things people pull out of a page:
 - **An AI summary** — a short, plain-language overview of what the page is about.
 - **Contacts** — leadership names, role titles, and contact emails where a page exposes them.
 - **Pricing** — structured pricing tiers and plan details from a pricing page.
+- **Firmographics** — industry, size band, pricing model, positioning and proof points for a company.
 - **A site map** — the set of indexed URLs across a whole domain.
 - **Anything else** — describe a field in plain English ("founding year", "office locations") and DatIQ extracts it.
 
 DatIQ works in light and dark themes; use the sun/moon button in the top bar to switch. Your preference is remembered.
 
-### The pillars
+### The one rule everything else follows
 
-DatIQ is organised as a stack of named pillars. **Pillar 0 is the foundation**; everything else is
-layered on top of it.
+**DatIQ never invents a fact.** Every field it gives you is either **observed** — read directly off a page,
+with the page and the quote recorded — or **inferred** and labelled as inferred, or **absent**. There is no
+fourth option and no plausible-looking default.
 
-| Pillar | Name | What it is |
+That has a consequence worth stating plainly: an honest run sometimes comes back with less than you hoped.
+A company that does not publish its headcount produces a brief with no headcount in it. That is the correct
+outcome. Every score DatIQ computes therefore carries a **coverage** figure alongside it, so you always know
+how much of the picture the number is based on — because a confident number built from two of five signals
+is not the same claim as one built from all five, and a tool that hides the difference is a tool that will
+eventually cost you a deal.
+
+### What DatIQ is made of
+
+| Layer | What it is | Where it lives |
 |---|---|---|
-| **P0** | **Web Intelligence (Core)** | The single, batch, and scheduled URL-extraction engine — proven, ships today. |
-| P1 | Enrichment & Insight | AI summaries, contact enrichment, content generation (SEO briefs, competitor briefs). |
-| P2 | Distribution & Workflow | CSV / PDF / Google Sheets export, scheduling, webhook push, CRM sync. |
-| P3 | Workspace & Collaboration | *(roadmap)* shared workspaces, role-based access, team controls. |
-| P4 | Intelligence Mesh (API) | *(roadmap)* REST + webhook API and native integrations. |
-
-> Pillar 0 is what runs the moment you click **Extract** on the Home screen — whether that is one URL, a
-> pasted list that becomes a **batch**, or a **schedule** firing later on. It is the engine; the rest of
-> DatIQ is everything you can do once the engine has the data.
+| **Web intelligence core** | Single, batch and scheduled URL extraction — the engine everything else runs on. | Home, Batch, Schedules |
+| **Enrichment & insight** | AI summaries, contacts, pricing, firmographics, generated content. | Preview, Dashboard |
+| **Intelligence workflows** | Named end-to-end jobs — account briefs, competitive briefs, audits, bulk scoring. | Templates, Lists |
+| **Change intelligence** | Standing watches on competitors, with materiality classification. | Watchlists |
+| **Signal routing** | If-this-then-that delivery into Slack, email, webhooks and CRM. | Rules, Integrations |
+| **Distribution** | Exports, pushes, shareable reports, branded deliverables. | Everywhere results appear |
+| **Collaboration** | Shared workspaces, roles, seats, workspace-scoped reports. | Workspace |
+| **Programmatic access** | REST endpoints and webhooks for building DatIQ into your own systems. | Business plans and above |
 
 ![DatIQ Home in dark mode](assets/screenshots/02-home-dark.png)
 
@@ -327,7 +365,280 @@ nothing to re-import.
 
 ---
 
-## 10. Exports & sharing
+## 10. Intelligence workflows — templates that finish the job
+
+Extraction gives you fields. A **workflow** gives you the finished piece of work those fields were for —
+a brief you can open a call with, a comparison you can take into a pricing meeting, a scored account list
+your reps can work today. Workflows are where DatIQ stops being a tool you operate and starts being a
+process that runs.
+
+Open **Templates** from the top bar. Every template is a complete, named job: an input form, the fields
+DatIQ will read, the analysis it will run, and the output blocks you get back.
+
+### The template catalogue
+
+| Template | Built for | What you get |
+|---|---|---|
+| **Sales-ready Account Brief** | Sales / SDR / BDR | What a company does, who they sell to, how they price, and who to talk to — framed for a discovery call, a displacement, or an expansion. |
+| **Bulk ICP Account Enrichment** | Sales / RevOps | A list of domains in, an enriched and scored account table out. See §11. |
+| **Competitor Pricing Tracker** | Competitive intelligence | A competitor's pricing page as a structured tier table you can diff later — the starting snapshot for a watchlist. |
+| **Customer Proof Extractor** | Competitive intelligence | Every named customer, case study, logo and quantified outcome on a site — the evidence layer under a battlecard. |
+| **AI Visibility & Competitive Brief** | Competitive intelligence / Marketing | How you and up to four competitors describe, price and position yourselves — and what an AI answer engine would say about each of you. |
+| **SEO / GEO / AEO Audit** | SEO / Content | A page scored for classic search, answer engines and generative engines, with a prioritised fix list. See §17. |
+| **Pre-Meeting Due Diligence Brief** | Founder / VC | A source-backed company brief before a first call: what they do, traction signals, team, and what to ask. |
+
+The catalogue is filtered by your persona by default, so the templates that fit your job are the ones you
+see first. Switch personas from the user menu, or clear the filter to browse everything.
+
+### Running a template
+
+1. Pick a template. You get a short form — usually one domain or URL, plus one or two choices that set the
+   angle (a discovery call versus a displacement, a diligence deep-dive versus an intro).
+2. DatIQ shows you a **cost estimate before you commit** — how many pages it expects to read and how many
+   AI calls it expects to make. Nothing is spent until you press Run.
+3. The run streams its progress. When it finishes you get the output blocks: structured facts, the written
+   analysis, and the sources behind them.
+4. Every run is saved. Re-open it from the template's run history, share it as a report (§14), or export it.
+
+### Every claim carries its source
+
+Workflow output is **evidence-backed by construction**. Each extracted fact travels with where it came from —
+the page it was read on, and the verbatim quote that supports it. A field DatIQ could not observe is marked
+**absent**, not guessed. That distinction is the whole point:
+
+> A brief that says "we don't know their headcount" is useful. A brief that invents one is worse than no
+> brief at all, because somebody acts on it.
+
+You will see this in the output as a coverage indicator — what proportion of the requested fields were
+actually found. A low-coverage run is telling you something real about the target's website, not failing.
+
+### Making a template your own
+
+On the **Go plan and above** you can **duplicate** any template and edit it — change the fields it reads,
+rewrite the prompts, adjust the output blocks. Your copy is private to your account and appears in your own
+catalogue alongside the originals. The shipped templates are never modified, so you always have a working
+baseline to fork again.
+
+---
+
+## 11. Bulk account intelligence & ICP scoring
+
+**Lists** is where a spreadsheet of company domains becomes a worked, scored, prioritised account table.
+It is built for the moment a rep or a RevOps lead is handed 300 domains and asked which ones matter.
+
+Open **Lists** from the top bar.
+
+### Building a list
+
+1. **New list** — name it, and paste or upload the domains. CSV upload and plain paste both work.
+2. DatIQ **normalises and de-duplicates** as it imports: `https://www.Acme.com/pricing`, `acme.com` and
+   `ACME.COM` are one account, not three. The import summary tells you how many duplicates it collapsed.
+3. Pick the persona the list is for — it seeds the scoring rules with a sensible starting profile.
+
+### Enrichment that never invents a field
+
+Running a list reads each company's public site and returns firmographics: industry, size band, pricing
+model, whether they publish pricing at all, positioning, proof points, and contacts where a site exposes them.
+
+Every field is one of exactly three things: **observed** (read directly off a page), **inferred** (derived
+from what was observed, and labelled as such), or **absent**. There is no fourth state. Absent fields are
+omitted rather than filled with a plausible-looking default — which means an honest run produces a lower
+**coverage** number rather than a wrong **score**.
+
+Runs are **durable and chunked**. A list of 500 accounts is processed in claimable batches, so closing the
+tab, losing your connection, or a provider having a bad minute does not lose the work already done. Re-open
+the list and the progress is where you left it.
+
+### ICP scoring — rules you can actually edit
+
+The **Rules** tab holds your Ideal Customer Profile as data, not as an opaque model. Each criterion is a
+field, an operator, a value, and a weight — for example *industry is one of Software, Fintech* at weight 30,
+or *employee count is at least 50* at weight 20. Mark a criterion **required** and an account that fails it
+cannot qualify however well it scores elsewhere.
+
+Two rules govern the maths, and both exist to stop the score lying to you:
+
+- **An unmeasured field is never scored as zero.** If a company's headcount could not be found, that
+  criterion is excluded and its weight is redistributed across the criteria that *were* measured. Scoring
+  it zero would punish a company for our failure to read their site.
+- **Coverage travels with every score.** A 70 computed from five of five criteria and a 70 computed from
+  two of five are different claims, and the table shows you which one you are looking at. An account with
+  zero coverage scores **no result**, not zero.
+
+Set the qualification **threshold** (50 by default) and test it live against a sample domain before you
+apply it to the whole list. Change a weight, watch the sample re-score, then run.
+
+### The review queue
+
+Low-confidence extractions land in **Review** rather than silently entering your table. You confirm,
+correct, or discard them. This is deliberate: the alternative is a 94%-accurate table that nobody can tell
+the bad 6% inside, which is a table nobody trusts.
+
+### Getting the list out
+
+Export the qualified accounts as CSV or JSON, or push them straight into HubSpot, Notion, Airtable or Slack
+from the same screen. Scores, coverage, and the source URL behind each field travel with the export — so
+the rep working the list can see *why* an account qualified, not just that it did.
+
+> **Plan note.** Bulk lists use your plan's batch allowance, so the number of accounts you can enrich in one
+> list matches the batch size your plan already includes (see §18). Top-up bundles raise it.
+
+---
+
+## 12. Competitor watchlists & change intelligence
+
+A one-off competitor snapshot is out of date the week you take it. **Watchlists** turn that snapshot into a
+standing watch: DatIQ re-reads the pages you care about on a cadence, works out what actually changed, and
+tells you only when the change is worth your attention.
+
+Open **Watchlists** from the top bar.
+
+### Setting one up
+
+1. **New watchlist** — name it, describe what you are watching for, and add the competitor domains.
+2. Choose a **cadence** — how often DatIQ re-reads them.
+3. Choose what to track: pricing, product and feature claims, positioning and messaging, leadership, or
+   customer proof.
+
+The first run is always a **baseline**. It never alerts — there is nothing to compare it against yet, and a
+tool that fires an alert the moment you set it up teaches you to ignore its alerts.
+
+### Materiality — why you are not woken up for a copyright year
+
+Every detected change is classified by how much it matters, and the classification drives what happens next:
+
+| Materiality | Examples | What DatIQ does |
+|---|---|---|
+| **Critical** | A price changes, a tier is added or removed, a plan is discontinued. | Alerts immediately. |
+| **High** | A headline feature claim changes, positioning shifts. | Rolled into the daily digest. |
+| **Medium** | Supporting copy, a new case study, a page reorganised. | Rolled into the weekly digest. |
+| **Low** | Whitespace, a copyright year, a rotated testimonial. | Recorded, never alerted. |
+| **Unknown** | DatIQ cannot tell how much it matters. | Sent to review rather than guessed at. |
+
+One rule is worth stating on its own, because getting it wrong is expensive:
+
+> **A field that stopped being observed is not a deletion.** If a pricing table was there last week and is
+> unreadable today, the overwhelmingly likely cause is a failed page render, not a competitor removing their
+> pricing. DatIQ reports it as unobserved. "They deleted all their pricing" is the costliest false positive
+> in this whole product, and it is not one we will hand you.
+
+### Facts and interpretation stay separate
+
+A change record has two halves that never blend into each other. The **fact** is what changed — the old
+value, the new value, the page, the timestamp. The **interpretation** is what DatIQ thinks it means
+strategically, and it is always labelled as an AI reading rather than an observation. You can mark an
+interpretation useful or wrong, and that feedback is kept with the record.
+
+The reason for the split is simple: you may need to take the fact into a pricing meeting. A fact is
+defensible. An interpretation is a starting point for a conversation.
+
+### Where changes go
+
+Changes appear in the watchlist's own feed, and — if you want them elsewhere — get routed by the rules in
+§13 to Slack, email, a webhook, or your CRM.
+
+> **Plan note.** A watchlist is a recurring monitor, so it uses your plan's scheduled-monitoring allowance
+> (see §18). Plans without scheduled monitoring do not include watchlists.
+
+---
+
+## 13. Signal routing — getting the right change to the right place
+
+Intelligence that stays inside a tool is intelligence nobody acts on. **Rules** is DatIQ's if-this-then-that
+layer: it watches for the things you care about and pushes them where your team already works.
+
+Open **Rules** from the top bar.
+
+### Building a rule
+
+A rule is three parts:
+
+1. **Trigger** — where the signal comes from: a **competitor watchlist** change, a **bulk enrichment**
+   result (for example, an account crossing your ICP threshold), or a **workflow run** finishing.
+2. **Conditions** — which of those events actually qualify. Materiality is at least high; the ICP score is
+   above 80; the domain is in this set. Conditions are combined, and an event has to satisfy all of them.
+3. **Action** — what happens: post to **Slack**, send an **email**, call a **webhook**, or create or update
+   a record in **HubSpot**.
+
+### Test it before you trust it
+
+Every rule has a **Test with sample payload** button. It runs your conditions against a realistic event and
+shows you both the verdict and *why* — which conditions matched and which did not. The preview and the live
+runtime share the same evaluation engine, so a rule that previews as matching is a rule that will match. A
+preview that could disagree with production would be worse than no preview.
+
+### What happens on every attempt
+
+Each dispatch is recorded whether it succeeded or not, with the outcome and the response. A destination that
+was unreachable is retried on a backoff schedule rather than dropped silently. You can see the execution
+history on the rule itself, so "did that fire?" has an answer.
+
+Destinations are re-validated at the moment of dispatch, not only when you saved the rule — a webhook URL
+that was fine last month and points somewhere it should not today is refused.
+
+> **Plan note.** Signal routing pushes into the same destinations as the Integrations feature, so it is
+> available on the **Select plan and above** (see §18).
+
+---
+
+## 14. Shareable reports
+
+Any workflow run, audit, or extraction can become a **report** — a clean, presentable page at its own link
+that you can send to a colleague, a client, or a prospect without giving them an account.
+
+Click **Share** on any result.
+
+### Who can see it
+
+You choose, per report, and you can change it later:
+
+| Visibility | Who gets in | Indexed by search engines? |
+|---|---|---|
+| **Private** | Only you. No link exists yet. | — |
+| **Anyone with the link** | Whoever you send it to. Unlisted. | No |
+| **Workspace only** | Any member of that workspace. | No |
+| **Specific people** | Only the email addresses you list. | No |
+| **Public** | Anyone. Listed, and eligible for the public gallery. | Yes |
+
+Only **Public** is indexable. Every other level ships a `noindex` instruction, so a link you meant for one
+client does not turn up in a search result.
+
+### Revoking
+
+**Revoke** permanently burns a link. It cannot be un-revoked, and the slug is never reissued — which is the
+point: an link you have revoked is one you needed to stop working, immediately and for good. If you want the
+report back, publish it again and you get a fresh link.
+
+Reports can also carry an **expiry date**, after which they close themselves.
+
+### Branding
+
+Reports carry DatIQ attribution by default. On **Business and Agency** plans your **Brand Kit** — your
+company name, logo, accent colour, and footer — replaces it, so a report you send a client looks like yours.
+Set it up under Account → Brand Kit; it applies to reports, PDF exports and emailed deliverables alike.
+
+---
+
+## 15. Team workspaces
+
+A **workspace** is a shared container for work: the people in it, and what they are allowed to do.
+
+Open **Workspace** from the user menu.
+
+- **Create a workspace** and invite people by email. Invites are single-use, expire in 14 days, and can only
+  be accepted by the address they were sent to.
+- **Roles** — owner, admin, member. Owners and admins can invite and remove; members work.
+- **Seats** — the seat count includes the owner. Your plan sets how many seats and how many workspaces you
+  can own (see §18); the Agency plan adds client workspaces, and extra workspaces can be bought as an add-on.
+- **Pause a seat** — a member you pause keeps their access to what they can read but cannot spend the
+  workspace's allowance. Useful for a contractor between engagements.
+
+Reports set to **Workspace only** visibility are readable by every member of that workspace, which is the
+simplest way to circulate an internal brief.
+
+---
+
+## 16. Exports & sharing
 
 There are exactly **two** ways to get data out, and they do not overlap:
 
@@ -385,7 +696,7 @@ Public reports can be unshared at any time. Recent public extractions also surfa
 
 ---
 
-## 11. Discoverability — SEO, AEO & GEO audits
+## 17. Discoverability — SEO, AEO & GEO audits
 
 Extraction answers *"what is on this page?"*. Discoverability answers a different
 question about a page you usually already own: **"can this page be found, and
@@ -575,17 +886,41 @@ If the site is yours, or you have the owner's permission, you can record that
 once per site and re-run. That confirmation is tied to your account and to that
 exact site, it expires after 180 days, and you can withdraw it at any time.
 
-## 12. Plans, usage & billing
+## 18. Plans, usage & billing
 
 DatIQ offers a free tier plus paid plans for heavier use. Pricing is shown in your local currency where
 supported, with monthly and annual billing (annual saves you money).
 
 ![DatIQ pricing page](assets/screenshots/08-pricing.png)
 
-- **Free** — a monthly allowance of extractions, full core features, and a one-time bonus credit when you sign up.
-- **Paid plans** (Go, Select, Pro, Business, Agency) — higher allowances, larger batches, more workspaces, and additional capabilities such as API access on Business and above.
-- **Top-up bundles** — add extra batch capacity to your current plan without changing tiers.
+- **Free** — a monthly allowance of extractions, full core features, the whole template catalogue, and a one-time bonus credit when you sign up.
+- **Paid plans** (Go, Select, Pro, Business, Agency) — higher allowances, larger batches and account lists, more workspaces, and additional capabilities such as integrations and signal routing from Select, and API access on Business and above.
+- **Top-up bundles** — add extra batch and account-list capacity to your current plan without changing tiers.
 - **Enterprise** — custom volume and terms; contact sales.
+
+### What each capability draws on
+
+DatIQ does not make you buy a separate allowance for every screen. Features reuse the allowance that
+already describes the work they do, so there is nothing new to learn and nothing to reconcile:
+
+| Capability | Draws on |
+|---|---|
+| Single extraction, enrichment, template runs | Your monthly **extractions** allowance |
+| Batch extraction and **bulk account lists** | Your plan's **batch size** (plus any top-up bundles) |
+| Scheduled monitors and **competitor watchlists** | Your plan's **scheduled monitoring** allowance |
+| **Signal routing rules** | Included wherever **integrations** are (Select and above) |
+| Discoverability audits | A separate monthly **audit** allowance |
+| Sharing a report | Free on every plan, including Free |
+
+### Knowing the cost before you spend it
+
+Any job that reads more than one page — a template run, a bulk list, a watchlist check — shows you an
+**estimate before it starts**: how many pages it expects to read and how many AI calls it expects to make.
+Nothing is spent until you confirm.
+
+Afterwards, the **usage ledger** on your Account screen records what each job actually consumed, itemised
+by what it was spent on. Estimates and actuals are reconciled, so if a job costs materially more than it
+quoted you can see that it did, rather than discovering it at the end of the month.
 
 Manage everything from the **Account** screen: your current plan, usage this month, usage alerts,
 coupon entry, and payment history. Before any charge, a confirmation shows the full breakdown (including taxes where applicable).
@@ -659,7 +994,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 13. Accounts, trial & sign-in
+## 19. Accounts, trial & sign-in
 
 - **Try without an account** — you can start extracting straight away. A trial banner shows how many free
   single extractions and batch runs remain. DatIQ never interrupts you on arrival: the limit is checked
@@ -676,7 +1011,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 14. Privacy & your data
+## 20. Privacy & your data
 
 - DatIQ extracts only from **publicly accessible** pages you point it at.
 - Your saved extractions are tied to your account (or kept on your device when you use DatIQ without signing in).
@@ -687,7 +1022,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 15. Troubleshooting
+## 21. Troubleshooting
 
 > Looking for general questions — pricing, plans, sharing, keyboard shortcuts, what DatIQ can
 > extract? Those all live in one place now: **[the DatIQ FAQ](https://datiq.app/faq)**. This section
@@ -733,7 +1068,7 @@ alerts, keyboard shortcuts and what each screen does. If it is still not covered
 
 ---
 
-## 16. Keyboard shortcuts
+## 22. Keyboard shortcuts
 
 DatIQ has power-user shortcuts for fast navigation and common actions. Press <kbd>?</kbd> any time
 to see the full list.
@@ -753,7 +1088,7 @@ to see the full list.
 
 ---
 
-## 17. Glossary
+## 23. Glossary
 
 - **Extraction** — one run of DatIQ against a page, producing structured results.
 - **Intent** — what you want from a page (summary, contacts, pricing, map, or custom).
@@ -766,8 +1101,21 @@ to see the full list.
 - **Map site** — discovering the set of indexed URLs across a domain.
 - **Top-up bundle** — extra capacity added to your current plan.
 - **Outcome tile** — a pre-wired shortcut chip above the URL box (lead list, pricing, etc.).
-- **Template** — a pre-built extraction recipe (YC companies, SaaS pricing, etc.) you can apply in one click.
-- **Workspace** — your logged-in command center for recent extractions and activity.
+- **Template** — a named end-to-end workflow: an input form, the fields DatIQ reads, the analysis it runs, and the output you get back.
+- **Workflow run** — one execution of a template, saved with its inputs, outputs and sources.
+- **List** — a set of company domains imported for bulk enrichment and ICP scoring.
+- **ICP** — Ideal Customer Profile: the weighted rules an account is scored against.
+- **Coverage** — how much of the requested information was actually found. A score always travels with its coverage.
+- **Observed / inferred / absent** — the only three states a DatIQ field can be in. Nothing is ever invented.
+- **Watchlist** — a standing watch on competitor domains that re-reads them on a cadence.
+- **Materiality** — how much a detected change matters (critical, high, medium, low), which decides whether it alerts.
+- **Baseline** — the first reading of a watched page. It never alerts, because there is nothing to compare it against yet.
+- **Signal rule** — an if-this-then-that rule routing a change or result to Slack, email, a webhook, or your CRM.
+- **Report** — a shareable page for any result, with a visibility level you choose.
+- **Visibility** — who can open a report: private, link, workspace, specific people, or public.
+- **Brand Kit** — your company name, logo, colour and footer, applied to reports, PDFs and emailed deliverables.
+- **Usage ledger** — the itemised record of what each job actually consumed.
+- **Workspace** — a shared container for work: the people in it and what they may do.
 - **Public report** — a read-only shareable link at `datiq.app/p/<short-code>`.
 - **Provenance** — a label that tells you where each piece of extracted data came from.
 - **Command palette** — press <kbd>mod</kbd>+<kbd>k</kbd> to jump anywhere.

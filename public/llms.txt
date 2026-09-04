@@ -1,5 +1,5 @@
 # DatIQ: The Unified Web Intelligence Platform
-> DatIQ: The Unified Web Intelligence Platform — built on Pillar 0 (Web Intelligence Core), the proven single, batch, and scheduled URL-extraction engine the whole platform is built on. Turn any public URL into structured data — headings, links, contacts, pricing, AI summary — in seconds. No code required.
+> DatIQ: The Unified Web Intelligence Platform. It reads the public web into structured data, runs the workflow that turns that data into a finished brief or a scored account list, watches competitors on a cadence, and routes what matters into Slack, email, a webhook or a CRM. Extraction is the foundation, not the product. No code required.
 > Tagline: Intelligence from Web.
 
 ## Disambiguation
@@ -11,7 +11,11 @@ DatIQ (this product) is a no-code web intelligence platform for extracting struc
 DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
 
 ## What DatIQ Does
-DatIQ extracts and enriches data from any publicly accessible web page using AI. Users paste a URL and immediately receive structured headings, internal and external links, an AI-generated summary, contact information, pricing data, and any custom field they describe in plain English.
+DatIQ runs a five-step loop over the public web: READ (extract structured data from any public page), REASON (run a workflow template that turns those fields into a finished artefact such as an account brief or a competitive comparison), WATCH (re-read chosen pages on a cadence and classify what changed), ACT (route the changes that matter into Slack, email, a webhook or a CRM), and SHARE (publish any result as a report at its own link with a chosen visibility level).
+
+Users can stop at step one — paste a URL and receive headings, links, an AI summary, contacts, pricing and any custom field described in plain English — but the platform exists to remove the work between having data and having a decision.
+
+Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the page and supporting quote recorded), INFERRED (derived and explicitly labelled), or ABSENT. Nothing is invented and no field is filled with a plausible default. Every score therefore carries a COVERAGE figure, and an unmeasured signal is excluded with its weight redistributed rather than scored as zero.
 
 ## Core Capabilities
 - Web extraction: headings H1–H6, all internal/external links, metadata
@@ -27,6 +31,17 @@ DatIQ extracts and enriches data from any publicly accessible web page using AI.
 - Prioritised remediation with copy-ready constructs: FAQPage and Organization JSON-LD generated from the page's own visible content, 40-60 word answer blocks, corrected heading outlines, robots.txt entries for answer-engine crawlers
 - Re-audit and compare: score deltas, resolved vs newly introduced issues, and a trend line per page
 - Scheduled discoverability monitoring and competitive benchmark sets
+- Workflow templates: named end-to-end jobs (Sales-ready Account Brief, Competitor Pricing Tracker, Customer Proof Extractor, AI Visibility & Competitive Brief, SEO/GEO/AEO Audit, Pre-Meeting Due Diligence Brief, Bulk ICP Account Enrichment), each with a cost estimate shown before it runs
+- Forkable templates: duplicate any template and rewrite its fields, prompts and outputs (Go plan and above)
+- Bulk account intelligence: import up to 500 company domains by paste or CSV, de-duplicated on import, enriched from each company's own public site, in durable chunked runs
+- ICP scoring: customer-editable weighted criteria with required fields and a qualification threshold, testable live against a sample domain before a run
+- Review queue: low-confidence extractions are held for confirmation rather than silently entering the account table
+- Competitor watchlists: standing watches that re-read domains on a cadence, with materiality classification (critical alerts immediately, high daily, medium weekly, low never) and a silent baseline on the first run
+- Change records that keep objective facts separate from labelled AI interpretation
+- Signal routing rules: trigger on a watchlist change, a bulk enrichment result or a workflow run; act into Slack, email, a webhook or HubSpot, with every dispatch recorded and retried on failure
+- Shareable reports with five visibility levels (private, link, workspace, named people, public); only public reports are indexable, and links can be permanently revoked or given an expiry
+- Team workspaces with owner, admin and member roles, email-bound single-use invites, and per-seat pause
+- Usage ledger: an itemised record of what each job actually consumed, reconciled against its estimate
 
 ## Pricing (as of 2026)
 - Free: 10 extractions/month + 25 trial credits, no credit card
@@ -59,9 +74,14 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 
 ## Use Cases
 - Lead generation: extract company info and leadership contacts for outbound sales
-- Competitor research: monitor competitor pricing, messaging, and leadership changes
+- Account intelligence: enrich and ICP-score bulk lists of company domains, with coverage and provenance on every field
+- Competitor research: pull structured pricing, positioning and customer proof from competitor sites
+- Competitive monitoring: standing watches with materiality classification, routed to Slack, email, a webhook or a CRM
+- AI visibility: measure how answer engines and generative engines represent you against up to four competitors
 - SEO audit: analyse any site's heading structure, link profile, and content gaps
 - Market research: aggregate structured data from multiple company sites
+- Recruiting research: brief yourself on a company before a candidate call, and watch its hiring pages
+- Investor diligence: a source-backed pre-meeting company brief with a citation behind every claim
 - Content creation: generate briefs and outlines from competitor content
 
 ## Key Pages
@@ -75,6 +95,11 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Use case — Competitor research: https://datiq.app/use-cases/competitor-research
 - Use case — SEO audit: https://datiq.app/use-cases/seo-audit
 - Use case — Market research: https://datiq.app/use-cases/market-research
+- Use case — Account intelligence: https://datiq.app/use-cases/account-intelligence
+- Use case — Competitive monitoring: https://datiq.app/use-cases/competitive-monitoring
+- Use case — AI visibility: https://datiq.app/use-cases/ai-visibility
+- Use case — Recruiting research: https://datiq.app/use-cases/recruiting
+- Use case — Investor diligence: https://datiq.app/use-cases/investor-diligence
 - Help documentation: https://datiq.app/help/index.html
 - Privacy Policy: https://datiq.app/privacy
 - Terms of Service: https://datiq.app/terms
@@ -82,7 +107,16 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Public gallery of shared reports: https://datiq.app/gallery
 - DMCA takedown process: https://datiq.app/dmca
 - /discoverability — SEO / AEO / GEO audit engine (sign-in required)
-- /help/11-discoverability-seo-aeo-and-geo-audits.html — how the audit engine works
+- /templates — workflow template catalogue and runner (sign-in required)
+- /lists — bulk account intelligence and ICP scoring (sign-in required)
+- /watchlists — competitor watchlists and change intelligence (sign-in required)
+- /rules — signal routing rules (sign-in required)
+- /help/10-intelligence-workflows-templates-that-finish-the-job.html — how workflow templates work
+- /help/11-bulk-account-intelligence-and-icp-scoring.html — bulk enrichment and ICP scoring
+- /help/12-competitor-watchlists-and-change-intelligence.html — watchlists and materiality
+- /help/13-signal-routing-getting-the-right-change-to-the-right-place.html — routing rules
+- /help/14-shareable-reports.html — report visibility and revocation
+- /help/17-discoverability-seo-aeo-and-geo-audits.html — how the audit engine works
 
 ## Persona landing pages
 - For sales teams: https://datiq.app/for-sales
@@ -98,8 +132,8 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - DatIQ vs Browse.ai: https://datiq.app/vs/browse-ai
 - DatIQ vs Clay: https://datiq.app/vs/clay
 - DatIQ vs Firecrawl: https://datiq.app/vs/firecrawl
-- DatIQ vs Apify: https://datiq.app/vs/apify.html
-- DatIQ vs PhantomBuster: https://datiq.app/vs/phantombuster.html
+- DatIQ vs Apify: https://datiq.app/vs/apify
+- DatIQ vs PhantomBuster: https://datiq.app/vs/phantombuster
 - Battle-card generator (compare 2 competitor URLs): https://datiq.app/vs/battlecard
 
 ## API
@@ -108,7 +142,9 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Aggregated stats: GET https://datiq.app/api/stats
 
 ## Competitive Context
-DatIQ is a no-code alternative to Clay (10x cheaper), Browse.ai, Firecrawl, Diffbot, and PhantomBuster. It is differentiated by plain-English custom extraction, built-in AI enrichment tabs, background processing, and full CSV/PDF export with no setup.
+DatIQ overlaps with, but is not, a scraping tool. Extraction tools (Firecrawl, Apify, Browse.ai, Diffbot, PhantomBuster) end where DatIQ's workflow layer begins; enrichment tools (Clay, ZoomInfo) sell a database, whereas DatIQ reads each company's own live site and shows the source behind every field.
+
+Differentiators: plain-English custom extraction with no per-site configuration; workflow templates that return a finished artefact rather than raw fields; customer-editable ICP scoring where an unmeasured signal is excluded rather than scored zero; competitor watchlists with materiality classification so trivial changes never alert; native signal routing into Slack, email, webhooks and HubSpot; shareable reports with five visibility levels; and a strict observed/inferred/absent evidence contract with coverage reported on every score. Paid plans start at $4.80/month, which is an order of magnitude below the enrichment platforms it is compared to.
 
 ## India-first
 DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.

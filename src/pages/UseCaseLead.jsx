@@ -77,16 +77,16 @@ export default function UseCaseLead() {
             </p>
             <div className="uc-stats">
               <div className="uc-stat">
-                <span className="uc-stat-num">500+</span>
-                <span className="uc-stat-label">sales teams</span>
+                <span className="uc-stat-num">500</span>
+                <span className="uc-stat-label">accounts scored per list</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">10K+</span>
-                <span className="uc-stat-label">contacts extracted this month</span>
+                <span className="uc-stat-num">4</span>
+                <span className="uc-stat-label">CRM &amp; chat destinations</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">30s</span>
-                <span className="uc-stat-label">average time per prospect</span>
+                <span className="uc-stat-num">$0</span>
+                <span className="uc-stat-label">to start — no card</span>
               </div>
             </div>
           </div>
@@ -133,17 +133,6 @@ export default function UseCaseLead() {
                   {p.label}
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Testimonial */}
-          <div className="uc-section fade">
-            <h2>What our users say</h2>
-            <div className="uc-testimonial">
-              <blockquote>
-                "We replaced a $300/month tool with DatIQ and built 200 targeted leads in a single afternoon."
-              </blockquote>
-              <cite>— Alex R., Head of Sales</cite>
             </div>
           </div>
 

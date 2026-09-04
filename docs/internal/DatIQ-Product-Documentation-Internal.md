@@ -13,11 +13,11 @@
 | | |
 |---|---|
 | **Product** | DatIQ |
-| **Documented version** | **V1.0 production + V1.0+ Integrations + Home/Batch consolidation** (current staging promotion candidate; one composer as the sole entry point, background runs, addressable batch runs, one Push menu, auth-gated schedule persistence) |
+| **Documented version** | **V1.0 production + Intelligence Workflows (PRD 1-5)** (current staging promotion candidate; workflow templates, bulk account intelligence with ICP scoring, competitor watchlists with materiality classification, native signal routing, shareable reports with five visibility levels, team workspaces — on top of the composer / background runs / addressable batches / one Push menu baseline) |
 | **Live site** | https://datiq.app (Netlify project `datiqapp`) |
 | **Repository** | https://github.com/vikashkaruna/scrapelite |
 | **Document purpose** | Internal master reference for the product, its screens, and its architecture. Source of truth for the public help split-outs above, onboarding, and support knowledge base. |
-| **Last updated** | 2026-08-18 (documentation + screenshot refresh for the Home/Batch consolidation on `staging`. All 10 screenshots regenerated; §6.1, §7.1, §7.3, §7.4, §7.5 and §9 rewritten against the shipped UI — §7.1 had still described the four-toggle v2.0 Home. Public help, FAQ, changelog, blog and `llms*.txt` updated to match.) |
+| **Last updated** | 2026-09-04 (documentation + public-surface refresh for the intelligence-workflow release. See §16 for what changed and where. User guide grew from 17 to 23 sections — six new workflow guides, so eight help URLs renumbered and carry 301s; five new use-case pages; four new changelog groups; four new blog posts; six new FAQ entries in both the visible list and the JSON-LD; `llms.txt` / `llms-full.txt` repositioned from extractor to platform. **Two integrity fixes worth knowing about:** four fabricated testimonials from named people and several invented usage statistics were removed from live use-case pages, and stale pricing claims — Select at $19/mo with 100 extractions, integrations gated to Business — were corrected against `pricingConfig.js`.) |
 
 ---
 
@@ -827,3 +827,106 @@ npm run preview  # preview the production build
 ---
 
 *End of document. This file is the canonical source for DatIQ's HTML help pages and future knowledge-base/chatbot content. Keep it in sync with the product as features ship.*
+
+---
+
+## 16. Intelligence Workflows — documentation & public-surface record (2026-09-04)
+
+This section records what the 2026-09-04 documentation pass changed, so the next
+person does not have to diff it out of the repository.
+
+### 16.1 What the release actually shipped (the reason for the pass)
+
+PRDs 1-5 landed across the preceding sessions and **nothing customer-facing
+described them**. The user guide had no section on any of it; `/pricing` sold
+none of it; the changelog, blog, FAQ and `llms*.txt` did not mention it.
+
+| Surface | Route | Backed by |
+|---|---|---|
+| Workflow templates | `/templates` | `src/lib/templates/*`, `seedTemplates.js` (7 published templates) |
+| Bulk account intelligence | `/lists` | `src/lib/bulk/*` — `identityModel.js`, `icpModel.js` |
+| Competitor watchlists | `/watchlists` | `src/lib/watchlist/*` — `materialityModel.js`, `snapshotModel.js` |
+| Signal routing | `/rules` | `src/lib/rules/*` — `ruleModel.js`, `retryModel.js` |
+| Shareable reports | `/r/:slug` | `src/lib/reports/visibilityModel.js` |
+| Credit ledger | Account | `src/lib/credits/creditModel.js` |
+
+### 16.2 Entitlements — everything reuses an existing limit
+
+Recorded here because it is the single fact most likely to be re-derived wrongly.
+`entitlementModel.js` deliberately does **not** introduce new per-tier allowances
+for the workflow surfaces; each reuses a limit the pricing page already sells:
+
+| Capability | Entitlement case | Reuses |
+|---|---|---|
+| Bulk account list | `bulk.enrich` | `limits.batch_max_urls` (+ bonus bundles) |
+| Competitor watchlist | `watchlist.create` | `limits.scheduled_monitoring` |
+| Signal routing rule | `rule.create` | `limits.integrations` |
+| Fork a template | `template.duplicate` | `limits.template_duplicate` |
+| Share a report | `report.share` | Ungated on every plan, by design (PRD 2's acquisition loop) |
+| Brand a report | `report.branding` | `limits.white_label_pdf` |
+
+`PricingMatrix.jsx`'s new **Intelligence workflows** group derives every cell from
+these same limits rather than hardcoding numbers, so the table cannot promise a
+capability the server will refuse. That failure mode is not hypothetical — it is
+exactly how the discoverability rows came to be missing from `/pricing` while the
+server had been enforcing an audit quota all along.
+
+### 16.3 Help-centre renumbering (8 URLs, all 301'd)
+
+Six workflow guides were inserted as user-guide sections 10-15, shifting the eight
+sections after them by six. New redirects are in `scripts/site-routes.mjs` and
+mirrored in `netlify.toml`; `page-ownership.test.mjs` asserts they match and that
+no two-hop chain exists. **The pre-existing help redirects were repointed at the
+NEW numbers**, not at the intermediate ones — leaving them would have created the
+chains that test forbids.
+
+### 16.4 Integrity fixes made during the pass
+
+Two categories of pre-existing defect were found on live public pages:
+
+1. **Fabricated social proof.** `UseCaseLead`, `UseCaseCompetitor`, `UseCaseSEO`
+   and `UseCaseResearch` each carried an invented testimonial attributed to a
+   named person ("Alex R., Head of Sales") plus invented usage statistics
+   ("1,200+ CI analysts", "50K+ competitor pages tracked"). The repo's own policy
+   had hidden Home's testimonials pending real data since R4; these four pages
+   were never cleaned up. All four testimonial blocks were **removed** and the
+   stat trios replaced with verifiable capability facts derived from
+   `pricingConfig.js` and `seedTemplates.js`.
+2. **Stale pricing and tier claims.** The lead-generation FAQ JSON-LD in
+   `pageSeo.js` advertised "Select ($19/mo) is 100, Pro ($29/mo) is 250,
+   Business ($79/mo) is 1,000, Agency ($299/mo)" — every figure wrong against
+   `pricingConfig.js` — and claimed integrations were "Business and Agency plans"
+   when `limits.integrations` is true from **Select**. `llms-full.txt` claimed
+   DatIQ "starts at $19/mo" (it is $4.80) and that Select includes 100
+   extractions (it is 500). All corrected against the source of truth.
+
+⚠️ **Both classes are invisible to every automated gate.** The readiness audit
+checks admin leakage, email routing, help freshness and *plan-name* coherence —
+not whether a JSON-LD answer body quotes a real price, and not whether a
+testimonial is real. Re-read the JSON-LD answer bodies whenever pricing moves.
+
+### 16.5 Tooling change
+
+`scripts/prerender.mjs` gained a **`PRERENDER_CHROMIUM_PATH`** env override. Some
+container images ship a Chromium revision that does not match the one the
+installed Playwright expects, so both the `channel:"chrome"` path *and* the
+bundled-chromium fallback fail, and no marketing page can be prerendered at all.
+That is an environment mismatch, not a repo problem, but it must not be the
+reason a page ships without crawlable HTML. In this container:
+
+```bash
+PRERENDER_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run prerender
+```
+
+### 16.6 Still open
+
+- **Screenshots are stale.** `docs/capture-screenshots.mjs` needs a dev server and
+  a working browser; the new `/templates`, `/lists`, `/watchlists` and `/rules`
+  screens have no captures, so the help pages for sections 10-15 carry no imagery.
+  This is the standing readiness WARN.
+- **Public gallery coverage** cannot be proven from source (it is runtime-populated
+  from Supabase `public_reports`). The workflow personas now have use-case pages;
+  the gallery still needs curated samples per persona.
+- **The workflow surfaces have no public REST API.** `docs/DatIQ-Developer-API.md`
+  now carries a *Planned endpoints* table saying so explicitly, and points
+  integrators at webhook signal rules as the supported egress today.
