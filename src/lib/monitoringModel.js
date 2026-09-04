@@ -94,6 +94,23 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "signal-retry",
+    label: "Signal dispatch retry",
+    schedule: "*/5 * * * *",
+    cron: "*/5 * * * *",
+    expectedIntervalMs: 5 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Re-attempts signal-rule dispatches whose backoff has elapsed (1m, 5m, 30m, 2h, 12h, then " +
+      "settled as failed). Retries DELIVERY only — it never re-evaluates the rule's conditions, " +
+      "because the decision to act was made when the event was detected.",
+    destructive: false,
+    // Safe by hand: each row's next_retry_at is cleared before the outbound
+    // call, so a manual run alongside the cron cannot deliver the same dispatch
+    // twice.
+    manualRunAllowed: true,
+  },
+  {
     id: "reengagement",
     label: "Re-engagement digest",
     schedule: "@daily",

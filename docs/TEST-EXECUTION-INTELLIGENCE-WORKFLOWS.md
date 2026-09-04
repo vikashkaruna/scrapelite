@@ -19,13 +19,13 @@
 
 | Suite | Cases | Passed | Failed | Result |
 |---|---:|---:|---:|---|
-| TS-1 Unit (pure models) | 2 911 | 2 911 | 0 | ✅ (+6 `describeCron`) |
+| TS-1 Unit (pure models) | 2 934 | 2 934 | 0 | ✅ (+6 `describeCron`, +23 `retryModel`) |
 | TS-2 Contract (Netlify functions) | 1 951 | 1 951 | 0 | ✅ (+14 skipped) |
 | TS-3 Integration | 432 | 432 | 0 | ✅ (+21 workflow surface render) |
 | TS-4 System | 8 | 8 | 0 | ✅ |
-| TS-5 Database (WASM Postgres, 45 migrations) | 461 | 461 | 0 | ✅ |
+| TS-5 Database (WASM Postgres, 46 migrations) | 462 | 462 | 0 | ✅ |
 | TS-6 Referral E2E (real Postgres) | 17 | 17 | 0 | ✅ |
-| **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **39** | **39** | **0** | ✅ **new — see §5a** |
+| **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **50** | **50** | **0** | ✅ **+11 execution-status coverage** |
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
 | **TS-9 Live staging, authenticated (browser)** | 1 | — | — | ⏸ **irreducible — needs a real credential, see §6** |
@@ -263,7 +263,7 @@ SQL with **two real tenants — Alice, and Mallory, who every isolation assertio
 | E-LEDGER-02 | …charged for pages actually read | — | `credits = 3` | ✅ |
 | E-LEDGER-03 | …against the unit `0037` already defined | — | `unit = monitor_check` | ✅ |
 
-**39 assertions passed · 0 failed**, across 45 migrations.
+**50 assertions passed · 0 failed**, across 46 migrations.
 
 > Building this harness found two bugs in the harness itself before it found none in the code — a
 > `.single()` call needs PostgREST's singular `Accept` header honoured, and supabase-js passes a
@@ -397,6 +397,7 @@ these tables, and before any production promotion (`npm run verify:rls -- --prod
 
 | # | Found by | Finding |
 |---|---|---|
+| F-06 | Building R-01 (the retry sweeper) | 🔴 **Every SSRF refusal was silently missing from the audit trail.** `0043` constrained `rule_executions.status` to three values; the dispatcher produces a fourth, `refused`. The insert violated the CHECK, and `dispatchSignal` catches bookkeeping errors so they cannot break a dispatch — so the row vanished with a `console.error`. **Neither suite could see it:** the contract tests mock `recordExecution`, and the real-Postgres E2E only ever recorded `success`. *An end-to-end test that walks only the happy path has the same blind spot as a mock.* Fixed by `0046`; the E2E now asserts every status the dispatcher can produce, confirmed RED without it. |
 | F-01 | New SSRF test (C-TEN-10) | The **first draft of the fix itself** accepted `http://169.254.169.254/`. `isPublicHttpUrl` **throws** for a bad scheme but **returns `false`** for a private IP, despite a JSDoc documenting only the first. A `try/catch` alone is not enough; both channels must be handled. Now uses `isPublicHttpUrlAsync` and checks the return value. |
 | F-02 | New unit test (U-SNAP-10) | `diffSnapshots(null, …)` threw. JS default parameters fire only for `undefined`, and a snapshot column never written comes back from Postgres as `null` — so the first monitored page with no prior snapshot would have crashed the crawler loop. |
 | F-03 | Code review during G3 | 🔴 **The shipped bulk enrichment was fabricated.** `industry: domain.includes("tech") ? "Software" : "Services"`, `employee_count: 55` for every company, `has_pricing: true` always — stamped `confidence_score: 0.95`. It never fetched the page. Every ICP score in the product derived from it. Replaced by `bulkEnrich.js` (observed / inferred / absent). |

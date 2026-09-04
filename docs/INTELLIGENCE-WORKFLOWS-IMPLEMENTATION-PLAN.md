@@ -220,8 +220,23 @@ fabrications are gone.
 
 | # | Item |
 |---|---|
-| R-01 | A retry sweeper for failed dispatches. `0045` adds `attempt` / `next_retry_at`; a failed dispatch is recorded and visible today, which satisfies "execution history and error status", but nothing retries it automatically yet. |
+| ~~R-01~~ | ✅ **DONE 2026-09-04.** `signal-retry` cron (`*/5`) + pure `retryModel.js`. Backoff matches the platform's existing schedule (1m, 5m, 30m, 2h, 12h), ceiling 5 attempts. **`refused` and `skipped` are never retried** — a refusal is the SSRF guard firing, and retrying would turn one blocked request into a scheduled repeating attempt at a private address; a skip needs a configuration change, not patience. A 4xx settles immediately (except 408/429), because resending a request the destination already rejected is how a broken rule earns a rate-limit ban on a customer's own Slack workspace. A retryable failure stores as **`retrying`**, not `failed`, so the history does not show a permanent failure for something still in flight. |
 | R-02 | Automatic watchlist page discovery. `classifyUrl` exists and is tested; it is deliberately not yet wired to a domain crawl, so the first version cannot silently enrol pages a user did not choose to monitor. |
+
+🔴 **A bug found while building R-01, and worth recording because of HOW it hid.**
+`0043` constrained `rule_executions.status` to `('success','failed','skipped')`, and the dispatcher
+shipped in this same cycle produces a fourth value — **`refused`**, the verdict when the SSRF guard
+rejects a destination. The insert violated the CHECK, and `dispatchSignal` catches bookkeeping
+errors so they can never break a dispatch — so the row was dropped with a `console.error`.
+**Every security refusal was missing from the audit trail**, which is precisely the event an
+operator most needs to see.
+
+Neither existing suite could see it: the contract tests mock `recordExecution`, and the
+real-Postgres E2E only ever recorded `success`. **An end-to-end test that walks only the happy path
+has the same blind spot as a mock** — it proves the schema accepts what the code usually writes, not
+what it writes when something goes wrong. `0046` widens the CHECK (keeping `refused` DISTINCT from
+`failed`: "we would not send this" and "we tried and it did not answer" mean different things to the
+person reading the history), and the E2E now asserts every status the dispatcher can produce.
 
 ### What is SHIPPED and LIVE on Staging
 

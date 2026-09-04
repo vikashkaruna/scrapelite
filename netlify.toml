@@ -73,6 +73,12 @@
 [functions."bulk-runner"]
   schedule = "*/5 * * * *"
 
+# PRD 5's "retry failed actions". Re-attempts dispatches whose backoff has
+# elapsed. Every 5 minutes, matching the first step of the backoff schedule
+# (1m, 5m, 30m, 2h, 12h) closely enough that an early retry is not left waiting.
+[functions."signal-retry"]
+  schedule = "*/5 * * * *"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

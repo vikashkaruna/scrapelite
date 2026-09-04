@@ -390,10 +390,60 @@ group("PRD 5 — signal rules: ownership, destination validation, execution log"
   eq("...its latency", row.latency_ms, 42);
   eq("...and the retry counter 0045 added", row.attempt, 1);
 
+  // ── EVERY status the dispatcher can produce must be storable ────────────
+  //
+  // This is the assertion the first version of this harness was missing, and
+  // the omission hid a real bug: it only ever recorded `success`. 0043
+  // constrained status to three values while the dispatcher produced a fourth,
+  // `refused` — the verdict when the SSRF guard rejects a destination — so
+  // every security refusal violated the CHECK and was silently dropped by
+  // dispatchSignal's own catch. The audit trail lost exactly the events an
+  // operator most needs to see.
+  //
+  // An end-to-end test that walks only the happy path has the same blind spot
+  // as a mock: it proves the schema accepts what the code usually writes, not
+  // what it writes when something goes wrong.
+  for (const st of ["success", "failed", "skipped", "refused", "retrying"]) {
+    const r = await rules.recordExecution(ruleId, users.alice, {
+      status: st, eventPayload: { kind: "monitor.change_detected" },
+      actionResponse: {}, error: null, latencyMs: 1,
+      // attempt at the ceiling so `failed` is stored verbatim rather than
+      // being promoted to `retrying` by the retry policy.
+      attempt: 9,
+    });
+    ok(`an execution with status '${st}' is storable`, r.ok);
+  }
+
+  // A retryable failure is stored as `retrying` WITH a due time, by the policy
+  // rather than by the caller — so every writer gets the same behaviour.
+  const retryable = await rules.recordExecution(ruleId, users.alice, {
+    status: "failed", eventPayload: {}, actionResponse: {}, error: "503", latencyMs: 1, attempt: 1,
+  });
+  ok("a retryable failure records", retryable.ok);
+  const stored = (await db.query(
+    `select status, attempt, next_retry_at from public.rule_executions
+      where error='503' order by executed_at desc limit 1`)).rows[0];
+  eq("...stored as 'retrying', not 'failed'", stored.status, "retrying");
+  eq("...carrying its attempt number", stored.attempt, 1);
+  ok("...and a scheduled next attempt", stored.next_retry_at !== null);
+
+  // A 4xx settles immediately: the destination said the request was wrong, and
+  // resending it unchanged is how a broken rule earns a rate-limit ban on a
+  // customer's own Slack workspace.
+  await rules.recordExecution(ruleId, users.alice, {
+    status: "failed", httpStatus: 404, eventPayload: {}, actionResponse: {},
+    error: "404", latencyMs: 1, attempt: 1,
+  });
+  const notRetried = (await db.query(
+    `select status, next_retry_at from public.rule_executions
+      where error='404' order by executed_at desc limit 1`)).rows[0];
+  eq("a 4xx settles as 'failed'", notRetried.status, "failed");
+  eq("...with no retry scheduled", notRetried.next_retry_at, null);
+
   await rules.deleteRule(ruleId, users.alice);
   eq("the owner CAN delete it",
      (await db.query(`select count(*)::int c from public.signal_rules`)).rows[0].c, 0);
-  eq("...and the execution cascades away",
+  eq("...and every execution cascades away",
      (await db.query(`select count(*)::int c from public.rule_executions`)).rows[0].c, 0);
 }
 

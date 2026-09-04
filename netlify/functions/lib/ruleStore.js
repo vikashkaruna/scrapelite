@@ -5,6 +5,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { evaluateSignalRule, formatActionPayload } from "../../../src/lib/rules/ruleModel.js";
 import { isPublicHttpUrlAsync } from "./publicUrl.js";
+import { statusFor, nextRetryAt } from "../../../src/lib/rules/retryModel.js";
 
 const _localRules = new Map();
 const _localExecutions = new Map();
@@ -196,7 +197,18 @@ export function testRuleWithPayload(rule, samplePayload) {
   };
 }
 
-export async function recordExecution(ruleId, userId, { status, eventPayload, actionResponse, error = null, latencyMs = 0 }, env = process.env) {
+/**
+ * Record one dispatch attempt.
+ *
+ * `attempt` and the retry schedule are computed HERE rather than by the caller,
+ * so every writer gets the same policy. A retryable failure is stored as
+ * `retrying` with a due time; anything terminal is stored as it happened.
+ */
+export async function recordExecution(ruleId, userId, { status, eventPayload, actionResponse, error = null, latencyMs = 0, attempt = 1, httpStatus = null }, env = process.env) {
+  const outcome = { status, httpStatus };
+  const storedStatus = statusFor(outcome, attempt);
+  const dueAt = nextRetryAt(outcome, attempt);
+
   const db = serviceDb(env);
   const now = new Date().toISOString();
 
@@ -206,11 +218,13 @@ export async function recordExecution(ruleId, userId, { status, eventPayload, ac
       id: execId,
       rule_id: ruleId,
       user_id: userId,
-      status,
+      status: storedStatus,
       event_payload: eventPayload,
       action_response: actionResponse,
       error,
       latency_ms: latencyMs,
+      attempt,
+      next_retry_at: dueAt,
       executed_at: now,
     };
     _localExecutions.set(execId, exec);
@@ -222,11 +236,13 @@ export async function recordExecution(ruleId, userId, { status, eventPayload, ac
     .insert({
       rule_id: ruleId,
       user_id: userId,
-      status,
+      status: storedStatus,
       event_payload: eventPayload,
       action_response: actionResponse,
       error,
       latency_ms: latencyMs,
+      attempt,
+      next_retry_at: dueAt,
     })
     .select()
     .single();

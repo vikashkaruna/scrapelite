@@ -53,6 +53,7 @@ import { evaluateSignalRule, formatActionPayload, ACTION_TYPES } from "../../../
 import { recordExecution, validateActionConfig, serviceDb } from "./ruleStore.js";
 import { isPublicHttpUrlAsync } from "./publicUrl.js";
 import { getConnection } from "./integrationConnectionStore.js";
+import { EXECUTION_STATUS, MAX_ATTEMPTS } from "../../../src/lib/rules/retryModel.js";
 
 /**
  * The canonical event model from PRD 5. Producers emit these names; rules are
@@ -211,7 +212,7 @@ export async function performAction(rule, event, env = process.env) {
       const body = await res.text().catch(() => "");
       return res.ok
         ? { ok: true, status: "success", response: { code: res.status, body: body.slice(0, 200) } }
-        : { ok: false, status: "failed", error: `slack responded ${res.status}`, response: { code: res.status, body: body.slice(0, 200) } };
+        : { ok: false, status: "failed", httpStatus: res.status, error: `slack responded ${res.status}`, response: { code: res.status, body: body.slice(0, 200) } };
     }
 
     if (dest.type === ACTION_TYPES.WEBHOOK) {
@@ -223,7 +224,7 @@ export async function performAction(rule, event, env = process.env) {
       const body = await res.text().catch(() => "");
       return res.ok
         ? { ok: true, status: "success", response: { code: res.status, body: body.slice(0, 200) } }
-        : { ok: false, status: "failed", error: `webhook responded ${res.status}`, response: { code: res.status } };
+        : { ok: false, status: "failed", httpStatus: res.status, error: `webhook responded ${res.status}`, response: { code: res.status } };
     }
 
     if (dest.type === ACTION_TYPES.EMAIL) {
@@ -245,7 +246,7 @@ export async function performAction(rule, event, env = process.env) {
       const body = await res.json().catch(() => ({}));
       return res.ok
         ? { ok: true, status: "success", response: { id: body?.id || null } }
-        : { ok: false, status: "failed", error: `resend responded ${res.status}`, response: { code: res.status } };
+        : { ok: false, status: "failed", httpStatus: res.status, error: `resend responded ${res.status}`, response: { code: res.status } };
     }
 
     if (dest.type === ACTION_TYPES.HUBSPOT) {
@@ -274,7 +275,7 @@ export async function performAction(rule, event, env = process.env) {
       const body = await res.json().catch(() => ({}));
       return res.ok
         ? { ok: true, status: "success", response: { id: body?.id || null } }
-        : { ok: false, status: "failed", error: `hubspot responded ${res.status}`, response: { code: res.status } };
+        : { ok: false, status: "failed", httpStatus: res.status, error: `hubspot responded ${res.status}`, response: { code: res.status } };
     }
 
     return { ok: false, status: "refused", error: `unknown action type: ${dest.type}`, response: null };
@@ -317,10 +318,12 @@ export async function dispatchSignal(event, env = process.env) {
     try {
       await recordExecution(rule.id, event.userId, {
         status: outcome.status,
+        httpStatus: outcome.httpStatus ?? null,
         eventPayload: { kind: event.kind, occurred_at: occurredAt, ...(event.payload || {}) },
         actionResponse: outcome.response,
         error: outcome.error || null,
         latencyMs,
+        attempt: event.attempt || 1,
       }, env);
     } catch (e) {
       console.error("[signalDispatch] could not record execution:", e.message);
@@ -330,6 +333,102 @@ export async function dispatchSignal(event, env = process.env) {
   }
 
   return { ok: true, evaluated: rules.length, fired, results };
+}
+
+
+/**
+ * Re-attempt every dispatch whose backoff has elapsed. PRD 5's "retry failed
+ * actions", driven by the `signal-retry` cron.
+ *
+ * ── WHY THIS RE-DISPATCHES RATHER THAN RE-EVALUATES ─────────────────────────
+ *
+ * The rule already MATCHED when the event happened. Re-running the conditions
+ * now would evaluate them against a world that has moved on — a competitor's
+ * price may have changed back, an ICP score may have been recomputed — and the
+ * retry would silently drop, leaving a `retrying` row that never settles. The
+ * decision to act was made at detection time; a retry is about delivery, not
+ * about the decision.
+ *
+ * ── AND WHY IT CLAIMS BEFORE IT SENDS ───────────────────────────────────────
+ *
+ * `next_retry_at` is cleared on the row BEFORE the outbound call, so a slow
+ * dispatch cannot be picked up twice by two overlapping runs and delivered
+ * twice. A duplicate Slack alert is a small harm; a duplicate HubSpot company
+ * write is not.
+ */
+export async function retryDueDispatches({ limit = 25, now = new Date() } = {}, env = process.env) {
+  const db = serviceDb(env);
+  if (!db) return { ok: false, reason: "supabase_unconfigured", retried: 0, settled: 0 };
+
+  const { data: due, error } = await db
+    .from("rule_executions")
+    .select("id, rule_id, user_id, attempt, event_payload")
+    .eq("status", EXECUTION_STATUS.RETRYING)
+    .lte("next_retry_at", now.toISOString())
+    .order("next_retry_at", { ascending: true })
+    .limit(limit);
+
+  if (error) return { ok: false, reason: error.message, retried: 0, settled: 0 };
+
+  const totals = { ok: true, retried: 0, settled: 0, succeeded: 0, errors: [] };
+
+  for (const row of due || []) {
+    // Claim first — see the header.
+    await db.from("rule_executions").update({ next_retry_at: null }).eq("id", row.id);
+
+    const { data: rule } = await db
+      .from("signal_rules").select("*").eq("id", row.rule_id).eq("status", "active").maybeSingle();
+
+    if (!rule) {
+      // The rule was deleted or paused while this was waiting. Settle the row
+      // rather than leaving it `retrying` for ever with nothing to drive it.
+      await db.from("rule_executions")
+        .update({ status: EXECUTION_STATUS.FAILED, error: "rule was removed or paused before the retry" })
+        .eq("id", row.id);
+      totals.settled += 1;
+      continue;
+    }
+
+    const payload = row.event_payload || {};
+    const attempt = (Number(row.attempt) || 1) + 1;
+    const started = Date.now();
+    const outcome = await performAction(rule, {
+      kind: payload.kind || "monitor.change_detected",
+      userId: row.user_id,
+      payload,
+      occurredAt: payload.occurred_at || new Date().toISOString(),
+    }, env);
+
+    totals.retried += 1;
+    if (outcome.status === EXECUTION_STATUS.SUCCESS) totals.succeeded += 1;
+    if (attempt >= MAX_ATTEMPTS && outcome.status !== EXECUTION_STATUS.SUCCESS) totals.settled += 1;
+
+    try {
+      // A NEW row per attempt, not an update: the history is the point. An
+      // operator asking "how many times did this fail before it worked?" needs
+      // the attempts to exist, not a single row that overwrote itself.
+      await recordExecution(rule.id, row.user_id, {
+        status: outcome.status,
+        httpStatus: outcome.httpStatus ?? null,
+        eventPayload: payload,
+        actionResponse: outcome.response,
+        error: outcome.error || null,
+        latencyMs: Date.now() - started,
+        attempt,
+      }, env);
+      // The row we just retried is settled as `failed` — which is what it was.
+      // It failed; that is why there was a retry. Its successor row carries
+      // whatever the new attempt produced, so the history reads as a sequence of
+      // attempts rather than a single row that rewrote its own past.
+      await db.from("rule_executions")
+        .update({ status: EXECUTION_STATUS.FAILED })
+        .eq("id", row.id);
+    } catch (e) {
+      totals.errors.push(`${row.id}: ${e.message}`);
+    }
+  }
+
+  return totals;
 }
 
 export const _internal = { EVENT_TO_SOURCE, resolveDestination, headline };

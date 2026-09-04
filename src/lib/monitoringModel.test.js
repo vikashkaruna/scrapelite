@@ -22,7 +22,7 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the eight platform jobs", () => {
+  it("registers the nine platform jobs", () => {
     // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
     // is the REALITY: adding a job here does not schedule it, and scheduling one
     // without adding it here means it runs unmonitored. Both halves have to be
@@ -33,6 +33,8 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
       // cadence was stored and never honoured, and a bulk job advanced only
       // while the browser tab that started it stayed open.
       "watchlist-monitor", "bulk-runner",
+      // PRD 5's "retry failed actions".
+      "signal-retry",
       "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
     ]);
   });
