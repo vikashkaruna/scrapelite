@@ -48,7 +48,8 @@
     "verify:referral": "node scripts/verify-referral-e2e.mjs",
     "sync:prerender": "node scripts/sync-prerender-assets.mjs",
     "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs",
-    "test:workflow": "node scripts/test-workflow-pipeline.mjs"
+    "test:workflow": "node scripts/test-workflow-pipeline.mjs",
+    "verify:rls": "node scripts/verify-workflow-rls.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
