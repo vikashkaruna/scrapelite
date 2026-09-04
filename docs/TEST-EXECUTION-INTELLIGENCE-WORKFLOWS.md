@@ -21,24 +21,35 @@
 |---|---:|---:|---:|---|
 | TS-1 Unit (pure models) | 2 905 | 2 905 | 0 | ✅ |
 | TS-2 Contract (Netlify functions) | 1 951 | 1 951 | 0 | ✅ (+14 skipped) |
-| TS-3 Integration | 411 | 411 | 0 | ✅ |
+| TS-3 Integration | 426 | 426 | 0 | ✅ (+15 workflow page render) |
 | TS-4 System | 8 | 8 | 0 | ✅ |
 | TS-5 Database (WASM Postgres, 45 migrations) | 461 | 461 | 0 | ✅ |
 | TS-6 Referral E2E (real Postgres) | 17 | 17 | 0 | ✅ |
 | **TS-11 Workflows E2E (real Postgres, 2 tenants)** | **39** | **39** | **0** | ✅ **new — see §5a** |
 | TS-7 Playwright smoke (chromium) | 132 | 131 | 0 | ✅ (1 skipped by design) |
 | TS-8 Build / prerender / security / readiness | 4 gates | 4 | 0 | ✅ |
-| **TS-9 Live staging, authenticated (browser)** | 7 | — | — | ⏸ **operator-run, spec shipped — see §6** |
+| **TS-9 Live staging, authenticated (browser)** | 4 | — | — | ⏸ **operator-run, spec shipped — see §6** |
 | **TS-10 Live staging, unauthenticated (security)** | 15 | 15 | 0 | ✅ **`0044` applied — verified live, see §7** |
 
-**Automated total: 5 792 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
+**Automated total: 5 807 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
 TS-9 remains operator-run: account creation and password handling are outside what this agent may
-do. **Its scope shrank from 24 cases to 7**, because most of what an authenticated pass proves is
-data-layer truth — cross-tenant isolation, cadence, ownership, the ledger — and TS-11 now asserts
-all of that against real Postgres with two real tenants and the real handlers. What is left in TS-9
-is genuinely browser-only: sign-in itself, and that the pages render the workspace rather than the
-signed-out gate. A ready-to-run spec ships at `e2e/journeys/workflows-authenticated.spec.js`; it
-**skips** without credentials, so it is safe in CI and needs no secret committed to stay green.
+do. **Its scope shrank from 24 cases to 4**, in two steps:
+
+* **17 cases → TS-11.** Most of what an authenticated pass proves is data-layer truth —
+  cross-tenant isolation, cadence, ownership, the ledger, fact-vs-interpretation. TS-11 asserts all
+  of it against real Postgres with two real tenants and the real handlers, which is stronger
+  evidence than one signed-in user clicking through.
+* **3 cases → TS-3.** S-07 / S-13 / S-20 asked "does the page show the workspace or the signed-out
+  gate?", and that branch is decided entirely by `useAuth()`. `WorkflowPages.integration.test.jsx`
+  now asserts **both directions** for all three pages. The signed-IN direction is the one a
+  regression breaks silently — an early return, or `user` read from the wrong provider, locks every
+  paying customer out while the signed-out test still passes — so it was confirmed RED by inverting
+  the guard before being accepted.
+
+What genuinely remains is what only a real credential against a real deployment can prove: that the
+account can obtain a session, and what renders once it has. A ready-to-run spec ships at
+`e2e/journeys/workflows-authenticated.spec.js`; it **skips** without credentials, so it is safe in
+CI and needs no secret committed to stay green.
 
 ---
 
@@ -298,13 +309,14 @@ destination the operator did not choose.
 
 | ID | Scenario | Expected | Result |
 |---|---|---|---|
-| S-01 | Sign in, plan shown on `/account` | Agency/Business | ⏸ |
+| S-01 | 🔑 Sign in with a real credential; plan shown on `/account` | Session obtained, Agency/Business | ⏸ **only a live account can prove this** |
 | S-02 | `/templates` renders for a signed-in user | Cards visible | ⏸ |
-| S-07 | `/lists` shows the workspace | Not the signed-out gate | ⏸ |
-| S-13 | `/watchlists` shows the workspace | Not the signed-out gate | ⏸ |
-| S-20 | `/rules` shows the builder | "New Routing Rule" visible | ⏸ |
 | S-24 | `/admin/monitoring` lists both new crons | Watchlist monitor + Bulk runner | ⏸ |
-| X-01 | `/lists`, `/watchlists`, `/rules` are noindex | `<meta robots>` contains noindex | ⏸ |
+| X-01 | `/lists`, `/watchlists`, `/rules` are noindex | `<meta robots>` contains noindex | ⏸ (also asserted from source by `page-ownership.test.mjs`) |
+
+> S-07, S-13 and S-20 were removed from this table: they are now covered in **both** directions by
+> `src/pages/WorkflowPages.integration.test.jsx` (TS-3), which runs in CI on every push. The spec
+> file still contains them, so running it re-confirms the same branch against the live build.
 
 <details><summary>Superseded by TS-11 — the original 24-case list</summary>
 
