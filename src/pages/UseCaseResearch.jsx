@@ -78,16 +78,16 @@ export default function UseCaseResearch() {
             </p>
             <div className="uc-stats">
               <div className="uc-stat">
-                <span className="uc-stat-num">50+</span>
-                <span className="uc-stat-label">sources per session</span>
+                <span className="uc-stat-num">500</span>
+                <span className="uc-stat-label">domains per bulk run</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">CSV + PDF</span>
-                <span className="uc-stat-label">clean export formats</span>
+                <span className="uc-stat-num">CSV · PDF · MD · JSON</span>
+                <span className="uc-stat-label">export formats</span>
               </div>
               <div className="uc-stat">
-                <span className="uc-stat-num">Free</span>
-                <span className="uc-stat-label">to start — no credit card</span>
+                <span className="uc-stat-num">$0</span>
+                <span className="uc-stat-label">to start — no card</span>
               </div>
             </div>
           </div>
@@ -134,17 +134,6 @@ export default function UseCaseResearch() {
                   {p.label}
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Testimonial */}
-          <div className="uc-section fade">
-            <h2>What our users say</h2>
-            <div className="uc-testimonial">
-              <blockquote>
-                "I benchmarked 30 competitors in one afternoon with DatIQ. What used to take a week of manual research now takes a single session."
-              </blockquote>
-              <cite>— Priya K., Market Research Lead</cite>
             </div>
           </div>
 

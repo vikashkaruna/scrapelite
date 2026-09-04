@@ -56,6 +56,22 @@ const FEATURE_ROWS = [
   { key: "enrichments",    group: "Usage",       label: "Enrichments per extraction",  render: (p) => fmtNum(p.limits?.enrichments_per_extraction) },
   { key: "batch",          group: "Usage",       label: "Batch mode (URLs per run)",   render: (p) => fmtNum(p.limits?.batch_max_urls) },
   { key: "monitoring",     group: "Usage",       label: "Scheduled monitoring",        render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
+  // ── Intelligence workflows ──────────────────────────────────────────────
+  // Every row here mirrors the limit entitlementModel ALREADY enforces rather
+  // than inventing a second number. A bulk list is a batch of domains, so it
+  // answers to `batch_max_urls`; a watchlist is a recurring monitor, so it
+  // answers to `scheduled_monitoring`; a signal rule pushes into the same four
+  // destinations as `integrations`. Deriving them here means the table cannot
+  // promise a capability the server will refuse — which is exactly how the
+  // discoverability rows below came to be missing in the first place.
+  { key: "templates",      group: "Intelligence workflows", label: "Workflow template library",            render: () => fmtBool(true) },
+  { key: "template_fork",  group: "Intelligence workflows", label: "Fork & edit templates",                render: (p) => fmtBool(p.limits?.template_duplicate) },
+  { key: "bulk_lists",     group: "Intelligence workflows", label: "Bulk account list (accounts per list)", render: (p) => fmtNum(p.limits?.batch_max_urls) },
+  { key: "icp",            group: "Intelligence workflows", label: "ICP scoring & review queue",           render: (p) => fmtBool((p.limits?.batch_max_urls || 0) > 0) },
+  { key: "watchlists",     group: "Intelligence workflows", label: "Competitor watchlists",                render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
+  { key: "signal_rules",   group: "Intelligence workflows", label: "Signal routing rules",                 render: (p) => fmtBool(p.limits?.integrations) },
+  { key: "reports",        group: "Intelligence workflows", label: "Shareable reports",                    render: () => fmtBool(true) },
+  { key: "report_brand",   group: "Intelligence workflows", label: "Your branding on reports",             render: (p) => fmtBool(p.limits?.white_label_pdf) },
   // ── Discoverability ─────────────────────────────────────────────────────
   // These limits have existed in pricingConfig since the module shipped
   // (free 3 · go 10 · select 25 · pro 100 · business 500 · agency 2000) but

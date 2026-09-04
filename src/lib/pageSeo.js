@@ -348,7 +348,7 @@ export const PAGE_SEO = {
             "name": "How many leads can I extract per month?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The Free plan includes 10 extractions per month and a 25-trial credit. Select ($19/mo) is 100, Pro ($29/mo) is 250, Business ($79/mo) is 1,000, and Agency ($299/mo) is unlimited. You can also batch-process up to hundreds of URLs in a single run on Pro and above."
+              "text": "The Free plan includes 10 extractions per month plus a one-time 25-extraction trial credit. Go ($4.80/mo) is 200, Select ($14.40/mo) is 500, Pro ($20.40/mo) is 1,000, Business ($44.40/mo) is 10,000, and Agency ($106.80/mo) is unlimited. Annual billing is around 20% cheaper. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of the same size."
             }
           },
           {
@@ -356,7 +356,7 @@ export const PAGE_SEO = {
             "name": "Can I push leads directly into HubSpot, Airtable, Notion, Slack, or Zapier?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Business and Agency plans include native one-click push to HubSpot, Airtable, Notion, Slack, and Zapier (server-stored connections, set up once in /account#integrations). One click on the Dashboard and the extracted contacts + company details are pushed to your CRM with the right field mapping. Pro plan supports Google Sheets export, which can be used as a staging layer."
+              "text": "Yes. Integrations are included from the Select plan upwards: one-click push to HubSpot, Notion, Airtable and Slack, with each connection set up once under Account. Google Sheets export needs no connection and is available to everyone. From Select you can also build signal routing rules that push an account crossing your ICP threshold straight into Slack, an inbox, a webhook or HubSpot without anyone clicking anything."
             }
           }
         ]
@@ -629,7 +629,452 @@ export const PAGE_SEO = {
         ]
       }
     ]
-  }
+  },
+  "/use-cases/account-intelligence": {
+    "title": "Bulk Account Intelligence with DatIQ - enrich and ICP-score company lists",
+    "description": "Import up to 500 company domains, enrich each from their public site, score them against ICP rules you control, and export or push a prioritised account table. Every field carries its source.",
+    "canonical": "https://datiq.app/use-cases/account-intelligence",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Account Intelligence",
+            "item": "https://datiq.app/use-cases/account-intelligence"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Account Intelligence",
+        "description": "Import up to 500 company domains, enrich each from their public site, score them against ICP rules you control, and export or push a prioritised account table. Every field carries its source.",
+        "datePublished": "2026-09-04",
+        "dateModified": "2026-09-04",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I enrich a list of company domains?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Open Lists in DatIQ, paste your domains or upload a CSV, and run the enrichment. DatIQ normalises and de-duplicates the list on import, reads each company's public site for firmographics, pricing model, positioning and contacts, and returns a table you can export as CSV or JSON or push to HubSpot, Notion, Airtable or Slack."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does DatIQ score an account against my ICP?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "You define the ICP as weighted criteria - a field, an operator, a value and a weight - and set a qualification threshold, 50 by default. Criteria can be marked required, in which case failing one disqualifies the account regardless of its other scores. You can test the whole rule set against a sample domain before running the list."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What happens if DatIQ cannot find a field for a company?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The field is marked absent rather than filled with a default, and the criterion that depended on it is excluded from the score with its weight redistributed across the criteria that were measured. It is never scored as zero. Every score therefore travels with a coverage figure showing how much of the picture it was computed from."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How many accounts can I put in one list?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A bulk list uses your plan's batch allowance: 5 accounts on Free, 20 on Go, 50 on Select, 100 on Pro, 250 on Business and 500 on Agency and Developer. Top-up bundles add capacity without changing plans. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/competitive-monitoring": {
+    "title": "Competitor Monitoring with DatIQ - pricing and positioning change alerts",
+    "description": "Watch competitor pricing, features and positioning on a cadence. DatIQ classifies how much each change matters and routes the ones that do to Slack, email, a webhook or your CRM.",
+    "canonical": "https://datiq.app/use-cases/competitive-monitoring",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Competitive Monitoring",
+            "item": "https://datiq.app/use-cases/competitive-monitoring"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Competitive Monitoring",
+        "description": "Watch competitor pricing, features and positioning on a cadence. DatIQ classifies how much each change matters and routes the ones that do to Slack, email, a webhook or your CRM.",
+        "datePublished": "2026-09-04",
+        "dateModified": "2026-09-04",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I monitor a competitor's pricing page for changes?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Create a watchlist, add the competitor domains and choose a cadence. DatIQ re-reads the pages on that schedule, compares each reading against the last, and classifies the difference. Pricing and tier changes are treated as critical and alert immediately."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Will I get an alert for every trivial change?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Every change is classified by materiality. Critical changes such as a price or tier change alert immediately, high-materiality changes such as a positioning shift are batched daily, medium changes weekly, and low-materiality noise such as whitespace or a copyright year is recorded but never alerted on. The first run of a watchlist is a baseline and never alerts at all."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does DatIQ tell me if a competitor removed something?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Only when it can tell the difference between a removal and a failed reading. If a pricing table was readable last week and is not today, DatIQ reports it as unobserved rather than deleted, because the far more common cause is a page that failed to render. A false claim that a competitor deleted their pricing is the most expensive mistake this category can make."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Where do the alerts go?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A signal routing rule sends them to Slack, email, a webhook or HubSpot, with conditions you set - for example, only changes at high materiality or above. Every dispatch is recorded whether it succeeded or not, and an unreachable destination is retried rather than dropped. Watchlists use your plan's scheduled-monitoring allowance, which starts on Select. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/ai-visibility": {
+    "title": "AI Visibility with DatIQ - how answer engines describe you vs competitors",
+    "description": "Score your site and up to four competitors for classic search, answer engines and generative engines under one shared schema, and get a prioritised, evidence-backed brief on what to change first.",
+    "canonical": "https://datiq.app/use-cases/ai-visibility",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "AI Visibility",
+            "item": "https://datiq.app/use-cases/ai-visibility"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "AI Visibility",
+        "description": "Score your site and up to four competitors for classic search, answer engines and generative engines under one shared schema, and get a prioritised, evidence-backed brief on what to change first.",
+        "datePublished": "2026-09-04",
+        "dateModified": "2026-09-04",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is AEO and GEO, and how are they different from SEO?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "SEO is optimising to win a ranked link in a classic search result. AEO is answer engine optimisation - being the source an assistant quotes when it answers a question directly. GEO is generative engine optimisation - being represented accurately in text a model generates. DatIQ scores all three separately, because the things that win a blue link are not the same as the things that win a citation."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does DatIQ compare me to my competitors fairly?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Your site and up to four competitors are read with the same extraction schema, so the comparison is like-for-like. Four differently-shaped summaries are not a comparison. A competitor whose site could not be read is explicitly named as unread and passed to the model as NOT READ, so no row is invented for them."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does a low score mean my page is bad?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Not necessarily - it may mean a signal could not be measured. DatIQ never scores an unmeasured signal as zero; it excludes it and redistributes its weight, then reports the coverage the score was computed from. Scoring a missing measurement as zero would drag your trend line down during a third-party outage and show a phantom improvement when it recovered."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How many audits do I get?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Discoverability audits have their own monthly allowance: 3 on Free, 10 on Go, 25 on Select, 100 on Pro, 500 on Business and 2,000 on Agency. Competitive benchmarks require an allowance of at least 25. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/recruiting": {
+    "title": "Recruiting research with DatIQ - brief yourself on a company before the call",
+    "description": "Turn a company's public site into a briefing you can use in a candidate call: what they build, how they position, who leads which function, and a watch on their hiring pages.",
+    "canonical": "https://datiq.app/use-cases/recruiting",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Recruiting",
+            "item": "https://datiq.app/use-cases/recruiting"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Recruiting",
+        "description": "Turn a company's public site into a briefing you can use in a candidate call: what they build, how they position, who leads which function, and a watch on their hiring pages.",
+        "datePublished": "2026-09-04",
+        "dateModified": "2026-09-04",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How can DatIQ help a recruiter research a company?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Run the company domain through the account brief template and DatIQ returns what they do, who they sell to, how they position themselves, the proof points they lead with, and the leadership names and titles their site publishes. It is the briefing you would otherwise assemble from ten browser tabs."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can DatIQ find candidate or employee email addresses?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "DatIQ surfaces only the contact information a company publishes publicly, such as team pages, leadership pages and press contacts. It does not generate or guess personal email addresses, and a detail it could not find is reported as absent rather than filled in."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I be told when a company starts hiring?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Add their careers or leadership page to a watchlist and DatIQ re-reads it on a cadence, classifies what changed, and can route a material change to Slack, email or a webhook."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I share the research with a candidate?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Publish any result as a report at its own link and choose who can open it - anyone with the link, your workspace, or named email addresses only. Non-public reports are not indexed by search engines, and a link can be permanently revoked. Sharing is free on every plan. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/investor-diligence": {
+    "title": "Pre-meeting diligence with DatIQ - a sourced company brief in minutes",
+    "description": "A source-backed company brief before a first call: what they build, how they price, the traction signals they publish, the team, and the questions worth asking. Every claim carries a citation.",
+    "canonical": "https://datiq.app/use-cases/investor-diligence",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Investor Diligence",
+            "item": "https://datiq.app/use-cases/investor-diligence"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Investor Diligence",
+        "description": "A source-backed company brief before a first call: what they build, how they price, the traction signals they publish, the team, and the questions worth asking. Every claim carries a citation.",
+        "datePublished": "2026-09-04",
+        "dateModified": "2026-09-04",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is in a DatIQ pre-meeting diligence brief?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Positioning and product surface, pricing model and go-to-market, the named customers, case studies and quantified outcomes the company publishes, the leadership its site exposes, and a set of questions framed for an intro call, a diligence deep-dive or a partnership conversation."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I trust the facts in the brief?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Every fact carries the page it was read from and the quote that supports it, so you can check anything before you repeat it. Anything DatIQ could not observe is marked absent rather than estimated - which means a brief is sometimes shorter than you hoped, and never contains a plausible number with no source."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I run diligence across a whole portfolio or pipeline?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Run a list of domains through the same template and you get a like-for-like comparison table rather than a folder of differently-shaped notes, because every company is read with the same schema."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I control who sees a brief?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Each report has its own visibility: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable; everything else carries a noindex instruction. A link can be revoked permanently, and reports can carry an expiry date. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+            }
+          }
+        ]
+      }
+    ]
+  },
 };
 
 /**

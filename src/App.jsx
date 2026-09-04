@@ -55,6 +55,11 @@ import UseCaseLead from "./pages/UseCaseLead.jsx";
 import UseCaseCompetitor from "./pages/UseCaseCompetitor.jsx";
 import UseCaseSEO from "./pages/UseCaseSEO.jsx";
 import UseCaseResearch from "./pages/UseCaseResearch.jsx";
+import UseCaseAccountIntelligence from "./pages/UseCaseAccountIntelligence.jsx";
+import UseCaseCompetitiveMonitoring from "./pages/UseCaseCompetitiveMonitoring.jsx";
+import UseCaseAiVisibility from "./pages/UseCaseAiVisibility.jsx";
+import UseCaseRecruiting from "./pages/UseCaseRecruiting.jsx";
+import UseCaseDiligence from "./pages/UseCaseDiligence.jsx";
 // The five per-tool /vs/* comparisons are static-owned (hand-written HTML in
 // public/vs/<slug>/index.html) and have no React route — see
 // scripts/site-routes.mjs. Only the hub is React.
@@ -270,6 +275,11 @@ function Shell() {
           <Route path="/use-cases/competitor-research" element={<UseCaseCompetitor />} />
           <Route path="/use-cases/seo-audit"           element={<UseCaseSEO />} />
           <Route path="/use-cases/market-research"     element={<UseCaseResearch />} />
+          <Route path="/use-cases/account-intelligence"   element={<UseCaseAccountIntelligence />} />
+          <Route path="/use-cases/competitive-monitoring" element={<UseCaseCompetitiveMonitoring />} />
+          <Route path="/use-cases/ai-visibility"          element={<UseCaseAiVisibility />} />
+          <Route path="/use-cases/recruiting"             element={<UseCaseRecruiting />} />
+          <Route path="/use-cases/investor-diligence"     element={<UseCaseDiligence />} />
           <Route path="/vs/compare"                    element={<VsCompare />} />
           <Route path="/changelog"                     element={<Changelog />} />
           <Route path="/for-sales"                     element={<ProgrammaticRoute />} />

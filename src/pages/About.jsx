@@ -9,13 +9,13 @@ import { seoFor } from "../lib/pageSeo.js";
 const VALUES = [
   {
     icon: "lightbulb",
-    title: "Intelligence First",
-    desc: "Raw data is noise. We transform it into structured, actionable intelligence so you can decide with confidence.",
+    title: "Never Invent a Fact",
+    desc: "Every field we return is observed, inferred and labelled as inferred, or absent. There is no fourth state and no plausible-looking default — so an honest answer is sometimes a shorter one, and every score tells you the coverage it was computed from.",
   },
   {
     icon: "zap",
-    title: "Zero Friction",
-    desc: "No code. No setup. Paste a URL and get structured data back in seconds — from a landing page to an entire domain.",
+    title: "Finish the Job",
+    desc: "Nobody wants fields; they want the brief, the scored list, the competitor they needed to hear about on the day it changed. We build the workflow, not just the extractor — and still with no code and no setup.",
   },
   {
     icon: "shield",
@@ -30,10 +30,10 @@ const VALUES = [
 ];
 
 const HOW_IT_WORKS = [
-  { step: "01", title: "Paste any URL", desc: "A product page, a company site, a help doc, a pricing page — anything publicly accessible." },
-  { step: "02", title: "Extract structure", desc: "We pull headings, links, metadata, contacts, pricing tiers, and any custom field you define." },
-  { step: "03", title: "Enrich with AI", desc: "Layer on an AI summary, content generation, lead scoring, or your own enrichment prompts." },
-  { step: "04", title: "Decide and act", desc: "Export to CSV, share via PDF, trigger a webhook, or build on top of the API — your data, your workflow." },
+  { step: "01", title: "Read", desc: "Paste a URL, a list, or a CSV. We pull headings, links, metadata, contacts, pricing tiers, firmographics, and any custom field you describe in plain English." },
+  { step: "02", title: "Reason", desc: "Run a workflow that turns those fields into the finished piece of work — an account brief, a competitive comparison, a scored account list, a discoverability audit." },
+  { step: "03", title: "Watch", desc: "Put the pages that matter under a standing watch. We re-read them on a cadence and work out what actually changed, and how much it matters." },
+  { step: "04", title: "Act and share", desc: "Route what matters into Slack, an inbox, a webhook or your CRM — and publish any result as a report at its own link, with the access level you choose." },
 ];
 
 const MODULES = [

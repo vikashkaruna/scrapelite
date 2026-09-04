@@ -173,37 +173,90 @@
 # advertisement for it.
 [[redirects]]
   from = "/help/11-plans-usage-and-billing.html"
-  to = "/help/12-plans-usage-and-billing.html"
+  to = "/help/18-plans-usage-and-billing.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/help/12-accounts-trial-and-sign-in.html"
-  to = "/help/13-accounts-trial-and-sign-in.html"
+  to = "/help/19-accounts-trial-and-sign-in.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/help/13-privacy-and-your-data.html"
-  to = "/help/14-privacy-and-your-data.html"
+  to = "/help/20-privacy-and-your-data.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/help/14-troubleshooting.html"
-  to = "/help/15-troubleshooting.html"
+  to = "/help/21-troubleshooting.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/help/15-keyboard-shortcuts.html"
-  to = "/help/16-keyboard-shortcuts.html"
+  to = "/help/22-keyboard-shortcuts.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/help/16-glossary.html"
-  to = "/help/17-glossary.html"
+  to = "/help/23-glossary.html"
+  status = 301
+  force = true
+
+# ── Help-centre renumbering (intelligence workflows inserted as 10-15) ─────
+# Six workflow guides were inserted, shifting the eight sections after them by
+# six. The redirects above were repointed at the NEW numbers rather than the
+# intermediate ones: a two-hop chain is followed by browsers but discounted by
+# crawlers, and page-ownership.test.mjs fails the build if one exists.
+[[redirects]]
+  from = "/help/10-exports-and-sharing.html"
+  to = "/help/16-exports-and-sharing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/11-discoverability-seo-aeo-and-geo-audits.html"
+  to = "/help/17-discoverability-seo-aeo-and-geo-audits.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/12-plans-usage-and-billing.html"
+  to = "/help/18-plans-usage-and-billing.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/13-accounts-trial-and-sign-in.html"
+  to = "/help/19-accounts-trial-and-sign-in.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/14-privacy-and-your-data.html"
+  to = "/help/20-privacy-and-your-data.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/15-troubleshooting.html"
+  to = "/help/21-troubleshooting.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/16-keyboard-shortcuts.html"
+  to = "/help/22-keyboard-shortcuts.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/help/17-glossary.html"
+  to = "/help/23-glossary.html"
   status = 301
   force = true
 
@@ -344,7 +397,7 @@
 # one URL moved.
 [[redirects]]
   from = "/help/14-faq-and-troubleshooting.html"
-  to = "/help/15-troubleshooting.html"
+  to = "/help/21-troubleshooting.html"
   status = 301
   force = true
 

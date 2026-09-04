@@ -166,6 +166,54 @@
         "@type": "Answer",
         "text": "That is one of two reasonable readings, so DatIQ asks instead of guessing. When your paste is text that contains links, an inline chooser appears under the box: \"Extract all N\" pulls the individual pages, and \"Extract this text as one page\" treats the paste as a single document."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "What is a workflow template?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Seven ship today, including a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility & Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can DatIQ score a list of companies against my ICP?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Import up to 500 company domains by paste or CSV \u2014 DatIQ normalises and de-duplicates them on the way in \u2014 and it reads each company's own public site for firmographics, pricing model, positioning and contacts. You define the ICP as weighted criteria with a qualification threshold, and can mark a criterion required so failing it disqualifies an account outright. Test the rules against a sample domain before you run the list, then export the qualified accounts or push them to HubSpot, Notion, Airtable or Slack."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does DatIQ ever guess a value it could not find?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Every field is either observed \u2014 read off a page, with the page and supporting quote recorded \u2014 or inferred and labelled as inferred, or absent. There is no fourth state and no plausible-looking default. That means an honest run sometimes returns less than you hoped, so every score travels with a coverage figure telling you how much of the picture it was computed from. An unmeasured signal is excluded and its weight redistributed \u2014 never scored as zero."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do competitor watchlists decide what is worth an alert?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every detected change is classified by materiality. Critical changes such as a price or tier change alert immediately; high-materiality changes such as a positioning shift are batched daily; medium changes weekly; and low-materiality noise such as whitespace or a copyright year is recorded but never alerted on. The first run of a watchlist is always a silent baseline. And a field that stopped being observed is reported as unobserved rather than deleted, because a failed page render is far more common than a competitor actually removing their pricing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can DatIQ notify my team automatically when something changes?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, with signal routing rules. A rule triggers on a competitor watchlist change, a bulk enrichment result such as an account crossing your ICP threshold, or a workflow run finishing; you add conditions; and the action posts to Slack, sends an email, calls a webhook, or writes to HubSpot. Every rule has a live test against a sample payload that uses the same evaluator as the runtime, and every dispatch is recorded whether it succeeded or not, with retries on failure. Signal routing is available from the Select plan upwards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Who can see a report I share?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You choose per report, and you can change it later: private (only you), anyone with the link (unlisted), workspace only, specific people (named email addresses), or public. Only public reports are indexable by search engines \u2014 every other level ships a noindex instruction. Revoking a link burns it permanently and the code is never reissued, and reports can also carry an expiry date. Sharing is free on every plan, including Free."
+      }
     }
   ]
 }
@@ -244,6 +292,7 @@
       <li><a href="#overview">Overview</a></li>
       <li><a href="#pricing">Pricing &amp; plans</a></li>
       <li><a href="#features">Features</a></li>
+      <li><a href="#workflows">Intelligence workflows</a></li>
       <li><a href="#troubleshooting">Troubleshooting</a></li>
       <li><a href="#account">Account &amp; data</a></li>
     </ul>
@@ -388,6 +437,41 @@
     <details class="faq-item" id="faq-gallery">
       <summary>What is the Gallery?</summary>
       <p class="answer"><a href="/gallery">/gallery</a> lists recent public extractions. Useful for browsing what others have shared and for discovering new use-cases.</p>
+    </details>
+
+  </section>
+
+  <section class="faq-section" id="workflows">
+    <h2>Intelligence workflows</h2>
+
+    <details class="faq-item" id="faq-workflows">
+      <summary>What is a workflow template?</summary>
+      <p class="answer">A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Seven ship today, including a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility &amp; Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs.</p>
+    </details>
+
+    <details class="faq-item" id="faq-bulk-icp">
+      <summary>Can DatIQ score a list of companies against my ICP?</summary>
+      <p class="answer">Yes. Import up to 500 company domains by paste or CSV — DatIQ normalises and de-duplicates them on the way in — and it reads each company's own public site for firmographics, pricing model, positioning and contacts. You define the ICP as weighted criteria with a qualification threshold, and can mark a criterion required so failing it disqualifies an account outright. Test the rules against a sample domain before you run the list, then export the qualified accounts or push them to HubSpot, Notion, Airtable or Slack.</p>
+    </details>
+
+    <details class="faq-item" id="faq-invented-fields">
+      <summary>Does DatIQ ever guess a value it could not find?</summary>
+      <p class="answer">No. Every field is either <strong>observed</strong> — read off a page, with the page and supporting quote recorded — or <strong>inferred</strong> and labelled as inferred, or <strong>absent</strong>. There is no fourth state and no plausible-looking default. That means an honest run sometimes returns less than you hoped, so every score travels with a <strong>coverage</strong> figure telling you how much of the picture it was computed from. An unmeasured signal is excluded and its weight redistributed — never scored as zero.</p>
+    </details>
+
+    <details class="faq-item" id="faq-watchlists">
+      <summary>How do competitor watchlists decide what is worth an alert?</summary>
+      <p class="answer">Every detected change is classified by materiality. Critical changes such as a price or tier change alert immediately; high-materiality changes such as a positioning shift are batched daily; medium changes weekly; and low-materiality noise such as whitespace or a copyright year is recorded but never alerted on. The first run of a watchlist is always a silent baseline. And a field that stopped being observed is reported as unobserved rather than deleted, because a failed page render is far more common than a competitor actually removing their pricing.</p>
+    </details>
+
+    <details class="faq-item" id="faq-signal-rules">
+      <summary>Can DatIQ notify my team automatically when something changes?</summary>
+      <p class="answer">Yes, with signal routing rules. A rule triggers on a competitor watchlist change, a bulk enrichment result such as an account crossing your ICP threshold, or a workflow run finishing; you add conditions; and the action posts to <strong>Slack</strong>, sends an <strong>email</strong>, calls a <strong>webhook</strong>, or writes to <strong>HubSpot</strong>. Every rule has a live test against a sample payload that uses the same evaluator as the runtime, and every dispatch is recorded whether it succeeded or not, with retries on failure. Signal routing is available from the Select plan upwards.</p>
+    </details>
+
+    <details class="faq-item" id="faq-report-visibility">
+      <summary>Who can see a report I share?</summary>
+      <p class="answer">You choose per report, and you can change it later: <strong>private</strong> (only you), <strong>anyone with the link</strong> (unlisted), <strong>workspace only</strong>, <strong>specific people</strong> (named email addresses), or <strong>public</strong>. Only public reports are indexable by search engines — every other level ships a noindex instruction. Revoking a link burns it permanently and the code is never reissued, and reports can also carry an expiry date. Sharing is free on every plan, including Free.</p>
     </details>
 
   </section>

@@ -15,7 +15,7 @@ import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 const VERSION = "V" + (typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0");
 const SHIPPED = "2026-07";
-const UPDATED = "2026-08-27";
+const UPDATED = "2026-09-04";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
@@ -66,6 +66,74 @@ const FEATURE_GROUPS = [
       "Pause a single team member instead of the whole account; a paused member keeps their seat and their read access",
       "Delete your account, scheduled 30 days out and cancellable at any point in that window — nothing disappears the moment you click",
       "Plan & usage now shows your discoverability allowance separately, and which role consumed what",
+    ],
+  },
+  {
+    id: "workflows",
+    icon: "wand",
+    title: "Intelligence workflows",
+    items: [
+      "Workflow templates — a named end-to-end job, not just an extraction: input form, fields read, analysis run, output blocks returned",
+      "Sales-ready Account Brief — a company framed for a discovery call, a displacement, or an expansion",
+      "Competitor Pricing Tracker — a pricing page as a structured tier table you can diff later",
+      "Customer Proof Extractor — every named customer, case study, logo and quantified outcome on a site",
+      "AI Visibility & Competitive Brief — you and up to four competitors read under one shared schema",
+      "Pre-Meeting Due Diligence Brief — a source-backed company brief before a first call",
+      "Bulk ICP Account Enrichment — a list of domains in, a scored account table out",
+      "Persona-filtered catalogue, so the templates that fit your job are the ones you see first",
+      "Cost estimate shown before every run — nothing is spent until you confirm",
+      "Fork and edit any template — change the fields, the prompts and the output blocks (Go and above)",
+      "Saved run history per template, re-openable, shareable and exportable",
+      "Evidence contract on every field: observed, inferred, or absent — never invented",
+    ],
+  },
+  {
+    id: "accounts",
+    icon: "target",
+    title: "Bulk account intelligence",
+    items: [
+      "Import company domains by paste or CSV, normalised and de-duplicated on the way in",
+      "Durable chunked enrichment — a 500-account run survives a closed tab or a slow provider",
+      "Firmographics read from each company's own site: industry, size band, pricing model, positioning, proof points",
+      "Editable ICP rules — field, operator, value, weight, plus required criteria and a qualification threshold",
+      "Live rule testing against a sample domain before you spend anything on a run",
+      "Unmeasured criteria are excluded and their weight redistributed, never scored as zero",
+      "Coverage travels with every score, so a 70 from five signals is distinguishable from a 70 from two",
+      "Review queue for low-confidence extractions instead of silently entering them into your table",
+      "Export scored accounts as CSV or JSON, or push them to HubSpot, Notion, Airtable or Slack",
+    ],
+  },
+  {
+    id: "watchlists",
+    icon: "eye",
+    title: "Change intelligence & signal routing",
+    items: [
+      "Competitor watchlists — standing watches that re-read chosen domains on a cadence",
+      "Page discovery — add a domain and DatIQ suggests the pages worth watching, labelled separately from the ones you added yourself",
+      "Materiality classification: critical alerts immediately, high daily, medium weekly, low never",
+      "First run is always a silent baseline, so setting up a watch never fires a false alert",
+      "A field that stopped being observed is reported as unobserved, never as a deletion",
+      "Objective change facts kept separate from labelled AI interpretation, with feedback on each",
+      "Signal routing rules — trigger on a watchlist change, a bulk enrichment result, or a workflow run",
+      "Conditions builder with a live 'Test with sample payload' that shares the runtime's own evaluator",
+      "Actions: Slack, email, webhook, and HubSpot",
+      "Every dispatch recorded whether it succeeded or not, with retries on a backoff schedule",
+      "Destinations re-validated at dispatch time, not only when the rule was saved",
+    ],
+  },
+  {
+    id: "reports",
+    icon: "share",
+    title: "Reports & collaboration",
+    items: [
+      "Publish any run, audit or extraction as a report at its own link",
+      "Five visibility levels: private, anyone with the link, workspace only, named people only, public",
+      "Only public reports are indexable — every other level ships a noindex instruction",
+      "Permanent revoke that burns a link for good, plus optional expiry dates",
+      "Your Brand Kit on reports, PDFs and emailed deliverables (Business and Agency)",
+      "Team workspaces with owner / admin / member roles and email-bound, single-use invites",
+      "Workspace-scoped reports readable by every member, for circulating an internal brief",
+      "Per-seat pause for a member who should keep access but stop spending the allowance",
     ],
   },
   {
@@ -209,13 +277,13 @@ const FEATURE_GROUPS = [
     icon: "book-open",
     title: "Docs & help",
     items: [
-      "Static help site at /help (16 user-guide sections + developer API reference)",
+      "Static help site at /help (23 user-guide sections + developer API reference)",
       "5 persona context chips (Sales, CI, SEO, Research, Recruiter, Founder, VC)",
       "In-app trust strip (Encrypted in transit / Auto-deleted in 30 days / Never used to train AI)",
       "Public AI crawler accessibility (llms.txt, GPTBot/ClaudeBot/PerplexityBot allowlist)",
       "Sitemap.xml + robots.txt + 3 JSON-LD schemas (Organization, WebSite, SoftwareApplication)",
       "About / Contact / Privacy / Terms / Use Cases / Integrations / Changelog pages",
-      "Comparison pages (/vs/browse-ai, /vs/clay, /vs/apify, /vs/phantombuster)",
+      "Comparison pages (/vs/browse-ai, /vs/clay, /vs/apify, /vs/phantombuster, /vs/firecrawl)",
       "One support inbox — reach us at hello@datiq.app for product, billing, legal & privacy",
     ],
   },

@@ -3254,6 +3254,10 @@
 .uc-step-num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast); display: grid; place-items: center; font-size: .84em; font-weight: 800; flex-shrink: 0; margin-top: 2px; }
 .uc-step-body h3 { margin: 0 0 4px; font-size: .98em; font-weight: 700; }
 .uc-step-body p { margin: 0; font-size: .88em; color: var(--text-3); line-height: 1.5; }
+/* Retained, currently unused. The four use-case testimonials these styled were
+   fabricated quotes attributed to invented people and were removed 2026-09-04;
+   the rules stay so real, attributable quotes can be dropped back in. Do not
+   re-add a testimonial without a named customer who agreed to it. */
 .uc-testimonial { padding: 28px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--accent-soft); margin-top: 24px; }
 .uc-testimonial blockquote { margin: 0 0 14px; font-size: 1.05em; font-style: italic; color: var(--text); line-height: 1.6; }
 .uc-testimonial cite { font-size: .86em; color: var(--text-3); font-weight: 600; font-style: normal; }
