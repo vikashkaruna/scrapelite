@@ -247,6 +247,7 @@ const bulk = await import("../netlify/functions/lib/bulkStore.js");
 const watch = await import("../netlify/functions/lib/watchlistStore.js");
 const rules = await import("../netlify/functions/lib/ruleStore.js");
 const { isDue } = await import("../netlify/functions/watchlist-monitor.js");
+const { discoverPages } = await import("../src/lib/watchlist/snapshotModel.js");
 const { chargeLedger } = await import("../netlify/functions/lib/templateStore.js");
 
 console.log(`\n[verify-workflows] ${files.length} migrations applied · two real tenants\n`);
@@ -340,6 +341,34 @@ group("PRD 4 — watchlists: cadence, ownership, and the change feed");
   const t = await db.query(
     `select id from public.watchlist_targets where watchlist_id=$1 and domain='rival.com'`, [wl.id]);
   eq("createWatchlist created the target for its domain", t.rows.length, 1);
+  // ── Discovered pages must satisfy the schema they are written into ──────
+  //
+  // `discoverPages` is pure and tested in isolation, but the categories it emits
+  // have to survive `monitored_pages.category`'s CHECK and the `source` CHECK
+  // 0047 added. A pure function returning a category the table rejects is a bug
+  // that only appears against real SQL — the same shape as the `refused` status
+  // that CHECK-violated its way out of the audit trail.
+  const discovered = discoverPages(
+    '<a href="/pricing">P</a><a href="/features">F</a><a href="/customers">C</a>',
+    "https://rival.com/",
+  );
+  ok("discovery finds the homepage plus real pages", discovered.length > 1);
+  for (const page of discovered) {
+    try {
+      await db.query(
+        `insert into public.monitored_pages (target_id, url, category, source)
+         values ($1,$2,$3,'auto')`,
+        [t.rows[0].id, page.url, page.category]);
+      pass++; console.log(`  ✓ a discovered '${page.category}' page is storable`);
+    } catch (e) {
+      fail++; failures.push(`discovered category '${page.category}' rejected: ${e.message.split("\n")[0]}`);
+      console.log(`  ✗ a discovered '${page.category}' page is storable`);
+    }
+  }
+  const src = await db.query(
+    `select count(*)::int c from public.monitored_pages where target_id=$1 and source='auto'`, [t.rows[0].id]);
+  eq("...and each is labelled auto-discovered, not as the user's own choice", src.rows[0].c, discovered.length);
+
   const change = await watch.recordFieldChange(wl.id, t.rows[0].id, {
     targetDomain: "rival.com", field: "pricing.tiers", category: "pricing",
     oldValue: "Free | Pro", newValue: "Free | Pro | Enterprise",
