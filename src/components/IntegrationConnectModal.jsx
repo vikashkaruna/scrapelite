@@ -266,8 +266,13 @@ export default function IntegrationConnectModal({
         }
       }
       if (!res.ok || data.error) {
-        if (isHtml) {
+        if (isHtml && res.status === 401) {
           setError("Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).");
+        } else if (isHtml) {
+          // Any other HTML body is an infrastructure error page — see apiClient.js.
+          setError(res.status >= 500 || res.status === 0
+            ? `The server did not complete this request (${res.status}). This is a problem on our side — try again shortly.`
+            : `This request could not be reached (${res.status}). Please refresh and try again.`);
         } else {
           // Prefer the structured `error` field the server functions all
           // emit. If it's missing (e.g. a Netlify-injected crash body

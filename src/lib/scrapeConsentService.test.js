@@ -47,7 +47,7 @@ describe("consentHostOf", () => {
 
 describe("knownDisallowedHost — the pre-flight hint", () => {
   it("recognises a known blocked site from a full URL", () => {
-    expect(knownDisallowedHost("https://www.linkedin.com/in/vikashkaruna")?.label).toBe("LinkedIn");
+    expect(knownDisallowedHost("https://www.linkedin.com/in/example-person")?.label).toBe("LinkedIn");
   });
 
   it("matches subdomains too", () => {

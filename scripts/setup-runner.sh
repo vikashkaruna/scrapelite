@@ -13,11 +13,11 @@
 #   1. In the GitHub UI: Settings → Actions → Runners → New self-hosted
 #      runner. Pick macOS or Linux. Copy the ./config.sh invocation it
 #      gives you — it'll look like:
-#        ./config.sh --url https://github.com/vikashkaruna/scrapelite \
+#        ./config.sh --url https://github.com/<owner>/<repo> \
 #                   --token AAAAAAAAAAAAAA \
 #                   --name datiq-runner-01
 #   2. Set the matching env vars in your shell:
-#        export RUNNER_CFG_URL='https://github.com/vikashkaruna/scrapelite'
+#        export RUNNER_CFG_URL='https://github.com/<owner>/<repo>'
 #        export RUNNER_CFG_TOKEN='AAAA...'
 #        export RUNNER_NAME='datiq-runner-01'   # optional
 #   3. Run this script from the repo root:

@@ -28,6 +28,8 @@ import { createReport } from "../lib/reports/reportsClient.js";
 import { lifecycle } from "../lib/analyticsService.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
 import StructuredFacts from "../components/StructuredFacts.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
+import { runToItem } from "../lib/templates/runToItems.js";
 import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 
 export default function Templates() {
@@ -564,9 +566,18 @@ function RunResult({ result, template, onShare }) {
     <div className="card tpl-result">
       <div className="tpl-result-head">
         <h2>Result</h2>
-        <Button variant="secondary" onClick={onShare}>
-          <Icon name="share-2" size={14} /> Create shareable report
-        </Button>
+        {/* Every template run is a deliverable someone forwards. Until now the
+            only way out of this screen was a shareable link — no CSV, no PDF,
+            nothing to paste into a deck. Same menu as Dashboard and Preview,
+            fed through the run→item adapter so a template export is the same
+            machinery, Brand Kit and all. */}
+        <ExportMenu
+          items={[runToItem(result)].filter(Boolean)}
+          label="Export"
+          buttonVariant="secondary"
+          onShare={onShare}
+          shareLabel="Create shareable report"
+        />
       </div>
 
       {result.summary && (

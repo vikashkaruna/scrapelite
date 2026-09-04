@@ -60,13 +60,23 @@ async function authedFetch(path, init = {}) {
     typeof res.headers?.get === "function" ? res.headers.get(h) : "";
   const contentType = getHeader("content-type") || "";
   const isHtml = contentType.includes("text/html");
+  // See apiClient.js: Edge Access is 401 + HTML. HTML alone is any Netlify
+  // error page (timeout, crash, SPA catch-all) and must not be reported as a
+  // sign-in problem the reader can do nothing about.
+  const isEdgeAccess = isHtml && res.status === 401;
   let body = {};
   let edgeAccess = false;
-  if (isHtml) {
+  if (isEdgeAccess) {
     body = {
       error: "Site authentication required. Refresh the page and sign in again (the branch deploy uses Netlify Edge Access).",
     };
     edgeAccess = true;
+  } else if (isHtml) {
+    body = {
+      error: res.status >= 500 || res.status === 0
+        ? `The server did not complete this request (${res.status}). This is a problem on our side — try again shortly.`
+        : `This request could not be reached (${res.status}). Please refresh and try again.`,
+    };
   } else {
     const text = await res.text();
     if (text) {

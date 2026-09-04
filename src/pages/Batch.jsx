@@ -16,7 +16,7 @@ import { usePersona } from "../components/PersonaProvider.jsx";
 import UrlReviewTable from "../components/UrlReviewTable.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import ExportIntegrations from "../components/ExportIntegrations.jsx";
-import PushIntegrationMenu from "../components/PushIntegrationMenu.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
 import EmailModal from "../components/EmailModal.jsx";
 import { apiClient } from "../lib/apiClient.js";
 import { estimateBatchCredits } from "../lib/creditEstimator.js";
@@ -1071,21 +1071,15 @@ export default function Batch() {
                     </p>
                   </div>
                   <div className="batch-results-ctas">
-                    <ExportDropdown
-                      onCsv={onExportCsv}
-                      onPdf={onExportPdf}
-                      onMarkdown={onExportMarkdown}
-                      onJson={onExportJson}
-                      onCopyCsv={onCopyCsv}
-                      onCopyMarkdown={onCopyMarkdown}
-                      onCopyJson={onCopyJson}
-                      onEmail={() => setEmailOpen(true)}
-                      disabled={!successResults.length}
-                    />
-                    <PushIntegrationMenu
+                    {/* Batch's own dropdown had no Excel option — the same
+                        menu offering a different format set per screen is the
+                        drift the shared component exists to end. */}
+                    <ExportMenu
                       items={successResults}
+                      label="Export"
                       buttonVariant="secondary"
-                      onAdvanced={() => setIntegrationsOpen(true)}
+                      disabled={!successResults.length}
+                      onPushAdvanced={() => setIntegrationsOpen(true)}
                     />
                     <Button
                       variant="ghost"

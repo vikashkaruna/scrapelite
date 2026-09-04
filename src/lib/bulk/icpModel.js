@@ -12,6 +12,59 @@
 
 export const DEFAULT_THRESHOLD = 50.0;
 
+// ── THE ENRICHER'S FIELD VOCABULARY ──────────────────────────────────────────
+// The complete set of fields `netlify/functions/lib/bulkEnrich.js` can produce.
+// It lives here, in the pure model both the client and the server import, for
+// the same reason `entitlementModel.js` does: a criterion naming a field the
+// enricher cannot produce is not a strict rule, it is a DEAD one — permanently
+// unmeasured, its weight silently redistributed to whatever is left (§1.6).
+//
+// That is exactly what happened. The enricher used to fabricate firmographics
+// (a hardcoded `employee_count: 55` for every company on earth); rewriting it
+// to be honest replaced that with an inferred `employee_band`, and the seeded
+// persona rules in 0041 were never migrated off the invented vocabulary. The
+// coverage rule then hid it: nothing errored, scores just quietly rested on
+// fewer criteria than the rule claimed.
+//
+// `sample` is what the ICP Rule Simulator evaluates against. Deriving it from
+// this one list is the point — a hand-written sample in the page is how the
+// simulator came to report a field the enricher never had.
+export const ENRICHABLE_FIELDS = Object.freeze({
+  company_name:     { sample: "Stripe",                        note: "observed" },
+  domain:           { sample: "stripe.com",                    note: "observed" },
+  description:      { sample: "Financial infrastructure for the internet", note: "observed, meta" },
+  has_pricing:      { sample: true,                            note: "observed" },
+  has_careers:      { sample: true,                            note: "observed" },
+  has_contact:      { sample: true,                            note: "observed" },
+  has_product_tour: { sample: true,                            note: "observed" },
+  industry:         { sample: "Software",                      note: "inferred, enum" },
+  employee_band:    { sample: "51-200",                        note: "inferred, enum band — NOT a count" },
+  employee_count:   { sample: 120,                             note: "observed only — absent unless the page states a headcount" },
+  target_customer:  { sample: "B2B revenue teams",             note: "inferred" },
+  hq_country:       { sample: "US",                            note: "inferred, ISO-3166 alpha-2" },
+});
+
+/** Field names the enricher can actually produce. */
+export const ENRICHABLE_FIELD_NAMES = Object.freeze(Object.keys(ENRICHABLE_FIELDS));
+
+/** A representative profile for the simulator, built from the real vocabulary. */
+export function sampleProfile(overrides = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(ENRICHABLE_FIELDS)) out[k] = v.sample;
+  return { ...out, ...overrides };
+}
+
+/**
+ * Criteria naming a field the enricher cannot produce. These can never be
+ * measured, so they are dead weight in every evaluation. Returns [] when clean.
+ */
+export function deadCriteria(criteria = []) {
+  if (!Array.isArray(criteria)) return [];
+  return criteria
+    .filter((c) => c && !ENRICHABLE_FIELD_NAMES.includes(c.field))
+    .map((c) => ({ field: c.field, weight: c.weight ?? 10 }));
+}
+
 function isEmpty(val) {
   if (val == null) return true;
   if (typeof val === "string") return val.trim().length === 0;

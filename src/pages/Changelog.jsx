@@ -408,15 +408,6 @@ export default function Changelog() {
 
         <footer className="cl-foot">
           <p>
-            <Icon name="info" size={12} />
-            Source for each feature is tracked in the public GitHub repo —
-            {" "}
-            <a href="https://github.com/vikashkaruna/scrapelite" target="_blank" rel="noreferrer noopener">
-              vikashkaruna/scrapelite
-            </a>
-            .
-          </p>
-          <p>
             <Link to="/">← Back to DatIQ</Link>
           </p>
         </footer>

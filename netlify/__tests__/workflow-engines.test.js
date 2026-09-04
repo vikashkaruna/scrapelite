@@ -242,3 +242,21 @@ describe("bulkEnrich — never invents a field", () => {
     expect(fieldsNeedingReview(r.provenance)).toEqual([]);
   });
 });
+
+// deriveEmployeeCount — the field that caused the original defect.
+// Observed only: a stated headcount is read, a band is never converted.
+import { deriveEmployeeCount as _dec } from "../functions/lib/bulkEnrich.js";
+describe("bulkEnrich — employee_count is observed, never inferred from a band", () => {
+  it("reads a headcount the page states", () => {
+    expect(_dec(undefined, "<p>We're a team of 40 building tools.</p>")?.value).toBe(40);
+    expect(_dec(undefined, "<p>1,200 employees worldwide</p>")?.value).toBe(1200);
+    expect(_dec(undefined, "<p>500+ employees</p>")?.method).toBe("observed");
+  });
+  it("returns null for a band — a range is never reported as a count", () => {
+    expect(_dec("51-200", "<p>About us</p>")).toBeNull();
+    expect(_dec("1000+", "<p>No headcount here.</p>")).toBeNull();
+  });
+  it("rejects an out-of-range number that merely sat near the word", () => {
+    expect(_dec(undefined, "<p>9999999 employees</p>")).toBeNull();
+  });
+});

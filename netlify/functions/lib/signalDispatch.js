@@ -138,7 +138,7 @@ export async function rulesForEvent(event, env = process.env) {
  * Resolve and re-check the outbound destination for a rule. Returns the URL to
  * call, or a refusal. See rule 2 above for why this repeats ruleStore's check.
  */
-async function resolveDestination(rule) {
+async function resolveDestination(rule, env = process.env) {
   const type = rule.action_type || ACTION_TYPES.SLACK;
   const cfg = rule.action_config || {};
 
@@ -148,6 +148,23 @@ async function resolveDestination(rule) {
 
   if (type === ACTION_TYPES.EMAIL) return { ok: true, type, to: cfg.to || cfg.email };
   if (type === ACTION_TYPES.HUBSPOT) return { ok: true, type };
+
+  // Slack through the stored connection. Resolved here, at dispatch, so a
+  // disconnected integration refuses honestly at send time instead of the rule
+  // silently pointing at a webhook the user has since revoked.
+  if (type === ACTION_TYPES.SLACK && cfg.use_connection === true) {
+    const conn = await getConnection({
+      userId: rule.user_id,
+      provider: "slack",
+      includeSecrets: true,
+      env,
+    });
+    const stored = conn?.ok ? (conn.connection?.config?.webhook_url || "") : "";
+    if (!stored) {
+      return { ok: false, reason: "Slack is not connected for this account. Connect it under Integrations." };
+    }
+    return { ok: true, type, url: stored };
+  }
 
   const url = String(cfg.url || cfg.webhook_url || cfg.webhookUrl || "").trim();
 
@@ -188,7 +205,7 @@ function headline(event, payload) {
  */
 export async function performAction(rule, event, env = process.env) {
   const payload = formatActionPayload(rule, event.payload || {});
-  const dest = await resolveDestination(rule);
+  const dest = await resolveDestination(rule, env);
   if (!dest.ok) {
     return { ok: false, status: "refused", error: dest.reason, response: null };
   }

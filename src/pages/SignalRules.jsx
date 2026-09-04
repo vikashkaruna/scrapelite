@@ -4,6 +4,7 @@
 // and workflow runs to Slack, Email, Webhooks, and HubSpot.
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -11,9 +12,11 @@ import { useAuth } from "../components/AuthProvider.jsx";
 import SignedInRequired from "../components/SignedInRequired.jsx";
 import { TRIGGER_SOURCES, ACTION_TYPES, evaluateSignalRule, formatActionPayload } from "../lib/rules/ruleModel.js";
 import * as rulesApi from "../lib/rules/rulesClient.js";
+import { getIntegrationStatus } from "../lib/integrationsClient.js";
 
 export default function SignalRules() {
   const showToast = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
 
   const [rules, setRules] = useState([]);
@@ -28,6 +31,54 @@ export default function SignalRules() {
   const [conditionField, setConditionField] = useState("materiality");
   const [conditionOp, setConditionOp] = useState("equals");
   const [conditionVal, setConditionVal] = useState("critical");
+
+  // Connection state for the two actions that route through a stored
+  // integration. Loaded when the modal opens, not on page mount: a user who
+  // never opens the builder should not trigger two integration lookups.
+  const [connections, setConnections] = useState({ slack: null, hubspot: null });
+  const [connLoading, setConnLoading] = useState(false);
+  const [destTesting, setDestTesting] = useState(false);
+  const [destTestResult, setDestTestResult] = useState(null);
+
+  // Load the two connection-backed integrations when the builder opens.
+  useEffect(() => {
+    if (!showCreateModal) return;
+    let cancelled = false;
+    setConnLoading(true);
+    Promise.all([getIntegrationStatus("slack"), getIntegrationStatus("hubspot")])
+      .then(([slack, hubspot]) => { if (!cancelled) setConnections({ slack, hubspot }); })
+      .catch(() => { if (!cancelled) setConnections({ slack: null, hubspot: null }); })
+      .finally(() => { if (!cancelled) setConnLoading(false); });
+    return () => { cancelled = true; };
+  }, [showCreateModal]);
+
+  // Each action wants a different destination, so switching action must not
+  // leave the previous one's value behind (a Slack channel in a webhook URL
+  // field saves a rule that can never dispatch). Email starts at the signed-in
+  // address — the overwhelmingly common answer — and stays editable.
+  useEffect(() => {
+    setDestTestResult(null);
+    if (actionType === ACTION_TYPES.EMAIL) setActionDest(user?.email || "");
+    else if (actionType === ACTION_TYPES.SLACK) setActionDest("#competitor-alerts");
+    else setActionDest("");
+  }, [actionType, user?.email]);
+
+  const runDestinationTest = async () => {
+    setDestTesting(true);
+    setDestTestResult(null);
+    try {
+      const cfg =
+        actionType === ACTION_TYPES.WEBHOOK ? { webhook_url: actionDest }
+        : actionType === ACTION_TYPES.SLACK ? { use_connection: true, channel: actionDest || null }
+        : { to: actionDest };
+      const r = await rulesApi.testDestination(actionType, cfg);
+      setDestTestResult(r);
+    } catch (err) {
+      setDestTestResult({ ok: false, error: err.message });
+    } finally {
+      setDestTesting(false);
+    }
+  };
 
   // Sandbox Tester
   const [testingRule, setTestingRule] = useState(null);
@@ -71,14 +122,21 @@ export default function SignalRules() {
     }
 
     const conditions = [{ field: conditionField, operator: conditionOp, value: conditionVal }];
+    // These shapes are the server's, not ours. `validateActionConfig` reads
+    // `to`/`email` for email and a URL for webhook; the previous
+    // `{ recipients: [...] }` and `{ channel }` matched neither, so every
+    // Slack and Email rule was refused at save with "a destination URL is
+    // required" / "a valid recipient email address is required".
     const actionConfig =
       actionType === ACTION_TYPES.SLACK
-        ? { channel: actionDest }
+        // The webhook URL is a secret and lives in the stored connection; the
+        // channel rides along as a label only.
+        ? { use_connection: true, channel: actionDest || null }
         : actionType === ACTION_TYPES.WEBHOOK
         ? { webhook_url: actionDest }
         : actionType === ACTION_TYPES.EMAIL
-        ? { recipients: [actionDest] }
-        : { portal_id: actionDest };
+        ? { to: actionDest }
+        : {};
 
     try {
       await rulesApi.createRule({
@@ -362,20 +420,17 @@ export default function SignalRules() {
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                    Destination (Channel, URL, or Email)
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
-                    placeholder={actionType === ACTION_TYPES.SLACK ? "#competitor-alerts" : "https://..."}
-                    value={actionDest}
-                    onChange={(e) => setActionDest(e.target.value)}
-                    required
-                  />
-                </div>
+                <DestinationField
+                  actionType={actionType}
+                  actionDest={actionDest}
+                  setActionDest={setActionDest}
+                  connections={connections}
+                  connLoading={connLoading}
+                  onConfigure={() => { setShowCreateModal(false); navigate("/integrations"); }}
+                  onTest={runDestinationTest}
+                  testing={destTesting}
+                  testResult={destTestResult}
+                />
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
@@ -390,6 +445,138 @@ export default function SignalRules() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The destination half of the rule builder. Each action answers a different
+ * question, so one free-text box could not serve all four: Slack and HubSpot
+ * route through a stored connection (nothing to type, but something to
+ * CONNECT), email wants an address, and a webhook wants a URL you can try
+ * before saving.
+ */
+function DestinationField({
+  actionType, actionDest, setActionDest,
+  connections, connLoading, onConfigure, onTest, testing, testResult,
+}) {
+  const label = { display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 };
+  const input = { width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" };
+  const note  = { fontSize: "0.78rem", color: "var(--text-3)", marginTop: 6 };
+
+  // Shown when an action needs an integration the account has not connected.
+  // A rule saved against a missing connection is refused at dispatch, hours
+  // later, in a log nobody reads — so it is blocked here, where it is fixable.
+  const NotConnected = ({ name }) => (
+    <div style={{
+      padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border)",
+      background: "var(--warning-soft, #fef3c7)",
+    }}>
+      <p style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
+        <strong>{name} is not connected.</strong> This rule needs a {name} connection
+        before it can send anything.
+      </p>
+      <Button variant="secondary" type="button" onClick={onConfigure}>
+        Connect {name}
+      </Button>
+    </div>
+  );
+
+  const Connected = ({ name, detail }) => (
+    <p style={{ ...note, color: "var(--success, #059669)", marginTop: 0, marginBottom: 8 }}>
+      ✓ {name} connected{detail ? ` — ${detail}` : ""}
+    </p>
+  );
+
+  const TestRow = () => (
+    <div style={{ marginTop: 10 }}>
+      <Button variant="secondary" type="button" onClick={onTest} disabled={testing || !actionDest}>
+        {testing ? "Sending…" : "Send test"}
+      </Button>
+      {testResult && (
+        <p style={{
+          ...note,
+          color: testResult.ok ? "var(--success, #059669)" : "var(--danger, #b45309)",
+        }}>
+          {testResult.ok
+            ? "Test message delivered."
+            : `Not delivered — ${testResult.error || "the destination did not accept it."}`}
+        </p>
+      )}
+    </div>
+  );
+
+  if (connLoading && (actionType === ACTION_TYPES.SLACK || actionType === ACTION_TYPES.HUBSPOT)) {
+    return <p style={note}>Checking your integrations…</p>;
+  }
+
+  if (actionType === ACTION_TYPES.SLACK) {
+    if (!connections.slack?.connected) return <NotConnected name="Slack" />;
+    return (
+      <div>
+        <Connected name="Slack" detail={connections.slack?.webhook_hint} />
+        <label style={label}>Channel (label only)</label>
+        <input
+          type="text" className="input" style={input}
+          placeholder="#competitor-alerts"
+          value={actionDest}
+          onChange={(e) => setActionDest(e.target.value)}
+        />
+        <p style={note}>
+          Messages go to the channel your Slack webhook was created for. This label
+          is recorded on the rule so the destination is readable at a glance.
+        </p>
+        <TestRow />
+      </div>
+    );
+  }
+
+  if (actionType === ACTION_TYPES.HUBSPOT) {
+    if (!connections.hubspot?.connected) return <NotConnected name="HubSpot" />;
+    return (
+      <div>
+        <Connected name="HubSpot" detail={connections.hubspot?.account_label} />
+        <p style={{ ...note, marginTop: 0 }}>
+          Qualified companies are synced to this connected portal. There is nothing
+          to configure — the destination is resolved from your connection at send
+          time, never stored on the rule.
+        </p>
+      </div>
+    );
+  }
+
+  if (actionType === ACTION_TYPES.EMAIL) {
+    return (
+      <div>
+        <label style={label}>Send to</label>
+        <input
+          type="email" className="input" style={input}
+          placeholder="you@company.com"
+          value={actionDest}
+          onChange={(e) => setActionDest(e.target.value)}
+          required
+        />
+        <p style={note}>Defaults to your account email. Change it to route alerts elsewhere.</p>
+        <TestRow />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label style={label}>Webhook URL</label>
+      <input
+        type="url" className="input" style={input}
+        placeholder="https://example.com/hooks/datiq"
+        value={actionDest}
+        onChange={(e) => setActionDest(e.target.value)}
+        required
+      />
+      <p style={note}>
+        A POST with the signal payload as JSON. Public HTTPS endpoints only —
+        private and reserved addresses are refused.
+      </p>
+      <TestRow />
     </div>
   );
 }
