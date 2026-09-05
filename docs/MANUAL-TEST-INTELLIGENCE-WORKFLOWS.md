@@ -718,25 +718,41 @@ Ensure zero regression on existing DatIQ modules:
 Execute the following comprehensive verification queries in the Supabase SQL editor to assert zero schema drift across all 43 migrations:
 
 ```sql
--- 16.1 Verify all 43 migration tables exist
-select count(*) as total_tables
-  from pg_tables
- where schemaname = 'public'
-   and tablename in (
-     'extractions', 'usage_records', 'public_reports', 'user_settings',
-     'plans', 'subscriptions', 'invoices', 'coupons', 'checkout_sessions',
-     'scheduled_tasks', 'workflow_events', 'workflow_runs', 'analytics_events',
-     'audits', 'audit_comparisons',
-     'workflow_templates', 'template_runs', 'template_run_sources',
-     'credit_ledger', 'credit_estimates', 'extracted_fields', 'field_provenance',
-     'reports', 'report_grants', 'report_access_log', 'pql_scores', 'activation_events',
-     'lists', 'canonical_entities', 'list_records', 'icp_score_rules',
-     'enrichment_jobs', 'enrichment_job_items', 'review_queue',
-     'watchlists', 'watchlist_targets', 'monitored_pages', 'entity_snapshots',
-     'field_changes', 'change_feedback',
-     'signal_rules', 'rule_executions'
-   );
--- ✅ Expect: Exactly 42 tables (reports supersedes public_reports)
+-- 16.1 Verify every expected migration table exists
+--    Presence check over a hand-picked SUBSET of the schema (the numbered
+--    migrations create ~87 public tables), so it is NOT a total-count assertion.
+--    Left-joined on purpose: a bare count(*) can tell you the number is short
+--    but never WHICH name is missing.
+--    Until 2026-09-05 this list also asserted `user_settings`, `plans`,
+--    `coupons`, `checkout_sessions` and `audit_comparisons`. None has ever
+--    existed in any migration, so the sweep returned 37 and read as a FAILED
+--    apply on a completely healthy database. Do not re-add them: plans and
+--    coupons live in `pricing_config` (jsonb, keys 'plans'/'coupons') plus
+--    `coupon_counters` / `coupon_redemptions` / `admin_coupon_assignments`;
+--    the checkout snapshot is `invoice_drafts`; user settings are localStorage
+--    + `auth.users.user_metadata`; stored comparisons are `audit_benchmarks`
+--    + `audit_benchmark_members`.
+with expected(tablename) as (
+  values ('extractions'),('usage_records'),('public_reports'),
+         ('subscriptions'),('invoices'),
+         ('scheduled_tasks'),('workflow_events'),('workflow_runs'),('analytics_events'),
+         ('audits'),
+         ('workflow_templates'),('template_runs'),('template_run_sources'),
+         ('credit_ledger'),('credit_estimates'),('extracted_fields'),('field_provenance'),
+         ('reports'),('report_grants'),('report_access_log'),('pql_scores'),('activation_events'),
+         ('lists'),('canonical_entities'),('list_records'),('icp_score_rules'),
+         ('enrichment_jobs'),('enrichment_job_items'),('review_queue'),
+         ('watchlists'),('watchlist_targets'),('monitored_pages'),('entity_snapshots'),
+         ('field_changes'),('change_feedback'),
+         ('signal_rules'),('rule_executions')
+)
+select e.tablename as missing_table
+  from expected e
+  left join pg_tables t
+    on t.schemaname = 'public' and t.tablename = e.tablename
+ where t.tablename is null
+ order by 1;
+-- ✅ Expect: 0 rows. Any row names a table the migrations did not create.
 
 -- 16.2 Verify RLS is enabled on ALL newly created tables
 select tablename from pg_tables

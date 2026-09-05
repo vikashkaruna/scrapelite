@@ -109,6 +109,7 @@ export const ENRICH_REASON = {
   EMPTY_REPLY:    "ai_empty_reply",    // model answered with nothing
   UNPARSEABLE:    "ai_unparseable",    // model answered, we could not read it
   NO_CONTENT:     "page_no_content",   // the scrape produced no readable text
+  BUDGET_EXHAUSTED: "ai_budget_exhausted", // our clock ran out before the model answered
   ABSENT:         "no_match",          // the page genuinely does not have it
 };
 
@@ -119,6 +120,11 @@ const INFRA_REASONS = new Set([
   ENRICH_REASON.NOT_CONFIGURED, ENRICH_REASON.CHAIN_FAILED, ENRICH_REASON.NO_CREDIT,
   ENRICH_REASON.BAD_KEY, ENRICH_REASON.RATE_LIMITED, ENRICH_REASON.EMPTY_REPLY,
   ENRICH_REASON.UNPARSEABLE, ENRICH_REASON.NO_CONTENT,
+  // Running out of OUR budget is our fault, not an absence on their page.
+  // Without this line pickReason() would let a genuine "no_match" from a
+  // sibling capability outrank it and tell the user their page has no
+  // pricing when the truth is we never finished asking.
+  ENRICH_REASON.BUDGET_EXHAUSTED,
 ]);
 
 /** Pick the most informative reason from a set of attempts. Infra always wins. */
@@ -158,7 +164,41 @@ function logEnrichmentFailure(capability, reason, attempts) {
  * Drive the AI chain with a capability schema over the gathered page text.
  * Returns { ok, data, reason?, provider?, model?, structured? }.
  */
-async function extractStructuredWithAI({ plan, title, url, text, pagesRead }) {
+/**
+ * How long ONE AI enrichment call may take, out of what is left in the request.
+ *
+ * ── WHY THIS IS A POLICY AND NOT A CONSTANT ────────────────────────────────
+ * A capability run can make TWO AI calls, not one. The first reads the page it
+ * was given; if that comes back empty, `gatherRelatedPages` scrapes up to two
+ * more same-domain pages and asks again (this is the path a pricing capability
+ * takes on a homepage whose plans live at /pricing — i.e. the common case, not
+ * the edge case). Both calls share whatever the scrape chain left behind.
+ *
+ * So the split is a real trade-off:
+ *   - Give call #1 everything → the retry never runs, and a homepage whose
+ *     pricing lives one click away reports `no_match`. That is our own clock
+ *     described as an absence on their page, which this file already has an
+ *     incident about (see pickReason).
+ *   - Split evenly up front → an easy page that would have answered in 3s is
+ *     aborted at 2s, and we return `ai_budget_exhausted` for a call that was
+ *     about to succeed.
+ *
+ * `deadline.signalFor()` already refuses to hand out a slice below
+ * MIN_USEFUL_SLICE_MS (1.2s), so returning something too small degrades to a
+ * clean skip rather than a doomed request — the floor is handled for you.
+ *
+ * TODO(vikash): implement the split. ~5 lines.
+ *   @param {{remaining:()=>number, allows:Function}} deadline
+ *   @param {{isRetry:boolean}} opts  isRetry=true is the related-pages second ask
+ *   @returns {number} preferred milliseconds for THIS call
+ */
+function aiSliceMs(deadline, { isRetry = false } = {}) {
+  // Placeholder: hands the whole remaining budget to whichever call asks first.
+  // Correct enough to stop the 504, but it starves the retry — replace it.
+  return deadline.remaining();
+}
+
+async function extractStructuredWithAI({ plan, title, url, text, pagesRead, deadline, isRetry = false }) {
   const presence = keyPresence();
   if (!Object.values(presence).some(Boolean)) {
     return { ok: false, reason: ENRICH_REASON.NOT_CONFIGURED };
@@ -191,15 +231,38 @@ async function extractStructuredWithAI({ plan, title, url, text, pagesRead }) {
     },
   ];
 
+  // ── THE BUDGET THE SCRAPE CHAIN ALREADY HONOURS ──────────────────────────
+  // runScrapeChain has been budgeted since the extract-deadline commit; this
+  // call was not, so a capability run spent up to the whole budget scraping and
+  // THEN started an unbounded AI call against a function killed at 10s. The
+  // platform won that race and answered with an HTML error page, which is not
+  // JSON — so the client fell through to the generic "(504) problem on our
+  // side" copy instead of the honest `extract_timeout` this handler writes.
+  //
+  // `signalFor` returns null when there is no useful room left, which the
+  // caller must read as "skip", never as "the page has nothing".
+  const slice = deadline ? deadline.signalFor(aiSliceMs(deadline, { isRetry })) : null;
+  if (deadline && !slice) {
+    return { ok: false, reason: ENRICH_REASON.BUDGET_EXHAUSTED };
+  }
+
   let r;
   try {
     r = await runChain(messages, AI_EXTRACT_MAX_TOKENS, {
       area: "enrichment",
       schema: plan.schema,
+      signal: slice?.signal,
     });
   } catch (err) {
     console.warn("[DatIQ] enrichment runChain threw:", err?.message || err);
     return { ok: false, reason: ENRICH_REASON.CHAIN_FAILED };
+  } finally {
+    slice?.clear();
+  }
+  // Same reasoning as /api/ai: the slice aborts before the deadline expires,
+  // so the abort flag — not expired() — is what says the clock was ours.
+  if (!r?.ok && (slice?.signal.aborted || deadline?.expired())) {
+    return { ok: false, reason: ENRICH_REASON.BUDGET_EXHAUSTED, attempts: r?.attempts };
   }
   if (!r || !r.ok) {
     console.warn("[DatIQ] enrichment chain failed:", r?.errorCode, JSON.stringify(r?.attempts || []));
@@ -731,7 +794,7 @@ export const handler = async (event) => {
       const corpus = buildCorpus(url, page.text, related);
       const aiRes = await extractStructuredWithAI({
         plan, title: result.title || "", url,
-        text: corpus.text, pagesRead: corpus.pagesRead,
+        text: corpus.text, pagesRead: corpus.pagesRead, deadline,
       });
 
       if (aiRes.ok) {
@@ -761,7 +824,8 @@ export const handler = async (event) => {
             if (late.length) {
               const c2 = buildCorpus(url, page.text, late);
               const retry = await extractStructuredWithAI({
-                plan, title: result.title || "", url, text: c2.text, pagesRead: c2.pagesRead,
+                plan, title: result.title || "", url, text: c2.text,
+                pagesRead: c2.pagesRead, deadline, isRetry: true,
               });
               if (retry.ok) {
                 result.customExtraction = retry.data;
