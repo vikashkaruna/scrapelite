@@ -164,38 +164,62 @@ function logEnrichmentFailure(capability, reason, attempts) {
  * Drive the AI chain with a capability schema over the gathered page text.
  * Returns { ok, data, reason?, provider?, model?, structured? }.
  */
+// A model call over a full corpus is the expensive half of a capability run.
+// Below this there is no point starting one: it would abort mid-flight and
+// spend the budget the stage after it needed, which is the failure `sliceFor`
+// exists to prevent.
+export const AI_CALL_MIN_MS = 4_000;
+
+// What the retry path costs end to end: a related-page scrape plus a second
+// model call. The scrape figure is NOT RELATED_FETCH_TIMEOUT_MS (9s) because
+// those fetches run through Promise.allSettled — the cost is the SLOWEST one,
+// not their sum — and because relatedFetchMs() clamps them to what is left.
+const RETRY_SCRAPE_RESERVE_MS = 3_000;
+const RETRY_PATH_RESERVE_MS   = RETRY_SCRAPE_RESERVE_MS + AI_CALL_MIN_MS;
+
 /**
- * How long ONE AI enrichment call may take, out of what is left in the request.
+ * How long ONE AI enrichment call may take, out of what the scrape chain left.
  *
- * ── WHY THIS IS A POLICY AND NOT A CONSTANT ────────────────────────────────
- * A capability run can make TWO AI calls, not one. The first reads the page it
- * was given; if that comes back empty, `gatherRelatedPages` scrapes up to two
- * more same-domain pages and asks again (this is the path a pricing capability
- * takes on a homepage whose plans live at /pricing — i.e. the common case, not
- * the edge case). Both calls share whatever the scrape chain left behind.
+ * A capability run can make TWO model calls. The first reads the page it was
+ * given; if that comes back ABSENT, `gatherRelatedPages` fetches same-domain
+ * candidates and asks again. That retry is the COMMON case, not the edge case —
+ * it is the path any pricing capability takes on a homepage whose plans live at
+ * /pricing, which is exactly the run that reported this bug.
  *
- * So the split is a real trade-off:
- *   - Give call #1 everything → the retry never runs, and a homepage whose
- *     pricing lives one click away reports `no_match`. That is our own clock
- *     described as an absence on their page, which this file already has an
- *     incident about (see pickReason).
- *   - Split evenly up front → an easy page that would have answered in 3s is
- *     aborted at 2s, and we return `ai_budget_exhausted` for a call that was
- *     about to succeed.
+ * ── THE POLICY ────────────────────────────────────────────────────────────
+ * Adaptive, because the right split genuinely differs by budget and the budget
+ * is not knowable from code (the function timeout is site configuration):
  *
- * `deadline.signalFor()` already refuses to hand out a slice below
- * MIN_USEFUL_SLICE_MS (1.2s), so returning something too small degrades to a
- * clean skip rather than a doomed request — the floor is handled for you.
+ *   - The retry is LAST. Nothing follows it, so it takes everything left.
+ *   - The first call holds back the retry path ONLY when doing so still leaves
+ *     itself a workable slice. On a generous budget both calls fit. On a tight
+ *     one, holding back would half-starve BOTH — so the first call takes the
+ *     lot, because one complete answer beats two aborted ones.
  *
- * TODO(vikash): implement the split. ~5 lines.
- *   @param {{remaining:()=>number, allows:Function}} deadline
- *   @param {{isRetry:boolean}} opts  isRetry=true is the related-pages second ask
- *   @returns {number} preferred milliseconds for THIS call
+ * Skipping the retry never costs honesty: the caller reports
+ * `ai_budget_exhausted` (an INFRA reason) rather than `no_match`, so running
+ * out of our clock is never described as an absence on the customer's page.
  */
-function aiSliceMs(deadline, { isRetry = false } = {}) {
-  // Placeholder: hands the whole remaining budget to whichever call asks first.
-  // Correct enough to stop the 504, but it starves the retry — replace it.
-  return deadline.remaining();
+export function aiSliceMs(deadline, { isRetry = false } = {}) {
+  const left = deadline.remaining();
+  if (isRetry) return left;
+  const held = left - RETRY_PATH_RESERVE_MS;
+  return held >= AI_CALL_MIN_MS ? held : left;
+}
+
+/**
+ * How long each related-page fetch may take. They run in PARALLEL, so this is
+ * the ceiling on the slowest, not a per-page share of the budget.
+ *
+ * Returns 0 for "skip": pages we will have no time left to reason over are not
+ * worth fetching, and RELATED_FETCH_TIMEOUT_MS (9s) is longer than the whole
+ * default budget — a third unbudgeted stage sitting between two budgeted ones.
+ */
+export function relatedFetchMs(deadline) {
+  if (!deadline) return RELATED_FETCH_TIMEOUT_MS;
+  const room = deadline.remaining() - AI_CALL_MIN_MS;
+  if (room < 1_000) return 0;
+  return Math.min(RELATED_FETCH_TIMEOUT_MS, room);
 }
 
 async function extractStructuredWithAI({ plan, title, url, text, pagesRead, deadline, isRetry = false }) {
@@ -400,9 +424,9 @@ export function findRelatedPageLinks(html, baseUrl, hints, limit = RELATED_PAGE_
 }
 
 /** Best-effort fetch of one related page's readable text. Never throws. */
-async function fetchRelatedPageText(url) {
+async function fetchRelatedPageText(url, timeoutMs = RELATED_FETCH_TIMEOUT_MS) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), RELATED_FETCH_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetchPublicUrl(url, {
       signal: ctrl.signal,
@@ -429,12 +453,18 @@ async function fetchRelatedPageText(url) {
  * Gather up to RELATED_PAGE_MAX same-domain subpages for a capability, in
  * parallel. Returns [] when the capability has no hints or nothing matched.
  */
-async function gatherRelatedPages(baseHtml, baseUrl, enrichKey) {
+async function gatherRelatedPages(baseHtml, baseUrl, enrichKey, deadline) {
   const hints = RELATED_PAGE_HINTS[enrichKey];
   if (!hints || hints.length === 0) return [];
   const candidates = findRelatedPageLinks(baseHtml, baseUrl, hints);
   if (candidates.length === 0) return [];
-  const settled = await Promise.allSettled(candidates.map(fetchRelatedPageText));
+  // Skip rather than overrun: a 9s fetch inside an 8s budget is how a stage
+  // between two budgeted ones takes the whole request down.
+  const perFetchMs = relatedFetchMs(deadline);
+  if (perFetchMs <= 0) return [];
+  const settled = await Promise.allSettled(
+    candidates.map((c) => fetchRelatedPageText(c, perFetchMs)),
+  );
   return settled
     .filter((s) => s.status === "fulfilled" && s.value)
     .map((s) => s.value);
@@ -785,7 +815,7 @@ export const handler = async (event) => {
       const deepAllowed = options.deep !== false;
       if (deepAllowed && options.enrichKey && ENTITY_CAPABILITIES.has(options.enrichKey)) {
         try {
-          related = await gatherRelatedPages(result.html || "", url, options.enrichKey);
+          related = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline);
         } catch (err) {
           console.warn("[DatIQ] related-page gather failed (continuing):", err?.message);
         }
@@ -817,10 +847,19 @@ export const handler = async (event) => {
         // infrastructure there is nothing to retry against — walking more
         // pages would spend three more fetches to reach the same dead chain.
         let secondReason = null;
-        if (aiRes.reason === ENRICH_REASON.ABSENT && deepAllowed && related.length === 0
-            && options.enrichKey && RELATED_PAGE_HINTS[options.enrichKey]?.length) {
+        const retryWorthTrying = aiRes.reason === ENRICH_REASON.ABSENT && deepAllowed
+            && related.length === 0
+            && options.enrichKey && RELATED_PAGE_HINTS[options.enrichKey]?.length;
+        // ⚠️ A gather skipped for BUDGET returns [], which is indistinguishable
+        // from "this page links to no pricing page at all" — and that ambiguity
+        // resolves to `no_match`, i.e. we would tell the customer their page
+        // has no pricing without ever having opened the page that carries it.
+        // Check the clock BEFORE attributing an absence to them.
+        if (retryWorthTrying && deadline && !deadline.allows(AI_CALL_MIN_MS)) {
+          secondReason = ENRICH_REASON.BUDGET_EXHAUSTED;
+        } else if (retryWorthTrying) {
           try {
-            const late = await gatherRelatedPages(result.html || "", url, options.enrichKey);
+            const late = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline);
             if (late.length) {
               const c2 = buildCorpus(url, page.text, late);
               const retry = await extractStructuredWithAI({

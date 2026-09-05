@@ -17,8 +17,26 @@
 > **never** to `extractStructuredWithAI`, so a capability run scraped for up to 8s and *then* began an
 > unbounded AI call, plus a SECOND one on the related-pages retry (the path a pricing capability takes
 > on any homepage whose plans live at `/pricing`). Both now budgeted; `AI_BUDGET_MS` / `EXTRACT_BUDGET_MS`
-> default to 8s for the STOCK 10s timeout. ⚠️ **`aiSliceMs()` IN `extract.js` IS A PLACEHOLDER** that
-> gives the whole budget to whichever AI call asks first — it stops the 504 but **starves the retry**.
+> default to 8s for the STOCK 10s timeout.
+> ✅ **`aiSliceMs()` IS NOW IMPLEMENTED** (it shipped as a placeholder in the first commit): the retry is
+> last so it takes what is left; the first call holds back the retry path **only when doing so still
+> leaves itself a workable slice**, else it takes the lot — on a tight budget holding back half-starves
+> BOTH, and one complete answer beats two aborted ones.
+> 🔴 **A THIRD UNBUDGETED STAGE was found while implementing it:** `RELATED_FETCH_TIMEOUT_MS` is **9s —
+> longer than the whole 8s default budget** — and `gatherRelatedPages` sits BETWEEN the two model calls
+> (and runs before the first one for entity capabilities). Now clamped by `relatedFetchMs()`, where
+> **0 means skip**: pages we will have no time to reason over are not worth fetching.
+> ⚠️ **A gather skipped for BUDGET returns `[]`, which is indistinguishable from "this page links to no
+> pricing page at all"** — and that ambiguity resolved to `no_match`, i.e. telling a customer their page
+> has no pricing without ever opening the page that carries it. The clock is now checked BEFORE an
+> absence is attributed to them.
+> ✅ **`EXTRACT_BUDGET_MS` / `AI_BUDGET_MS` / `AUDIT_BUDGET_MS` = `20000`, function timeout 26s** (owner;
+> confirmed via `netlify env:list`). ⚠️ **Netlify injects Function env vars at DEPLOY time** — a var
+> changed in the UI reaches no function until the next deploy.
+> 🔴 **`SCRAPE_PROVIDER_ORDER` IS STILL `direct,spider,jina` ON STAGING** — Firecrawl omitted and the
+> lowest-fidelity provider first, while `FIRECRAWL_API_KEY` is set and funded. On a JS-rendered SPA like
+> notion.so `direct` returns a shell, so the AI reasons over near-nothing. The code default is already
+> quality-first (`firecrawl → spider → jina → direct`); **deleting the env var restores it.**
 > ⚠️ **THE ERROR'S SHAPE LOCALISED THIS, NOT A LOG:** our budgeted refusals are **JSON**, a platform kill
 > is **HTML**, and `apiClient.js`'s generic "(504) problem on our side" copy fires **only on an HTML
 > body** — so the message itself proved `/api/extract` was not the culprit. ⚠️ **The regression test

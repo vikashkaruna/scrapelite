@@ -161,18 +161,42 @@ only and `netlify/` contract tests cover it, but **the pre-push hook is the gate
 
 ### 5. Open items for the next session / operator
 
-- [ ] 🔴 **`aiSliceMs()` in `extract.js` ships as a PLACEHOLDER.** It hands the whole remaining budget to
-      whichever AI call asks first. **It stops the 504 but starves the retry**, and the retry is the
-      common case, not the edge case — a homepage whose pricing lives at `/pricing` is exactly the Notion
-      run. The trade-off is real and deliberate: give call #1 everything and the retry never runs (our
-      clock reported as `no_match`, an absence on their page); split evenly and an easy page that would
-      have answered in 3s is aborted at 2s. `signalFor()` already refuses any slice under
-      `MIN_USEFUL_SLICE_MS` (1.2s), so a too-small return degrades to a clean skip rather than a doomed
-      request — the floor is handled. ~5 lines at the `TODO(vikash)` marker.
-- [ ] ⚠️ **Raise the Netlify function timeout to 26s and set `EXTRACT_BUDGET_MS=20000` +
-      `AI_BUDGET_MS=20000`.** All three budgets default to 8s because the function timeout is site
-      configuration **no code can read**, and guessing high reinstates the 504. This is worth doing
-      regardless of the placeholder above — it gives every run 2.5× the headroom. **Operator action.**
+- [x] ✅ **`aiSliceMs()` implemented** (was a placeholder in the first commit). Adaptive, because the
+      right split genuinely differs by budget and the budget is not knowable from code: the **retry is
+      last so it takes everything left**; the **first call holds back the retry path only when doing so
+      still leaves itself a workable slice** (`AI_CALL_MIN_MS` 4s), otherwise it takes the lot — on a
+      tight budget, holding back would half-starve *both*, and one complete answer beats two aborted
+      ones. 9 tests, **4 confirmed RED** against the placeholder.
+- [x] ✅ **A THIRD unbudgeted stage, found while implementing the above.**
+      `RELATED_FETCH_TIMEOUT_MS` is **9 000 ms** — longer than the whole 8s default budget — and
+      `gatherRelatedPages` sat *between* the two budgeted model calls, and also ran *before* call #1 for
+      entity capabilities. New `relatedFetchMs()` clamps each fetch to what is left minus a model call
+      and returns **0 = skip**: pages we will have no time to reason over are not worth fetching. (The
+      fetches run through `Promise.allSettled`, so the cost is the slowest one, not their sum — the
+      reserve is sized accordingly, not from the 9s ceiling.)
+- [x] ✅ **Honesty guard on the skip path.** A gather skipped for budget returns `[]`, which is
+      **indistinguishable from "this page links to no pricing page at all"** — and that ambiguity
+      resolves to `no_match`, i.e. telling the customer their page has no pricing without ever opening
+      the page that carries it. The clock is now checked **before** an absence is attributed to them, and
+      sets `ai_budget_exhausted` instead.
+- [x] ✅ **`EXTRACT_BUDGET_MS` / `AI_BUDGET_MS` / `AUDIT_BUDGET_MS` all set to `20000` by the owner**, and
+      the function timeout raised to 26s. Confirmed via `netlify env:list`. ⚠️ **Netlify injects Function
+      env vars at DEPLOY time**, so they did not reach the already-published `710431f` build — the push
+      that carries this entry is what makes them live.
+- [ ] 🔴 **`SCRAPE_PROVIDER_ORDER` on staging is `direct,spider,jina` — Firecrawl is OMITTED and the
+      lowest-fidelity provider is FIRST.** Observed directly in `netlify env:list` this session, and
+      `FIRECRAWL_API_KEY` **is set and funded**, so a working paid provider is being skipped entirely.
+      `CLAUDE.md` already carries this warning from a previous session; it is still live. **This matters
+      for the reported bug specifically:** `direct` is a plain fetch with no JS execution and no
+      main-content isolation, so on a JS-rendered SPA like **notion.so** it returns a shell — the AI then
+      reasons over near-nothing, which is both slow (large empty corpus) and useless. The code default is
+      already quality-first (`firecrawl → spider → jina → direct`); **deleting the env var restores it.**
+      Left unchanged deliberately — editing a deployed environment is an operator decision, not a
+      session's.
+- [ ] ⚠️ **`netlify env:list --json` prints every secret in PLAINTEXT** — this session's transcript now
+      contains the Anthropic, OpenAI, Gemini, Firecrawl, Spider, Jina, Razorpay, Resend and Slack
+      credentials. Prefer `netlify env:get <KEY>` for a single value. Rotate if this transcript is shared
+      outside the owner.
 - [ ] **Re-run the template runs that failed** (Competitor Pricing Tracker → `notion.so`, Due Diligence
       Brief → `datiq.app`) once deployed. Both should now either succeed or return a **JSON** failure
       naming our limit — never the generic HTML-body 504.
