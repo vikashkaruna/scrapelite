@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
+import DomainListInput from "../components/DomainListInput.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
@@ -574,22 +575,16 @@ export default function Lists() {
 
                 <div>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                    Company Domains (CSV or pasted list)
+                    Company domains or names
                   </label>
-                  <textarea
+                  {/* A RevOps source list is almost always company NAMES out of
+                      a CRM export, not domains. Hand-resolving fifty of them is
+                      most of the work this screen exists to remove. */}
+                  <DomainListInput
                     rows={6}
-                    className="input"
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: 6,
-                      border: "1px solid var(--border)",
-                      fontFamily: "monospace",
-                      fontSize: "0.85rem",
-                    }}
-                    placeholder={`stripe.com\nlinear.app\ngithub.com`}
                     value={rawDomains}
-                    onChange={(e) => setRawDomains(e.target.value)}
+                    onChange={setRawDomains}
+                    placeholder={`stripe.com\nLinear\ngithub.com`}
                   />
                   <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: 4 }}>
                     {dedupedPreview.count > 0 ? (

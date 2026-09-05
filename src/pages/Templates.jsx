@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router";
 import Icon from "../components/Icon.jsx";
+import DomainListInput from "../components/DomainListInput.jsx";
+import { useTemplateRun } from "../components/TemplateRunProvider.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
@@ -202,6 +204,9 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [shareFor, setShareFor] = useState(null);
+  // Optional: the provider is mounted app-wide, but the page is also rendered
+  // directly in unit tests without it, so every call site is guarded.
+  const tplRun = useTemplateRun();
 
   useEffect(() => {
     if (templateKey) {
@@ -307,6 +312,11 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
     setBusy(true);
     setResult(null);
     setProgress({ message: "Starting…", percent: 5 });
+    // Report through the SAME dock as a single extraction and a batch run, so
+    // the product has one progress surface rather than three. The in-page bar
+    // stays for the user who is watching this page; the dock is what they see
+    // once they navigate away.
+    const tplToken = tplRun?.startTemplateRun(template.template_key, template.title);
 
     let runId = null;
     try {
@@ -318,7 +328,10 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
       const exec = await api.executeRun({
         template: started.template || template,
         input: v.value,
-        onProgress: setProgress,
+        onProgress: (p) => {
+          setProgress(p);
+          tplRun?.updateTemplateRun(tplToken, { message: p.message, percent: p.percent });
+        },
       });
 
       if (runId) {
@@ -339,8 +352,12 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         void lifecycle.templateRunCompleted({ templateKey: template.template_key });
       }
       setProgress(null);
+      // Hand the dock the run id so "View report" can reopen it after the user
+      // has navigated away — the whole point of surviving navigation.
+      tplRun?.finishTemplateRun(tplToken, { runId });
     } catch (e) {
       setProgress(null);
+      tplRun?.finishTemplateRun(tplToken, { error: e.message });
       if (runId) { try { await api.failRun(runId, e.message); } catch { /* best effort */ } }
       // A failed run charges nothing — say so, because the first thing a user
       // wonders after an error is whether they were billed for it.
@@ -467,8 +484,10 @@ function FieldInput({ field, value, onChange }) {
           })}
         </select>
       ) : field.kind === "domain_list" ? (
-        <textarea id={id} rows={5} value={value ?? ""} placeholder={field.placeholder}
-                  onChange={(e) => onChange(e.target.value)} />
+        // Was a bare textarea, so the SINGLE-domain field resolved a typed
+        // company name and the MULTI-domain field — the one people paste a CRM
+        // export into — did not.
+        <DomainListInput id={id} value={value} onChange={onChange} placeholder={field.placeholder} />
       ) : field.kind === "boolean" ? (
         <input id={id} type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
       ) : field.kind === "domain" ? (

@@ -37,6 +37,10 @@ const EXPLORE_ITEMS = [
   {
     group: "Workflows",
     items: [
+      // First in the group on purpose: it is the only entry that explains how
+      // the other three relate, and the reported confusion was precisely that
+      // a user had no way to see what was going on across them.
+      { label: "Overview",       icon: "share-2", path: "/workflows" },
       { label: "Account Lists",  icon: "users",   path: "/lists" },
       { label: "Watchlists",     icon: "eye",     path: "/watchlists" },
       { label: "Signal Rules",   icon: "share-2", path: "/rules" },
@@ -58,7 +62,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/lists", "/watchlists", "/rules", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/lists", "/watchlists", "/rules", "/workflows", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
