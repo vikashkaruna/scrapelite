@@ -176,8 +176,12 @@ only and `netlify/` contract tests cover it, but **the pre-push hook is the gate
 - [ ] **Re-run the template runs that failed** (Competitor Pricing Tracker → `notion.so`, Due Diligence
       Brief → `datiq.app`) once deployed. Both should now either succeed or return a **JSON** failure
       naming our limit — never the generic HTML-body 504.
-- [ ] ⚠️ **`main` is still behind and still carries `0041`–`0043` without `0044`** — the unauthenticated
-      exposure. Unchanged by this session; do not deploy `main` before those migrations reach production.
+- [ ] ⚠️ **`main` moved WHILE this session ran** — the owner merged PRs #149 and #151, so `main` is now
+      `fe61743` and carries `0044`–`0047`. The standing *"`main` lacks `0044`"* warning is **RESOLVED**
+      and was retired on `staging` by a concurrent session (`98a89c2`) mid-flight; an earlier draft of
+      this entry restated it and was corrected before push. **But a migration FILE on a branch is not an
+      APPLIED migration** — confirm the production database itself with `npm run verify:rls -- --prod`
+      (401 = locked down, 200 = still exposed) before trusting it.
 - [ ] Consider whether §3.4's presence check should defer to `npm run verify:rls`, which proves the
       thing that actually matters (those 15 tables **refuse** an anonymous read) rather than that they
       exist. Left as-is deliberately — it depends on how the runbook is used.
