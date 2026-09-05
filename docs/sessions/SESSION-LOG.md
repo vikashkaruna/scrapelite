@@ -18,6 +18,155 @@
 
 ---
 
+## 2026-09-05 (later) — The intelligence templates promised more than the runner and renderer could deliver; plus the orchestration screen, real watchlist checks, and a fabrication path removed
+
+> **Branch:** `claude/missing-public-tables-107e72` → **`staging` = `fc64c00`**, deployed `ready`.
+> **`main` = `d701f78`** — the owner promoted staging via **PR #153** mid-session, so the `/api/ai`
+> budget fix from the entry below is now on `main` as well. `main` was not touched by this session.
+> **Verification:** full suite **346 files / 5413 passed** (+38 new) · build · prerender 28 pages ·
+> e2e smoke **136** · all 8 pre-push gates green in 200s. `/workflows` render verified in a browser.
+
+### Why this session existed
+
+Eight reported items. Three were "this template returns an incomplete/empty brief for datiq.app" and
+read as model-quality problems. **None of them was.** All four causes were implementation, and two of
+them were certain from source alone regardless of which run you looked at.
+
+---
+
+### 1. Items 1-3 — the templates promised more than the pipeline could produce
+
+Found by diffing what each seed template **promises** against what the runner and renderer can
+**deliver** — a gap analysis, not a per-template hunt, because each half looked correct alone.
+
+🔴 **THE RENDERER IGNORED `from:` ENTIRELY, AND `table` WAS NEVER IMPLEMENTED.**
+`Templates.jsx` filled every `list` block from `talking_points` **whatever the block's `from:` said**,
+and had no `table` branch at all. Since `tiers`, `case_studies` and `named_customers` are **real
+extraction fields**, the data was being extracted correctly and **discarded at the last step**:
+
+| Template | Block | Before |
+|---|---|---|
+| Customer Proof | `{kind:"table", from:"case_studies"}` | **never rendered on any site** |
+| Competitor Pricing | `{from:"tiers"}` | **never rendered on any site** |
+| Due Diligence | `{kind:"list", from:"questions"}` | title rendered, filled from `talking_points` — a prompt that template does not have |
+
+A block whose **title is honoured but whose source is ignored is worse than an unrendered one**: it
+puts a promise on screen and fills it with something else.
+
+🔴 **`questions` WAS DECLARED AND NEVER RUN.** The runner executed exactly `summarize` +
+`talking_points`. Same defect this repo already fixed once for those two; `questions` was missed
+because only one template declares it. (`comparison` and `delegate` belong to other execution paths
+and are now recorded as such.)
+
+🔴 **NO TEMPLATE DECLARED WHICH SUBPAGES IT NEEDS.** `CAPABILITY_SCHEMAS` is keyed by *capability*
+(`contacts`, `pricing`, …) and templates by *template key* — **disjoint sets** — so `enrichKey` was
+never set explicitly and every template fell through to `guessRelatedPageHintsKey()`, a first-match
+regex written for free-text prompts typed on Home. **Measured, it sent FIVE of seven templates to
+`pricing`**, because every extract prompt happens to mention a price:
+
+- **Due Diligence** wants team, founding year, customers, hiring signals → fetched **`/pricing`**, never opened `/about`
+- **Customer Proof** guessed **`null`** → **homepage only**, never opened `/customers` or `/case-studies`
+
+Fixed with explicit `related_key` on every seed plus two new hint buckets (`diligence`, `proof`) that
+gather **up front** like the other entity capabilities — a homepage yielding a couple of fields is not
+`ABSENT`, so the retry never fired and the subpages were never read.
+
+✅ **A null finding now names what it searched for**, beside the Sources list naming the pages read.
+*"We found nothing" is only credible if we say what we looked for* — without it the reader must take
+our word for both the search and the conclusion.
+
+⚠️ **On item 2 (Customer Proof vs datiq.app) the template is RIGHT and the fix is not code.** DatIQ
+publishes no named customers, case studies or testimonials — deliberately: this repo removed four
+fabricated testimonials from the use-case pages and keeps Home's behind `{false && …}`. Making that
+template return something requires **real, attributable** customer proof.
+
+✅ **`templateContract.test.js`** pins all three template-side gaps as a parity test — one side
+declares, the other executes, and nothing asserted they agreed. Same shape as `cron-registry-parity`.
+
+---
+
+### 2. Item 6 — "Run Enrichment" could never work, for any list, ever
+
+`Lists.jsx` **fabricated its job id** as `` `job_${currentList.id}` `` and POSTed it to
+`process_chunk`; jobs carry a database-generated id, so `assertJobOwner` failed and the server
+answered **404 "Job not found"** every time. `createList()` **already returns the real id** and the
+client threw it away. `getList()` now returns the list's jobs plus an `active_job_id`, the button
+advances the real one, and the jobs are listed on screen with status and progress — so the button's
+behaviour is predictable instead of a dead click naming an id the user never saw.
+
+---
+
+### 3. Items 4, 5, 7, 8
+
+🔴 **ITEM 7 — "Simulate Delta" WAS FABRICATING DATA.** It POSTed a hardcoded **`$49/mo → $79/mo`**
+through `record_change`, writing **invented competitor movement into the same feed as observed
+movement** — indistinguishable once stored, in the list a RevOps user routes real outbound off. This
+repo has had to undo that exact shape twice (fixture prose badged `ai_generated`; firmographics
+invented from a domain string). Replaced with a real **"Check now"** that runs the **same differ the
+`@hourly` cron runs** — a preview that disagrees with the scheduled run makes every diff noise —
+budgeted from the request, ownership-checked **404 not 403**, charged only for pages actually read.
+
+✅ **ITEM 5 — the multi-domain box accepts company NAMES.** The *single*-domain field already resolved
+a typed name; the *multi*-domain box — the one people paste a CRM export into — was a bare textarea.
+⚠️ **Resolution is SUGGESTED, never auto-applied**: `candidateDomains()` is a heuristic and enriching
+the **wrong** company produces firmographics that look perfectly valid and describe somebody else.
+
+✅ **ITEM 4 — one progress surface.** Template runs lived in the page body with their own bar, so
+navigating away **hid AND abandoned** the run. Now owned by `TemplateRunProvider` above the router,
+like `BatchRunProvider`, reporting through the shared dock. Its percent is **real** (`executeRun`
+emits stage progress), unlike the single-extraction branch's cosmetic pacing.
+
+✅ **ITEM 8 — NEW `/workflows`, the orchestration view.** Lists → Watchlists → Rules is ONE pipeline
+presented as three unrelated screens, so nothing told a user a rule could never fire because no
+watchlist feeds it, or that a watchlist produced changes no rule acts on. Each screen was individually
+correct and **the system was silently inert**. Two design rules:
+
+- **THE ISSUES LEAD, THE DIAGRAM IS CONTEXT.** A picture of what is wired is decoration; every gap
+  named here fails silently today. Eight detected, incl. a watchlist legitimately at **baseline**
+  (INFO, not an error — a first sighting never alerts).
+- ⚠️ **EDGES ARE BY KIND, NEVER ID-TO-ID.** `signal_rules.trigger_source` names a *class* of event, so
+  an id edge would imply a precision the schema does not have and show a rule as connected to one
+  watchlist when it fires for all of them.
+
+Pure model (`src/lib/workflows/workflowGraph.js`) shared by React and `netlify/`, like
+`entitlementModel`, so server and browser cannot disagree about reachability. `/workflows` is a
+**private prefix**, added in all four places `page-ownership.test.mjs` checks (26/26 green).
+
+---
+
+### 4. Verification
+
+| Suite | Result |
+|---|---|
+| Full vitest | **346 files / 5413 passed / 14 skipped** (+38 new) |
+| New: `workflowGraph` 15 · `workflow-graph` endpoint 7 · `run_now` 8 · domain parsing 8 | all green |
+| `templateContract.test.js` | 5, pinning the declare-vs-execute parity |
+| Pre-push gate | 8/8 green in 200s, incl. e2e smoke **136** |
+| Browser | `/workflows` renders; no React errors (502/401s are the local dev server having no backend on :9999) |
+
+---
+
+### 5. Open items for the next session
+
+- [ ] ⚠️ **`/workflows` has never run against a real POPULATED account** — staging is 401-gated, so the
+      issue detection is pinned only against synthetic data. The derived counts (`execution_count` from
+      `rule_executions`, `change_count` from `field_changes`) are the parts most likely to surprise.
+      Open it once with real lists and rules and check the issues match what you know to be true.
+- [ ] **Re-run the three templates against datiq.app** (Due Diligence, Customer Proof, Competitor
+      Pricing). Pricing tiers and customer tables should now RENDER, and Due Diligence should read
+      `/about` rather than `/pricing`.
+- [ ] **Phase 2 of `/workflows`**: inline creation of the missing link, and a dry-run trace (pick a
+      change, watch which rules would match). Phase 1 is deliberately read-only — shipping mutations
+      before anyone confirmed the diagnosis is right would be the wrong order.
+- [ ] ⚠️ **Customer Proof on datiq.app stays empty until there is real customer proof to publish.**
+      That is a business action, and inventing it is the one thing this codebase has an explicit
+      policy against.
+- [ ] **`SCRAPE_PROVIDER_ORDER` was removed by the owner** so the admin-configured order is used.
+      Worth confirming on `/admin/ai` that the effective scrape chain is now quality-first
+      (`firecrawl → spider → jina → direct`) rather than still starting at `direct`.
+
+---
+
 ## 2026-09-05 01:20 IST — Template runs 504'd because `/api/ai` had no clock; the migration sweep called a healthy database broken
 
 > **Branch:** `claude/missing-public-tables-107e72`, cut from `staging` @ `ba6879f` (0 ahead / 0 behind
