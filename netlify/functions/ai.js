@@ -34,6 +34,7 @@ import { publicFailure, logChainFailure } from "./lib/aiFailure.js";
 import { AI_AREA_KEYS, MODEL_TIER } from "../../src/lib/providerRegistry.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
+import { createDeadline } from "./lib/audit/deadline.js";
 
 const MAX_MESSAGES = 50;
 // Raised from 20k/100k. The old ceiling predates sending page BODY text: a
@@ -64,6 +65,37 @@ function normalizeMessages(messages) {
     out.push({ role: message.role, content });
   }
   return total <= MAX_TOTAL_CHARS ? out : null;
+}
+
+
+// ── WALL-CLOCK BUDGET ───────────────────────────────────────────────────────
+//
+// `runChain` is a SERIAL fallback over three providers and, until now, this
+// endpoint passed it no signal — so its cost was unbounded on a Netlify
+// function killed at 10s. The discoverability audit fixed exactly this shape
+// for its own AI calls (deadline.js names "runChain had no timeout at any
+// layer" as one of the three causes of that 504) and /api/extract was budgeted
+// for its scrape chain, but this endpoint kept the original defect.
+//
+// It matters most for TEMPLATE RUNS, which the client orchestrates: a run is
+// 2-4 scrapes plus 1-2 calls to THIS endpoint. When the platform wins the race
+// it answers with an HTML error page rather than JSON, so apiClient falls
+// through to the generic "(504) problem on our side" copy instead of anything
+// naming the real limit. Observed on both a hard target (notion.so) and our own
+// prerendered site (datiq.app) — which is what rules out a slow scrape.
+//
+// Sized for the STOCK 10s timeout, deliberately, in the same conservative
+// direction AUDIT_BUDGET_MS documents: the function timeout is site
+// configuration no code can read, and guessing high reinstates the 504. Raise
+// the timeout to 26s on Netlify and set AI_BUDGET_MS=20000.
+const DEFAULT_AI_BUDGET_MS = 8_000;
+
+function aiBudgetMs(env = process.env) {
+  const raw = Number(env.AI_BUDGET_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_AI_BUDGET_MS;
+  // Floor of 3s: below that no provider answers and every call is a timeout,
+  // which reads as a dead product rather than a tight budget.
+  return Math.max(3_000, Math.min(120_000, Math.round(raw)));
 }
 
 function respond(statusCode, body) {
@@ -139,9 +171,29 @@ export const handler = async (event) => {
     return respond(503, { error: "AI is temporarily unavailable.", code: "no_key" });
   }
 
+  // Budgeted from the REQUEST, not from the chain: entitlement resolution and
+  // the workspace lookup above have already spent real wall clock, and a budget
+  // that ignores it is a budget that still overruns.
+  const deadline = createDeadline(aiBudgetMs());
+  const slice = deadline.signalFor(deadline.remaining());
+
   try {
-    const result = await runChain(safeMessages, max_tokens, { area, tier });
+    const result = await runChain(safeMessages, max_tokens, { area, tier, signal: slice?.signal });
     if (!result.ok) {
+      // Our own clock, named as ours. Distinguished from a provider fault so an
+      // operator reads "raise the budget" instead of hunting a key or a bill,
+      // and so the customer is never told their request was the problem.
+      // The slice aborts BEFORE the deadline expires — sliceFor() holds back a
+      // reserve so there is room to answer — so `expired()` alone misses it and
+      // the honest 504 degrades to a generic 502. The abort flag is ours by
+      // construction: we own the controller that set it.
+      if (slice?.signal.aborted || deadline.expired()) {
+        logChainFailure("/api/ai (timeout)", result);
+        return respond(504, {
+          error: "This took too long to answer. This is a limit on our side — try again shortly.",
+          code: "ai_timeout",
+        });
+      }
       // The full diagnosis goes to the LOG (an operator surface) and the code
       // alone goes to the caller. `detail.attempts` used to travel here
       // carrying each vendor's own error prose.
@@ -157,6 +209,14 @@ export const handler = async (event) => {
       _area: area || null,
     });
   } catch (err) {
+    if (err?.name === "AbortError" || slice?.signal.aborted || deadline.expired()) {
+      return respond(504, {
+        error: "This took too long to answer. This is a limit on our side — try again shortly.",
+        code: "ai_timeout",
+      });
+    }
     return respond(502, { error: `Upstream fetch failed: ${err.message}` });
+  } finally {
+    slice?.clear();
   }
 };

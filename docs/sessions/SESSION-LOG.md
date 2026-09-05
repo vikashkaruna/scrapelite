@@ -18,6 +18,200 @@
 
 ---
 
+## 2026-09-05 01:20 IST — Template runs 504'd because `/api/ai` had no clock; the migration sweep called a healthy database broken
+
+> **Branch:** `claude/missing-public-tables-107e72`, cut from `staging` @ `ba6879f` (0 ahead / 0 behind
+> at session start); one commit, fast-forwarded onto `staging` — resolve it with
+> `git log --oneline origin/staging -1`. · **Target:** `staging` only — **`main` untouched.**
+> **Verification:** contract + integration **107 files / 1 943 passed** (+2 new, 14 skipped).
+> The new budget test was **confirmed RED against the pre-fix code** — without the signal it hangs the
+> full 10s, reproducing the production symptom exactly.
+
+### Why this session existed
+
+Two unrelated reports that turned out to share one shape: **our own limit reported as somebody else's
+fault** — the pattern this repo keeps having to undo.
+
+1. A `pg_tables` assertion in the production deployment runbook returned **37** where the doc said
+   **"Expect: 42"**.
+2. Template runs failed with *"The server did not complete this request (504)"* — reported as
+   **"still not fixed"** after the previous session's extract-budget commit (`ba6879f`).
+
+---
+
+### 1. The migration sweep asserted five tables that have never existed
+
+**Symptom.** `select count(*) … where tablename in (<42 names>)` returned 37 against a healthy database.
+
+**Root cause.** Five of the 42 names were never table names in any migration — verified by grepping all
+47 files in `supabase/migrations/` for `CREATE TABLE`:
+
+| Asserted | Reality |
+|---|---|
+| `user_settings` | Never existed. Settings live in `localStorage` (`datiq.*`) + `auth.users.user_metadata`. |
+| `plans` | Code (`pricingConfig.js`) + `pricing_config` jsonb, key `'plans'`. |
+| `coupons` | `pricing_config` key `'coupons'` + `coupon_counters` / `coupon_redemptions` / `admin_coupon_assignments`. |
+| `checkout_sessions` | The checkout snapshot is `invoice_drafts` (0016), keyed on the provider's `order_id`. |
+| `audit_comparisons` | Derived from `audits`; stored comparisons are `audit_benchmarks` + `audit_benchmark_members`. |
+
+🔴 **Why it mattered rather than being a curiosity.** The query is **committed in two places**, and one is
+§3.4 of [`INTELLIGENCE-WORKFLOWS-DEPLOYMENT-GUIDE.md`](../INTELLIGENCE-WORKFLOWS-DEPLOYMENT-GUIDE.md) —
+the "Post-Apply SQL Data Integrity Sweep" an operator runs **immediately after applying `0036`–`0044` to
+production**. `CLAUDE.md` still lists `0044`/`0045` as outstanding on production. The next person to
+apply the **RLS lockdown** would have got 37, read `Expect: 42`, and had to decide whether the security
+migration failed. A correct, complete apply reporting as a failure — on the one migration where guessing
+wrong is expensive.
+
+**Resolution.** Both copies now use a `left join` that **names** the missing tables instead of returning a
+number to diff by eye; a `count(*)` can only say a number is short, never which name is absent. The five
+phantoms are removed and a comment records that they were asserted here until 2026-09-05, that none has
+ever existed, and where each concern actually lives — so nobody restores them. **Verified against real
+Postgres** (PGlite): empty schema → exactly 37 missing rows; after creating `lists` and `audits` → 35,
+with those two correctly dropping off.
+
+⚠️ **The list is a hand-picked SUBSET** — the numbered migrations create **~87** public tables. Even
+corrected it proves "these 37 exist", not "all migrations applied". `npm run test:db` (47 migrations /
+463 assertions) and `npm run verify:rls` (15/15 at HTTP 401) are the mechanically-derived gates; neither
+can drift into asserting a table that does not exist.
+
+---
+
+### 2. Template runs 504'd: `/api/ai` had no wall-clock budget at any layer
+
+**Symptom.** Two template runs, both `0 cr` charged, both:
+> *"The server did not complete this request (504). This is a problem on our side, not with the page you
+> asked for — try again shortly."*
+
+- `trun_mtn` — Competitor Pricing Tracker → **notion.so**, est. 7 cr
+- `trun_mtn` — Due Diligence Brief → **datiq.app**, est. 9 cr, `focus: intro`
+
+🔴 **The second report is what cracked it.** `notion.so` is a hard target; **`datiq.app` is our own
+prerendered site**. Both failed identically, which **rules out a slow scrape** entirely.
+
+**Root cause.** The *shape* of the error localised it faster than any log. That message comes from
+[`apiClient.js:83`](../../src/lib/apiClient.js), which fires **only on an HTML body** — i.e. a platform
+kill. Our own budgeted refusals return **JSON**:
+
+- `/api/extract` is budgeted at 8s under a 10s kill and refuses with `code: "extract_timeout"` —
+  *"This page took too long to read."* **The user never saw that.**
+- **`/api/ai` had no budget, no signal, no timeout, at any layer.**
+
+`runChain` has always accepted a `signal` — the discoverability audit passes one
+(`lib/audit/aiEvaluator.js`). But `ai.js` called `runChain(safeMessages, max_tokens, { area, tier })`
+with **none**, so a serial fallback over three providers ran unbounded against a 10s kill.
+`lib/audit/deadline.js`'s own header names *"runChain had no timeout at any layer"* as one of the three
+causes of the 2026-08-26 audit 504. **That defect survived on the public endpoint.**
+
+🔴 **The previous commit made it worse, which is exactly why it read as "still not fixed".** Budgeting
+the scrape chain made the budget bind **earlier**, so the unbudgeted AI call that follows started with
+*less* headroom. A template run is 2-4 scrapes plus 1-2 AI calls; the scrapes got a budget, the AI calls
+did not. **A partial budget on a serial pipeline is worse than none** — it does not reduce total time,
+it only guarantees the unbudgeted stage starts later.
+
+**A second hole, same shape.** `extract.js` created a deadline (line 444) and passed it to
+`runScrapeChain`, but `extractStructuredWithAI` (called at lines 732 and 763) **never received it**. A
+capability run spent up to 8s scraping and then began an **unbounded** AI call — and on a pricing
+capability, a **second** one after the related-pages retry. Competitor Pricing Tracker on `notion.so`
+hits precisely that path: pricing is not on the homepage, so it takes the retry branch.
+
+**Resolution.**
+
+- **`/api/ai` budgeted** — `AI_BUDGET_MS`, default **8 000 ms**, sized for the STOCK 10s timeout in the
+  same conservative direction `AUDIT_BUDGET_MS` documents. Refuses with a JSON **504 / `ai_timeout`**
+  naming our limit and blaming nobody's page.
+- **`extract.js`'s AI enrichment budgeted** — deadline threaded into both call sites, `signal` into
+  `runChain`, `slice.clear()` in a `finally`.
+- **New reason `ai_budget_exhausted`**, added to **`INFRA_REASONS`**. Without that line `pickReason()`
+  would let a sibling capability's genuine `no_match` outrank it and tell the user their page has no
+  pricing when the truth is we never finished asking — the exact substitution that ordering exists to
+  prevent.
+
+⚠️ **The test caught a bug in the fix itself.** The first version keyed the 504 on `deadline.expired()`
+— but `sliceFor()` holds back a 600ms reserve, so **the slice aborts before the deadline expires**,
+`expired()` was still false, and the honest 504 silently degraded to a generic 502. Now keyed on
+`slice.signal.aborted`, which is ours by construction. Corrected in **both** files.
+
+---
+
+### 3. Verification evidence
+
+| Suite | Result |
+|---|---|
+| `netlify/__tests__/` (contract + integration) | **107 files / 1 943 passed / 14 skipped** |
+| New `ai-budget.test.js` | 2 passed; the timeout case **confirmed RED** pre-fix (hangs the full 10s) |
+| New sweep SQL | Executed against real Postgres via PGlite — 37 missing on an empty schema, 35 after creating 2 |
+| `node --check` | `ai.js`, `extract.js` both clean |
+
+⚠️ **Not run this session:** unit (jsdom), db-verify, build, prerender, e2e. The change is server-side
+only and `netlify/` contract tests cover it, but **the pre-push hook is the gate that matters** — see §5.
+
+---
+
+### 4. Files changed
+
+| File | Change |
+|---|---|
+| `netlify/functions/ai.js` | `AI_BUDGET_MS` + `createDeadline` + `signal` into `runChain`; JSON 504 `ai_timeout` |
+| `netlify/functions/extract.js` | `ENRICH_REASON.BUDGET_EXHAUSTED` (+ `INFRA_REASONS`); deadline threaded into `extractStructuredWithAI` and both call sites; `aiSliceMs()` policy hook |
+| `netlify/__tests__/ai-budget.test.js` | **NEW** — 2 regression tests |
+| `docs/INTELLIGENCE-WORKFLOWS-DEPLOYMENT-GUIDE.md` | §3.4 sweep rewritten as a self-diagnosing `left join` |
+| `docs/MANUAL-TEST-INTELLIGENCE-WORKFLOWS.md` | §16.1 same fix; dropped the false *"(reports supersedes public_reports)"* note — both tables exist, neither supersedes the other |
+
+---
+
+### 5. Open items for the next session / operator
+
+- [x] ✅ **`aiSliceMs()` implemented** (was a placeholder in the first commit). Adaptive, because the
+      right split genuinely differs by budget and the budget is not knowable from code: the **retry is
+      last so it takes everything left**; the **first call holds back the retry path only when doing so
+      still leaves itself a workable slice** (`AI_CALL_MIN_MS` 4s), otherwise it takes the lot — on a
+      tight budget, holding back would half-starve *both*, and one complete answer beats two aborted
+      ones. 9 tests, **4 confirmed RED** against the placeholder.
+- [x] ✅ **A THIRD unbudgeted stage, found while implementing the above.**
+      `RELATED_FETCH_TIMEOUT_MS` is **9 000 ms** — longer than the whole 8s default budget — and
+      `gatherRelatedPages` sat *between* the two budgeted model calls, and also ran *before* call #1 for
+      entity capabilities. New `relatedFetchMs()` clamps each fetch to what is left minus a model call
+      and returns **0 = skip**: pages we will have no time to reason over are not worth fetching. (The
+      fetches run through `Promise.allSettled`, so the cost is the slowest one, not their sum — the
+      reserve is sized accordingly, not from the 9s ceiling.)
+- [x] ✅ **Honesty guard on the skip path.** A gather skipped for budget returns `[]`, which is
+      **indistinguishable from "this page links to no pricing page at all"** — and that ambiguity
+      resolves to `no_match`, i.e. telling the customer their page has no pricing without ever opening
+      the page that carries it. The clock is now checked **before** an absence is attributed to them, and
+      sets `ai_budget_exhausted` instead.
+- [x] ✅ **`EXTRACT_BUDGET_MS` / `AI_BUDGET_MS` / `AUDIT_BUDGET_MS` all set to `20000` by the owner**, and
+      the function timeout raised to 26s. Confirmed via `netlify env:list`. ⚠️ **Netlify injects Function
+      env vars at DEPLOY time**, so they did not reach the already-published `710431f` build — the push
+      that carries this entry is what makes them live.
+- [ ] 🔴 **`SCRAPE_PROVIDER_ORDER` on staging is `direct,spider,jina` — Firecrawl is OMITTED and the
+      lowest-fidelity provider is FIRST.** Observed directly in `netlify env:list` this session, and
+      `FIRECRAWL_API_KEY` **is set and funded**, so a working paid provider is being skipped entirely.
+      `CLAUDE.md` already carries this warning from a previous session; it is still live. **This matters
+      for the reported bug specifically:** `direct` is a plain fetch with no JS execution and no
+      main-content isolation, so on a JS-rendered SPA like **notion.so** it returns a shell — the AI then
+      reasons over near-nothing, which is both slow (large empty corpus) and useless. The code default is
+      already quality-first (`firecrawl → spider → jina → direct`); **deleting the env var restores it.**
+      Left unchanged deliberately — editing a deployed environment is an operator decision, not a
+      session's.
+- [ ] ⚠️ **`netlify env:list --json` prints every secret in PLAINTEXT** — this session's transcript now
+      contains the Anthropic, OpenAI, Gemini, Firecrawl, Spider, Jina, Razorpay, Resend and Slack
+      credentials. Prefer `netlify env:get <KEY>` for a single value. Rotate if this transcript is shared
+      outside the owner.
+- [ ] **Re-run the template runs that failed** (Competitor Pricing Tracker → `notion.so`, Due Diligence
+      Brief → `datiq.app`) once deployed. Both should now either succeed or return a **JSON** failure
+      naming our limit — never the generic HTML-body 504.
+- [ ] ⚠️ **`main` moved WHILE this session ran** — the owner merged PRs #149 and #151, so `main` is now
+      `fe61743` and carries `0044`–`0047`. The standing *"`main` lacks `0044`"* warning is **RESOLVED**
+      and was retired on `staging` by a concurrent session (`98a89c2`) mid-flight; an earlier draft of
+      this entry restated it and was corrected before push. **But a migration FILE on a branch is not an
+      APPLIED migration** — confirm the production database itself with `npm run verify:rls -- --prod`
+      (401 = locked down, 200 = still exposed) before trusting it.
+- [ ] Consider whether §3.4's presence check should defer to `npm run verify:rls`, which proves the
+      thing that actually matters (those 15 tables **refuse** an anonymous read) rather than that they
+      exist. Left as-is deliberately — it depends on how the runbook is used.
+
+---
+
 ## 2026-09-04 (later) — Documentation & public-surface release for the intelligence workflows: five new use-case pages, six new help sections, and two classes of pre-existing integrity defect removed
 
 > **Branch:** `claude/docs-web-pages-update-y27y0d`, cut from `staging` @ `493e5a1` · **Target:** `staging`
@@ -165,6 +359,24 @@ gate on the substring `/admin` — a false positive in meaning but a real match,
 FAIL. Reworded to "owner, admin and member roles" rather than weakening the pattern. **The gate is
 right to be blunt here**; the cost of a false positive is one reworded sentence, and the cost of a false
 negative is the admin console described on a public page.
+
+### ⚠️ `staging` moved twice mid-session, and the second one changed what the docs said
+
+The first was watchlist page discovery (above). The second landed **after** the release
+was already merged and gate-green: `ba6879f`, 67 files — a shared `ExportMenu`, an
+Excel (.xls) export, and rule/ICP failure handling.
+
+Two things it made stale within minutes of publishing:
+
+- §16 said *"there are exactly **two** ways to get data out — Export ▾ and Push ▾"*. Push
+  is now a **Send** section inside one Export menu (Download / Copy / Send), on every
+  surface including workflow runs, which previously had no export at all.
+- **Excel (.xls) is a new format** and appeared in no format table anywhere.
+
+Corrected in §16, the changelog's batch-export line, and `llms.txt`. The point worth
+carrying: **a docs release is stale the moment a concurrent session merges**, so re-read
+`git log HEAD..origin/staging` for behaviour changes before the final push, not just for
+merge conflicts — the merge here was clean and the docs were wrong anyway.
 
 ### Open
 

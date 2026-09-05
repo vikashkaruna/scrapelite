@@ -52,7 +52,7 @@ const FEATURE_GROUPS = [
       "Failures are kept with the run, with a per-row reason and Retry",
       "Filter results by All / Success / Failed, and sort them",
       "Run history with intent + run count + delete per run",
-      "Combined export (CSV / PDF / Markdown / JSON) across all successful items",
+      "Combined export (CSV / Excel / PDF / Markdown / JSON) across all successful items",
       "Copy-to-clipboard for CSV / Markdown / JSON (plan-gated same as downloads)",
     ],
   },

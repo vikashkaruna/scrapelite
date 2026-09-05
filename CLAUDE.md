@@ -2,8 +2,60 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-04 (later) — THE INTELLIGENCE WORKFLOWS HAD SHIPPED AND NOT ONE PUBLIC SURFACE DESCRIBED THEM. FIXED — AND TWO CLASSES OF PRE-EXISTING INTEGRITY DEFECT REMOVED FROM LIVE PAGES ON THE WAY. ON `staging`; `main` DELIBERATELY UNTOUCHED.**
-> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> **Last updated: 2026-09-05 — TEMPLATE RUNS 504'd BECAUSE `/api/ai` HAD NO CLOCK, AND THE PRODUCTION MIGRATION SWEEP CALLED A HEALTHY DATABASE BROKEN. ON `staging`; `main` NOT TOUCHED BY THIS SESSION (it moved anyway — the owner merged PRs #149/#151 mid-flight, so `main` now carries `0044`–`0047` and the standing "main lacks 0044" warning is RESOLVED; see the Branches row).**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+>
+> 🔴 **`/api/ai` HAD NO WALL-CLOCK BUDGET AT ANY LAYER.** `runChain` is a serial fallback over three
+> providers and has always accepted a `signal` — the discoverability audit passes one — but `ai.js`
+> called it with **none**, unbounded against a function Netlify kills at 10s. `lib/audit/deadline.js`
+> names *"runChain had no timeout at any layer"* as a cause of the 2026-08-26 audit 504; **that defect
+> survived on the public endpoint.** 🔴 **AND THE PREVIOUS COMMIT MADE IT WORSE** — budgeting the scrape
+> chain made the budget bind EARLIER, so the unbudgeted AI call that follows started with *less*
+> headroom, which is why it was reported as "still not fixed". **A partial budget on a serial pipeline
+> is worse than none: it does not reduce total time, it only guarantees the unbudgeted stage starts
+> later.** Same hole in `extract.js` — a deadline was created and passed to `runScrapeChain` but
+> **never** to `extractStructuredWithAI`, so a capability run scraped for up to 8s and *then* began an
+> unbounded AI call, plus a SECOND one on the related-pages retry (the path a pricing capability takes
+> on any homepage whose plans live at `/pricing`). Both now budgeted; `AI_BUDGET_MS` / `EXTRACT_BUDGET_MS`
+> default to 8s for the STOCK 10s timeout.
+> ✅ **`aiSliceMs()` IS NOW IMPLEMENTED** (it shipped as a placeholder in the first commit): the retry is
+> last so it takes what is left; the first call holds back the retry path **only when doing so still
+> leaves itself a workable slice**, else it takes the lot — on a tight budget holding back half-starves
+> BOTH, and one complete answer beats two aborted ones.
+> 🔴 **A THIRD UNBUDGETED STAGE was found while implementing it:** `RELATED_FETCH_TIMEOUT_MS` is **9s —
+> longer than the whole 8s default budget** — and `gatherRelatedPages` sits BETWEEN the two model calls
+> (and runs before the first one for entity capabilities). Now clamped by `relatedFetchMs()`, where
+> **0 means skip**: pages we will have no time to reason over are not worth fetching.
+> ⚠️ **A gather skipped for BUDGET returns `[]`, which is indistinguishable from "this page links to no
+> pricing page at all"** — and that ambiguity resolved to `no_match`, i.e. telling a customer their page
+> has no pricing without ever opening the page that carries it. The clock is now checked BEFORE an
+> absence is attributed to them.
+> ✅ **`EXTRACT_BUDGET_MS` / `AI_BUDGET_MS` / `AUDIT_BUDGET_MS` = `20000`, function timeout 26s** (owner;
+> confirmed via `netlify env:list`). ⚠️ **Netlify injects Function env vars at DEPLOY time** — a var
+> changed in the UI reaches no function until the next deploy.
+> 🔴 **`SCRAPE_PROVIDER_ORDER` IS STILL `direct,spider,jina` ON STAGING** — Firecrawl omitted and the
+> lowest-fidelity provider first, while `FIRECRAWL_API_KEY` is set and funded. On a JS-rendered SPA like
+> notion.so `direct` returns a shell, so the AI reasons over near-nothing. The code default is already
+> quality-first (`firecrawl → spider → jina → direct`); **deleting the env var restores it.**
+> ⚠️ **THE ERROR'S SHAPE LOCALISED THIS, NOT A LOG:** our budgeted refusals are **JSON**, a platform kill
+> is **HTML**, and `apiClient.js`'s generic "(504) problem on our side" copy fires **only on an HTML
+> body** — so the message itself proved `/api/extract` was not the culprit. ⚠️ **The regression test
+> caught a bug in the fix:** `sliceFor()` holds back a 600ms reserve, so the slice aborts BEFORE
+> `deadline.expired()` is true and the honest 504 degraded to a generic 502 — key on
+> `slice.signal.aborted`, not `expired()`.
+>
+> 🔴 **THE PRODUCTION MIGRATION SWEEP ASSERTED FIVE TABLES THAT HAVE NEVER EXISTED.** §3.4 of the
+> deployment guide — the sweep run **immediately after applying `0036`–`0044` to production** — asserted
+> 42 names and returns **37**, because `user_settings`, `plans`, `coupons`, `checkout_sessions` and
+> `audit_comparisons` appear in no migration. **Production still needs `0044`/`0045`, so the next person
+> to apply the RLS lockdown would have read `Expect: 42`, seen 37, and had to decide whether the security
+> migration failed.** A correct apply reporting as a failure, on the one migration where guessing wrong
+> is expensive. Both copies now `left join` and **name** the misses — a `count(*)` can only say a number
+> is short, never which name is absent. ⚠️ **The list is a hand-picked SUBSET** (~87 public tables exist);
+> `npm run test:db` and `npm run verify:rls` are the mechanically-derived gates.
+>
+> Prior: 2026-09-04 (later) — THE INTELLIGENCE WORKFLOWS HAD SHIPPED AND NOT ONE PUBLIC SURFACE DESCRIBED THEM. FIXED — AND TWO CLASSES OF PRE-EXISTING INTEGRITY DEFECT REMOVED FROM LIVE PAGES ON THE WAY. ON `staging`; `main` DELIBERATELY UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) ·
 > [docs/internal/DatIQ-Product-Documentation-Internal.md §16](docs/internal/DatIQ-Product-Documentation-Internal.md).
 >
 > 🔴 **FOUR FABRICATED TESTIMONIALS, FROM NAMED PEOPLE, WERE LIVE ON THE USE-CASE PAGES.** *"Alex R., Head of Sales"*, *"Sarah M., Product Manager"*, *"Priya K., Market Research Lead"*, *"Jamie L., SEO Lead"* — alongside invented usage numbers (*"1,200+ CI analysts"*, *"50K+ competitor pages tracked"*). **This repo's own policy had hidden Home's testimonials behind `{false && …}` since R4 precisely because there was no real data behind them**; these four pages were built later and never got the same treatment. All four removed; the stat trios replaced with facts a reader can verify against `/pricing`.
@@ -219,9 +271,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-04: `staging` = **`1de5b34`** (workflow security lockdown + the three BRD engines). **`main` = `db8868c`, 17 behind and deliberately untouched** — the owner asked for staging only. ⚠️ **`main` therefore still carries `0041`–`0043` WITHOUT `0044`**, i.e. the unauthenticated-exposure defect, so it must not be deployed before those migrations reach the production database. **Do not trust this row without re-checking `git branch -r`** — it has gone stale for weeks at a time before. |
-| **Latest commit** | `1de5b34` on `staging`, 2026-09-04 — `describeCron` sub-daily fix, the last of 12 commits covering the RLS lockdown, the PRD 3/4/5 engines and their test coverage. `main` is at `db8868c`. Run `git log --oneline origin/main..origin/staging`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **45** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**461 assertions**), then runs the referral (17) and workflow (39) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-05: `staging` = **this session's merge commit** (the `/api/ai` + extract AI wall-clock budget fix, merged over a concurrent export/docs pass) — resolve it with `git log --oneline origin/staging -1`. **`main` = `fe61743`** — advanced by the OWNER via PRs #149 and #151, not by any session here. ✅ **The standing "`main` lacks `0044`" warning is RESOLVED** — `main` now carries `0044`–`0047`. ⚠️ **But a migration FILE on a branch is not an APPLIED migration**: confirm the production database itself with `npm run verify:rls -- --prod` (401 = locked down, 200 = still exposed). **Do not trust this row without re-checking `git branch -r`** — it went two sessions stale before the last correction, and `main` moved again mid-session twice running. |
+| **Latest commit** | On `staging`, 2026-09-05 — budgets `/api/ai` and the extract AI enrichment call (the template-run 504), and rewrites the production migration sweep that called a healthy database broken. `main` is at `fe61743`. Run `git log --oneline origin/main..origin/staging`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **47** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**463 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---
