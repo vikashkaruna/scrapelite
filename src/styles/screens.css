@@ -10591,3 +10591,14 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   border-radius: 7px; padding: 6px 9px; font-size: .86rem;
 }
 .admin-gallery-takedown-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Templates — "what we looked for" beside a null finding, so the reader can
+   check the search rather than just the conclusion. */
+.tpl-finding-sub { margin: 10px 0 6px; font-weight: 600; color: var(--text-1, #111827); }
+.tpl-looked-for { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.tpl-looked-for li {
+  font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border, #e5e7eb); color: var(--text-2, #4b5563);
+  background: var(--surface-2, #f9fafb);
+}
+.tpl-cell-none { color: var(--text-muted, #9ca3af); font-style: italic; }

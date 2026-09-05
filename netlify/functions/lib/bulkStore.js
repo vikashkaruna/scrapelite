@@ -94,7 +94,30 @@ export async function getList(listId, userId, env = process.env) {
     .eq("list_id", listId)
     .order("created_at", { ascending: true });
 
-  return { ...listData, records: recError ? [] : records || [] };
+  // ── THE JOBS THIS LIST HAS ────────────────────────────────────────────────
+  // The client used to FABRICATE a job id as `job_${listId}` and POST it to
+  // process_chunk, which answered 404 "Job not found" for every list ever
+  // created — jobs carry a database-generated id, and createList already
+  // returns the real one. Returning the jobs here means the UI can run the
+  // right one and, just as importantly, SHOW the user what jobs exist and what
+  // state they are in, instead of a dead button and an error naming an id the
+  // user never saw.
+  const { data: jobs } = await db
+    .from("enrichment_jobs")
+    .select("id, status, total_items, processed_items, created_at, updated_at")
+    .eq("list_id", listId)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  return {
+    ...listData,
+    records: recError ? [] : records || [],
+    jobs: jobs || [],
+    // The one a "Run enrichment" click should advance: the newest that still
+    // has work left, else the newest overall (so the UI can report it as done
+    // rather than silently doing nothing).
+    active_job_id: (jobs || []).find((j) => j.status !== "completed")?.id || null,
+  };
 }
 
 export async function createList(userId, { name, description = "", domains = [], persona = "sales" }, env = process.env) {

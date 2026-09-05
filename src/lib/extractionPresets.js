@@ -69,6 +69,18 @@ export const RELATED_PAGE_HINTS = {
   mission:    ["about", "mission", "company", "who-we-are", "story"],
   social:     [], // social links are almost always in the header/footer of every page
   custom:     [], // free-text prompts have no reliable subpage signal to key off
+
+  // ── TEMPLATE BUCKETS ──────────────────────────────────────────────────────
+  // Templates used to fall through to guessRelatedPageHintsKey(), a first-match
+  // regex written for free-text prompts typed on Home. Measured, it collapsed
+  // FIVE of seven seed templates to `pricing` — because every one of their
+  // extract prompts happens to mention a price — so the Due Diligence Brief,
+  // which wants team, founding year, customers and hiring signals, went and
+  // fetched /pricing and never opened /about. Customer Proof guessed null and
+  // read the homepage alone. A template knows what it is looking for; it should
+  // say so rather than have it inferred from its own prompt prose.
+  diligence:  ["about", "team", "company", "leadership", "careers", "jobs", "customers", "story"],
+  proof:      ["customers", "case-studies", "case-study", "testimonials", "stories", "success", "clients"],
 };
 
 // Best-effort guess at which RELATED_PAGE_HINTS bucket a free-text prompt

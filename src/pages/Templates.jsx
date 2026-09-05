@@ -559,6 +559,32 @@ function DomainField({ id, field, value, onChange }) {
   );
 }
 
+/** "case_studies" → "Case studies". Column headers come from schema keys. */
+function humanKey(k) {
+  const t = String(k).replace(/[_-]+/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * Resolve a block's `from:` against the run output.
+ *
+ * Two places a key can live, and both are legitimate:
+ *   - `output.<from>`        — written by a synthesis prompt (talking_points, questions)
+ *   - `output.fields.<from>` — a field of the structured extraction (case_studies, tiers)
+ *
+ * A block with no `from:` keeps the old behaviour and shows talking points, so
+ * templates written before `from:` was honoured do not go blank.
+ */
+function resolveBlockData(result, block) {
+  const out = result?.output || {};
+  if (!block.from) return result?.talking_points || out.talking_points || null;
+  const direct = out[block.from];
+  if (direct != null) return Array.isArray(direct) ? direct : [direct];
+  const field = out.fields?.[block.from];
+  if (field == null) return null;
+  return Array.isArray(field) ? field : [field];
+}
+
 function RunResult({ result, template, onShare }) {
   const blocks = template.output_schema?.blocks || [];
   const talkingPoints = result.talking_points || result.output?.talking_points || null;
@@ -590,18 +616,59 @@ function RunResult({ result, template, onShare }) {
         </section>
       )}
 
-      {/* Talking points were declared by every seed template's output_schema
-          and could never be populated, because nothing ran prompt_bundle
-          .talking_points. They render now. */}
-      {Array.isArray(talkingPoints) && talkingPoints.length ? (
-        <section className="tpl-block">
-          <h3>{blocks.find((b) => b.kind === "list")?.title || "Talking points"}</h3>
-          <ol className="tpl-points">
-            {talkingPoints.map((p, i) => <li key={i}>{p}</li>)}
-          </ol>
-          <p className="tpl-ai-note">Written by AI from the extracted facts below.</p>
-        </section>
-      ) : null}
+      {/* ── EVERY list AND table BLOCK, EACH RESOLVING ITS OWN `from:` ────────
+          Previously this rendered ONE list, took its TITLE from the first
+          `list` block in the schema, and filled it from `talking_points`
+          regardless of what that block's `from:` said — and no `table` branch
+          existed at all. So a Due Diligence Brief showed the heading
+          "Questions worth asking" over talking points it had no prompt for,
+          and Customer Proof's `{kind:"table", from:"case_studies"}` and
+          Competitor Pricing's `{from:"tiers"}` could never render on ANY site.
+          A block whose title is honoured but whose source is ignored is worse
+          than an unrendered one: it puts a promise on screen and fills it with
+          something else. */}
+      {blocks.filter((b) => b.kind === "list" || b.kind === "table").map((b, bi) => {
+        const rows = resolveBlockData(result, b);
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+        if (b.kind === "list") {
+          return (
+            <section className="tpl-block" key={`lst-${bi}`}>
+              <h3>{b.title || "Talking points"}</h3>
+              <ol className="tpl-points">
+                {rows.map((p, i) => <li key={i}>{typeof p === "string" ? p : JSON.stringify(p)}</li>)}
+              </ol>
+              <p className="tpl-ai-note">Written by AI from the extracted facts below.</p>
+            </section>
+          );
+        }
+        const cols = b.columns && b.columns.length
+          ? b.columns
+          : [...new Set(rows.flatMap((r) => (r && typeof r === "object" ? Object.keys(r) : [])))];
+        return (
+          <section className="tpl-block" key={`tbl-${bi}`}>
+            <h3>{b.title || "Details"}</h3>
+            <div className="tpl-cmp-wrap">
+              <table className="tpl-cmp">
+                <thead>
+                  <tr>{cols.map((c) => <th key={c}>{humanKey(c)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      {cols.map((c) => {
+                        const v = r && typeof r === "object" ? r[c] : (c === cols[0] ? r : null);
+                        // A blank cell is a FINDING — "they don't say" — not a
+                        // rendering gap, so it is labelled rather than empty.
+                        return <td key={c}>{v == null || v === "" ? <span className="tpl-cell-none">not stated</span> : String(v)}</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })}
 
       {/* The comparison grid — rows are companies, columns are the axes they
           were compared on. A blank cell here is a FINDING ("they don't say"),
@@ -661,12 +728,31 @@ function RunResult({ result, template, onShare }) {
           "we could not produce it" when the truth is "they do not publish it"
           reports a successful run as a failure — and contradicts the report
           immediately above, which says so in plain words. */}
+      {/* ── "WE FOUND NOTHING" IS ONLY A CREDIBLE FINDING IF WE SAY WHAT WE
+             LOOKED FOR ─────────────────────────────────────────────────────
+          A bare "this site doesn't publish it" asks the reader to take our
+          word for both the search and the conclusion. Naming the fields we
+          searched for — beside the Sources list that names the pages we read —
+          turns an assertion into something they can check and disagree with,
+          and it is the difference between a null result and a useless one. */}
       {result.informationAbsent && !result.partial ? (
-        <p className="tpl-finding">
-          <Icon name="info" size={14} />
-          This site doesn’t publish the information this template looks for — that itself is the
-          finding. Everything below was read from the pages listed under Sources.
-        </p>
+        <div className="tpl-finding">
+          <p>
+            <Icon name="info" size={14} />
+            This site doesn’t publish the information this template looks for — that itself is the
+            finding. Everything below was read from the pages listed under Sources.
+          </p>
+          {(template.extraction_schema?.fields || []).length ? (
+            <>
+              <p className="tpl-finding-sub">Searched for, and not stated anywhere we could read:</p>
+              <ul className="tpl-looked-for">
+                {template.extraction_schema.fields.map((f) => (
+                  <li key={f.name}>{humanKey(f.name)}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
       ) : null}
 
       {result.partial ? (
