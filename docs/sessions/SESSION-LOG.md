@@ -332,6 +332,24 @@ FAIL. Reworded to "owner, admin and member roles" rather than weakening the patt
 right to be blunt here**; the cost of a false positive is one reworded sentence, and the cost of a false
 negative is the admin console described on a public page.
 
+### ⚠️ `staging` moved twice mid-session, and the second one changed what the docs said
+
+The first was watchlist page discovery (above). The second landed **after** the release
+was already merged and gate-green: `ba6879f`, 67 files — a shared `ExportMenu`, an
+Excel (.xls) export, and rule/ICP failure handling.
+
+Two things it made stale within minutes of publishing:
+
+- §16 said *"there are exactly **two** ways to get data out — Export ▾ and Push ▾"*. Push
+  is now a **Send** section inside one Export menu (Download / Copy / Send), on every
+  surface including workflow runs, which previously had no export at all.
+- **Excel (.xls) is a new format** and appeared in no format table anywhere.
+
+Corrected in §16, the changelog's batch-export line, and `llms.txt`. The point worth
+carrying: **a docs release is stale the moment a concurrent session merges**, so re-read
+`git log HEAD..origin/staging` for behaviour changes before the final push, not just for
+merge conflicts — the merge here was clean and the docs were wrong anyway.
+
 ### Open
 
 - **Screenshots remain stale** (the standing readiness WARN). `/templates`, `/lists`, `/watchlists` and
