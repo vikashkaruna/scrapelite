@@ -93,3 +93,26 @@ export async function submitFeedback({ fieldChangeId, feedback, notes }) {
   }
   return res.json();
 }
+
+/**
+ * Run a real check now — the same differ the @hourly cron runs, against the
+ * live competitor pages.
+ *
+ * Replaces the old "Simulate Delta", which POSTed a hardcoded
+ * `$49/mo → $79/mo` through recordChange() and put invented competitor
+ * movement into the user's real change feed, indistinguishable from observed
+ * movement once written.
+ */
+export async function runNow(watchlistId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/watchlists", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "run_now", watchlistId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Check failed: ${res.status}`);
+  }
+  return res.json();
+}

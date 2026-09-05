@@ -16,7 +16,15 @@ import {
   createWatchlist,
   recordFieldChange,
   submitChangeFeedback,
+  serviceDb,
 } from "./lib/watchlistStore.js";
+// The SAME differ the @hourly cron runs. A "check now" that used a second
+// implementation would eventually disagree with the scheduled run, and a diff
+// that disagrees with itself makes every alert noise — the reasoning
+// watchlist-monitor.js already applies to sharing one evaluator.
+import { _internal as monitorInternals } from "./watchlist-monitor.js";
+import { chargeLedger } from "./lib/templateStore.js";
+import { createDeadline } from "./lib/audit/deadline.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -119,6 +127,77 @@ async function handlePost(event) {
       newValue,
     });
     return json(200, res);
+  }
+
+  // ── CHECK NOW ─────────────────────────────────────────────────────────────
+  // Replaces "Simulate Delta", which INSERTED A FABRICATED CHANGE
+  // ($49/mo → $79/mo) into the user's real change feed via record_change. That
+  // is invented competitor movement sitting in the same list as observed
+  // movement, indistinguishable once written, in the feed a RevOps user acts
+  // on. This repo has already had to undo exactly that shape twice (fixture
+  // prose badged ai_generated; firmographics invented from a domain string).
+  // A preview that fabricates is worse than no preview.
+  if (action === "run_now") {
+    const { watchlistId } = body;
+    if (!watchlistId) return json(400, { error: "watchlistId is required." });
+
+    // 404 not 403, so ids cannot be enumerated by probing — same rule as
+    // record_change directly below.
+    if (!(await assertWatchlistOwner(watchlistId, userId))) {
+      return json(404, { error: "Watchlist not found" });
+    }
+
+    const wl = await getWatchlist(watchlistId, userId);
+    if (!wl) return json(404, { error: "Watchlist not found" });
+    const targets = wl.targets || [];
+    if (targets.length === 0) {
+      return json(200, { ok: true, checked: 0, changes: 0, note: "This watchlist has no competitors to check yet." });
+    }
+
+    const db = serviceDb();
+    if (!db) return json(503, { error: "Monitoring is not configured.", code: "not_configured" });
+
+    // Budgeted from the REQUEST, like every other synchronous path here. The
+    // cron gets RUN_BUDGET_MS across a whole sweep; one user waiting on one
+    // watchlist gets less, and a target that does not fit is left for the
+    // scheduled run rather than taking the request down.
+    const deadline = createDeadline(Number(process.env.WATCHLIST_NOW_BUDGET_MS) || 18_000);
+    const deadlineAt = deadline.startedAt + deadline.totalMs;
+
+    const totals = { checked: 0, pages: 0, changes: 0, discovered: 0, skipped: 0, errors: [] };
+    for (const target of targets) {
+      if (deadline.expired()) { totals.skipped += 1; continue; }
+      try {
+        const sres = await monitorInternals.processTarget(db, wl, target, deadlineAt);
+        totals.checked += 1;
+        totals.pages += sres.pages;
+        totals.changes += sres.changes;
+        totals.discovered += sres.discovered || 0;
+        if (sres.errors?.length) totals.errors.push(...sres.errors.slice(0, 2));
+
+        // Charged for pages actually READ, exactly as the cron does — a target
+        // we could not fetch costs nothing.
+        if (sres.pages > 0) {
+          try {
+            await chargeLedger([{
+              user_id: userId,
+              reason: "monitor_check",
+              unit: "monitor_check",
+              credits: sres.pages,
+              quantity: sres.pages,
+              metadata: { watchlist_id: wl.id, target_id: target.id, domain: target.domain, on_demand: true },
+            }]);
+          } catch (e) {
+            // Bookkeeping never breaks the job — same rule as withJobRun.
+            totals.errors.push(`ledger: ${e.message}`);
+          }
+        }
+      } catch (e) {
+        totals.errors.push(`${target.domain}: ${e.message}`);
+      }
+    }
+
+    return json(200, { ok: true, ...totals });
   }
 
   if (action === "feedback") {

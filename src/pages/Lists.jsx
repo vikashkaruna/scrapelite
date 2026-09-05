@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
+import DomainListInput from "../components/DomainListInput.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
@@ -146,8 +147,22 @@ export default function Lists() {
     setJobProgress({ processed: 0, remaining: currentList.total_records });
 
     try {
-      // Find or start job
-      const jobId = currentList.id ? `job_${currentList.id}` : "job_demo";
+      // 🔴 THIS USED TO FABRICATE THE ID: `job_${currentList.id}`.
+      // Jobs carry a database-generated id and createList() already returns the
+      // real one, so the constructed id matched nothing and the server answered
+      // 404 "Job not found" for EVERY list — the button could never work once.
+      // The server now returns the list's jobs, and we advance the real one.
+      const jobId = currentList.active_job_id;
+      if (!jobId) {
+        // Nothing to advance is not an error. Say which of the two it is —
+        // there was never a job, or every job is finished — because those need
+        // different actions from the user.
+        const finished = (currentList.jobs || []).length > 0;
+        showToast(finished
+          ? "Every enrichment job for this list has already completed."
+          : "This list has no enrichment job yet — re-import the list to create one.");
+        return;
+      }
       await bulkApi.runFullJob(jobId, (p) => {
         setJobProgress(p);
       });
@@ -261,6 +276,33 @@ export default function Lists() {
                   </Button>
                 </div>
               </div>
+
+              {/* ── WHAT JOBS EXIST, AND WHERE THEY ARE ──────────────────────
+                  The Run Enrichment button used to be the only thing on this
+                  screen that knew jobs existed, and it referred to one by an id
+                  the user had never seen. Listing them makes the button's
+                  behaviour predictable: you can see whether there is work left
+                  before you click, and a completed list explains itself instead
+                  of looking broken. */}
+              {(currentList.jobs || []).length ? (
+                <div className="tpl-block" style={{ marginBottom: 14 }}>
+                  <h3 style={{ fontSize: "0.95rem", margin: "0 0 8px" }}>Enrichment jobs</h3>
+                  <ul className="tpl-looked-for" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                    {currentList.jobs.map((j) => (
+                      <li key={j.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <span>
+                          <strong>{j.status}</strong>
+                          {j.id === currentList.active_job_id ? " · next to run" : ""}
+                        </span>
+                        <span style={{ color: "var(--text-2)" }}>
+                          {(j.processed_items ?? 0)}/{j.total_items ?? 0} accounts
+                          {j.created_at ? ` · created ${new Date(j.created_at).toLocaleDateString()}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {/* Accounts Table */}
               <div style={{ overflowX: "auto" }}>
@@ -533,22 +575,16 @@ export default function Lists() {
 
                 <div>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                    Company Domains (CSV or pasted list)
+                    Company domains or names
                   </label>
-                  <textarea
+                  {/* A RevOps source list is almost always company NAMES out of
+                      a CRM export, not domains. Hand-resolving fifty of them is
+                      most of the work this screen exists to remove. */}
+                  <DomainListInput
                     rows={6}
-                    className="input"
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: 6,
-                      border: "1px solid var(--border)",
-                      fontFamily: "monospace",
-                      fontSize: "0.85rem",
-                    }}
-                    placeholder={`stripe.com\nlinear.app\ngithub.com`}
                     value={rawDomains}
-                    onChange={(e) => setRawDomains(e.target.value)}
+                    onChange={setRawDomains}
+                    placeholder={`stripe.com\nLinear\ngithub.com`}
                   />
                   <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: 4 }}>
                     {dedupedPreview.count > 0 ? (

@@ -74,19 +74,55 @@ export const SIGNAL_EVENTS = Object.freeze([
   "usage.limit_approaching",
 ]);
 
-/** Which trigger_source a rule must declare to see a given event kind. */
+/**
+ * Which trigger_source a rule must declare to see a given event kind.
+ *
+ * 🔴 EVERY VALUE HERE MUST BE ONE A RULE CAN ACTUALLY DECLARE.
+ * `findMatchingRules` filters `.eq("trigger_source", source)`, and
+ * `signal_rules.trigger_source` carries a CHECK constraint (migration 0043)
+ * limiting it to 'watchlist' | 'bulk_enrichment' | 'workflow_run'. This map
+ * previously emitted 'account', 'extraction', 'report' and 'system' — values
+ * no row can hold — so EIGHT of the ten canonical kinds queried for a
+ * trigger_source that cannot exist, matched zero rules every time, and
+ * dispatched nothing. Silently: an empty result is indistinguishable from
+ * "no rule wanted this event".
+ *
+ * The mirror of the same bug: 'bulk_enrichment' and 'workflow_run' are offered
+ * in the rule builder and accepted by the database, but NO event produced
+ * them — so a rule a user could save and see listed as active could never
+ * fire. Both halves are fixed by mapping onto the three real sources.
+ *
+ * `signalDispatch.parity.test.js` now asserts this map only emits values the
+ * CHECK constraint permits, and that every declarable source has at least one
+ * producing event. One side declares, the other executes — the failure is
+ * silence, so it needs a test rather than care.
+ *
+ * ⚠️ `integration.action_failed` and `usage.limit_approaching` are DELIBERATELY
+ * absent. They are platform faults, not user signals: routing an
+ * integration failure to a user rule whose action is that same integration is
+ * a loop, and neither is something a customer rule should act on. An unmapped
+ * kind returns no rules, which is the honest outcome — not an oversight.
+ */
 const EVENT_TO_SOURCE = Object.freeze({
   "monitor.change_detected": "watchlist",
   "monitor.digest_ready": "watchlist",
-  "account.score_changed": "account",
-  "enrichment.completed": "account",
-  "enrichment.failed": "account",
-  "extraction.completed": "extraction",
-  "report.shared": "report",
-  "report.viewed": "report",
-  "integration.action_failed": "system",
-  "usage.limit_approaching": "system",
+  // Produced by the bulk enricher and the ICP scorer.
+  "account.score_changed": "bulk_enrichment",
+  "enrichment.completed": "bulk_enrichment",
+  "enrichment.failed": "bulk_enrichment",
+  // Produced by template/extraction runs and the sharing surface.
+  "extraction.completed": "workflow_run",
+  "report.shared": "workflow_run",
+  "report.viewed": "workflow_run",
 });
+
+/** Kinds that deliberately route to no user rule, with the reason. */
+export const UNROUTED_EVENTS = Object.freeze({
+  "integration.action_failed": "A failed integration is a platform fault; routing it to a rule whose action is that same integration would loop.",
+  "usage.limit_approaching": "A billing signal belongs on an account surface, not in a customer's routing rules.",
+});
+
+export { EVENT_TO_SOURCE };
 
 /** One event may fire at most this many rules. See rule 4 above. */
 export const MAX_ACTIONS_PER_EVENT = 10;

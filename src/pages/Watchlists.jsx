@@ -109,23 +109,33 @@ export default function Watchlists() {
     }
   };
 
-  const handleSimulateChange = async () => {
-    if (!currentWatchlist || !currentWatchlist.targets?.length) return;
-    const target = currentWatchlist.targets[0];
+  // 🔴 REPLACES "Simulate Delta", WHICH FABRICATED DATA.
+  // It POSTed a hardcoded "$49/mo → $79/mo" through recordChange(), writing an
+  // invented competitor movement into the SAME feed as observed movement —
+  // indistinguishable once stored, in the list a RevOps user routes real
+  // outbound off. A preview that fabricates is worse than no preview.
+  const [checking, setChecking] = useState(false);
+  const handleCheckNow = async () => {
+    if (!currentWatchlist || !currentWatchlist.targets?.length) {
+      showToast("Add a competitor to this watchlist first.");
+      return;
+    }
+    setChecking(true);
     try {
-      await watchlistApi.recordChange({
-        watchlistId: currentWatchlist.id,
-        targetId: target.id,
-        targetDomain: target.domain,
-        field: "starter_price",
-        category: "pricing",
-        oldValue: "$49/mo",
-        newValue: "$79/mo",
-      });
-      showToast("Simulated pricing delta recorded.");
+      const r = await watchlistApi.runNow(currentWatchlist.id);
+      // Report what actually happened, including the honest nothing: a first
+      // sighting is a BASELINE and never alerts, so "0 changes" on a new
+      // watchlist is correct and must not read as a failure.
+      const bits = [`${r.checked} competitor${r.checked === 1 ? "" : "s"} checked`];
+      if (r.pages) bits.push(`${r.pages} page${r.pages === 1 ? "" : "s"} read`);
+      bits.push(r.changes ? `${r.changes} change${r.changes === 1 ? "" : "s"} found` : "no changes since last check");
+      if (r.skipped) bits.push(`${r.skipped} left for the scheduled run`);
+      showToast(bits.join(" · "));
       loadCurrentWatchlist(currentWatchlist.id);
     } catch (err) {
       showToast(err.message);
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -169,8 +179,9 @@ export default function Watchlists() {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
-                <Button variant="secondary" onClick={handleSimulateChange}>
-                  <Icon name="zap" size={14} /> Simulate Delta
+                <Button variant="secondary" onClick={handleCheckNow} disabled={checking}>
+                  <Icon name={checking ? "loader" : "zap"} size={14} className={checking ? "spin" : undefined} />
+                  {checking ? "Checking…" : "Check now"}
                 </Button>
               </div>
             </div>

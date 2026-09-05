@@ -2,7 +2,96 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-05 — TEMPLATE RUNS 504'd BECAUSE `/api/ai` HAD NO CLOCK, AND THE PRODUCTION MIGRATION SWEEP CALLED A HEALTHY DATABASE BROKEN. ON `staging`; `main` NOT TOUCHED BY THIS SESSION (it moved anyway — the owner merged PRs #149/#151 mid-flight, so `main` now carries `0044`–`0047` and the standing "main lacks 0044" warning is RESOLVED; see the Branches row).**
+> **Last updated: 2026-09-05 (latest) — `/workflows` PHASE 2, AND THE ROUTING VOCABULARY THAT MADE 8 OF 10 EVENT KINDS UNDELIVERABLE. ON `staging`.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+>
+> 🔴 **EIGHT OF THE TEN CANONICAL EVENT KINDS COULD NEVER FIRE A RULE.**
+> `signalDispatch.findMatchingRules` selects `.eq("trigger_source", source)` where `source`
+> comes from `EVENT_TO_SOURCE` — which emitted **`account`, `extraction`, `report`,
+> `system`**, while migration `0043`'s CHECK constraint limits the column to
+> **`watchlist` | `bulk_enrichment` | `workflow_run`**. Eight kinds queried for a value **no
+> row can hold**, matched zero rules every time, and dispatched nothing — **silently**, since
+> an empty result is indistinguishable from "no rule wanted this". 🔴 **THE MIRROR IMAGE:**
+> `bulk_enrichment` and `workflow_run` are offered in the rule builder and accepted by the
+> database while **no event produced them**, so a rule a user saved and saw listed as ACTIVE
+> could never fire. Only `monitor.*` ever routed. ✅ Fixed; ⚠️ **`integration.action_failed`
+> and `usage.limit_approaching` are DELIBERATELY unrouted** in a new `UNROUTED_EVENTS` map
+> **with a written reason each** (routing an integration failure to a rule whose action is
+> that integration is a loop) — a kind absent from both maps would look identical to one
+> deliberately excluded. ✅ **`signalDispatch.parity.test.js` PARSES THE CHECK CONSTRAINT OUT
+> OF THE MIGRATION** rather than restating it: a copy would drift exactly as `EVENT_TO_SOURCE`
+> did. 2 of 7 confirmed RED.
+>
+> ✅ **`/workflows` PHASE 2.** **Dry trace** — pick something that could happen, see which
+> rules fire and **which condition turned the others away**. ⚠️ **Uses `evaluateSignalRule`,
+> the RUNTIME'S OWN evaluator, never a copy**, and **sample field names lifted from the real
+> producers** — invented names would report every condition unmatched and send the user to
+> "fix" a correct rule. **It sends nothing**, and says so. **Inline repair** — the trigger
+> source is **derived from the issue, never asked**; a rule created here emails the
+> signed-in address (no connection needed) and ships with **no conditions, stated on the
+> form**, because a rule that silently matched *nothing* would reproduce the very defect this
+> screen surfaces. ⚠️ **Not offered for importing an account list** — a three-field version
+> of a paste-a-CRM-export flow would be worse than the screen that exists. **Guide** — ⚠️
+> **ONE step, not a checklist**, in pipeline order, stating the MODEL as well as the action.
+>
+> ⚠️ **BOTH PHASES ARE PINNED ONLY AGAINST SYNTHETIC FIXTURES** — staging is 401-gated, so no
+> session has opened `/workflows` on a populated account. **Confirm Phase 1's diagnosis
+> against real data, then re-check Phase 2.** ⚠️ **The routing fix is reasoned from the schema
+> and pinned by test, NOT observed firing** — watch the first real `account.score_changed`.
+>
+> **Verified:** **348 files / 5441 passed** (+49) · build · prerender · e2e smoke.
+>
+> Prior: 2026-09-05 (later) — THE INTELLIGENCE TEMPLATES PROMISED MORE THAN THE RUNNER AND RENDERER COULD DELIVER; PLUS `/workflows`, REAL WATCHLIST CHECKS, AND A FABRICATION PATH REMOVED. ON `staging` AT `fc64c00`.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+>
+> 🔴 **THE RENDERER IGNORED `from:` ENTIRELY, AND `table` WAS NEVER IMPLEMENTED.** `Templates.jsx`
+> filled every `list` block from `talking_points` **whatever the block's `from:` said**. Since `tiers`,
+> `case_studies` and `named_customers` are **real extraction fields**, Competitor Pricing and Customer
+> Proof were extracting correctly and **discarding it at the last step** — those tables never rendered
+> on ANY site. Due Diligence showed the heading "Questions worth asking" over talking points it has no
+> prompt for. **A block whose TITLE is honoured but whose SOURCE is ignored is worse than an unrendered
+> one: it puts a promise on screen and fills it with something else.**
+> 🔴 **`questions` WAS DECLARED AND NEVER RUN** — same defect already fixed once for
+> `summarize`/`talking_points`, missed because only one template declares it.
+> 🔴 **NO TEMPLATE DECLARED WHICH SUBPAGES IT NEEDS.** `CAPABILITY_SCHEMAS` is keyed by *capability*
+> and templates by *template key* — **disjoint sets** — so every template fell through to
+> `guessRelatedPageHintsKey()`, a first-match regex for free-text prompts. **Measured, it sent FIVE of
+> seven templates to `pricing`** because every extract prompt mentions a price: **Due Diligence went
+> looking for team and founding year on `/pricing` and never opened `/about`**, and Customer Proof
+> guessed nothing and read the homepage alone. Fixed with explicit `related_key` + two new hint buckets
+> (`diligence`, `proof`) gathered UP FRONT. ✅ **`templateContract.test.js`** pins declare-vs-execute as
+> a parity test, like `cron-registry-parity`.
+> ⚠️ **CUSTOMER PROOF ON datiq.app IS CORRECT TO RETURN NOTHING** — DatIQ publishes no named customers
+> or testimonials, deliberately (four fabricated ones were removed and Home's stay behind
+> `{false && …}`). That fix is a business action, not code.
+>
+> 🔴 **"Simulate Delta" WAS FABRICATING DATA.** It POSTed a hardcoded **`$49/mo → $79/mo`** through
+> `record_change`, writing **invented competitor movement into the same feed as observed movement** —
+> indistinguishable once stored, in the list a RevOps user routes real outbound off. Replaced with a
+> real **"Check now"** running the **same differ the `@hourly` cron runs** (a preview that disagrees
+> with the scheduled run makes every diff noise), budgeted, 404-not-403, charged for pages actually read.
+>
+> 🔴 **"Run Enrichment" COULD NEVER WORK, FOR ANY LIST.** `Lists.jsx` **fabricated** its job id as
+> `` `job_${listId}` ``; jobs carry a database-generated id, so the server answered **404 "Job not
+> found"** every time — and `createList()` already returns the real one. `getList()` now returns the
+> list's jobs + `active_job_id`, and the jobs are shown on screen.
+>
+> ✅ **NEW `/workflows`** — Lists → Watchlists → Rules is ONE pipeline shown as three unrelated screens,
+> so **the system could be silently inert while every screen looked correct**. PURE model shared by
+> React and `netlify/` (like `entitlementModel`). ⚠️ **THE ISSUES LEAD, THE DIAGRAM IS CONTEXT** — a
+> picture of what is wired is decoration. ⚠️ **EDGES ARE BY KIND, NEVER ID-TO-ID**: `trigger_source`
+> names a *class* of event, so an id edge would imply a precision the schema does not have. Private
+> prefix, added in all four places `page-ownership.test.mjs` checks.
+> ✅ **Template runs report through the SHARED dock** (`TemplateRunProvider` above the router, like
+> `BatchRunProvider`) — they used to live in the page body, so navigating away hid AND abandoned them.
+> ✅ **The multi-domain box accepts company NAMES.** ⚠️ **Suggested, never auto-applied** — enriching
+> the WRONG company produces firmographics that look valid and describe somebody else.
+>
+> **Verified:** **346 files / 5413 passed** (+38) · build · prerender 28 · e2e smoke **136** · 8/8
+> gates green. ⚠️ **`/workflows` has never run against a real POPULATED account** — staging is
+> 401-gated, so its issue detection is pinned only against synthetic data.
+>
+> Prior: 2026-09-05 — TEMPLATE RUNS 504'd BECAUSE `/api/ai` HAD NO CLOCK, AND THE PRODUCTION MIGRATION SWEEP CALLED A HEALTHY DATABASE BROKEN.
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 >
 > 🔴 **`/api/ai` HAD NO WALL-CLOCK BUDGET AT ANY LAYER.** `runChain` is a serial fallback over three
@@ -271,8 +360,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-05: `staging` = **this session's merge commit** (the `/api/ai` + extract AI wall-clock budget fix, merged over a concurrent export/docs pass) — resolve it with `git log --oneline origin/staging -1`. **`main` = `fe61743`** — advanced by the OWNER via PRs #149 and #151, not by any session here. ✅ **The standing "`main` lacks `0044`" warning is RESOLVED** — `main` now carries `0044`–`0047`. ⚠️ **But a migration FILE on a branch is not an APPLIED migration**: confirm the production database itself with `npm run verify:rls -- --prod` (401 = locked down, 200 = still exposed). **Do not trust this row without re-checking `git branch -r`** — it went two sessions stale before the last correction, and `main` moved again mid-session twice running. |
-| **Latest commit** | On `staging`, 2026-09-05 — budgets `/api/ai` and the extract AI enrichment call (the template-run 504), and rewrites the production migration sweep that called a healthy database broken. `main` is at `fe61743`. Run `git log --oneline origin/main..origin/staging`. |
+| **Branches** | As of 2026-09-05 (latest): `staging` = **`add61d9`** (`/workflows` Phase 2 + the signal-routing vocabulary fix). **`main` = `d701f78`**, advanced by the OWNER via PR #153, not by any session here. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`** — `main` has moved mid-session three sessions running. |
+| **Latest commit** | `add61d9` on `staging`, 2026-09-05 — `/workflows` Phase 2 (dry trace, inline repair, guide) and the `EVENT_TO_SOURCE` fix that made 8 of 10 event kinds deliverable. `main` is at `d701f78`. Run `git log --oneline origin/main..origin/staging`. |
 | **Verify the schema locally** | `npm run test:db` — applies all **47** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**463 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 

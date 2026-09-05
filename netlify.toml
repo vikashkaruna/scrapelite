@@ -565,6 +565,14 @@
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]
+  for = "/workflows"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/workflows/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
   for = "/collections"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"

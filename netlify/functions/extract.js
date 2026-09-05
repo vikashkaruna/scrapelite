@@ -92,7 +92,13 @@ const RELATED_FETCH_TIMEOUT_MS = 9000;
 // rather than after a failure. `social` is absent deliberately — profile links
 // sit in the header/footer of every page, so a subpage adds cost and nothing
 // else. `custom` is absent because free text has no reliable subpage signal.
-const ENTITY_CAPABILITIES = new Set(["contacts", "leadership", "mission", "pricing"]);
+// "diligence" and "proof" are TEMPLATE buckets (see RELATED_PAGE_HINTS). They
+// belong here for the same reason the others do: what they look for is spread
+// across a company's surface, so the subpages must be gathered BEFORE the one
+// model call rather than only on the ABSENT retry — a homepage that yields a
+// couple of fields is not ABSENT, so the retry never fires and /about is never
+// opened.
+const ENTITY_CAPABILITIES = new Set(["contacts", "leadership", "mission", "pricing", "diligence", "proof"]);
 
 // ── Reason vocabulary ───────────────────────────────────────────────────────
 // Split out of the single overloaded "no_match", which used to mean any of:

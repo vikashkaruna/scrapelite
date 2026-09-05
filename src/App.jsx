@@ -73,6 +73,7 @@ import Templates from "./pages/Templates.jsx";
 import Lists from "./pages/Lists.jsx";
 import Watchlists from "./pages/Watchlists.jsx";
 import SignalRules from "./pages/SignalRules.jsx";
+import Workflows from "./pages/Workflows.jsx";
 import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import Discoverability from "./pages/Discoverability.jsx";
@@ -95,6 +96,7 @@ import PendingReferralFlush from "./components/PendingReferralFlush.jsx";
 import PendingWorkspaceInviteFlush from "./components/PendingWorkspaceInviteFlush.jsx";
 import PendingAuditFlush from "./components/PendingAuditFlush.jsx";
 import { BatchRunProvider } from "./components/BatchRunProvider.jsx";
+import { TemplateRunProvider } from "./components/TemplateRunProvider.jsx";
 
 
 // Redirect /docs to the static help site
@@ -255,6 +257,7 @@ function Shell() {
           <Route path="/lists"                         element={<Lists />} />
           <Route path="/watchlists"                    element={<Watchlists />} />
           <Route path="/rules"                         element={<SignalRules />} />
+          <Route path="/workflows"                     element={<Workflows />} />
           {/* PRD 2 — a shared report. NOT under a private prefix: this page
               exists to be opened by someone without a DatIQ account, which is
               the whole acquisition loop. Indexability is decided per report
@@ -356,9 +359,15 @@ export default function App() {
                           survives navigation and reports through the same
                           global dock as a single extraction. */}
                       <BatchRunProvider>
-                        <div className="app-root">
-                          <Shell />
-                        </div>
+                        {/* Same reasoning one level down: a template run is
+                            tens of seconds of scrapes and AI calls, and used to
+                            live in the page body with its own progress bar — so
+                            navigating away hid it and abandoned it. */}
+                        <TemplateRunProvider>
+                          <div className="app-root">
+                            <Shell />
+                          </div>
+                        </TemplateRunProvider>
                       </BatchRunProvider>
                     </ExtractionProvider>
                   </BillingProvider>

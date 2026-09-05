@@ -35,6 +35,9 @@ import { TEMPLATE_STATUS } from "./templateModel.js";
 export const SEED_TEMPLATES = [
   {
     template_key: "account_brief",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "mission",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Sales-ready Account Brief",
     persona: "sales",
@@ -96,6 +99,9 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "competitor_pricing_tracker",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "pricing",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Competitor Pricing Tracker",
     persona: "competitive-intel",
@@ -188,6 +194,9 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "due_diligence_brief",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "diligence",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Pre-Meeting Due Diligence Brief",
     persona: "founder-vc",
@@ -244,6 +253,9 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "customer_proof_extractor",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "proof",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Customer Proof Extractor",
     persona: "competitive-intel",
@@ -294,6 +306,9 @@ export const SEED_TEMPLATES = [
     // like-for-like rather than four differently-shaped summaries), then writes
     // a brief about where you actually stand and what to change.
     template_key: "ai_visibility_brief",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "pricing",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "AI Visibility & Competitive Brief",
     persona: "competitive-intel",
@@ -370,6 +385,9 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "bulk_icp_enrichment",
+    // Which subpages this template needs read. Explicit, because the guess
+    // from prompt prose collapsed five of seven templates to "pricing".
+    related_key: "mission",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Bulk ICP Account Enrichment",
     persona: "sales",

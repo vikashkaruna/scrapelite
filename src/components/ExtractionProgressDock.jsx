@@ -17,6 +17,7 @@
 // has navigated away from wherever they launched it.
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useBatchRun } from "./BatchRunProvider.jsx";
+import { useTemplateRun } from "./TemplateRunProvider.jsx";
 import Icon from "./Icon.jsx";
 
 const STEPS = ["Fetching webpage", "Parsing structure", "Extracting links", "Summarizing with AI"];
@@ -72,6 +73,8 @@ export default function ExtractionProgressDock() {
   const { job, dismissJob, viewJob } = useExtraction();
   const batch = useBatchRun();
   const batchJob = batch?.job;
+  const tpl = useTemplateRun();
+  const tplJob = tpl?.job;
 
   // A batch run takes precedence: it's the longer-lived job, and the two can
   // only overlap if the user launched a single extraction mid-batch.
@@ -106,6 +109,39 @@ export default function ExtractionProgressDock() {
           <button type="button" className="extract-dock-cancel" onClick={batch.cancelBatchRun}>
             Cancel
           </button>
+        </div>
+      </DockShell>
+    );
+  }
+
+  // A template run reports here too, so the product has ONE progress surface
+  // for every long-running job rather than three visual languages for the same
+  // shape of work. Its percent is REAL — executeRun() emits stage progress —
+  // so unlike the single-extraction branch the bar is not cosmetic pacing.
+  if (tplJob) {
+    const done = tplJob.status === "done" || tplJob.status === "error";
+    const failed = tplJob.status === "error";
+    return (
+      <DockShell
+        done={done}
+        title={failed ? "Template run failed" : done ? "Template run complete" : `Running ${tplJob.title || "template"}…`}
+        subtitle={tplJob.message || "Working…"}
+        subtitleIcon={failed ? "alert-circle" : done ? "check" : "layers-2"}
+        pct={tplJob.percent || 0}
+        onDismiss={tpl.clearTemplateRun}
+        footer={done && !failed && (
+          <div className="extract-dock-actions">
+            <button type="button" className="extract-dock-view" onClick={tpl.viewTemplateRun}>
+              View report <Icon name="arrow-right" size={14} />
+            </button>
+          </div>
+        )}
+      >
+        <div className="extract-dock-step extract-dock-step-row">
+          <span>
+            <Icon name="loader" size={12} className="spin" />
+            {tplJob.percent || 0}%
+          </span>
         </div>
       </DockShell>
     );

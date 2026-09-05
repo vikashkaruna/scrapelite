@@ -154,6 +154,7 @@ export const PRIVATE_PREFIXES = [
   "/lists",
   "/watchlists",
   "/rules",
+  "/workflows",
   "/collections",
   "/payment",
   "/reset-password",

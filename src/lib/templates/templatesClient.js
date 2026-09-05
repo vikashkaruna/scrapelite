@@ -332,7 +332,21 @@ export async function executeRun({ template, input, onProgress }) {
       customPrompt: template.prompt_bundle?.extract,
       // A template whose key matches a first-class capability gets that
       // capability's JSON Schema and its related-page gathering for free.
-      enrichKey: CAPABILITY_SCHEMAS[template.template_key] ? template.template_key : undefined,
+      //
+      // ⚠️ `related_key` is the fallback and it is LOAD-BEARING. No seed
+      // template key matches a CAPABILITY_SCHEMAS key — the schemas are keyed
+      // by capability (contacts/pricing/…), the templates by template key, and
+      // the two sets are disjoint — so before this every template fell through
+      // to guessRelatedPageHintsKey(), a first-match regex written for
+      // free-text prompts typed on Home. Measured, it sent FIVE of seven
+      // templates to `pricing` because their extract prompts all mention a
+      // price: the Due Diligence Brief went looking for team, founding year
+      // and customers on /pricing and never opened /about, and Customer Proof
+      // guessed nothing at all and read the homepage alone. A template knows
+      // what it needs; it now says so.
+      enrichKey: CAPABILITY_SCHEMAS[template.template_key]
+        ? template.template_key
+        : (template.related_key || undefined),
     });
   } catch (e) {
     events.push({ unit: "page", credits: 1, failed: true });
@@ -381,17 +395,28 @@ export async function executeRun({ template, input, onProgress }) {
     // they are the instruction, the page is the evidence.
     pageText: `${inputContext(template, input)}${scraped?.page_text || ""}`,
   };
-  // Concurrent: they read the same facts and neither depends on the other.
-  const [summary, talkingPoints] = await Promise.all([
+  // Concurrent: they read the same facts and none depends on the others.
+  //
+  // ⚠️ `questions` USED TO BE DECLARED AND NEVER RUN. The Due Diligence Brief
+  // ships a `questions` prompt and an output block titled "Questions worth
+  // asking" that reads `from: "questions"` — and nothing executed the prompt or
+  // populated the key, so the block could never appear. Exactly the defect this
+  // file already fixed once for `summarize`/`talking_points`; `questions` was
+  // missed because only that template declares it. A prompt in a seed is a
+  // promise on a screen — if it is not run, do not ship it in the bundle.
+  const [summary, talkingPoints, questions] = await Promise.all([
     synthesise(bundle.summarize, { ...ctx, label: "summarize" }),
     synthesise(bundle.talking_points, { ...ctx, label: "talking_points" }),
+    synthesise(bundle.questions, { ...ctx, label: "questions" }),
   ]);
 
   // Charge per AI call that actually LANDED. A failed synthesis is free.
   if (summary) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
   if (talkingPoints) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
+  if (questions) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
 
   if (talkingPoints) output.talking_points = splitPoints(talkingPoints);
+  if (questions) output.questions = splitPoints(questions);
 
   // 🔴 "WE FAILED" AND "THIS SITE DOES NOT PUBLISH THAT" ARE DIFFERENT
   // ANSWERS, AND ONLY ONE OF THEM IS OUR FAULT.
