@@ -18,6 +18,87 @@
 
 ---
 
+## 2026-09-05 (latest) — `/workflows` Phase 2, and the routing vocabulary that made 8 of 10 event kinds undeliverable
+
+> **Branch:** `claude/missing-public-tables-107e72` → **`staging`**. `main` untouched.
+> **Verified:** full suite **348 files / 5441 passed** (+49 new) · build · prerender · e2e smoke.
+
+### 1. 🔴 THE FIND: eight of ten canonical event kinds could never fire a rule
+
+Uncovered while building the dry-run trace — which is the point of building one.
+
+`signalDispatch.findMatchingRules` selects rules with `.eq("trigger_source", source)`,
+where `source` comes from `EVENT_TO_SOURCE`. That map emitted **`account`**,
+**`extraction`**, **`report`** and **`system`** — and migration `0043` puts a CHECK
+constraint on `signal_rules.trigger_source` limiting it to
+**`watchlist` | `bulk_enrichment` | `workflow_run`**. So eight kinds queried for a
+value **no row can hold**, matched zero rules every time, and dispatched nothing.
+**Silently** — an empty result is indistinguishable from "no rule wanted this event".
+
+**The mirror image was equally bad:** `bulk_enrichment` and `workflow_run` are offered
+in the rule builder and accepted by the database, but **no event produced them** — so a
+rule a user saved and saw listed as *active* could never fire. Only
+`monitor.change_detected` / `monitor.digest_ready` ever routed at all.
+
+✅ Fixed by mapping onto the three real sources. ⚠️ **`integration.action_failed` and
+`usage.limit_approaching` are deliberately left UNROUTED**, in a new `UNROUTED_EVENTS`
+map **with a written reason each**: routing an integration failure to a rule whose
+action is that same integration is a loop, and a billing signal belongs on an account
+surface. A kind absent from both maps would look identical to one deliberately excluded,
+which is why the reason is required rather than optional.
+
+✅ **`signalDispatch.parity.test.js`** — 7 assertions, **2 confirmed RED** against the
+old map, naming the exact impossible pairs. It **parses the CHECK constraint out of the
+migration** rather than restating it: a copy here would drift from the database exactly
+as `EVENT_TO_SOURCE` did. Same shape as `cron-registry-parity`.
+
+### 2. Phase 2 of `/workflows`
+
+**Dry trace** (`traceEvent`) — pick something that could happen, see which rules fire and
+**which condition turned the others away**. ⚠️ **Uses `evaluateSignalRule`, the runtime's
+own evaluator, not a copy** — a preview that disagrees with production is worse than none,
+the same rule that makes "Check now" share the cron's differ. ⚠️ **Sample field names are
+lifted from the real producers** (`watchlist-monitor.js` emits
+`domain/company_name/watchlist/field/category/old_value/new_value/materiality/source_url`);
+invented names would report every condition unmatched and send the user to "fix" a rule
+that was already correct. **It sends nothing** — no Slack, no email, no ledger — and the
+panel says so, because a preview a user is afraid to click is a preview nobody uses.
+
+**Inline repair** (`InlineFix`) — create the missing link without leaving the diagnosis.
+The trigger source is **derived from the issue, never asked**: the card already knows which
+upstream has no listener. A rule created here uses **email to the signed-in address**, the
+one destination needing no connection or webhook, so it works the moment it is saved.
+⚠️ It ships with **no conditions — stated on the form** — because the evaluator treats
+that as "matches everything", and a rule that silently matched *nothing* would reproduce
+the exact defect this screen exists to surface. **Deliberately not offered for importing
+an account list**: that is a paste-a-CRM-export flow with dedupe and a credit estimate,
+and a three-field version inside a card would be a worse copy of a screen that exists.
+
+**The guide** (`nextStep`) — ⚠️ **ONE step, not a checklist**: a user landing on an empty
+pipeline with five equally-weighted suggestions does none of them. The order is the order
+the pipeline runs, because a rule with nothing upstream is not progress — it is the
+unreachable rule this screen warns about. It states the **model** as well as the action,
+since this pipeline's failure mode is things that look configured and do nothing.
+
+### 3. Open items
+
+- [ ] 🔴 **CONFIRM PHASE 1 AGAINST REAL DATA, THEN RE-CHECK PHASE 2.** Both phases are
+      pinned only against synthetic fixtures — staging is 401-gated, so no session here has
+      opened `/workflows` on a populated account. The derived counts (`execution_count` from
+      `rule_executions`, `change_count` from `field_changes`) are the likeliest to surprise.
+      **Open it with real lists, watchlists and rules; confirm the issue list matches what
+      you know to be true; then exercise the inline repair and the trace.**
+- [ ] ⚠️ **The routing fix is reasoned from the schema and pinned by test, NOT observed
+      firing.** Watch the first real `account.score_changed` / `extraction.completed` —
+      those two paths have, on this analysis, never dispatched anything.
+- [ ] **Adding targets to an EXISTING watchlist has no endpoint** — `InlineFix` says so and
+      links out rather than pretending. A small `add_targets` action would close it.
+- [ ] The rule builder offers operators `equals / not_equals / in / gte / lte / contains /
+      not_empty`. A test here initially guessed `greater_than`; the trace surfaces the real
+      vocabulary, but the builder could name it more plainly.
+
+---
+
 ## 2026-09-05 (later) — The intelligence templates promised more than the runner and renderer could deliver; plus the orchestration screen, real watchlist checks, and a fabrication path removed
 
 > **Branch:** `claude/missing-public-tables-107e72` → **`staging` = `fc64c00`**, deployed `ready`.

@@ -24,6 +24,10 @@
 // precision the schema does not have, and would show a rule as "connected" to
 // one watchlist when it in fact fires for all of them.
 
+// The runtime's OWN evaluator, used by the dry-run trace below. Never a copy:
+// a preview that disagrees with production is worse than no preview.
+import { evaluateSignalRule } from "../rules/ruleModel.js";
+
 /** Stage identifiers, in pipeline order. */
 export const STAGES = ["lists", "watchlists", "rules"];
 
@@ -180,7 +184,17 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
   const nodes = [
     ...lists.map((l) => ({ stage: "lists", id: l.id, label: l.name, meta: `${l.completed_records || 0}/${l.total_records || 0} enriched` })),
     ...watchlists.map((w) => ({ stage: "watchlists", id: w.id, label: w.name, meta: `${w.targets?.length || 0} tracked · ${w.cadence || "daily"}` })),
-    ...rules.map((r) => ({ stage: "rules", id: r.id, label: r.name, meta: `${labelForTrigger(r.trigger_source)} → ${r.action_type}` })),
+    // Rule nodes carry their CONDITIONS so the dry-run trace can evaluate them
+    // in the browser with the runtime's own evaluator — no extra round trip, and
+    // no second implementation to drift.
+    ...rules.map((r) => ({
+      stage: "rules", id: r.id, label: r.name,
+      meta: `${labelForTrigger(r.trigger_source)} → ${r.action_type}`,
+      status: r.status,
+      trigger_source: r.trigger_source,
+      action_type: r.action_type,
+      conditions: r.conditions || [],
+    })),
   ];
 
   // One edge per (upstream stage → rule) pair that is actually wired by kind.
@@ -222,4 +236,210 @@ function fixForTrigger(t) {
   if (t === "watchlist") return { label: "Create a watchlist", href: "/watchlists?new=1" };
   if (t === "bulk_enrichment") return { label: "Import a list", href: "/lists?new=1" };
   return { label: "Run a template", href: "/templates" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2 — dry-run trace, and the guide that tells a user what to do next.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+/**
+ * Sample events for the dry-run trace.
+ *
+ * ⚠️ THE FIELD NAMES ARE COPIED FROM THE REAL PRODUCERS, NOT INVENTED.
+ * watchlist-monitor.js emits domain/company_name/watchlist/field/category/
+ * old_value/new_value/materiality/confidence/source_url; a sample carrying
+ * different keys would make every field condition read as unmatched and send
+ * the user editing a rule that was correct. `source` is present because
+ * evaluateSignalRule gates on it exactly as the runtime does.
+ */
+export const SAMPLE_EVENTS = Object.freeze([
+  {
+    id: "price_change",
+    source: "watchlist",
+    label: "A competitor raised a price",
+    kind: "monitor.change_detected",
+    payload: {
+      source: "watchlist",
+      domain: "rival.com",
+      company_name: "Rival Inc",
+      watchlist: "Close competitors",
+      field: "starter_price",
+      category: "pricing",
+      old_value: "$49/mo",
+      new_value: "$79/mo",
+      materiality: "high",
+      confidence: 1,
+      source_url: "https://rival.com/pricing",
+    },
+  },
+  {
+    id: "copy_change",
+    source: "watchlist",
+    label: "A competitor reworded a page (low materiality)",
+    kind: "monitor.change_detected",
+    payload: {
+      source: "watchlist",
+      domain: "rival.com",
+      company_name: "Rival Inc",
+      watchlist: "Close competitors",
+      field: "hero_headline",
+      category: "positioning",
+      old_value: "Ship faster",
+      new_value: "Ship faster, together",
+      materiality: "low",
+      confidence: 1,
+      source_url: "https://rival.com",
+    },
+  },
+  {
+    id: "good_fit",
+    source: "bulk_enrichment",
+    label: "An account scored well against your ICP",
+    kind: "account.score_changed",
+    payload: {
+      source: "bulk_enrichment",
+      domain: "prospect.com",
+      company_name: "Prospect Co",
+      icp_score: 82,
+      industry: "Software",
+      employee_range: "51-200",
+    },
+  },
+  {
+    id: "poor_fit",
+    source: "bulk_enrichment",
+    label: "An account scored poorly against your ICP",
+    kind: "account.score_changed",
+    payload: {
+      source: "bulk_enrichment",
+      domain: "smallco.com",
+      company_name: "Small Co",
+      icp_score: 21,
+      industry: "Retail",
+      employee_range: "1-10",
+    },
+  },
+  {
+    id: "run_done",
+    source: "workflow_run",
+    label: "A template run finished",
+    kind: "extraction.completed",
+    payload: {
+      source: "workflow_run",
+      domain: "target.com",
+      template: "Competitor Pricing Tracker",
+      status: "completed",
+    },
+  },
+]);
+
+/**
+ * Dry-run: which of the user's rules would this event fire, and why not?
+ *
+ * ⚠️ USES `evaluateSignalRule` — THE RUNTIME'S OWN EVALUATOR, NOT A COPY.
+ * A preview that disagrees with production is worse than no preview: the user
+ * edits a rule until the preview is happy and the real dispatch still ignores
+ * it. Same reasoning that makes the watchlist "Check now" share the cron's
+ * differ, and the rule sandbox share the dispatcher's evaluator.
+ *
+ * @returns {{event, matched:Array, skipped:Array, wouldFire:number}}
+ */
+export function traceEvent(rules = [], sample) {
+  if (!sample) return { event: null, matched: [], skipped: [], wouldFire: 0 };
+
+  const matched = [];
+  const skipped = [];
+
+  for (const rule of rules) {
+    // A paused rule discards matching events, so it is reported as skipped WITH
+    // its reason rather than silently omitted — "why didn't this fire?" is the
+    // whole question this screen answers.
+    if (rule.status === "paused") {
+      skipped.push({ rule, matches: false, reasons: ["This rule is paused, so matching events are discarded."] });
+      continue;
+    }
+    const verdict = evaluateSignalRule(rule, sample.payload);
+    (verdict.matches ? matched : skipped).push({ rule, ...verdict });
+  }
+
+  return { event: sample, matched, skipped, wouldFire: matched.length };
+}
+
+/**
+ * The single most valuable next action, given where the pipeline actually is.
+ *
+ * ⚠️ ONE STEP, NOT A CHECKLIST. A user arriving at an empty pipeline with five
+ * equally-weighted suggestions does none of them. The order below is the order
+ * the pipeline runs in, because a rule with nothing upstream is not a step
+ * forward — it is the unreachable rule this screen exists to warn about.
+ */
+export function nextStep(graph) {
+  const c = graph?.counts || { lists: 0, watchlists: 0, rules: 0 };
+  const issues = graph?.issues || [];
+  const has = (code) => issues.some((i) => i.code === code);
+
+  if (c.lists === 0 && c.watchlists === 0) {
+    return {
+      id: "start",
+      title: "Start by telling DatIQ what you care about",
+      body: "Two ways in, and you can do either first: a list of accounts you sell to, or a watchlist of competitors you want to hear about when they change.",
+      actions: [
+        { label: "Import an account list", href: "/lists?new=1", primary: true },
+        { label: "Watch a competitor", href: "/watchlists?new=1" },
+      ],
+    };
+  }
+
+  if (has("list_not_enriched")) {
+    return {
+      id: "enrich",
+      title: "Your accounts are imported but not enriched",
+      body: "Enrichment is what produces the firmographics and ICP scores everything downstream reads. Until it runs, there is nothing for a rule to act on.",
+      actions: [{ label: "Run enrichment", href: "/lists", primary: true }],
+    };
+  }
+
+  if (has("watchlist_no_targets")) {
+    return {
+      id: "targets",
+      title: "Your watchlist has no competitors in it",
+      body: "Add at least one domain. The first check records a baseline and never alerts — changes appear from the second check onward.",
+      actions: [{ label: "Add competitors", href: "/watchlists", primary: true }],
+    };
+  }
+
+  if (c.rules === 0) {
+    return {
+      id: "route",
+      title: "Nothing acts on what you are collecting yet",
+      body: "A signal rule is the last link: when something changes, it decides who hears about it — Slack, email, a webhook, or HubSpot. Without one, the work runs and the result reaches nobody.",
+      actions: [{ label: "Create your first rule", href: "/rules?new=1", primary: true }],
+    };
+  }
+
+  if (has("rule_unreachable") || has("rule_upstream_idle")) {
+    return {
+      id: "reconnect",
+      title: "A rule is listening for something you do not produce",
+      body: "Rules listen for a kind of event — competitor changes, account enrichment, or template runs. One of yours has no matching source, so it can never fire.",
+      actions: [{ label: "See which", href: "#wf-issues", primary: true }],
+    };
+  }
+
+  if (has("rule_never_fired")) {
+    return {
+      id: "verify",
+      title: "Everything is wired — check the conditions match reality",
+      body: "A rule that has never fired usually has conditions narrower than the events actually arriving. Run a dry trace below to see exactly which condition rejects them.",
+      actions: [{ label: "Run a dry trace", href: "#wf-trace", primary: true }],
+    };
+  }
+
+  return {
+    id: "done",
+    title: "Your pipeline is complete",
+    body: "Accounts and competitors are feeding rules that fire. Use the dry trace below whenever you change a rule, to confirm it still matches the events you expect.",
+    actions: [{ label: "Run a dry trace", href: "#wf-trace", primary: true }],
+  };
 }

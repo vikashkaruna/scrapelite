@@ -10663,3 +10663,112 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   .wf-arrow { right: 50%; top: auto; bottom: -13px; transform: translateX(50%) rotate(90deg); }
   .wf-issue { flex-wrap: wrap; }
 }
+
+/* ── /workflows Phase 2 — guide, inline repair, dry trace ──────────────────
+   The guide states the MODEL as well as the action: this pipeline's failure
+   mode is things that look configured and do nothing, so a button whose
+   consequence the user cannot predict is the wrong affordance. */
+.wf-guide {
+  display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;
+  padding: 18px; margin-bottom: 24px; border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--accent-soft, #eef2ff);
+}
+.wf-guide-kicker {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--accent, #4f46e5);
+}
+.wf-guide-main h2 { margin: 6px 0 6px; font-size: 1.1rem; }
+.wf-guide-main p { margin: 0 0 12px; color: var(--text-2); max-width: 54ch; }
+.wf-guide-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.wf-guide-cta, .wf-guide-alt {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  padding: 7px 13px; border-radius: 8px;
+}
+.wf-guide-cta { background: var(--accent, #4f46e5); color: var(--accent-contrast, #fff); }
+.wf-guide-alt { border: 1px solid var(--border, #e5e7eb); color: var(--text-1, #111827); background: var(--surface, #fff); }
+.wf-guide-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; counter-reset: wfstep; }
+.wf-guide-steps li {
+  display: flex; flex-direction: column; padding: 9px 11px; border-radius: 8px;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb);
+}
+.wf-guide-steps li::before {
+  counter-increment: wfstep; content: counter(wfstep);
+  font-size: 10px; font-weight: 700; color: var(--accent, #4f46e5);
+}
+.wf-guide-steps strong { font-size: 13px; }
+.wf-guide-steps span { font-size: 12px; color: var(--text-2); }
+
+.wf-issue-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.wf-inline-open {
+  background: none; border: 0; cursor: pointer; padding: 0;
+  font-size: 12px; font-weight: 600; color: var(--accent, #4f46e5);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.wf-inline { width: 100%; }
+.wf-inline-form {
+  margin-top: 8px; padding: 12px; border-radius: 9px; width: 100%;
+  border: 1px solid var(--border, #e5e7eb); background: var(--surface-2, #f9fafb);
+}
+.wf-inline-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 9px; }
+.wf-inline-label input, .wf-inline-label textarea {
+  display: block; width: 100%; margin-top: 3px; padding: 7px 9px;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
+  font: inherit; font-size: 13px; font-weight: 400; background: var(--surface, #fff);
+  color: var(--text-1, #111827);
+}
+.wf-inline-note {
+  display: flex; align-items: flex-start; gap: 5px;
+  font-size: 12px; color: var(--text-2); margin: 0 0 10px;
+}
+.wf-inline-actions { display: flex; align-items: center; gap: 10px; }
+.wf-inline-cancel {
+  background: none; border: 0; cursor: pointer; padding: 0;
+  font-size: 12px; color: var(--text-2); text-decoration: underline;
+}
+
+.wf-trace { margin-top: 28px; }
+.wf-trace h2 { font-size: 1.05rem; display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.wf-trace-safe {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: var(--success-soft, #d1fae5); color: var(--success, #059669);
+}
+.wf-trace-intro { margin: 0 0 12px; color: var(--text-2); max-width: 66ch; }
+.wf-trace-picker { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+.wf-trace-chip {
+  font-size: 12px; padding: 6px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff);
+  color: var(--text-1, #111827);
+}
+.wf-trace-chip.on { border-color: var(--accent, #4f46e5); background: var(--accent-soft, #eef2ff); font-weight: 600; }
+.wf-trace-verdict { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.wf-trace-fire { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--success, #059669); }
+.wf-trace-none { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--warning, #d97706); }
+.wf-trace-kind { font-size: 12px; color: var(--text-2); }
+.wf-trace-kind code { font-size: 11px; }
+.wf-trace-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.wf-trace-row {
+  display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px;
+  border-radius: 9px; border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff); opacity: .72;
+}
+.wf-trace-row-on { opacity: 1; border-color: var(--success, #059669); }
+.wf-trace-row-body { flex: 1; min-width: 0; }
+.wf-trace-row-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.wf-trace-row-meta { font-size: 11px; color: var(--text-2); }
+.wf-trace-reasons { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: var(--text-2); }
+.wf-trace-payload { margin-top: 12px; font-size: 12px; }
+.wf-trace-payload summary { cursor: pointer; color: var(--accent, #4f46e5); font-weight: 600; }
+.wf-trace-payload pre {
+  margin: 8px 0; padding: 10px; border-radius: 8px; overflow-x: auto;
+  background: var(--surface-2, #f9fafb); border: 1px solid var(--border, #e5e7eb);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .wf-guide { grid-template-columns: 1fr; }
+  .wf-issue-side { align-items: stretch; width: 100%; }
+}

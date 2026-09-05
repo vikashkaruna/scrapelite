@@ -2,7 +2,46 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-05 (later) — THE INTELLIGENCE TEMPLATES PROMISED MORE THAN THE RUNNER AND RENDERER COULD DELIVER; PLUS `/workflows`, REAL WATCHLIST CHECKS, AND A FABRICATION PATH REMOVED. ON `staging` AT `fc64c00`.**
+> **Last updated: 2026-09-05 (latest) — `/workflows` PHASE 2, AND THE ROUTING VOCABULARY THAT MADE 8 OF 10 EVENT KINDS UNDELIVERABLE. ON `staging`.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+>
+> 🔴 **EIGHT OF THE TEN CANONICAL EVENT KINDS COULD NEVER FIRE A RULE.**
+> `signalDispatch.findMatchingRules` selects `.eq("trigger_source", source)` where `source`
+> comes from `EVENT_TO_SOURCE` — which emitted **`account`, `extraction`, `report`,
+> `system`**, while migration `0043`'s CHECK constraint limits the column to
+> **`watchlist` | `bulk_enrichment` | `workflow_run`**. Eight kinds queried for a value **no
+> row can hold**, matched zero rules every time, and dispatched nothing — **silently**, since
+> an empty result is indistinguishable from "no rule wanted this". 🔴 **THE MIRROR IMAGE:**
+> `bulk_enrichment` and `workflow_run` are offered in the rule builder and accepted by the
+> database while **no event produced them**, so a rule a user saved and saw listed as ACTIVE
+> could never fire. Only `monitor.*` ever routed. ✅ Fixed; ⚠️ **`integration.action_failed`
+> and `usage.limit_approaching` are DELIBERATELY unrouted** in a new `UNROUTED_EVENTS` map
+> **with a written reason each** (routing an integration failure to a rule whose action is
+> that integration is a loop) — a kind absent from both maps would look identical to one
+> deliberately excluded. ✅ **`signalDispatch.parity.test.js` PARSES THE CHECK CONSTRAINT OUT
+> OF THE MIGRATION** rather than restating it: a copy would drift exactly as `EVENT_TO_SOURCE`
+> did. 2 of 7 confirmed RED.
+>
+> ✅ **`/workflows` PHASE 2.** **Dry trace** — pick something that could happen, see which
+> rules fire and **which condition turned the others away**. ⚠️ **Uses `evaluateSignalRule`,
+> the RUNTIME'S OWN evaluator, never a copy**, and **sample field names lifted from the real
+> producers** — invented names would report every condition unmatched and send the user to
+> "fix" a correct rule. **It sends nothing**, and says so. **Inline repair** — the trigger
+> source is **derived from the issue, never asked**; a rule created here emails the
+> signed-in address (no connection needed) and ships with **no conditions, stated on the
+> form**, because a rule that silently matched *nothing* would reproduce the very defect this
+> screen surfaces. ⚠️ **Not offered for importing an account list** — a three-field version
+> of a paste-a-CRM-export flow would be worse than the screen that exists. **Guide** — ⚠️
+> **ONE step, not a checklist**, in pipeline order, stating the MODEL as well as the action.
+>
+> ⚠️ **BOTH PHASES ARE PINNED ONLY AGAINST SYNTHETIC FIXTURES** — staging is 401-gated, so no
+> session has opened `/workflows` on a populated account. **Confirm Phase 1's diagnosis
+> against real data, then re-check Phase 2.** ⚠️ **The routing fix is reasoned from the schema
+> and pinned by test, NOT observed firing** — watch the first real `account.score_changed`.
+>
+> **Verified:** **348 files / 5441 passed** (+49) · build · prerender · e2e smoke.
+>
+> Prior: 2026-09-05 (later) — THE INTELLIGENCE TEMPLATES PROMISED MORE THAN THE RUNNER AND RENDERER COULD DELIVER; PLUS `/workflows`, REAL WATCHLIST CHECKS, AND A FABRICATION PATH REMOVED. ON `staging` AT `fc64c00`.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 >
 > 🔴 **THE RENDERER IGNORED `from:` ENTIRELY, AND `table` WAS NEVER IMPLEMENTED.** `Templates.jsx`

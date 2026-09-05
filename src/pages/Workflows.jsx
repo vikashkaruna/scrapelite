@@ -12,7 +12,9 @@ import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import SignedInRequired from "../components/SignedInRequired.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
-import { SEVERITY, STAGES } from "../lib/workflows/workflowGraph.js";
+import { SEVERITY, STAGES, nextStep } from "../lib/workflows/workflowGraph.js";
+import InlineFix from "../components/workflows/InlineFix.jsx";
+import TracePanel from "../components/workflows/TracePanel.jsx";
 import { getWorkflowGraph } from "../lib/workflows/workflowClient.js";
 
 const STAGE_META = {
@@ -27,6 +29,48 @@ const SEV_META = {
   [SEVERITY.INFO]: { label: "For information", icon: "info", cls: "wf-sev-info" },
 };
 
+/**
+ * The one-page brief: what this pipeline is, and the single next thing to do.
+ *
+ * ⚠️ It states the MODEL, not just the action. "Create a rule" without
+ * "a rule decides who hears about it" leaves the user clicking a button whose
+ * consequence they cannot predict — and this pipeline's whole failure mode is
+ * things that look configured and do nothing.
+ */
+function GuidePanel({ step }) {
+  if (!step) return null;
+  return (
+    <section className="wf-guide">
+      <div className="wf-guide-main">
+        <span className="wf-guide-kicker"><Icon name="compass" size={13} /> Start here</span>
+        <h2>{step.title}</h2>
+        <p>{step.body}</p>
+        <div className="wf-guide-actions">
+          {(step.actions || []).map((a) => (
+            a.href.startsWith("#") ? (
+              <a key={a.label} href={a.href} className={a.primary ? "wf-guide-cta" : "wf-guide-alt"}>
+                {a.label} <Icon name="arrow-right" size={13} />
+              </a>
+            ) : (
+              <Link key={a.label} to={a.href} className={a.primary ? "wf-guide-cta" : "wf-guide-alt"}>
+                {a.label} <Icon name="arrow-right" size={13} />
+              </Link>
+            )
+          ))}
+        </div>
+      </div>
+
+      {/* The mental model, once, in plain words. Three screens that each make
+          sense alone still do not explain that they are one pipeline. */}
+      <ol className="wf-guide-steps">
+        <li><strong>Lists</strong><span>Accounts you sell to. Enrichment scores them against your ICP.</span></li>
+        <li><strong>Watchlists</strong><span>Competitors you track. A check finds what changed since last time.</span></li>
+        <li><strong>Rules</strong><span>What happens when either moves — Slack, email, webhook or HubSpot.</span></li>
+      </ol>
+    </section>
+  );
+}
+
 export default function Workflows() {
   const { user } = useAuth();
   const [graph, setGraph] = useState(null);
@@ -37,6 +81,10 @@ export default function Workflows() {
   // prefix, and the noindex is enforced in the four places the page-ownership
   // invariant checks (site-routes.mjs, netlify.toml's X-Robots-Tag, robots.txt,
   // and index.html's inline guard) rather than from inside the component.
+
+  // Bumped by an inline fix so the diagnosis re-runs in place. Creating the
+  // missing link and then still being told it is missing would undo the point.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -52,7 +100,7 @@ export default function Workflows() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, reloadKey]);
 
   if (!user) {
     return (
@@ -79,8 +127,16 @@ export default function Workflows() {
 
       {graph && (
         <>
+          {/* ── START HERE ────────────────────────────────────────────────
+              ONE step, not a checklist. A user landing on an empty pipeline
+              with five equally-weighted suggestions does none of them; the
+              order in nextStep() is the order the pipeline runs, because a
+              rule with nothing upstream is not progress, it is the unreachable
+              rule this screen exists to warn about. */}
+          <GuidePanel step={nextStep(graph)} />
+
           {/* ── WHAT IS BROKEN ────────────────────────────────────────────── */}
-          <section className="wf-issues">
+          <section className="wf-issues" id="wf-issues">
             <h2>
               What needs your attention
               {graph.counts.blocking > 0 && <span className="wf-badge wf-sev-blocking">{graph.counts.blocking} blocking</span>}
@@ -105,11 +161,14 @@ export default function Workflows() {
                         </div>
                         <p className="wf-issue-detail">{i.detail}</p>
                       </div>
-                      {i.fix && (
-                        <Link to={i.fix.href} className="wf-issue-fix">
-                          {i.fix.label} <Icon name="arrow-right" size={13} />
-                        </Link>
-                      )}
+                      <div className="wf-issue-side">
+                        {i.fix && (
+                          <Link to={i.fix.href} className="wf-issue-fix">
+                            {i.fix.label} <Icon name="arrow-right" size={13} />
+                          </Link>
+                        )}
+                        <InlineFix issue={i} graph={graph} onDone={() => setReloadKey((k) => k + 1)} />
+                      </div>
                     </li>
                   );
                 })}
@@ -158,6 +217,11 @@ export default function Workflows() {
               );
             })}
           </section>
+
+          {/* ── WOULD IT FIRE? ────────────────────────────────────────────
+              The question that comes straight after "is it connected", and
+              which had no answer anywhere in the product before this. */}
+          <TracePanel rules={graph.nodes.filter((n) => n.stage === "rules")} />
 
           <p className="wf-foot">
             Rules listen for a <em>kind</em> of event, not a specific list or watchlist — so a rule
