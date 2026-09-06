@@ -32,6 +32,46 @@
 | **TS-10 Live staging, unauthenticated (security)** | 15 | 15 | 0 | ✅ **`0044` applied — verified live, see §7** |
 
 **Automated total: 5 819 assertions across 9 suites, 0 failures. TS-10 verified live: 15/15.**
+
+---
+
+### Update — 2026-09-06
+
+**Operator setup is complete.** Every item that was outstanding in the
+`WORKFLOW-BRANCH-READINESS` checklist (now deleted, because two of its entries
+were actively wrong) has been closed and, where checkable, verified rather than
+asserted:
+
+| Item | State | Evidence |
+|---|---|---|
+| P1 — production RLS (`0044`) | ✅ | `npm run verify:rls -- --prod` → 15/15 HTTP **401** on `sikkfxysjhirmtwkumpt` |
+| P2 — `SCRAPE_PROVIDER_ORDER` removed | ✅ | absent from production / branch-deploy / deploy-preview; 69 keys visible for production, so the absence is real and not an empty result |
+| N1–N3 — Netlify env for n8n | ✅ | operator-confirmed |
+| K1–K2 — instance reachable, 18 workflows imported | ✅ | operator-confirmed |
+| K3 — credentials + instance env | ✅ | **one** credential (`datiq-slack-monitoring`), not four — see `N8N-DEPLOYMENT-STATUS.md`; plus 13 `$env` vars on the n8n host |
+| K4 — workflows activated | ✅ | operator-confirmed |
+| C1/C4 — dispatch cron scheduled + guarded | ✅ | `workflow-orchestrator-cron` in netlify.toml **and** AUTOMATION_JOBS; source-parity assertions added to `cron-registry-parity` |
+| E1 — `/admin/automation` browser coverage | ✅ | `e2e/smoke/admin-automation.spec.js`, 6 specs |
+| E2 — orchestrator route wiring | ✅ | `orchestrator-route-parity.test.js`, 5 assertions |
+
+🔴 **Three defects were found while closing these, none of which were on any
+list.** (1) The v2 dispatch loop had **never once run on a cron** — it declared
+its schedule in source, which is ignored for v1 handlers, and was in neither
+registry; `cron-registry-parity` passed vacuously because absent-from-both reads
+as agreement. (2) Scheduling it would have **404'd n8n's `/ping` and `/dispatch`
+callbacks**, because a scheduled Netlify function loses HTTP access — hence the
+cron/HTTP split. (3) Five "Run now" buttons were wired to nothing, four of them
+pre-existing.
+
+⚠️ **Nothing below is yet verified against real traffic.** The pipeline is
+configured and the cron is scheduled, but no session has watched an event travel
+`pending → processing → done`. That is T1–T6 in
+**`POST-DEPLOYMENT-MANUAL-TEST.md`**, which supersedes the T-list that used to
+live in the deleted readiness doc.
+
+**Still outstanding, all operator-run:** S-01 (a real credential), M1 (the 158-check
+feature pass), M2 (`/workflows` on a populated account — never done), M3 (watch a
+real `account.score_changed` route), T1–T6 (n8n end to end).
 TS-9 remains operator-run: account creation and password handling are outside what this agent may
 do. **Its scope shrank from 24 cases to 4**, in two steps:
 

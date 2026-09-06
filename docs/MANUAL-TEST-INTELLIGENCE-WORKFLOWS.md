@@ -4,8 +4,19 @@
 > PRD 3 (Bulk Account Intelligence & Activation Funnel), PRD 4 (Competitor Watchlists & Change Intelligence),
 > PRD 5 (Native Signal Routing), Workflow Run History Modal, Smart Company Resolver, and Integration Recipes.
 > **Source Plan:** `docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md` (derived from `DatIQ - Persona Specific Templates & Shareable Reports.pdf`).
-> **Status:** ALL PHASES (0–7) SHIPPED to `staging`. 100% Green Staging Gate (Run #33829281244). Netlify deploy `ready`.
-> **Automated coverage:** 4,800+ unit, contract, integration, and database tests green. This document covers the interactive, end-to-end, and manual verification steps that cannot be asserted purely by static mocks.
+> **Status:** ALL PHASES (0–7) SHIPPED. Updated **2026-09-06**.
+> **Automated coverage:** unit 3 016 · contract 2 006 · integration 432 · db 463+17+56 · e2e smoke 142.
+> This document covers the interactive checks that static mocks cannot assert.
+>
+> 👉 **Run `POST-DEPLOYMENT-MANUAL-TEST.md` first.** It is the shorter, ordered pass to run
+> immediately after a deploy (M1–M3 and the n8n T1–T6), and it says which of the checks below
+> are the 🔴 priority subset if you do not have time for all 158. This document remains the
+> exhaustive per-feature reference.
+>
+> ⚠️ **Two things below are known to be verified against synthetic fixtures only:** `/workflows`
+> has never run against a populated account, and the `EVENT_TO_SOURCE` routing fix is reasoned
+> from the schema and pinned by test rather than observed firing. Both are M2/M3 in the
+> post-deployment doc.
 
 ---
 

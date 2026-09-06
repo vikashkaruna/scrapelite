@@ -2,8 +2,90 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-05 (latest) — `/workflows` PHASE 2, AND THE ROUTING VOCABULARY THAT MADE 8 OF 10 EVENT KINDS UNDELIVERABLE. ON `staging`.**
+> **Last updated: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+> Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
+>
+> ✅ **BRANCHES ARE IN SYNC.** `main` and `staging` were already content-identical (empty tree
+> diff; the 4 commits main led by were all staging→main merge commits). Both fast-forwarded, and
+> `workflow-implementation-and-optimization` — which has **ZERO unique commits** and was 109
+> behind — brought level. **Nothing was ever stranded on that branch**; all the n8n/v2 work has
+> been on staging since `157df70`.
+>
+> 🔴 **`workflow-orchestrator` DECLARED A SCHEDULE AND WAS SCHEDULED NOWHERE.** It carried
+> `export const config = { schedule: "*/5 * * * *" }` — honoured only for v2 `export default`
+> handlers, and every function here is v1 — while appearing in **neither `netlify.toml` NOR
+> `AUTOMATION_JOBS`**. So the entire v2 pipeline's dispatch loop had never fired, was invisible to
+> `/admin/monitoring`, and **`cron-registry-parity` stayed green**: it compares the two registries
+> against each other, and *absent from both is agreement*. The guard written precisely to catch
+> "declared a schedule, never actually scheduled" could not see the one instance of it. The
+> function source is a **third** registry, and the only one that does nothing on its own; the test
+> now reads all three (+4 assertions, 2 confirmed RED while the 7 pre-existing ones stayed GREEN —
+> direct evidence the old suite was blind).
+>
+> 🔴 **AND THE OBVIOUS FIX WOULD HAVE BROKEN PRODUCTION.** Declaring a schedule makes Netlify
+> **refuse public HTTP access** to that function — the same mechanism `netlify.toml`'s own header
+> credits with keeping `billing-purge` off the open internet. But `workflow-orchestrator` has three
+> live HTTP callers: `00-datiq-smoke-test.json` → `/ping`, `datiq_process_pending_workflow.json` →
+> `/dispatch`, and the operator smoke test → `/run-now`. **A function cannot be both a cron and an
+> HTTP endpoint.** Split: new `workflow-orchestrator-cron.js` carries the schedule and the
+> `withJobRun` bookkeeping; the original stays unscheduled and keeps serving HTTP. Both call the
+> **same `runOnce()`**, so there is no second copy of the poll to drift from the one n8n exercises.
+> ⚠️ **Do NOT "simplify" them back together** — `orchestrator-route-parity.test.js` fails the build
+> if you do.
+>
+> 🔴 **FIVE "Run now" BUTTONS WERE WIRED TO NOTHING.** `AUTOMATION_JOBS` marked 8 jobs
+> `manualRunAllowed: true`; `RUNNABLE` in `admin-monitoring.js` wired 4. `discoverability-monitor`,
+> `watchlist-monitor`, `bulk-runner` and `signal-retry` all rendered an **enabled** button that
+> answered `400 No runner is wired` — pre-existing, and fixed here because a control that looks
+> live and does nothing is worse than a disabled one: the operator believes the job just ran.
+>
+> 🔴 **`/admin/automation` AND `/admin/revenue` NEVER LOADED UNDER `npm run dev`.** Both used
+> `useEffect(() => () => { alive.current = false; }, [])` — a cleanup with **no re-arm**.
+> `React.StrictMode` runs mount → cleanup → mount on the SAME instance, so `alive` stayed false for
+> ever and every `if (!alive.current) return` bailed: permanent "loading", no error.
+> `AdminMonitoring`/`AdminHealth` already open their effect with `alive.current = true`; these two
+> now match. **Development-only** (StrictMode is stripped in production), but it means neither page
+> could be tested locally — plausibly why neither had a browser spec. **Found by the new e2e spec,
+> not by reading.**
+>
+> ⚠️ **THE "4 n8n CREDENTIALS" IN THE DOCS WERE WRONG, IN BOTH DIRECTIONS.** Parsing all 18
+> workflow JSONs: exactly **ONE** credential is bound — `datiq-slack-monitoring` (`slackOAuth2Api`,
+> 3 workflows, **name must match exactly**). Resend is a plain HTTP call authenticated from
+> `$env.RESEND_API_KEY`; there is **no `supabase.co` host in any workflow**; `datiq-orchestrator`
+> appears nowhere. What K3 actually needs is **13 `$env` vars on the n8n host**, of which
+> `DATIQ_N8N_API_KEY` **must equal** Netlify's `N8N_WEBHOOK_SECRET` or every dispatch 401s.
+>
+> ⚠️ **THERE ARE TWO n8n INSTANCES AND THEY ARE EASY TO CONFLATE.** The v2 pipeline targets the
+> **self-hosted GCP Cloud Run** box (`n8n-dev-…run.app`, via `N8N_BASE_URL`). The browser-side
+> webhook targets **n8n Cloud** (`vkaruna.app.n8n.cloud`), hardcoded in `public/runtime-config.js`.
+> 🔴 **`VITE_WEBHOOK_URL` is set in NO Netlify context, yet that webhook is LIVE**, because
+> `config.js`'s `endpoint()` prefers the runtime override over the env var — so `netlify env:list`
+> alone will tell you it is off, and it is not.
+>
+> ✅ **OPERATOR ITEMS CLOSED AND VERIFIED, not assumed:** **P1** production RLS — `verify:rls
+> --prod` returns **15/15 HTTP 401**; **P2** `SCRAPE_PROVIDER_ORDER` deleted from all three
+> contexts (69 keys still visible for production, so the absence is real, not an empty result);
+> **N1–N3**, **K1–K4** operator-confirmed. ⚠️ **Netlify injects Function env vars at DEPLOY time**,
+> so P2 reaches production only on its next deploy.
+>
+> ⚠️ **STILL UNVERIFIED AGAINST REAL TRAFFIC.** The pipeline is configured and the cron is
+> scheduled, but **no session has watched an event travel `pending → processing → done`**. Nor has
+> `/workflows` ever run on a populated account, nor has the `EVENT_TO_SOURCE` fix been *observed*
+> firing. All of it is **[docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md)**
+> (M1–M3, T1–T6), which replaces the T-list in the deleted readiness doc.
+>
+> 🧹 **DOC CLEANUP:** deleted `WORKFLOW-BRANCH-READINESS-2026-08-02.md` (0 inbound refs, and two of
+> its entries were actively wrong — C3 pointed at a `scripts/env/` that does not exist, C1's advice
+> would have broken n8n); rewrote `N8N-DEPLOYMENT-STATUS.md` as the current confirmed state;
+> corrected `HELP.md`'s `email.send` fallback (it described `emailService.js`, **deleted**) and this
+> file's own `SCHEDULE_ALERT_WEBHOOK` line (**gone** — v2 replaced it with `enqueueEvent()`).
+>
+> **Verified:** unit **3 016** · contract **2 006** · integration **432** · e2e smoke **142** (+6
+> new) · db · build · prerender · security · readiness 5 pass / 2 warn / 0 fail. All gates green in
+> 221s, nothing bypassed. Every behavioural test confirmed RED first.
+>
+> **Prior: 2026-09-05 (latest) — `/workflows` PHASE 2, AND THE ROUTING VOCABULARY THAT MADE 8 OF 10 EVENT KINDS UNDELIVERABLE.**
 >
 > 🔴 **EIGHT OF THE TEN CANONICAL EVENT KINDS COULD NEVER FIRE A RULE.**
 > `signalDispatch.findMatchingRules` selects `.eq("trigger_source", source)` where `source`
@@ -360,8 +442,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-05 (latest): `staging` = **`add61d9`** (`/workflows` Phase 2 + the signal-routing vocabulary fix). **`main` = `d701f78`**, advanced by the OWNER via PR #153, not by any session here. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`** — `main` has moved mid-session three sessions running. |
-| **Latest commit** | `add61d9` on `staging`, 2026-09-05 — `/workflows` Phase 2 (dry trace, inline repair, guide) and the `EVENT_TO_SOURCE` fix that made 8 of 10 event kinds deliverable. `main` is at `d701f78`. Run `git log --oneline origin/main..origin/staging`. |
+| **Branches** | As of 2026-09-06: **`main` and `staging` are IN SYNC** — they were already content-identical (empty tree diff; the 4 commits `main` led by were all staging→main merge commits), and `staging` was fast-forwarded onto `main` at `e71b329` before this session's work landed on top. `workflow-implementation-and-optimization` has **ZERO unique commits** and is a pure fast-forward of `staging` — **nothing is stranded there**; all the n8n/v2 work has been on staging since `157df70`. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod` (currently 15/15 at 401 ✅). **Do not trust this row without re-checking `git branch -r`** — `main` has moved mid-session three sessions running. |
+| **Latest commit** | `staging`, 2026-09-06 — split the workflow orchestrator's cron from its HTTP surface (the v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n's callbacks), wired five dead admin Run-now buttons, and fixed a StrictMode `alive`-ref bug that stopped `/admin/automation` and `/admin/revenue` loading under `npm run dev`. Run `git log --oneline origin/main..origin/staging`. |
 | **Verify the schema locally** | `npm run test:db` — applies all **47** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**463 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
@@ -393,7 +475,7 @@ Netlify env needed by the runner (✅ all already set): `SUPABASE_URL` + `SUPABA
 **Alert email delivery (wired):** on a detected change, `fireAlert()` sends a real HTML email **directly via Resend** and also posts a `schedule.changed` event to the automation webhook. Email env (optional — both paths degrade gracefully):
 - `RESEND_API_KEY` — from resend.com; required to actually send email. Without it, no email is sent (webhook still fires).
 - `ALERT_EMAIL_FROM` — sender, e.g. `DatIQ Alerts <alerts@datiq.app>` (the domain must be verified in Resend). Defaults to that.
-- `SCHEDULE_ALERT_WEBHOOK` (else `VITE_WEBHOOK_URL`) — optional n8n/Zapier/Make webhook; receives the change event (`emailSent` flag included) for automations.
+- ~~`SCHEDULE_ALERT_WEBHOOK` (else `VITE_WEBHOOK_URL`)~~ — **gone.** The v2 pipeline replaced `fireAlert()`'s direct POST with `enqueueEvent()`; `scheduled-runner.js` contains no reference to either var now. Change events go to `workflow_events` and are dispatched to n8n by `workflow-orchestrator-cron`, which is where retries and history live.
 - `URL`/`SITE_URL` — used for the "View in DatIQ" link (Netlify sets `URL` automatically).
 The manual "Run now" on /schedules is client-side and only toasts the change; automated (hourly) runs send the email.
 
@@ -1237,7 +1319,15 @@ VITE_WEBHOOK_URL=              # n8n webhook (also used for email capture)
 # ── Contact form (/contact) ──
 # Delivery is server-side via Resend — there is deliberately NO browser-side mail
 # key. See CONTACT_EMAIL_FROM in the server-only block below.
-VITE_CONTACT_WEBHOOK_URL=        # optional CRM endpoint; falls back to VITE_WEBHOOK_URL
+VITE_CONTACT_WEBHOOK_URL=        # optional CRM endpoint; falls back to VITE_WEBHOOK_URL.
+                               # ⚠️ NEITHER is set in any Netlify context, yet the webhook is LIVE:
+                               # public/runtime-config.js hardcodes vkaruna.app.n8n.cloud and
+                               # config.js's endpoint() prefers the runtime override over the env
+                               # var. `netlify env:list` alone will tell you it is off. It is not.
+                               # That is n8n CLOUD — a different instance from the self-hosted GCP
+                               # Cloud Run box the v2 pipeline uses. Do not conflate them.
+                               # contactWebhook.js is self-described SCAFFOLDING: nothing downstream
+                               # consumes contact.submitted yet.
 VITE_PAYMENT_PROVIDER=auto     # auto | stripe | razorpay
 VITE_STRIPE_PUBLISHABLE_KEY=   # pk_live_...
 VITE_RAZORPAY_KEY_ID=          # rzp_live_...

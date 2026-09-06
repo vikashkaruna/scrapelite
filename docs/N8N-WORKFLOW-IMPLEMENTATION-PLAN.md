@@ -2,7 +2,11 @@
 
 > **Document Type:** Master Feature Architecture, Impact Analysis, Orchestration & Verification Reference  
 > **Target Branch:** `workflow-implementation-and-optimization`  
-> **Status:** Implemented, Validated (10/10 Test Suites Green) & Pushed to `origin/workflow-implementation-and-optimization`  
+> **Status (2026-09-06):** Implemented and validated. **Now on `staging` and `main`** — the
+> `workflow-implementation-and-optimization` branch has no unique commits and is a fast-forward
+> of `staging`. Operator setup N1–N3 and K1–K4 are complete; the dispatch cron was finally
+> scheduled on 2026-09-06 (it had never fired). End-to-end verification against real traffic is
+> outstanding — see `POST-DEPLOYMENT-MANUAL-TEST.md`.  
 > **Deployed n8n Target:** `https://n8n-dev-692109205619.asia-south1.run.app`  
 > **Guiding Principle:** Enhance and decouple without altering or regressing existing, fully-functional customer features.
 
