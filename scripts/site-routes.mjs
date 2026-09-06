@@ -156,6 +156,7 @@ export const PRIVATE_PREFIXES = [
   "/rules",
   "/workflows",
   "/collections",
+  "/engagement",
   "/payment",
   "/reset-password",
   "/onboarding",

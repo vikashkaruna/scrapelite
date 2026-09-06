@@ -54,6 +54,14 @@
 --   0038  0038_field_provenance.sql
 --   0039  0039_report_access.sql
 --   0040  0040_pql.sql
+--   0041  0041_bulk_enrichment.sql
+--   0042  0042_watchlists.sql
+--   0043  0043_signal_rules.sql
+--   0044  0044_lock_down_workflow_rls.sql
+--   0045  0045_workflow_engines.sql
+--   0046  0046_rule_execution_outcomes.sql
+--   0047  0047_monitored_page_source.sql
+--   0048  0048_prospect_engagement_engine.sql
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -5319,6 +5327,1055 @@ end;
 $$;
 
 revoke all on function public.record_pql_score(uuid, integer, numeric, boolean, boolean, text, jsonb, text[]) from public, anon, authenticated;
+
+
+-- ============================================================
+-- 0041_bulk_enrichment.sql
+-- ============================================================
+-- 0041_bulk_enrichment.sql
+-- Phase 4 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md —
+-- PRD 3: Bulk Account Intelligence.
+--
+-- Adds 7 tables:
+--   1. lists: workspace/user account lists
+--   2. canonical_entities: deduplicated normalized company entities
+--   3. list_records: per-account rows inside a list with ICP score & status
+--   4. icp_score_rules: customer-editable ICP weighting criteria
+--   5. enrichment_jobs: durable chunked runner jobs
+--   6. enrichment_job_items: individual record execution states
+--   7. review_queue: human confirmation queue for low-confidence facts
+--
+-- Adds 1 function (bulk_touch_updated_at) and 3 triggers.
+
+-- ── 1. lists ────────────────────────────────────────────────────────────────
+create table if not exists public.lists (
+  id                    uuid primary key default gen_random_uuid(),
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  workspace_id          uuid references public.workspaces(id) on delete cascade,
+  name                  text not null,
+  description           text,
+  template_key          text not null default 'bulk_icp_enrichment',
+  status                text not null default 'pending'
+    check (status in ('pending', 'running', 'complete', 'partial', 'failed', 'paused')),
+  total_records         integer not null default 0 check (total_records >= 0),
+  completed_records     integer not null default 0 check (completed_records >= 0),
+  failed_records        integer not null default 0 check (failed_records >= 0),
+  needs_review_records  integer not null default 0 check (needs_review_records >= 0),
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+
+create index if not exists lists_user_idx on public.lists (user_id, created_at desc);
+create index if not exists lists_workspace_idx on public.lists (workspace_id) where workspace_id is not null;
+
+-- ── 2. canonical_entities ───────────────────────────────────────────────────
+create table if not exists public.canonical_entities (
+  id                    uuid primary key default gen_random_uuid(),
+  canonical_domain      text not null unique,
+  company_name          text,
+  normalized_name       text,
+  industry              text,
+  employee_range        text,
+  hq_country            text,
+  overview              text,
+  enriched_payload      jsonb not null default '{}'::jsonb,
+  last_enriched_at      timestamptz,
+  created_at            timestamptz not null default now()
+);
+
+create index if not exists canonical_entities_domain_idx on public.canonical_entities (canonical_domain);
+
+-- ── 3. list_records ─────────────────────────────────────────────────────────
+create table if not exists public.list_records (
+  id                    uuid primary key default gen_random_uuid(),
+  list_id               uuid not null references public.lists(id) on delete cascade,
+  raw_input             text not null,
+  canonical_domain      text,
+  status                text not null default 'queued'
+    check (status in ('queued', 'running', 'complete', 'partial', 'failed', 'needs_review')),
+  icp_score             numeric(5,2) check (icp_score is null or (icp_score >= 0 and icp_score <= 100)),
+  icp_reasons           jsonb not null default '[]'::jsonb,
+  enriched_data         jsonb not null default '{}'::jsonb,
+  confidence_score      numeric(4,3) check (confidence_score is null or (confidence_score >= 0 and confidence_score <= 1)),
+  error                 text,
+  credits_used          integer not null default 0 check (credits_used >= 0),
+  run_id                text references public.template_runs(id) on delete set null,
+  created_at            timestamptz not null default now(),
+  completed_at          timestamptz
+);
+
+create index if not exists list_records_list_idx on public.list_records (list_id, created_at asc);
+create index if not exists list_records_status_idx on public.list_records (list_id, status);
+create index if not exists list_records_domain_idx on public.list_records (canonical_domain) where canonical_domain is not null;
+
+-- ── 4. icp_score_rules ──────────────────────────────────────────────────────
+create table if not exists public.icp_score_rules (
+  id                    uuid primary key default gen_random_uuid(),
+  user_id               uuid references auth.users(id) on delete cascade,
+  workspace_id          uuid references public.workspaces(id) on delete cascade,
+  persona               text not null default 'default',
+  name                  text not null,
+  criteria              jsonb not null default '[]'::jsonb,
+  threshold             numeric(5,2) not null default 50.00
+    check (threshold >= 0 and threshold <= 100),
+  is_default            boolean not null default false,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+
+create index if not exists icp_score_rules_user_idx on public.icp_score_rules (user_id);
+create index if not exists icp_score_rules_persona_idx on public.icp_score_rules (persona);
+
+-- Seed default persona rules
+insert into public.icp_score_rules (persona, name, criteria, threshold, is_default)
+values
+  ('sales', 'B2B Tech ICP Baseline', '[
+    {"field": "industry", "operator": "in", "value": ["Software", "SaaS", "Fintech", "Technology"], "weight": 35},
+    {"field": "employee_count", "operator": "gte", "value": 20, "weight": 25},
+    {"field": "has_pricing", "operator": "equals", "value": true, "weight": 20},
+    {"field": "has_contact", "operator": "equals", "value": true, "weight": 20}
+  ]'::jsonb, 60.00, true),
+  ('revops', 'Mid-Market Qualified ICP', '[
+    {"field": "industry", "operator": "not_in", "value": ["Consumer", "Retail"], "weight": 30},
+    {"field": "employee_count", "operator": "gte", "value": 50, "weight": 40},
+    {"field": "hq_country", "operator": "in", "value": ["US", "CA", "GB", "EU"], "weight": 30}
+  ]'::jsonb, 65.00, true),
+  ('ci', 'Competitive Intelligence Monitor', '[
+    {"field": "has_pricing", "operator": "equals", "value": true, "weight": 50},
+    {"field": "has_product_tour", "operator": "equals", "value": true, "weight": 50}
+  ]'::jsonb, 50.00, true),
+  ('default', 'General ICP Criteria', '[
+    {"field": "industry", "operator": "not_empty", "weight": 40},
+    {"field": "employee_count", "operator": "gte", "value": 10, "weight": 30},
+    {"field": "has_pricing", "operator": "equals", "value": true, "weight": 30}
+  ]'::jsonb, 50.00, true)
+on conflict do nothing;
+
+-- ── 5. enrichment_jobs ──────────────────────────────────────────────────────
+create table if not exists public.enrichment_jobs (
+  id                    uuid primary key default gen_random_uuid(),
+  list_id               uuid not null references public.lists(id) on delete cascade,
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  status                text not null default 'queued'
+    check (status in ('queued', 'running', 'paused', 'completed', 'failed')),
+  batch_size            integer not null default 25 check (batch_size > 0),
+  cursor                integer not null default 0 check (cursor >= 0),
+  total_items           integer not null default 0 check (total_items >= 0),
+  processed_items       integer not null default 0 check (processed_items >= 0),
+  estimated_credits     integer not null default 0 check (estimated_credits >= 0),
+  actual_credits        integer not null default 0 check (actual_credits >= 0),
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+
+create index if not exists enrichment_jobs_list_idx on public.enrichment_jobs (list_id);
+create index if not exists enrichment_jobs_status_idx on public.enrichment_jobs (status);
+
+-- ── 6. enrichment_job_items ─────────────────────────────────────────────────
+create table if not exists public.enrichment_job_items (
+  id                    uuid primary key default gen_random_uuid(),
+  job_id                uuid not null references public.enrichment_jobs(id) on delete cascade,
+  record_id             uuid not null references public.list_records(id) on delete cascade,
+  status                text not null default 'queued'
+    check (status in ('queued', 'running', 'completed', 'failed', 'skipped')),
+  attempts              integer not null default 0 check (attempts >= 0),
+  error                 text,
+  started_at            timestamptz,
+  completed_at          timestamptz,
+  created_at            timestamptz not null default now()
+);
+
+create index if not exists enrichment_job_items_job_idx on public.enrichment_job_items (job_id, status);
+
+-- ── 7. review_queue ─────────────────────────────────────────────────────────
+create table if not exists public.review_queue (
+  id                    uuid primary key default gen_random_uuid(),
+  record_id             uuid not null references public.list_records(id) on delete cascade,
+  list_id               uuid not null references public.lists(id) on delete cascade,
+  user_id               uuid not null references auth.users(id) on delete cascade,
+  field_name            text not null,
+  candidate_value       text,
+  confidence            numeric(4,3) check (confidence is null or (confidence >= 0 and confidence <= 1)),
+  status                text not null default 'pending'
+    check (status in ('pending', 'accepted', 'rejected', 'edited')),
+  resolved_value        text,
+  resolved_at           timestamptz,
+  created_at            timestamptz not null default now()
+);
+
+create index if not exists review_queue_user_idx on public.review_queue (user_id, status);
+create index if not exists review_queue_record_idx on public.review_queue (record_id);
+
+-- ── helper trigger function ─────────────────────────────────────────────────
+create or replace function public.bulk_touch_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists lists_touch_updated_at_trg on public.lists;
+create trigger lists_touch_updated_at_trg
+  before update on public.lists
+  for each row execute function public.bulk_touch_updated_at();
+
+drop trigger if exists icp_rules_touch_updated_at_trg on public.icp_score_rules;
+create trigger icp_rules_touch_updated_at_trg
+  before update on public.icp_score_rules
+  for each row execute function public.bulk_touch_updated_at();
+
+drop trigger if exists enrichment_jobs_touch_updated_at_trg on public.enrichment_jobs;
+create trigger enrichment_jobs_touch_updated_at_trg
+  before update on public.enrichment_jobs
+  for each row execute function public.bulk_touch_updated_at();
+
+-- ── RLS ─────────────────────────────────────────────────────────────────────
+alter table public.lists enable row level security;
+alter table public.canonical_entities enable row level security;
+alter table public.list_records enable row level security;
+alter table public.icp_score_rules enable row level security;
+alter table public.enrichment_jobs enable row level security;
+alter table public.enrichment_job_items enable row level security;
+alter table public.review_queue enable row level security;
+
+-- lists policies
+create policy lists_owner_access on public.lists
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+-- canonical_entities policies
+create policy canonical_entities_select on public.canonical_entities
+  for select using (true);
+
+create policy canonical_entities_insert on public.canonical_entities
+  for insert with check (auth.uid() is null or auth.uid() is not null);
+
+create policy canonical_entities_update on public.canonical_entities
+  for update using (auth.uid() is null or auth.uid() is not null);
+
+-- list_records policies
+create policy list_records_owner_access on public.list_records
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.lists l where l.id = list_records.list_id and l.user_id = auth.uid()
+    )
+  );
+
+-- icp_score_rules policies
+create policy icp_score_rules_select on public.icp_score_rules
+  for select using (is_default = true or user_id = auth.uid() or auth.uid() is null);
+
+create policy icp_score_rules_write on public.icp_score_rules
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+-- enrichment_jobs policies
+create policy enrichment_jobs_owner_access on public.enrichment_jobs
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+-- enrichment_job_items policies
+create policy enrichment_job_items_owner_access on public.enrichment_job_items
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.enrichment_jobs j where j.id = enrichment_job_items.job_id and j.user_id = auth.uid()
+    )
+  );
+
+-- review_queue policies
+create policy review_queue_owner_access on public.review_queue
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+grant all on public.lists to anon, authenticated, service_role;
+grant all on public.canonical_entities to anon, authenticated, service_role;
+grant all on public.list_records to anon, authenticated, service_role;
+grant all on public.icp_score_rules to anon, authenticated, service_role;
+grant all on public.enrichment_jobs to anon, authenticated, service_role;
+grant all on public.enrichment_job_items to anon, authenticated, service_role;
+grant all on public.review_queue to anon, authenticated, service_role;
+
+
+-- ============================================================
+-- 0042_watchlists.sql
+-- ============================================================
+-- 0042_watchlists.sql
+-- Phase 5 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md —
+-- PRD 4: Competitor Watchlists & Change Intelligence.
+--
+-- Adds 6 tables:
+--   1. watchlists: named competitor tracking lists with cadence
+--   2. watchlist_targets: monitored competitor domains
+--   3. monitored_pages: discovered category pages (pricing, product, positioning)
+--   4. entity_snapshots: structured snapshots (not bare HTML hashes)
+--   5. field_changes: detected field deltas with materiality & fact vs interpretation
+--   6. change_feedback: human signal tuning (useful / not_useful / mute_field)
+--
+-- Adds 1 function (watchlists_touch_updated_at) and 1 trigger.
+
+-- ── 1. watchlists ───────────────────────────────────────────────────────────
+create table if not exists public.watchlists (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  workspace_id  uuid references public.workspaces(id) on delete cascade,
+  name          text not null,
+  description   text,
+  cadence       text not null default 'daily' check (cadence in ('hourly', 'daily', 'weekly')),
+  status        text not null default 'active' check (status in ('active', 'paused', 'archived')),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists watchlists_user_idx on public.watchlists (user_id, created_at desc);
+create index if not exists watchlists_workspace_idx on public.watchlists (workspace_id) where workspace_id is not null;
+
+-- ── 2. watchlist_targets ───────────────────────────────────────────────────
+create table if not exists public.watchlist_targets (
+  id              uuid primary key default gen_random_uuid(),
+  watchlist_id    uuid not null references public.watchlists(id) on delete cascade,
+  domain          text not null,
+  company_name    text,
+  status          text not null default 'active' check (status in ('active', 'paused', 'error')),
+  last_checked_at timestamptz,
+  created_at      timestamptz not null default now(),
+  constraint watchlist_targets_unique_domain unique (watchlist_id, domain)
+);
+
+create index if not exists watchlist_targets_watchlist_idx on public.watchlist_targets (watchlist_id);
+create index if not exists watchlist_targets_domain_idx on public.watchlist_targets (domain);
+
+-- ── 3. monitored_pages ─────────────────────────────────────────────────────
+create table if not exists public.monitored_pages (
+  id              uuid primary key default gen_random_uuid(),
+  target_id       uuid not null references public.watchlist_targets(id) on delete cascade,
+  url             text not null,
+  category        text not null check (category in ('pricing', 'product', 'positioning', 'terms', 'other')),
+  content_hash    text,
+  last_fetched_at timestamptz,
+  http_status     integer,
+  created_at      timestamptz not null default now(),
+  constraint monitored_pages_unique_url unique (target_id, url)
+);
+
+create index if not exists monitored_pages_target_idx on public.monitored_pages (target_id);
+
+-- ── 4. entity_snapshots ────────────────────────────────────────────────────
+create table if not exists public.entity_snapshots (
+  id              uuid primary key default gen_random_uuid(),
+  target_id       uuid not null references public.watchlist_targets(id) on delete cascade,
+  page_id         uuid not null references public.monitored_pages(id) on delete cascade,
+  snapshot_type   text not null check (snapshot_type in ('pricing', 'product', 'positioning')),
+  extracted_data  jsonb not null default '{}'::jsonb,
+  content_hash    text not null,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists entity_snapshots_target_idx on public.entity_snapshots (target_id, created_at desc);
+
+-- ── 5. field_changes ───────────────────────────────────────────────────────
+create table if not exists public.field_changes (
+  id                uuid primary key default gen_random_uuid(),
+  target_id         uuid not null references public.watchlist_targets(id) on delete cascade,
+  watchlist_id      uuid not null references public.watchlists(id) on delete cascade,
+  field_name        text not null,
+  category          text not null check (category in ('pricing', 'product', 'positioning', 'other')),
+  old_value         text,
+  new_value         text,
+  materiality       text not null default 'medium' check (materiality in ('critical', 'high', 'medium', 'low', 'unknown')),
+  fact_summary      text not null,
+  ai_interpretation text,
+  detected_at       timestamptz not null default now(),
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists field_changes_watchlist_idx on public.field_changes (watchlist_id, detected_at desc);
+create index if not exists field_changes_target_idx on public.field_changes (target_id, detected_at desc);
+create index if not exists field_changes_materiality_idx on public.field_changes (materiality);
+
+-- ── 6. change_feedback ─────────────────────────────────────────────────────
+create table if not exists public.change_feedback (
+  id              uuid primary key default gen_random_uuid(),
+  field_change_id uuid not null references public.field_changes(id) on delete cascade,
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  feedback        text not null check (feedback in ('useful', 'not_useful', 'mute_field')),
+  notes           text,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists change_feedback_change_idx on public.change_feedback (field_change_id);
+create index if not exists change_feedback_user_idx on public.change_feedback (user_id);
+
+-- ── helper trigger function ─────────────────────────────────────────────────
+create or replace function public.watchlists_touch_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists watchlists_touch_updated_at_trg on public.watchlists;
+create trigger watchlists_touch_updated_at_trg
+  before update on public.watchlists
+  for each row execute function public.watchlists_touch_updated_at();
+
+-- ── RLS ─────────────────────────────────────────────────────────────────────
+alter table public.watchlists enable row level security;
+alter table public.watchlist_targets enable row level security;
+alter table public.monitored_pages enable row level security;
+alter table public.entity_snapshots enable row level security;
+alter table public.field_changes enable row level security;
+alter table public.change_feedback enable row level security;
+
+-- watchlists policies
+create policy watchlists_owner_access on public.watchlists
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+-- watchlist_targets policies
+create policy watchlist_targets_owner_access on public.watchlist_targets
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.watchlists w where w.id = watchlist_targets.watchlist_id and w.user_id = auth.uid()
+    )
+  );
+
+-- monitored_pages policies
+create policy monitored_pages_owner_access on public.monitored_pages
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.watchlist_targets t
+      join public.watchlists w on w.id = t.watchlist_id
+      where t.id = monitored_pages.target_id and w.user_id = auth.uid()
+    )
+  );
+
+-- entity_snapshots policies
+create policy entity_snapshots_owner_access on public.entity_snapshots
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.watchlist_targets t
+      join public.watchlists w on w.id = t.watchlist_id
+      where t.id = entity_snapshots.target_id and w.user_id = auth.uid()
+    )
+  );
+
+-- field_changes policies
+create policy field_changes_owner_access on public.field_changes
+  for all using (
+    auth.uid() is null or exists (
+      select 1 from public.watchlists w where w.id = field_changes.watchlist_id and w.user_id = auth.uid()
+    )
+  );
+
+-- change_feedback policies
+create policy change_feedback_owner_access on public.change_feedback
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+grant all on public.watchlists to anon, authenticated, service_role;
+grant all on public.watchlist_targets to anon, authenticated, service_role;
+grant all on public.monitored_pages to anon, authenticated, service_role;
+grant all on public.entity_snapshots to anon, authenticated, service_role;
+grant all on public.field_changes to anon, authenticated, service_role;
+grant all on public.change_feedback to anon, authenticated, service_role;
+
+
+-- ============================================================
+-- 0043_signal_rules.sql
+-- ============================================================
+-- 0043_signal_rules.sql
+-- Phase 6 of docs/INTELLIGENCE-WORKFLOWS-IMPLEMENTATION-PLAN.md —
+-- PRD 5: Native Signal Routing.
+--
+-- Adds 2 tables:
+--   1. signal_rules: if-this-then-that routing rules (Slack, Email, Webhook, HubSpot)
+--   2. rule_executions: audit trail of rule evaluations and action dispatches
+--
+-- Adds 1 function (signal_rules_touch_updated_at) and 1 trigger.
+
+-- ── 1. signal_rules ─────────────────────────────────────────────────────────
+create table if not exists public.signal_rules (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  workspace_id    uuid references public.workspaces(id) on delete cascade,
+  name            text not null,
+  status          text not null default 'active' check (status in ('active', 'paused')),
+  trigger_source  text not null check (trigger_source in ('watchlist', 'bulk_enrichment', 'workflow_run')),
+  conditions      jsonb not null default '[]'::jsonb,
+  action_type     text not null check (action_type in ('slack', 'email', 'webhook', 'hubspot')),
+  action_config   jsonb not null default '{}'::jsonb,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists signal_rules_user_idx on public.signal_rules (user_id, created_at desc);
+create index if not exists signal_rules_source_idx on public.signal_rules (trigger_source, status);
+
+-- ── 2. rule_executions ──────────────────────────────────────────────────────
+create table if not exists public.rule_executions (
+  id              uuid primary key default gen_random_uuid(),
+  rule_id         uuid not null references public.signal_rules(id) on delete cascade,
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  status          text not null default 'success' check (status in ('success', 'failed', 'skipped')),
+  event_payload   jsonb not null default '{}'::jsonb,
+  action_response jsonb not null default '{}'::jsonb,
+  error           text,
+  latency_ms      integer,
+  executed_at     timestamptz not null default now()
+);
+
+create index if not exists rule_executions_rule_idx on public.rule_executions (rule_id, executed_at desc);
+create index if not exists rule_executions_user_idx on public.rule_executions (user_id, executed_at desc);
+
+-- ── helper trigger function ─────────────────────────────────────────────────
+create or replace function public.signal_rules_touch_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists signal_rules_touch_updated_at_trg on public.signal_rules;
+create trigger signal_rules_touch_updated_at_trg
+  before update on public.signal_rules
+  for each row execute function public.signal_rules_touch_updated_at();
+
+-- ── RLS ─────────────────────────────────────────────────────────────────────
+alter table public.signal_rules enable row level security;
+alter table public.rule_executions enable row level security;
+
+-- signal_rules policies
+create policy signal_rules_owner_access on public.signal_rules
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+-- rule_executions policies
+create policy rule_executions_owner_access on public.rule_executions
+  for all using (user_id = auth.uid() or auth.uid() is null);
+
+grant all on public.signal_rules to anon, authenticated, service_role;
+grant all on public.rule_executions to anon, authenticated, service_role;
+
+
+-- ============================================================
+-- 0044_lock_down_workflow_rls.sql
+-- ============================================================
+-- 0044_lock_down_workflow_rls.sql
+--
+-- SECURITY FIX. Migrations 0041 (bulk enrichment), 0042 (watchlists) and 0043
+-- (signal rules) shipped fifteen tables that are readable AND writable by any
+-- anonymous caller holding the publishable anon key — which is committed to
+-- this repository and served in every browser bundle by design.
+--
+-- Two independent mistakes combined, and either alone would have been enough:
+--
+--   1.  grant all on public.<table> to anon, authenticated, service_role;
+--       Phases 0-3 (0036-0040) grant nothing to anon at all.
+--
+--   2.  create policy ... for all using (user_id = auth.uid() or auth.uid() is null)
+--       `auth.uid()` IS null for the anon role. The clause that reads like a
+--       local-development convenience is in fact "…or the caller is anonymous",
+--       so the policy evaluates TRUE for every row for exactly the caller it
+--       was meant to exclude. `canonical_entities_insert`'s
+--       `with check (auth.uid() is null or auth.uid() is not null)` is a
+--       tautology — literally `true`.
+--
+-- Verified exploitable against the staging project on 2026-09-04, read-only:
+--   GET /rest/v1/lists?select=id&limit=1   with only the public anon key
+--   → HTTP 200, real row ids. No Authorization header, no session.
+-- Reads were confirmed; the same policy grants insert, update and delete.
+--
+-- The rule this restores is already locked in this repo (0029_referrals.sql,
+-- 0031_team_workspaces.sql, and 0036-0040): the browser NEVER reaches these
+-- tables directly — it goes through a Netlify Function, which uses the service
+-- key. An anon policy is therefore not a convenience, it is pure unused attack
+-- surface. Ownership is enforced in the handler, and RLS is the second line.
+--
+-- Idempotent and safe to re-run. Drops the permissive policies by name, revokes
+-- the grants, and installs the service-role-only policy the rest of the schema
+-- uses.
+
+-- ── 1. Drop every permissive policy from 0041-0043 ──────────────────────────
+drop policy if exists lists_owner_access                on public.lists;
+drop policy if exists canonical_entities_select         on public.canonical_entities;
+drop policy if exists canonical_entities_insert         on public.canonical_entities;
+drop policy if exists canonical_entities_update         on public.canonical_entities;
+drop policy if exists list_records_owner_access         on public.list_records;
+drop policy if exists icp_score_rules_select            on public.icp_score_rules;
+drop policy if exists icp_score_rules_write             on public.icp_score_rules;
+drop policy if exists enrichment_jobs_owner_access      on public.enrichment_jobs;
+drop policy if exists enrichment_job_items_owner_access on public.enrichment_job_items;
+drop policy if exists review_queue_owner_access         on public.review_queue;
+
+drop policy if exists watchlists_owner_access           on public.watchlists;
+drop policy if exists watchlist_targets_owner_access    on public.watchlist_targets;
+drop policy if exists monitored_pages_owner_access      on public.monitored_pages;
+drop policy if exists entity_snapshots_owner_access     on public.entity_snapshots;
+drop policy if exists field_changes_owner_access        on public.field_changes;
+drop policy if exists change_feedback_owner_access      on public.change_feedback;
+
+drop policy if exists signal_rules_owner_access         on public.signal_rules;
+drop policy if exists rule_executions_owner_access      on public.rule_executions;
+
+-- ── 2. Revoke the anon/authenticated grants ─────────────────────────────────
+-- `revoke` on a role that was never granted is a no-op, so this is safe even
+-- if a prior partial fix has already run.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'lists','canonical_entities','list_records','icp_score_rules',
+    'enrichment_jobs','enrichment_job_items','review_queue',
+    'watchlists','watchlist_targets','monitored_pages','entity_snapshots',
+    'field_changes','change_feedback',
+    'signal_rules','rule_executions'
+  ]
+  loop
+    execute format('revoke all on public.%I from anon', t);
+    execute format('revoke all on public.%I from authenticated', t);
+    execute format('grant all on public.%I to service_role', t);
+  end loop;
+end $$;
+
+-- ── 3. Re-assert RLS and install service-role-only policies ─────────────────
+-- Matches 0036-0040 exactly. `to service_role` is the load-bearing clause: a
+-- policy without it applies to PUBLIC, which is every role.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'lists','canonical_entities','list_records','icp_score_rules',
+    'enrichment_jobs','enrichment_job_items','review_queue',
+    'watchlists','watchlist_targets','monitored_pages','entity_snapshots',
+    'field_changes','change_feedback',
+    'signal_rules','rule_executions'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    if not exists (
+      select 1 from pg_policies
+       where schemaname = 'public' and tablename = t
+         and policyname = 'service full access'
+    ) then
+      execute format(
+        'create policy "service full access" on public.%I '
+        'for all to service_role using (true) with check (true)', t);
+    end if;
+  end loop;
+end $$;
+
+
+-- ============================================================
+-- 0045_workflow_engines.sql
+-- ============================================================
+-- 0045_workflow_engines.sql
+--
+-- Schema the three execution engines need (PRD 3, 4, 5). Additive only: no
+-- table is dropped, no column is removed, no data is rewritten.
+--
+-- Follows the service-role-only RLS convention 0044 restored. Nothing here
+-- grants anything to anon.
+
+-- ── 1. Field-level provenance on an enriched account row ────────────────────
+--
+-- The BRD makes provenance a product feature, not metadata: every important
+-- output should disclose its source URL, extraction timestamp, method, and
+-- "whether a field was explicitly observed, inferred, or generated by AI".
+--
+-- `enriched_data` holds the VALUES; this holds, per field, how we came to
+-- believe them:
+--   { "industry": { "method": "inferred", "source": "https://…", "confidence": 0.8 } }
+--
+-- It is separate from `confidence_score` (a single row-level number) because a
+-- row is rarely uniformly trustworthy — a company name read off the page and an
+-- industry inferred by a model are not the same kind of claim, and collapsing
+-- them into one number is what let the previous enricher stamp 0.95 on
+-- fabricated firmographics.
+alter table public.list_records
+  add column if not exists provenance jsonb not null default '{}'::jsonb;
+
+-- ── 2. Watchlist crawl bookkeeping ──────────────────────────────────────────
+--
+-- `watchlists.last_run_at` lets the monitor answer "when did this watchlist
+-- last actually run?" without scanning every target, and gives the UI something
+-- truthful to show instead of implying a cadence that has never fired.
+alter table public.watchlists
+  add column if not exists last_run_at timestamptz;
+
+-- Why a page stopped being monitored. A robots.txt refusal is a standing
+-- decision, not a transient error, and must be distinguishable from "the fetch
+-- failed this once" — otherwise the crawler retries a disallowed host hourly
+-- for ever, which is exactly the behaviour our own /blog promises we do not
+-- have.
+alter table public.monitored_pages
+  add column if not exists paused_reason text;
+
+-- ── 3. Rule execution retry accounting ──────────────────────────────────────
+--
+-- PRD 5 lists "retry failed actions" as a Must. A retry needs somewhere to
+-- record that it IS a retry, or a transient Slack 503 is indistinguishable from
+-- a rule that has failed eleven times and should be reported to its owner.
+alter table public.rule_executions
+  add column if not exists attempt integer not null default 1;
+
+alter table public.rule_executions
+  add column if not exists next_retry_at timestamptz;
+
+create index if not exists rule_executions_retry_idx
+  on public.rule_executions (next_retry_at)
+  where next_retry_at is not null;
+
+-- ── 4. Keep the 0044 posture ────────────────────────────────────────────────
+-- Adding a column cannot change a policy, but asserting it here means a future
+-- reader of this file sees the invariant rather than having to go and check.
+do $$
+declare t text;
+begin
+  foreach t in array array['list_records','watchlists','monitored_pages','rule_executions']
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('revoke all on public.%I from authenticated', t);
+    execute format('grant all on public.%I to service_role', t);
+  end loop;
+end $$;
+
+
+-- ============================================================
+-- 0046_rule_execution_outcomes.sql
+-- ============================================================
+-- 0046_rule_execution_outcomes.sql
+--
+-- Two fixes to `rule_executions`, both about the audit trail PRD 5 requires
+-- being able to record what actually happened.
+--
+-- ── 1. `refused` was not an allowed status ──────────────────────────────────
+--
+-- 0043 constrained status to ('success','failed','skipped'), but the dispatcher
+-- added in this cycle also produces `refused` — the verdict when a rule's
+-- destination is rejected at dispatch time, which is the SSRF guard firing.
+--
+-- The insert therefore violated the CHECK, and `dispatchSignal` catches
+-- bookkeeping errors so it never breaks a dispatch — so the row was silently
+-- dropped with a console.error. The net effect: **every security refusal was
+-- missing from the audit trail**, which is precisely the event an operator most
+-- needs to see. Verified against the real schema before this migration.
+--
+-- `refused` is kept DISTINCT from `failed` rather than folded into it. They mean
+-- different things to the person reading the history: `failed` is "we tried and
+-- the destination did not answer", `refused` is "we would not send this at all".
+-- Collapsing them would tell a user their webhook is flaky when in fact we are
+-- refusing to call it.
+--
+-- ── 2. `retrying` is a real state ───────────────────────────────────────────
+--
+-- PRD 5 lists "retry failed actions" as a Must. A row awaiting its next attempt
+-- is neither a settled failure nor a success, and reporting it as `failed` would
+-- make the change feed show a permanent failure for something still in flight.
+--
+-- ── 3. Why the constraint is dropped BY LOOKUP, not by name ─────────────────
+--
+-- 0043 declares the CHECK inline on the column, so its name is whatever Postgres
+-- auto-generated — conventionally `rule_executions_status_check`, but that is a
+-- convention this migration would be betting the fix on. Dropping an ASSUMED
+-- name with `if exists` fails open twice over: if the live name differs at all
+-- (a hand-applied constraint, a table rebuilt out of band, a second CHECK added
+-- later and auto-suffixed `..._check1`), the DROP matches nothing, the ADD then
+-- succeeds under a free name, and the table ends up carrying BOTH constraints.
+--
+-- Postgres ANDs CHECK constraints. Two of them means the old, narrower list is
+-- still in force, so `refused` and `retrying` are still rejected — and the
+-- migration reports success while fixing nothing. That is the same silent
+-- failure this file exists to repair, reintroduced by the repair itself.
+--
+-- So: find every CHECK that actually constrains the `status` column (by attnum,
+-- not by text matching, so a constraint on some future `http_status` is never
+-- collateral), drop those, add exactly one, then ASSERT exactly one remains.
+-- The assertion is the point — it converts a silent no-op into a failed
+-- migration, which is the only way anyone finds out.
+
+do $$
+declare
+  c        record;
+  status_a smallint;
+begin
+  select attnum into status_a
+    from pg_attribute
+   where attrelid = 'public.rule_executions'::regclass
+     and attname  = 'status'
+     and not attisdropped;
+
+  if status_a is null then
+    raise exception '0046: public.rule_executions has no status column';
+  end if;
+
+  for c in
+    select con.conname
+      from pg_constraint con
+     where con.conrelid = 'public.rule_executions'::regclass
+       and con.contype  = 'c'
+       and con.conkey   @> array[status_a]
+  loop
+    execute format('alter table public.rule_executions drop constraint %I', c.conname);
+  end loop;
+end $$;
+
+alter table public.rule_executions
+  add constraint rule_executions_status_check
+  check (status in ('success', 'failed', 'skipped', 'refused', 'retrying'));
+
+-- Fail loudly if anything but exactly one status CHECK survived. A second one
+-- would silently re-narrow the set; zero would mean the ADD did not take.
+do $$
+declare n integer;
+begin
+  select count(*) into n
+    from pg_constraint con
+   where con.conrelid = 'public.rule_executions'::regclass
+     and con.contype  = 'c'
+     and con.conkey   @> array[(
+           select attnum from pg_attribute
+            where attrelid = 'public.rule_executions'::regclass
+              and attname  = 'status'
+              and not attisdropped)];
+
+  if n <> 1 then
+    raise exception
+      '0046: expected exactly 1 CHECK on rule_executions.status, found %', n;
+  end if;
+end $$;
+
+-- Keep the 0044 posture. Adding a constraint cannot change a policy, but
+-- asserting it here means a reader sees the invariant rather than going to look.
+alter table public.rule_executions enable row level security;
+revoke all on public.rule_executions from anon;
+revoke all on public.rule_executions from authenticated;
+grant  all on public.rule_executions to service_role;
+
+
+-- ============================================================
+-- 0047_monitored_page_source.sql
+-- ============================================================
+-- 0047_monitored_page_source.sql
+--
+-- Records HOW a monitored page came to be monitored.
+--
+-- PRD 4 asks for two things that pull in opposite directions: *"Domain mapping
+-- to recommend relevant pages"* and *"User chooses monitored categories/pages"*.
+-- Automatic discovery satisfies the first and, left unlabelled, quietly
+-- undermines the second — a user would open their watchlist and find pages they
+-- never added, with no way to tell which were theirs.
+--
+-- `source` keeps the distinction visible:
+--   'user' — explicitly added. The default, so nothing pre-existing is
+--            retroactively relabelled as something the product guessed at.
+--   'auto' — discovered by crawling the target's homepage. The UI can surface
+--            these as "we added these, remove any you don't want", and a user
+--            removing one is removing a suggestion rather than undoing their
+--            own earlier decision.
+--
+-- Every auto-discovered page is a recurring crawl charged to the customer, so
+-- being able to see and prune them is not cosmetic.
+
+alter table public.monitored_pages
+  add column if not exists source text not null default 'user'
+  check (source in ('user', 'auto'));
+
+-- Lets the crawler find "targets that have never been discovered for" without
+-- scanning every page of every watchlist.
+create index if not exists monitored_pages_source_idx
+  on public.monitored_pages (target_id, source);
+
+-- Keep the 0044 posture.
+do $$ begin
+  execute 'alter table public.monitored_pages enable row level security';
+  execute 'revoke all on public.monitored_pages from anon';
+  execute 'revoke all on public.monitored_pages from authenticated';
+  execute 'grant all on public.monitored_pages to service_role';
+end $$;
+
+
+-- ============================================================
+-- 0048_prospect_engagement_engine.sql
+-- ============================================================
+-- 0048_prospect_engagement_engine.sql
+--
+-- Prospect Engagement Engine: Modular, n8n-orchestrated multi-channel outreach engine.
+-- Adds 5 tables:
+--   1. engagement_campaigns: outreach campaign definitions, brand kits, and settings
+--   2. engagement_prospects: prospect records with state machine status and engagement scoring
+--   3. engagement_messages: AI-generated copy variants (A/B), approval states, and delivery status
+--   4. engagement_activity_log: immutable chronological audit log of all transitions & events
+--   5. engagement_sync_configs: Google Sheets and Airtable two-way sync configurations
+--
+-- Security: Strict RLS with service-role-only access conforming to migration 0044 standards.
+
+-- ── 1. engagement_campaigns ─────────────────────────────────────────────────
+create table if not exists public.engagement_campaigns (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  workspace_id      uuid references public.workspaces(id) on delete cascade,
+  name              text not null,
+  description       text,
+  status            text not null default 'active' check (status in ('active', 'paused', 'completed', 'archived')),
+  channel_priority  jsonb not null default '["email", "whatsapp", "sms"]'::jsonb,
+  brand_kit         jsonb not null default '{}'::jsonb,
+  settings          jsonb not null default '{"followup_delay_days": 4, "max_followups": 2, "require_approval": true}'::jsonb,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists engagement_campaigns_user_idx on public.engagement_campaigns (user_id, created_at desc);
+
+-- ── 2. engagement_prospects ─────────────────────────────────────────────────
+create table if not exists public.engagement_prospects (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  first_name          text,
+  last_name           text,
+  email               text,
+  phone               text,
+  company             text,
+  role                text,
+  industry            text,
+  country             text,
+  status              text not null default 'new' check (
+    status in ('new', 'queued', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'followup_due', 'converted', 'unresponsive', 'opted_out')
+  ),
+  channel_preference  text not null default 'auto' check (channel_preference in ('email', 'whatsapp', 'telegram', 'sms', 'auto')),
+  source              text not null default 'manual' check (source in ('manual', 'datiq_extraction', 'datiq_list', 'google_sheets', 'airtable', 'csv')),
+  source_id           text,
+  custom_attributes   jsonb not null default '{}'::jsonb,
+  engagement_score    integer not null default 0,
+  last_contacted_at   timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_prospects_campaign_idx on public.engagement_prospects (campaign_id, status);
+create index if not exists engagement_prospects_user_idx on public.engagement_prospects (user_id, created_at desc);
+create index if not exists engagement_prospects_email_idx on public.engagement_prospects (campaign_id, email) where email is not null;
+create index if not exists engagement_prospects_phone_idx on public.engagement_prospects (campaign_id, phone) where phone is not null;
+
+-- ── 3. engagement_messages ──────────────────────────────────────────────────
+create table if not exists public.engagement_messages (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  prospect_id         uuid not null references public.engagement_prospects(id) on delete cascade,
+  channel             text not null check (channel in ('email', 'whatsapp', 'telegram', 'sms')),
+  variant             text not null default 'A' check (variant in ('A', 'B', 'C')),
+  subject             text,
+  body                text not null,
+  body_html           text,
+  status              text not null default 'draft' check (
+    status in ('draft', 'pending_approval', 'approved', 'rejected', 'queued', 'sent', 'delivered', 'failed', 'opened', 'clicked', 'replied')
+  ),
+  approval_status     text not null default 'pending' check (approval_status in ('pending', 'approved', 'rejected')),
+  rejection_reason    text,
+  guardrail_checks    jsonb not null default '{"passed": true, "violations": []}'::jsonb,
+  external_message_id text,
+  sent_at             timestamptz,
+  delivered_at        timestamptz,
+  opened_at           timestamptz,
+  clicked_at          timestamptz,
+  replied_at          timestamptz,
+  metadata            jsonb not null default '{}'::jsonb,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_messages_prospect_idx on public.engagement_messages (prospect_id, created_at desc);
+create index if not exists engagement_messages_campaign_idx on public.engagement_messages (campaign_id, status);
+
+-- ── 4. engagement_activity_log ──────────────────────────────────────────────
+create table if not exists public.engagement_activity_log (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  prospect_id         uuid not null references public.engagement_prospects(id) on delete cascade,
+  message_id          uuid references public.engagement_messages(id) on delete set null,
+  event_type          text not null,
+  channel             text,
+  from_status         text,
+  to_status           text,
+  details             jsonb not null default '{}'::jsonb,
+  timestamp           timestamptz not null default now()
+);
+
+create index if not exists engagement_activity_prospect_idx on public.engagement_activity_log (prospect_id, timestamp desc);
+create index if not exists engagement_activity_campaign_idx on public.engagement_activity_log (campaign_id, timestamp desc);
+
+-- ── 5. engagement_sync_configs ──────────────────────────────────────────────
+create table if not exists public.engagement_sync_configs (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  provider            text not null check (provider in ('google_sheets', 'airtable')),
+  config              jsonb not null default '{}'::jsonb,
+  last_synced_at      timestamptz,
+  sync_status         text not null default 'idle' check (sync_status in ('idle', 'syncing', 'success', 'error')),
+  sync_error          text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_sync_campaign_idx on public.engagement_sync_configs (campaign_id, provider);
+
+-- ── Helper trigger functions for updated_at ─────────────────────────────────
+create or replace function public.engagement_touch_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists engagement_campaigns_touch_updated_at on public.engagement_campaigns;
+create trigger engagement_campaigns_touch_updated_at
+  before update on public.engagement_campaigns
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_prospects_touch_updated_at on public.engagement_prospects;
+create trigger engagement_prospects_touch_updated_at
+  before update on public.engagement_prospects
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_messages_touch_updated_at on public.engagement_messages;
+create trigger engagement_messages_touch_updated_at
+  before update on public.engagement_messages
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_sync_configs_touch_updated_at on public.engagement_sync_configs;
+create trigger engagement_sync_configs_touch_updated_at
+  before update on public.engagement_sync_configs
+  for each row execute function public.engagement_touch_updated_at();
+
+-- ── RLS & Security ──────────────────────────────────────────────────────────
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'engagement_campaigns',
+    'engagement_prospects',
+    'engagement_messages',
+    'engagement_activity_log',
+    'engagement_sync_configs'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('revoke all on public.%I from authenticated', t);
+    execute format('grant all on public.%I to service_role', t);
+
+    if not exists (
+      select 1 from pg_policies
+       where schemaname = 'public' and tablename = t
+         and policyname = 'service full access'
+    ) then
+      execute format(
+        'create policy "service full access" on public.%I '
+        'for all to service_role using (true) with check (true)', t);
+    end if;
+  end loop;
+end $$;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

@@ -119,13 +119,15 @@ grant usage on schema public to anon, authenticated;
 // 0042_watchlists.sql          +6 tables (watchlists, watchlist_targets,
 //   monitored_pages, entity_snapshots, field_changes, change_feedback)
 //   +1 function (watchlists_touch_updated_at) +1 trigger.
-// 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
-//   +1 function (signal_rules_touch_updated_at) +1 trigger.
-// Taking these to 87 / 46 / 19.
+// 0048_prospect_engagement_engine.sql +5 tables (engagement_campaigns,
+//   engagement_prospects, engagement_messages, engagement_activity_log,
+//   engagement_sync_configs) +1 function (engagement_touch_updated_at)
+//   +4 triggers.
+// Taking these to 92 / 47 / 23.
 const EXPECT = {
-  tables: 87,
-  functions: 46,
-  triggers: 19,
+  tables: 92,
+  functions: 47,
+  triggers: 23,
   tablesWithoutRls: 0,
 };
 
@@ -1824,7 +1826,83 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting signal rule cascades to executions", remExec.c, 0);
 }
 
-// ── 0044: workflow RLS lockdown (Phases 4-6) ────────────────────────────────
+// ── 0048: prospect engagement engine ──────────────────────────────────
+{
+  group("engagement engine — campaigns, prospects, messages, audit log & sync");
+  const U4 = "88888888-8888-8888-8888-888888888801";
+  await db.query(`insert into auth.users (id, email) values ($1, 'outreach@datiq.test') on conflict do nothing`, [U4]);
+
+  // Create campaign
+  const cmp = await one(
+    `insert into public.engagement_campaigns (
+       user_id, name, description, channel_priority, brand_kit
+     ) values (
+       $1, 'Q4 Enterprise AI Outreach', 'Targeting VP of Engineering',
+       '["email", "whatsapp", "sms"]'::jsonb,
+       '{"company": "DatIQ", "cta_url": "https://datiq.app"}'::jsonb
+     ) returning id`,
+    [U4]
+  );
+  check("engagement campaign created", Boolean(cmp?.id));
+
+  // Add prospect
+  const prs = await one(
+    `insert into public.engagement_prospects (
+       user_id, campaign_id, first_name, last_name, email, company, role, status
+     ) values (
+       $1, $2, 'Jane', 'Doe', 'jane@acme.test', 'Acme Corp', 'VP Engineering', 'new'
+     ) returning id`,
+    [U4, cmp.id]
+  );
+  check("engagement prospect registered", Boolean(prs?.id));
+
+  // Create AI message draft
+  const msg = await one(
+    `insert into public.engagement_messages (
+       user_id, campaign_id, prospect_id, channel, variant, subject, body, status, approval_status
+     ) values (
+       $1, $2, $3, 'email', 'A', 'Transforming your competitive monitoring at Acme',
+       'Hi Jane, saw Acme is expanding its data platform...', 'draft', 'pending'
+     ) returning id`,
+    [U4, cmp.id, prs.id]
+  );
+  check("engagement message draft created", Boolean(msg?.id));
+
+  // Activity log
+  const act = await one(
+    `insert into public.engagement_activity_log (
+       user_id, campaign_id, prospect_id, message_id, event_type, from_status, to_status, details
+     ) values (
+       $1, $2, $3, $4, 'prospect_created', null, 'new', '{"source": "manual"}'::jsonb
+     ) returning id`,
+    [U4, cmp.id, prs.id, msg.id]
+  );
+  check("engagement activity log appended", Boolean(act?.id));
+
+  // Sync config
+  const sync = await one(
+    `insert into public.engagement_sync_configs (
+       user_id, campaign_id, provider, config
+     ) values (
+       $1, $2, 'google_sheets', '{"spreadsheet_id": "sheet_123", "tab": "Prospects"}'::jsonb
+     ) returning id`,
+    [U4, cmp.id]
+  );
+  check("engagement sync config saved", Boolean(sync?.id));
+
+  // Cascade delete campaign removes prospects, messages, activity logs, sync configs
+  await db.query(`delete from public.engagement_campaigns where id=$1`, [cmp.id]);
+  const remPrs = await one(`select count(*)::int c from public.engagement_prospects where id=$1`, [prs.id]);
+  eq("deleting campaign cascades to prospects", remPrs.c, 0);
+  const remMsg = await one(`select count(*)::int c from public.engagement_messages where id=$1`, [msg.id]);
+  eq("...and cascades to messages", remMsg.c, 0);
+  const remAct = await one(`select count(*)::int c from public.engagement_activity_log where id=$1`, [act.id]);
+  eq("...and cascades to activity log", remAct.c, 0);
+  const remSync = await one(`select count(*)::int c from public.engagement_sync_configs where id=$1`, [sync.id]);
+  eq("...and cascades to sync configs", remSync.c, 0);
+}
+
+// ── 0044: workflow RLS lockdown (Phases 4-6 & Engagement) ───────────────────
 // 0041-0043 shipped `grant all ... to anon` plus a policy whose
 // `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making
 // all fifteen tables world-readable and world-writable with the publishable
@@ -1839,6 +1917,8 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     "watchlists", "watchlist_targets", "monitored_pages", "entity_snapshots",
     "field_changes", "change_feedback",
     "signal_rules", "rule_executions",
+    "engagement_campaigns", "engagement_prospects", "engagement_messages",
+    "engagement_activity_log", "engagement_sync_configs",
   ];
 
   for (const t of LOCKED) {

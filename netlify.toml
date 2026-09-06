@@ -590,6 +590,14 @@
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]
+  for = "/engagement"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/engagement/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
   for = "/payment/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"

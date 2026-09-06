@@ -46,6 +46,7 @@ Disallow: /watchlists
 Disallow: /rules
 Disallow: /workflows
 Disallow: /collections
+Disallow: /engagement
 Disallow: /payment
 Disallow: /reset-password
 Disallow: /onboarding

@@ -626,6 +626,21 @@ export default function Preview() {
               label="Download"
               buttonVariant="secondary"
             />
+            <Button
+              variant="secondary"
+              icon="send"
+              onClick={() => {
+                const target = {
+                  company: data.page_title || hostOf(data.url),
+                  domain: hostOf(data.url),
+                  source_url: data.url,
+                };
+                navigate("/engagement", { state: { importProspects: [target] } });
+              }}
+              title="Send prospect to Engagement Engine"
+            >
+              Engage
+            </Button>
             <Button variant="primary" icon="bookmark" onClick={onViewDashboard}>
               View Dashboard
             </Button>

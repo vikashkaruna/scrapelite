@@ -18,6 +18,65 @@
 
 ---
 
+## 2026-09-06 — Shipped Prospect Engagement Engine: Multi-Channel Outreach, State Machine, n8n Templates & Bi-Directional CRM Sync
+
+**Branch:** `feat/prospect-engagement-engine` (branched off `origin/main` @ `dcb4bb0`; `main` and `staging` untouched).
+**Spec:** `DatIQ - Prospect Engagement Engine.md` (Pillar 0 extension: structured intelligence in, AI-personalized multi-channel outreach out, engagement tracked back to database of record).
+
+### What was built & delivered end-to-end:
+
+1. **Database Layer (Migration `0048_prospect_engagement_engine.sql`):**
+   - 5 new tables: `engagement_campaigns`, `engagement_prospects`, `engagement_messages`, `engagement_activity_log`, `engagement_sync_configs`.
+   - Complete indexes on `(campaign_id, email)`, `(campaign_id, phone)`, status filtering, and foreign key cascades.
+   - Strict RLS compliance: enabled on all 5 tables with `"service full access"` service-role policies (zero access to anon/authenticated, multi-tenant workspace isolation).
+   - Generated `supabase/migrations/run-all.sql` via `npm run build:sql`.
+   - Updated `scripts/db-verify.mjs` (inventory: 92 tables, 47 functions, 23 triggers, 0 tables without RLS; added 0048 table assertions).
+   - Verified via `npm run test:db` (48 migrations applied, 498 assertions passed, 0 failed).
+
+2. **Core Domain Logic & Unit Tests (`src/lib/engagement/`):**
+   - `stateMachine.js`: 11-state transition matrix (`new` → `queued` → `sent` → `delivered` → `opened`/`read` → `clicked` → `replied` → `followup_due` → `converted`/`unresponsive`/`opted_out`). Immutable transition validation, terminal opt-out compliance boundary, dynamic engagement score calculation (`calculateEngagementScore`), and stale prospect detection (`detectStaleProspects`).
+   - `aiMessageGenerator.js`: Multi-variant A/B copy generation (Variant A: Direct Value/ROI, Variant B: Insight/Challenge) across Email (HTML + markdown), WhatsApp (conversational), Telegram, and SMS (bounded under 160 chars). Built-in compliance guardrails (`validateMessageGuardrails`) detecting banned spam triggers and verifying opt-out footers.
+   - `channelRouter.js`: Multi-channel cascade router resolving destination viability (Email via Resend, WhatsApp/SMS via Twilio, Telegram via Bot API) with deterministic mock simulator.
+   - `syncConnectors.js`: Normalizers and bidirectional data mappers for Google Sheets, Airtable, and native DatIQ extraction contacts with phone/email deduplication (`dedupeProspects`).
+   - `engagementClient.js`: Frontend API SDK with localStorage fallback for demo/guest mode.
+
+3. **Backend Netlify Functions & Webhooks (`netlify/functions/`):**
+   - `engagement-engine.js`: Multi-action authenticated endpoint handling campaign CRUD, prospect batch ingestion, status transitions, AI message generation, approvals, and analytics aggregations.
+   - `engagement-webhook.js`: Inbound webhook endpoint capturing delivery receipts, email opens/clicks from Resend, inbound SMS/WhatsApp replies with STOP keyword opt-out handling from Twilio, and Telegram bot callbacks.
+   - `netlify/functions/lib/engagement/engagementStore.js`: Database repository for the service role.
+   - Verified via `npm run test:contract` (117 files, 2071 passed, 0 failed).
+
+4. **Production-Ready n8n Workflow Templates (`n8n/workflows/`):**
+   - `datiq_prospect_ingest.json`: Ingestion & deduplication sub-workflow from Google Sheets / Airtable.
+   - `datiq_ai_personalize.json`: AI message copy generation sub-workflow with compliance guardrails.
+   - `datiq_channel_router.json`: Multi-channel router dispatching to Resend, Twilio WhatsApp, SMS, and Telegram.
+   - `datiq_engagement_webhook.json`: Webhook receiver capturing delivery receipts and inbound replies.
+   - `datiq_state_monitor.json`: Cron-triggered state machine monitor transitioning stale prospects to `followup_due`.
+   - Verified via `netlify/__tests__/n8n-workflow-json.test.js` (233 assertions green).
+
+5. **Frontend UI Components & Page Hub (`src/components/engagement/` & `src/pages/Engagement.jsx`):**
+   - `KanbanBoard.jsx`: 9-column interactive pipeline board with search, channel filter chips, card metrics, and quick stage transitions.
+   - `ApprovalQueue.jsx`: Split-screen human-in-the-loop review interface with live compliance guardrail validation, inline copy editing, AI regeneration, and batch approval.
+   - `ProspectTimelineDrawer.jsx`: Slideover panel rendering chronological audit logs from `engagement_activity_log`, manual stage dropdown, and quick touch notes.
+   - `AnalyticsPanel.jsx`: Metric cards, conversion funnel visualization (Sent → Delivered → Opened → Clicked → Replied → Converted), and multi-channel attribution table.
+   - `BrandKitEditor.jsx`: Editor for brand voice guidelines (tone, value prop, CTA URLs) and two-way sync configuration for Google Sheets and Airtable.
+   - `Engagement.jsx`: Main hub page tying together all 5 tabs (`board`, `approval`, `prospects`, `analytics`, `settings`) with campaign selector, New Campaign modal, and CSV Import modal.
+   - Cross-surface integration: Added "Engage" CTAs in `src/pages/Preview.jsx` and `src/pages/Dashboard.jsx` to transfer extracted contacts directly into an outreach campaign.
+   - Routed at `/engagement` with navigation link in `TopBar.jsx`, registered in `PRIVATE_PREFIXES` in `scripts/site-routes.mjs`, `netlify.toml`, `public/robots.txt`, and `index.html`.
+   - Styled with design system tokens in `src/styles/screens.css` (`.eng-*`).
+
+6. **Validation & Test Gate Results:**
+   - Unit tests: 185 test files, 3047 tests passed (`npm run test:unit`)
+   - Contract tests: 117 test files, 2071 passed (`npm run test:contract`)
+   - DB verify: 48 migrations applied, 498 assertions passed, 0 failed (`npm run test:db`)
+   - Route & page ownership: 26/26 passed (`npx vitest run scripts/page-ownership.test.mjs`)
+   - Engagement suite: 10 test files, 306 tests passed (`src/lib/engagement/`, `netlify/__tests__/engagement*`, `src/pages/Engagement*`)
+   - Security check: Clean (`npm run test:security`)
+   - Prerender check: Clean (`npm run check:prerender`)
+   - Production build: Clean in 1.20s (`npm run build`)
+
+---
+
 ## 2026-09-06 — The v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n
 
 **Branches.** `main` and `staging` were **already content-identical** — an empty tree diff; the

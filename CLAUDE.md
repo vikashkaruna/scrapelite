@@ -2,15 +2,17 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
+> **Last updated: 2026-09-06 — PROSPECT ENGAGEMENT ENGINE SHIPPED ON `feat/prospect-engagement-engine` (main & staging untouched).**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
 >
-> ✅ **BRANCHES ARE IN SYNC.** `main` and `staging` were already content-identical (empty tree
-> diff; the 4 commits main led by were all staging→main merge commits). Both fast-forwarded, and
-> `workflow-implementation-and-optimization` — which has **ZERO unique commits** and was 109
-> behind — brought level. **Nothing was ever stranded on that branch**; all the n8n/v2 work has
-> been on staging since `157df70`.
+> ✅ **NEW MODULE: PROSPECT ENGAGEMENT ENGINE (v2.4)** on dedicated branch `feat/prospect-engagement-engine`.
+> End-to-end multi-channel outreach engine (Email via Resend, WhatsApp & SMS via Twilio, Telegram via Bot API).
+> 11-stage state machine (`stateMachine.js`), AI personalization copy generator with compliance guardrails (`aiMessageGenerator.js`),
+> multi-channel router (`channelRouter.js`), Google Sheets & Airtable sync connectors (`syncConnectors.js`),
+> 5 n8n production workflows in `n8n/workflows/`, Netlify Functions (`engagement-engine.js`, `engagement-webhook.js`),
+> and full frontend UI hub (`/engagement` in `src/pages/Engagement.jsx`, `KanbanBoard.jsx`, `ApprovalQueue.jsx`, `ProspectTimelineDrawer.jsx`, `AnalyticsPanel.jsx`, `BrandKitEditor.jsx`).
+> All test gates passed: 48 DB migrations (0048 added), 3047 unit tests, 2071 contract tests, 306 engagement tests, 26 route tests, clean build, clean prerender.
 >
 > 🔴 **`workflow-orchestrator` DECLARED A SCHEDULE AND WAS SCHEDULED NOWHERE.** It carried
 > `export const config = { schedule: "*/5 * * * *" }` — honoured only for v2 `export default`
