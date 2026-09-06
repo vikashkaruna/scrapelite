@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { AUTOMATION_JOBS } from "../../../src/lib/monitoringModel.js";
@@ -63,5 +63,59 @@ describe("cron registry ↔ netlify.toml parity", () => {
     const job = AUTOMATION_JOBS.find((j) => j.id === "discoverability-monitor");
     expect(job).toBeDefined();
     expect(job.destructive).toBe(false);
+  });
+});
+
+// ── The third registry: the function sources themselves ────────────────────
+// The two checks above compare netlify.toml against AUTOMATION_JOBS. A job
+// missing from BOTH is "agreement", so they pass vacuously — which is exactly
+// how workflow-orchestrator sat unscheduled and unmonitored while this file
+// stayed green. It declared `export const config = { schedule }` in its own
+// source, which is honoured only for v2 `export default` handlers; ours are all
+// v1. The source is therefore a third place a schedule can be declared, and the
+// only one that does nothing at all on its own.
+const FN_DIR = resolve(ROOT, "netlify/functions");
+
+const declaresSchedule = readdirSync(FN_DIR)
+  .filter((f) => f.endsWith(".js"))
+  .map((f) => ({ id: f.replace(/\.js$/, ""), src: readFileSync(resolve(FN_DIR, f), "utf8") }))
+  // Match the whole `export const config = { ... }` object, then look for a
+  // schedule key inside it — a bare /schedule:/ over the file would match
+  // prose in comments, and several of these files discuss scheduling at length.
+  .filter(({ src }) => {
+    const m = src.match(/export\s+const\s+config\s*=\s*\{[\s\S]*?\n?\}/);
+    return !!m && /\bschedule\s*:/.test(m[0]);
+  })
+  .map(({ id }) => id);
+
+describe("cron registry ↔ function source parity", () => {
+  it("finds the in-source schedule declarations at all", () => {
+    // Guards the regex: if it stops matching, every assertion below would pass
+    // vacuously — the same failure mode this whole block exists to close.
+    expect(declaresSchedule.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("every function that declares a schedule in source is scheduled in netlify.toml", () => {
+    const orphans = declaresSchedule.filter((id) => !scheduled.some((s) => s.id === id));
+    expect(
+      orphans,
+      `declare config.schedule in source but are NOT in netlify.toml, so they never fire: ${orphans.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every function that declares a schedule in source is registered in AUTOMATION_JOBS", () => {
+    const unmonitored = declaresSchedule.filter((id) => !AUTOMATION_JOBS.some((j) => j.id === id));
+    expect(
+      unmonitored,
+      `declare config.schedule in source but are absent from AUTOMATION_JOBS, so they run unmonitored: ${unmonitored.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every function named in netlify.toml actually exists on disk", () => {
+    // A typo'd or renamed function name in the toml is a cron pointed at
+    // nothing, and Netlify reports no error for it.
+    const missing = scheduled.filter((s) => !declaresSchedule.includes(s.id)
+      && !readdirSync(FN_DIR).includes(`${s.id}.js`));
+    expect(missing.map((m) => m.id), `scheduled in netlify.toml but no such function file`).toEqual([]);
   });
 });

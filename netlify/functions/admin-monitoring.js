@@ -52,6 +52,15 @@ const RUNNABLE = {
   "reengagement": () => import("./reengagement.js"),
   "billing-lifecycle": () => import("./billing-lifecycle.js"),
   "health-monitor": () => import("./health-monitor.js"),
+  // These five were registered in AUTOMATION_JOBS with manualRunAllowed:true
+  // but never wired here, so "Run now" rendered enabled and answered
+  // 400 "No runner is wired". A control that looks live and does nothing is
+  // worse than a disabled one: the operator believes the job just ran.
+  "discoverability-monitor": () => import("./discoverability-monitor.js"),
+  "watchlist-monitor": () => import("./watchlist-monitor.js"),
+  "bulk-runner": () => import("./bulk-runner.js"),
+  "signal-retry": () => import("./signal-retry.js"),
+  "workflow-orchestrator-cron": () => import("./workflow-orchestrator-cron.js"),
 };
 
 // Marks a schedule paused by an admin rather than by the billing lifecycle.
@@ -72,6 +81,13 @@ const JOB_PLATFORM = {
   "billing-lifecycle":"db",
   "billing-purge":    "db",
   "health-monitor":   "db",
+  "discoverability-monitor": "db",
+  "watchlist-monitor":       "db",
+  "bulk-runner":             "db",
+  "signal-retry":            "db",
+  // The orchestrator's own work is an outbound POST to n8n; the queue read is
+  // incidental. Classified by what it primarily does, not what it touches.
+  "workflow-orchestrator-cron": "netlify",
 };
 
 function jobPlatform(jobId) {

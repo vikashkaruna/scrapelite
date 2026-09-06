@@ -79,6 +79,19 @@
 [functions."signal-retry"]
   schedule = "*/5 * * * *"
 
+# The v2 workflow pipeline's dispatch loop: claims queued workflow_events and
+# POSTs them to n8n. Every 5 minutes, matching the first step of the backoff
+# schedule. Until 2026-09-06 this was scheduled NOWHERE — workflow-orchestrator
+# declared `export const config = { schedule }` in its own source, which is a v2
+# feature silently ignored for our v1 handlers — so it had never once fired.
+#
+# NOTE the "-cron" suffix, and do NOT "simplify" it onto workflow-orchestrator:
+# scheduling a function makes Netlify refuse HTTP access to it, and
+# workflow-orchestrator serves /ping and /dispatch to n8n plus /run-now to the
+# operator. Both call the same runOnce(); only this one is on a clock.
+[functions."workflow-orchestrator-cron"]
+  schedule = "*/5 * * * *"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env

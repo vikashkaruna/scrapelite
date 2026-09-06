@@ -17,9 +17,17 @@
 import { runOnce } from "./lib/workflowOrchestrator.js";
 import { verify as verifySig } from "./lib/n8nSignature.js";
 import { getPipelineConfig } from "./admin-automation.js";
+import { isJobEnabled } from "./lib/jobControl.js";
 
-// Cron: every 5 minutes (acts as backup fallback when enabled).
-export const config = { schedule: "*/5 * * * *" };
+// Must match the id in AUTOMATION_JOBS (src/lib/monitoringModel.js) and the
+// [functions."..."] block in netlify.toml. cron-registry-parity asserts all three.
+const JOB_ID = "workflow-orchestrator";
+
+// NO `export const config = { schedule }` here, deliberately. It would be
+// ignored anyway (a v2 feature; this is a v1 handler), and scheduling this
+// function for real would make Netlify refuse HTTP access to it — breaking
+// n8n's /ping and /dispatch callbacks. The cron lives in
+// workflow-orchestrator-cron.js; both call the same runOnce().
 
 // ── Environment ────────────────────────────────────────────────────────
 function getEnv() {
@@ -147,17 +155,15 @@ async function handleHttp(event, env, client) {
   return { statusCode: 404, body: JSON.stringify({ error: `unknown action '${action}'` }) };
 }
 
-// ── Netlify entrypoint ─────────────────────────────────────────────────
-export const handler = async (event) => {
+// ── The poll, as reached by a direct (non-HTTP) invocation ─────────────
+// NOT wrapped in withJobRun: the job_runs row and the kill-switch check belong
+// to workflow-orchestrator-cron.js, which is the invocation Netlify's scheduler
+// actually makes and the one /admin/monitoring reports on. Recording a run here
+// too would double-count every tick in the job history.
+const scheduledPoll = (async () => {
   const env = getEnv();
   const client = sbClient(env);
 
-  // HTTP path
-  if (event && event.httpMethod) {
-    return await handleHttp(event, env, client);
-  }
-
-  // Scheduled path
   if (!client) {
     return { statusCode: 200, body: "skipped (no supabase)" };
   }
@@ -176,4 +182,45 @@ export const handler = async (event) => {
   const summary = `scanned=${result.scanned || 0} dispatched=${result.dispatched || 0} failed=${result.failed || 0} requeued=${result.requeued || 0}`;
   console.log(`[DatIQ] orchestrator: ${summary}`);
   return { statusCode: result.ok ? 200 : 500, body: summary };
+});
+
+// ── Netlify entrypoint ─────────────────────────────────────────────────
+export const handler = async (event) => {
+  // HTTP path: POST /api/workflow-orchestrator/{run-now,dispatch}.
+  // Callers are n8n (HMAC-signed) and the operator (Bearer token).
+  if (event && event.httpMethod) {
+    const env = getEnv();
+    const client = sbClient(env);
+
+    // The operator Stop switch gates the WORK, not the endpoint — a decision,
+    // not an oversight. Three reasons it is shaped this way:
+    //
+    //  1. Stop has to mean stop. If it only halted the cron, an operator who
+    //     stopped this job mid-incident would still watch events flow out via
+    //     n8n's own /dispatch calls.
+    //  2. It answers 200, not 4xx/5xx. n8n treats a non-2xx as a retryable
+    //     failure, so refusing with an error would turn one operator stop into
+    //     a retry storm against this endpoint.
+    //  3. It deliberately writes NO job_runs row. job_runs is sized for a
+    //     5-minute cron; n8n calls /dispatch per event, and prune_ops_history()
+    //     still has no scheduled caller. The cron path keeps full run history.
+    //
+    // isJobEnabled FAILS OPEN, like everywhere else it is used: a Supabase blip
+    // means the pipeline runs. Use OPS_JOBS_DISABLED for a stop that cannot.
+    if (!(await isJobEnabled(JOB_ID))) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          ok: true, job: JOB_ID, skipped: true, reason: "disabled_by_operator",
+          message: `${JOB_ID} is stopped by an operator — no work was done.`,
+        }),
+      };
+    }
+
+    return await handleHttp(event, env, client);
+  }
+
+  // Scheduled path (also the path a manual "Run now" takes: admin-monitoring
+  // calls handler({ opsTrigger: "manual" }), which carries no httpMethod).
+  return scheduledPoll(event);
 };

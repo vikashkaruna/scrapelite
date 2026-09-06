@@ -405,7 +405,7 @@ Any `2xx` response is treated as success. Non-2xx responses throw an error displ
 
 ### Fallback chain
 
-If `VITE_EMAIL_API_URL` is not set but `VITE_WEBHOOK_URL` is set, DatIQ sends an `email.send` event to the webhook instead (see [Section 12](#12-webhook-integration) and [Section 16](#16-webhook-event-reference)). If neither is set, the browser opens the user's default email client with a pre-filled draft.
+⚠️ **Stale as of 2026-09-06 — corrected.** This described `src/lib/emailService.js`, which was **deleted** when the export-email flow moved server-side. There is no `email.send` webhook event any more. Emailed exports go through `POST /api/export-email` (Resend, real attachment, signed-in only); "email me a copy" of a report goes through `POST /api/report-email`, which always sends to the authenticated session's own address and never to a client-supplied one.
 
 ---
 

@@ -346,9 +346,23 @@ describe("workflow-orchestrator handler — HTTP path", () => {
 });
 
 describe("workflow-orchestrator handler — config", () => {
-  it("exports the 5-min cron schedule", async () => {
+  // This assertion used to read `expect(mod.config.schedule).toBe("*/5 * * * *")`.
+  // It was false comfort: that export is honoured only for v2 `export default`
+  // handlers, and this is a v1 one, so it stayed green for the entire time the
+  // job had never once run on a cron. Worse, acting on it would BREAK this
+  // function — Netlify refuses HTTP access to a scheduled function, and n8n
+  // calls /ping and /dispatch here.
+  it("does NOT declare a schedule — scheduling it would 404 n8n's callbacks", async () => {
     const mod = await import("../functions/workflow-orchestrator.js");
-    expect(mod.config).toBeDefined();
-    expect(mod.config.schedule).toBe("*/5 * * * *");
+    expect(mod.config?.schedule).toBeUndefined();
+  });
+
+  it("the cron half exists as its own function and shares the same runOnce", async () => {
+    const cron = await import("../functions/workflow-orchestrator-cron.js");
+    expect(typeof cron.handler).toBe("function");
+    // No schedule export there either: netlify.toml is the only thing that
+    // schedules anything, and cron-registry-parity asserts it agrees with
+    // AUTOMATION_JOBS and with the function files on disk.
+    expect(cron.config?.schedule).toBeUndefined();
   });
 });

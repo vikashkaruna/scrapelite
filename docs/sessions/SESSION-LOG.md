@@ -18,6 +18,128 @@
 
 ---
 
+## 2026-09-06 — The v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n
+
+**Branches.** `main` and `staging` were **already content-identical** — an empty tree diff; the
+4 commits `main` led by were all `Merge pull request #N from staging` commits with no content of
+their own. `staging` fast-forwarded onto `main` at `e71b329`, then this session's three commits
+landed on top. `workflow-implementation-and-optimization` has **zero unique commits** and is 116
+behind: **nothing was ever stranded there** — all the n8n/v2 work has been on staging since
+`157df70`, so "merge staging into it" is a pure fast-forward.
+
+⚠️ Three branches are checked out in other worktrees (two belonging to a concurrent Gemini
+session), so `git checkout` is impossible and `git fetch origin X:X` is refused. Every update had
+to be an explicit-refspec push. The user's own primary checkout was fast-forwarded; the two
+antigravity worktrees were deliberately left alone and need `git pull --ff-only`.
+
+### 🔴 `workflow-orchestrator` declared a schedule and was scheduled nowhere
+
+It carried `export const config = { schedule: "*/5 * * * *" }` — which `netlify.toml`'s own header
+documents as honoured **only** for v2 `export default` handlers, and every function here is v1 —
+while appearing in **neither `netlify.toml` nor `AUTOMATION_JOBS`**. So the entire v2 pipeline's
+dispatch loop had never fired, and it was invisible to `/admin/monitoring`.
+
+**Why it survived:** `cron-registry-parity.test.js` compares the two registries against each other
+in both directions, and **absent from both is agreement**. The guard written precisely to catch
+"declared a schedule, never actually scheduled" could not see the one instance of it. The function
+source is a **third** registry — and the only one that does nothing on its own. The test now reads
+all three: +4 assertions, **2 confirmed RED** against the pre-fix registries while the **7
+pre-existing assertions stayed GREEN**, which is direct evidence the old suite was blind here.
+
+### 🔴 And the obvious fix would have broken production
+
+Declaring a schedule makes Netlify **refuse public HTTP access** to that function — the same
+mechanism `netlify.toml` credits with keeping `billing-purge` off the open internet. But
+`workflow-orchestrator` has three live HTTP callers: `00-datiq-smoke-test.json` → `/ping`,
+`datiq_process_pending_workflow.json` → `/dispatch`, and the deployment guide's operator smoke
+test → `/run-now`. **A Netlify function can be a cron or an HTTP endpoint, not both.**
+
+Split: new **`workflow-orchestrator-cron.js`** carries the schedule and the `withJobRun`
+bookkeeping; the original stays unscheduled and keeps serving HTTP. Both call the **same
+`runOnce()`**, so there is no second copy of the poll to drift from the one n8n exercises. The dead
+`config.schedule` export was removed from the HTTP function, since acting on it is precisely the
+trap. `orchestrator-route-parity.test.js` (5 assertions, 2 confirmed RED by re-introducing the
+exact mistakes) fails the build if anyone re-merges them.
+
+⚠️ This is very likely **why it was never scheduled** — but nothing recorded that, so it read as an
+oversight rather than a constraint. It is written down now, in three places.
+
+### 🔴 Five "Run now" buttons were wired to nothing
+
+`AUTOMATION_JOBS` marked 8 jobs `manualRunAllowed: true`; `RUNNABLE` in `admin-monitoring.js` wired
+4. `discoverability-monitor`, `watchlist-monitor`, `bulk-runner` and `signal-retry` each rendered an
+**enabled** button that answered `400 No runner is wired`. All four export a usable handler — they
+were simply never added. Pre-existing, and fixed in the same pass because a control that looks live
+and does nothing is worse than a disabled one: the operator believes the job just ran.
+
+### 🔴 `/admin/automation` and `/admin/revenue` never loaded under `npm run dev`
+
+Both used `useEffect(() => () => { alive.current = false; }, [])` — a cleanup with **no re-arm**.
+`React.StrictMode` runs mount → cleanup → mount on the *same* component instance, so `alive` stayed
+`false` for ever and every `if (!alive.current) return` bailed: permanent "loading", no error.
+`AdminMonitoring` and `AdminHealth` already open their effect with `alive.current = true`.
+Development-only (StrictMode is stripped in production builds), and a remount creates a fresh ref —
+but it means neither page could be tested locally, **plausibly why neither ever got a browser
+spec**. Found by the new e2e spec failing, not by reading the code.
+
+### The "4 n8n credentials" in the docs were wrong, in both directions
+
+`WORKFLOW-BRANCH-READINESS` said 4, `N8N-DEPLOYMENT-STATUS` said 3. Parsing all 18 workflow JSONs:
+exactly **one** credential is bound — `datiq-slack-monitoring` (`slackOAuth2Api`, 3 workflows,
+**name must match exactly**, they bind by name). Resend is a plain HTTP call authenticated from
+`$env.RESEND_API_KEY`; there is **no `supabase.co` host in any workflow** (they call back to
+DatIQ's own API); `datiq-orchestrator` appears nowhere. What K3 actually needs is **13 `$env` vars
+on the n8n host**, of which `DATIQ_N8N_API_KEY` **must equal** Netlify's `N8N_WEBHOOK_SECRET`.
+
+### Two n8n instances, easy to conflate
+
+The v2 pipeline targets the **self-hosted GCP Cloud Run** box via `N8N_BASE_URL`. The browser-side
+webhook targets **n8n Cloud** (`vkaruna.app.n8n.cloud`), hardcoded in `public/runtime-config.js`.
+🔴 **`VITE_WEBHOOK_URL` is set in no Netlify context, yet that webhook is live**, because
+`config.js`'s `endpoint()` prefers the runtime override over the env var — so `netlify env:list`
+alone reports it off when it is not. `VITE_CONTACT_WEBHOOK_URL` falls back to it, and
+`contactWebhook.js` is self-described scaffolding: nothing downstream consumes `contact.submitted`.
+
+### Operator items closed — verified, not assumed
+
+**P1** production RLS: `npm run verify:rls -- --prod` → **15/15 HTTP 401**. **P2**
+`SCRAPE_PROVIDER_ORDER` deleted from production / branch-deploy / deploy-preview — and the sanity
+check matters: **69 keys still visible** for production, so the absence is a real absence rather
+than an empty result. **N1–N3**, **K1–K4** operator-confirmed. ⚠️ Netlify injects Function env vars
+at **deploy** time, so P2 reaches production only on its next deploy.
+
+### Doc cleanup
+
+**Deleted** `WORKFLOW-BRANCH-READINESS-2026-08-02.md` — 0 inbound references, and two of its entries
+were actively wrong (C3 pointed at a `scripts/env/` directory that does not exist; C1's advice would
+have broken n8n). **Rewrote** `N8N-DEPLOYMENT-STATUS.md` as the current confirmed state. **New**
+`POST-DEPLOYMENT-MANUAL-TEST.md` — the ordered post-deploy pass (M1–M3, T1–T6), replacing the
+deleted doc's T-list. **Corrected** `HELP.md`'s `email.send` webhook fallback (it described
+`emailService.js`, which was **deleted**) and `CLAUDE.md`'s own `SCHEDULE_ALERT_WEBHOOK` line
+(**gone** — v2 replaced it with `enqueueEvent()`).
+
+### Verified
+
+unit **3 016** · contract **2 006** · integration **432** · e2e smoke **142** (+6 new) · db · build ·
+prerender · security · readiness 5 pass / 2 warn / 0 fail. **All gates green in 221s, nothing
+bypassed.** Every behavioural test confirmed RED against the pre-fix code first.
+
+⚠️ The prerender gate fired on the admin-page edits. Rather than bypass it, the generator was run:
+the diff was **31 insertions / 31 deletions across 28 pages — one line each, the entry bundle's
+content hash**, no content change. `/admin` is in `PRIVATE_PREFIXES` ("never prerendered"), so the
+change provably cannot affect prerendered output; running the generator proved it rather than
+asserting it.
+
+### Still outstanding
+
+**Nothing is verified against real traffic.** The pipeline is configured and the cron is scheduled,
+but no session has watched an event travel `pending → processing → done`; `/workflows` has never run
+on a populated account; and the `EVENT_TO_SOURCE` routing fix is reasoned from the schema and pinned
+by test, **not observed firing**. All of it is `POST-DEPLOYMENT-MANUAL-TEST.md`.
+
+---
+
+
 ## 2026-09-05 (latest) — `/workflows` Phase 2, and the routing vocabulary that made 8 of 10 event kinds undeliverable
 
 > **Branch:** `claude/missing-public-tables-107e72` → **`staging`**. `main` untouched.

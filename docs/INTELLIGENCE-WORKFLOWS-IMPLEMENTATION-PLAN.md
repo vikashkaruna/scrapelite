@@ -147,6 +147,18 @@ makes one set of n8n workflow JSONs work across production, staging, and every b
 
 ## 2.0 Status board
 
+> ⚠️ **2026-09-06 addendum — read before trusting the ✅s below.** The phase table
+> records that code shipped. It does not record that the code *ran*. The v2
+> workflow dispatch loop was marked delivered and had **never once fired on a
+> cron**: `workflow-orchestrator` declared its schedule inside the function,
+> which Netlify honours only for v2 handlers, and was absent from both
+> `netlify.toml` and `AUTOMATION_JOBS`. Fixed 2026-09-06 by splitting the cron
+> into `workflow-orchestrator-cron.js` (a scheduled function loses HTTP access,
+> and the original serves n8n's `/ping` and `/dispatch`). End-to-end
+> verification against real traffic is still outstanding —
+> `POST-DEPLOYMENT-MANUAL-TEST.md` §4.
+
+
 > Single source of truth for what exists. Updated at the end of every session.
 > Last updated **2026-09-04** — revised after a BRD-conformance, security and coverage
 > review. **Phases 4-6 were previously recorded as DONE; they are not.** They shipped the
