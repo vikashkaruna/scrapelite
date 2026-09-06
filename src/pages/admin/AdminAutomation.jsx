@@ -157,7 +157,6 @@ export default function AdminAutomation() {
   const [filter, setFilter] = useState("all"); // all | pending | failed | done
   const [warning, setWarning] = useState("");
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
 
   async function parseJsonSafe(res) {
     const text = await res.text();
@@ -203,7 +202,17 @@ export default function AdminAutomation() {
     } catch {/* ignore */}
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // NOTE: the re-arm below is load-bearing. React.StrictMode (main.jsx) runs
+  // mount -> cleanup -> mount on the SAME component instance in development, so
+  // a cleanup-only effect leaves `alive` permanently false and every
+  // `if (!alive.current) return` guard bails — the page then sits in "loading"
+  // for ever with no error. AdminMonitoring and AdminHealth already do this;
+  // these two did not, so neither page ever loaded under `npm run dev`.
+  useEffect(() => {
+    alive.current = true;
+    load();
+    return () => { alive.current = false; };
+  }, [load]);
   useEffect(() => { if (selectedId) loadDetail(selectedId); }, [selectedId, loadDetail]);
 
   const onSaveConfig = useCallback(async () => {

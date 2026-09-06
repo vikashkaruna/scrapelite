@@ -170,7 +170,7 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
-    id: "workflow-orchestrator",
+    id: "workflow-orchestrator-cron",
     label: "Workflow dispatch loop",
     schedule: "*/5 * * * *",
     cron: "*/5 * * * *",
@@ -178,10 +178,10 @@ export const AUTOMATION_JOBS = [
     category: "platform",
     description:
       "Claims queued workflow_events and POSTs them to n8n, which fans them out to Slack, email " +
-      "and the other destinations. Every 5 minutes. Until 2026-09-06 this job was scheduled " +
-      "NOWHERE — it declared `export const config = { schedule }` inside the function, which is a " +
-      "v2 feature and is silently ignored for our v1 handlers — so the v2 pipeline had never once " +
-      "run on a cron.",
+      "and the other destinations. Every 5 minutes. Until 2026-09-06 the v2 pipeline had never " +
+      "once run on a cron: it declared its schedule inside the function, which is a v2 feature " +
+      "silently ignored for our v1 handlers. Separate from the workflow-orchestrator FUNCTION, " +
+      "which serves n8n's /ping and /dispatch — a scheduled function cannot also answer HTTP.",
     destructive: false,
     // Safe by hand: events are claimed with an optimistic-concurrency update
     // before dispatch, so a manual run alongside the cron cannot deliver the

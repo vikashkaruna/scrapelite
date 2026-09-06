@@ -113,6 +113,9 @@ describe("jobEnabledMap (J-02)", () => {
       "billing-lifecycle", "billing-purge", "bulk-runner",
       "discoverability-monitor", "health-monitor", "reengagement",
       "scheduled-runner", "signal-retry", "watchlist-monitor",
+      // The v2 dispatch loop's cron half, registered 2026-09-06. Sorted last
+      // by the .sort() above, not by registry order.
+      "workflow-orchestrator-cron",
     ]);
     expect(map["billing-purge"]).toMatchObject({
       enabled: false, source: "config", reason: "migration window", changedBy: "admin",

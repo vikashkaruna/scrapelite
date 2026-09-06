@@ -60,7 +60,7 @@ const RUNNABLE = {
   "watchlist-monitor": () => import("./watchlist-monitor.js"),
   "bulk-runner": () => import("./bulk-runner.js"),
   "signal-retry": () => import("./signal-retry.js"),
-  "workflow-orchestrator": () => import("./workflow-orchestrator.js"),
+  "workflow-orchestrator-cron": () => import("./workflow-orchestrator-cron.js"),
 };
 
 // Marks a schedule paused by an admin rather than by the billing lifecycle.
@@ -87,7 +87,7 @@ const JOB_PLATFORM = {
   "signal-retry":            "db",
   // The orchestrator's own work is an outbound POST to n8n; the queue read is
   // incidental. Classified by what it primarily does, not what it touches.
-  "workflow-orchestrator":   "netlify",
+  "workflow-orchestrator-cron": "netlify",
 };
 
 function jobPlatform(jobId) {

@@ -40,7 +40,7 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
       // declared config.schedule in its own source since it shipped, which is
       // ignored for v1 handlers, and was absent from BOTH registries — so it
       // had never once run on a cron and was invisible to this dashboard.
-      "workflow-orchestrator",
+      "workflow-orchestrator-cron",
     ]);
   });
 

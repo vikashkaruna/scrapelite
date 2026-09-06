@@ -17,14 +17,17 @@
 import { runOnce } from "./lib/workflowOrchestrator.js";
 import { verify as verifySig } from "./lib/n8nSignature.js";
 import { getPipelineConfig } from "./admin-automation.js";
-import { withJobRun, isJobEnabled } from "./lib/jobControl.js";
+import { isJobEnabled } from "./lib/jobControl.js";
 
 // Must match the id in AUTOMATION_JOBS (src/lib/monitoringModel.js) and the
 // [functions."..."] block in netlify.toml. cron-registry-parity asserts all three.
 const JOB_ID = "workflow-orchestrator";
 
-// Cron: every 5 minutes (acts as backup fallback when enabled).
-export const config = { schedule: "*/5 * * * *" };
+// NO `export const config = { schedule }` here, deliberately. It would be
+// ignored anyway (a v2 feature; this is a v1 handler), and scheduling this
+// function for real would make Netlify refuse HTTP access to it — breaking
+// n8n's /ping and /dispatch callbacks. The cron lives in
+// workflow-orchestrator-cron.js; both call the same runOnce().
 
 // ── Environment ────────────────────────────────────────────────────────
 function getEnv() {
@@ -152,12 +155,12 @@ async function handleHttp(event, env, client) {
   return { statusCode: 404, body: JSON.stringify({ error: `unknown action '${action}'` }) };
 }
 
-// ── The scheduled poll ─────────────────────────────────────────────────
-// Wrapped in withJobRun so it (a) writes a job_runs row that /admin/monitoring
-// can read, and (b) honours the operator kill switch. Without this the job
-// would appear on the dashboard permanently reading "never run", and the Stop
-// button would silently do nothing — a dashboard that lies is worse than none.
-const scheduledPoll = withJobRun(JOB_ID, async () => {
+// ── The poll, as reached by a direct (non-HTTP) invocation ─────────────
+// NOT wrapped in withJobRun: the job_runs row and the kill-switch check belong
+// to workflow-orchestrator-cron.js, which is the invocation Netlify's scheduler
+// actually makes and the one /admin/monitoring reports on. Recording a run here
+// too would double-count every tick in the job history.
+const scheduledPoll = (async () => {
   const env = getEnv();
   const client = sbClient(env);
 

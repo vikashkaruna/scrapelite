@@ -88,7 +88,6 @@ export default function AdminRevenue() {
   // but an unhandled "window is not defined" (and a red suite) under vitest,
   // where the jsdom environment is torn down the moment the file finishes.
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,7 +112,17 @@ export default function AdminRevenue() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // NOTE: the re-arm below is load-bearing. React.StrictMode (main.jsx) runs
+  // mount -> cleanup -> mount on the SAME component instance in development, so
+  // a cleanup-only effect leaves `alive` permanently false and every
+  // `if (!alive.current) return` guard bails — the page then sits in "loading"
+  // for ever with no error. AdminMonitoring and AdminHealth already do this;
+  // these two did not, so neither page ever loaded under `npm run dev`.
+  useEffect(() => {
+    alive.current = true;
+    load();
+    return () => { alive.current = false; };
+  }, [load]);
 
   const fmt = (usd) => formatPrice(convertPrice(usd, rates, currency), currency);
 

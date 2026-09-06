@@ -116,7 +116,7 @@ describe("admin-monitoring GET (AM-02)", () => {
       "scheduled-runner", "discoverability-monitor",
       "watchlist-monitor", "bulk-runner", "signal-retry",
       "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
-      "workflow-orchestrator",
+      "workflow-orchestrator-cron",
     ]);
     const lifecycle = b.jobs.find((j) => j.id === "billing-lifecycle");
     expect(lifecycle.state).toBe("healthy");
