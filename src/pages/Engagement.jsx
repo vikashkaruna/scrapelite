@@ -73,7 +73,7 @@ export default function Engagement() {
       ]);
       setProspects(pRes.prospects || []);
       setMessages(mRes.messages || []);
-      setAnalytics(aRes.analytics || {});
+      setAnalytics(aRes.analytics || aRes || {});
       setSyncConfig(sRes.config || null);
     } catch (e) {
       showToast(e.message || "Failed to load campaign data");
@@ -540,6 +540,9 @@ export default function Engagement() {
                         <tr
                           key={p.id}
                           onClick={() => handleSelectProspect(p.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectProspect(p.id); } }}
+                          tabIndex={0}
+                          role="button"
                           className="eng-clickable-row"
                         >
                           <td>

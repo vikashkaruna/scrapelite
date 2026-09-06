@@ -62,11 +62,11 @@ To enable live persistent storage and multi-seat sync, execute migration `0048_p
 File: [`supabase/migrations/0048_prospect_engagement_engine.sql`](file:///Users/vikash/Extracta/supabase/migrations/0048_prospect_engagement_engine.sql)
 
 #### Tables Created:
-1. `public.engagement_brand_kits`: Brand tone, voice guidelines, persona parameters, forbidden words, compliance footers.
-2. `public.prospect_engagements`: Master prospect records, channels, lead scores, stages (`new`, `enriched`, `drafted`, `review_pending`, `approved`, `queued`, `sent`, `delivered`, `opened`, `clicked`, `replied`, `converted`, `stale`, `opted_out`).
+1. `public.engagement_campaigns`: Outreach campaign definitions, brand kits, channel priority, and settings.
+2. `public.engagement_prospects`: Master prospect records, channels, lead scores, stages (`new`, `queued`, `sent`, `delivered`, `opened`, `clicked`, `replied`, `followup_due`, `converted`, `unresponsive`, `opted_out`).
 3. `public.engagement_messages`: Multi-channel copy (Email subject/body, WhatsApp/SMS text, Telegram payload), review status, dispatch logs.
-4. `public.engagement_activities`: Immutable audit trail for every stage change, message generation, approval, dispatch, reply, and opt-out.
-5. `public.engagement_sync_logs`: Bidirectional synchronization audit logs for Google Sheets, Airtable, and CRMs.
+4. `public.engagement_activity_log`: Immutable audit trail for every stage change, message generation, approval, dispatch, reply, note, and opt-out.
+5. `public.engagement_sync_configs`: Bidirectional synchronization configurations and status logs for Google Sheets and Airtable.
 
 #### Applying the Migration:
 ```bash
@@ -78,7 +78,7 @@ File: [`supabase/migrations/0048_prospect_engagement_engine.sql`](file:///Users/
 npm run migrate:prod
 ```
 
-> **Security Note**: RLS is strictly enforced. Client anonymous keys have zero direct table access. All reads/writes route through Netlify functions (`/api/engagement/engine` and `/api/engagement/webhook`) using the `SUPABASE_SERVICE_ROLE_KEY` with authenticated user context or HMAC signatures.
+> **Security Note**: RLS is strictly enforced. Client anonymous keys have zero direct table access. All reads/writes route through Netlify functions (`/api/engagement-engine` and `/api/engagement-webhook`) using the `SUPABASE_SERVICE_ROLE_KEY` with authenticated user context or HMAC signatures.
 
 ---
 
@@ -89,24 +89,27 @@ Set the following environment variables in your Netlify site settings (**Site Se
 | Variable Name | Required? | Purpose | Example Value |
 |---|---|---|---|
 | `SUPABASE_URL` | **Yes** | Supabase Project REST URL | `https://xyzproject.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | Service role key for backend DB operations | `eyJhbGciOi...` |
+| `SUPABASE_SERVICE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | Service role key for backend DB operations | `eyJhbGciOi...` |
 | `RESEND_API_KEY` | Optional | Native email dispatch provider | `re_abc123...` |
 | `TWILIO_ACCOUNT_SID` | Optional | Twilio account for SMS and WhatsApp | `ACXXXXXXXXXXXXXXXX` |
 | `TWILIO_AUTH_TOKEN` | Optional | Twilio auth token | `auth_token_xyz` |
 | `TWILIO_PHONE_NUMBER` | Optional | Twilio SMS sender / WhatsApp sandbox number | `+14155238886` |
 | `TELEGRAM_BOT_TOKEN` | Optional | Telegram Bot API token for direct messaging | `123456789:ABCdef...` |
-| `ENGAGEMENT_WEBHOOK_SECRET`| Optional | Secret for verifying inbound webhook payloads | `datiq-engagement-webhook-secret` |
-| `VITE_ENGAGEMENT_API_URL` | Optional | Custom proxy endpoint (defaults to `/api/engagement`) | `/api/engagement` |
+| `ENGAGEMENT_WEBHOOK_SECRET`| Optional | Secret for verifying inbound webhook payloads (`x-engagement-secret`) | `datiq-engagement-webhook-secret` |
 
 > **Graceful Degradation**: If third-party credentials (`RESEND_API_KEY`, `TWILIO_*`, `TELEGRAM_*`) are omitted, the engine automatically enters **Dry-Run Simulation Mode**: message logs, state transitions, activities, and payloads are generated and recorded with mock delivery IDs (`mock_resend_...`, `mock_twilio_...`).
 
 ---
 
-### 2.3 Netlify Edge Access Bypass
+### 2.3 Netlify Edge Access & Routing
+
+The following API endpoints and rewrites are configured in `netlify.toml`:
+- **Engine Endpoint**: `/api/engagement-engine` (aliases: `/api/engagement/engine`, `/api/engagement-engine/*`)
+- **Webhook Endpoint**: `/api/engagement-webhook` (alias: `/api/engagement/webhook`)
 
 If your Netlify site has Edge Access (SSO / Basic Auth gating) enabled, configure the following path bypass in Netlify:
-- **Bypass Path**: `/api/engagement/*`
-- **Reason**: Allows inbound webhooks from Resend, Twilio, and n8n background workers to reach the Netlify functions without being stopped by the SSO login gate.
+- **Bypass Path**: `/api/engagement*`
+- **Reason**: Allows inbound webhooks from Resend, Twilio, Telegram, and n8n background workers to reach the Netlify functions without being stopped by the SSO login gate.
 
 ---
 
@@ -114,16 +117,16 @@ If your Netlify site has Edge Access (SSO / Basic Auth gating) enabled, configur
 
 The engine includes 5 production-ready n8n workflow templates located in `n8n/workflows/`:
 
-1. [`n8n/workflows/datiq_prospect_engagement_engine.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_prospect_engagement_engine.json)  
-   *Lead Ingest & AI Multi-Channel Router*
-2. [`n8n/workflows/datiq_human_in_the_loop_approval.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_human_in_the_loop_approval.json)  
-   *Approval Gate & Review Pipeline*
-3. [`n8n/workflows/datiq_multi_channel_dispatcher.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_multi_channel_dispatcher.json)  
+1. [`n8n/workflows/datiq_prospect_ingest.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_prospect_ingest.json)  
+   *Lead Ingest & Normalization*
+2. [`n8n/workflows/datiq_ai_personalize.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_ai_personalize.json)  
+   *AI Personalized Message Generation Sub-Workflow*
+3. [`n8n/workflows/datiq_channel_router.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_channel_router.json)  
    *Multi-Channel Dispatcher (Email, WhatsApp, SMS, Telegram)*
-4. [`n8n/workflows/datiq_inbound_engagement_webhook.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_inbound_engagement_webhook.json)  
+4. [`n8n/workflows/datiq_engagement_webhook.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_engagement_webhook.json)  
    *Inbound Webhook Receiver (Replies, Clicks, STOP Opt-out)*
-5. [`n8n/workflows/datiq_stale_prospect_monitor.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_stale_prospect_monitor.json)  
-   *Scheduled Stale Prospect SLA Monitor (Runs every 6 hours)*
+5. [`n8n/workflows/datiq_state_monitor.json`](file:///Users/vikash/Extracta/n8n/workflows/datiq_state_monitor.json)  
+   *Scheduled Stale Prospect SLA Monitor (Runs every 4 hours)*
 
 #### Importing Workflows into n8n:
 1. In the n8n UI, navigate to **Workflows > Add Workflow > Import from File**.
@@ -134,9 +137,34 @@ The engine includes 5 production-ready n8n workflow templates located in `n8n/wo
    - **`datiq-twilio`**: Twilio Basic Auth (Account SID + Auth Token).
    - **`datiq-telegram`**: Telegram Bot Token.
 4. Set workflow variables:
-   - `DATIQ_BASE_URL`: `https://datiq.app` (or your staging/preview domain).
-   - `ENGAGEMENT_SECRET`: Must match `ENGAGEMENT_WEBHOOK_SECRET` in Netlify.
+   - `DATIQ_BASE_URL` or `SITE_URL`: `https://datiq.app` (or your staging/preview domain).
+   - `DATIQ_N8N_API_KEY`: Operator session or API token for authenticating calls to `/api/engagement-engine`.
 5. Activate each workflow toggle to **Active**.
+
+---
+
+### 2.5 API Actions Reference
+
+The `/api/engagement-engine` endpoint accepts authenticated requests with an `action` parameter:
+
+| Category | Action | Method | Required Parameters | Description |
+|---|---|---|---|---|
+| **Campaigns** | `list_campaigns` | GET | — | Lists user's campaigns |
+| **Campaigns** | `get_campaign` | GET | `campaign_id` | Retrieves campaign details and brand kit |
+| **Campaigns** | `create_campaign` | POST | `name` | Creates new outreach campaign |
+| **Campaigns** | `update_campaign` | POST | `campaign_id`, `updates` | Updates brand kit or campaign settings |
+| **Campaigns** | `delete_campaign` | POST | `campaign_id` | Deletes campaign and cascades |
+| **Prospects** | `list_prospects` | GET | `campaign_id` | Lists prospects with status & search filters |
+| **Prospects** | `add_prospects` | POST | `campaign_id`, `prospects` | Ingests & deduplicates prospects |
+| **Prospects** | `update_prospect_status` | POST | `prospect_id`, `campaign_id`, `status` | Applies state machine transition & score |
+| **Prospects** | `delete_prospect` | POST | `prospect_id` | Removes prospect record |
+| **Messages** | `generate_messages` | POST | `campaign_id` | Generates A/B variants per channel |
+| **Messages** | `list_messages` | GET | `campaign_id` | Lists messages for review queue |
+| **Messages** | `approve_message` | POST | `message_id` | Approves and queues message |
+| **Messages** | `reject_message` | POST | `message_id` | Rejects message with optional reason |
+| **Messages** | `dispatch_messages` | POST | `campaign_id` | Dispatches approved messages via channels |
+| **Analytics** | `get_analytics` | GET | `campaign_id` | Returns funnel, rates, and counts |
+| **Monitor** | `check_stale_prospects`| POST | `campaign_id` (opt) | Scans prospects past SLA and transitions to `followup_due` |
 
 ---
 
@@ -255,86 +283,97 @@ Open your deployed preview or local dev instance (`http://localhost:5173/engagem
 
 **Goal**: Simulate third-party webhooks to verify automated stage updates and compliance opt-out handling.
 
-#### Test 6A: Simulate Email Opened Event
+#### Test 6A: Simulate Email Opened Event (Resend Webhook)
 ```bash
-curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
+curl -X POST "https://<your-preview-url>/api/engagement-webhook" \
   -H "Content-Type: application/json" \
   -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
-    "provider": "resend",
-    "event": "email.opened",
+    "type": "email.opened",
     "data": {
-      "to": "sarah@cyberdyne.io",
+      "to": ["sarah@cyberdyne.io"],
       "email_id": "test-resend-msg-123"
     }
   }'
 ```
 **Verification**:
-- Response: `{"success":true,"action":"status_updated","stage":"opened"}`
+- Response: `{"ok":true,"status":"transitioned","from":"sent","to":"opened","prospect_id":"..."}`
 - Sarah Connor's status on the Kanban board updates to **"Opened"**.
 
-#### Test 6B: Simulate Inbound Reply
+#### Test 6B: Simulate Inbound WhatsApp / SMS Reply (Twilio Webhook)
 ```bash
-curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
+curl -X POST "https://<your-preview-url>/api/engagement-webhook" \
   -H "Content-Type: application/json" \
   -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
-    "provider": "twilio",
-    "event": "message.received",
-    "data": {
-      "From": "+14155550199",
-      "To": "+14155238886",
-      "Body": "Sounds interesting, can we schedule a demo call tomorrow at 3pm?"
-    }
+    "From": "whatsapp:+14155550199",
+    "To": "whatsapp:+14155238886",
+    "Body": "Sounds interesting, can we schedule a demo call tomorrow at 3pm?"
   }'
 ```
 **Verification**:
-- Response: `{"success":true,"action":"reply_recorded","stage":"replied"}`
-- Prospect moves to the **"Replied"** column with the incoming text displayed in the activity drawer.
+- Response: `{"ok":true,"status":"transitioned","from":"delivered","to":"replied","prospect_id":"..."}`
+- Prospect moves to the **"Replied"** column with the incoming text recorded in the activity log.
 
-#### Test 6C: Simulate Opt-Out / STOP Event (CRITICAL COMPLIANCE)
+#### Test 6C: Simulate Inbound Telegram Reply
 ```bash
-curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
+curl -X POST "https://<your-preview-url>/api/engagement-webhook" \
   -H "Content-Type: application/json" \
   -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
-    "provider": "twilio",
-    "event": "message.received",
-    "data": {
-      "From": "+14155550199",
-      "To": "+14155238886",
-      "Body": "STOP"
+    "update_id": 10001,
+    "message": {
+      "from": { "username": "sarah_connor" },
+      "chat": { "id": 987654321 },
+      "text": "Sounds great, send over the details!"
     }
   }'
 ```
 **Verification**:
-- Response: `{"success":true,"action":"opt_out_enforced","stage":"opted_out"}`
+- Response: `{"ok":true,"status":"transitioned","to":"replied"}`
+- Telegram reply is recorded in the activity log and engagement score increments.
+
+#### Test 6D: Simulate Opt-Out / STOP Event (CRITICAL COMPLIANCE)
+```bash
+curl -X POST "https://<your-preview-url>/api/engagement-webhook" \
+  -H "Content-Type: application/json" \
+  -H "x-engagement-secret: datiq-engagement-webhook-secret" \
+  -d '{
+    "From": "whatsapp:+14155550199",
+    "To": "whatsapp:+14155238886",
+    "Body": "STOP"
+  }'
+```
+**Verification**:
+- Response: `{"ok":true,"status":"transitioned","from":"...","to":"opted_out","prospect_id":"..."}`
 - Prospect is moved immediately to **"Opted Out"**.
-- All pending queued messages are automatically cancelled.
-- Any future dispatch attempts to this contact are blocked with `OPTED_OUT_CONTACT` error.
+- Compliance guardrail is locked (`OPTED_OUT` is terminal; automated re-transition is rejected).
+- Any future automated message generation or dispatch attempts for this contact are blocked.
 
 ---
 
 ### Test Scenario 7: Scheduled Stale SLA Monitor
 
-**Goal**: Automatically mark prospects as stale when no response is received within the SLA window (e.g. 7 days).
+**Goal**: Automatically transition prospects that have had no response after SLA window (default 4 days) to `followup_due`.
 
-Simulate the n8n 6-hour cron call:
+Simulate the periodic monitor call (from n8n cron or curl):
 ```bash
-curl -X POST "https://<your-preview-url>/api/engagement/engine" \
+curl -X POST "https://<your-preview-url>/api/engagement-engine" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <user-or-service-jwt>" \
   -d '{
     "action": "check_stale_prospects",
-    "stale_threshold_days": 7
+    "followup_delay_days": 4
   }'
 ```
 **Verification**:
-- Response: `{"success":true,"stale_count":N}`
-- Prospects sent > 7 days ago transition from `sent`/`opened` to `stale`.
+- Response: `{"ok":true,"stale_count":N,"updated":["prs_..."]}`
+- Stale prospects transition to **"Follow-up Due"** stage.
+- Timeline log records `stale_sla_exceeded` event with timestamp.
 
 ---
 
-### Test Scenario 8: Bi-directional CRM & Google Sheets Sync
+### Test Scenario 8: Metrics Export & Two-Way CRM Sync
 
 **Goal**: Export pipeline data to Google Sheets or Airtable, and pull status updates back.
 

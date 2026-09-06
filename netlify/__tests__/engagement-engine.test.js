@@ -45,6 +45,16 @@ describe("engagement-engine — authentication gate", () => {
     const res = await invoke("GET", "/campaigns", null, { action: "list_campaigns" });
     expect(res.statusCode).toBe(401);
   });
+
+  it("returns 400 for unknown action", async () => {
+    const res = await invoke("POST", "", { action: "unknown_magic_action" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 when get_campaign lacks campaign_id", async () => {
+    const res = await invoke("GET", "", null, { action: "get_campaign" });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe("engagement-engine — campaign operations", () => {
@@ -108,6 +118,19 @@ describe("engagement-engine — prospects & deduplication", () => {
     expect(data.duplicates.length).toBe(1);
     expect(data.stats.uniqueCount).toBe(2);
   });
+
+  it("returns empty result when prospects array is empty", async () => {
+    const res = await invoke("POST", "", {
+      action: "add_prospects",
+      campaignId,
+      prospects: [],
+    });
+    
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(data.prospects.length).toBe(0);
+  });
 });
 
 describe("engagement-engine — AI message generation & approval flow", () => {
@@ -145,6 +168,19 @@ describe("engagement-engine — AI message generation & approval flow", () => {
     const emailMsg = genData.messages.find((m) => m.channel === "email");
     expect(emailMsg.body).toContain("Carol");
     expect(emailMsg.status).toBe("pending_approval");
+  });
+
+  it("returns empty messages array when prospectIds do not match", async () => {
+    const genRes = await invoke("POST", "", {
+      action: "generate_messages",
+      campaignId,
+      prospectIds: ["non_existent_id"],
+    });
+
+    expect(genRes.statusCode).toBe(200);
+    const data = JSON.parse(genRes.body);
+    expect(data.ok).toBe(true);
+    expect(data.messages.length).toBe(0);
   });
 
   it("approves message and advances prospect status to queued", async () => {
@@ -191,5 +227,18 @@ describe("engagement-engine — AI message generation & approval flow", () => {
     expect(anData.total_prospects).toBeGreaterThanOrEqual(1);
     expect(anData.funnel).toBeDefined();
     expect(anData.rates).toBeDefined();
+  });
+
+  it("executes check_stale_prospects SLA monitor", async () => {
+    const res = await invoke("POST", "", {
+      action: "check_stale_prospects",
+      campaign_id: campaignId,
+      followup_delay_days: 1,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(typeof data.stale_count).toBe("number");
   });
 });

@@ -11,6 +11,7 @@
 
 import { PROSPECT_STATUSES, transitionProspect } from "../../src/lib/engagement/stateMachine.js";
 import { serviceDb } from "./lib/engagement/engagementStore.js";
+import crypto from "crypto";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -27,6 +28,23 @@ const json = (status, body) => ({
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+
+  // Webhook signature verification
+  const webhookSecret = process.env.ENGAGEMENT_WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const providedSecret = event.headers["x-engagement-secret"] || "";
+    try {
+      const expected = Buffer.from(webhookSecret, "utf8");
+      const provided = Buffer.from(providedSecret, "utf8");
+      if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+        console.warn("[engagement-webhook] Signature verification failed");
+        return json(401, { error: "Invalid webhook signature" });
+      }
+    } catch {
+      console.warn("[engagement-webhook] Signature verification error");
+      return json(401, { error: "Invalid webhook signature" });
+    }
+  }
 
   try {
     let payload = {};

@@ -121,7 +121,7 @@ export default function KanbanBoard({
                     <div
                       key={prospect.id}
                       className="eng-card"
-                      onClick={() => onSelectProspect && onSelectProspect(prospect)}
+                      onClick={() => onSelectProspect && onSelectProspect(prospect.id)}
                     >
                       <div className="eng-card-top">
                         <div className="eng-card-identity">

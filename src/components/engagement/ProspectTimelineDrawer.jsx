@@ -3,7 +3,7 @@ import { useState } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import FaviconDot from "../FaviconDot.jsx";
-import { PROSPECT_STATUSES, STATUS_METADATA } from "../../lib/engagement/stateMachine.js";
+import { PROSPECT_STATUSES, STATUS_METADATA, isValidTransition } from "../../lib/engagement/stateMachine.js";
 import { fmtDate, timeAgo } from "../../lib/utils.js";
 
 export default function ProspectTimelineDrawer({
@@ -117,11 +117,13 @@ export default function ProspectTimelineDrawer({
                 color: currentMeta.color,
               }}
             >
-              {Object.values(PROSPECT_STATUSES).map((st) => (
-                <option key={st} value={st}>
-                  {STATUS_METADATA[st]?.label || st}
-                </option>
-              ))}
+              {Object.values(PROSPECT_STATUSES)
+                .filter((st) => st === prospect.status || isValidTransition(prospect.status, st))
+                .map((st) => (
+                  <option key={st} value={st}>
+                    {STATUS_METADATA[st]?.label || st}
+                  </option>
+                ))}
             </select>
           </div>
 

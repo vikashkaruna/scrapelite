@@ -38,6 +38,7 @@ netlify.backup.toml
 
 # Local Netlify folder
 .netlify
+.netlify-bundle-test/
 
 # E2E test screenshots — generated on demand, not committed
 e2e-screenshots/*.png

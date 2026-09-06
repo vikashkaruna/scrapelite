@@ -18,6 +18,48 @@
 
 ---
 
+## 2026-09-07 — Prospect Engagement Engine Audit & Remediation: API Routing, Webhook Security, State Machine Guards & Comprehensive Test Expansion
+
+**Branch:** `feat/prospect-engagement-engine`
+**Spec:** `DatIQ - Prospect Engagement Engine.md`, PRD/BRD, and Architecture Review Guidelines.
+
+### Audit Findings & Gaps Addressed:
+1. **API Routing Mismatch Fixed (P0):**
+   - **Issue:** Frontend client called REST-style paths (`/api/engagement/campaigns`, etc.), but Netlify catch-all redirected to non-existent functions. The backend function `engagement-engine.js` expects action-based dispatch.
+   - **Fix:** Added explicit redirects in `netlify.toml` for `/api/engagement-engine`, `/api/engagement-engine/*`, `/api/engagement/engine`, `/api/engagement-webhook`, and `/api/engagement/webhook`. Rewrote `engagementClient.js` to dispatch actions (`action: "list_campaigns"`, etc.) while keeping offline/demo localStorage fallbacks intact.
+
+2. **Webhook Security & HMAC Verification Added (P0):**
+   - **Issue:** Webhook endpoint accepted arbitrary unauthenticated POSTs without signature checks.
+   - **Fix:** Added timing-safe secret validation (`crypto.timingSafeEqual`) on `x-engagement-secret` against `ENGAGEMENT_WEBHOOK_SECRET` in `engagement-webhook.js`. Preserves graceful dry-run simulation when the secret is unset.
+
+3. **State Machine Integrity & UI Dropdown Guard (P1):**
+   - **Issue:** `ProspectTimelineDrawer.jsx` allowed arbitrary state selection bypassing `isValidTransition()`.
+   - **Fix:** Filtered dropdown choices to only allowed valid transitions per the state machine graph.
+
+4. **Input Validation & SLA Stale State Monitor (P1):**
+   - **Issue:** Missing input validation on campaign/prospect/message IDs; `check_stale_prospects` was documented but not wired into `engagement-engine.js`.
+   - **Fix:** Added strict parameter validation across all GET and POST actions in `engagement-engine.js`. Implemented `check_stale_prospects` action using `detectStaleProspects()` to transition stale contacts to `followup_due`.
+
+5. **A11y, Data Mapping & CSV Export (P2):**
+   - **Issue:** `KanbanBoard` passed full object to `onSelectProspect`; `Engagement.jsx` table rows lacked keyboard navigation; `AnalyticsPanel` metrics did not unpack nested funnel counters and lacked direct CSV download.
+   - **Fix:** Corrected ID passing in `KanbanBoard`; added `tabIndex={0}`, `role="button"`, and Enter/Space keyboard handlers on table rows in `Engagement.jsx`; supported nested funnel/counts unpacking and implemented `handleExportCsv` in `AnalyticsPanel.jsx`.
+
+6. **Expanded Test Suite (P3):**
+   - Added 19 new automated tests across unit, security, error paths, and channel dispatch:
+     - `stateMachine.test.js`: Idempotent transitions, follow-up, unresponsive, and score clamp tests.
+     - `aiMessageGenerator.test.js`: Telegram formatting, empty body violations, long subject warnings.
+     - `channelRouter.test.js`: Channel cascade resolution, SMS dispatch, Telegram fallback, missing phone guards.
+     - `engagement-engine.test.js`: 400 error handling on invalid actions/missing IDs, empty batch handling, `check_stale_prospects` test.
+     - `engagement-webhook.test.js`: Webhook HMAC authorization, invalid secret rejection, Telegram `/stop` opt-out, malformed payload resilience.
+   - Engagement test suite now has **71 passed tests** (all green).
+
+7. **Documentation & Verification Guide Updated (P4):**
+   - Corrected n8n workflow file names in `docs/PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md`.
+   - Corrected curl simulation commands for Resend, Twilio, and Telegram webhooks.
+   - Added comprehensive API Actions Reference table.
+
+---
+
 ## 2026-09-06 — Shipped Prospect Engagement Engine: Multi-Channel Outreach, State Machine, n8n Templates & Bi-Directional CRM Sync
 
 **Branch:** `feat/prospect-engagement-engine` (branched off `origin/main` @ `dcb4bb0`; `main` and `staging` untouched).

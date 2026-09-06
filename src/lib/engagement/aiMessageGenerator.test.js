@@ -61,6 +61,24 @@ describe("aiMessageGenerator — variant generation", () => {
     expect(sms.body.length).toBeLessThanOrEqual(160);
     expect(sms.body).toContain("STOP");
   });
+
+  it("generates Telegram channel message variant", () => {
+    const telegramCampaign = { ...campaign, channels: [CHANNELS.TELEGRAM] };
+    const variants = generatePersonalizedVariants(prospect, telegramCampaign, brandKit);
+    const tg = variants.find((v) => v.channel === CHANNELS.TELEGRAM);
+    expect(tg).toBeDefined();
+    expect(tg.body).toContain("Alex");
+  });
+
+  it("generates variants for all requested channels including Telegram", () => {
+    const allChannelsCampaign = { ...campaign, channels: [CHANNELS.EMAIL, CHANNELS.WHATSAPP, CHANNELS.SMS, CHANNELS.TELEGRAM] };
+    const variants = generatePersonalizedVariants(prospect, allChannelsCampaign, brandKit);
+    
+    expect(variants.some(v => v.channel === CHANNELS.EMAIL)).toBe(true);
+    expect(variants.some(v => v.channel === CHANNELS.WHATSAPP)).toBe(true);
+    expect(variants.some(v => v.channel === CHANNELS.SMS)).toBe(true);
+    expect(variants.some(v => v.channel === CHANNELS.TELEGRAM)).toBe(true);
+  });
 });
 
 describe("aiMessageGenerator — guardrails & compliance validation", () => {
@@ -107,5 +125,22 @@ describe("aiMessageGenerator — guardrails & compliance validation", () => {
     const res = validateMessageGuardrails(longSms);
     expect(res.passed).toBe(false);
     expect(res.violations.some((v) => v.includes("maximum allowable length"))).toBe(true);
+  });
+
+  it("flags completely empty body as a violation", () => {
+    const emptyDraft = { channel: CHANNELS.EMAIL, subject: "Hello", body: "   " };
+    const res = validateMessageGuardrails(emptyDraft);
+    expect(res.passed).toBe(false);
+    expect(res.violations.some((v) => v.includes("cannot be empty"))).toBe(true);
+  });
+
+  it("warns when subject line length exceeds 120 characters", () => {
+    const longSubjectDraft = {
+      channel: CHANNELS.EMAIL,
+      subject: "A".repeat(125),
+      body: "Just a standard email body here. Unsubscribe",
+    };
+    const res = validateMessageGuardrails(longSubjectDraft);
+    expect(res.warnings.some((w) => w.includes("subject is long"))).toBe(true);
   });
 });

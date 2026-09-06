@@ -8,18 +8,61 @@ export default function AnalyticsPanel({
   campaignTitle = "Current Campaign",
   onExportCsv,
 }) {
-  const {
-    total_prospects = 0,
-    sent_count = 0,
-    delivered_count = 0,
-    opened_count = 0,
-    clicked_count = 0,
-    replied_count = 0,
-    converted_count = 0,
-    opted_out_count = 0,
-    rates = {},
-    channel_breakdown = {},
-  } = analytics;
+  const total_prospects = analytics.total_prospects ?? analytics.total ?? 0;
+  const sent_count = analytics.sent_count ?? analytics.funnel?.sent ?? analytics.counts?.sent ?? 0;
+  const delivered_count = analytics.delivered_count ?? analytics.funnel?.delivered ?? analytics.counts?.delivered ?? 0;
+  const opened_count = analytics.opened_count ?? analytics.funnel?.opened ?? analytics.counts?.opened ?? 0;
+  const clicked_count = analytics.clicked_count ?? analytics.funnel?.clicked ?? analytics.counts?.clicked ?? 0;
+  const replied_count = analytics.replied_count ?? analytics.funnel?.replied ?? analytics.counts?.replied ?? 0;
+  const converted_count = analytics.converted_count ?? analytics.funnel?.converted ?? analytics.counts?.converted ?? 0;
+  const opted_out_count = analytics.opted_out_count ?? analytics.counts?.opted_out ?? 0;
+  const rates = analytics.rates || {};
+  const channel_breakdown = analytics.channel_breakdown || {};
+
+  const handleExportCsv = () => {
+    const rows = [
+      ["Metric", "Value"],
+      ["Campaign Title", `"${campaignTitle.replace(/"/g, '""')}"`],
+      ["Total Prospects", total_prospects],
+      ["Messages Sent", sent_count],
+      ["Delivered", delivered_count],
+      ["Opened / Read", opened_count],
+      ["Clicked", clicked_count],
+      ["Replied", replied_count],
+      ["Converted", converted_count],
+      ["Opted Out", opted_out_count],
+      ["Delivery Rate", `${rates.delivery_rate || 0}%`],
+      ["Open Rate", `${rates.open_rate || 0}%`],
+      ["Click Rate", `${rates.click_rate || 0}%`],
+      ["Reply Rate", `${rates.reply_rate || 0}%`],
+      ["Conversion Rate", `${rates.conversion_rate || 0}%`],
+      [],
+      ["Channel Breakdown"],
+      ["Channel", "Sent", "Delivered", "Opened", "Replied", "Converted", "Reply Rate %", "Conversion Rate %"],
+      ...channelRows.map((r) => [
+        r.channel.toUpperCase(),
+        r.sent || 0,
+        r.delivered || 0,
+        r.opened || 0,
+        r.replied || 0,
+        r.converted || 0,
+        `${r.replyRate || 0}%`,
+        `${r.convRate || 0}%`,
+      ]),
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map((e) => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    const safeTitle = (campaignTitle || "campaign").toLowerCase().replace(/[^a-z0-9]/g, "_");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `datiq_metrics_${safeTitle}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    if (onExportCsv) onExportCsv();
+  };
 
   const funnelStages = useMemo(() => {
     const base = Math.max(sent_count, 1);
@@ -81,11 +124,9 @@ export default function AnalyticsPanel({
           <h3 className="eng-analytics-title">Campaign Intelligence & Metrics</h3>
           <p className="eng-analytics-sub">Performance metrics, multi-channel attribution and conversion funnel for {campaignTitle}</p>
         </div>
-        {onExportCsv && (
-          <Button variant="secondary" size="sm" icon="download" onClick={onExportCsv}>
-            Export Metrics CSV
-          </Button>
-        )}
+        <Button variant="secondary" size="sm" icon="download" onClick={handleExportCsv}>
+          Export Metrics CSV
+        </Button>
       </div>
 
       {/* KPI Cards Grid */}

@@ -354,6 +354,37 @@
   status = 200
   force = true
 
+# ── Engagement Engine API ────────────────────────────────────────────────────
+[[redirects]]
+  from = "/api/engagement-engine"
+  to = "/.netlify/functions/engagement-engine"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/engagement-engine/*"
+  to = "/.netlify/functions/engagement-engine"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/engagement/engine"
+  to = "/.netlify/functions/engagement-engine"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/engagement-webhook"
+  to = "/.netlify/functions/engagement-webhook"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/engagement/webhook"
+  to = "/.netlify/functions/engagement-webhook"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"

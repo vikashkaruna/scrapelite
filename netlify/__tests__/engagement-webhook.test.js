@@ -27,7 +27,7 @@ describe("engagement-webhook — provider detection", () => {
 });
 
 describe("engagement-webhook — event parsing", () => {
-  it("parses Resend open and click events", () => {
+  it("parses Resend open, click, and bounce events", () => {
     const openPayload = { type: "email.opened", data: { to: ["buyer@acme.test"] } };
     const parsedOpen = parseWebhookEvent("resend", openPayload);
     expect(parsedOpen.channel).toBe("email");
@@ -37,6 +37,10 @@ describe("engagement-webhook — event parsing", () => {
     const clickPayload = { type: "email.clicked", data: { to: ["buyer@acme.test"] } };
     const parsedClick = parseWebhookEvent("resend", clickPayload);
     expect(parsedClick.eventType).toBe("click");
+
+    const bouncePayload = { type: "email.bounced", data: { to: ["buyer@acme.test"] } };
+    const parsedBounce = parseWebhookEvent("resend", bouncePayload);
+    expect(parsedBounce.eventType).toBe("bounce");
   });
 
   it("parses Twilio inbound reply and identifies STOP keyword as opt-out", () => {
@@ -112,5 +116,53 @@ describe("engagement-webhook — handler execution", () => {
     expect(res.statusCode).toBe(200);
     const data = JSON.parse(res.body);
     expect(data.ok).toBe(true);
+  });
+
+  it("processes inbound Telegram /stop command", async () => {
+    const res = await handler({
+      httpMethod: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: { text: "/stop", from: { username: "user" } }
+      })
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).ok).toBe(true);
+  });
+
+  it("returns 200 with ignored status for malformed JSON payload", async () => {
+    const res = await handler({
+      httpMethod: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ badly_formed: true",
+    });
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.ok).toBe(true);
+    expect(data.status).toBe("ignored_unrecognized_event");
+  });
+});
+
+describe("engagement-webhook — security validation", () => {
+  it("rejects webhook with invalid signature when env var is set", async () => {
+    process.env.ENGAGEMENT_WEBHOOK_SECRET = "secret";
+    const res = await handler({
+      httpMethod: "POST",
+      headers: { "x-engagement-secret": "wrong" },
+      body: "{}",
+    });
+    expect(res.statusCode).toBe(401);
+    delete process.env.ENGAGEMENT_WEBHOOK_SECRET;
+  });
+
+  it("accepts webhook with valid signature when env var is set", async () => {
+    process.env.ENGAGEMENT_WEBHOOK_SECRET = "secret";
+    const res = await handler({
+      httpMethod: "POST",
+      headers: { "x-engagement-secret": "secret" },
+      body: JSON.stringify({ type: "email.opened", data: { to: ["a@a.com"] } }),
+    });
+    expect(res.statusCode).toBe(200);
+    delete process.env.ENGAGEMENT_WEBHOOK_SECRET;
   });
 });

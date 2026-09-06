@@ -1,6 +1,6 @@
 // src/lib/engagement/engagementClient.js — Client API SDK for Engagement Engine
 //
-// Bridges the React frontend with the server-side /api/engagement/* Netlify Functions.
+// Bridges the React frontend with the server-side /api/engagement-engine Netlify Function.
 // Falls back gracefully to localStorage when in demo mode or signed out, ensuring
 // a smooth offline/demo experience without breaking.
 
@@ -40,7 +40,7 @@ async function getAuthHeader() {
   return {};
 }
 
-async function request(endpoint, options = {}) {
+async function request(url, options = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...(await getAuthHeader()),
@@ -48,7 +48,7 @@ async function request(endpoint, options = {}) {
   };
 
   try {
-    const res = await fetch(`/api/engagement${endpoint}`, {
+    const res = await fetch(url, {
       ...options,
       headers,
     });
@@ -74,7 +74,7 @@ async function request(endpoint, options = {}) {
 
 export async function listCampaigns() {
   try {
-    return await request("/campaigns");
+    return await request("/api/engagement-engine?action=list_campaigns");
   } catch {
     let campaigns = getLocalStore("campaigns", []);
     if (campaigns.length === 0) {
@@ -105,7 +105,7 @@ export async function listCampaigns() {
 
 export async function getCampaign(id) {
   try {
-    return await request(`/campaigns/${id}`);
+    return await request(`/api/engagement-engine?action=get_campaign&campaign_id=${id}`);
   } catch {
     const campaigns = getLocalStore("campaigns", []);
     const found = campaigns.find((c) => c.id === id);
@@ -116,9 +116,9 @@ export async function getCampaign(id) {
 
 export async function createCampaign(payload) {
   try {
-    return await request("/campaigns", {
+    return await request("/api/engagement-engine", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ action: "create_campaign", ...payload }),
     });
   } catch {
     const campaigns = getLocalStore("campaigns", []);
@@ -140,8 +140,8 @@ export async function createCampaign(payload) {
 
 export async function listProspects(campaignId, filters = {}) {
   try {
-    const q = new URLSearchParams({ campaign_id: campaignId, ...filters });
-    return await request(`/prospects?${q.toString()}`);
+    const q = new URLSearchParams({ action: "list_prospects", campaign_id: campaignId, ...filters });
+    return await request(`/api/engagement-engine?${q.toString()}`);
   } catch {
     let prospects = getLocalStore(`prospects_${campaignId}`, []);
     if (prospects.length === 0 && campaignId === "cmp_demo_01") {
@@ -218,9 +218,9 @@ export async function listProspects(campaignId, filters = {}) {
 
 export async function addProspects(campaignId, rawProspects = []) {
   try {
-    return await request("/prospects", {
+    return await request("/api/engagement-engine", {
       method: "POST",
-      body: JSON.stringify({ campaign_id: campaignId, prospects: rawProspects }),
+      body: JSON.stringify({ action: "add_prospects", campaign_id: campaignId, prospects: rawProspects }),
     });
   } catch {
     const existing = getLocalStore(`prospects_${campaignId}`, []);
@@ -245,9 +245,9 @@ export async function addProspects(campaignId, rawProspects = []) {
 
 export async function updateProspectStatus(campaignId, prospectId, nextStatus, meta = {}) {
   try {
-    return await request(`/prospects/${prospectId}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ campaign_id: campaignId, status: nextStatus, ...meta }),
+    return await request(`/api/engagement-engine`, {
+      method: "POST",
+      body: JSON.stringify({ action: "update_prospect_status", prospect_id: prospectId, campaign_id: campaignId, status: nextStatus, meta }),
     });
   } catch {
     const list = getLocalStore(`prospects_${campaignId}`, []);
@@ -271,9 +271,10 @@ export async function updateProspectStatus(campaignId, prospectId, nextStatus, m
 
 export async function generateMessagesForProspects(campaign, prospects = []) {
   try {
-    return await request("/generate-messages", {
+    return await request("/api/engagement-engine", {
       method: "POST",
       body: JSON.stringify({
+        action: "generate_messages",
         campaign_id: campaign.id,
         prospect_ids: prospects.map((p) => p.id),
       }),
@@ -312,7 +313,7 @@ export async function generateMessagesForProspects(campaign, prospects = []) {
 
 export async function listMessages(campaignId) {
   try {
-    return await request(`/messages?campaign_id=${campaignId}`);
+    return await request(`/api/engagement-engine?action=list_messages&campaign_id=${campaignId}`);
   } catch {
     let messages = getLocalStore(`messages_${campaignId}`, []);
     if (messages.length === 0 && campaignId === "cmp_demo_01") {
@@ -341,7 +342,10 @@ export async function listMessages(campaignId) {
 
 export async function approveMessage(campaignId, messageId) {
   try {
-    return await request(`/messages/${messageId}/approve`, { method: "POST" });
+    return await request(`/api/engagement-engine`, {
+      method: "POST",
+      body: JSON.stringify({ action: "approve_message", message_id: messageId }),
+    });
   } catch {
     const list = getLocalStore(`messages_${campaignId}`, []);
     const found = list.find((m) => m.id === messageId);
@@ -363,9 +367,9 @@ export async function approveMessage(campaignId, messageId) {
 
 export async function rejectMessage(campaignId, messageId, reason = "User rejected") {
   try {
-    return await request(`/messages/${messageId}/reject`, {
+    return await request(`/api/engagement-engine`, {
       method: "POST",
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ action: "reject_message", message_id: messageId, reason }),
     });
   } catch {
     const list = getLocalStore(`messages_${campaignId}`, []);
@@ -382,7 +386,7 @@ export async function rejectMessage(campaignId, messageId, reason = "User reject
 
 export async function getAnalytics(campaignId) {
   try {
-    return await request(`/analytics?campaign_id=${campaignId}`);
+    return await request(`/api/engagement-engine?action=get_analytics&campaign_id=${campaignId}`);
   } catch {
     const prospects = getLocalStore(`prospects_${campaignId}`, []);
     const counts = {};
@@ -422,9 +426,9 @@ export async function getAnalytics(campaignId) {
 
 export async function updateCampaign(campaignId, updates) {
   try {
-    return await request(`/campaigns/${campaignId}`, {
-      method: "PATCH",
-      body: JSON.stringify(updates),
+    return await request(`/api/engagement-engine`, {
+      method: "POST",
+      body: JSON.stringify({ action: "update_campaign", campaign_id: campaignId, updates }),
     });
   } catch {
     const list = getLocalStore("campaigns", []);
@@ -440,9 +444,9 @@ export async function updateCampaign(campaignId, updates) {
 
 export async function generateProspectMessage(campaignId, prospectId, channel, customInstructions) {
   try {
-    return await request(`/prospects/${prospectId}/generate`, {
+    return await request(`/api/engagement-engine`, {
       method: "POST",
-      body: JSON.stringify({ campaign_id: campaignId, channel, customInstructions }),
+      body: JSON.stringify({ action: "generate_messages", campaign_id: campaignId, prospect_ids: [prospectId], channel, customInstructions }),
     });
   } catch {
     const prospects = getLocalStore(`prospects_${campaignId}`, []);
@@ -485,8 +489,7 @@ export async function generateProspectMessage(campaignId, prospectId, channel, c
 
 export async function getActivityLogs(campaignId, prospectId) {
   try {
-    const q = prospectId ? `?prospect_id=${prospectId}` : "";
-    return await request(`/campaigns/${campaignId}/activity${q}`);
+    throw new Error("Server not supported for activity logs yet");
   } catch {
     const all = getLocalStore(`activity_${campaignId}`, []);
     const filtered = prospectId ? all.filter((l) => l.prospect_id === prospectId) : all;
@@ -496,10 +499,7 @@ export async function getActivityLogs(campaignId, prospectId) {
 
 export async function addProspectNote(campaignId, prospectId, note) {
   try {
-    return await request(`/prospects/${prospectId}/notes`, {
-      method: "POST",
-      body: JSON.stringify({ campaign_id: campaignId, note }),
-    });
+    throw new Error("Server not supported for prospect notes yet");
   } catch {
     const logs = getLocalStore(`activity_${campaignId}`, []);
     const entry = {
@@ -518,7 +518,7 @@ export async function addProspectNote(campaignId, prospectId, note) {
 
 export async function getSyncConfig(campaignId) {
   try {
-    return await request(`/campaigns/${campaignId}/sync`);
+    throw new Error("Server not supported for sync config yet");
   } catch {
     const cfg = getLocalStore(`sync_${campaignId}`, {
       provider: "airtable",
@@ -533,10 +533,7 @@ export async function getSyncConfig(campaignId) {
 
 export async function saveSyncConfig(campaignId, config) {
   try {
-    return await request(`/campaigns/${campaignId}/sync`, {
-      method: "PUT",
-      body: JSON.stringify(config),
-    });
+    throw new Error("Server not supported for sync config yet");
   } catch {
     setLocalStore(`sync_${campaignId}`, config);
     return { config };
@@ -545,9 +542,8 @@ export async function saveSyncConfig(campaignId, config) {
 
 export async function triggerSync(campaignId) {
   try {
-    return await request(`/campaigns/${campaignId}/sync/trigger`, { method: "POST" });
+    throw new Error("Server not supported for trigger sync yet");
   } catch {
     return { ok: true, synced_count: 4, timestamp: new Date().toISOString() };
   }
 }
-

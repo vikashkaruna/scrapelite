@@ -49,7 +49,7 @@ export async function listCampaigns(userId, env = process.env) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, campaigns: data || [] };
 }
 
@@ -107,7 +107,7 @@ export async function createCampaign(userId, payload = {}, env = process.env) {
     .select("*")
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, campaign: data };
 }
 
@@ -131,7 +131,7 @@ export async function updateCampaign(campaignId, userId, updates = {}, env = pro
     .select("*")
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, campaign: data };
 }
 
@@ -159,7 +159,7 @@ export async function deleteCampaign(campaignId, userId, env = process.env) {
     .eq("id", campaignId)
     .eq("user_id", userId);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true };
 }
 
@@ -203,7 +203,7 @@ export async function listProspects(campaignId, userId, filters = {}, env = proc
   query = query.order("created_at", { ascending: false });
 
   const { data, error } = await query;
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, prospects: data || [] };
 }
 
@@ -261,7 +261,7 @@ export async function addProspects(campaignId, userId, rawProspects = [], env = 
     .insert(rows)
     .select("*");
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, prospects: data || [], duplicates, stats };
 }
 
@@ -339,7 +339,7 @@ export async function deleteProspect(prospectId, userId, env = process.env) {
     .eq("id", prospectId)
     .eq("user_id", userId);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true };
 }
 
@@ -369,7 +369,7 @@ export async function listMessages(campaignId, userId, filters = {}, env = proce
   query = query.order("created_at", { ascending: false });
 
   const { data, error } = await query;
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, messages: data || [] };
 }
 
@@ -412,7 +412,7 @@ export async function createMessages(campaignId, userId, rawMessages = [], env =
     .insert(rows)
     .select("*");
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, messages: data || [] };
 }
 
@@ -439,7 +439,7 @@ export async function approveMessage(messageId, userId, env = process.env) {
     .select("*")
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, message: data };
 }
 
@@ -467,7 +467,7 @@ export async function rejectMessage(messageId, userId, reason = "User rejected",
     .select("*")
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
   return { ok: true, message: data };
 }
 
@@ -489,7 +489,7 @@ export async function getAnalytics(campaignId, userId, env = process.env) {
       .eq("user_id", userId)
       .eq("campaign_id", campaignId);
 
-    if (error) return { ok: false, error: error.message };
+    if (error) { console.error("[engagementStore] DB error:", error.message); return { ok: false, error: error.message }; }
     prospects = data || [];
   }
 

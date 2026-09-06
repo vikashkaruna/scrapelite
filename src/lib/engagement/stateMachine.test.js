@@ -22,6 +22,7 @@ describe("stateMachine — transition validity", () => {
   it("is idempotent on self-transitions", () => {
     expect(isValidTransition(PROSPECT_STATUSES.SENT, PROSPECT_STATUSES.SENT)).toBe(true);
     expect(isValidTransition(PROSPECT_STATUSES.OPENED, PROSPECT_STATUSES.OPENED)).toBe(true);
+    expect(isValidTransition(PROSPECT_STATUSES.NEW, PROSPECT_STATUSES.NEW)).toBe(true);
   });
 
   it("rejects illegal backward regressions", () => {
@@ -33,6 +34,14 @@ describe("stateMachine — transition validity", () => {
   it("prevents transitions out of OPTED_OUT without admin override", () => {
     expect(isValidTransition(PROSPECT_STATUSES.OPTED_OUT, PROSPECT_STATUSES.QUEUED)).toBe(false);
     expect(isValidTransition(PROSPECT_STATUSES.OPTED_OUT, PROSPECT_STATUSES.NEW)).toBe(false);
+  });
+
+  it("allows follow-up and re-engagement transitions", () => {
+    expect(isValidTransition(PROSPECT_STATUSES.FOLLOWUP_DUE, PROSPECT_STATUSES.QUEUED)).toBe(true);
+    expect(isValidTransition(PROSPECT_STATUSES.FOLLOWUP_DUE, PROSPECT_STATUSES.CONVERTED)).toBe(true);
+    expect(isValidTransition(PROSPECT_STATUSES.UNRESPONSIVE, PROSPECT_STATUSES.QUEUED)).toBe(true);
+    expect(isValidTransition(PROSPECT_STATUSES.UNRESPONSIVE, PROSPECT_STATUSES.OPTED_OUT)).toBe(true);
+    expect(isValidTransition(PROSPECT_STATUSES.CONVERTED, PROSPECT_STATUSES.FOLLOWUP_DUE)).toBe(true);
   });
 });
 
@@ -51,6 +60,15 @@ describe("stateMachine — transition execution & scoring", () => {
     expect(score).toBe(102);
     score = calculateEngagementScore(score, PROSPECT_STATUSES.CONVERTED);
     expect(score).toBe(202);
+  });
+
+  it("decreases score for UNRESPONSIVE but not below 0", () => {
+    const reduced = calculateEngagementScore(10, PROSPECT_STATUSES.UNRESPONSIVE);
+    expect(reduced).toBeLessThan(10);
+    expect(reduced).toBeGreaterThanOrEqual(0);
+
+    const zeroScore = calculateEngagementScore(0, PROSPECT_STATUSES.UNRESPONSIVE);
+    expect(zeroScore).toBe(0);
   });
 
   it("transitions prospect, updates score and creates activity log", () => {
@@ -103,9 +121,10 @@ describe("stateMachine — stale prospect detection", () => {
       { id: "2", status: PROSPECT_STATUSES.OPENED, last_contacted_at: fourDaysAgo },
       { id: "3", status: PROSPECT_STATUSES.DELIVERED, last_contacted_at: oneDayAgo }, // not stale
       { id: "4", status: PROSPECT_STATUSES.REPLIED, last_contacted_at: fourDaysAgo }, // already replied
+      { id: "5", status: PROSPECT_STATUSES.CLICKED, last_contacted_at: fourDaysAgo }, // stale clicked
     ];
 
     const stale = detectStaleProspects(prospects, 4);
-    expect(stale.map((p) => p.id)).toEqual(["1", "2"]);
+    expect(stale.map((p) => p.id)).toEqual(["1", "2", "5"]);
   });
 });

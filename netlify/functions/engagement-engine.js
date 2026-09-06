@@ -27,7 +27,7 @@ import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import * as store from "./lib/engagement/engagementStore.js";
 import { generatePersonalizedVariants } from "../../src/lib/engagement/aiMessageGenerator.js";
 import { dispatchMessage, resolveChannelForProspect } from "../../src/lib/engagement/channelRouter.js";
-import { PROSPECT_STATUSES } from "../../src/lib/engagement/stateMachine.js";
+import { PROSPECT_STATUSES, detectStaleProspects } from "../../src/lib/engagement/stateMachine.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -75,13 +75,17 @@ async function handleGet(event, userId) {
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
+  const campaignId = q.campaign_id || q.campaignId;
+
   if (action === "get_campaign") {
-    const res = await store.getCampaign(q.campaign_id || q.campaignId, userId);
+    if (!campaignId) return json(400, { ok: false, error: "Missing campaign_id", status: 400 });
+    const res = await store.getCampaign(campaignId, userId);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   if (action === "list_prospects") {
-    const res = await store.listProspects(q.campaign_id || q.campaignId, userId, {
+    if (!campaignId) return json(400, { ok: false, error: "Missing campaign_id", status: 400 });
+    const res = await store.listProspects(campaignId, userId, {
       status: q.status,
       search: q.search,
     });
@@ -89,7 +93,8 @@ async function handleGet(event, userId) {
   }
 
   if (action === "list_messages") {
-    const res = await store.listMessages(q.campaign_id || q.campaignId, userId, {
+    if (!campaignId) return json(400, { ok: false, error: "Missing campaign_id", status: 400 });
+    const res = await store.listMessages(campaignId, userId, {
       approval_status: q.approval_status,
       status: q.status,
     });
@@ -97,7 +102,8 @@ async function handleGet(event, userId) {
   }
 
   if (action === "get_analytics") {
-    const res = await store.getAnalytics(q.campaign_id || q.campaignId, userId);
+    if (!campaignId) return json(400, { ok: false, error: "Missing campaign_id", status: 400 });
+    const res = await store.getAnalytics(campaignId, userId);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
@@ -121,25 +127,36 @@ async function handlePost(event, userId) {
   }
 
   if (action === "update_campaign") {
-    const res = await store.updateCampaign(body.campaign_id || body.campaignId, userId, body.updates || {});
+    const cid = body.campaign_id || body.campaignId;
+    if (!cid) return json(400, { error: "Missing campaign_id" });
+    const res = await store.updateCampaign(cid, userId, body.updates || {});
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   if (action === "delete_campaign") {
-    const res = await store.deleteCampaign(body.campaign_id || body.campaignId, userId);
+    const cid = body.campaign_id || body.campaignId;
+    if (!cid) return json(400, { error: "Missing campaign_id" });
+    const res = await store.deleteCampaign(cid, userId);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   // ── Prospects ─────────────────────────────────────────────────────────────
   if (action === "add_prospects") {
-    const res = await store.addProspects(body.campaign_id || body.campaignId, userId, body.prospects || []);
+    const cid = body.campaign_id || body.campaignId;
+    if (!cid) return json(400, { error: "Missing campaign_id" });
+    const res = await store.addProspects(cid, userId, body.prospects || []);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   if (action === "update_prospect_status") {
+    const pid = body.prospect_id || body.prospectId;
+    const cid = body.campaign_id || body.campaignId;
+    if (!pid) return json(400, { error: "Missing prospect_id" });
+    if (!cid) return json(400, { error: "Missing campaign_id" });
+    if (!body.status) return json(400, { error: "Missing status" });
     const res = await store.updateProspectStatus(
-      body.prospect_id || body.prospectId,
-      body.campaign_id || body.campaignId,
+      pid,
+      cid,
       userId,
       body.status,
       body.meta || {}
@@ -148,13 +165,16 @@ async function handlePost(event, userId) {
   }
 
   if (action === "delete_prospect") {
-    const res = await store.deleteProspect(body.prospect_id || body.prospectId, userId);
+    const pid = body.prospect_id || body.prospectId;
+    if (!pid) return json(400, { error: "Missing prospect_id" });
+    const res = await store.deleteProspect(pid, userId);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   // ── Messages & AI Generation ──────────────────────────────────────────────
   if (action === "generate_messages") {
     const campaignId = body.campaign_id || body.campaignId;
+    if (!campaignId) return json(400, { error: "Missing campaign_id" });
     const campRes = await store.getCampaign(campaignId, userId);
     if (!campRes.ok) return json(campRes.status || 404, campRes);
 
@@ -190,17 +210,22 @@ async function handlePost(event, userId) {
   }
 
   if (action === "approve_message") {
-    const res = await store.approveMessage(body.message_id || body.messageId, userId);
+    const mid = body.message_id || body.messageId;
+    if (!mid) return json(400, { error: "Missing message_id" });
+    const res = await store.approveMessage(mid, userId);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   if (action === "reject_message") {
-    const res = await store.rejectMessage(body.message_id || body.messageId, userId, body.reason);
+    const mid = body.message_id || body.messageId;
+    if (!mid) return json(400, { error: "Missing message_id" });
+    const res = await store.rejectMessage(mid, userId, body.reason);
     return json(res.ok ? 200 : res.status || 400, res);
   }
 
   if (action === "dispatch_messages") {
     const campaignId = body.campaign_id || body.campaignId;
+    if (!campaignId) return json(400, { error: "Missing campaign_id" });
     const messageIds = body.message_ids || body.messageIds;
 
     const campRes = await store.getCampaign(campaignId, userId);
@@ -246,6 +271,35 @@ async function handlePost(event, userId) {
     }
 
     return json(200, { ok: true, dispatches: dispatchResults });
+  }
+
+  // ── State Monitoring & Stale SLA Check ────────────────────────────────────
+  if (action === "check_stale_prospects") {
+    const campaignId = body.campaign_id || body.campaignId;
+    const followupDelayDays = Number(body.followup_delay_days || body.stale_threshold_days || 4);
+
+    let targetCampaignIds = [];
+    if (campaignId) {
+      targetCampaignIds = [campaignId];
+    } else {
+      const campRes = await store.listCampaigns(userId);
+      targetCampaignIds = (campRes.campaigns || []).map((c) => c.id);
+    }
+
+    const updated = [];
+    for (const cid of targetCampaignIds) {
+      const prsRes = await store.listProspects(cid, userId);
+      const stale = detectStaleProspects(prsRes.prospects || [], followupDelayDays);
+      for (const p of stale) {
+        const upRes = await store.updateProspectStatus(p.id, cid, userId, PROSPECT_STATUSES.FOLLOWUP_DUE, {
+          eventType: "stale_sla_exceeded",
+          details: { followup_delay_days: followupDelayDays },
+        });
+        if (upRes.ok) updated.push(p.id);
+      }
+    }
+
+    return json(200, { ok: true, stale_count: updated.length, updated });
   }
 
   return json(400, { error: `Unknown action: ${action}` });
