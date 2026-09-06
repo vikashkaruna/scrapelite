@@ -95,7 +95,7 @@ Set the following environment variables in your Netlify site settings (**Site Se
 | `TWILIO_AUTH_TOKEN` | Optional | Twilio auth token | `auth_token_xyz` |
 | `TWILIO_PHONE_NUMBER` | Optional | Twilio SMS sender / WhatsApp sandbox number | `+14155238886` |
 | `TELEGRAM_BOT_TOKEN` | Optional | Telegram Bot API token for direct messaging | `123456789:ABCdef...` |
-| `ENGAGEMENT_WEBHOOK_SECRET`| Optional | Secret for verifying inbound webhook payloads | `whsec_datiq_engagement_2026` |
+| `ENGAGEMENT_WEBHOOK_SECRET`| Optional | Secret for verifying inbound webhook payloads | `datiq-engagement-webhook-secret` |
 | `VITE_ENGAGEMENT_API_URL` | Optional | Custom proxy endpoint (defaults to `/api/engagement`) | `/api/engagement` |
 
 > **Graceful Degradation**: If third-party credentials (`RESEND_API_KEY`, `TWILIO_*`, `TELEGRAM_*`) are omitted, the engine automatically enters **Dry-Run Simulation Mode**: message logs, state transitions, activities, and payloads are generated and recorded with mock delivery IDs (`mock_resend_...`, `mock_twilio_...`).
@@ -259,7 +259,7 @@ Open your deployed preview or local dev instance (`http://localhost:5173/engagem
 ```bash
 curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
   -H "Content-Type: application/json" \
-  -H "x-engagement-secret: whsec_datiq_engagement_2026" \
+  -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
     "provider": "resend",
     "event": "email.opened",
@@ -277,7 +277,7 @@ curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
 ```bash
 curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
   -H "Content-Type: application/json" \
-  -H "x-engagement-secret: whsec_datiq_engagement_2026" \
+  -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
     "provider": "twilio",
     "event": "message.received",
@@ -296,7 +296,7 @@ curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
 ```bash
 curl -X POST "https://<your-preview-url>/api/engagement/webhook" \
   -H "Content-Type: application/json" \
-  -H "x-engagement-secret: whsec_datiq_engagement_2026" \
+  -H "x-engagement-secret: datiq-engagement-webhook-secret" \
   -d '{
     "provider": "twilio",
     "event": "message.received",
