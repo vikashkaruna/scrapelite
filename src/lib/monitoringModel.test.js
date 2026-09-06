@@ -22,7 +22,7 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the nine platform jobs", () => {
+  it("registers the ten platform jobs", () => {
     // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
     // is the REALITY: adding a job here does not schedule it, and scheduling one
     // without adding it here means it runs unmonitored. Both halves have to be
@@ -36,6 +36,11 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
       // PRD 5's "retry failed actions".
       "signal-retry",
       "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
+      // The v2 workflow pipeline's dispatch loop. Added 2026-09-06: it had
+      // declared config.schedule in its own source since it shipped, which is
+      // ignored for v1 handlers, and was absent from BOTH registries — so it
+      // had never once run on a cron and was invisible to this dashboard.
+      "workflow-orchestrator",
     ]);
   });
 

@@ -79,6 +79,14 @@
 [functions."signal-retry"]
   schedule = "*/5 * * * *"
 
+# The v2 workflow pipeline's dispatch loop: claims queued workflow_events and
+# POSTs them to n8n. Every 5 minutes, matching the first step of the backoff
+# schedule. THIS BLOCK is what schedules it — the `export const config`
+# in the function itself is a v2 feature and is silently ignored for our v1
+# handlers, which is why this job had never once fired on a cron.
+[functions."workflow-orchestrator"]
+  schedule = "*/5 * * * *"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env
