@@ -25,6 +25,7 @@ import {
   buildNotionPageBody,
   validateNotionConfig,
   defaultNotionSchema,
+  autoMapNotionSchema,
 } from "../../src/lib/notion.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
@@ -101,11 +102,12 @@ async function handleConnect(event, userId) {
   const probe = await fetchNotionSchema({ apiKey, databaseId });
   if (!probe.ok) return respond(400, { error: probe.error });
 
+  const mappedSchema = probe.schema || autoMapNotionSchema(probe.properties, probe.titleColumn) || defaultNotionSchema();
   const r = await upsertConnection({
     userId,
     provider: "notion",
     fields: {
-      config: { api_key: apiKey, database_id: databaseId, schema: probe.properties || defaultNotionSchema() },
+      config: { api_key: apiKey, database_id: databaseId, schema: mappedSchema },
       account_label: body?.accountLabel || "Notion",
     },
   });
@@ -114,6 +116,7 @@ async function handleConnect(event, userId) {
     ok: true,
     connected: true,
     schema: probe.properties,
+    mappedSchema,
     titleColumn: probe.titleColumn,
   });
 }
@@ -157,6 +160,16 @@ async function handleTest(event, userId) {
     return respond(502, { error: probe.error });
   }
   const properties = probe.properties || {};
+  const mappedSchema = probe.schema || autoMapNotionSchema(properties, probe.titleColumn) || defaultNotionSchema();
+  if (conn.connection && conn.connection.config) {
+    await upsertConnection({
+      userId,
+      provider: "notion",
+      fields: {
+        config: { ...conn.connection.config, schema: mappedSchema },
+      },
+    }).catch((err) => console.warn("[integrations-notion] test schema refresh warning:", err?.message));
+  }
   return respond(200, {
     ok: true,
     titleColumn: probe.titleColumn,
@@ -203,7 +216,7 @@ async function handlePatch(event, userId) {
     }
     const probe = await fetchNotionSchema({ apiKey: existingConfig.api_key, databaseId: newDbId });
     if (!probe.ok) return respond(400, { error: probe.error });
-    configPatch.schema = probe.properties || defaultNotionSchema();
+    configPatch.schema = probe.schema || autoMapNotionSchema(probe.properties, probe.titleColumn) || defaultNotionSchema();
   }
 
   fields.config = configPatch;
@@ -231,10 +244,15 @@ async function handlePush(event, userId) {
   if (!conn.ok) return respond(500, { error: conn.error });
   const apiKey = body?.apiKey || conn.connection?.config?.api_key;
   const databaseId = body?.databaseId || conn.connection?.config?.database_id;
-  const schema = body?.schema || conn.connection?.config?.schema || defaultNotionSchema();
+  const rawSchema = body?.schema || conn.connection?.config?.schema;
+  const schema = autoMapNotionSchema(rawSchema) || defaultNotionSchema();
   if (!apiKey || !databaseId) return respond(400, { error: "Connect Notion first." });
 
   const r = await pushToNotion(items, { apiKey, databaseId, schema });
+  if (!r.ok) {
+    console.error(`[integrations-notion] push failed for user ${userId}:`, r.errors);
+    return respond(400, r);
+  }
   return respond(200, r);
 }
 

@@ -15,6 +15,26 @@ export function canonicalSourceUrl(value) {
 }
 
 export function sourceUrlField(fieldMap, fallback = "URL") {
-  const entry = Object.entries(fieldMap || {}).find(([, def]) => def?.key === "url");
-  return entry?.[0] || fallback;
+  if (!fieldMap || typeof fieldMap !== "object") return fallback;
+  const entries = Object.entries(fieldMap);
+  if (entries.length === 0) return fallback;
+
+  // 1. Explicit key: "url" (object shape { key: "url" } or string "url")
+  const keyEntry = entries.find(([, def]) => (typeof def === "object" ? def?.key === "url" : def === "url"));
+  if (keyEntry) return keyEntry[0];
+
+  // 2. Declared type: "url" (e.g. { type: "url" } or "url")
+  const typeEntry = entries.find(([, def]) => (typeof def === "object" ? def?.type === "url" : def === "url"));
+  if (typeEntry) return typeEntry[0];
+
+  // 3. Name heuristic (case-insensitive column name)
+  const nameEntry = entries.find(([name]) =>
+    /^(url|link|source|website|site|source[_\s]?url|page[_\s]?url)$/i.test(name.trim())
+  );
+  if (nameEntry) return nameEntry[0];
+
+  // 4. If fallback exists in fieldMap, return fallback
+  if (Object.prototype.hasOwnProperty.call(fieldMap, fallback)) return fallback;
+
+  return fallback;
 }

@@ -1,7 +1,10 @@
 // config.js — single source of truth for which integrations are live.
 // Each flag flips on automatically when its env var is present.
 
-const env = import.meta.env;
+const env =
+  (typeof import.meta !== "undefined" && import.meta.env) ||
+  (typeof process !== "undefined" && process.env) ||
+  {};
 
 // Runtime overrides from public/runtime-config.js (read when the app loads, NOT
 // baked in at build time). A non-empty value here wins over the matching VITE_*.

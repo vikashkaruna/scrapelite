@@ -198,18 +198,20 @@ export async function pushToIntegration(slug, items) {
         }
         return {
           ok: false,
-          pushed: 0,
+          pushed: body?.pushed ?? 0,
           total: clean.length,
-          errors: [body?.error || "push_failed"],
-          failedRecords: [],
-          message: body?.error || "Push failed",
+          errors: body?.errors || [body?.error || "push_failed"],
+          failedRecords: body?.failedRecords || [],
+          message: body?.error || body?.errors?.[0] || "Push failed",
         };
       }
+      const pushedCount = body.pushed ?? 0;
+      const isOk = body.ok === true && (pushedCount > 0 || clean.length === 0);
       return {
-        ok: body.ok !== false,
-        pushed: body.pushed ?? clean.length,
+        ok: isOk,
+        pushed: pushedCount,
         total: body.total ?? clean.length,
-        errors: body.errors || [],
+        errors: body.errors || (!isOk ? ["Push failed"] : []),
         failedRecords: body.failedRecords || [],
       };
     }
