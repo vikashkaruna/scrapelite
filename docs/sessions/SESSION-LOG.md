@@ -18,6 +18,34 @@
 
 ---
 
+## 2026-09-08 — Single bottom progress dock & report view on Templates, Zapier webhook URL input & secret key testing in Account Integrations
+
+**Branches.** All changes implemented and tested on `staging`, passed full pre-push test gates (352 test files, 5,480 vitest tests, 142 e2e smoke tests), pushed to `origin/staging`, and merged to `main` via PR #161 (`ac9e170`). Deployed and published live to production on Netlify (deploy `6aa0600e7299f200087204a6` ready).
+
+### 1. Templates Single Progress Dock & Report Transition
+- **Duplicate progress bar eliminated:** Removed the in-page `.tpl-progress` bar inside `.card.tpl-form`. Retained only the bottom `ExtractionProgressDock` for active execution feedback.
+- **View Transition & Smooth Scroll:** When template execution completes, `Templates.jsx` transitions the form directly into `<RunResult />` and smoothly scrolls to top (`window.scrollTo({ top: 0, behavior: "smooth" })`).
+- **Edit inputs / Run again:** Added an explicit `<Button variant="secondary" size="sm">` in the `RunResult` header calling `onEditInputs={() => setResult(null)}`, allowing users to intuitively adjust inputs and re-run.
+- **Query Parameter Aliases:** Supported both `key` and `t`, and `runId` and `run` query params in `Templates.jsx`. Canonicalized `TemplateRunProvider.jsx` to use `runId` and `key`.
+
+### 2. Account Integrations: Zapier Webhook URL & Secret Key Testing
+- **Editable Zap Webhook URL:** Removed the hardcoded omission in `EditIntegrationModal.jsx` that previously hid input fields for Zapier. Exposed `accountLabel` and `webhookUrl` ("Zap Webhook URL (Catch Hook)") pre-populated with `connection.webhook_url || connection.webhook_hint`.
+- **Backend PATCH Support:** Implemented `handlePatch(event, userId)` in `netlify/functions/integrations-zapier.js` for updating `account_label` and `webhook_url` without clobbering or exposing `token_hash`.
+- **Secret Key Verification Sub-form:** Added a "Test / Validate a Secret Key" input in `EditIntegrationModal` allowing users to paste a `zap_...` token and verify it against their stored hash with clear inline feedback.
+- **Authenticated Test Endpoint:** Added authenticated `handleUserTest(event, userId)` in `integrations-zapier.js` handling `POST /api/integrations/zapier/test`, verifying secret keys or pinging configured catch hook URLs with test payloads.
+- **Connection Testing:** Added "Test connection" button in `EditIntegrationModal` footer for testing active Zapier connection.
+
+### 3. Test Suites & Verification
+- `netlify/__tests__/integrations-zapier.test.js`: 31/31 tests passing (including 6 new tests for PATCH, status webhook_url, and authenticated POST /test).
+- `src/components/EditIntegrationModal.test.jsx`: 4/4 unit tests passing.
+- `src/pages/Account.integration.test.jsx`: 12/12 integration tests passing (including Zapier Edit modal and key validation flows).
+- `src/pages/Templates.handoff.test.jsx`: 6/6 tests passing.
+- Full Vitest suite: 352 passed files, 5,480 passed tests, 0 failed.
+- Playwright E2E smoke suite: 142 passed, 1 skipped.
+- Prerender verification: all 28 static pages regenerated and synced.
+
+---
+
 ## 2026-09-06 — The v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n
 
 **Branches.** `main` and `staging` were **already content-identical** — an empty tree diff; the
