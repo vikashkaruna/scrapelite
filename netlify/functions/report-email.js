@@ -14,7 +14,7 @@ import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { sendReportEmail } from "./lib/reportEmail.js";
 import * as store from "./lib/audit/auditStore.js";
 import { rehydrate } from "./discoverability.js";
-import { validateBrandKit } from "../../src/lib/whiteLabelTemplate.js";
+import { validateBrandKit } from "../../src/lib/brandKitValidation.js";
 import { requireCapability } from "./lib/requireEntitlement.js";
 
 const HEADERS = {

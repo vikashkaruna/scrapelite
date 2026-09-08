@@ -36,6 +36,7 @@ vi.mock("../../src/lib/notion.js", () => ({
   buildNotionPageBody: vi.fn(),
   validateNotionConfig: vi.fn(() => []),
   defaultNotionSchema: vi.fn(() => ({ Title: { type: "title" } })),
+  autoMapNotionSchema: vi.fn((s) => s || { Title: { type: "title" } }),
 }));
 
 // The push entitlement gate hits the entitlements table via plain fetch() —
