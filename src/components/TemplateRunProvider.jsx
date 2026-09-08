@@ -64,8 +64,8 @@ export function TemplateRunProvider({ children }) {
 
   const viewTemplateRun = useCallback(() => {
     setJob((prev) => {
-      if (prev?.runId) navigate(`/templates?run=${encodeURIComponent(prev.runId)}`);
-      else if (prev?.templateKey) navigate(`/templates?t=${encodeURIComponent(prev.templateKey)}`);
+      if (prev?.runId) navigate(`/templates?runId=${encodeURIComponent(prev.runId)}`);
+      else if (prev?.templateKey) navigate(`/templates?key=${encodeURIComponent(prev.templateKey)}`);
       return null;
     });
   }, [navigate]);
