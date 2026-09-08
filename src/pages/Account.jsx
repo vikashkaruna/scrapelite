@@ -400,9 +400,7 @@ export default function Account() {
         } else if (slug === "slack") {
           detail = "Welcome message posted to your channel";
         } else if (slug === "zapier") {
-          // Zapier's /test is for the Zapier private app, not the user
-          // — we re-use /status here to confirm a token is stored.
-          detail = "Token stored and ready";
+          detail = result?.detail || "Connection verified";
         }
         toast(`${name}: ${detail}.`, "success");
       } else {
