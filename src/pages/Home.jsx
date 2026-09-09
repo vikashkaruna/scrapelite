@@ -114,14 +114,6 @@ export default function Home() {
     description:
       "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
     canonical: "https://datiq.app/",
-    // EA-04 (no named author) and EA-06 (no visible date) — both raised by a
-    // discoverability audit of this very page. Anonymous, undated content is
-    // systematically treated as lower-trust, and trust is what decides which of
-    // several correct sources gets cited.
-    //
-    // `dateModified` is stamped from the last commit at build time (see
-    // vite.config.js) rather than hand-typed, because a hand-typed date is a
-    // claim that silently stops being true.
     jsonLd: [
       {
         "@context": "https://schema.org",
@@ -139,6 +131,22 @@ export default function Home() {
           url: "https://datiq.app",
           logo: "https://datiq.app/favicon.svg",
         },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "DatIQ",
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        description: "Zero-code web data extraction, enrichment, and AI discoverability platform.",
+        url: "https://datiq.app/",
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+          category: "Free tier with 10 free extractions and 1 free discoverability audit",
+        },
+        author: AUTHOR_SCHEMA,
       },
     ],
   });
@@ -241,13 +249,17 @@ export default function Home() {
 
   // ── Feature card click → set matching intent chip ─────────────────────
   const handleCardClick = useCallback((featureKey) => {
+    if (featureKey === "discoverability") {
+      navigate("/discoverability", { state: { auditUrl: url } });
+      return;
+    }
     const mapped = CARD_TO_INTENT[featureKey];
     if (mapped) {
       setIntent(mapped);
       // Scroll extraction form into view smoothly
       document.querySelector(".intent-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, []);
+  }, [navigate, url]);
 
   // Resolve the per-intent prompt that the composer carries into the extraction.
   // (contacts / pricing have canned prompts; custom uses the user's text.)
@@ -503,6 +515,24 @@ export default function Home() {
           );
         })()}
 
+        {/* ── Discoverability spotlight ─────────────────────────────────── */}
+        <div className="home-discoverability-spotlight rise" style={{ animationDelay: ".175s" }}>
+          <div className="hds-inner">
+            <div className="hds-badge">
+              <Icon name="scan-search" size={13} />
+              <span>SEO, AEO &amp; GEO Discoverability</span>
+            </div>
+            <div className="hds-text">
+              <strong>Can AI models &amp; search crawlers cite your site?</strong>
+              <span>Audit 30 search &amp; citation signals. First audit is 100% Free with instant actionable fixes.</span>
+            </div>
+            <Link to="/discoverability" className="hds-cta" state={{ auditUrl: url }}>
+              <span>Audit URL Free</span>
+              <Icon name="arrow-right" size={13} />
+            </Link>
+          </div>
+        </div>
+
         {/* ── Main extraction composer ─────────────────────────────────── */}
         <div
           className="rise"
@@ -698,9 +728,9 @@ export default function Home() {
                 <Icon name="layers" size={12} />
                 DatIQ architecture
               </span>
-              <h3 className="hp-banner-title">
+              <h2 className="hp-banner-title">
                 Everything runs on <span className="hp-p0-tag">Pillar 0</span> — Web Intelligence (Core)
-              </h3>
+              </h2>
               <p className="hp-banner-sub">
                 The proven single, batch, and scheduled URL-extraction engine is the foundation. Every
                 capability below is layered on top of it.
@@ -879,18 +909,26 @@ export default function Home() {
             Stamped from the last commit at build time, never hand-typed: a
             hand-typed date is a claim that silently stops being true. Rendered
             only when we actually have one. */}
-        {CONTENT_DATE && (
-          <p className="home-updated rise" style={{ animationDelay: ".31s" }}>
-            Last updated{" "}
-            <time dateTime={CONTENT_DATE}>
-              {new Date(`${CONTENT_DATE}T00:00:00Z`).toLocaleDateString("en-GB", {
-                day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
-              })}
-            </time>
+        <div className="home-updated rise" style={{ animationDelay: ".31s", textAlign: "center" }}>
+          <p style={{ margin: "0 0 6px" }}>
+            Published by <strong>DatIQ Editorial Team</strong> (<a href="mailto:hello@datiq.app">hello@datiq.app</a>) · <a href="/about">Axiom Minds</a>
+            {CONTENT_DATE && (
+              <>
+                {" · "}Last updated{" "}
+                <time dateTime={CONTENT_DATE}>
+                  {new Date(`${CONTENT_DATE}T00:00:00Z`).toLocaleDateString("en-GB", {
+                    day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+                  })}
+                </time>
+              </>
+            )}
             {" · "}
             <a href="/about">About DatIQ</a>
           </p>
-        )}
+          <p style={{ margin: 0, fontSize: "0.9em", color: "var(--text-3)" }}>
+            Built on web standards compliant with <a href="https://schema.org/docs/documents.html" target="_blank" rel="noopener noreferrer">Schema.org</a> and <a href="https://www.w3.org/TR/html52/" target="_blank" rel="noopener noreferrer">W3C HTML5 Specifications</a>.
+          </p>
+        </div>
 
         {/* Persona footer */}
         {persona && (

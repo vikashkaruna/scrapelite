@@ -26,6 +26,7 @@ import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
 import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 import { createReport } from "../lib/reports/reportsClient.js";
 import { lifecycle } from "../lib/analyticsService.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
@@ -224,10 +225,24 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
   useEffect(() => {
     if (!runId) return;
     let alive = true;
+    const cached = readPageCache(`templateRun_${runId}`)?.data;
+    if (cached) {
+      setActiveKey(cached.template_key);
+      setValues(cached.input || {});
+      setResult({
+        output: cached.output || {},
+        summary: cached.output_summary || cached.output?.summary || null,
+        talking_points: cached.output?.talking_points || null,
+        sources: cached.sources || cached.output?.sources || [],
+        run: cached,
+      });
+    }
+
     api.getRun(runId)
       .then(async (r) => {
         if (!alive || !r?.run) return;
         const runData = r.run;
+        writePageCache(`templateRun_${runId}`, runData);
         setActiveKey(runData.template_key);
         setValues(runData.input || {});
         setResult({
@@ -239,7 +254,7 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         });
       })
       .catch((e) => {
-        if (alive) setLoadError(e.message);
+        if (alive && !cached) setLoadError(e.message);
       });
     return () => { alive = false; };
   }, [runId]);
@@ -344,8 +359,14 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         if (done.reconciliation?.needsDisclosure) {
           showToast(`This run used ${done.charged} credits — more than the ${done.run.credits_estimated} we estimated.`);
         }
+        if (done.run?.id) {
+          writePageCache(`templateRun_${done.run.id}`, done.run);
+        }
       } else {
         setResult(exec);
+        if (runId && exec) {
+          writePageCache(`templateRun_${runId}`, { ...exec, id: runId, template_key: template.template_key, input: values });
+        }
         // Same event on the path where reconciliation did not happen: the
         // user still completed a template run, and scoring must not depend on
         // an accounting detail they never see.

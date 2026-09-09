@@ -192,32 +192,39 @@ export default function Discoverability() {
   // ── Run ──────────────────────────────────────────────────────────────────
   const run = useCallback(async (payload) => {
     if (!user) {
-      // Google/Microsoft sign-in is a full-page navigation away and back,
-      // which discards every bit of React state — including whatever the
-      // composer's URL field held. Stash the request so PendingAuditFlush
-      // can hand it back once a session exists, regardless of which page
-      // the OAuth round trip actually lands on.
-      setPendingAudit(payload);
-      openAuth("signup");
-      return;
+      let guestRan = false;
+      try { guestRan = localStorage.getItem("datiq.dsc.guestAuditRan") === "true"; } catch { /* ignore */ }
+      if (guestRan) {
+        setPendingAudit(payload);
+        openAuth("signup");
+        showToast("You've used your 1 free Discoverability audit. Sign in to save reports and continue.", "info");
+        return;
+      }
     }
     setRunning(true);
     setError(null);
     setDiff(null);
     setLastRequest(payload);
-    // Naming the active workspace lets the server refuse the run for a paused
-    // seat; a personal request (no workspace selected) is unaffected.
-    const runPayload = currentWorkspaceId ? { ...payload, workspace_id: currentWorkspaceId } : payload;
+    const runPayload = currentWorkspaceId ? { ...payload, workspace_id: currentWorkspaceId } : { ...payload };
+    if (!user) {
+      runPayload.guest = true;
+    }
     try {
       const data = await discoverability.runAudit(runPayload);
       setAudit(data);
       setMatrixCell(null);
+      if (!user) {
+        try {
+          localStorage.setItem("datiq.dsc.guestAuditRan", "true");
+          localStorage.setItem("datiq.dsc.guestAuditData", JSON.stringify(data));
+        } catch { /* storage full */ }
+      }
       // Deliberately NOT clearing expandedPillars: which pillars the reader has
       // open is their choice, and a new run against the same page is precisely
       // when they want to keep looking at the same ones.
       if (data.auditId) setParams({ audit: data.auditId }, { replace: true });
       if (data.targetId) await loadTrend(data.targetId);
-      if (data.persisted === false) {
+      if (data.persisted === false && user) {
         // The work happened and was charged for; say plainly it was not saved
         // so nobody goes looking for it in their history later.
         showToast("Audit complete, but it could not be saved to your history.");
@@ -276,6 +283,12 @@ export default function Discoverability() {
   }, [location.state]);
 
   const rerun = useCallback(async () => {
+    if (!user) {
+      setPendingAudit(lastRequest || (audit ? { target_url: audit.targetUrl } : null));
+      openAuth("signup");
+      showToast("Sign in or upgrade to run comparative re-audits.", "info");
+      return;
+    }
     if (!audit?.auditId) return;
     setRunning(true);
     setError(null);
@@ -296,7 +309,7 @@ export default function Discoverability() {
     } finally {
       setRunning(false);
     }
-  }, [audit, setParams, loadTrend, showToast]);
+  }, [user, openAuth, lastRequest, audit, setParams, loadTrend, showToast]);
 
   // ── Recommendation queue ─────────────────────────────────────────────────
   const changeStatus = useCallback(async (rec, status, reason) => {
@@ -491,6 +504,25 @@ export default function Discoverability() {
                   unmeasured rather than zero.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Guest conversion banner — allow saving report with login & tracking */}
+          {!user && (
+            <div className="dsc-guest-save-banner rise">
+              <div className="dsc-guest-save-content">
+                <Icon name="sparkles" size={20} className="text-accent" />
+                <div>
+                  <strong>Save this report &amp; track discoverability progress over time</strong>
+                  <p>Sign in or create a free account to benchmark against competitors, monitor SEO/AEO trends, and save actionable fixes.</p>
+                </div>
+              </div>
+              <Button variant="primary" onClick={() => {
+                setPendingAudit(lastRequest || (audit ? { target_url: audit.targetUrl } : null));
+                openAuth("signup");
+              }}>
+                Save report &amp; Sign in
+              </Button>
             </div>
           )}
 
