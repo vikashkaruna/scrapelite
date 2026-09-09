@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Routes, Route } from "react-router";
 import WorkflowRunHistory from "./WorkflowRunHistory.jsx";
+import WorkflowRunPreview from "../pages/WorkflowRunPreview.jsx";
 import * as api from "../lib/templates/templatesClient.js";
 
 vi.mock("../lib/templates/templatesClient.js", () => ({
@@ -48,6 +49,10 @@ describe("WorkflowRunHistory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.listRuns.mockResolvedValue({ runs: SAMPLE_RUNS });
+    api.getRun.mockImplementation((id) => {
+      const found = SAMPLE_RUNS.find((r) => r.id === id);
+      return Promise.resolve({ run: found });
+    });
   });
 
   it("renders workflow runs and stats", async () => {
@@ -66,7 +71,61 @@ describe("WorkflowRunHistory", () => {
     expect(screen.getByText("unreachable-site.xyz")).toBeInTheDocument();
   });
 
-  it("opens WorkflowRunModal when a run row is clicked", async () => {
+  it("navigates to WorkflowRunPreview when a run row is clicked", async () => {
+    render(
+      <MemoryRouter initialEntries={["/dashboard?view=runs"]}>
+        <Routes>
+          <Route path="/dashboard" element={<WorkflowRunHistory />} />
+          <Route path="/workflows/runs/:runId" element={<WorkflowRunPreview />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("stripe.com")).toBeInTheDocument();
+    });
+
+    // Click the row or View button
+    const row = screen.getByText("stripe.com").closest("tr");
+    expect(row).toBeInTheDocument();
+    fireEvent.click(row);
+
+    // Verify preview page opened
+    await waitFor(() => {
+      expect(screen.getByText("Executive Summary")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Stripe provides financial infrastructure for the internet.")).toBeInTheDocument();
+    expect(screen.getByText("Key Talking Points & Insights")).toBeInTheDocument();
+    expect(screen.getByText("Mention global scale")).toBeInTheDocument();
+  });
+
+  it("displays failed run explanation in preview without billing credits", async () => {
+    render(
+      <MemoryRouter initialEntries={["/dashboard?view=runs"]}>
+        <Routes>
+          <Route path="/dashboard" element={<WorkflowRunHistory />} />
+          <Route path="/workflows/runs/:runId" element={<WorkflowRunPreview />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("unreachable-site.xyz")).toBeInTheDocument();
+    });
+
+    const row = screen.getByText("unreachable-site.xyz").closest("tr");
+    fireEvent.click(row);
+
+    await waitFor(() => {
+      expect(screen.getByText("Run execution failed")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Target page unreachable")).toBeInTheDocument();
+    expect(screen.getByText("No credits were billed for this failed run.")).toBeInTheDocument();
+  });
+
+  it("supports multi-selection and filtering", async () => {
     render(
       <MemoryRouter>
         <WorkflowRunHistory />
@@ -77,49 +136,15 @@ describe("WorkflowRunHistory", () => {
       expect(screen.getByText("stripe.com")).toBeInTheDocument();
     });
 
-    // Click the first run row
-    const row = screen.getByText("stripe.com").closest("li");
-    expect(row).toBeInTheDocument();
-    fireEvent.click(row);
+    // Filter by search query
+    const searchInput = screen.getByPlaceholderText("Search domain or summary…");
+    fireEvent.change(searchInput, { target: { value: "stripe" } });
 
-    // Verify modal is opened
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
+    expect(screen.getByText("stripe.com")).toBeInTheDocument();
+    expect(screen.queryByText("unreachable-site.xyz")).not.toBeInTheDocument();
 
-    expect(screen.getAllByText("Stripe provides financial infrastructure for the internet.")[0]).toBeInTheDocument();
-    expect(screen.getByText("Talking Points")).toBeInTheDocument();
-    expect(screen.getByText("Mention global scale")).toBeInTheDocument();
-
-    // Close modal
-    const closeBtn = screen.getAllByRole("button", { name: "Close" })[0];
-    fireEvent.click(closeBtn);
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-  });
-
-  it("displays failed run explanation in modal without billing credits", async () => {
-    render(
-      <MemoryRouter>
-        <WorkflowRunHistory />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("unreachable-site.xyz")).toBeInTheDocument();
-    });
-
-    const row = screen.getByText("unreachable-site.xyz").closest("li");
-    fireEvent.click(row);
-
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("Run failed")).toBeInTheDocument();
-    expect(screen.getByText("Target page unreachable")).toBeInTheDocument();
-    expect(screen.getByText("No credits were billed for this failed run.")).toBeInTheDocument();
+    // Clear search
+    fireEvent.change(searchInput, { target: { value: "" } });
+    expect(screen.getByText("unreachable-site.xyz")).toBeInTheDocument();
   });
 });

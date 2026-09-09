@@ -12,15 +12,17 @@ import { useAuth } from "../components/AuthProvider.jsx";
 import SignedInRequired from "../components/SignedInRequired.jsx";
 import { MATERIALITY, CADENCE_FOR_MATERIALITY } from "../lib/watchlist/materialityModel.js";
 import * as watchlistApi from "../lib/watchlist/watchlistClient.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
 export default function Watchlists() {
   const showToast = useToast();
   const { user } = useAuth();
 
-  const [watchlists, setWatchlists] = useState([]);
+  const cachedWatchlists = readPageCache("watchlists")?.data || [];
+  const [watchlists, setWatchlists] = useState(cachedWatchlists);
   const [selectedId, setSelectedId] = useState(null);
   const [currentWatchlist, setCurrentWatchlist] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedWatchlists.length === 0);
 
   // New Watchlist modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -29,13 +31,15 @@ export default function Watchlists() {
   const [cadence, setCadence] = useState("daily");
   const [domainsInput, setDomainsInput] = useState("");
 
-  const loadWatchlists = async () => {
-    setLoading(true);
+  const loadWatchlists = async (silent = false) => {
+    if (!silent && watchlists.length === 0) setLoading(true);
     try {
       const res = await watchlistApi.listWatchlists();
-      setWatchlists(res.watchlists || []);
+      const fresh = res.watchlists || [];
+      setWatchlists(fresh);
+      writePageCache("watchlists", fresh);
     } catch (e) {
-      showToast(e.message);
+      if (watchlists.length === 0) showToast(e.message);
     } finally {
       setLoading(false);
     }

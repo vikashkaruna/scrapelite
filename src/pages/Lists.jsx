@@ -15,6 +15,7 @@ import SignedInRequired from "../components/SignedInRequired.jsx";
 import { dedupeEntries } from "../lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD, sampleProfile, deadCriteria, ENRICHABLE_FIELD_NAMES } from "../lib/bulk/icpModel.js";
 import * as bulkApi from "../lib/bulk/bulkClient.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
 export default function Lists() {
   const location = useLocation();
@@ -24,9 +25,10 @@ export default function Lists() {
 
   const [activeTab, setActiveTab] = useState("lists"); // "lists" | "rules" | "review"
   const [selectedListId, setSelectedListId] = useState(null);
-  const [lists, setLists] = useState([]);
+  const cachedLists = readPageCache("accountLists")?.data || [];
+  const [lists, setLists] = useState(cachedLists);
   const [currentList, setCurrentList] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedLists.length === 0);
   const [runningJob, setRunningJob] = useState(false);
   const [jobProgress, setJobProgress] = useState(null);
 
@@ -52,13 +54,15 @@ export default function Lists() {
     }
   }, [location.state]);
 
-  const loadLists = async () => {
-    setLoading(true);
+  const loadLists = async (silent = false) => {
+    if (!silent && lists.length === 0) setLoading(true);
     try {
       const res = await bulkApi.listLists();
-      setLists(res.lists || []);
+      const fresh = res.lists || [];
+      setLists(fresh);
+      writePageCache("accountLists", fresh);
     } catch (e) {
-      showToast(e.message);
+      if (lists.length === 0) showToast(e.message);
     } finally {
       setLoading(false);
     }

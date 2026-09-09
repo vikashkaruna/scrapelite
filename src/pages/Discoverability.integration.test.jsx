@@ -229,7 +229,20 @@ describe("running an audit", () => {
 // Run must survive that round trip: land back on this page with the SAME URL
 // showing and the audit actually run, not a blank box the user has to redo.
 describe("sign-in interruption is resumed, not lost", () => {
-  it("stashes the request instead of calling the API when signed out", async () => {
+  it("allows 1 free guest audit before requiring sign-in", async () => {
+    localStorage.clear();
+    authMocks.getSession.mockResolvedValue(null);
+    api.runAudit.mockResolvedValueOnce(AUDIT);
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    await submit("https://example.com/geo");
+    expect(api.runAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ target_url: "https://example.com/geo", guest: true }),
+    );
+  });
+
+  it("stashes the request instead of calling the API when signed out after using free audit", async () => {
+    localStorage.setItem("datiq.dsc.guestAuditRan", "true");
     authMocks.getSession.mockResolvedValue(null);
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });

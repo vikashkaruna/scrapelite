@@ -18,6 +18,42 @@
 
 ---
 
+## 2026-09-09 — Discoverability 1st Free Audit & TopNav, Dedicated Workflow Run Preview & Dashboard Table Upgrade, and Intelligent LocalStorage Caching
+
+**Branches.** Implemented on `staging`. Passed all 9 pre-push gates (`npm run test:prepush`): 354 Vitest test files (5,490 tests passed, 0 failed), production readiness clean, contract tests clean, integration tests clean, database & referral tests clean, prerender check clean (28 static pages in `dist/` and `public/`), security check clean.
+
+### 1. Navigation & Discoverability Trial Experience
+- **TopNav Order:** Re-ordered navigation links across desktop and mobile menus to `Extract` (`/`) → `Discover` (`/discoverability`) → `Templates` (`/templates`) → `Dashboard` (`/dashboard`). Updated smoke tests in `e2e/smoke/home.spec.js`.
+- **First Discoverability Audit 100% Free:** Updated `netlify/functions/discoverability.js` to allow unauthenticated `POST /api/discoverability/audits` with `guest: true` using `consumeGuestCredit(event, "single")`. Skips Supabase user writes and returns the full audit report with `persisted: false, guest: true`.
+- **Save Report with Login & Progress Tracking:** On audit completion for guests, `Discoverability.jsx` displays a prominent banner `.dsc-guest-save-banner` prompting them to sign in to save the report to history and unlock longitudinal progress tracking. Guest audit data is cached in `localStorage` (`datiq.dsc.guestAuditRan`).
+- **Rediscovery / Re-audits Paid:** In `rerunRoute` on `discoverability.js`, free-tier accounts and unauthenticated users receive a 402 `UPGRADE_REQUIRED` ("Re-discovery and comparative re-auditing require a paid DatIQ plan").
+- **Prominent Home Feature Spotlight & Clutter Reduction:** Added `.home-discoverability-spotlight` hero banner right above the extraction composer highlighting SEO, AEO & GEO discoverability with instant actionable fixes. Kept `ALL_FEATURES` at 8 extraction capabilities to prevent layout clutter.
+- **Discoverability Audit SEO Fixes for `datiq.app`:**
+  - `SH-04`: Resolved heading hierarchy outline skip in `Home.jsx` (`h1` -> `h2` on line 753).
+  - `EA-04`: Added visible editorial byline ("Published by DatIQ Editorial Team (hello@datiq.app) · Axiom Minds").
+  - `EA-07`: Added outbound primary source links to Schema.org and W3C HTML5 specifications in footer notes.
+
+### 2. Dedicated Workflow Run Preview Page & Upgraded Dashboard Runs View
+- **Dedicated Full-Page Preview (`/workflows/runs/:runId`):** Created `src/pages/WorkflowRunPreview.jsx` replacing the cramped modal popup.
+  - Features a fixed/sticky top action bar (`.wrp-sticky-bar`) with `position: sticky; top: var(--topbar-height, 56px); z-index: 20` that stays fixed during downward scrolling.
+  - Action bar includes Back to Workflow Runs, Template & Target name, Status badge (`Succeeded`, `Partial`, `Failed`, `Running`), Credits charged badge, Re-run in Templates button, Share report dialog, and Export menu (CSV, PDF, Markdown, JSON).
+  - Complete structured output view: Executive Summary, Key Talking Points & Insights, Side-by-Side Comparison tables, Structured Extracted Facts, and Source Citations.
+  - Route `/workflows/runs/:runId` registered in `src/App.jsx`.
+- **Dashboard Workflow Runs History Upgrade (`WorkflowRunHistory.jsx`):**
+  - Upgraded table to match Extractions tab look and feel: layout toggle (`table` vs `cards`), outcome filter chips (`All`, `Succeeded`, `Partial`, `Failed`, `Running`), Template dropdown filter, Month dropdown filter, and live text search across template, target domain, and summary.
+  - Multi-select checkbox column with floating selection bar (`.dash-selbar`) supporting bulk export and bulk delete.
+  - Clicking any run row or "View" button navigates smoothly to `/workflows/runs/:runId`.
+
+### 3. Intelligent LocalStorage Caching (`pageCache.js`)
+- **`src/lib/cache/pageCache.js`:** Created a lightweight, SSR-safe, quota-resilient stale-while-revalidate utility (`readPageCache`, `writePageCache`, `clearPageCache`) with unit test coverage in `src/lib/cache/pageCache.test.js`.
+- **`Workflows.jsx` (Overview):** Caches workflow graph in `datiq.cache.workflowGraph`. Paints graph immediately on mount without loading spinner; revalidates silently in background and updates cache on changes.
+- **`Lists.jsx` (Account Lists):** Caches account lists in `datiq.cache.accountLists`. Paints lists immediately from cache; background revalidation and cache updates on create/delete.
+- **`Watchlists.jsx` (Competitor Watchlists):** Caches watchlists in `datiq.cache.watchlists`. Instant first paint; background revalidation and cache updates on create.
+- **`SignalRules.jsx` (Signal Rules):** Caches rules in `datiq.cache.signalRules`. Instant first paint; background revalidation and cache updates on create.
+- **`Templates.jsx` & `WorkflowRunPreview.jsx`:** Caches run results under `datiq.cache.templateRun_<runId>` so re-opening previous runs renders instantaneously.
+
+---
+
 ## 2026-09-08 — Single bottom progress dock & report view on Templates, Zapier webhook URL input & secret key testing in Account Integrations
 
 **Branches.** All changes implemented and tested on `staging`, passed full pre-push test gates (352 test files, 5,480 vitest tests, 142 e2e smoke tests), pushed to `origin/staging`, and merged to `main` via PR #161 (`ac9e170`). Deployed and published live to production on Netlify (deploy `6aa0600e7299f200087204a6` ready).
