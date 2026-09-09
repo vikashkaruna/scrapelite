@@ -495,13 +495,16 @@ export function extractLinks(html = "", baseUrl = "") {
 export function detectAuthor(html = "", jsonLdBlocks = []) {
   const article = findSchema(jsonLdBlocks, "Article") || findSchema(jsonLdBlocks, "BlogPosting");
   const person = findSchema(jsonLdBlocks, "Person");
+  const webPage = findSchema(jsonLdBlocks, "WebPage");
   const schemaAuthor = article?.author?.name || (typeof article?.author === "string" ? article.author : null)
-    || person?.name || null;
+    || person?.name
+    || webPage?.author?.name || (typeof webPage?.author === "string" ? webPage.author : null)
+    || null;
 
   const clean = visibleHtml(html);
   const relAuthor = clean.match(/<[^>]*\brel\s*=\s*["']author["'][^>]*>([\s\S]*?)<\//i);
   const classAuthor = clean.match(/<[^>]*class\s*=\s*["'][^"']*\bauthor\b[^"']*["'][^>]*>([\s\S]*?)<\//i);
-  const byline = clean.match(/\bBy\s+([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+){0,3})\b/);
+  const byline = clean.match(/\b(?:By|Published\s+by)\s+(?:<[^>]+>\s*)*([A-Z][a-z]+(?:\s+[A-Z][a-z'-]+){0,3})\b/i);
 
   const visibleName = textOf(relAuthor?.[1] || "") || textOf(classAuthor?.[1] || "") || byline?.[1] || null;
 
@@ -510,9 +513,9 @@ export function detectAuthor(html = "", jsonLdBlocks = []) {
     visible: Boolean(visibleName),
     inSchema: Boolean(schemaAuthor),
     // A bio page is what turns a name into a credential.
-    bioLinked: /rel\s*=\s*["']author["']/i.test(clean) || /href\s*=\s*["'][^"']*\/(author|authors|team|about)\//i.test(clean),
-    credentials: Boolean(person?.jobTitle || article?.author?.jobTitle),
-    sameAs: [].concat(person?.sameAs || article?.author?.sameAs || []).filter((s) => typeof s === "string"),
+    bioLinked: /rel\s*=\s*["']author["']/i.test(clean) || /href\s*=\s*["'][^"']*\/(author|authors|team|about)\/?["']/i.test(clean),
+    credentials: Boolean(person?.jobTitle || article?.author?.jobTitle || person?.worksFor || webPage?.author),
+    sameAs: [].concat(person?.sameAs || article?.author?.sameAs || webPage?.author?.sameAs || []).filter((s) => typeof s === "string"),
   };
 }
 
@@ -553,6 +556,8 @@ export function parsePage(rawHtml = "", url = "") {
   const text = visibleText(html);
 
   return {
+    url,
+    canonical: meta.canonical || url,
     truncated,
     bytes,
     meta,

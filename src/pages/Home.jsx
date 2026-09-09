@@ -148,6 +148,30 @@ export default function Home() {
         },
         author: AUTHOR_SCHEMA,
       },
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: "DatIQ Web Intelligence Platform",
+        description: "Zero-code web data extraction, enrichment, and AI discoverability platform.",
+        url: "https://datiq.app/",
+        brand: {
+          "@type": "Brand",
+          name: "DatIQ",
+        },
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+        },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: "DatIQ Editorial Team",
+        email: "hello@datiq.app",
+        worksFor: AUTHOR_SCHEMA,
+      },
     ],
   });
   const { personaId, userName, resetOnboarding } = usePersona();
@@ -781,7 +805,7 @@ export default function Home() {
         <h2 className="home-section-h rise" style={{ animationDelay: ".25s" }}>
           What can DatIQ extract from a page?
         </h2>
-        <div className="rise home-features" style={{ animationDelay: ".26s" }}>
+        <ul className="rise home-features" role="list" style={{ animationDelay: ".26s", listStyle: "none", padding: 0 }}>
           {ALL_FEATURES.map((f) => {
             const isHighlighted  = persona && persona.featuresHighlight?.includes(f.key);
             const mappedIntent   = CARD_TO_INTENT[f.key];
@@ -789,7 +813,7 @@ export default function Home() {
             const isClickable    = Boolean(mappedIntent);
 
             return (
-              <div
+              <li
                 key={f.key}
                 className={[
                   "feature-cell",
@@ -850,10 +874,10 @@ export default function Home() {
                   </div>
                   <div className="feature-desc">{f.desc}</div>
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
 
         {/* Q1 (alt) — Interactive Try-an-Example demo.
             Previously this wrapper was nested INSIDE the template-gallery
@@ -911,7 +935,10 @@ export default function Home() {
             only when we actually have one. */}
         <div className="home-updated rise" style={{ animationDelay: ".31s", textAlign: "center" }}>
           <p style={{ margin: "0 0 6px" }}>
-            Published by <strong>DatIQ Editorial Team</strong> (<a href="mailto:hello@datiq.app">hello@datiq.app</a>) · <a href="/about">Axiom Minds</a>
+            Published by{" "}
+            <span className="author" rel="author">
+              <strong>DatIQ Editorial Team</strong> (<a href="mailto:hello@datiq.app">hello@datiq.app</a>) · <a href="/about">Axiom Minds</a>
+            </span>
             {CONTENT_DATE && (
               <>
                 {" · "}Last updated{" "}
