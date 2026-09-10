@@ -2,9 +2,86 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
+> **Last updated: 2026-09-10 — DISCOVERABILITY P1/W1: TWO COLUMNS DECLARED IN MIGRATION 0030 HAD NEVER ONCE BEEN WRITTEN, SO NO SCORE COULD BE TRACED TO AN OBSERVATION. ON `discoverability-p1-to-p3`, LOCAL ONLY.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+> Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
+>
+> ✅ **`staging` WAS ALREADY UP TO DATE WITH `main` — NOTHING TO SYNC.**
+> `git rev-list --count --no-merges origin/staging..origin/main` is **0**; the three commits on
+> `main` absent from `staging` (`2042348`, `2c6067c`, `ac9e170`) are all GitHub merge commits from
+> staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
+> **`discoverability-p1-to-p3`** cut from it, one commit (`84d3a5e`), **not pushed**.
+>
+> 🔴 **`$GITHUB_TOKEN` IS AN EXPIRED CLASSIC `ghp_` TOKEN.** `git fetch` and `git push` both fail
+> with `remote: Invalid username or token`. The credential helper reads that var and it is present
+> but dead, so **`netlify env`-style "it's configured" reasoning will mislead you** — the sync
+> comparison above is against the LAST SUCCESSFUL FETCH, not the live remote. Needs a fine-grained
+> PAT (`contents: read/write`) or `gh auth login` before anything can be pushed or re-verified.
+>
+> 🔴 **`audit_signals.raw_value` AND `.evidence_json` HAVE EXISTED SINCE MIGRATION 0030 AND NOTHING
+> HAD EVER WRITTEN THEM** — NULL on every row for the whole life of the module — while an issue's
+> only provenance was a sentence in a `text` column with no source, no selector, no timestamp and no
+> confidence. Both readable, neither checkable, so *"where exactly did you see that?"* had no answer,
+> which is the question a customer asks the moment a finding surprises them. The BRD requires
+> evidence on **every signal and every issue** and explainability on every score; the engine could
+> satisfy neither. **W1 is the write path**, and it goes first because every other workstream in P1
+> and P2 writes into it.
+>
+> ⚠️ **THE MODULE IS FAR MORE COMPLETE THAN THE PERPLEXITY DECK CLAIMS, AND `DISCOVERABILITY-MODULE.md`
+> WAS MAPPED TO THE WRONG DOCUMENT.** That deck rates the four-pillar scorer at 15% and gap analysis
+> at 20%; both are shipped, and the pillar and framework weights **already match PRD §7.3 exactly**.
+> But the module doc mapped itself onto an OLDER three-phase PRD and marked all three ✅ — that does
+> not transfer, because the new P1 is broader in several places and the new P2 is largely greenfield.
+> **The release-mapping table in that doc is now corrected**; do not read the old one as current.
+>
+> ⚠️ **`scoring_model_version` IS NOT NULL WITH NO DEFAULT, DELIBERATELY.** A default would let a
+> writer that forgets the stamp file a future v3 score as v1 — precisely the mislabelling the version
+> exists to prevent. Existing rows backfill to `'v1'`; they WERE scored, by the only model this repo
+> has shipped, and NULL would read as "unknown model" and make every historical baseline
+> non-comparable overnight. `auditStore.persistResult` falls back to the imported constant so a null
+> can never be sent. ⚠️ **`threshold_json` is usually NULL and that is CORRECT** — most signals are
+> curves, not thresholds, and inventing a boundary so the column looks populated would show a
+> customer a number the scorer never applied.
+>
+> ⚠️ **ONE DECORATOR, TWO PATHS.** `attachEvidenceToPillars()` is called by the pipeline AND by
+> `rehydrate()`, so a fresh audit and one reopened from history are identical BY CONSTRUCTION —
+> the same reasoning `rehydrate`'s own header gives for routing through `scorePillar()`. **Do NOT
+> add a second implementation on either side**; `rehydrate.test.js` went red the moment evidence was
+> attached on the read path only, which is the whole reason that suite exists.
+>
+> 🔴 **A REAL MODELLING ERROR CAUGHT BY A TEST WRITTEN TO CHECK SOMETHING ELSE:** the deterministic
+> pre-screen for `passage_independence` was labelled `model_inference` whenever a model happened to
+> run later, filing a MEASURED heuristic as a judgement and destroying the only independent check on
+> a model that disagrees with the page. The analyser now always records `derived` and the pipeline
+> adds its own record beside it. ⚠️ A sitemap test assertion of mine also contradicted its own
+> comment about leniency — the code was right, the assertion was not.
+>
+> ⚠️ **PENALTIES ARE UNTOUCHED IN W1, BY DECISION.** Per D1 the SHIPPED calibration is retained in
+> full — `AI_CRAWLER_BLOCKED` 0.20 (not the PRD's 0.15), `CONTENT_HYDRATION_ONLY` 0.20 (not 0.15),
+> and both DatIQ extensions `AI_CRAWLER_PARTIAL_BLOCK` 0.05 and `MOBILE_PARITY_MISSING` 0.10 as
+> first-class members — and only the two PRD conditions with no shipped equivalent
+> (`ENTITY_SCHEMA_INVALID` 0.10, `SEVERE_CWV_FAILURE` 0.10) are ADDED, in **W3**. Priority stays
+> multiplicative, not the PRD's linear form. `SCORING_MODEL_VERSION` ships `"v1"` and moves to
+> `"v2"` in W3, not here.
+>
+> **Also closed (BRD §7.2 collection gaps):** the **sitemap indicator**, read from the robots.txt
+> already fetched for crawler access so it costs no extra request against a host we have promised to
+> be polite to; and a **microdata INVENTORY** rather than a bare type list, because "you have Product
+> markup" and "you have forty Product blocks, none of which names a price" call for opposite advice.
+>
+> ⚠️ **NOT YET RUN ANYWHERE REAL.** Migration 0048 has only touched in-process WASM Postgres (no
+> GoTrue, no PostgREST, shimmed roles), and no audit has been run against a live URL with evidence
+> recording on — the pipeline suite mocks the network boundary deliberately. **Evidence also reaches
+> the API and the JSON export but NO SCREEN yet**; `EvidencePanels.jsx` still shows the human
+> sentence only, scheduled with W4.
+>
+> **Verified:** unit+contract **345 files / 5348 passed / 14 skipped / 0 failed** (+31) · db-verify
+> **48 migrations / 476 assertions / 0 failed** · build clean · check:prerender 28 pages / 112 refs ·
+> security clean · `run-all.sql` regenerated. **4 of the new rehydrate assertions confirmed RED
+> against the pre-fix code first.**
+>
+> **Prior: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
 >
 > ✅ **BRANCHES ARE IN SYNC.** `main` and `staging` were already content-identical (empty tree
 > diff; the 4 commits main led by were all staging→main merge commits). Both fast-forwarded, and
@@ -442,9 +519,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-06: **`main` and `staging` are IN SYNC** — they were already content-identical (empty tree diff; the 4 commits `main` led by were all staging→main merge commits), and `staging` was fast-forwarded onto `main` at `e71b329` before this session's work landed on top. `workflow-implementation-and-optimization` has **ZERO unique commits** and is a pure fast-forward of `staging` — **nothing is stranded there**; all the n8n/v2 work has been on staging since `157df70`. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod` (currently 15/15 at 401 ✅). **Do not trust this row without re-checking `git branch -r`** — `main` has moved mid-session three sessions running. |
-| **Latest commit** | `staging`, 2026-09-06 — split the workflow orchestrator's cron from its HTTP surface (the v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n's callbacks), wired five dead admin Run-now buttons, and fixed a StrictMode `alive`-ref bug that stopped `/admin/automation` and `/admin/revenue` loading under `npm run dev`. Run `git log --oneline origin/main..origin/staging`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **47** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**463 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, one commit `84d3a5e`, **local only — cannot be pushed, see the expired-token note above**). ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-p1-to-p3`, 2026-09-10 — P1/W1: the evidence envelope. Every signal and issue now retains a structured, timestamped, confidence-bearing record of what was observed and where; `audit_signals.raw_value`/`.evidence_json` finally have a write path after existing unwritten since 0030. Run `git log --oneline staging..discoverability-p1-to-p3`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **48** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**476 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---

@@ -18,6 +18,179 @@
 
 ---
 
+## 2026-09-10 — Discoverability P1/W1: the evidence envelope, and the two columns nothing ever wrote
+
+> **Branch:** `discoverability-p1-to-p3` @ `84d3a5e`, cut from `staging` (`4922c04`) · **Merged to:** nothing — local only · **`main`:** untouched
+
+### 1. Quick orientation
+
+New consolidated BRD/PRD (P1/P2/P3, 37pp) plus a Perplexity architecture deck (18pp) were
+supplied and a full gap analysis requested against the shipped Discoverability module, followed
+by implementation of P1 and P2.
+
+**Branch sync question, answered first:** `git rev-list --count --no-merges origin/staging..origin/main`
+is **0**. The three commits on `main` absent from `staging` are all GitHub merge commits from
+staging PRs (#161, #162, #164); every line of content on `main` came from `staging`, which is one
+commit ahead. **`staging` was already up to date with `main` — nothing to sync.**
+
+⚠️ **That comparison is against the last successful fetch.** `git fetch` fails with
+`remote: Invalid username or token`; the credential helper reads `$GITHUB_TOKEN`, which is present
+but is an **expired 40-character classic `ghp_` token**. Nothing is pushed and nothing can be
+re-verified against the live remote until a fine-grained PAT (`contents: read/write`) or
+`gh auth login` replaces it.
+
+**The module is far more complete than the Perplexity deck's "current-state map" claims** — that
+deck rates the four-pillar scorer at 15% and gap analysis at 20%; both are shipped, and the pillar
+and framework weights already match PRD §7.3 exactly. But
+[`DISCOVERABILITY-MODULE.md`](../DISCOVERABILITY-MODULE.md) mapped the module onto an **older**
+three-phase PRD and marked all three ✅, which does **not** transfer: the new P1 is broader in
+several places and the new P2 is largely greenfield. That table is now corrected.
+
+Full clause-by-clause analysis and the 14 workstreams:
+[`DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](../DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
+
+### 2. What was accomplished
+
+**W1 — the evidence envelope.** First of eight P1 workstreams, and first because every other
+workstream in both releases writes into it.
+
+🔴 **`audit_signals.raw_value` and `.evidence_json` have existed since migration 0030 and NOTHING
+HAS EVER WRITTEN THEM.** NULL on every row for the whole life of the module. An issue's only
+provenance was a sentence in a `text` column — no source, no selector, no timestamp, no
+confidence. Both readable, neither checkable, so *"where exactly did you see that?"* had no
+answer, which is the question a customer asks the moment a finding surprises them.
+
+| Piece | What it does |
+|---|---|
+| `src/lib/discoverability/evidenceModel.js` | PURE envelope: `{method, observed, source_url, selector, section, observed_value, excerpt, structured, collected_at, confidence}`. 11 methods. `collectedAt` is a PARAMETER — a module that reads the clock cannot be replayed, and an audit that cannot be replayed cannot be diffed against itself. |
+| `netlify/functions/lib/audit/evidenceCollector.js` | What an analyser records into, at the point the observation is made. |
+| all four analysers | All **20 signals** emit evidence; an issue inherits its signal's records via `evidenceForIssue()`. |
+| `auditPipeline.js` | Collector created with the audit's own `now`; `scoringModelVersion` stamped; shared decorator applied — including to the unreachable-page shell, so result shape does not depend on whether the fetch succeeded. |
+| `discoverability.js` (`rehydrate`) | Same decorator, fed from stored rows. |
+| `auditReport.js` | JSON export carries `raw_value`, `thresholds`, `confidence`, per-signal `evidence`, per-issue `evidence_records` and `scoring_model_version` — added as SIBLING keys, so no existing integration breaks. |
+| `0048_discoverability_evidence.sql` | `audit_issues.evidence_json`, `audit_signals.threshold_json`, `audit_results.scoring_model_version`. |
+
+**The four rules the envelope enforces**, each written into the file's own header:
+
+1. **No source, no evidence.** `makeEvidence` returns `null` for an unknown method, a missing
+   source URL or an unusable timestamp, and never fills in a default. A record whose provenance
+   was guessed is worse than an absent one: absence shows in the UI as "not measured", while a
+   fabricated source is indistinguishable from a real observation and gets quoted back as fact.
+2. **Observation is not inference, and `method` says so.** Each method declares
+   `observed: true|false`, so the BRD's *"separate observed facts from model inference"* is a
+   property of how a thing was learned rather than a flag a call site can forget. A test asserts
+   exactly two methods (`derived`, `model_inference`) are inferences, forcing a decision about
+   which side any future method falls on.
+3. **Recording never fails an audit.** A malformed record is dropped silently. An analyser must
+   not be able to fail an audit the customer was already charged for because a `section` string
+   came out undefined.
+4. **Confidence takes the STRONGEST record, not the mean** — evidence accumulates — and returns
+   `null` for none rather than `0`, the same `unknown` is never `0` discipline as the scorer.
+
+⚠️ **`attachEvidenceToPillars()` is called by the pipeline AND by `rehydrate()`.** One function,
+both paths, so a fresh audit and one reopened from history are identical **by construction**. That
+is the same reasoning `rehydrate`'s own header already gives for routing through `scorePillar()`,
+and for the same reason: the alternative is a bug that renders perfectly while you are looking at
+it. `raw_value` and `threshold_json` are stored for QUERYING and derived again on read from the
+same records, so the two can never disagree.
+
+**BRD §7.2 collection gaps closed.** **Sitemap indicator** — declarations are read from the
+robots.txt already fetched for crawler access, so it costs no extra request against a host we have
+promised to be polite to; only absolute http(s) values are accepted (robots.txt is
+attacker-controllable text) and the list is capped, because it rides along on every audit for that
+host thereafter. **Microdata inventory** — types were already extracted and merged into
+`schemaTypes`, but never inventoried, so *"you have Product markup"* could not be told apart from
+*"you have forty Product blocks, none of which names a price"*, and those call for opposite advice.
+
+### 3. Root cause analyses
+
+🔴 **A real modelling error, caught by a test written to check something else.** The analyser's
+deterministic pre-screen for `passage_independence` was labelled `model_inference` whenever a model
+happened to run later (`method: ctx.aiEvaluated ? "model_inference" : "derived"`). That files a
+MEASURED heuristic as a judgement and destroys the only independent check on a model that disagrees
+with the page. The analyser now always records `derived`; the pipeline adds its own
+`model_inference` record BESIDE it carrying `deterministic_prescreen`, so both survive.
+
+🔴 **A shape divergence, caught by the suite that exists for exactly this.**
+`rehydrate.test.js` — whose header records the earlier defect as *"the worst shape a bug can take:
+a fresh audit renders perfectly, so it never reproduces while you are looking at it"* — went red
+the moment evidence was attached on the read path only. Fixed by extracting the single shared
+decorator rather than by making the two lists of fields agree.
+
+⚠️ **A test assertion that contradicted its own comment.** The sitemap test asserted that
+`sitemap : url` (space before the colon) must NOT match, while the comment directly above it argued
+that being strict *"would report a sitemap as absent on sites that plainly declare one"*. The code
+was right; the assertion was wrong and was corrected, with the leniency and its reasoning written
+down.
+
+**`scoring_model_version` is NOT NULL with NO DEFAULT.** A default would be the dangerous choice,
+not the safe one: it would let a writer that forgets the stamp have its result silently filed under
+whatever the default was — precisely the class of error the version exists to prevent. Existing
+rows backfill to `'v1'`; they WERE scored, by the only model this repo has shipped, and NULL would
+read as "unknown model" and make every historical baseline non-comparable overnight.
+`auditStore.persistResult` falls back to the imported `SCORING_MODEL_VERSION` constant so a null
+can never be sent.
+
+**`threshold_json` is usually NULL and that is correct.** Most signals are CURVES — conciseness
+declines either side of a 40-60 word band, heading integrity is a proportion, render completeness
+is a ratio. Only Core Web Vitals and the ideal answer band have a published cut-off. Inventing a
+boundary so the column looks populated would show a customer a number the scorer never applied.
+
+### 4. Verification evidence
+
+```bash
+npx vitest run src netlify
+# Test Files 345 passed (345) · Tests 5348 passed | 14 skipped (5362)   [+31 net new]
+
+node scripts/db-verify.mjs
+# 48 migrations applied · 476 assertions passed · 0 failed
+
+npm run build && npm run check:prerender
+# BUILD OK · 28 generated pages in dist/, 112 asset references, all present
+
+npm run test:security
+# [security-check] source and dependency checks passed
+```
+
+⚠️ **4 of the new/changed rehydrate assertions were confirmed RED against the pre-fix code** by
+temporarily reverting the decorator and the version read, then restored. The evidence-model and
+collector suites are new-surface tests and have no pre-fix state to be red against.
+
+⚠️ **Nothing has been run against a real Supabase.** Migration 0048 has only been applied to
+in-process WASM Postgres by `db-verify`, which has no GoTrue, no PostgREST and shimmed roles.
+⚠️ **No audit has been run against a live URL with evidence recording on** — the pipeline suite
+mocks the network boundary deliberately, so the envelope is proven against known HTML, not against
+a real page.
+
+### 5. Environment state after this session
+
+- Branch `discoverability-p1-to-p3` exists **locally only**, one commit (`84d3a5e`) ahead of
+  `staging`. Not pushed — see the token note in §1.
+- `main` and `staging` untouched.
+- Migration count 47 → **48**; `run-all.sql` regenerated (it is GENERATED and CI-checked).
+- Decisions D1–D6, D8 recorded in the plan; D7, D9 deferred with stated defaults; D10 (P3) out of
+  scope for this branch.
+
+### 6. Open items for the next session
+
+- [ ] **Replace `$GITHUB_TOKEN`**, then re-verify branch sync against the live remote and push.
+- [ ] **Apply 0048 to a real Supabase** before this reaches staging.
+- [ ] **W2 — goal-based intake.** `audit_type`, `primary_goal`, `target_geography`, competitor URLs
+      on the audit, 4 missing business-model profiles (saas/services/local/e-commerce), 4 missing
+      page-type packs (homepage/service/location/comparison). Second because goal and geography
+      **cannot be back-filled** onto historical audits.
+- [ ] **W3 — penalty completion.** Add `ENTITY_SCHEMA_INVALID` (0.10) and `SEVERE_CWV_FAILURE`
+      (0.10); every existing penalty keeps its shipped weight per D1; bump
+      `SCORING_MODEL_VERSION` to `"v2"` and add the cross-version guard to `auditDiff`; rewrite the
+      penalty section of `DISCOVERABILITY-MODULE.md` as a shipped-vs-PRD mapping table.
+- [ ] W4–W8 then P2 (W9–W14). Hard P1 gate before any P2 work — P2's entity work writes into this
+      envelope and reuses the P1 issue/recommendation/workflow spine.
+- [ ] **Surface evidence in the UI.** `EvidencePanels.jsx` and the issue list still show the human
+      sentence only; the structured records reach the API and the JSON export but no screen yet.
+      Scheduled with W4, where the issue record is reworked.
+
+---
+
 ## 2026-09-09 — Discoverability Report Remediation: Full Resolution of Audit Signals on datiq.app
 
 **Branches.** Implemented on `staging`. Passed all 9 pre-push gates (`npm run test:prepush`): 354 Vitest test files (5,490 tests passed, 0 failed), production readiness clean, contract tests clean, integration tests clean, database & referral tests clean, prerender check clean (28 static pages in `dist/` and `public/`), security check clean.
