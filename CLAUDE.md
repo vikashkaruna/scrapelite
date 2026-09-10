@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-10 — DISCOVERABILITY P1/W1: TWO COLUMNS DECLARED IN MIGRATION 0030 HAD NEVER ONCE BEEN WRITTEN, SO NO SCORE COULD BE TRACED TO AN OBSERVATION. ON `discoverability-p1-to-p3`, LOCAL ONLY.**
+> **Last updated: 2026-09-10 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE). TWO COLUMNS DECLARED IN 0030 HAD NEVER ONCE BEEN WRITTEN, AND INTAKE COULD NOT RECORD A GOAL OR A GEOGRAPHY — THE TWO THINGS THAT CAN NEVER BE BACK-FILLED. ON `discoverability-p1-to-p3`, LOCAL ONLY, 3 COMMITS.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
@@ -11,7 +11,7 @@
 > `git rev-list --count --no-merges origin/staging..origin/main` is **0**; the three commits on
 > `main` absent from `staging` (`2042348`, `2c6067c`, `ac9e170`) are all GitHub merge commits from
 > staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
-> **`discoverability-p1-to-p3`** cut from it, one commit (`84d3a5e`), **not pushed**.
+> **`discoverability-p1-to-p3`** cut from it, three commits (HEAD `7469efe`), **not pushed**.
 >
 > 🔴 **`$GITHUB_TOKEN` IS AN EXPIRED CLASSIC `ghp_` TOKEN.** `git fetch` and `git push` both fail
 > with `remote: Invalid username or token`. The credential helper reads that var and it is present
@@ -27,6 +27,44 @@
 > evidence on **every signal and every issue** and explainability on every score; the engine could
 > satisfy neither. **W1 is the write path**, and it goes first because every other workstream in P1
 > and P2 writes into it.
+>
+> 🔴 **AND INTAKE COULD NOT RECORD WHY THE AUDIT WAS RUN.** BRD §7.1 requires an audit TYPE, a
+> primary GOAL and a target GEOGRAPHY; the `audits` row had the target and a 4-value profile, no goal,
+> no geography, no competitor list, and `source` (`api|ui|schedule|benchmark|rerun`) doing double duty
+> as a type while actually recording provenance. **W2 (`0049`) adds them**, and `primary_goal` /
+> `target_geography` are **nullable BECAUSE they can never be back-filled** — a profile can be
+> re-derived from the page at any time, but if nobody asked what the customer was trying to achieve,
+> that answer is gone. A default would invent an intent nobody stated.
+>
+> ⚠️ **ALL FIVE AUDIT TYPES ARE DECLARED, INCLUDING THE TWO THAT ARE NOT BUILT** (`domain`,
+> `prompt_monitor`), each `available: false` with a reason — the vocabulary is a stored CHECK
+> constraint and widening a live enum later is a migration plus a deploy plus a window where the API
+> and the database disagree about what is legal. **The API REFUSES an unavailable type rather than
+> accepting it and running something else**: a row claiming to be a domain snapshot when one page was
+> fetched is worse than a rejected request, because the rejection is visible now and the mislabel
+> surfaces a quarter later inside a trend line. `benchmark` is `callerSelectable: false` — a benchmark
+> audit with no benchmark behind it belongs to nothing.
+>
+> 🔴 **THE COMPOSER WAS SENDING A PROFILE THE USER NEVER CHOSE, AND A TEST WAS PINNING IT.**
+> `AuditComposer` sent `audit_profile: "balanced"` unconditionally, which on the wire is
+> indistinguishable from a deliberate choice of the neutral lens — so it would have **suppressed
+> inference on every audit run from a browser** and recorded `audit_profile_source: explicit` for a
+> choice nobody made. An **ABSENT** `audit_profile` is now the signal that nobody chose one.
+> `Discoverability.integration.test.jsx` asserted the old contract and went red; **that assertion was
+> wrong, not a regression**, and its replacement pins the omission with the reasoning written down.
+> ⚠️ **Do not "fix" it back.**
+>
+> ⚠️ **EIGHT PROFILES, ONE SET OF MATHS.** `saas`/`services`/`local`/`ecommerce` join the four
+> originals and `homepage`/`service`/`location`/`comparison` join the eight page-type packs — but a
+> profile is still a **LENS**: all four framework views are computed with identical weightings, so the
+> same page scores identically under any of them. ⚠️ **`ecommerce`, not `e-commerce`** — codes are a
+> public contract.
+>
+> ⚠️ **PROVENANCE, RECORDED BECAUSE IT MATTERS TO WHOEVER READS THIS NEXT:** the W2 implementation
+> appeared in the working tree between two turns and was **not authored in that session** — most
+> likely a concurrent session on the same branch, which this repo has a documented history of. It was
+> read, gate-verified, one real regression in it fixed, and committed. Its design comments are
+> authoritative; the review of it was **one pass, not two**.
 >
 > ⚠️ **THE MODULE IS FAR MORE COMPLETE THAN THE PERPLEXITY DECK CLAIMS, AND `DISCOVERABILITY-MODULE.md`
 > WAS MAPPED TO THE WRONG DOCUMENT.** That deck rates the four-pillar scorer at 15% and gap analysis
@@ -76,10 +114,17 @@
 > the API and the JSON export but NO SCREEN yet**; `EvidencePanels.jsx` still shows the human
 > sentence only, scheduled with W4.
 >
-> **Verified:** unit+contract **345 files / 5348 passed / 14 skipped / 0 failed** (+31) · db-verify
-> **48 migrations / 476 assertions / 0 failed** · build clean · check:prerender 28 pages / 112 refs ·
-> security clean · `run-all.sql` regenerated. **4 of the new rehydrate assertions confirmed RED
-> against the pre-fix code first.**
+> **Verified:** unit+contract **346 files / 5430 passed / 14 skipped** (+89 over the pre-branch
+> baseline) · db-verify **49 migrations / 505 assertions / 0 failed** · build clean · check:prerender
+> 28 pages / 112 refs · security source checks clean · `run-all.sql` regenerated. **4 of the new
+> rehydrate assertions confirmed RED against the pre-fix code first.**
+>
+> ⚠️ **7 tests fail in a full parallel run and NONE is from this branch.** Six (`Account` ×5,
+> `AdminMonitoring` ×1) pass in isolation at **46/46** — machine contention, the trap this file
+> already documents. The seventh, `whiteLabelTemplate > accepts a file exactly at the MAX_BYTES
+> boundary`, **fails identically on `staging`** (proven by checkout) and is a standing red test
+> somebody should own. ⚠️ **The dependency half of `test:security` could not run** — the npm registry
+> audit endpoint returned `ECONNRESET`; source checks pass, re-run on a working network.
 >
 > **Prior: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
 >
@@ -519,9 +564,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, one commit `84d3a5e`, **local only — cannot be pushed, see the expired-token note above**). ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `discoverability-p1-to-p3`, 2026-09-10 — P1/W1: the evidence envelope. Every signal and issue now retains a structured, timestamped, confidence-bearing record of what was observed and where; `audit_signals.raw_value`/`.evidence_json` finally have a write path after existing unwritten since 0030. Run `git log --oneline staging..discoverability-p1-to-p3`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **48** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**476 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, **three commits**, HEAD `7469efe`, **local only — cannot be pushed, see the expired-token note above**). ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-p1-to-p3` @ `7469efe`, 2026-09-10 — P1/**W2**: goal-based intake. `audit_type`, `primary_goal`, `target_geography`, `competitor_urls` and `audit_profile_source` on the audit row; 8 profiles and 12 page-type packs; profile inference with a recorded source. Under it, **W1** (`84d3a5e`): the evidence envelope. Run `git log --oneline staging..discoverability-p1-to-p3`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **49** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**505 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---

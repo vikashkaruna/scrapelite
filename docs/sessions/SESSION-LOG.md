@@ -18,6 +18,152 @@
 
 ---
 
+## 2026-09-10 — Discoverability P1/W2: goal-based intake, and the four fields that cannot be back-filled
+
+> **Branch:** `discoverability-p1-to-p3` @ `7469efe` · **Target:** feature branch, **not pushed** · **`main`/`staging`:** untouched
+
+### 1. Quick orientation — START HERE FOR A FRESH SESSION
+
+| Property | Value |
+|---|---|
+| **Branch** | `discoverability-p1-to-p3`, cut from `staging` (`4922c04`) |
+| **HEAD** | `7469efe` — three commits ahead of `staging`, **local only** |
+| **Status** | W1 + W2 of eight P1 workstreams complete and verified |
+| **Next** | **W3 — penalty completion.** See §5. |
+| **Blocked on** | A working GitHub token. `$GITHUB_TOKEN` is an expired classic `ghp_`; `git fetch` and `git push` both fail. |
+
+```
+7469efe  feat(discoverability): P1/W2 — goal-based intake …
+6c2ab92  docs: session record for P1/W1 — evidence envelope
+84d3a5e  feat(discoverability): P1/W1 — the evidence envelope …
+4922c04  ← staging
+```
+
+**The plan and the clause-by-clause gap analysis are the entry point:**
+[`docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](../DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
+Decisions D1–D6 and D8 are RESOLVED there; D7 and D9 carry stated defaults; D10 puts P3 out of
+scope for this branch.
+
+⚠️ **Read §3 of the W1 entry below before touching the evidence envelope** — the one-decorator rule
+and the `derived` vs `model_inference` distinction are both easy to undo by accident.
+
+### 2. What was accomplished
+
+**W2 — goal-based intake.** Second in the sequence because `primary_goal` and `target_geography`
+are the only things in this release that can **never** be recovered later: a profile can be
+re-derived from the page at any time, but if nobody asked "what are you trying to achieve, and
+where?" at intake, that answer is gone. Every audit run before this ships carries NULL there
+permanently — which is exactly why the columns are nullable rather than defaulted.
+
+| Piece | What it does |
+|---|---|
+| `src/lib/discoverability/intakeModel.js` | PURE, shared by React and `netlify/`. Audit types, primary goals, geography normalisation, competitor-URL normalisation, profile inference and source tracking. |
+| `supabase/migrations/0049_discoverability_intake.sql` | Widens the `audit_profile` CHECK on `audits`, `audit_benchmarks` and `audit_schedules` to eight values; adds `audit_type`, `primary_goal`, `target_geography`, `competitor_urls`, `audit_profile_source`. |
+| `auditProfiles.js` | Four business-model profiles (`saas`, `services`, `local`, `ecommerce`) and four page-type packs (`homepage`, `service`, `location`, `comparison`). |
+| `AuditComposer.jsx` | Goal row above the fold; profile chips gain a "take it from my goal" option. |
+| `discoverability.js` / `auditStore.js` / `auditPipeline.js` | Intake accepted, validated, resolved and persisted. |
+
+**Five decisions worth not re-litigating**, each written into the code:
+
+1. **All five audit types are declared, including the two that are not built** (`domain`,
+   `prompt_monitor`), each `available: false` with a reason. The vocabulary is a stored CHECK
+   constraint, and widening a live enum later is a migration plus a deploy plus a window where the
+   API and the database disagree about what is legal. **The API refuses an unavailable type rather
+   than accepting it and running something else** — a row claiming to be a domain snapshot when one
+   page was fetched is worse than a rejected request, because the rejection is visible now and the
+   mislabel surfaces a quarter later inside a trend line.
+2. **`benchmark` is `callerSelectable: false`.** A benchmark audit with no benchmark behind it is a
+   row that belongs to nothing.
+3. **`normaliseCompetitorUrls` returns `{urls, rejected}`,** not a bare array. Silently keeping ten
+   of eleven is how a customer comes to believe a competitor is tracked when it is not.
+4. **Profile inference returns NULL when nothing argues for a lens** — the common case, and better
+   than reaching for a weak signal. `audit_profile_source` (`explicit | goal | inferred | default`)
+   records which of the four settled it, so a report can say so rather than implying the customer
+   chose the neutral lens.
+5. **`ecommerce`, not `e-commerce`.** Codes are a public contract.
+
+⚠️ **A profile is still a LENS.** All four framework views are computed with identical weightings,
+so the same page scores identically under any of the eight profiles. Eight lenses, one set of maths.
+
+### 3. Root cause analysis
+
+🔴 **The composer was sending a profile the user never chose, and a test was pinning it.**
+`AuditComposer` sent `audit_profile: "balanced"` unconditionally. On the wire that is
+indistinguishable from a deliberate choice of the neutral lens, so it would have **suppressed
+inference on every audit run from a browser** — the goal and the page could never settle the lens,
+and `audit_profile_source` would have read `explicit` for a choice nobody made. W2 omits the field
+when nothing was chosen; an ABSENT `audit_profile` is the signal.
+
+`Discoverability.integration.test.jsx > shows all four framework scores` asserted
+`audit_profile: "balanced"` on that request and went red. **That assertion was the wrong contract,
+not a regression.** It is replaced by one pinning the omission (`expect(body).not.toHaveProperty`)
+with the reasoning written down, so it is not "fixed" back later.
+
+⚠️ **Two other failures were investigated and are NOT from this work:**
+
+- `whiteLabelTemplate > accepts a file exactly at the MAX_BYTES boundary` — **pre-existing.**
+  Proven by `git stash` + `git checkout staging` and re-running: it fails identically there.
+- `Account.integration` (×5) and `AdminMonitoring.integration` (×1) — **machine contention**, the
+  trap this repo already documents. All six pass in isolation (46/46), with durations of 12–56s in
+  the contended run.
+
+### 4. Verification evidence
+
+```bash
+npx vitest run src netlify
+# 346 files · 5430 passed | 7 failed | 14 skipped (5451)   [+89 over the W1 baseline]
+#   6 of the 7 pass in isolation (contention); 1 is pre-existing on staging — see §3
+
+node scripts/db-verify.mjs
+# 49 migrations applied · 505 assertions passed · 0 failed
+
+npm run build && npm run check:prerender
+# BUILD OK · 28 generated pages in dist/, 112 asset references, all present
+
+SECURITY_CHECK_SKIP_AUDIT=1 npm run test:security
+# source and dependency checks passed
+```
+
+⚠️ **The dependency half of the security gate could not run** — the npm registry audit endpoint
+returned `ECONNRESET`. Source checks pass. Re-run `npm run test:security` on a working network
+before promoting.
+
+⚠️ **Provenance note, recorded because the log is the source of truth about what happened:** the W2
+implementation appeared in the working tree between two turns of this session and was **not authored
+in this conversation** — most likely a concurrent session on the same branch, which this repo has a
+documented history of. It was read, gate-verified, one real regression in it fixed (§3), and
+committed. Treat its design comments as authoritative; treat this session's *review* of it as one
+pass, not two.
+
+⚠️ **Still not run anywhere real.** Migrations `0048` and `0049` have only met in-process WASM
+Postgres (no GoTrue, no PostgREST, shimmed roles), and no audit has been run against a live URL with
+either evidence recording or the new intake. The pipeline suite mocks the network boundary by design.
+
+### 5. Open items for the next session
+
+- [ ] **Replace `$GITHUB_TOKEN`** (fine-grained PAT, `contents: read/write`, or `gh auth login`),
+      then re-verify branch sync against the live remote and push all three commits.
+- [ ] **Apply `0048` and `0049` to a real Supabase** before this reaches staging.
+- [ ] **W3 — penalty completion.** Add `ENTITY_SCHEMA_INVALID` (0.10) and `SEVERE_CWV_FAILURE`
+      (0.10) with detection rules, issue codes and constructs. ⚠️ **Every existing penalty keeps its
+      shipped weight** per decision D1 — `AI_CRAWLER_BLOCKED` stays 0.20 (not the PRD's 0.15),
+      `CONTENT_HYDRATION_ONLY` stays 0.20, and `AI_CRAWLER_PARTIAL_BLOCK` (0.05) and
+      `MOBILE_PARITY_MISSING` (0.10) stay as first-class DatIQ extensions. Priority stays
+      multiplicative, not the PRD's linear form. Then bump `SCORING_MODEL_VERSION` to `"v2"`, add the
+      cross-version guard to `auditDiff`, and rewrite the penalty section of
+      `DISCOVERABILITY-MODULE.md` as a shipped-vs-PRD mapping table with the reasoning for each of
+      the four deliberate divergences.
+- [ ] **W4–W8**, then the hard P1 gate, then P2 (W9–W14). P2's entity work writes into W1's evidence
+      envelope and reuses the P1 issue/recommendation/workflow spine, so it must not start early.
+- [ ] **Surface evidence in the UI.** `EvidencePanels.jsx` and the issue list still show the human
+      sentence only; structured records reach the API and the JSON export but no screen. Scheduled
+      with W4, where the issue record is reworked.
+- [ ] **Re-run `npm run test:security`** on a working network (see §4).
+- [ ] ⚠️ **`whiteLabelTemplate` MAX_BYTES fails on `staging` too.** Unrelated to this branch, but it
+      is a standing red test somebody should own.
+
+---
+
 ## 2026-09-10 — Discoverability P1/W1: the evidence envelope, and the two columns nothing ever wrote
 
 > **Branch:** `discoverability-p1-to-p3` @ `84d3a5e`, cut from `staging` (`4922c04`) · **Merged to:** nothing — local only · **`main`:** untouched
