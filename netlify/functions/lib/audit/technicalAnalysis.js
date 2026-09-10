@@ -16,6 +16,7 @@ import {
   CWV_THRESHOLDS,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { AI_CRAWLERS } from "../../../../src/lib/discoverability/constructTemplates.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /**
  * Below this share of content surviving in raw HTML, the page is treated as
@@ -42,6 +43,7 @@ export function analyseTechnical(parsed, ctx = {}) {
   const reasons = {};
   const issues = [];
   const penalties = [];
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const meta = parsed.meta || {};
   const fetchFacts = ctx.fetch || {};
@@ -269,6 +271,82 @@ export function analyseTechnical(parsed, ctx = {}) {
   // here, where the rest of the multiplicative layer lives.
   if (ctx.faqMismatch) penalties.push("FAQ_SCHEMA_MISMATCH");
 
+  // ── record what was read ─────────────────────────────────────────────────
+  // This pillar's readings come from four different places — the HTTP response,
+  // robots.txt, a third-party performance API and the document itself — and the
+  // `method` on each record is what lets a reader tell them apart. Two of them
+  // are not the customer's own page at all, and one of those (Core Web Vitals)
+  // is somebody else's measurement, which is exactly the sort of thing a
+  // customer disputes and therefore exactly the sort of thing that needs a
+  // source and a timestamp attached.
+  E.signal("crawl_index_eligibility", {
+    method: "http_response",
+    section: "Status, robots directives and crawler access",
+    observedValue: {
+      status,
+      noindex: Boolean(meta.noindex),
+      canonical: canonical || null,
+      canonical_self_reference: canonicalSelf,
+      ai_crawlers_allowed: access ? Object.values(access).filter((v) => v === true).length : null,
+      ai_crawlers_blocked: access ? Object.values(access).filter((v) => v === false).length : null,
+    },
+    excerpt: meta.robots || "",
+    structured: {
+      ai_crawler_access: aiAccessFacts || null,
+      robots_error: ctx.robotsError || null,
+      sitemaps: (ctx.sitemaps || []).slice(0, 10),
+    },
+  });
+  E.signal("render_completeness", {
+    // Deliberately `rendered_dom`: this signal exists ONLY because we compared
+    // two fetches, and filing it as `raw_html` would misdescribe the one
+    // measurement in the audit that needs both.
+    method: "rendered_dom",
+    section: "Raw HTML compared against rendered DOM",
+    observedValue: {
+      raw_word_count: rawWords ?? null,
+      rendered_word_count: renderedWords ?? null,
+      content_loss_ratio: loss,
+      js_shell: Boolean(fetchFacts.rawIsJsShell),
+    },
+    structured: { renderer: fetchFacts.renderer || null },
+  });
+  if (cwv && (cwv.lcp != null || cwv.inp != null || cwv.cls != null)) {
+    E.signal("core_web_vitals", {
+      method: "external_api",
+      section: `${cwv.source || "lab"} measurement`,
+      observedValue: { lcp: cwv.lcp ?? null, inp: cwv.inp ?? null, cls: cwv.cls ?? null, ttfb: cwv.ttfb ?? null },
+      structured: {
+        source: cwv.source || null,
+        thresholds: {
+          lcp: CWV_THRESHOLDS.lcp.good, inp: CWV_THRESHOLDS.inp.good, cls: CWV_THRESHOLDS.cls.good,
+        },
+      },
+    });
+  }
+  E.signal("mobile_parity", {
+    method: "raw_html",
+    selector: "meta[name='viewport']",
+    section: "Viewport declaration",
+    observedValue: { viewport: meta.viewport || null, head_reliable: fetchFacts.headSignalsReliable !== false },
+    excerpt: meta.viewport || "",
+  });
+  E.signal("structured_data_validity", {
+    method: "json_ld",
+    selector: "script[type='application/ld+json']",
+    section: "Structured-data blocks",
+    observedValue: {
+      blocks: blockCount,
+      parse_errors: jsonLdErrors.length,
+      microdata_items: (parsed.microdata || []).reduce((a, m) => a + m.count, 0),
+    },
+    structured: {
+      types: parsed.schemaTypes || [],
+      errors: jsonLdErrors.slice(0, 3),
+      microdata: (parsed.microdata || []).slice(0, 10),
+    },
+  });
+
   return {
     signals, reasons, issues, penalties,
     facts: {
@@ -301,7 +379,15 @@ export function analyseTechnical(parsed, ctx = {}) {
         block_count: blockCount,
         parse_errors: jsonLdErrors.length,
         types: parsed.schemaTypes || [],
+        // The BRD asks for a JSON-LD *and microdata* inventory. Types alone
+        // cannot distinguish "you have Product markup" from "you have forty
+        // Product blocks, none of which names a price".
+        microdata: parsed.microdata || [],
       },
+      // A sitemap declaration read from the host's own robots.txt, which we
+      // already fetched for crawler access. Empty means none was declared —
+      // NOT that none exists, since /sitemap.xml can be served undeclared.
+      sitemaps: ctx.sitemaps || [],
       checked_ai_crawlers: AI_CRAWLERS,
     },
   };

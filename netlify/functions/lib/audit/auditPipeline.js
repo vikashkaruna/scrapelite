@@ -31,13 +31,15 @@ import { fetchWebVitals, webVitalsAvailable, PSI_TIMEOUT_MS } from "./webVitals.
 import { sampleCitations, resolveEngine } from "./citationSampling.js";
 import { evaluatePassage, aiEvaluationEnabled } from "./aiEvaluator.js";
 import { createDeadline, budgetFromEnv } from "./deadline.js";
-import { scoreAudit } from "../../../../src/lib/discoverability/scoringModel.js";
+import { scoreAudit, SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 import { buildRecommendation, rankRecommendations, estimateTotalLift, estimateUnblockedLift, applyDependencies }
   from "../../../../src/lib/discoverability/recommendationModel.js";
 import { buildConstruct } from "../../../../src/lib/discoverability/constructTemplates.js";
 import { severityTally, ISSUES } from "../../../../src/lib/discoverability/issueCatalog.js";
 import { applyProfile, AUDIT_PROFILES, applyPageTypePack, notApplicableSignals, packFor }
   from "../../../../src/lib/discoverability/auditProfiles.js";
+import { createEvidenceCollector } from "./evidenceCollector.js";
+import { attachEvidenceToPillars } from "../../../../src/lib/discoverability/evidenceModel.js";
 
 export const PIPELINE_STAGES = Object.freeze([
   "audit.fetch", "audit.render", "audit.parse",
@@ -122,6 +124,13 @@ export async function runAudit(url, options = {}) {
   // killed at 10-26s — which is what produced `POST /audits failed (504)`.
   // See deadline.js for the measurements.
   const deadline = options.deadline || createDeadline(options.budgetMs ?? budgetFromEnv(env));
+
+  // Every observation any analyser makes is recorded here, at the point it is
+  // made, and lands on the signal or issue it supports. `now` rather than a
+  // clock read per record: two observations from the same audit run must carry
+  // the same collection timestamp, or a diff between two audits starts showing
+  // sub-second jitter as though it were change.
+  const evidence = createEvidenceCollector({ url, collectedAt: now });
 
   // ── 1 + 2. fetch and render, concurrently ────────────────────────────────
   const collected = await collectPage(url, { env, deadline });
@@ -230,9 +239,9 @@ export async function runAudit(url, options = {}) {
   if (citationResult?.error) stageErrors.push({ stage: "audit.score", signal: "citation_footprint", error: citationResult.error });
 
   // ── 4. analyse and score ─────────────────────────────────────────────────
-  const answer = analyseAnswerClarity(parsed, { aiEvaluated: Boolean(aiResult) });
-  const structure = analyseStructure(parsed, {});
-  const entity = analyseEntityAuthority(parsed, { now, citationSample: citationResult });
+  const answer = analyseAnswerClarity(parsed, { aiEvaluated: Boolean(aiResult), evidence });
+  const structure = analyseStructure(parsed, { evidence });
+  const entity = analyseEntityAuthority(parsed, { now, citationSample: citationResult, evidence });
 
   // The FAQ mismatch penalty belongs to the technical layer but is only
   // detectable by the structural comparison, so it is threaded across.
@@ -245,6 +254,8 @@ export async function runAudit(url, options = {}) {
     webVitals,
     canonicalStatus,
     faqMismatch,
+    sitemaps: collected.sitemaps || [],
+    evidence,
   });
 
   const analyses = [answer, structure, entity, technical];
@@ -264,6 +275,17 @@ export async function runAudit(url, options = {}) {
 
   // The model refines the deterministic pre-screen, bounded and marked down.
   if (aiResult?.passageIndependence !== null && aiResult?.passageIndependence !== undefined) {
+    // Recorded as its own record rather than by editing the analyser's: the
+    // deterministic pre-screen genuinely happened and its reading is still the
+    // reason the model was asked at all. Overwriting it would erase the only
+    // check on a model that disagrees with the page.
+    evidence.signal("passage_independence", {
+      method: "model_inference",
+      section: "Model re-read of the primary answer",
+      observedValue: aiResult.passageIndependence,
+      excerpt: aiResult.notes || "",
+      structured: { provider: aiResult.provider || null, deterministic_prescreen: signalValues.passage_independence ?? null },
+    });
     signalValues.passage_independence = aiResult.passageIndependence;
   }
 
@@ -275,6 +297,14 @@ export async function runAudit(url, options = {}) {
     }),
     auditProfile,
   );
+
+  // ── attach the workings to the numbers ───────────────────────────────────
+  // The scorer is pure and knows nothing about where a value came from, which
+  // is right — but a score without its provenance is exactly what the BRD
+  // forbids. attachEvidenceToPillars() is the SAME function rehydrate() calls
+  // on the way back out of Postgres, so a fresh audit and a stored one carry
+  // identical shapes by construction.
+  scored.pillars = attachEvidenceToPillars(scored.pillars, evidence.signalMap());
 
   // ── 5. recommend ─────────────────────────────────────────────────────────
   const rawIssues = analyses
@@ -295,7 +325,12 @@ export async function runAudit(url, options = {}) {
     issues.push({
       code: i.code, pillar: meta.pillar, severity: meta.severity,
       frameworks: [...meta.frameworks], title: meta.title,
+      // `evidence` stays the human sentence it has always been — it is what the
+      // report prints and what every stored row and diff already contains.
+      // `evidenceRecords` is the structured provenance beside it, inherited
+      // from the signal this finding sits on.
       evidence: i.evidence || "", details: i.details || null,
+      evidenceRecords: evidence.evidenceForIssue(i.code, i.signalCode),
     });
   }
   const packedIssues = applyPageTypePack(issues, pageType);
@@ -344,6 +379,7 @@ export async function runAudit(url, options = {}) {
       audit_profile: auditProfile,
     },
     ...scored,
+    scoringModelVersion: SCORING_MODEL_VERSION,
     issues: packedIssues,
     severityTally: severityTally(packedIssues),
     recommendations,
@@ -410,6 +446,12 @@ export function inferPageType(parsed) {
 /** The shape returned when a page could not be fetched at all. */
 function emptyResultShell({ url, deviceProfile, auditProfile, now, collected }) {
   const scored = scoreAudit({ signalValues: {}, penaltyCodes: [] });
+  // Decorated with an EMPTY evidence map rather than left undecorated. An
+  // unreachable page gathered no observations, but its signals must still carry
+  // the same fields a reachable page's do — a consumer that reads
+  // `signal.evidence.length` should get 0, not a TypeError, and the shape of a
+  // result must not depend on whether the fetch happened to succeed.
+  scored.pillars = attachEvidenceToPillars(scored.pillars, {});
   const issueCode = collected.fetch.status && collected.fetch.status !== 200 ? "TA-04" : "TA-04";
   const rec = buildRecommendation(issueCode, {
     evidence: collected.fetch.status
@@ -428,6 +470,7 @@ function emptyResultShell({ url, deviceProfile, auditProfile, now, collected }) 
       device_profile: deviceProfile, audit_profile: auditProfile,
     },
     ...scored,
+    scoringModelVersion: SCORING_MODEL_VERSION,
     issues: [issue],
     severityTally: severityTally([issue]),
     recommendations: [rec],

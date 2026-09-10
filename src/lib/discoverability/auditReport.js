@@ -441,6 +441,16 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
         measured: Boolean(s.measured),
         applicable: s.applicable !== false,
         unknown_reason: s.measured ? null : (s.unknownReason || "not_measured"),
+        // ── the workings ──────────────────────────────────────────────────
+        // The BRD requires every score to store its calculation components,
+        // raw value, threshold, evidence and model version. A JSON export that
+        // carries the number but not the provenance is exactly the archive a
+        // customer cannot use to challenge a finding six months later, which is
+        // the one moment the evidence matters most.
+        raw_value: s.rawValue ?? null,
+        thresholds: s.thresholds ?? null,
+        confidence: s.confidence ?? null,
+        evidence: s.evidence || [],
       })),
     ),
     bands: Object.fromEntries(
@@ -452,7 +462,14 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
     technical_facts: audit.facts?.technical || {},
     content_facts: audit.facts?.content || {},
     entity_facts: audit.facts?.entity || {},
-    issues: audit.issues || [],
+    // `evidence` stays the human sentence every existing consumer already reads;
+    // `evidence_records` is the structured provenance beside it. Added as a new
+    // key rather than a change of shape, for the same reason `signal_detail`
+    // sits beside `pillar_scores.signals` — an existing integration keeps working.
+    issues: (audit.issues || []).map((i) => ({
+      ...i,
+      evidence_records: i.evidenceRecords || i.evidence_records || [],
+    })),
     recommendations: audit.recommendations || [],
     // Everything the on-screen report shows that the payload used to omit. The
     // JSON export is what an API consumer archives, so a section visible in the
@@ -485,6 +502,9 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
       sentiment_score: run.sentiment_score ?? null,
     })),
     score_math: audit.scoreMath || null,
+    // Which maths produced every number above. A consumer diffing two archived
+    // payloads has to be able to tell whether they are comparable at all.
+    scoring_model_version: audit.scoringModelVersion || null,
     engine: audit.meta?.engine || null,
     stage_errors: audit.stageErrors || [],
   };

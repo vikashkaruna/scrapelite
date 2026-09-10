@@ -76,6 +76,7 @@ import {
 import { buildConstruct } from "../../src/lib/discoverability/constructTemplates.js";
 import { AUDIT_PROFILES, packFor } from "../../src/lib/discoverability/auditProfiles.js";
 import { scorePillar, scoreFramework } from "../../src/lib/discoverability/scoringModel.js";
+import { attachEvidenceToPillars } from "../../src/lib/discoverability/evidenceModel.js";
 import { PILLAR_IDS, PILLARS } from "../../src/lib/discoverability/signalRegistry.js";
 import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
 
@@ -923,9 +924,19 @@ export function rehydrate(full) {
   // Only the derived presentation fields are recomputed.
   const values = {};
   const reasons = {};
+  // Provenance, keyed by signal code so it can be re-attached after
+  // scorePillar() rebuilds the presentation fields. Without this a stored audit
+  // shows scores with no workings while a fresh one shows both — the exact
+  // fresh-renders-right / stored-renders-wrong shape this function's own header
+  // records having been caught by once already.
+  const storedEvidence = {};
   for (const row of full.signals || []) {
     values[row.signal_code] = row.normalized_score === null ? null : Number(row.normalized_score);
     if (row.unknown_reason) reasons[row.signal_code] = row.unknown_reason;
+    // Records only. `raw_value` and `threshold_json` are stored for querying
+    // and DERIVED again here from these same records, so the two can never
+    // disagree — see attachEvidenceToPillars.
+    storedEvidence[row.signal_code] = Array.isArray(row.evidence_json) ? row.evidence_json : [];
   }
 
   const storedPillarScore = {
@@ -945,6 +956,11 @@ export function rehydrate(full) {
       score: stored === null || stored === undefined ? rebuilt.score : Number(stored),
     };
   }
+
+  // The same decorator the pipeline runs, fed from the stored records instead
+  // of a live collector. See attachEvidenceToPillars' own comment for why this
+  // must not be a second implementation.
+  const decorated = attachEvidenceToPillars(pillars, storedEvidence);
 
   return {
     auditId: full.audit.id,
@@ -970,13 +986,19 @@ export function rehydrate(full) {
       aeo: { score: num(r.aeo_score), coverage: scoreFramework("aeo", pillars).coverage },
       geo: { score: num(r.geo_score), coverage: scoreFramework("geo", pillars).coverage },
     },
-    pillars,
+    pillars: decorated,
     penalties: r.engine_json?.penalties || [],
     penaltyMultiplier: num(r.penalty_multiplier),
     scoreMath: { prePenaltyTotal: num(r.pre_penalty_score), penaltyMultiplier: num(r.penalty_multiplier), finalScore: num(r.final_score) },
+    // Rows written before 0048 carry no version. They were scored by v1 — the
+    // only model this repository has ever shipped — and the migration backfills
+    // them; this fallback covers a read that races the migration rather than
+    // inventing a version for an unknown model.
+    scoringModelVersion: r.scoring_model_version || "v1",
     issues: (full.issues || []).map((i) => ({
       code: i.code, pillar: i.pillar, severity: i.severity,
       frameworks: i.framework_scope || [], title: i.title, evidence: i.evidence, details: i.details_json,
+      evidenceRecords: Array.isArray(i.evidence_json) ? i.evidence_json : [],
     })),
     recommendations: (full.recommendations || []).map((x) => ({
       id: x.id, code: x.code, pillar: x.pillar, frameworks: x.frameworks || [],

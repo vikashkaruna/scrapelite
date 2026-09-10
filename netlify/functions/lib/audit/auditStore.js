@@ -14,6 +14,7 @@
 // we did, and our own failures are free.
 
 import { getServiceDb } from "../requireEntitlement.js";
+import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 
 const SELECT_ALL = "select=*";
 
@@ -211,6 +212,10 @@ export async function persistResult(userId, auditId, result) {
     estimated_total_lift: result.estimatedTotalLift ?? 0,
     issue_count: (result.issues || []).length,
     critical_count: (result.issues || []).filter((i) => i.severity === "critical").length,
+    // Never null. The result normally carries it; falling back to the imported
+    // constant means the column can be NOT NULL — so a future write that forgets
+    // the version fails loudly instead of silently filing a v3 score as a v1.
+    scoring_model_version: result.scoringModelVersion || SCORING_MODEL_VERSION,
     facts_json: result.facts || {},
     evidence_json: result.evidence || {},
     engine_json: { ...(result.meta?.engine || {}), penalties: result.penalties || [], stageErrors: result.stageErrors || [] },
@@ -224,12 +229,20 @@ export async function persistResult(userId, auditId, result) {
       weight: s.weight,
       measured: s.measured,
       unknown_reason: s.unknownReason,
+      // The workings behind the number. `raw_value` is what was actually read;
+      // `evidence_json` is how and from where. Both columns have existed since
+      // 0030 and neither was ever written — a score nobody could trace back to
+      // an observation, on every row in the table.
+      raw_value: s.rawValue ?? null,
+      evidence_json: s.evidence?.length ? s.evidence : null,
+      threshold_json: s.thresholds ?? null,
     })));
 
   const issueRows = (result.issues || []).map((i) => ({
     audit_id: auditId, user_id: userId, code: i.code, pillar: i.pillar,
     severity: i.severity, framework_scope: i.frameworks || [],
     title: i.title, evidence: i.evidence, details_json: i.details || null,
+    evidence_json: i.evidenceRecords?.length ? i.evidenceRecords : null,
   }));
 
   const recRows = (result.recommendations || []).map((r) => ({

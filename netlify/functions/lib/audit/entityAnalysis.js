@@ -13,6 +13,7 @@ import {
   citationFootprintScore, shareOfVoice, freshnessScore,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { findSchema } from "./htmlParse.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /** Properties that make each identity type actually resolvable. */
 const IDENTITY_REQUIREMENTS = Object.freeze({
@@ -41,6 +42,7 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
   const signals = {};
   const reasons = {};
   const issues = [];
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const jsonLd = parsed.jsonLd || [];
   const org = findSchema(jsonLd, "Organization");
@@ -227,6 +229,65 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
         confidenceOverride: sample.live ? 80 : 55,
       });
     }
+  }
+
+  // ── record what was read ─────────────────────────────────────────────────
+  // One record per signal, emitted after the branches settle. Note that
+  // citation_footprint's method is `answer_engine`, not `raw_html`: it is the
+  // one signal in this pillar that was not read off the customer's own page,
+  // and its lower default confidence says so without anyone having to remember.
+  E.signal("schema_identity_completeness", {
+    method: "json_ld",
+    selector: "script[type='application/ld+json']",
+    section: "Identity markup",
+    observedValue: { types_scored: parts.length, types_found: (parsed.schemaTypes || []).length },
+    structured: { schema_types: parsed.schemaTypes || [] },
+  });
+  E.signal("sameas_consistency", {
+    method: uniqueSameAs.length ? "json_ld" : "raw_html",
+    selector: uniqueSameAs.length ? "sameAs" : "a[href]",
+    section: "Official profile linkage",
+    observedValue: { sameAs: uniqueSameAs.length, visible_profiles: visibleProfiles.length },
+    structured: { sameAs: uniqueSameAs.slice(0, 8), visible: visibleProfiles.slice(0, 8) },
+  });
+  E.signal("author_trust_signals", {
+    method: "raw_html",
+    section: "Byline and author credentials",
+    observedValue: {
+      named: Boolean(author.name),
+      bio_linked: Boolean(author.bioLinked),
+      credentials: Boolean(author.credentials),
+      visible: Boolean(author.visible),
+    },
+    excerpt: author.name || "",
+  });
+  E.signal("freshness_and_sources", {
+    method: "raw_html",
+    section: "Dates and outbound attribution",
+    observedValue: {
+      visible_date: Boolean(dates.visibleDate),
+      age_days: ageDays,
+      outbound_references: outbound.length,
+    },
+    structured: { date_published: dates.published || null, date_modified: dates.modified || null },
+  });
+  if (sample && sample.promptCount) {
+    E.signal("citation_footprint", {
+      method: "answer_engine",
+      sourceUrl: parsed.url || undefined,
+      section: `${sample.engine || "answer engine"} prompt sample`,
+      observedValue: {
+        prompts: sample.promptCount,
+        mentions: sample.mentions,
+        citations: sample.citations,
+        live: Boolean(sample.live),
+      },
+      // A recall-only sample is a model's memory of the brand, not a retrieval
+      // result, so it is worth materially less than a live one — and the record
+      // says which it was rather than leaving the reader to guess.
+      confidence: sample.live ? undefined : 0.35,
+      structured: { engine: sample.engine || null, sentiment: sample.sentiment ?? null },
+    });
   }
 
   return {

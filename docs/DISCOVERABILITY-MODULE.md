@@ -69,6 +69,7 @@ src/lib/discoverability/          PURE. Imported by BOTH React and netlify/,
   recommendationModel.js          priority formula, per-page lift, ranking
   constructTemplates.js           13 generators for ready-made assets
   auditProfiles.js                4 profiles (lenses) + 8 page-type rule packs
+  evidenceModel.js                the evidence envelope — §2b
   auditDiff.js                    two audits → deltas, with comparability
   auditReport.js                  markdown / CSV / JSON renderings
   auditUrl.js                     canonical target identity
@@ -84,6 +85,7 @@ netlify/functions/lib/audit/      Server only.
   webVitals.js                    PageSpeed Insights adapter
   citationSampling.js             Perplexity | AI-chain, pluggable
   aiEvaluator.js                  optional LLM refinement, always degradable
+  evidenceCollector.js            what an analyser records its workings into
   auditPipeline.js                the 7 stages
   auditStore.js                   Supabase persistence
   webhookDispatch.js              HMAC-signed delivery
@@ -93,9 +95,82 @@ netlify/functions/
   discoverability-monitor.js      @daily scheduled monitoring
 
 supabase/migrations/0030_discoverability_audits.sql
+supabase/migrations/0048_discoverability_evidence.sql
 src/pages/Discoverability.jsx
 src/components/discoverability/*.jsx
 ```
+
+---
+
+## 2b. The evidence contract
+
+The BRD's sentence is unambiguous, and the whole product rests on it:
+
+> Every signal and issue must retain evidence. Evidence includes **source URL,
+> selector or extracted section, observed value, excerpt/structured object,
+> collection timestamp and confidence.**
+
+Every observation the engine makes is therefore a record built by
+`makeEvidence()` in `evidenceModel.js`:
+
+```
+{ method, observed, source_url, selector, section,
+  observed_value, excerpt, structured, collected_at, confidence }
+```
+
+**Four rules shape it.**
+
+**1. No source, no evidence.** `makeEvidence` returns `null` for an unknown
+method, a missing source URL or an unusable timestamp. It never fills in a
+default. A record whose provenance was guessed is worse than an absent one:
+absence shows in the UI as "not measured", while a fabricated source is
+indistinguishable from a real observation and gets quoted back to the customer
+as fact.
+
+**2. Observation is not inference, and `method` is what says so.** Each method
+declares `observed: true|false`, so the distinction is a property of how the
+thing was learned rather than a flag a call site can forget to set. `derived`
+and `model_inference` are the only two that are not observations, and they carry
+the lowest default confidence. This is the BRD's *"separate observed facts from
+model/LLM inference"* expressed as data — `EVIDENCE_METHODS` has a test that
+forces a decision about which side of that line any new method falls on.
+
+**3. Recording never fails an audit.** `makeEvidence` returns `null` for
+anything it will not vouch for, and the collector drops nulls silently. A
+missing `section` string must never be able to fail an audit the customer was
+already charged for. The finding still stands; it is simply less well supported,
+and `evidenceConfidence` reports that honestly.
+
+**4. Confidence takes the STRONGEST record, not the mean.** Evidence
+accumulates — a fact read straight from the HTTP response does not become less
+certain because a model also had an opinion about it. It returns `null` for no
+evidence rather than `0`, the same discipline the scorer applies to unmeasured
+signals.
+
+**One decorator, two paths.** `attachEvidenceToPillars()` is called by the
+pipeline (from a live collector) *and* by `rehydrate()` (from stored rows), so a
+fresh audit and one reopened from history carry identical shapes **by
+construction**. That is the same reasoning §2's `scorePillar` note gives, and for
+the same reason: the alternative is a bug that renders perfectly while you are
+looking at it. `rehydrate.test.js` pins it.
+
+**`raw_value` and `threshold_json` are stored AND derived.** The columns exist so
+"twelve months of `core_web_vitals` raw values" is an index scan rather than a
+JSON walk; they are written from the evidence records at persist time and
+derived again from those same records on read. The two can therefore never
+disagree.
+
+**A threshold is usually NULL, and that is correct.** Most signals are curves —
+conciseness declines either side of a 40-60 word band, heading integrity is a
+proportion, render completeness is a ratio. Only signals with a genuine published
+cut-off (Core Web Vitals, the ideal answer band) write a threshold. Inventing one
+so the column looks populated would show a customer a number the scorer never
+applied.
+
+**`scoring_model_version` is NOT NULL with no default.** A default would let a
+writer that forgets the stamp file a future v3 score as v1 — precisely the
+mislabelling the version exists to prevent. `auditDiff` refuses to compare across
+versions: a delta between two different models is a number nobody earned.
 
 ---
 
@@ -327,14 +402,33 @@ deletion is what an audit trail exists to prevent. Nothing calls
 
 ---
 
-## 8. Phase mapping
+## 8. Release mapping
 
-| PRD phase | Shipped |
+⚠️ **This table maps the module onto the CURRENT consolidated BRD/PRD (P1/P2/P3),
+which is not the three-phase document the module was originally built against.**
+An earlier version of this file marked all three of THAT document's phases ✅,
+and that remains true of it — but the new P1 is broader in several places and
+the new P2 is largely greenfield, so the old mapping does not transfer. The
+clause-by-clause gap analysis lives in
+[DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
+
+| P1 area | State |
 |---|---|
-| **1** — single URL audit, four-pillar scoring, framework outputs, JSON results, recommendations, dashboard | ✅ |
-| **2** — historical comparison and trends, prompt-set citation sampling, multi-URL benchmarks, markdown/CSV/JSON export, webhooks | ✅ |
-| **3** — template-level audits (page-type rule packs), scheduled monitoring, persona-tuned recommendations (owner-filtered queue), competitive and citation intelligence | ✅ |
+| Four-pillar model, SEO/AEO/GEO framework views | ✅ weights match the PRD exactly |
+| Evidence envelope and explainability | ✅ W1 — `evidenceModel.js`, migration 0048 |
+| Penalty model | ⚠️ W3 — shipped calibration retained by decision; two PRD conditions still to add |
+| Goal-based intake (audit type, primary goal, geography, 8 profiles) | ❌ W2 |
+| Gap analysis v2 (root cause, module, observed-fact/inference split) | ❌ W4 |
+| Recommendation Studio (meta variants, internal links, content brief) | ⚠️ W5 — 13 of 17 constructs |
+| AI visibility (prompt taxonomy, 7 citation states, SOV, WAVI, displacement) | ❌ W6 — largest remaining P1 item |
+| Validation Lab (signal diff, regressed/unchanged, trend windows, attribution) | ⚠️ W7 |
+| Workflow Hub lite (7-state lifecycle, assignment, due dates, notes) | ⚠️ W8 — 4 of 9 states |
+| `/api/v1/discoverability/*` namespace | ⚠️ W8 — served under `/api/v1/audits/*` |
 
-Workspace-level rollups are the one Phase 3 item deferred, and deliberately:
-they need the workspaces table that does not yet exist. The nullable
-`workspace_id` columns are the hook.
+**P2 — brand, product, service and local intelligence — is not started.** Schema
+intelligence has two of its signals; everything else (truth record, entity graph,
+BDS/PDS/SFS, NAP and directory, trust and proof, service radius) is greenfield.
+
+Workspace rollups are no longer blocked: `public.workspaces` has existed since
+migration 0031, and the nullable `workspace_id` columns on every audit table are
+the hook. Wiring them is W8.

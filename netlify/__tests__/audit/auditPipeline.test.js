@@ -457,3 +457,142 @@ describe("inferPageType", () => {
     expect(inferPageType({ schemaTypes: [], headingStats: {}, meta: {}, wordCount: 40 })).toBe("page");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EVIDENCE — the BRD's "every signal and issue must retain evidence"
+// ═══════════════════════════════════════════════════════════════════════════
+// Before this, `audit_signals.raw_value` and `.evidence_json` were columns
+// declared in migration 0030 that NOTHING EVER WROTE, and an issue's only
+// provenance was a sentence in a text column. A score nobody could trace back
+// to an observation, on every row in the table.
+
+describe("evidence travels with every score", () => {
+  it("gives every measured signal at least one evidence record", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const measured = Object.values(r.pillars)
+      .flatMap((p) => p.signals)
+      .filter((s) => s.measured);
+    expect(measured.length).toBeGreaterThan(0);
+    for (const s of measured) {
+      expect(s.evidence, `signal ${s.code} has no evidence`).toBeTruthy();
+      expect(s.evidence.length, `signal ${s.code} has no evidence`).toBeGreaterThan(0);
+    }
+  });
+
+  it("stamps every record with the audit's own clock, not a per-record read", async () => {
+    // Two observations from the same run must share a timestamp. Reading the
+    // clock per record makes a diff between two audits show sub-second jitter
+    // as though it were change.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const stamps = new Set(
+      Object.values(r.pillars).flatMap((p) => p.signals).flatMap((s) => s.evidence)
+        .map((e) => e.collected_at),
+    );
+    expect([...stamps]).toEqual([new Date(baseOpts.now).toISOString()]);
+  });
+
+  it("names the audited URL as the source, so a finding can be traced back", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const records = Object.values(r.pillars).flatMap((p) => p.signals).flatMap((s) => s.evidence);
+    expect(records.length).toBeGreaterThan(0);
+    for (const e of records) expect(e.source_url).toBe("https://example.com/geo");
+  });
+
+  it("carries the raw reading beside the normalised score", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const h1 = r.pillars.structural_hierarchy.signals.find((s) => s.code === "single_h1");
+    expect(h1.rawValue).toEqual({ h1_count: 1 });
+    // The score is the model's opinion of the reading; the reading is the fact.
+    expect(typeof h1.score).toBe("number");
+  });
+
+  it("labels a model judgement as inference, not as something it read", async () => {
+    aiChain.mockResolvedValue({
+      ok: true, provider: "gemini",
+      text: JSON.stringify({ passage_independence: 88, intent_alignment: 90, notes: "Stands alone." }),
+    });
+    const r = await runAudit("https://example.com/geo", {
+      ...baseOpts, skipAi: false,
+      // aiEvaluationEnabled() gates on a key being present, so an empty env
+      // silently skips the model stage and the test would pass for the wrong
+      // reason — an absent record rather than a correctly-labelled one.
+      env: { GEMINI_API_KEY: "test-key" },
+    });
+    const sig = r.pillars.answer_clarity.signals.find((s) => s.code === "passage_independence");
+    // TWO records, not one. The deterministic pre-screen is kept beside the
+    // model's judgement rather than being relabelled as one — it is the only
+    // independent check on a model that disagrees with the page.
+    const prescreen = sig.evidence.find((e) => e.method === "derived");
+    const model = sig.evidence.find((e) => e.method === "model_inference");
+    expect(prescreen).toBeTruthy();
+    expect(prescreen.observed).toBe(false);
+    expect(model).toBeTruthy();
+    expect(model.observed).toBe(false);
+    expect(model.structured.deterministic_prescreen).toBe(prescreen.observed_value);
+    expect(model.structured.provider).toBe("gemini");
+  });
+
+  it("attaches an issue's evidence from the signal it sits on", async () => {
+    const r = await runAudit("https://example.com/broken", {
+      ...baseOpts,
+      // A page with real defects, so there are issues to carry evidence.
+    });
+    expect(r.issues.length).toBeGreaterThan(0);
+    const withSignal = r.issues.filter((i) => (i.evidenceRecords || []).length > 0);
+    expect(withSignal.length).toBeGreaterThan(0);
+    for (const i of withSignal) {
+      for (const e of i.evidenceRecords) {
+        expect(e.source_url).toBeTruthy();
+        expect(e.collected_at).toBeTruthy();
+        expect(typeof e.confidence).toBe("number");
+      }
+    }
+  });
+
+  it("stamps the scoring model version on the result", async () => {
+    // Without it, a diff cannot tell whether two scores came out of the same
+    // maths — and a delta across two models is a number nobody earned.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.scoringModelVersion).toBe("v1");
+  });
+
+  it("records no threshold for a signal that is a curve", async () => {
+    // Most signals have no published cut-off. Inventing one so the column looks
+    // populated would put a number in front of a customer the scorer never used.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const tree = r.pillars.structural_hierarchy.signals.find((s) => s.code === "heading_tree_integrity");
+    expect(tree.thresholds).toBeNull();
+  });
+});
+
+describe("an unreachable page still has the shape of a result", () => {
+  it("gives its signals the same evidence fields a reachable page's have", async () => {
+    // A consumer reading `signal.evidence.length` must get 0, not a TypeError.
+    // The shape of a result must not depend on whether the fetch succeeded.
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return htmlResponse("", 503, url);
+    });
+    scrapeChain.mockResolvedValue({ ok: false, error: "unreachable" });
+
+    const r = await runAudit("https://example.com/down", baseOpts);
+    expect(r.unreachable).toBe(true);
+    const all = Object.values(r.pillars).flatMap((p) => p.signals);
+    expect(all.length).toBeGreaterThan(0);
+    for (const s of all) {
+      expect(Array.isArray(s.evidence), `signal ${s.code}`).toBe(true);
+      expect(s.confidence).toBeNull();
+      expect(s.thresholds).toBeNull();
+    }
+  });
+
+  it("still declares which maths produced its (empty) scores", async () => {
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return htmlResponse("", 503, url);
+    });
+    scrapeChain.mockResolvedValue({ ok: false, error: "unreachable" });
+    const r = await runAudit("https://example.com/down", baseOpts);
+    expect(r.scoringModelVersion).toBe("v1");
+  });
+});

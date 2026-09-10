@@ -61,6 +61,33 @@ export const FRAMEWORK_WEIGHTS = Object.freeze({
 export const FRAMEWORKS = Object.freeze(["overall", "seo", "aeo", "geo"]);
 
 /**
+ * The version of the maths in this file.
+ *
+ * ── WHY A VERSION AT ALL ───────────────────────────────────────────────────
+ * The whole point of the validation loop is the sentence "your score went up
+ * 5.2 because you did the work". That sentence is only true when both numbers
+ * came out of the same model. Change a pillar weight, add a penalty, alter a
+ * curve, and a stored baseline stops being a comparable measurement — it
+ * becomes a number produced by different rules, and subtracting it from today's
+ * score yields a delta nobody earned.
+ *
+ * So the version travels WITH the score, and `auditDiff` refuses to compare
+ * across versions. That is a worse user experience than showing a delta, and it
+ * is the correct one: an honest "re-run to compare" beats a confident number
+ * that is a fiction. It is the same discipline as `unknown` never being `0`.
+ *
+ * ── WHEN TO BUMP IT ────────────────────────────────────────────────────────
+ * Any change that could move a score for an unchanged page: pillar weights,
+ * framework weights, signal weights, penalty factors, the penalty SET, or a
+ * scorer curve. NOT for a new issue code, a new construct, a copy change, or a
+ * bug fix in something that never ran.
+ *
+ * ── HISTORY ────────────────────────────────────────────────────────────────
+ *   v1  the shipped four-pillar model: 7 penalties, multiplicative priority.
+ */
+export const SCORING_MODEL_VERSION = "v1";
+
+/**
  * Hard blockers, applied MULTIPLICATIVELY after the weighted sum.
  *
  * These exist because some failures undermine discovery no matter how good the

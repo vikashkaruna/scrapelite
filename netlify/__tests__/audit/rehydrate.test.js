@@ -29,6 +29,7 @@
 import { describe, it, expect } from "vitest";
 import { rehydrate } from "../../functions/discoverability.js";
 import { scoreAllPillars } from "../../../src/lib/discoverability/scoringModel.js";
+import { makeEvidence, attachEvidenceToPillars } from "../../../src/lib/discoverability/evidenceModel.js";
 import { SIGNALS, PILLAR_IDS, signalsForPillar } from "../../../src/lib/discoverability/signalRegistry.js";
 import { buildMarkdownReport, toJsonPayload } from "../../../src/lib/discoverability/auditReport.js";
 
@@ -46,6 +47,26 @@ function fixtureValues({ unmeasured = [], notApplicable = [] } = {}) {
   return { values, reasons };
 }
 
+/**
+ * A real evidence record for one signal, so the round trip is PROVEN rather
+ * than merely shown not to crash. `single_h1` is chosen because it is a plain
+ * deterministic reading with a selector and an excerpt — the shape a reviewer
+ * would expect to see quoted back at them in a report.
+ */
+const EV_AT = "2026-08-27T10:00:00.000Z";
+const EVIDENCED_SIGNAL = "single_h1";
+function evidenceFixture() {
+  return [makeEvidence({
+    method: "raw_html",
+    sourceUrl: "https://example.com/pricing",
+    selector: "h1",
+    section: "Page H1",
+    observedValue: { h1_count: 2 },
+    excerpt: "Pricing that scales",
+    collectedAt: EV_AT,
+  })];
+}
+
 /** The DB rows persistResult() would have written for those values. */
 function storedRowsFor(values, reasons) {
   const rows = [];
@@ -59,6 +80,9 @@ function storedRowsFor(values, reasons) {
         weight: SIGNALS[code].weight,
         measured: v !== null && v !== undefined,
         unknown_reason: reasons[code] || null,
+        evidence_json: code === EVIDENCED_SIGNAL ? evidenceFixture() : null,
+        raw_value: code === EVIDENCED_SIGNAL ? { h1_count: 2 } : null,
+        threshold_json: null,
       });
     }
   }
@@ -71,7 +95,14 @@ function storedRowsFor(values, reasons) {
 
 function fullFixture(opts = {}) {
   const { values, reasons } = fixtureValues(opts);
-  const pillars = scoreAllPillars(values, reasons);
+  // `fresh` is what the PIPELINE produces, which is the scorer's output PLUS the
+  // evidence decoration — not the bare scorer's. Comparing rehydrate against an
+  // undecorated scorer would assert that a stored audit matches something the
+  // product never actually renders.
+  const pillars = attachEvidenceToPillars(
+    scoreAllPillars(values, reasons),
+    { [EVIDENCED_SIGNAL]: evidenceFixture() },
+  );
   return {
     fresh: pillars,
     full: {
@@ -140,6 +171,43 @@ describe("rehydrate — a stored audit matches a fresh one", () => {
     for (const p of PILLAR_IDS) {
       expect(audit.pillars[p].signals).toEqual(fresh[p].signals);
     }
+  });
+
+  it("brings each signal's evidence back with it", () => {
+    // The BRD requires every signal to retain its evidence. A stored audit that
+    // has the score but not the workings satisfies the letter of a score column
+    // and none of the requirement.
+    const { full } = fullFixture();
+    const audit = rehydrate(full);
+    const all = PILLAR_IDS.flatMap((p) => audit.pillars[p].signals);
+    const evidenced = all.find((sig) => sig.code === EVIDENCED_SIGNAL);
+    expect(evidenced.evidence).toHaveLength(1);
+    expect(evidenced.evidence[0].source_url).toBe("https://example.com/pricing");
+    expect(evidenced.evidence[0].selector).toBe("h1");
+    expect(evidenced.evidence[0].excerpt).toBe("Pricing that scales");
+    expect(evidenced.evidence[0].collected_at).toBe(EV_AT);
+    expect(evidenced.rawValue).toEqual({ h1_count: 2 });
+    expect(evidenced.confidence).toBe(0.99);
+  });
+
+  it("reports a signal with no stored evidence as unsupported, not zero-confidence", () => {
+    // Same discipline as the scorer: `unknown` is never `0`. A signal we have
+    // no provenance for must not render as one we are 0% sure of.
+    const { full } = fullFixture();
+    const audit = rehydrate(full);
+    const bare = PILLAR_IDS
+      .flatMap((p) => audit.pillars[p].signals)
+      .find((sig) => sig.code !== EVIDENCED_SIGNAL);
+    expect(bare.evidence).toEqual([]);
+    expect(bare.confidence).toBeNull();
+    expect(bare.rawValue).toBeNull();
+  });
+
+  it("stamps the scoring model version, defaulting pre-0048 rows to v1", () => {
+    const { full } = fullFixture();
+    expect(rehydrate(full).scoringModelVersion).toBe("v1");
+    full.result.scoring_model_version = "v2";
+    expect(rehydrate(full).scoringModelVersion).toBe("v2");
   });
 
   it("preserves not-measured and not-applicable as distinct states", () => {

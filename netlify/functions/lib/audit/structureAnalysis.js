@@ -15,6 +15,7 @@ import {
   headingTreeIntegrityScore, singleH1Score,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { findSchema } from "./htmlParse.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /**
  * How many visible Q&A pairs make a page an FAQ.
@@ -61,6 +62,10 @@ export function analyseStructure(parsed, ctx = {}) {
   const signals = {};
   const reasons = {};
   const issues = [];
+  // Absent in unit tests, which call this with a bare `{}`. See
+  // nullEvidenceCollector's own comment for why that is a real collector rather
+  // than an optional chain at every call site.
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const stats = parsed.headingStats || {};
   const jsonLd = parsed.jsonLd || [];
@@ -69,6 +74,14 @@ export function analyseStructure(parsed, ctx = {}) {
   // ── heading tree ─────────────────────────────────────────────────────────
   signals.heading_tree_integrity = headingTreeIntegrityScore({
     skipped: stats.skipped ?? 0, empty: stats.empty ?? 0, total: stats.total ?? 0,
+  });
+  E.signal("heading_tree_integrity", {
+    method: "raw_html",
+    selector: "h1, h2, h3, h4, h5, h6",
+    section: "Heading outline",
+    observedValue: { total: stats.total ?? 0, skipped: stats.skipped ?? 0, empty: stats.empty ?? 0 },
+    excerpt: (parsed.headings || []).slice(0, 6).map((h) => `H${h.level} ${h.text}`).join(" › "),
+    structured: { outline: (parsed.headings || []).slice(0, 40).map((h) => ({ level: h.level, text: h.text })) },
   });
 
   if ((stats.total ?? 0) === 0) {
@@ -101,6 +114,14 @@ export function analyseStructure(parsed, ctx = {}) {
     h1Count: stats.h1Count ?? 0,
     h1Text: stats.h1Text || "",
     titleText: parsed.meta?.title || "",
+  });
+  E.signal("single_h1", {
+    method: "raw_html",
+    selector: "h1",
+    section: "Page H1",
+    observedValue: { h1_count: stats.h1Count ?? 0 },
+    excerpt: stats.h1Text || "",
+    structured: { h1: stats.h1Text || null, title: parsed.meta?.title || null },
   });
   if ((stats.h1Count ?? 0) === 0) {
     issues.push({
@@ -135,6 +156,21 @@ export function analyseStructure(parsed, ctx = {}) {
     : [];
 
   const hasFaqSection = visibleFaq.length >= MIN_FAQ_PAIRS;
+
+  // Recorded BEFORE the branching, because every branch below is a reading of
+  // these same two counts and a reader comparing markup against visible text
+  // needs both numbers whichever way the comparison came out.
+  E.signal("faq_schema_alignment", {
+    method: faqSchema ? "json_ld" : "raw_html",
+    selector: faqSchema ? "script[type='application/ld+json'] FAQPage" : null,
+    section: "FAQ content and markup",
+    observedValue: { visible_pairs: visibleFaq.length, marked_up_questions: markupQuestions.length },
+    excerpt: (visibleFaq[0]?.question) || (markupQuestions[0]?.question) || "",
+    structured: {
+      visible_questions: visibleFaq.slice(0, 8).map((f) => f.question),
+      marked_up_questions: markupQuestions.slice(0, 8).map((q) => q.question),
+    },
+  });
 
   if (!faqSchema && !hasFaqSection) {
     // No FAQ section and no FAQ markup. This is NOT a defect — an article that
@@ -186,6 +222,20 @@ export function analyseStructure(parsed, ctx = {}) {
   const looksProcedural = visibleSteps.length >= 3
     && (avgStepWords >= MIN_STEP_WORDS || proceduralHeading);
 
+  E.signal("howto_schema_alignment", {
+    method: howToSchema ? "json_ld" : "raw_html",
+    selector: howToSchema ? "script[type='application/ld+json'] HowTo" : "ol > li",
+    section: "Procedural content and markup",
+    observedValue: {
+      visible_steps: visibleSteps.length,
+      avg_step_words: Math.round(avgStepWords),
+      procedural_heading: proceduralHeading,
+      has_markup: Boolean(howToSchema),
+    },
+    excerpt: visibleSteps[0]?.text || visibleSteps[0]?.name || "",
+    structured: { steps: visibleSteps.slice(0, 8).map((st) => st.name || st.text) },
+  });
+
   if (!howToSchema && !looksProcedural) {
     signals.howto_schema_alignment = null;
     reasons.howto_schema_alignment = "not_applicable";
@@ -222,6 +272,17 @@ export function analyseStructure(parsed, ctx = {}) {
       return u.pathname === "" || u.pathname === "/";
     } catch { return false; }
   })();
+
+  E.signal("breadcrumb_semantics", {
+    method: crumb ? "json_ld" : "raw_html",
+    selector: crumb ? "script[type='application/ld+json'] BreadcrumbList" : null,
+    section: "Site hierarchy",
+    observedValue: {
+      has_breadcrumb: Boolean(crumb),
+      items: crumb ? [].concat(crumb.itemListElement || []).filter(Boolean).length : 0,
+      is_root_page: isRootPage,
+    },
+  });
 
   if (crumb) {
     const items = [].concat(crumb.itemListElement || []).filter(Boolean);

@@ -802,8 +802,8 @@ group("discoverability — targets, idempotency, trends, retention");
          (audit_id, user_id, final_score, seo_score, aeo_score, geo_score,
           answer_clarity_score, entity_authority_score, structural_hierarchy_score,
           technical_accessibility_score, pre_penalty_score, penalty_multiplier,
-          coverage, issue_count, critical_count)
-       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1)`,
+          coverage, issue_count, critical_count, scoring_model_version)
+       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1,'v1')`,
       [auditId, user, score]);
   };
   await addResult(a1, alice, 78.4);
@@ -833,6 +833,91 @@ group("discoverability — targets, idempotency, trends, retention");
        values ($1,$2,'technical_accessibility','core_web_vitals',0.30)`, [a1, alice]);
   } catch (e) { dupSignal = e.message; }
   check("one row per signal per audit", !!dupSignal, dupSignal || "the duplicate insert succeeded");
+
+  // ── 0048: evidence, thresholds and the model version ─────────────────────
+  // Every one of these columns exists because a score with no traceable
+  // observation behind it is what the BRD forbids. `raw_value` and
+  // `evidence_json` were declared in 0030 and written by nothing until 0048 —
+  // NULL on every row in the table for the whole life of the module — so these
+  // assertions are as much about the WRITE path existing as the column.
+  const evidenceRecord = {
+    method: "raw_html", observed: true,
+    source_url: "https://example.com/pricing", selector: "h1", section: "Page H1",
+    observed_value: { h1_count: 2 }, excerpt: "Pricing that scales",
+    structured: null, collected_at: "2026-09-10T09:00:00.000Z", confidence: 0.99,
+  };
+
+  let signalEvidence = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals
+         (audit_id, user_id, pillar, signal_code, normalized_score, weight,
+          measured, raw_value, evidence_json, threshold_json)
+       values ($1,$2,'structural_hierarchy','single_h1',60,0.15,true,$3,$4,$5)`,
+      [a1, alice, JSON.stringify({ h1_count: 2 }), JSON.stringify([evidenceRecord]),
+       JSON.stringify({ ideal_min: 40, ideal_max: 60 })]);
+  } catch (e) { signalEvidence = e.message; }
+  eq("a signal stores its raw value, evidence and threshold", signalEvidence, null);
+
+  const storedSignal = await one(
+    `select raw_value, evidence_json, threshold_json from public.audit_signals
+      where audit_id = $1 and signal_code = 'single_h1'`, [a1]);
+  eq("the raw reading survives the round trip",
+    storedSignal.raw_value?.h1_count, 2);
+  eq("the evidence record survives the round trip",
+    storedSignal.evidence_json?.[0]?.source_url, "https://example.com/pricing");
+  eq("the collection timestamp survives the round trip",
+    storedSignal.evidence_json?.[0]?.collected_at, "2026-09-10T09:00:00.000Z");
+  eq("a declared threshold survives the round trip",
+    storedSignal.threshold_json?.ideal_max, 60);
+
+  // A curve has no threshold, and NULL is the correct and common answer. If
+  // this column were ever made NOT NULL, seventeen of twenty signals would have
+  // to carry a boundary the scorer never applied.
+  const curve = await one(
+    `select threshold_json from public.audit_signals
+      where audit_id = $1 and signal_code = 'core_web_vitals'`, [a1]);
+  eq("a signal that is a curve stores no threshold", curve.threshold_json, null);
+
+  let issueEvidence = null;
+  try {
+    await db.query(
+      `insert into public.audit_issues
+         (audit_id, user_id, code, pillar, severity, title, evidence, evidence_json)
+       values ($1,$2,'SH-02','structural_hierarchy','high','Two H1s',
+               'Two H1 elements compete to describe this page.', $3)`,
+      [a1, alice, JSON.stringify([evidenceRecord])]);
+  } catch (e) { issueEvidence = e.message; }
+  eq("an issue stores structured evidence beside its sentence", issueEvidence, null);
+
+  const storedIssue = await one(
+    `select evidence, evidence_json from public.audit_issues
+      where audit_id = $1 and code = 'SH-02'`, [a1]);
+  check("the human sentence is kept, not replaced",
+    /compete to describe/.test(storedIssue.evidence || ""));
+  eq("the issue's evidence names a selector",
+    storedIssue.evidence_json?.[0]?.selector, "h1");
+
+  const versioned = await one(
+    `select scoring_model_version v from public.audit_results where audit_id = $1`, [a1]);
+  eq("a result records which maths produced it", versioned.v, "v1");
+
+  // NOT NULL with no default. A default would let a writer that forgets the
+  // stamp file a v3 score as whatever the default was — the exact mislabelling
+  // the version exists to prevent — so a forgotten stamp must fail loudly.
+  const unstamped = await throws(
+    `insert into public.audit_results (audit_id, user_id, final_score, penalty_multiplier)
+     values ($1,$2,50,1)`, [bobA, bob]);
+  check("a result cannot be stored without its scoring model version", Boolean(unstamped),
+    unstamped || "the unstamped insert succeeded");
+
+  let setV2 = null;
+  try {
+    await db.query(
+      `update public.audit_results set scoring_model_version = 'v2' where audit_id = $1`, [a1]);
+  } catch (e) { setV2 = e.message; }
+  eq("a result can record a newer scoring model", setV2, null);
+  await db.query(`update public.audit_results set scoring_model_version = 'v1' where audit_id = $1`, [a1]);
 
   // ── constraints that keep the vocabulary honest ───────────────────────────
   const badEnum = async (sql, params) => Boolean(await throws(sql, params));

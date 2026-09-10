@@ -160,13 +160,46 @@ export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS) {
   }
 
   const robots = await fetchRobotsText(origin);
-  if (robots.error) return { access: null, error: robots.error, robotsFound: false };
+  if (robots.error) {
+    return { access: null, error: robots.error, robotsFound: false, sitemaps: [] };
+  }
   return {
     access: evaluateAgentAccess(robots.text, agents, path),
     error: null,
     // A missing robots.txt is PERMISSIVE, and distinct from an unreadable one.
     robotsFound: robots.text !== null && robots.text !== undefined,
+    // Read from the SAME fetch, so the sitemap indicator the BRD asks for costs
+    // no extra request. A second fetch of robots.txt for this alone would be
+    // a request we already made, against a host we have promised to be polite to.
+    sitemaps: extractSitemapDeclarations(robots.text),
   };
+}
+
+/**
+ * Sitemap declarations in robots.txt.
+ *
+ * `Sitemap:` is a NON-GROUP directive — it belongs to the file, not to any
+ * `User-agent` block — so it is read globally rather than per agent. A file can
+ * legitimately declare several (an index plus per-section maps), and the cap
+ * exists because a robots.txt is attacker-controllable text and an unbounded
+ * list would ride along on every audit row for that host thereafter.
+ */
+export const MAX_SITEMAP_DECLARATIONS = 20;
+
+export function extractSitemapDeclarations(robotsText) {
+  if (!robotsText) return [];
+  const out = [];
+  for (const line of String(robotsText).split(/\r?\n/)) {
+    const m = /^\s*sitemap\s*:\s*(\S+)/i.exec(line);
+    if (!m) continue;
+    // Only absolute HTTP(S). A relative or javascript: value is not a sitemap,
+    // and recording it as one would put a bad URL in front of a customer as
+    // though we had verified it.
+    if (!/^https?:\/\//i.test(m[1])) continue;
+    if (!out.includes(m[1])) out.push(m[1]);
+    if (out.length >= MAX_SITEMAP_DECLARATIONS) break;
+  }
+  return out;
 }
 
 /**
@@ -196,7 +229,7 @@ export async function collectPage(url, opts = {}) {
     runScrapeChain(url, chainOpts).catch((err) => ({
       ok: false, error: err?.message || "scrape chain threw",
     })),
-    checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false })),
+    checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false, sitemaps: [] })),
   ]);
 
   const rawHtml = raw.ok ? raw.html : "";
@@ -271,6 +304,7 @@ export async function collectPage(url, opts = {}) {
     aiCrawlerAccess: crawler.access,
     robotsError: crawler.error,
     robotsFound: crawler.robotsFound,
+    sitemaps: crawler.sitemaps || [],
     ok: Boolean(primaryHtml),
   };
 }
