@@ -20,19 +20,29 @@
 
 ## 2026-09-10 — Discoverability P1/W2: goal-based intake, and the four fields that cannot be back-filled
 
-> **Branch:** `discoverability-p1-to-p3` @ `7469efe` · **Target:** feature branch, **not pushed** · **`main`/`staging`:** untouched
+> **Branch:** `discoverability-p1-to-p3` @ `c93afa5` · **Target:** feature branch, **not pushed** · **`main`/`staging`:** untouched
+
+> ✏️ **CORRECTED 2026-09-11.** This entry was written at `7469efe` and said "three commits". Two
+> more have landed since — the W2 session record itself and a `.gitignore` chore (§2b) — so the
+> orientation below is restated at `c93afa5` / five commits. Only the facts that went stale are
+> changed; nothing about W2 itself is rewritten. §1 is the block a fresh session reads first, so
+> leaving a wrong SHA in it would be worse than the convention against editing entries.
 
 ### 1. Quick orientation — START HERE FOR A FRESH SESSION
 
 | Property | Value |
 |---|---|
 | **Branch** | `discoverability-p1-to-p3`, cut from `staging` (`4922c04`) |
-| **HEAD** | `7469efe` — three commits ahead of `staging`, **local only** |
+| **HEAD** | `c93afa5` — **five** commits ahead of `staging`, **local only** |
+| **Working tree** | Clean. `.claude/worktrees/` is now ignored, deliberately — see §2b. |
 | **Status** | W1 + W2 of eight P1 workstreams complete and verified |
 | **Next** | **W3 — penalty completion.** See §5. |
 | **Blocked on** | A working GitHub token. `$GITHUB_TOKEN` is an expired classic `ghp_`; `git fetch` and `git push` both fail. |
+| **`main` / `staging`** | Untouched and verified: `main` = `b073218`, `staging` = `4922c04`, unchanged since this work began. `git branch --contains c93afa5` returns only this branch. |
 
 ```
+c93afa5  chore: ignore agent worktrees …
+ac7ee48  docs: session record for P1/W2 …
 7469efe  feat(discoverability): P1/W2 — goal-based intake …
 6c2ab92  docs: session record for P1/W1 — evidence envelope
 84d3a5e  feat(discoverability): P1/W1 — the evidence envelope …
@@ -84,6 +94,21 @@ permanently — which is exactly why the columns are nullable rather than defaul
 
 ⚠️ **A profile is still a LENS.** All four framework views are computed with identical weightings,
 so the same page scores identically under any of the eight profiles. Eight lenses, one set of maths.
+
+### 2b. `.claude/worktrees/` is ignored, and committing it would not have worked
+
+Added 2026-09-11, alongside the correction above. That path had been the only thing keeping the
+tree dirty through W1 and W2, and "commit everything" is the wrong reading of it.
+
+It holds **three full repo checkouts from 2026-08-06/07 — 1.3 GB — each with its own `.git`.**
+Git does not add the FILES of an embedded repository; it records a **gitlink** to a commit no clone
+can resolve. Committing them would have produced a repo that appears to carry three undeclared
+submodules, cannot be cloned intact, and is 1.3 GB heavier for nothing. `git add` warns about
+exactly this, in a hint that is easy to scroll past.
+
+⚠️ **`.claude/` itself stays tracked** — the 11 files under `skills/`, `commands/` and
+`launch.json` are project files. Only `worktrees/` is excluded. If a future session finds the tree
+dirty here again, the answer is still not to commit it.
 
 ### 3. Root cause analysis
 

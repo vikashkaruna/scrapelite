@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-10 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE). TWO COLUMNS DECLARED IN 0030 HAD NEVER ONCE BEEN WRITTEN, AND INTAKE COULD NOT RECORD A GOAL OR A GEOGRAPHY — THE TWO THINGS THAT CAN NEVER BE BACK-FILLED. ON `discoverability-p1-to-p3`, LOCAL ONLY, 3 COMMITS.**
+> **Last updated: 2026-09-10 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE). TWO COLUMNS DECLARED IN 0030 HAD NEVER ONCE BEEN WRITTEN, AND INTAKE COULD NOT RECORD A GOAL OR A GEOGRAPHY — THE TWO THINGS THAT CAN NEVER BE BACK-FILLED. ON `discoverability-p1-to-p3`, LOCAL ONLY, **5 COMMITS**, TREE CLEAN.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
@@ -11,7 +11,7 @@
 > `git rev-list --count --no-merges origin/staging..origin/main` is **0**; the three commits on
 > `main` absent from `staging` (`2042348`, `2c6067c`, `ac9e170`) are all GitHub merge commits from
 > staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
-> **`discoverability-p1-to-p3`** cut from it, three commits (HEAD `7469efe`), **not pushed**.
+> **`discoverability-p1-to-p3`** cut from it, **five commits** (HEAD `c93afa5`), **not pushed**.
 >
 > 🔴 **`$GITHUB_TOKEN` IS AN EXPIRED CLASSIC `ghp_` TOKEN.** `git fetch` and `git push` both fail
 > with `remote: Invalid username or token`. The credential helper reads that var and it is present
@@ -107,6 +107,14 @@
 > already fetched for crawler access so it costs no extra request against a host we have promised to
 > be polite to; and a **microdata INVENTORY** rather than a bare type list, because "you have Product
 > markup" and "you have forty Product blocks, none of which names a price" call for opposite advice.
+>
+> ⚠️ **`.claude/worktrees/` IS IGNORED ON PURPOSE, AND "JUST COMMIT IT" DOES NOT WORK.** It holds
+> **three full repo checkouts from 2026-08-06/07 — 1.3 GB — each with its own `.git`**, so
+> `git add` records a **GITLINK** to a commit no clone can resolve rather than adding the files. The
+> result would be a repo that appears to carry three undeclared submodules, cannot be cloned intact,
+> and is 1.3 GB heavier for nothing; git warns about it in a hint that is easy to scroll past.
+> ⚠️ **`.claude/` itself stays TRACKED** — the 11 files under `skills/`, `commands/` and
+> `launch.json` are project files; only `worktrees/` is excluded.
 >
 > ⚠️ **NOT YET RUN ANYWHERE REAL.** Migration 0048 has only touched in-process WASM Postgres (no
 > GoTrue, no PostgREST, shimmed roles), and no audit has been run against a live URL with evidence
@@ -564,8 +572,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, **three commits**, HEAD `7469efe`, **local only — cannot be pushed, see the expired-token note above**). ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `discoverability-p1-to-p3` @ `7469efe`, 2026-09-10 — P1/**W2**: goal-based intake. `audit_type`, `primary_goal`, `target_geography`, `competitor_urls` and `audit_profile_source` on the audit row; 8 profiles and 12 page-type packs; profile inference with a recorded source. Under it, **W1** (`84d3a5e`): the evidence envelope. Run `git log --oneline staging..discoverability-p1-to-p3`. |
+| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, **five commits**, HEAD `c93afa5`, tree clean, **local only — cannot be pushed, see the expired-token note above**). ✅ **`main` = `b073218` and `staging` = `4922c04`, both verified unchanged**; `git branch --contains c93afa5` returns only this branch. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-p1-to-p3` @ `c93afa5`, 2026-09-11 — `chore`: `.claude/worktrees/` ignored (see the worktree note below). Under it, 2026-09-10 — P1/**W2**: goal-based intake. `audit_type`, `primary_goal`, `target_geography`, `competitor_urls` and `audit_profile_source` on the audit row; 8 profiles and 12 page-type packs; profile inference with a recorded source. Under it, **W1** (`84d3a5e`): the evidence envelope. Run `git log --oneline staging..discoverability-p1-to-p3`. |
 | **Verify the schema locally** | `npm run test:db` — applies all **49** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**505 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
