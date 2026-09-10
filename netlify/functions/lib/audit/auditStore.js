@@ -162,15 +162,35 @@ export async function ensureTarget(userId, canonicalUrl, host, label = null) {
   }
 }
 
-/** Open an audit row before the work starts, so an in-flight run is visible. */
+/**
+ * Open an audit row before the work starts, so an in-flight run is visible.
+ *
+ * ── THE INTAKE IS WRITTEN HERE, THE RESOLVED PROFILE IS NOT ───────────────
+ * Everything the customer stated — type, goal, geography, competitors — is
+ * known before a byte is fetched and is written now, so an audit that dies
+ * mid-run still records what it was commissioned to do.
+ *
+ * `audit_profile` is the exception. It may still be settled by the page (see
+ * resolveAuditProfile), which has not been fetched yet, so what lands here is
+ * the requested-or-derivable value and `persistResult` corrects it to what was
+ * actually applied — exactly as it already does for `page_type`.
+ */
 export async function createAudit(userId, {
   targetId, targetUrl, deviceProfile = "mobile", auditProfile = "balanced",
+  auditProfileSource = "default", auditType = "url", primaryGoal = null,
+  targetGeography = null, competitorUrls = [],
   pageTypeHint = null, baselineAuditId = null, promptSetId = null,
   idempotencyKey = null, source = "ui", tags = [],
 }) {
   const r = await insert("audits", [{
     user_id: userId, target_id: targetId, target_url: targetUrl,
     device_profile: deviceProfile, audit_profile: auditProfile,
+    audit_profile_source: auditProfileSource,
+    audit_type: auditType, primary_goal: primaryGoal,
+    // NULL, never {}. The column's comment and normaliseGeography() agree on
+    // one shape for absence; two would mean every reader needs two checks.
+    target_geography: targetGeography || null,
+    competitor_urls: Array.isArray(competitorUrls) ? competitorUrls : [],
     page_type_hint: pageTypeHint, baseline_audit_id: baselineAuditId,
     prompt_set_id: promptSetId, idempotency_key: idempotencyKey,
     source, tags, status: "running", started_at: new Date().toISOString(),
@@ -273,6 +293,11 @@ export async function persistResult(userId, auditId, result) {
     body: JSON.stringify({
       status: "completed",
       page_type: result.target?.page_type || null,
+      // The profile the run ACTUALLY applied, which may have been settled by
+      // the page after the row was opened. Same reason page_type is corrected
+      // here: the row must say what happened, not what was requested.
+      ...(result.target?.audit_profile ? { audit_profile: result.target.audit_profile } : {}),
+      ...(result.target?.audit_profile_source ? { audit_profile_source: result.target.audit_profile_source } : {}),
       completed_at: new Date().toISOString(),
     }),
   });
@@ -617,10 +642,18 @@ function scrubWebhook(row) {
 
 export async function createSchedule(userId, {
   targetId, name, cadence, deviceProfile, auditProfile, alertEmail, alertThreshold,
+  primaryGoal = null, pageTypeHint = null, targetGeography = null, competitorUrls = [],
 }) {
   const r = await insert("audit_schedules", [{
     user_id: userId, target_id: targetId, name, cadence,
     device_profile: deviceProfile, audit_profile: auditProfile,
+    // Carried onto every run this schedule creates. A monitor that dropped the
+    // goal would build a trend line whose first point had context and whose
+    // others did not — and the diff would still be drawn, because nothing
+    // downstream knows the context changed.
+    primary_goal: primaryGoal, page_type_hint: pageTypeHint,
+    target_geography: targetGeography || null,
+    competitor_urls: Array.isArray(competitorUrls) ? competitorUrls : [],
     alert_email: alertEmail, alert_threshold: alertThreshold,
     next_run_at: nextRunAt(cadence),
   }]);

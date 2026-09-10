@@ -38,6 +38,8 @@ import { buildConstruct } from "../../../../src/lib/discoverability/constructTem
 import { severityTally, ISSUES } from "../../../../src/lib/discoverability/issueCatalog.js";
 import { applyProfile, AUDIT_PROFILES, applyPageTypePack, notApplicableSignals, packFor }
   from "../../../../src/lib/discoverability/auditProfiles.js";
+import { resolveAuditProfile, normaliseGeography, normaliseCompetitorUrls, PRIMARY_GOALS }
+  from "../../../../src/lib/discoverability/intakeModel.js";
 import { createEvidenceCollector } from "./evidenceCollector.js";
 import { attachEvidenceToPillars } from "../../../../src/lib/discoverability/evidenceModel.js";
 
@@ -101,7 +103,11 @@ function constructFacts(parsed, url) {
  * @param {string} url
  * @param {object} options
  * @param {"mobile"|"desktop"} [options.deviceProfile]
- * @param {string} [options.auditProfile]     balanced | seo | aeo | geo
+ * @param {string} [options.auditProfile]     one of PROFILE_IDS; omit to have one chosen
+ * @param {string} [options.primaryGoal]      one of PRIMARY_GOAL_IDS
+ * @param {object} [options.targetGeography]  {country, region, city, language}
+ * @param {string[]} [options.competitorUrls] recorded context; nothing is fetched
+ * @param {string} [options.auditType]        url | domain | benchmark | prompt_monitor | rerun
  * @param {string} [options.pageTypeHint]
  * @param {string[]} [options.prompts]        prompt set for citation sampling
  * @param {boolean} [options.skipWebVitals]
@@ -113,7 +119,30 @@ export async function runAudit(url, options = {}) {
   const env = options.env || process.env;
   const now = options.now ?? Date.now();
   const deviceProfile = options.deviceProfile === "desktop" ? "desktop" : "mobile";
-  const auditProfile = AUDIT_PROFILES[options.auditProfile] ? options.auditProfile : "balanced";
+
+  // ── The intake, normalised once ─────────────────────────────────────────
+  // Everything the customer said before anything was fetched. It is echoed on
+  // the result rather than re-read from the audit row so a guest run — which
+  // has no row — carries the same shape as a stored one.
+  const requestedProfile = AUDIT_PROFILES[options.auditProfile] ? options.auditProfile : null;
+  const primaryGoal = PRIMARY_GOALS[options.primaryGoal] ? options.primaryGoal : null;
+  const targetGeography = normaliseGeography(options.targetGeography);
+  const competitorUrls = normaliseCompetitorUrls(options.competitorUrls).urls;
+  const auditType = options.auditType || "url";
+
+  // Settled TWICE, and this is the first pass: it can see the choice and the
+  // goal but not the page, and it is what an unreachable URL is reported under
+  // — a fetch that never returned HTML gives inference nothing to read, and a
+  // profile guessed from a page we never saw would be a fabrication.
+  let { profile: auditProfile, source: auditProfileSource } =
+    resolveAuditProfile({ requested: requestedProfile, primaryGoal });
+
+  const intake = {
+    audit_type: auditType,
+    primary_goal: primaryGoal,
+    target_geography: targetGeography,
+    competitor_urls: competitorUrls,
+  };
   const stageErrors = [];
   const startedAt = now;
 
@@ -143,7 +172,8 @@ export async function runAudit(url, options = {}) {
       url,
       unreachable: true,
       stageErrors: [{ stage: "audit.fetch", error: collected.fetch.error || "no HTML returned" }],
-      ...emptyResultShell({ url, deviceProfile, auditProfile, now, collected }),
+      intake,
+      ...emptyResultShell({ url, deviceProfile, auditProfile, auditProfileSource, now, collected }),
     };
   }
 
@@ -164,6 +194,19 @@ export async function runAudit(url, options = {}) {
     ? options.pageTypeHint
     : inferPageType(parsed);
   const pack = packFor(pageType);
+
+  // ── The second pass, now that the page has spoken ───────────────────────
+  // Re-settled rather than patched: `resolveAuditProfile` is ordered, so
+  // handing it the page as well can only ever fill the slot nothing else
+  // claimed. An explicit choice and a stated goal both still outrank whatever
+  // the schema says, and the source travels with the answer so the report can
+  // tell the customer which of the four reasons they are reading this view for.
+  ({ profile: auditProfile, source: auditProfileSource } = resolveAuditProfile({
+    requested: requestedProfile,
+    primaryGoal,
+    pageType,
+    schemaTypes: parsed.schemaTypes || [],
+  }));
 
   // ── external evidence, all optional, all concurrent ──────────────────────
   const org = findSchema(parsed.jsonLd || [], "Organization");
@@ -377,7 +420,9 @@ export async function runAudit(url, options = {}) {
       language: parsed.meta?.lang || null,
       device_profile: deviceProfile,
       audit_profile: auditProfile,
+      audit_profile_source: auditProfileSource,
     },
+    intake,
     ...scored,
     scoringModelVersion: SCORING_MODEL_VERSION,
     issues: packedIssues,
@@ -423,19 +468,61 @@ export async function runAudit(url, options = {}) {
  */
 export const MAX_STORED_RUNS = 10;
 
-/** Best guess at the page type, used to select the rule pack. */
+/**
+ * Best guess at the page type, used to select the rule pack.
+ *
+ * ── ORDER IS THE WHOLE ALGORITHM ──────────────────────────────────────────
+ * Schema first, because that is the page ASSERTING what it is. Then the URL's
+ * own shape, which the author also controls and cannot fake by accident. Then
+ * words in the title and H1, which are the weakest evidence here and the most
+ * easily coincidental. A pack only ever adjusts expectations, so a wrong guess
+ * costs a suppressed or promoted issue rather than a wrong score — but it is
+ * still a claim we make in the UI ("Comparison page"), and the hint overrides
+ * it precisely because the customer knows and we are guessing.
+ */
 export function inferPageType(parsed) {
   const types = (parsed.schemaTypes || []).map((t) => String(t).toLowerCase());
   if (types.includes("faqpage")) return "faq";
   if (types.includes("howto")) return "howto";
   if (types.includes("product")) return "product";
+  // A LocalBusiness SUBTYPE is still a location page. Matching the suffix
+  // rather than enumerating the ~200 subtypes schema.org defines, which is a
+  // list that would be stale the week after it was written.
+  if (types.some((t) => /(?:localbusiness|store|restaurant|clinic|dentist|physician|hotel)$/.test(t))
+      || types.includes("place")) return "location";
+  if (types.includes("service") || types.includes("professionalservice")) return "service";
   if (types.includes("article") || types.includes("blogposting")) return "article";
+
+  // The root of a site is a homepage whatever it says in its title, and the
+  // path is the one piece of evidence here that cannot be a coincidence.
+  // Guarded so a parsed object with no URL — which is how most of the unit
+  // tests call this — cannot match on an empty string.
+  try {
+    if (parsed.url) {
+      const { pathname } = new URL(parsed.url);
+      if (pathname === "/" || pathname === "") return "homepage";
+    }
+  } catch { /* unparseable URL is simply not evidence of a homepage */ }
 
   const h1 = (parsed.headingStats?.h1Text || "").toLowerCase();
   const title = (parsed.meta?.title || "").toLowerCase();
   const both = `${h1} ${title}`;
-  if (/\b(pricing|plans?|cost)\b/.test(both)) return "pricing";
+  // ⚠️ THE ORDER OF THESE THREE CHANGED IN W2, DELIBERATELY.
+  //
+  // "how to" is the strongest intent marker of the set and now runs first: it
+  // used to sit behind the pricing test, so "How to reduce hosting cost" was
+  // filed as a pricing page and asked for Offer markup it has no business
+  // carrying.
+  //
+  // Comparison then runs before pricing, for the same reason in reverse.
+  // "Acme vs Rival pricing" is a comparison that happens to discuss price, and
+  // the two packs differ in exactly the way that matters for it: the
+  // comparison pack promotes AC-08 — comparative content written as prose —
+  // which is that page's defining failure mode and the one the pricing pack
+  // says nothing about.
   if (/\bhow to\b/.test(both)) return "howto";
+  if (/\b(vs\.?|versus)\b|\balternatives?\b|\bcompar(?:e|ed|ison)\b/.test(both)) return "comparison";
+  if (/\b(pricing|plans?|cost)\b/.test(both)) return "pricing";
   if (/\b(faq|frequently asked)\b/.test(both)) return "faq";
   if (/\b(docs?|documentation|reference|api)\b/.test(both)) return "docs";
   if ((parsed.faqPairs || []).length >= 3) return "faq";
@@ -444,7 +531,7 @@ export function inferPageType(parsed) {
 }
 
 /** The shape returned when a page could not be fetched at all. */
-function emptyResultShell({ url, deviceProfile, auditProfile, now, collected }) {
+function emptyResultShell({ url, deviceProfile, auditProfile, auditProfileSource, now, collected }) {
   const scored = scoreAudit({ signalValues: {}, penaltyCodes: [] });
   // Decorated with an EMPTY evidence map rather than left undecorated. An
   // unreachable page gathered no observations, but its signals must still carry
@@ -468,6 +555,7 @@ function emptyResultShell({ url, deviceProfile, auditProfile, now, collected }) 
       url, canonical_url: null, final_url: collected.fetch.finalUrl || url,
       page_type: "unknown", language: null,
       device_profile: deviceProfile, audit_profile: auditProfile,
+      audit_profile_source: auditProfileSource || "default",
     },
     ...scored,
     scoringModelVersion: SCORING_MODEL_VERSION,

@@ -74,7 +74,11 @@ import {
   signalsToCsv, scoresToCsv, bundleToCsv, brandCsv,
 } from "../../src/lib/discoverability/auditReport.js";
 import { buildConstruct } from "../../src/lib/discoverability/constructTemplates.js";
-import { AUDIT_PROFILES, packFor } from "../../src/lib/discoverability/auditProfiles.js";
+import { AUDIT_PROFILES, PAGE_TYPE_PACKS, packFor } from "../../src/lib/discoverability/auditProfiles.js";
+import {
+  AUDIT_TYPES, SELECTABLE_AUDIT_TYPE_IDS, PRIMARY_GOALS, PRIMARY_GOAL_IDS,
+  normaliseGeography, normaliseCompetitorUrls, intakeVocabulary, MAX_COMPETITOR_URLS,
+} from "../../src/lib/discoverability/intakeModel.js";
 import { scorePillar, scoreFramework } from "../../src/lib/discoverability/scoringModel.js";
 import { attachEvidenceToPillars } from "../../src/lib/discoverability/evidenceModel.js";
 import { PILLAR_IDS, PILLARS } from "../../src/lib/discoverability/signalRegistry.js";
@@ -253,19 +257,34 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   let host = "";
   try { host = new URL(rawUrl).hostname; } catch { host = compliance.host || ""; }
 
+  // ── One options object, both run paths ──────────────────────────────────
+  // The guest path and the stored path used to build this list separately, and
+  // a field added to one and forgotten in the other is invisible: the audit
+  // still runs, and only the context is missing. Built once here so a guest
+  // audit and a signed-in audit are commissioned identically.
+  //
+  // `auditProfile` is passed only when it was EXPLICITLY chosen. Sending the
+  // "balanced" fallback would look identical to a deliberate choice of the
+  // neutral lens and would stop the goal and the page from ever settling it.
+  const pipelineOptions = {
+    deadline,
+    deviceProfile: options.deviceProfile,
+    auditProfile: options.auditProfileExplicit ? options.auditProfile : null,
+    auditType: options.auditType,
+    primaryGoal: options.primaryGoal,
+    targetGeography: options.targetGeography,
+    competitorUrls: options.competitorUrls,
+    pageTypeHint: options.pageTypeHint,
+    prompts: options.prompts,
+    citationEngine: options.citationEngine,
+    skipWebVitals: options.skipWebVitals,
+    skipCitations: options.skipCitations,
+  };
+
   if (!userId) {
     let result;
     try {
-      result = await runAudit(rawUrl, {
-        deadline,
-        deviceProfile: options.deviceProfile,
-        auditProfile: options.auditProfile,
-        pageTypeHint: options.pageTypeHint,
-        prompts: options.prompts,
-        citationEngine: options.citationEngine,
-        skipWebVitals: options.skipWebVitals,
-        skipCitations: options.skipCitations,
-      });
+      result = await runAudit(rawUrl, pipelineOptions);
     } catch (err) {
       return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
     }
@@ -284,6 +303,13 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   const created = await store.createAudit(userId, {
     targetId, targetUrl: rawUrl,
     deviceProfile: options.deviceProfile, auditProfile: options.auditProfile,
+    // What is known before the fetch. `persistResult` corrects the profile and
+    // its source to whatever the run actually applied, exactly as it already
+    // does for `page_type` — so an audit that dies mid-run still records what
+    // it was commissioned to do, and a completed one records what happened.
+    auditProfileSource: options.auditProfileExplicit ? "explicit" : "default",
+    auditType: options.auditType, primaryGoal: options.primaryGoal,
+    targetGeography: options.targetGeography, competitorUrls: options.competitorUrls,
     pageTypeHint: options.pageTypeHint, baselineAuditId: options.baselineAuditId,
     promptSetId: options.promptSetId, idempotencyKey: options.idempotencyKey,
     source, tags: options.tags || [],
@@ -296,17 +322,9 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   // ── run ──────────────────────────────────────────────────────────────────
   let result;
   try {
-    result = await runAudit(rawUrl, {
-      // What is LEFT after the gates above, not a fresh allowance.
-      deadline,
-      deviceProfile: options.deviceProfile,
-      auditProfile: options.auditProfile,
-      pageTypeHint: options.pageTypeHint,
-      prompts: options.prompts,
-      citationEngine: options.citationEngine,
-      skipWebVitals: options.skipWebVitals,
-      skipCitations: options.skipCitations,
-    });
+    // The same options the guest path runs, carrying the deadline that is LEFT
+    // after the gates above rather than a fresh allowance.
+    result = await runAudit(rawUrl, pipelineOptions);
   } catch (err) {
     await store.markAuditFailed(auditId, err?.message);
     return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED", auditId } };
@@ -336,7 +354,39 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   return { ok: true, statusCode: 201, body: { ...result, auditId, targetId, persisted: true } };
 }
 
-/** Validate and normalise the create-audit body. */
+/**
+ * Everything the composer needs to render the intake form, in one call.
+ *
+ * `profiles` keeps its original key and its original shape. It is the response
+ * this endpoint has always returned and there are clients reading it; the new
+ * vocabularies sit BESIDE it rather than nesting it under a new key, so an
+ * older client keeps working and a newer one gets the goals, the types and the
+ * page types without a second request.
+ */
+function intakeReference() {
+  return {
+    profiles: AUDIT_PROFILES,
+    page_types: PAGE_TYPE_PACKS,
+    ...intakeVocabulary(),
+  };
+}
+
+/**
+ * Validate and normalise the create-audit body.
+ *
+ * ── AN UNKNOWN VALUE IS AN ERROR, NEVER A SUBSTITUTION ────────────────────
+ * The rule `audit_profile` has always followed now covers the whole intake. A
+ * caller who sends `primary_goal: "local"` (the profile id) instead of
+ * `"local_discovery"` (the goal id) must be told, not quietly given an audit
+ * with no goal recorded — they would go looking for local findings that were
+ * never commissioned, and the row would say the question was never asked.
+ *
+ * `auditProfile` still defaults to "balanced" here rather than to null, and
+ * `auditProfileExplicit` carries whether anybody actually chose it. The
+ * pipeline needs both: "balanced" is the fallback the unreachable-page path
+ * reports under, and the flag is what stops inference overriding a deliberate
+ * choice of the neutral lens.
+ */
 export function parseAuditOptions(body = {}) {
   const errors = [];
   const url = String(body.target_url || body.url || "").trim();
@@ -348,10 +398,57 @@ export function parseAuditOptions(body = {}) {
     errors.push(`audit_profile must be one of: ${Object.keys(AUDIT_PROFILES).join(", ")}.`);
   }
 
+  const primaryGoal = PRIMARY_GOALS[body.primary_goal] ? body.primary_goal : null;
+  if (body.primary_goal && !PRIMARY_GOALS[body.primary_goal]) {
+    errors.push(`primary_goal must be one of: ${PRIMARY_GOAL_IDS.join(", ")}.`);
+  }
+
+  if (body.page_type_hint && !PAGE_TYPE_PACKS[body.page_type_hint]) {
+    errors.push(`page_type_hint must be one of: ${Object.keys(PAGE_TYPE_PACKS).join(", ")}.`);
+  }
+
+  // ── The audit type, and the two the engine cannot honour ────────────────
+  // Refused rather than accepted-and-downgraded. Storing `domain` on a row
+  // that fetched one page would be a claim about work nobody did, and it is a
+  // claim the customer cannot check — the row looks exactly like a domain
+  // snapshot in every list, export and trend it appears in.
+  let auditType = "url";
+  if (body.audit_type) {
+    const type = AUDIT_TYPES[body.audit_type];
+    if (!type) {
+      errors.push(`audit_type must be one of: ${SELECTABLE_AUDIT_TYPE_IDS.join(", ")}.`);
+    } else if (!type.available) {
+      errors.push(type.unavailableReason || `${type.label} audits are not available yet.`);
+    } else if (!type.callerSelectable) {
+      // `benchmark` and `rerun` are set by the routes that create their
+      // context. An audit that called itself a re-audit with nothing to be a
+      // re-audit OF would break the one guarantee the type carries.
+      errors.push(`audit_type "${body.audit_type}" is set by the ${body.audit_type} endpoint, not on a plain audit.`);
+    } else {
+      auditType = body.audit_type;
+    }
+  }
+
+  const geography = normaliseGeography(body.target_geography);
+  const competitors = normaliseCompetitorUrls(body.competitor_urls);
+  if (competitors.rejected.length) {
+    // Named and returned, not dropped. A caller who believes a competitor is
+    // being tracked when it is not will read the next report as though it
+    // covered them.
+    errors.push(
+      `${competitors.rejected.length} competitor URL${competitors.rejected.length === 1 ? " was" : "s were"} ` +
+      `not usable or beyond the limit of ${MAX_COMPETITOR_URLS}: ${competitors.rejected.slice(0, 3).join(", ")}.`,
+    );
+  }
+
   return {
     errors, url,
     options: {
       deviceProfile, auditProfile,
+      auditProfileExplicit: Boolean(AUDIT_PROFILES[body.audit_profile]),
+      auditType, primaryGoal,
+      targetGeography: geography,
+      competitorUrls: competitors.urls,
       pageTypeHint: body.page_type_hint || null,
       baselineAuditId: body.baseline_audit_id || null,
       promptSetId: body.prompt_sample_set_id || null,
@@ -395,7 +492,7 @@ export const handler = async (event) => {
   const [root, id, sub, subId] = path;
 
   // Profiles is static reference data for the UI
-  if (root === "profiles" && method === "GET") return json(200, { profiles: AUDIT_PROFILES });
+  if (root === "profiles" && method === "GET") return json(200, intakeReference());
 
   // Guest audit: allow unauthenticated visitors to run 1 free discoverability audit
   const isGuestAudit = !userId && root === "audits" && method === "POST" && !id && Boolean(body?.guest);
@@ -512,7 +609,7 @@ export const handler = async (event) => {
     if (root === "schedules") return await scheduleRoute(event, userId, method, id, body);
 
     // ── /profiles — static reference data for the UI ────────────────────────
-    if (root === "profiles" && method === "GET") return json(200, { profiles: AUDIT_PROFILES });
+    if (root === "profiles" && method === "GET") return json(200, intakeReference());
 
     // Diagnostic only — never triggered on a successful route match, so this
     // costs nothing when routing works. If resolveSplat's marker search ever
@@ -576,8 +673,27 @@ async function rerunRoute(event, userId, auditId, body) {
   if (!userId) return unauthorized();
 
   const resolved = await resolveRequestEntitlement(event);
-  const planId = resolved.plan?.id || "free";
-  if (planId === "free") {
+
+  // ── 🔴 `resolved.plan` HAS NEVER EXISTED ────────────────────────────────
+  //
+  // This gate read `resolved.plan?.id`, and `resolveRequestEntitlement` has
+  // only ever returned `{userId, guest, entitlement, degraded, planMap,
+  // supabase}` — no `plan` key on any of its four return paths. So the
+  // optional chain produced `undefined`, the `|| "free"` fallback fired on
+  // EVERY request, and every re-audit answered 402 "requires a paid plan" —
+  // to Pro and Business customers included.
+  //
+  // It failed CLOSED and it failed SILENTLY, which is why it survived: the
+  // refusal is a plausible-looking upgrade prompt rather than an error, so it
+  // reads as a plan limit to the customer and as working code to us. The
+  // adjacent gates all read `resolved.entitlement` correctly (gateAuditQuota,
+  // the benchmark and schedule routes); this one path had its own spelling.
+  //
+  // Fixed to the shape the resolver actually returns, and made to fail OPEN on
+  // a degraded lookup like every other capability check in this codebase — a
+  // Supabase blip must not become "your plan does not include this".
+  const planId = resolved.entitlement?.plan_id || "free";
+  if (!resolved.guest && !resolved.degraded && planId === "free") {
     return json(402, {
       error: "Re-discovery and comparative re-auditing require a paid DatIQ plan.",
       code: "UPGRADE_REQUIRED",
@@ -591,11 +707,38 @@ async function rerunRoute(event, userId, auditId, body) {
   const gate = await gateAuditQuota(event, userId, 1, body.workspace_id);
   if (!gate.ok) return gate.response;
 
+  // ── THE INTAKE IS INHERITED, NOT RE-ASKED ────────────────────────────────
+  //
+  // A re-audit exists to answer "did my fix work", and that question is only
+  // answerable if the second run was commissioned exactly like the first. A
+  // rerun that quietly dropped the goal, the geography or the competitor set
+  // would still be diffed against its baseline — nothing downstream knows the
+  // context changed — and the delta would be read as page movement.
+  //
+  // `??`, not `||`, on every field a caller can legitimately CLEAR. With `||`
+  // an explicit `primary_goal: null` ("I no longer have that goal") silently
+  // re-inherits the old one, which is the failure mode of a form that lets you
+  // change your mind and does not record it.
+  const inheritedProfile = body.audit_profile ?? prior.audit_profile;
   const run = await executeAudit({
     event, userId, rawUrl: body.target_url || prior.target_url,
     options: {
       deviceProfile: body.device_profile || prior.device_profile,
-      auditProfile: body.audit_profile || prior.audit_profile,
+      auditProfile: inheritedProfile,
+      // A profile inherited from the baseline is an explicit one for this run:
+      // the baseline was scored under that lens, and re-inferring a different
+      // one from the same page would change which score leads the comparison.
+      auditProfileExplicit: Boolean(AUDIT_PROFILES[inheritedProfile]),
+      auditType: "rerun",
+      primaryGoal: body.primary_goal !== undefined
+        ? (PRIMARY_GOALS[body.primary_goal] ? body.primary_goal : null)
+        : (prior.primary_goal || null),
+      targetGeography: body.target_geography !== undefined
+        ? normaliseGeography(body.target_geography)
+        : normaliseGeography(prior.target_geography),
+      competitorUrls: body.competitor_urls !== undefined
+        ? normaliseCompetitorUrls(body.competitor_urls).urls
+        : (prior.competitor_urls || []),
       pageTypeHint: body.page_type_hint || prior.page_type_hint,
       // The re-run is automatically measured against the audit it re-ran, which
       // is what makes "did my fix work" a single click.
@@ -761,7 +904,19 @@ async function benchmarkRoute(event, userId, method, id, body) {
     for (const member of created.members) {
       const run = await executeAudit({
         event, userId, rawUrl: member.url,
-        options: { auditProfile: profile, deviceProfile: body.device_profile },
+        options: {
+          auditProfile: profile,
+          // Explicit for every member, including the ones we would otherwise
+          // infer a lens for. A set whose members were each scored under a
+          // profile read off their own markup is not a comparison — the
+          // "competitor intelligence" goal exists precisely to say that the
+          // lens must favour nobody.
+          auditProfileExplicit: true,
+          auditType: "benchmark",
+          primaryGoal: PRIMARY_GOALS[body.primary_goal] ? body.primary_goal : null,
+          targetGeography: normaliseGeography(body.target_geography),
+          deviceProfile: body.device_profile,
+        },
         resolved, source: "benchmark",
       });
       if (run.ok && run.body?.auditId) {
@@ -871,6 +1026,13 @@ async function scheduleRoute(event, userId, method, id, body) {
       cadence: ["daily", "weekly", "monthly"].includes(body.cadence) ? body.cadence : "weekly",
       deviceProfile: body.device_profile === "desktop" ? "desktop" : "mobile",
       auditProfile: AUDIT_PROFILES[body.audit_profile] ? body.audit_profile : "balanced",
+      // Stored on the schedule so every run it creates is commissioned the same
+      // way. Without this a twelve-month monitor produces a series whose first
+      // point had a goal and whose other fifty-one did not.
+      primaryGoal: PRIMARY_GOALS[body.primary_goal] ? body.primary_goal : null,
+      pageTypeHint: PAGE_TYPE_PACKS[body.page_type_hint] ? body.page_type_hint : null,
+      targetGeography: normaliseGeography(body.target_geography),
+      competitorUrls: normaliseCompetitorUrls(body.competitor_urls).urls,
       alertEmail: body.alert_email || null,
       alertThreshold: Number.isFinite(Number(body.alert_threshold)) ? Number(body.alert_threshold) : 3,
     });
@@ -967,9 +1129,26 @@ export function rehydrate(full) {
     target: {
       url: full.audit.target_url, page_type: full.audit.page_type,
       device_profile: full.audit.device_profile, audit_profile: full.audit.audit_profile,
+      // Rows written before 0049 carry no source. They were commissioned with
+      // whatever the caller sent or the 'balanced' fallback and nothing was
+      // ever inferred, so 'default' is a true statement about them rather than
+      // a guess — the same reasoning the migration's own default rests on.
+      audit_profile_source: full.audit.audit_profile_source || "default",
       // The pipeline puts the human label here (auditPipeline.js:341). Without
       // it every export printed the raw enum — "page" instead of "General page".
       page_type_label: packFor(full.audit.page_type).label,
+    },
+    // ── THE INTAKE, REBUILT TO THE SHAPE THE PIPELINE EMITS ────────────────
+    // Same discipline as the pillars above: a reopened audit must be
+    // indistinguishable from a fresh one, so this block mirrors the pipeline's
+    // `intake` field key for key. `primary_goal` stays NULL where the question
+    // was never asked; defaulting it here would invent an intent for every
+    // audit that predates 0049.
+    intake: {
+      audit_type: full.audit.audit_type || "url",
+      primary_goal: full.audit.primary_goal || null,
+      target_geography: full.audit.target_geography || null,
+      competitor_urls: full.audit.competitor_urls || [],
     },
     finalScore: num(r.final_score), seoScore: num(r.seo_score),
     aeoScore: num(r.aeo_score), geoScore: num(r.geo_score),

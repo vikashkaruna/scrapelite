@@ -19,6 +19,8 @@ import Icon from "../Icon.jsx";
 import FaviconDot from "../FaviconDot.jsx";
 import { hostOf } from "../../lib/utils.js";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
+import { AUDIT_PROFILES } from "../../lib/discoverability/auditProfiles.js";
+import { PRIMARY_GOALS } from "../../lib/discoverability/intakeModel.js";
 
 function when(iso) {
   if (!iso) return null;
@@ -65,9 +67,32 @@ export default function AuditHeader({ audit }) {
   const host = hostOf(url) || url;
   const ran = when(audit.audit?.created_at || audit.meta?.startedAt);
 
+  // ── WHY THE PROFILE IS SHOWN WITH ITS REASON ─────────────────────────────
+  // A reader who disagrees with the lens needs to know whether they chose it,
+  // whether their goal chose it, or whether we guessed it from their markup.
+  // Those are three different claims, and only one of them is ours to defend.
+  // Same rule the evidence envelope enforces one layer down: an observed fact
+  // and an inference must never be presented as the same kind of thing.
+  const profile = audit.target?.audit_profile;
+  const profileLabel = profile && (AUDIT_PROFILES[profile]?.label || profile);
+  const because = {
+    goal: "from your goal",
+    inferred: "read from the page",
+    // 'explicit' needs no gloss — the reader made the choice — and 'default'
+    // is the absence of one, which the goal line already implies.
+    explicit: null,
+    default: null,
+  }[audit.target?.audit_profile_source] || null;
+
+  const goal = audit.intake?.primary_goal;
+  const goalLabel = goal && (PRIMARY_GOALS[goal]?.label || goal);
+
   const facts = [
     ran,
-    audit.target?.audit_profile && `${audit.target.audit_profile} profile`,
+    // Audits that predate migration 0049 carry no goal, and nothing is shown
+    // for them rather than a placeholder claiming one.
+    goalLabel && `for ${goalLabel}`,
+    profileLabel && `${profileLabel} profile${because ? ` (${because})` : ""}`,
     audit.target?.device_profile,
     audit.target?.page_type_label || audit.target?.page_type,
   ].filter(Boolean);

@@ -44,6 +44,34 @@ Re-weighting per profile would mean the same page scoring differently depending
 on which profile it was run under, and a user who switched profiles between runs
 would see a change in their trend that no change to their page caused.
 
+There are **eight** profiles since W2. Four name a framework (`balanced`, `seo`,
+`aeo`, `geo`); four name a **business model** (`saas`, `services`, `local`,
+`ecommerce`) and then pick the framework that business is usually judged by. The
+business-model four exist because *"which of SEO, AEO and GEO matters most to
+me?"* is not a question a first-time visitor can answer and *"I sell software"*
+is. **The rule binds them exactly as hard** — a page audited as `ecommerce` and
+as `balanced` produces the same four numbers, and `auditPipeline.test.js` asserts
+it for all four.
+
+The profile is **settled, not supplied**, and the audit records why:
+
+| `audit_profile_source` | Means |
+|---|---|
+| `explicit` | the caller named a profile |
+| `goal` | derived from `primary_goal` |
+| `inferred` | read from what the page declares (schema first, then page type) |
+| `default` | nothing argued for a lens, so `balanced` |
+
+`resolveAuditProfile()` in `intakeModel.js` is that ordering, and the ordering is
+the definition of the column. A **stated goal outranks page inference**: the
+customer told us their intent in words, while the schema is our reading of markup
+they may not control and may be trying to fix.
+
+It is settled **twice** in a run — once before the fetch, once after the parse.
+The first pass is what an unreachable URL is reported under: a page that returned
+no HTML gives inference nothing to read, and a profile guessed from a page nobody
+saw would be a fabrication.
+
 ### 1.3 Constructs use placeholders, never inventions
 
 Anything the audit could not observe is emitted as an explicit `TODO:`. A
@@ -68,7 +96,9 @@ src/lib/discoverability/          PURE. Imported by BOTH React and netlify/,
   issueCatalog.js                 44 issue codes → severity, owner, fix, penalty
   recommendationModel.js          priority formula, per-page lift, ranking
   constructTemplates.js           13 generators for ready-made assets
-  auditProfiles.js                4 profiles (lenses) + 8 page-type rule packs
+  auditProfiles.js                8 profiles (lenses) + 12 page-type rule packs
+  intakeModel.js                  what was ASKED FOR — §2c. Audit types, goals,
+                                  geography, competitors, profile resolution
   evidenceModel.js                the evidence envelope — §2b
   auditDiff.js                    two audits → deltas, with comparability
   auditReport.js                  markdown / CSV / JSON renderings
@@ -171,6 +201,96 @@ applied.
 writer that forgets the stamp file a future v3 score as v1 — precisely the
 mislabelling the version exists to prevent. `auditDiff` refuses to compare across
 versions: a delta between two different models is a number nobody earned.
+
+---
+
+## 2c. The intake contract
+
+Everything the customer said **before anything was fetched**. Migration 0049,
+`src/lib/discoverability/intakeModel.js` (pure), echoed on the result as
+`intake` and rebuilt identically by `rehydrate()`.
+
+| Field | Column | Nullable | Why |
+|---|---|---|---|
+| Audit type | `audits.audit_type` | no, defaults `url` | Knowable retrospectively — every audit that already exists fetched one page |
+| Primary goal | `audits.primary_goal` | **yes, and never defaulted** | see below |
+| Target geography | `audits.target_geography` (jsonb) | yes | `NULL`, never `{}` |
+| Competitor URLs | `audits.competitor_urls` (text[]) | no, defaults `{}` | recorded context only |
+| Profile source | `audits.audit_profile_source` | no, defaults `default` | §1.2 |
+
+### `primary_goal` is nullable on purpose and cannot be back-filled
+
+Every other column in this module records something we **measured**, and a
+measurement can be taken again by re-running the audit. This one records
+something the **customer said**. If nobody was asked *"what are you trying to
+achieve?"* at the moment the audit was commissioned, that answer does not exist
+anywhere and no later migration can recover it.
+
+A default here would be a **fabricated intent** — the same class of error as an
+evidence record with a guessed source URL (§2b) — and the P2 brand, product,
+service and local modules key off this field, so a guessed goal would propagate
+into work nobody commissioned.
+
+```
+NULL      this audit predates the question, or it was not answered
+NOT NULL  the customer said this
+```
+
+### `source` and `audit_type` answer different questions
+
+They overlap on two values, which is what made them easy to conflate before W2.
+
+| | Question | Values |
+|---|---|---|
+| `source` | who **asked** | `api` · `ui` · `schedule` · `benchmark` · `rerun` |
+| `audit_type` | what **kind** of audit | `url` · `domain` · `benchmark` · `prompt_monitor` · `rerun` |
+
+A scheduled run is `source = schedule`, `audit_type = rerun` — a monitor
+re-audits a page it has audited before. Collapsing the two is why *"show me my
+domain snapshots"* and *"show me everything the scheduler ran"* could not both be
+answered.
+
+### Two audit types are legal in the column and refused by the API
+
+`domain` and `prompt_monitor` pass the CHECK constraint and are rejected by
+`parseAuditOptions` with a "not available yet" error. The vocabulary is a stored
+contract and widening a live CHECK later is a migration, a deploy, and a window
+in which the API and the database disagree about what is legal — declaring the
+full set now costs nothing.
+
+What would cost something is a row **claiming to be a domain snapshot when one
+page was fetched**. That claim is invisible: the row looks like a domain snapshot
+in every list, export and trend it appears in. A rejected request is visible in
+the moment; a mislabelled row is found a quarter later inside a trend line.
+
+`benchmark` and `rerun` are legal but not caller-selectable — they are set by the
+routes that create their context. A rerun with no baseline is a re-audit of
+nothing.
+
+### Intake reuse is what makes a re-audit answerable
+
+*"Did my fix work"* is only answerable if the second run was commissioned exactly
+like the first. `rerunRoute` inherits goal, geography, competitors, profile and
+page-type hint from the baseline, and `audit_schedules` stores the same four so
+every scheduled run replays them.
+
+A rerun that quietly dropped the context would **still be diffed** against its
+baseline — nothing in the diff engine knows the context changed — and the delta
+would be read as page movement.
+
+The inheritance uses `??`, not `||`, on every field a caller can legitimately
+clear: with `||` an explicit `primary_goal: null` ("I no longer have that goal")
+silently re-inherits the old one, which is the failure mode of a form that lets
+you change your mind and does not record it.
+
+### Competitor URLs are context, not audits
+
+Naming a competitor at intake **fetches nothing and spends no credit**. The cap
+of 10 exists so the column cannot be used as unbounded storage, not because each
+entry costs anything. `audit_benchmarks` is what turns competitors into runs.
+Rejected and overflowing URLs are **named back to the caller** rather than
+dropped: someone who believes a competitor is being tracked when it is not will
+read the next report as though it covered them.
 
 ---
 
@@ -417,7 +537,7 @@ clause-by-clause gap analysis lives in
 | Four-pillar model, SEO/AEO/GEO framework views | ✅ weights match the PRD exactly |
 | Evidence envelope and explainability | ✅ W1 — `evidenceModel.js`, migration 0048 |
 | Penalty model | ⚠️ W3 — shipped calibration retained by decision; two PRD conditions still to add |
-| Goal-based intake (audit type, primary goal, geography, 8 profiles) | ❌ W2 |
+| Goal-based intake (audit type, primary goal, geography, 8 profiles) | ✅ W2 — `intakeModel.js`, migration 0049 |
 | Gap analysis v2 (root cause, module, observed-fact/inference split) | ❌ W4 |
 | Recommendation Studio (meta variants, internal links, content brief) | ⚠️ W5 — 13 of 17 constructs |
 | AI visibility (prompt taxonomy, 7 citation states, SOV, WAVI, displacement) | ❌ W6 — largest remaining P1 item |

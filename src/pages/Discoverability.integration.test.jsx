@@ -196,11 +196,25 @@ describe("running an audit", () => {
   it("shows all four framework scores", async () => {
     await runAudit();
     expect(api.runAudit).toHaveBeenCalledWith(expect.objectContaining({
-      target_url: "https://example.com/geo", audit_profile: "balanced", device_profile: "mobile",
+      target_url: "https://example.com/geo", device_profile: "mobile",
     }));
     for (const s of ["78", "75", "82", "71"]) {
       expect(screen.getAllByText(s).length).toBeGreaterThan(0);
     }
+  });
+
+  it("omits audit_profile entirely when the user has not chosen one", async () => {
+    // This assertion used to require `audit_profile: "balanced"`, and that is
+    // now the WRONG contract. An ABSENT profile is the signal that nobody
+    // chose one, which is what lets the goal — and failing that, the page's own
+    // characteristics — settle the lens, with `audit_profile_source` recording
+    // which of them did. Sending a hard "balanced" from the composer would look
+    // identical on the wire to a deliberate choice of the neutral lens and would
+    // suppress inference on every audit run from the UI.
+    await runAudit();
+    const body = api.runAudit.mock.calls[0][0];
+    expect(body).not.toHaveProperty("audit_profile");
+    expect(body).not.toHaveProperty("primary_goal");
   });
 
   it("sends an idempotency key so a double-clicked button costs one audit", async () => {

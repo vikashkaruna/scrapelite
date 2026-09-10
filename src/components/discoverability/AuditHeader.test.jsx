@@ -101,3 +101,52 @@ describe("AuditHeader — the summary", () => {
     await waitFor(() => expect(summary).toHaveBeenCalledWith("aud_2"));
   });
 });
+
+// ── W2: the commission, and why this lens ──────────────────────────────────
+
+describe("AuditHeader — what this audit was commissioned for", () => {
+  const facts = () => document.querySelector(".dsc-audit-header-facts").textContent;
+
+  it("names the goal the audit was run for", () => {
+    render(<AuditHeader audit={{
+      ...AUDIT,
+      intake: { audit_type: "url", primary_goal: "local_discovery", target_geography: null, competitor_urls: [] },
+    }} />);
+    expect(facts()).toMatch(/for Local discovery/i);
+  });
+
+  it("says a lens was READ FROM THE PAGE rather than presenting it as a choice", () => {
+    // A reader who disagrees with the lens needs to know whether they chose it
+    // or whether we guessed it from their markup. Those are different claims,
+    // and only one of them is ours to defend.
+    render(<AuditHeader audit={{
+      ...AUDIT,
+      target: { ...AUDIT.target, audit_profile: "ecommerce", audit_profile_source: "inferred" },
+    }} />);
+    expect(facts()).toMatch(/E-commerce profile \(read from the page\)/i);
+  });
+
+  it("says a lens came from the goal", () => {
+    render(<AuditHeader audit={{
+      ...AUDIT,
+      target: { ...AUDIT.target, audit_profile: "local", audit_profile_source: "goal" },
+    }} />);
+    expect(facts()).toMatch(/Local profile \(from your goal\)/i);
+  });
+
+  it("adds no gloss to a lens the reader chose", () => {
+    render(<AuditHeader audit={{
+      ...AUDIT,
+      target: { ...AUDIT.target, audit_profile: "seo", audit_profile_source: "explicit" },
+    }} />);
+    expect(facts()).toMatch(/SEO-heavy profile/i);
+    expect(facts()).not.toMatch(/\(/);
+  });
+
+  it("shows nothing for an audit that predates the goal question", () => {
+    // Migration 0049 leaves primary_goal NULL on every historical row, and a
+    // placeholder here would claim an intent nobody stated.
+    render(<AuditHeader audit={AUDIT} />);
+    expect(facts()).not.toMatch(/\bfor\b/i);
+  });
+});

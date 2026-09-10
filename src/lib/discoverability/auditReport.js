@@ -410,6 +410,12 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
     audit_id: audit.auditId || audit.id || null,
     timestamp: audit.meta?.startedAt ? new Date(audit.meta.startedAt).toISOString() : null,
     target: audit.target || null,
+    // What this audit was COMMISSIONED to do, beside what it measured. A
+    // consumer diffing two exports needs to know the two were asked the same
+    // question before it reads the delta as page movement. Null on every audit
+    // that predates migration 0049 — the question was not asked, and a
+    // placeholder would claim an intent nobody stated.
+    intake: audit.intake || null,
     framework_scores: {
       overall: audit.finalScore, seo: audit.seoScore, aeo: audit.aeoScore, geo: audit.geoScore,
     },

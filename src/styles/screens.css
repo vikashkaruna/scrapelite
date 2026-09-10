@@ -9499,6 +9499,15 @@ html.dark .dsc-page {
 .dsc-field > span { font-weight: 600; }
 .dsc-field select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .dsc-field small { color: var(--text-3); font-size: 12px; line-height: 1.45; }
+/* The goal row is the one intake control above the fold — see AuditComposer's
+   header for why. It gets a divider rather than a panel so it reads as part of
+   the URL bar's own row rather than as the first of the advanced options. */
+.dsc-goal-row { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.dsc-goal-row .dsc-fieldset-hint { margin: 8px 0 0; }
+.dsc-field input[type="text"] { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.dsc-field input[type="text"]:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.dsc-textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; min-height: 64px; }
+.dsc-textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
 /* ── Score tiles ────────────────────────────────────────────────────────── */
 .dsc-score-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 16px; }

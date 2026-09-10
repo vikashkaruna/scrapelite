@@ -281,3 +281,57 @@ describe("rehydrate — the exports that consume it", () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W2 — THE INTAKE REHYDRATES TOO
+// ═══════════════════════════════════════════════════════════════════════════
+// Same discipline as the pillars above: a reopened audit must be
+// indistinguishable from a fresh one, and the way that goes wrong is always
+// the same — a field the pipeline emits that the read path forgets, invisible
+// because a fresh audit renders it perfectly.
+
+describe("the intake survives a reopen", () => {
+  it("rebuilds the intake block key for key", () => {
+    const { full } = fullFixture();
+    full.audit.audit_type = "rerun";
+    full.audit.primary_goal = "local_discovery";
+    full.audit.target_geography = { country: "IN", region: null, city: "Bengaluru", language: "en-IN" };
+    full.audit.competitor_urls = ["https://rival.com/"];
+    full.audit.audit_profile_source = "goal";
+
+    const r = rehydrate(full);
+    expect(r.intake).toEqual({
+      audit_type: "rerun",
+      primary_goal: "local_discovery",
+      target_geography: { country: "IN", region: null, city: "Bengaluru", language: "en-IN" },
+      competitor_urls: ["https://rival.com/"],
+    });
+    expect(r.target.audit_profile_source).toBe("goal");
+  });
+
+  it("leaves a goal NULL on an audit that predates the question", () => {
+    // Every row written before migration 0049. Defaulting the goal here would
+    // invent an intent for the entire history of the module — and the P2
+    // modules key off this field.
+    const { full } = fullFixture();
+    const r = rehydrate(full);
+    expect(r.intake.primary_goal).toBeNull();
+    expect(r.intake.target_geography).toBeNull();
+    expect(r.intake.competitor_urls).toEqual([]);
+  });
+
+  it("reports a pre-0049 row's profile as a default rather than a reading", () => {
+    // Those audits carried whatever the caller sent, or the balanced fallback,
+    // and nothing inferred anything — so 'default' is a true statement about
+    // them, which is the same reasoning the migration's own default rests on.
+    const { full } = fullFixture();
+    expect(rehydrate(full).target.audit_profile_source).toBe("default");
+  });
+
+  it("defaults only the audit type, because only that one is knowable", () => {
+    // Every audit that already exists fetched exactly one page, which is what
+    // 'url' means. A true statement about the past, not a guess at one.
+    const { full } = fullFixture();
+    expect(rehydrate(full).intake.audit_type).toBe("url");
+  });
+});

@@ -170,10 +170,24 @@ export async function runSchedule(schedule, opts = {}) {
     }
 
     const targetId = schedule.target_id;
+    // ── EVERY RUN IS COMMISSIONED LIKE THE FIRST ONE ───────────────────────
+    // The schedule carries the intake (migration 0049) precisely so this loop
+    // can replay it. A monitor that re-audited a page without its goal,
+    // geography and page-type hint would build a trend line whose points were
+    // commissioned differently from each other — and the diff below would
+    // still be drawn, because nothing in the diff engine knows the context
+    // changed. `audit_type` is `rerun`: a monitored run IS a re-audit, and
+    // `source: "schedule"` is what separately records that a cron asked for it.
     const created = await store.createAudit(schedule.user_id, {
       targetId, targetUrl: url,
       deviceProfile: schedule.device_profile,
       auditProfile: schedule.audit_profile,
+      auditProfileSource: "explicit",
+      auditType: "rerun",
+      primaryGoal: schedule.primary_goal || null,
+      targetGeography: schedule.target_geography || null,
+      competitorUrls: schedule.competitor_urls || [],
+      pageTypeHint: schedule.page_type_hint || null,
       baselineAuditId: schedule.last_audit_id || null,
       source: "schedule",
     });
@@ -182,6 +196,11 @@ export async function runSchedule(schedule, opts = {}) {
     const result = await runAudit(url, {
       deviceProfile: schedule.device_profile,
       auditProfile: schedule.audit_profile,
+      auditType: "rerun",
+      primaryGoal: schedule.primary_goal || null,
+      targetGeography: schedule.target_geography || null,
+      competitorUrls: schedule.competitor_urls || [],
+      pageTypeHint: schedule.page_type_hint || null,
       ...opts.auditOptions,
     });
     await store.persistResult(schedule.user_id, created.audit.id, result);

@@ -919,6 +919,111 @@ group("discoverability — targets, idempotency, trends, retention");
   eq("a result can record a newer scoring model", setV2, null);
   await db.query(`update public.audit_results set scoring_model_version = 'v1' where audit_id = $1`, [a1]);
 
+  // ── 0049: the intake ─────────────────────────────────────────────────────
+  // Every other column in this module records something we MEASURED, and a
+  // measurement can be taken again. These record something the CUSTOMER SAID,
+  // and if the question was never asked the answer does not exist anywhere.
+  // That is why primary_goal is nullable and why nothing back-fills it.
+  const intakeAudit = await one(
+    `insert into public.audits
+       (user_id, target_id, target_url, audit_type, primary_goal,
+        target_geography, competitor_urls, audit_profile, audit_profile_source)
+     values ($1,$2,'https://x.com/local','url','local_discovery',
+             $3, array['https://rival.com/'], 'local', 'goal')
+     returning id, audit_type, primary_goal, target_geography, competitor_urls,
+               audit_profile_source`,
+    [alice, t1, JSON.stringify({ country: "IN", region: null, city: "Bengaluru", language: "en-IN" })]);
+
+  eq("an audit records what kind of audit it is", intakeAudit.audit_type, "url");
+  eq("an audit records the goal it was commissioned for", intakeAudit.primary_goal, "local_discovery");
+  eq("the geography survives the round trip", intakeAudit.target_geography?.city, "Bengaluru");
+  eq("the language tag survives normalised", intakeAudit.target_geography?.language, "en-IN");
+  eq("competitors are stored as an array", intakeAudit.competitor_urls?.[0], "https://rival.com/");
+  eq("the audit records WHY it carries its profile", intakeAudit.audit_profile_source, "goal");
+
+  // NULL is the correct and expected state for every audit that predates the
+  // question. A default here would be a fabricated intent — the same class of
+  // error as an evidence record with a guessed source URL — and the P2 brand,
+  // product, service and local modules key off this field.
+  const noGoal = await one(
+    `insert into public.audits (user_id, target_id, target_url)
+     values ($1,$2,'https://x.com/no-goal')
+     returning primary_goal, target_geography, audit_type, competitor_urls, audit_profile_source`,
+    [alice, t1]);
+  eq("an audit with no stated goal stores NULL, not a default", noGoal.primary_goal, null);
+  eq("an audit with no stated geography stores NULL, not {}", noGoal.target_geography, null);
+  // Defaulted, unlike the goal, because it IS knowable retrospectively: every
+  // audit that already exists fetched exactly one page, which is what 'url'
+  // means. A true statement about the past, not a guess at one.
+  eq("audit_type defaults to the one kind of audit that has ever run", noGoal.audit_type, "url");
+  eq("competitor_urls defaults to empty, never null", noGoal.competitor_urls?.length, 0);
+  eq("a profile nobody chose is recorded as a default", noGoal.audit_profile_source, "default");
+
+  check("primary_goal rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, primary_goal)
+     values ($1,$2,'https://x.com','world_domination')`, [alice, t1])));
+  check("audit_type rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, audit_type)
+     values ($1,$2,'https://x.com','vibes')`, [alice, t1])));
+  check("audit_profile_source rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, audit_profile_source)
+     values ($1,$2,'https://x.com','because')`, [alice, t1])));
+
+  // The two types the API refuses today are legal in the COLUMN on purpose.
+  // The vocabulary is a stored contract, and widening a live CHECK later is a
+  // migration plus a deploy plus a window in which the API and the database
+  // disagree about what is legal.
+  for (const type of ["domain", "prompt_monitor", "benchmark", "rerun"]) {
+    let err = null;
+    try {
+      await db.query(
+        `insert into public.audits (user_id, target_id, target_url, audit_type)
+         values ($1,$2,'https://x.com/t','${type}')`, [alice, t1]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts audit_type '${type}' ahead of the engine`, err, null);
+  }
+
+  // ── the four business-model profiles ─────────────────────────────────────
+  for (const profile of ["saas", "services", "local", "ecommerce"]) {
+    let err = null;
+    try {
+      await db.query(
+        `insert into public.audits (user_id, target_id, target_url, audit_profile)
+         values ($1,$2,'https://x.com/p','${profile}')`, [alice, t1]);
+    } catch (e) { err = e.message; }
+    eq(`audit_profile accepts '${profile}'`, err, null);
+  }
+
+  // ── intake reuse on the recurring path ───────────────────────────────────
+  // A monitor that dropped the goal would build a trend line whose first point
+  // had context and whose others did not — and the diff would still be drawn,
+  // because nothing downstream knows the context changed.
+  const sched = await one(
+    `insert into public.audit_schedules
+       (user_id, target_id, cadence, audit_profile, primary_goal, page_type_hint,
+        target_geography, competitor_urls)
+     values ($1,$2,'weekly','local','local_discovery','location',$3,array['https://rival.com/'])
+     returning primary_goal, page_type_hint, target_geography, competitor_urls, audit_profile`,
+    [alice, t1, JSON.stringify({ country: "IN", region: null, city: "Bengaluru", language: null })]);
+  eq("a schedule carries the goal onto every run it creates", sched.primary_goal, "local_discovery");
+  eq("a schedule carries the page-type hint", sched.page_type_hint, "location");
+  eq("a schedule carries the geography", sched.target_geography?.city, "Bengaluru");
+  eq("a schedule may use a business-model profile", sched.audit_profile, "local");
+
+  check("a schedule's primary_goal is held to the same vocabulary", Boolean(await throws(
+    `insert into public.audit_schedules (user_id, target_id, cadence, primary_goal)
+     values ($1,$2,'weekly','vibes')`, [alice, t1])));
+
+  // The benchmark table's profile CHECK was widened by the same migration. It
+  // was missed once already — 0030 wrote the same four-value list three times.
+  let benchProfile = null;
+  try {
+    await db.query(
+      `insert into public.audit_benchmarks (user_id, name, audit_profile)
+       values ($1,'set','ecommerce')`, [alice]);
+  } catch (e) { benchProfile = e.message; }
+  eq("a benchmark may use a business-model profile too", benchProfile, null);
+
   // ── constraints that keep the vocabulary honest ───────────────────────────
   const badEnum = async (sql, params) => Boolean(await throws(sql, params));
   check("device_profile rejects an unknown value", await badEnum(

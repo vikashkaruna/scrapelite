@@ -456,6 +456,170 @@ describe("inferPageType", () => {
   it("degrades to a generic page rather than guessing wildly", () => {
     expect(inferPageType({ schemaTypes: [], headingStats: {}, meta: {}, wordCount: 40 })).toBe("page");
   });
+
+  // ── W2: the four templates the BRD names that had no pack ───────────────
+  it("reads a LocalBusiness subtype as a location page", () => {
+    // Matched by suffix rather than by enumerating the ~200 subtypes
+    // schema.org defines, which is a list that would be stale on arrival.
+    expect(inferPageType({ schemaTypes: ["Dentist"] })).toBe("location");
+    expect(inferPageType({ schemaTypes: ["LocalBusiness"] })).toBe("location");
+    expect(inferPageType({ schemaTypes: ["Place"] })).toBe("location");
+  });
+
+  it("reads Service schema as a service page", () => {
+    expect(inferPageType({ schemaTypes: ["Service"] })).toBe("service");
+  });
+
+  it("reads the root path as a homepage", () => {
+    expect(inferPageType({ url: "https://example.com/", schemaTypes: [], headingStats: {}, meta: {} }))
+      .toBe("homepage");
+    expect(inferPageType({ url: "https://example.com", schemaTypes: [], headingStats: {}, meta: {} }))
+      .toBe("homepage");
+  });
+
+  it("does not treat a missing or unparseable URL as evidence of a homepage", () => {
+    // The guard that keeps every other test in this file — none of which pass
+    // a URL — from suddenly resolving to "homepage".
+    expect(inferPageType({ schemaTypes: [], headingStats: {}, meta: {}, wordCount: 40 })).toBe("page");
+    expect(inferPageType({ url: "not a url", schemaTypes: [], headingStats: {}, meta: {}, wordCount: 40 })).toBe("page");
+  });
+
+  it("still prefers what a page declares over where it sits", () => {
+    expect(inferPageType({ url: "https://example.com/", schemaTypes: ["Product"] })).toBe("product");
+  });
+
+  it("reads a comparison as a comparison, even when it discusses price", () => {
+    // ⚠️ A DELIBERATE BEHAVIOUR CHANGE. "Acme vs Rival pricing" used to be
+    // filed as a pricing page, whose pack says nothing about AC-08 —
+    // comparative content written as prose — which is that page's defining
+    // failure mode.
+    expect(inferPageType({ schemaTypes: [], headingStats: { h1Text: "Acme vs Rival pricing" }, meta: {} }))
+      .toBe("comparison");
+    expect(inferPageType({ schemaTypes: [], headingStats: { h1Text: "Best Acme alternatives" }, meta: {} }))
+      .toBe("comparison");
+  });
+
+  it("lets a how-to beat a stray price word", () => {
+    // Also a deliberate change: "how to" used to sit behind the pricing test,
+    // so this page was asked for Offer markup it has no business carrying.
+    expect(inferPageType({ schemaTypes: [], headingStats: { h1Text: "How to reduce hosting cost" }, meta: {} }))
+      .toBe("howto");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W2 — GOAL-BASED INTAKE
+// ═══════════════════════════════════════════════════════════════════════════
+// The audit row could not say what kind of audit it was, what the customer was
+// trying to achieve, or where they wanted to be found — and the profile was
+// whatever the caller sent, with no record of whether anyone had chosen it.
+
+describe("the intake travels with the result", () => {
+  it("echoes what was asked for, normalised", async () => {
+    const r = await runAudit("https://example.com/geo", {
+      ...baseOpts,
+      primaryGoal: "local_discovery",
+      targetGeography: { country: "in", city: "Bengaluru", language: "en-in" },
+      competitorUrls: ["competitor.com", "competitor.com"],
+    });
+    expect(r.intake.primary_goal).toBe("local_discovery");
+    expect(r.intake.target_geography).toEqual({
+      country: "IN", region: null, city: "Bengaluru", language: "en-IN",
+    });
+    // Deduplicated on the way in, so a competitor named twice is one competitor.
+    expect(r.intake.competitor_urls).toEqual(["https://competitor.com/"]);
+    expect(r.intake.audit_type).toBe("url");
+  });
+
+  it("records NULL for a goal nobody stated rather than inventing one", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.intake.primary_goal).toBeNull();
+    expect(r.intake.target_geography).toBeNull();
+    expect(r.intake.competitor_urls).toEqual([]);
+  });
+
+  it("refuses a goal that is not in the vocabulary", async () => {
+    // The CHECK constraint would reject it at the write; dropping it here
+    // means the row is honest either way.
+    const r = await runAudit("https://example.com/geo", { ...baseOpts, primaryGoal: "world_domination" });
+    expect(r.intake.primary_goal).toBeNull();
+  });
+
+  it("carries the intake even when the page could not be fetched", async () => {
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return { ok: false, status: 500, url, text: async () => "", headers: { get: () => "text/html" } };
+    });
+    scrapeChain.mockResolvedValue({ ok: false, error: "no html" });
+    const r = await runAudit("https://example.com/geo", { ...baseOpts, primaryGoal: "seo_health" });
+    expect(r.unreachable).toBe(true);
+    // An unreachable page is still a commissioned audit, and what it was
+    // commissioned to do is the part the customer can still act on.
+    expect(r.intake.primary_goal).toBe("seo_health");
+  });
+});
+
+describe("the profile is settled, and the result says by whom", () => {
+  it("honours an explicit choice over everything the page says", async () => {
+    const r = await runAudit("https://example.com/geo", { ...baseOpts, auditProfile: "seo" });
+    expect(r.target.audit_profile).toBe("seo");
+    expect(r.target.audit_profile_source).toBe("explicit");
+    expect(r.headlineFramework).toBe("seo");
+  });
+
+  it("derives the profile from a stated goal", async () => {
+    const r = await runAudit("https://example.com/geo", { ...baseOpts, primaryGoal: "local_discovery" });
+    expect(r.target.audit_profile).toBe("local");
+    expect(r.target.audit_profile_source).toBe("goal");
+    // A business-model profile is still only a lens: it selects the headline
+    // and nothing else.
+    expect(r.headlineFramework).toBe("geo");
+  });
+
+  it("reads the page when nobody said anything", async () => {
+    // GOOD_PAGE declares Organization + Article and argues for no lens, so the
+    // honest answer is the neutral one — labelled as a default, not a reading.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.target.audit_profile).toBe("balanced");
+    expect(r.target.audit_profile_source).toBe("default");
+  });
+
+  it("infers a lens from what the page declares about itself", async () => {
+    const productPage = GOOD_PAGE.replace('"@type":"Article"', '"@type":"Product"');
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return htmlResponse(productPage, 200, url);
+    });
+    scrapeChain.mockResolvedValue({ ok: true, source: "firecrawl", html: productPage });
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.target.audit_profile).toBe("ecommerce");
+    expect(r.target.audit_profile_source).toBe("inferred");
+  });
+
+  it("reports a default, not an inference, for a page it never saw", async () => {
+    // The whole reason the profile is settled twice: inference from a page
+    // that returned nothing would be a fabrication.
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return { ok: false, status: 500, url, text: async () => "", headers: { get: () => "text/html" } };
+    });
+    scrapeChain.mockResolvedValue({ ok: false, error: "no html" });
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.target.audit_profile_source).toBe("default");
+  });
+
+  it("changes no score when the lens changes", async () => {
+    // The constraint the whole profile system rests on, asserted against the
+    // four business-model profiles specifically.
+    const balanced = await runAudit("https://example.com/geo", { ...baseOpts, auditProfile: "balanced" });
+    for (const profile of ["saas", "services", "local", "ecommerce"]) {
+      const r = await runAudit("https://example.com/geo", { ...baseOpts, auditProfile: profile });
+      expect(r.finalScore, profile).toBe(balanced.finalScore);
+      expect(r.seoScore, profile).toBe(balanced.seoScore);
+      expect(r.aeoScore, profile).toBe(balanced.aeoScore);
+      expect(r.geoScore, profile).toBe(balanced.geoScore);
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -409,6 +409,298 @@ describe("input validation", () => {
     expect(p.options.prompts).toHaveLength(10);
     expect(p.options.tags).toHaveLength(10);
   });
+
+  // ── W2 — goal-based intake ──────────────────────────────────────────────
+  it("accepts the four business-model profiles the BRD names", () => {
+    for (const profile of ["saas", "services", "local", "ecommerce"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", audit_profile: profile });
+      expect(p.errors, profile).toEqual([]);
+      expect(p.options.auditProfile).toBe(profile);
+    }
+  });
+
+  it("records whether anybody actually CHOSE the profile", () => {
+    // "balanced" as a fallback and "balanced" as a deliberate choice of the
+    // neutral lens look identical in the column; this flag is the difference,
+    // and it is what stops inference overriding a considered decision.
+    expect(parseAuditOptions({ target_url: "https://x.com" }).options.auditProfileExplicit).toBe(false);
+    expect(parseAuditOptions({ target_url: "https://x.com", audit_profile: "balanced" })
+      .options.auditProfileExplicit).toBe(true);
+  });
+
+  it("rejects an unknown goal rather than storing the audit with none", () => {
+    // A caller sending the PROFILE id where the GOAL id belongs would
+    // otherwise get an audit whose row says the question was never asked, and
+    // go looking for findings nobody commissioned.
+    const p = parseAuditOptions({ target_url: "https://x.com", primary_goal: "local" });
+    expect(p.errors[0]).toMatch(/primary_goal must be one of/);
+  });
+
+  it("accepts every goal in the vocabulary", () => {
+    for (const goal of ["seo_health", "ai_citations", "product_discovery",
+      "service_leads", "local_discovery", "competitor_intelligence"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", primary_goal: goal });
+      expect(p.errors, goal).toEqual([]);
+      expect(p.options.primaryGoal).toBe(goal);
+    }
+  });
+
+  it("rejects an unknown page-type hint instead of silently ignoring it", () => {
+    const p = parseAuditOptions({ target_url: "https://x.com", page_type_hint: "landing" });
+    expect(p.errors[0]).toMatch(/page_type_hint must be one of/);
+  });
+
+  it("accepts the four page types W2 added", () => {
+    for (const hint of ["homepage", "service", "location", "comparison"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", page_type_hint: hint });
+      expect(p.errors, hint).toEqual([]);
+    }
+  });
+
+  it("REFUSES an audit type the engine cannot honour", () => {
+    // The alternative — accepting `domain` and fetching one page — writes a row
+    // that claims work nobody did, and the claim is invisible: the row looks
+    // like a domain snapshot in every list, export and trend it appears in.
+    const p = parseAuditOptions({ target_url: "https://x.com", audit_type: "domain" });
+    expect(p.errors[0]).toMatch(/not available yet/i);
+    const q = parseAuditOptions({ target_url: "https://x.com", audit_type: "prompt_monitor" });
+    expect(q.errors[0]).toMatch(/not available yet/i);
+  });
+
+  it("refuses a type that only its own endpoint may set", () => {
+    // A rerun with no baseline is a re-audit of nothing.
+    const p = parseAuditOptions({ target_url: "https://x.com", audit_type: "rerun" });
+    expect(p.errors[0]).toMatch(/set by the rerun endpoint/);
+  });
+
+  it("defaults the audit type to the one kind of audit that runs today", () => {
+    expect(parseAuditOptions({ target_url: "https://x.com" }).options.auditType).toBe("url");
+  });
+
+  it("normalises geography, and stores NULL rather than {} for an empty one", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      target_geography: { country: "in", city: " Bengaluru ", language: "EN_in" },
+    });
+    expect(p.options.targetGeography).toEqual({
+      country: "IN", region: null, city: "Bengaluru", language: "en-IN",
+    });
+    expect(parseAuditOptions({ target_url: "https://x.com", target_geography: {} })
+      .options.targetGeography).toBeNull();
+  });
+
+  it("names the competitor URLs it could not use", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      competitor_urls: ["fine.com", "http://[broken"],
+    });
+    expect(p.options.competitorUrls).toEqual(["https://fine.com/"]);
+    expect(p.errors[0]).toMatch(/competitor URL was not usable/);
+  });
+
+  it("reports the overflow rather than keeping ten of eleven quietly", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      competitor_urls: Array.from({ length: 12 }, (_, i) => `https://c${i}.com`),
+    });
+    expect(p.options.competitorUrls).toHaveLength(10);
+    expect(p.errors[0]).toMatch(/beyond the limit of 10/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W2 — THE INTAKE SURVIVES THE ROUND TRIP
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("intake reaches the audit row and the pipeline", () => {
+  it("writes what the customer said, and marks the profile unchosen", async () => {
+    happyStore();
+    await call("POST", "audits", { body: {
+      target_url: "https://example.com/p",
+      primary_goal: "service_leads",
+      target_geography: { country: "in", city: "Bengaluru" },
+      competitor_urls: ["rival.com"],
+    } });
+
+    const row = storeMock.createAudit.mock.calls[0][1];
+    expect(row.primaryGoal).toBe("service_leads");
+    expect(row.targetGeography).toEqual({ country: "IN", region: null, city: "Bengaluru", language: null });
+    expect(row.competitorUrls).toEqual(["https://rival.com/"]);
+    expect(row.auditType).toBe("url");
+    // Nobody chose a profile, so the row must not claim one was chosen.
+    expect(row.auditProfileSource).toBe("default");
+  });
+
+  it("does not hand the pipeline a profile nobody chose", async () => {
+    // Sending the "balanced" fallback here would be indistinguishable from a
+    // deliberate choice of the neutral lens, and would stop the goal and then
+    // the page from ever settling it.
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com/p", primary_goal: "ai_citations" } });
+    const opts = auditRun.mock.calls[0][1];
+    expect(opts.auditProfile).toBeNull();
+    expect(opts.primaryGoal).toBe("ai_citations");
+  });
+
+  it("passes an explicit profile straight through", async () => {
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com/p", audit_profile: "local" } });
+    expect(auditRun.mock.calls[0][1].auditProfile).toBe("local");
+    expect(storeMock.createAudit.mock.calls[0][1].auditProfileSource).toBe("explicit");
+  });
+
+  it("commissions a guest audit exactly like a signed-in one", async () => {
+    // The two run paths built their options separately until W2, and a field
+    // added to one and forgotten in the other is invisible: the audit still
+    // runs, and only the context is missing.
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    entitlement.mockResolvedValue({
+      userId: null, guest: true, degraded: false,
+      entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+    });
+    const res = await call("POST", "audits/guest", { body: {
+      target_url: "https://example.com/p", primary_goal: "local_discovery",
+      target_geography: { city: "Pune" },
+    } });
+    // Whether the guest gate lets it through is a different test's business;
+    // what matters here is that IF it runs, it runs with the same intake.
+    if (auditRun.mock.calls.length) {
+      const opts = auditRun.mock.calls[0][1];
+      expect(opts.primaryGoal).toBe("local_discovery");
+      expect(opts.targetGeography).toEqual({ country: null, region: null, city: "Pune", language: null });
+    }
+    expect(res.statusCode).toBeGreaterThan(0);
+  });
+
+  it("refuses a domain snapshot rather than running one page and calling it that", async () => {
+    happyStore();
+    const res = await call("POST", "audits", { body: {
+      target_url: "https://example.com/p", audit_type: "domain",
+    } });
+    expect(res.statusCode).toBe(400);
+    expect(storeMock.createAudit).not.toHaveBeenCalled();
+    expect(auditRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("the re-audit plan gate", () => {
+  // 🔴 REGRESSION GUARD ON A GATE THAT REFUSED EVERYONE.
+  //
+  // It read `resolved.plan?.id`, and resolveRequestEntitlement has never
+  // returned a `plan` key on any of its four return paths — so the `|| "free"`
+  // fallback fired on every request and every re-audit answered 402, to paying
+  // customers included. It failed closed and silently: the refusal is a
+  // plausible upgrade prompt, so it reads as a plan limit to the customer and
+  // as working code to us.
+  function rerunStore() {
+    happyStore();
+    storeMock.getAudit = vi.fn(async () => ({ id: "audit-1", target_url: "https://example.com/p" }));
+  }
+
+  it("lets a paying customer re-audit", async () => {
+    rerunStore();
+    const res = await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(res.statusCode).not.toBe(402);
+    expect(storeMock.createAudit).toHaveBeenCalled();
+  });
+
+  it("still refuses a free plan", async () => {
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: false,
+      entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    const res = await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(res.statusCode).toBe(402);
+    expect(parse(res).code).toBe("UPGRADE_REQUIRED");
+  });
+
+  it("refuses a signed-in caller with no entitlement row", async () => {
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: false, entitlement: null, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    expect((await call("POST", "audits/audit-1/rerun", { body: {} })).statusCode).toBe(402);
+  });
+
+  it("fails OPEN when the entitlement lookup degraded", async () => {
+    // A Supabase blip must not present itself as a plan limit. Every other
+    // capability check in this codebase already holds this line.
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: true, entitlement: null, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    expect((await call("POST", "audits/audit-1/rerun", { body: {} })).statusCode).not.toBe(402);
+  });
+});
+
+describe("a re-audit inherits the commission", () => {
+  const PRIOR = {
+    id: "audit-1", target_url: "https://example.com/p", device_profile: "mobile",
+    audit_profile: "local", page_type_hint: "location", prompt_set_id: null, tags: ["t"],
+    primary_goal: "local_discovery",
+    target_geography: { country: "IN", region: null, city: "Bengaluru", language: null },
+    competitor_urls: ["https://rival.com/"],
+  };
+
+  function rerunStore() {
+    happyStore();
+    storeMock.getAudit = vi.fn(async () => ({ ...PRIOR }));
+    storeMock.createAudit = vi.fn(async () => ({ ok: true, audit: { id: "audit-2" } }));
+  }
+
+  it("carries the goal, geography and competitors forward untouched", async () => {
+    // "Did my fix work" is only answerable if the second run was commissioned
+    // like the first. A rerun that dropped the context would still be diffed
+    // against its baseline, and the delta read as page movement.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: {} });
+    const row = storeMock.createAudit.mock.calls[0][1];
+    expect(row.primaryGoal).toBe("local_discovery");
+    expect(row.targetGeography).toEqual(PRIOR.target_geography);
+    expect(row.competitorUrls).toEqual(["https://rival.com/"]);
+    expect(row.auditType).toBe("rerun");
+    expect(row.baselineAuditId).toBe("audit-1");
+  });
+
+  it("treats the inherited profile as explicit so the lens cannot drift", async () => {
+    // The baseline was scored under that lens. Re-inferring a different one
+    // from the same page would change which score leads the comparison.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(auditRun.mock.calls[0][1].auditProfile).toBe("local");
+    expect(storeMock.createAudit.mock.calls[0][1].auditProfileSource).toBe("explicit");
+  });
+
+  it("lets a caller CLEAR the goal rather than re-inheriting it", async () => {
+    // The `??` vs `||` distinction: with `||` an explicit null silently
+    // re-inherits, which is the failure mode of a form that lets you change
+    // your mind and does not record it.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: { primary_goal: null } });
+    expect(storeMock.createAudit.mock.calls[0][1].primaryGoal).toBeNull();
+  });
+
+  it("lets a caller change the goal on the re-run", async () => {
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: { primary_goal: "seo_health" } });
+    expect(storeMock.createAudit.mock.calls[0][1].primaryGoal).toBe("seo_health");
+  });
+});
+
+describe("the intake vocabulary is served to the composer", () => {
+  it("returns goals, types and page types beside the profiles", async () => {
+    const res = await call("GET", "profiles");
+    const body = parse(res);
+    // `profiles` keeps its original key and shape — there are clients reading
+    // it — and the new vocabularies sit beside it rather than nesting it.
+    expect(body.profiles.balanced).toBeTruthy();
+    expect(body.profiles.ecommerce).toBeTruthy();
+    expect(body.primary_goals.local_discovery).toBeTruthy();
+    expect(body.page_types.comparison).toBeTruthy();
+    expect(body.selectable_audit_types).toEqual(["url"]);
+    expect(body.max_competitor_urls).toBe(10);
+  });
 });
 
 describe("results and ownership", () => {

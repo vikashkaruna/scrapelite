@@ -275,7 +275,11 @@ export default function Discoverability() {
     handoffConsumedRef.current = true;
     setResumedRequest({
       target_url: url,
-      audit_profile: location.state?.auditProfile || "balanced",
+      // "" when the caller named none. Seeding "balanced" here would make a
+      // handoff from another screen look like a deliberate choice of the
+      // neutral lens and stop the goal — and then the page itself — from ever
+      // settling the profile. The composer treats "" as "choose for me".
+      audit_profile: location.state?.auditProfile || "",
       idempotency_key: `handoff-${url}`,
     });
     navigate(location.pathname + location.search, { replace: true, state: null });
@@ -454,9 +458,19 @@ export default function Discoverability() {
         onRun={run}
         running={running}
         defaultUrl={resumedRequest?.target_url || audit?.target?.url || ""}
-        defaultProfile={resumedRequest?.audit_profile || "balanced"}
+        // "" rather than "balanced": an empty profile means nobody has chosen
+        // one, which is what lets the goal — and then the page — settle it.
+        // Defaulting to "balanced" here would make every resumed request claim
+        // a deliberate choice of the neutral lens.
+        defaultProfile={resumedRequest?.audit_profile || ""}
         defaultDevice={resumedRequest?.device_profile || "mobile"}
         defaultPageType={resumedRequest?.page_type_hint || ""}
+        // The intake a sign-in interruption is resumed with. Losing the goal
+        // on the way through an auth bounce would mean the audit that finally
+        // ran was not the one the visitor asked for.
+        defaultGoal={resumedRequest?.primary_goal || ""}
+        defaultGeography={resumedRequest?.target_geography || null}
+        defaultCompetitors={resumedRequest?.competitor_urls || []}
         signedIn={Boolean(user)}
       />
 
