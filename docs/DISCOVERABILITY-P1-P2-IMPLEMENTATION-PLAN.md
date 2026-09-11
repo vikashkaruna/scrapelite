@@ -303,7 +303,7 @@ owner role and workflow state persisted on the issue; issue↔recommendation lin
 Meta title/description **variants**; internal-link recommendations; content brief generator
 (category / comparison / use-case / industry); technical remediation brief. Assign verb on the queue.
 
-**W6 · AI Visibility Intelligence** *(largest P1 build; gated on D4)*
+**W6 · AI Visibility Intelligence** — ✅ **COMPLETE.** Grounded Gemini (D4's second engine, which did not exist), the seven-kind prompt taxonomy and generator, the seven citation states, competitor tracking with declared and discovered kept apart, WAVI as a scoring signal at `scoring_model_version` **v3**, prompt monitors on their own table and cron, the displacement narrative, and the AI-visibility panel. ⚠️ Migrations `0052`/`0053` applied nowhere; nothing verified against a live engine key.
 Prompt taxonomy + `PromptSet` combinatorial generator; 7-state citation classifier; commercial-prompt
 classifier for RecommendationRate; competitor mention tracking → AI SOV; answer prominence and
 accuracy → WAVI; competitor-displacement narrative; prompt-run scheduling; `prompt-runs` endpoints;

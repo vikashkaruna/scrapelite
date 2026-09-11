@@ -18,6 +18,86 @@
 
 ---
 
+## 2026-09-11 (final) — W6 complete. FRESH-START ORIENTATION FOR THE NEXT SESSION.
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `bb807fe` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits — verified, not assumed.
+
+### Start here
+
+P1 workstreams **W1 through W6 are complete**. W7 (Validation Lab) and W8
+(Workflow Hub lite + API conformance) remain, then the **hard P1 gate** D8
+names: P1 ships complete and verified against the PRD §16 completion definition
+before any P2 work starts.
+
+```
+git fetch origin
+git checkout Discoverability-P1-P3-implementation   # expect bb807fe
+nvm use 24        # 26.x breaks every jsdom test on the localStorage polyfill
+npm run test:db   # 53 migrations · 560 assertions
+```
+
+### 🔴 Two things are true and easy to miss
+
+**Migrations `0052` and `0053` are applied NOWHERE.** `0048`–`0051` are on dev
+and stage. Until 0052 and 0053 join them, citation states do not persist and
+prompt monitors cannot be created outside tests. **Production carries none of
+`0048`–`0053`** — six migrations behind this branch.
+
+**`scoring_model_version` is `v3`.** `auditDiff` refuses cross-version
+comparison by design, so every target's next audit reports "re-run to compare"
+until it has a v3 baseline. The blast radius was deliberately limited: WAVI
+SPLITS `citation_footprint`'s 0.25 (0.10 + 0.15) rather than adding on top, so
+the pillar's exposure to answer-engine evidence is exactly what v2 had, and **a
+page whose citation sample cannot be taken scores identically on v2 and v3.**
+
+### W6.5, in brief
+
+Prompt monitoring got **its own table and cron**, not a branch inside
+`audit_schedules`. `discoverability-monitor` states the rule — it refuses to
+share a cron with `scheduled-runner` because "they share a cadence and nothing
+else" — and the load-bearing half here is the failure mode: **an engine outage
+must not pause page auditing.**
+
+🔴 **Alerts fire on a STATE CHANGE, not a score move.** Cited → absent is news
+at any score. 🔴 **Runs of different liveness are never compared** — live and
+recalled are different measurements. 🔴 **The displacement narrative reports the
+"because" we OBSERVED**: which prompt, who was cited, what was sourced. It never
+speculates about why a model chose a source, because nobody knows that,
+including the model — and a plausible invention about a third party would ship
+inside a report the customer forwards onward. A test asserts it.
+
+`prompt_monitor` is now `available: true` and still `callerSelectable: false`,
+exactly as `rerun` is: it is created at `POST /monitors`, not by POSTing an
+audit. Gated on `audit.prompt_monitor`, which **shares** the scheduled-monitoring
+allowance so a user at their limit cannot acquire more by pointing the next one
+at prompts.
+
+### ⚠️ Nothing in W6 has met a live engine
+
+Grounded Gemini, the Perplexity sample, the seven states and every rate are
+verified against documented contracts and by unit test — **not against a real
+key.** Watch the first real run the way the Jina URL-form fix was watched. The
+most likely first surprise is the grounding tool name, which differs by model
+family and is REJECTED rather than ignored when wrong.
+
+### Traps this session re-hit, worth not re-learning
+
+- **A blanket regex over test files** hit an unrelated `toHaveLength(10)` that
+  caps run HISTORY, not job count. The suite caught it.
+- **The prerender gate fires on any `src/lib` change** even when prerender
+  produces no diff, because `dateModified` follows the COMMIT date. Run
+  prerender, commit whatever it produces, push again. Do not reach for
+  `PREPUSH_SKIP_PRERENDER`.
+- **`public/home/index.html` churns on every prerender** — it captures whichever
+  frame the Try-it-now demo animation was in. Pre-existing; `check:prerender` is
+  the authoritative gate and passes.
+
+**Verified:** unit **3333** · contract **2158** (+14 skipped) · integration
+**436** · db **53 migrations / 560 assertions** + referral 17 + workflows 56 ·
+build · security · prerender 28. Every push through the full gate, nothing
+bypassed. Handoff page:
+<https://claude.ai/code/artifact/090417cb-dcf1-4942-9ad9-8b8d56167e13>
+
 ## 2026-09-11 (later still) — W6 AI Visibility: four of five, and the model moved to v3
 
 > **Branch:** `Discoverability-P1-P3-implementation` @ `dd3b3d8` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits
