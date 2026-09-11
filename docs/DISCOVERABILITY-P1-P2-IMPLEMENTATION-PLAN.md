@@ -19,6 +19,20 @@ executable by `anon`, because PostgreSQL grants EXECUTE to PUBLIC by default
 and nobody had checked functions when 0044 locked the tables. **The next
 migration number is `0062`.**
 
+🔴 **AND A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, found in the same review.**
+`audit_entity_evidence` (W10 / `0056`) holds CORROBORATION — every later
+sighting of an edge, which the migration's own header says is what separates
+*"we read this once in 2024"* from *"we have read this on six pages across nine
+months"*. `recordEntityEvidence` was written for it and **called by nothing**,
+so the table was empty for the life of the module. Worse than silence: the
+duplicate-edge route returned a 409 whose message read *"Re-observing one
+corroborates it rather than adding a second copy"* — a sentence that was false,
+and whose test asserted the CLAIM rather than the write, so it stayed green.
+Now wired, with the 409 carrying a `corroborated` flag so a caller can tell a
+recorded sighting from a lost one. **The running count of this defect in this
+schema is four:** `audit_signals.raw_value`, `audit_signals.evidence_json`,
+`audit_recommendations.issue_id`, and now this one.
+
 ---
 
 ## 0. Repository state (verified 2026-09-10)
