@@ -414,6 +414,33 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
   return insert("audit_prompt_runs", rows, "return=minimal");
 }
 
+/**
+ * The whole queue across every audit, not one audit's slice of it.
+ *
+ * Exports have been audit-scoped since the module shipped, which is the wrong
+ * unit for somebody working a backlog spread over twenty pages. Ordered by
+ * priority so a CSV opened in a spreadsheet is already in the order the work
+ * should happen.
+ *
+ * ⚠️ ACTIVE ITEMS BY DEFAULT. A queue export that silently includes everything
+ * ever dismissed hands somebody a file that is mostly noise, and they will not
+ * notice until they have worked half of it.
+ */
+export async function listRecommendationQueue(userId, { status = null, workspaceId = null, limit = 500 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (status) {
+    parts.push(`status=eq.${encodeURIComponent(status)}`);
+  } else {
+    parts.push("status=in.(open,accepted,assigned,in_progress)");
+  }
+  if (workspaceId) parts.push(`workspace_id=eq.${encodeURIComponent(workspaceId)}`);
+  const r = await rest(
+    `audit_recommendations?${parts.join("&")}&${SELECT_ALL}`
+    + `&order=priority_score.desc.nullslast&limit=${limit}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
 // ── Prompt monitors (W6.5) ─────────────────────────────────────────────────
 
 /** Monitors whose clock is up, and that neither the user nor the platform paused. */

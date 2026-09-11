@@ -598,6 +598,12 @@ export const handler = async (event) => {
         });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
+        // W8 — the audit trail entry AND the webhook, which are different
+        // readers: the first is ours, the second is somebody's integration.
+        await dispatchAuditEvent(userId, WEBHOOK_EVENT_FOR[status] || null, {
+          audit: { id: r.recommendation.audit_id },
+          recommendation: r.recommendation,
+        }).catch(() => {});
         await store.recordEvent(userId, {
           auditId: r.recommendation.audit_id,
           eventType: `recommendation.${status}`,
@@ -633,6 +639,26 @@ export const handler = async (event) => {
     // ── /prompts/samples ───────────────────────────────────────────────────
     if (root === "prompts" && id === "samples") return await promptSetRoute(event, userId, method, sub, body);
     if (root === "monitors") return await promptMonitorRoute(event, userId, method, id, sub, body);
+    // W8 — the PRD calls these `prompt-runs`; we shipped `monitors` first.
+    // Aliased rather than duplicated, for the same reason D2 strips a segment
+    // instead of adding a second route: two paths into one feature is one
+    // refactor away from two sets of gates.
+    if (root === "prompt-runs") return await promptMonitorRoute(event, userId, method, id, sub, body);
+
+    // W8 — the QUEUE as a file, not one audit's slice of it. Exports have been
+    // audit-scoped since the module shipped, which is the wrong unit for
+    // somebody working a backlog across twenty pages.
+    if (root === "queue" && method === "GET") {
+      const rows = await store.listRecommendationQueue(userId, {
+        status: sub || null,
+        workspaceId: event.queryStringParameters?.workspace_id || null,
+      });
+      const format = (event.queryStringParameters?.format || "json").toLowerCase();
+      if (format === "csv") {
+        return text(200, recommendationsToCsv(rows), "text/csv");
+      }
+      return json(200, { recommendations: rows, count: rows.length });
+    }
 
     // ── /webhooks ──────────────────────────────────────────────────────────
     if (root === "webhooks") return await webhookRoute(event, userId, method, id, body);
@@ -998,6 +1024,25 @@ async function benchmarkRoute(event, userId, method, id, body) {
  * stored row and webhook payload in existence says `done` and a client posting
  * it must get back what it expects.
  */
+/**
+ * Which webhook event a state change publishes.
+ *
+ * `open` maps to `reopened` rather than `opened`: a recommendation arriving at
+ * `open` for the first time is already covered by `recommendation.created`, and
+ * a subscriber receiving both for one row would double-count every new finding.
+ */
+const WEBHOOK_EVENT_FOR = Object.freeze({
+  accepted: "recommendation.accepted",
+  assigned: "recommendation.assigned",
+  in_progress: "recommendation.in_progress",
+  implemented: "recommendation.implemented",
+  done: "recommendation.implemented",   // one state, one event
+  validation_scheduled: "recommendation.validation_scheduled",
+  validated: "recommendation.validated",
+  dismissed: "recommendation.dismissed",
+  open: "recommendation.reopened",
+});
+
 const VERB_TO_STATE = Object.freeze({
   accept: "accepted",
   dismiss: "dismissed",

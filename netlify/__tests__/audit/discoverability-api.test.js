@@ -53,6 +53,7 @@ const STORE_EXPORTS = [
   // keeps the double honest: a real export the mock lacks fails the route
   // under test for a reason that has nothing to do with the route.
   "listDuePromptMonitors", "advancePromptMonitor", "getTargetById", "recordPromptMonitorRun", "listPromptMonitorRuns", "listPromptMonitors", "createPromptMonitor", "deletePromptMonitor",
+  "listRecommendationQueue",
   "saveAuditSummary",
   "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
   "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",

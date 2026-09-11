@@ -257,7 +257,7 @@ single largest risk in the whole plan and the one most likely to change what "50
 | **D4** | AI visibility engines | **Perplexity + Gemini with Google Search grounding.** No browser-driven ChatGPT / AI Overviews sampling. The existing AI-chain fallback stays as the non-live degradation path, flagged `live: false`. |
 | **D5** | Directory data acquisition | **Three-tier.** (i) Authorized APIs where they exist — Google Business Profile via the customer's own OAuth; (ii) customer-declared listing URLs; (iii) public listing pages fetched through the existing compliance engine (robots + SSRF + host allowlist + per-host attestation). Registry and matching engine built now; (ii)+(iii) ship first, (i) as a pluggable adapter. **Product copy must read "50+ configured sources, coverage depending on what each customer authorizes" — never a flat "50+ directories audited".** |
 | **D6** | Workspaces / RBAC | **Wire `workspace_id` through the audit tables in P1** (columns already exist, `public.workspaces` exists since 0031, back-filling later is far more expensive). The PRD's 7-role RBAC — viewer, analyst, editor, manager, admin, agency admin, client viewer — **defers to P2** alongside the workflow expansion, where those roles first have something to act on. |
-| **D8** | Sequencing | **Hard P1 gate.** P1 ships complete and verified against the PRD §16 completion definition before any P2 work starts. |
+| **D8** | Sequencing | **Hard P1 gate.** P1 ships complete and verified against the PRD §16 completion definition before any P2 work starts. ✅ **W1–W8 COMPLETE.** The gate is now `src/lib/discoverability/p1Gate.test.js` — 11 assertions reading the real registries, so P1 cannot quietly become incomplete. A completion claim living only in a document goes stale the first time somebody deletes a function and nothing says so. |
 
 ### Still open — not blocking, will surface at the workstream that needs them
 
@@ -309,12 +309,12 @@ classifier for RecommendationRate; competitor mention tracking → AI SOV; answe
 accuracy → WAVI; competitor-displacement narrative; prompt-run scheduling; `prompt-runs` endpoints;
 AI-visibility dashboard panel.
 
-**W7 · Validation Lab completion**
+**W7 · Validation Lab completion** — ✅ **COMPLETE.** ⚠️ §7.7's "signal-level diff missing" was WRONG: `auditDiff` has compared every signal through `delta()` since the module shipped. W7 nearly added a second differ before that was spotted. What it adds is the four-way classification (resolved / new / regressed / unchanged), 7/28/90/custom trend windows that report what they EXCLUDED, and implemented-recommendation attribution carrying `relationship: "correlation"` in every record.
 Signal-level diff; resolved / new / **regressed** / **unchanged** classification; 7/28/90/custom trend
 windows; **implemented-recommendation → score-movement attribution** (correlation, explicitly
 labelled as correlation, per the PRD's risk table).
 
-**W8 · Workflow Hub lite + API conformance** *(gated on D2, D6)*
+**W8 · Workflow Hub lite + API conformance** — ✅ **COMPLETE.** Migration `0054`: eight lifecycle states (the PRD's seven plus `dismissed`, which is ours and load-bearing), due dates, notes, and `validated_by_audit_id` — without which `validated` is a second word for `implemented`. Queue-level export, nine recommendation-lifecycle webhook events, `/api/v1/discoverability/*` canonical with the bare prefixes as PERMANENT aliases (D2), and `workspace_id` actually written (D6). ⚠️ Evidence attachments deferred: they need file storage, which is a larger call than a column.
 Full 7-state lifecycle; assignment, due date, notes, evidence attachments; queue-level exports;
 recommendation-lifecycle webhook events; `/api/v1/discoverability/*` namespace with aliases;
 `workspace_id` wired through.
