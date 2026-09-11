@@ -278,6 +278,7 @@ export async function runAudit(url, options = {}) {
           // W6.2 — the declared dimensions W2 already collects. Nothing here is
           // inferred: an absent dimension drops its prompt kinds entirely.
           competitors: competitorUrls, geography: targetGeography, industries: [],
+          pageText: parsed.text || "",
           prompts: options.prompts, env, engine: options.citationEngine,
           signal: citationBudget.signal, timeoutMs: citationBudget.ms,
         }).catch(() => null).finally(() => citationBudget.clear())

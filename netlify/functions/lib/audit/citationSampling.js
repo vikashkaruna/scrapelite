@@ -24,6 +24,8 @@
 
 import { runChain, resolveProvider, callGeminiGrounded } from "../aiProviders.js";
 import { generatePrompts, classifyPromptKind } from "../../../../src/lib/discoverability/promptTaxonomy.js";
+import { classifyCitation, readsAsRecommendation, contradictsPrice, aggregateStates } from "../../../../src/lib/discoverability/citationStates.js";
+import { competitorsInAnswer, shareOfVoice } from "../../../../src/lib/discoverability/competitorTracking.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -198,6 +200,9 @@ export async function sampleCitations({
   // Declared dimensions. Absent ones are simply not crossed — see
   // promptTaxonomy.js for why none of them is ever guessed.
   competitors = [], geography = null, industries = [],
+  // The audited page's own text. Used ONLY to check claims the page states —
+  // see contradictsPrice for why that is deliberately narrow.
+  pageText = "",
   env = process.env, engine = null, fetchImpl = fetch, maxPrompts = MAX_PROMPTS_PER_AUDIT,
   // The audit's wall-clock budget, if it has one. `signal` cuts every in-flight
   // prompt short together; `timeoutMs` lowers the per-call ceiling to fit.
@@ -272,6 +277,16 @@ export async function sampleCitations({
 
     const mention = mentionsBrand(r.text, brand);
     const citation = citesDomain(r.citations, r.text, host);
+    const rivals = competitorsInAnswer({ citations: r.citations, ourHost: host, declared: competitors });
+    const recommended = readsAsRecommendation(r.text, brand, { commercial: entry.commercial });
+    // null means "could not check", and classifyCitation reads it as not-proven
+    // rather than as proven-correct. Stored as-is so the distinction survives.
+    const misrepresented = contradictsPrice(r.text, brand, pageText);
+    const state = classifyCitation({
+      mentioned: mention, cited: citation, commercial: entry.commercial,
+      recommended, misrepresented: misrepresented === true,
+      competitorsPresent: rivals.length,
+    });
     runs.push({
       prompt,
       kind: entry.kind,
@@ -279,6 +294,10 @@ export async function sampleCitations({
       kindConfidence: entry.kindConfidence,
       mention,
       citation,
+      state,
+      recommended,
+      misrepresented,
+      competitors: rivals,
       // ⚠️ PER-RUN, NOT PER-ENGINE. Grounded Gemini falls back to its own
       // weights whenever Search returns nothing useful, so within one sampling
       // run some answers are retrieved and others remembered. A single
@@ -308,6 +327,8 @@ export async function sampleCitations({
   }
 
   const sentiments = answered.map((r) => r.sentiment).filter((s) => Number.isFinite(s));
+  const states = aggregateStates(answered);
+  const sov = shareOfVoice(answered, { ourHost: host });
   // The run is live only where the answers were. A grounded engine that fell
   // back to recall on every prompt produced a non-live sample, whatever it is
   // called, and `liveAnswers` is what a reader needs to judge the rest by.
@@ -319,6 +340,11 @@ export async function sampleCitations({
     promptCount: answered.length,
     mentions: answered.filter((r) => r.mention).length,
     citations: answered.filter((r) => r.citation).length,
+    // W6.3 — the seven states and the rates built on them. `mentions` and
+    // `citations` are kept as raw counts because citation_footprint and every
+    // stored audit already read them; the rates sit beside, not instead.
+    states,
+    shareOfVoice: sov,
     sentiment: sentiments.length ? sentiments.reduce((a, b) => a + b, 0) / sentiments.length : null,
     runs,
     failures,

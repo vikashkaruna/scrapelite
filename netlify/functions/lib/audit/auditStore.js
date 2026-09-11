@@ -372,10 +372,24 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
   if (!sample || !Array.isArray(sample.runs) || sample.runs.length === 0) return { ok: true };
   const rows = sample.runs.slice(0, 20).map((r) => ({
     audit_id: auditId, user_id: userId, prompt_set_id: promptSetId,
-    engine_name: sample.engine, live: Boolean(sample.live),
+    engine_name: sample.engine,
+    // ⚠️ PER-RUN, NOT PER-SAMPLE. A grounded engine falls back to its own
+    // weights whenever search returns nothing useful, so within one sampling
+    // pass some answers are retrieved and others recalled. Stamping the whole
+    // set with the sample-level flag would label recalled answers as live.
+    live: r.live !== undefined ? Boolean(r.live) : Boolean(sample.live),
     prompt: String(r.prompt || "").slice(0, 500),
     mention_detected: r.mention ?? null,
     citation_detected: r.citation ?? null,
+    // W6.3 — the seven states and what they were derived from. `misrepresented`
+    // stays three-valued: null means could-not-check, not checked-and-fine.
+    state: r.state ?? null,
+    prompt_kind: r.kind ?? null,
+    commercial: r.commercial ?? null,
+    kind_confidence: Number.isFinite(r.kindConfidence) ? r.kindConfidence : null,
+    recommended: r.recommended ?? null,
+    misrepresented: r.misrepresented ?? null,
+    competitors_json: r.competitors && r.competitors.length ? r.competitors : null,
     cited_domains_json: r.citedDomains || null,
     sentiment_score: Number.isFinite(r.sentiment) ? r.sentiment : null,
     // Excerpt only. Answer-engine output is volatile and can be

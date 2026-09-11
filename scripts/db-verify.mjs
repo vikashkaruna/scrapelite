@@ -2249,6 +2249,65 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     `\n      the row was deleted, not freed`);
 }
 
+// ── 0052 · citation states ───────────────────────────────────────────────────
+{
+  group("audit_prompt_runs — seven states, and the null that is not a false");
+
+  const u = (await one(`insert into auth.users (email) values ('cit@x.com') returning id`)).id;
+  const t = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [u])).id;
+  const a = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [u, t])).id;
+
+  const mk = (over) => Object.assign({
+    state: null, commercial: null, misrepresented: null, prompt_kind: null,
+  }, over);
+
+  for (const st of ["misrepresented", "cited_and_recommended", "recommended",
+                    "cited", "mentioned", "competitor_dominated", "absent"]) {
+    const row = await one(
+      `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, state)
+       values ($1,$2,'perplexity','p',$3) returning state`, [a, u, st]);
+    eq(`state '${st}' is storable`, row.state, st);
+  }
+
+  const bad = await throws(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, state)
+     values ($1,$2,'perplexity','p','invented')`, [a, u]);
+  check("🔴 an invented state is refused by the constraint", Boolean(bad));
+
+  // 🔴 The distinction the whole accuracy heuristic rests on.
+  const n = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, misrepresented)
+     values ($1,$2,'perplexity','p',null) returning misrepresented`, [a, u]);
+  eq("misrepresented NULL means could-not-check, and stays NULL", n.misrepresented, null);
+  const f = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, misrepresented)
+     values ($1,$2,'perplexity','p',false) returning misrepresented`, [a, u]);
+  eq("...and false means checked-and-consistent, which is a different row", f.misrepresented, false);
+
+  // A run predating the taxonomy classifies as nothing, not as absent.
+  const legacy = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt)
+     values ($1,$2,'perplexity','p') returning state, commercial, prompt_kind`, [a, u]);
+  eq("🔴 a row written without a state is unclassified, not 'absent'",
+    [legacy.state, legacy.commercial, legacy.prompt_kind], [null, null, null]);
+
+  const comp = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, competitors_json)
+     values ($1,$2,'perplexity','p','[{"host":"clay.com","declared":true,"confidence":100}]'::jsonb)
+     returning competitors_json`, [a, u]);
+  eq("a competitor keeps its declared flag and confidence",
+    [comp.competitors_json[0].declared, comp.competitors_json[0].confidence], [true, 100]);
+
+  eq("kind confidence records whether the intent was declared or guessed",
+    (await one(
+      `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, kind_confidence)
+       values ($1,$2,'perplexity','p',30) returning kind_confidence`, [a, u])).kind_confidence, 30);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"─".repeat(62)}`);
 console.log(`[db-verify] ${files.length} migrations applied · ${pass} assertions passed · ${fail} failed`);
