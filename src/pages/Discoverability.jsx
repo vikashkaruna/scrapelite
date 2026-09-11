@@ -569,7 +569,12 @@ export default function Discoverability() {
           {/* Which page this report is about, and what it says — above the
               scores, because a wall of numbers with no subject is what opening
               an audit from History used to produce. */}
-          <AuditHeader audit={audit} />
+          <AuditHeader
+            audit={audit}
+            diff={diff}
+            framework={tab}
+            onFrameworkChange={setTab}
+          />
 
           <ScoreTiles
             audit={audit}

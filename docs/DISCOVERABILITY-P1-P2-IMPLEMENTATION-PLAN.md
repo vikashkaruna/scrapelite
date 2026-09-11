@@ -62,6 +62,27 @@ That is the single largest piece of P1 and it needs no change.
 
 ## 1. P1 gap analysis — clause by clause
 
+> ## 🔴 THIS SECTION RECORDS THE STATE ON 2026-09-10, BEFORE ANY WORK. IT IS HISTORY.
+> **P1 is complete.** Every ⚠️ and ❌ below was closed by W1–W8 unless this note
+> names it as deferred. The rows are kept rather than rewritten because two of
+> them turned out to be **WRONG about the code at the time** — §7.6 recorded
+> `metaTags` as emitting no variants when it had emitted three since the scoring
+> engine shipped, and §7.7 recorded the signal-level diff as missing when
+> `auditDiff` had built one all along. A second differ was written against that
+> row before it was caught. **Read this section as a hypothesis somebody held
+> once, never as a survey of the code.**
+>
+> **The live answer is `src/lib/discoverability/p1Gate.test.js`** — assertions
+> that read the real registries, so P1 cannot quietly become incomplete the way
+> four crons once did.
+>
+> **Deferred, deliberately, and the only P1 item not built:**
+> **evidence attachments** on a recommendation (§7.9). They need file storage
+> with its own quota, lifecycle and purge path, which is a larger call than a
+> column — recorded rather than quietly dropped.
+
+
+
 Legend: ✅ done · ⚠️ partial · ❌ missing
 
 ### §7.1 Intake

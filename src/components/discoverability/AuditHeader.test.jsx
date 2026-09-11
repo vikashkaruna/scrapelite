@@ -11,7 +11,7 @@
 // a report with no summary is a report; a report that failed to load is not.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import AuditHeader from "./AuditHeader.jsx";
 
 const summary = vi.fn();
@@ -148,5 +148,58 @@ describe("AuditHeader — what this audit was commissioned for", () => {
     // placeholder here would claim an intent nobody stated.
     render(<AuditHeader audit={AUDIT} />);
     expect(facts()).not.toMatch(/\bfor\b/i);
+  });
+});
+
+
+// ── §7.12 · the two header gaps the PRD wireframe names ────────────────────
+
+describe("the baseline delta", () => {
+  const base = { target: { canonical_url: "https://x.com/a" }, intake: {} };
+
+  it("shows the movement against the baseline", () => {
+    render(<AuditHeader audit={base} diff={{ frameworks: { overall: { change: 4.2, comparable: true } } }} />);
+    expect(screen.getByText(/\+4\.2 vs baseline/)).toBeTruthy();
+  });
+
+  it("calls a sub-noise move no change rather than dressing it as progress", () => {
+    render(<AuditHeader audit={base} diff={{ frameworks: { overall: { change: 0.2, comparable: true } } }} />);
+    expect(screen.getByText(/no change/)).toBeTruthy();
+  });
+
+  it("🔴 says 'not comparable' rather than going blank", () => {
+    // A missing delta with no explanation reads as "nothing changed", and a
+    // headline that quietly mixed two scoring models would be the single
+    // most-screenshotted wrong number in the product.
+    render(<AuditHeader audit={base} diff={{ comparable: false, reason: "baseline was scored on v2" }} />);
+    expect(screen.getByText(/not comparable to the baseline/i)).toBeTruthy();
+  });
+
+  it("shows nothing at all when there is no baseline", () => {
+    render(<AuditHeader audit={base} />);
+    expect(screen.queryByText(/vs baseline/)).toBeNull();
+  });
+});
+
+describe("the framework lens", () => {
+  const base = { target: { canonical_url: "https://x.com/a" }, intake: {} };
+
+  it("is absent when the page cannot act on it", () => {
+    render(<AuditHeader audit={base} />);
+    expect(screen.queryByLabelText(/Read as/i)).toBeNull();
+  });
+
+  it("⚠️ says plainly that switching does not re-run anything", () => {
+    // All four framework views are always computed; the profile only decides
+    // which leads. Switching re-frames a finished report and costs no audit.
+    render(<AuditHeader audit={base} onFrameworkChange={() => {}} />);
+    expect(screen.getByText(/does not re-run the audit/i)).toBeTruthy();
+  });
+
+  it("hands the chosen lens back to the page", () => {
+    const onFrameworkChange = vi.fn();
+    render(<AuditHeader audit={base} framework="overall" onFrameworkChange={onFrameworkChange} />);
+    fireEvent.change(screen.getByLabelText(/Read as/i), { target: { value: "aeo" } });
+    expect(onFrameworkChange).toHaveBeenCalledWith("aeo");
   });
 });

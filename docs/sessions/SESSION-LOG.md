@@ -42,9 +42,10 @@ npx vitest run src/lib/discoverability/p1Gate.test.js   # the D8 gate
 
 ### ⚠️ Two things before P2
 
-**Migration `0054` is applied nowhere.** `0048`–`0053` are on dev and stage;
-`0054` (the lifecycle, due dates, notes, `validated_by_audit_id`, `workspace_id`)
-is not. **Production carries none of `0048`–`0054`.**
+✅ **Migrations `0048`–`0054` are ALL applied to dev and stage** (operator,
+2026-09-11). The lifecycle, due dates, notes, `validated_by_audit_id` and
+`workspace_id` are live there. ⚠️ **Production carries none of `0048`–`0054`** —
+seven migrations behind this branch.
 
 **Nothing in W6 has met a live engine.** `/admin/ai` now has an **Answer
 engines** tab whose probe answers the question a ping cannot: does grounding

@@ -31,7 +31,7 @@ function when(iso) {
   });
 }
 
-export default function AuditHeader({ audit }) {
+export default function AuditHeader({ audit, diff = null, framework = "overall", onFrameworkChange = null }) {
   // Seeded from the audit itself, so an already-summarised report shows its
   // summary on first paint with no request at all.
   const [summary, setSummary] = useState(audit?.summary || null);
@@ -97,6 +97,34 @@ export default function AuditHeader({ audit }) {
     audit.target?.page_type_label || audit.target?.page_type,
   ].filter(Boolean);
 
+  // ── §7.12 · the baseline delta ───────────────────────────────────────────
+  //
+  // ⚠️ SHOWN ONLY WHEN THE TWO AUDITS ARE COMPARABLE. `auditDiff` refuses a
+  // cross-version comparison outright, and a headline "+4.2" that quietly mixed
+  // two scoring models would be the single most-screenshotted wrong number in
+  // the product. When it refuses, the header says why rather than going blank —
+  // a missing delta with no explanation reads as "nothing changed".
+  const overall = diff?.frameworks?.overall || null;
+  const deltaNode = (() => {
+    if (!diff) return null;
+    if (diff.comparable === false || overall?.comparable === false) {
+      return (
+        <span className="dsc-audit-delta is-unknown" title={diff.reason || overall?.reason || ""}>
+          not comparable to the baseline
+        </span>
+      );
+    }
+    if (!Number.isFinite(overall?.change)) return null;
+    const up = overall.change > 0;
+    const flat = Math.abs(overall.change) < 0.5;
+    return (
+      <span className={`dsc-audit-delta${flat ? "" : up ? " is-up" : " is-down"}`}>
+        <Icon name={flat ? "minus" : up ? "trending-up" : "trending-down"} size={13} />
+        {flat ? "no change" : `${up ? "+" : ""}${overall.change} vs baseline`}
+      </span>
+    );
+  })();
+
   return (
     <section className="dsc-audit-header" aria-label="Audited page">
       <div className="dsc-audit-header-id">
@@ -111,7 +139,34 @@ export default function AuditHeader({ audit }) {
           </a>
           <div className="dsc-audit-header-facts">{facts.join("  ·  ")}</div>
         </div>
+        {deltaNode}
       </div>
+
+      {/* ── §7.12 · the goal selector ────────────────────────────────────────
+          ⚠️ THIS CHANGES THE LENS, NOT THE MATHS. All four framework views are
+          always computed with identical weightings — the profile only decides
+          which one leads — so switching here re-frames a report that is already
+          complete. It never re-runs anything and never costs an audit, which is
+          exactly why it can live in the header. */}
+      {onFrameworkChange ? (
+        <div className="dsc-audit-lens">
+          <label className="dsc-audit-lens-label" htmlFor="audit-lens">Read as</label>
+          <select
+            id="audit-lens"
+            className="dsc-audit-lens-select"
+            value={framework}
+            onChange={(e) => onFrameworkChange(e.target.value)}
+          >
+            <option value="overall">Overall</option>
+            <option value="seo">SEO</option>
+            <option value="aeo">Answer engines</option>
+            <option value="geo">Generative engines</option>
+          </select>
+          <span className="dsc-audit-lens-note">
+            Switching the lens re-frames this report. It does not re-run the audit.
+          </span>
+        </div>
+      ) : null}
 
       {summary ? (
         <p className="dsc-audit-summary">{summary}</p>

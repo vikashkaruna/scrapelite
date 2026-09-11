@@ -802,6 +802,14 @@ async function rerunRoute(event, userId, auditId, body) {
       // is what makes "did my fix work" a single click.
       baselineAuditId: auditId,
       promptSetId: body.prompt_sample_set_id || prior.prompt_set_id,
+      // 🔴 INHERITED, OR A RE-AUDIT SILENTLY LEAVES ITS WORKSPACE.
+      // Every other intake field is carried across; workspace was added in W8
+      // and missed here, which would have made the ONE path the validation loop
+      // depends on — "re-run and compare" — the path that drops it. The
+      // baseline would sit in a workspace queue and its re-audit would not.
+      workspaceId: body.workspace_id !== undefined
+        ? (body.workspace_id || null)
+        : (prior.workspace_id || null),
       tags: prior.tags || [],
     },
     resolved: gate.resolved, source: "rerun",
