@@ -39,39 +39,19 @@ vi.mock("../../functions/lib/audit/auditPipeline.js", () => ({
   inferPageType: vi.fn(),
   PIPELINE_STAGES: [],
 }));
-// Every store export, declared explicitly. vitest's ESM mock needs the export
-// names up front — a Proxy factory returns a module with no declared exports
-// and every call fails with "No <name> export is defined on the mock".
-const STORE_EXPORTS = [
-  "ABANDONED_AUDIT_MS",
-  "countAuditsThisMonth", "createAudit", "deleteAudit", "ensureTarget",
-  "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
-  "listAudits", "listTargets", "markAuditFailed", "monthStart",
-  "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
-  "setRecommendationAssignee",
-  // W6.5 — prompt monitors. Listed here because this parity test is what
-  // keeps the double honest: a real export the mock lacks fails the route
-  // under test for a reason that has nothing to do with the route.
-  "listDuePromptMonitors", "advancePromptMonitor", "getTargetById", "recordPromptMonitorRun", "listPromptMonitorRuns", "listPromptMonitors", "createPromptMonitor", "deletePromptMonitor",
-  "listRecommendationQueue",
-  "saveAuditSummary",
-  "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
-  "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
-  "getPromptSet", "deletePromptSet", "createWebhook", "listWebhooks",
-  "webhooksForEvent", "recordWebhookDelivery", "deleteWebhook",
-  "createSchedule", "listSchedules", "updateSchedule", "deleteSchedule",
-  "dueSchedules", "markScheduleRun", "nextRunAt",
-  // W9 — the Canonical Business Truth Record.
-  "createTruthRecord", "listTruthRecords", "getTruthRecord", "getTruthRecordFull",
-  "getTruthVersion", "getCanonicalTruthVersion", "createTruthVersion",
-  "setTruthVersionState", "promoteTruthVersion", "archiveTruthRecord",
-  "recordTruthConflicts", "resolveTruthConflict",
-];
-vi.mock("../../functions/lib/audit/auditStore.js", () =>
-  Object.fromEntries(STORE_EXPORTS.map((name) => [
+// 🔴 THE MOCK'S EXPORT LIST IS DERIVED FROM THE REAL MODULE, NOT COPIED.
+// The older suite in this directory keeps a hand-written list and guards it
+// with a parity test — which works, and which this file was about to duplicate
+// a stale copy of. An async factory can `importActual`, so the names come from
+// the module itself and cannot drift: a store export added tomorrow is mocked
+// tomorrow, with no list to remember to update.
+vi.mock("../../functions/lib/audit/auditStore.js", async () => {
+  const real = await vi.importActual("../../functions/lib/audit/auditStore.js");
+  return Object.fromEntries(Object.keys(real).map((name) => [
     name,
     (...args) => (storeMock[name] || (storeMock[name] = vi.fn()))(...args),
-  ])));
+  ]));
+});
 
 
 

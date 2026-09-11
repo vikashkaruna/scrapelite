@@ -66,6 +66,11 @@ const STORE_EXPORTS = [
   "getTruthVersion", "getCanonicalTruthVersion", "createTruthVersion",
   "setTruthVersionState", "promoteTruthVersion", "archiveTruthRecord",
   "recordTruthConflicts", "resolveTruthConflict",
+  // W10 — the entity graph.
+  "createEntity", "listEntities", "getEntity",
+  "createRelationship", "listRelationships", "getRelationship",
+  "approveEntityRelationship", "rejectGraphRow", "recordEntityEvidence",
+  "recordGraphConflicts", "listGraphConflicts", "resolveGraphConflict",
 ];
 vi.mock("../../functions/lib/audit/auditStore.js", () =>
   Object.fromEntries(STORE_EXPORTS.map((name) => [

@@ -1225,3 +1225,186 @@ export async function resolveTruthConflict(userId, recordId, conflictId, resolut
     });
   return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
 }
+
+// ── Entity graph (W10) ─────────────────────────────────────────────────────
+//
+// Nothing here creates an APPROVED row. Approval is `approveEntityRelationship`,
+// which goes through the SQL function because approving an edge also approves
+// its endpoints — an approved edge between two unreviewed nodes is a half-built
+// statement, and doing that as three PostgREST calls leaves windows where the
+// graph asserts a relationship between things it has not agreed exist.
+
+export async function createEntity(userId, {
+  entityType, name, description = null, canonicalDomain = null, externalIds = null,
+  source = "declared", evidence = null, confidence = null,
+  truthRecordId = null, workspaceId = null, sourceAuditId = null,
+}) {
+  const r = await insert("audit_entities", [{
+    user_id: userId,
+    entity_type: entityType,
+    name,
+    description,
+    canonical_domain: canonicalDomain,
+    external_ids: externalIds || {},
+    source,
+    evidence_json: evidence,
+    confidence,
+    truth_record_id: truthRecordId,
+    workspace_id: workspaceId,
+    source_audit_id: sourceAuditId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, entity: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+export async function listEntities(userId, { truthRecordId = null, state = null, limit = 500 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
+  const r = await rest(`audit_entities?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 500}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getEntity(userId, entityId) {
+  const r = await rest(
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function createRelationship(userId, {
+  subjectId, predicate, objectId, source = "declared",
+  evidence = null, confidence = null, note = null, sourceAuditId = null,
+}) {
+  const r = await insert("audit_entity_relationships", [{
+    user_id: userId,
+    subject_id: subjectId,
+    predicate,
+    object_id: objectId,
+    source,
+    evidence_json: evidence,
+    confidence,
+    note,
+    source_audit_id: sourceAuditId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) {
+    // The unique index is the point: re-observing an edge must update the row,
+    // never add one, or a weekly crawler doubles every count. Report the
+    // collision so the caller can corroborate instead of retrying blindly.
+    const duplicate = /duplicate key|audit_rel_unique/i.test(r.error || "");
+    return { ok: false, duplicate, error: r.error };
+  }
+  return { ok: true, relationship: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+export async function listRelationships(userId, { state = null, entityId = null, limit = 1000 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
+  if (entityId) {
+    parts.push(`or=(subject_id.eq.${encodeURIComponent(entityId)},object_id.eq.${encodeURIComponent(entityId)})`);
+  }
+  const r = await rest(
+    `audit_entity_relationships?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 1000}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getRelationship(userId, relationshipId) {
+  const r = await rest(
+    `audit_entity_relationships?id=eq.${encodeURIComponent(relationshipId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
+export async function approveEntityRelationship(userId, relationshipId, { note = null } = {}) {
+  const owned = await getRelationship(userId, relationshipId);
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/approve_entity_relationship", {
+    method: "POST",
+    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: note }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity_relationship || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
+/**
+ * Reject an entity or a relationship.
+ *
+ * ⚠️ A REASON IS REQUIRED and is enforced by a CHECK constraint too. A rejected
+ * edge that keeps being re-proposed is itself a finding, and without the reason
+ * nobody can tell a considered decision from a mis-click.
+ */
+export async function rejectGraphRow(userId, table, id, reason) {
+  const t = table === "entity" ? "audit_entities" : "audit_entity_relationships";
+  const r = await rest(
+    `${t}?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        state: "rejected", review_note: reason,
+        reviewed_by: userId, reviewed_at: new Date().toISOString(),
+      }),
+    });
+  if (!r.ok) return { ok: false, error: r.error };
+  return Array.isArray(r.data) && r.data.length
+    ? { ok: true, row: r.data[0] }
+    : { ok: false, notFound: true };
+}
+
+/** Corroboration — a later sighting of something already recorded. */
+export async function recordEntityEvidence({ entityId = null, relationshipId = null, auditId = null, evidence, confidence = null }) {
+  if (!entityId && !relationshipId) return { ok: false, error: "Evidence needs a subject." };
+  const r = await insert("audit_entity_evidence", [{
+    entity_id: entityId, relationship_id: relationshipId, audit_id: auditId,
+    evidence_json: evidence, confidence,
+  }], "return=minimal");
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
+export async function recordGraphConflicts(userId, truthRecordId, auditId, conflicts = []) {
+  const rows = (Array.isArray(conflicts) ? conflicts : [])
+    .filter((c) => c && typeof c.code === "string")
+    .map((c) => ({
+      user_id: userId,
+      truth_record_id: truthRecordId || null,
+      audit_id: auditId || null,
+      code: c.code,
+      severity: c.severity || "medium",
+      // The pure model reports the offending subject by id; it is only stored
+      // when that id is a real entity row, so a synthetic id from a dry run
+      // cannot violate the foreign key and lose the whole batch.
+      subject_id: c.subject_entity_id || null,
+      predicate: c.predicate || null,
+      detail_json: { values: c.values || [], evidence: c.evidence || null },
+      message: c.message || null,
+    }));
+  if (!rows.length) return { ok: true, count: 0 };
+  const r = await insert("audit_entity_conflicts", rows, "return=minimal");
+  return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
+}
+
+export async function listGraphConflicts(userId, { truthRecordId = null, limit = 200 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`, "resolved_at=is.null"];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(
+    `audit_entity_conflicts?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 200}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function resolveGraphConflict(userId, conflictId, resolution) {
+  const r = await rest(
+    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString() }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}

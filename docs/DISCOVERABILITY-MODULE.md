@@ -741,6 +741,140 @@ thing that actually happened.
 
 ---
 
+## 3f. The Entity Graph Builder (P2 · W10)
+
+W9 gave the module one approved set of **facts**. A fact is a value; it says
+nothing about how things relate. *"Acme sells Acme Cloud"*, *"Acme Cloud is a
+product, not the company"*, *"these two office records are one organisation"* —
+those are edges, and edges are what a knowledge graph resolves an entity by.
+
+| Layer | Where |
+|---|---|
+| Pure model | `src/lib/discoverability/entityGraph.js` |
+| Schema | `supabase/migrations/0056_entity_graph.sql` |
+| Store | `auditStore.js` (`*Entity*`, `*Relationship*`, `*GraphConflict*`) |
+| API | `/api/discoverability/entity-graph/*` |
+| Client | `discoverabilityClient.js` |
+
+### D3 name mapping
+
+| PRD name | Actual table |
+|---|---|
+| `entities` | `public.audit_entities` |
+| `entity_relationships` | `public.audit_entity_relationships` |
+| `entity_evidence` | `public.audit_entity_evidence` |
+| *(not in the PRD)* | `public.audit_entity_conflicts` |
+
+### D7 is still open, and this does not pre-empt it
+
+Graph conflicts get their own table, exactly as W9's truth conflicts did, rather
+than retrofitting `subject_type` + `subject_id` onto `audit_issues`. That
+retrofit touches every reader of the P1 queue, the diff engine and all four
+exports — doing it as a side effect of building the graph would ship the two one
+bug apart. When D7 lands, these findings migrate into whatever it decides.
+
+⚠️ **W9 and W10 both attach to a business rather than to an audit**, so whatever
+D7 resolves to attaches to them rather than replacing them.
+
+### The taxonomy, and what was not guessed
+
+⚠️ The PRD names **fourteen entity types** and **nine predicates** and
+enumerates neither anywhere visible in this repository — the same situation W4
+hit with "M1–M13". The counts match; the **names are derived from schema.org**,
+which is the vocabulary this module already reads, validates and generates. That
+is a defensible derivation rather than a guess, and it has the property that
+matters: every type maps to something an audit can actually observe in markup.
+
+🔴 **If the PRD's own list differs, ADD — never renumber or repurpose.** These
+ids travel in stored rows and every historical diff, exactly like the signal and
+issue codes.
+
+**Types** — organization, brand, product, service, location, person, offer,
+review, credential, event, content_asset, topic, industry, audience.
+
+**Predicates** — owns, offers, located_at, employs, part_of, same_as, about,
+serves, competes_with.
+
+⚠️ **Every predicate declares a domain and a range, and `validateRelation`
+enforces them.** Without that a graph is a bag of edges: *"this review employs
+that topic"* is storable, meaningless, and impossible to notice later.
+
+### Every relation carries evidence, or it is not a relation
+
+🔴 A graph is only worth reasoning over if each edge traces back to the bytes
+that justified it. `makeRelation` refuses an `observed` edge with no evidence,
+and so does the `audit_rel_observed_has_evidence` CHECK. An edge nobody can
+drill into is indistinguishable from one somebody made up.
+
+The API refuses `observed` and `imported` from a client for the same reason W9
+does: those sources promise somebody could go and check, and this path has
+nothing to attach.
+
+### Three things the database refuses outright
+
+| Refused | Why |
+|---|---|
+| **A self-edge** (`audit_rel_no_self_edge`) | *"Acme is part of Acme"* is vacuously true and pollutes every traversal. |
+| **A duplicate edge** (`audit_rel_unique`) | A crawler re-reading the same page weekly would otherwise add a row per run, every count would double, and *"who do we compete with"* would answer differently depending on how many audits had happened. Re-observation **corroborates**; it does not accumulate. |
+| **A dangling edge** (cascade on both endpoints) | An edge to a deleted node is not a partial edge, it is a pointer every traversal has to defend against for ever. |
+
+### Approval approves the endpoints too
+
+🔴 `approve_entity_relationship()` is one SQL function because **an approved
+edge between two unreviewed nodes is a half-built statement** — the graph would
+assert a relationship between two things it has not agreed exist. So approving
+an edge approves its endpoints, under the same reviewer, in the same statement.
+
+⚠️ **The endpoints are approved, not created.** A node somebody explicitly
+rejected blocks the edge (`endpoint_rejected`) rather than being silently
+revived — reviving it would undo an explicit decision.
+
+🔴 **Self-approval is refused** in the pure model, in the CHECK constraints on
+both tables, and in the function. Same discipline as W9.
+
+### Conflicts read the approved graph only
+
+| Code | Means |
+|---|---|
+| `EG-01` | two approved values for a one-value relationship (`located_at`, `part_of`) |
+| `EG-02` | the hierarchy contains a cycle |
+| `EG-03` | `same_as` links two entities of different types |
+| `EG-04` | an approved edge whose endpoints do not fit the predicate |
+| `EG-05` | an **identifying** entity with no approved relationship at all |
+| `EG-06` | an approved relationship resting on inference alone |
+
+⚠️ **A proposal that contradicts the graph is not a conflict, it is a
+proposal.** Reporting it as one would make the review queue argue with itself.
+
+⚠️ **`EG-05` fires only on `identifying` types.** A Topic nothing points at yet
+is an ordinary state of affairs; an Organization nothing points at is a node
+that resolves nobody.
+
+⚠️ **`EG-02` is reported once, not once per member of the cycle.** A hierarchy
+that loops makes every rollup either infinite or silently truncated, and the
+truncation is the dangerous one because it looks like an answer.
+
+### The endpoint types are joined, never stored on the edge
+
+🔴 `audit_entity_relationships` holds no `subject_type` or `object_type`, and
+`toRelationModels()` joins them from the entities. Denormalising them onto the
+edge would be a second copy of a fact that already has an owner, and the two
+would drift the first time an entity was re-typed — after which `EG-03` and
+`EG-04` would be checking against a type nobody holds any more.
+
+### The conflict sweep runs on approval, and it writes
+
+🔴 `refreshGraphConflicts()` runs when an edge is approved, because that is when
+the approved graph changes. A conflict table nothing writes is the failure
+pattern this repo has shipped three times; a contract test asserts the write and
+was confirmed RED first.
+
+⚠️ **Already-open conflicts are not re-written** — a queue that grows while
+nothing gets worse is a queue people stop reading — and **the sweep never fails
+the approval** that already succeeded.
+
+---
+
 ## 4. Failure modes, and which way each fails
 
 | Condition | Behaviour | Why |
@@ -759,6 +893,8 @@ thing that actually happened.
 | Truth-record lookup fails mid-audit | audit returned as normal, no `businessTruth` key | The audit ran and was charged for. A record briefly unreadable is not a reason to lose it. |
 | Truth record exists but nothing is approved | **no comparison at all** | Findings against an un-reviewed draft are what the approval gate exists to prevent. |
 | Page carries no identity markup | every in-scope field reports `BT-02`, `identity_markup_present: false` | "We compared and found nothing" and "there was nothing to compare" are different answers. |
+| Graph conflict sweep fails after an approval | approval stands, `conflicts: null` | The edge was approved. A sweep that cannot write is not a reason to report the approval as failed. |
+| An edge's endpoint was rejected | approval refused, `endpoint_rejected` | Approving it would silently revive a node somebody explicitly declined. |
 
 ---
 

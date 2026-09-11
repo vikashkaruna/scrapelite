@@ -243,7 +243,7 @@ in the header**, and the **AI-visibility panel** (mention/cite/recommend %, top 
 | PRD §  | Module | State |
 |---|---|---|
 | 9.1 | Canonical Business Truth Record (+ versions, approval-before-canonical) | ✅ W9 — `0055`, three tables, approval enforced in three layers |
-| 9.2 | Entity Graph Builder (14 entity types, 9 predicates, evidence + confidence on every relation) | ❌ |
+| 9.2 | Entity Graph Builder (14 entity types, 9 predicates, evidence + confidence on every relation) | ✅ W10 — `0056`, four tables, domain/range enforced |
 | 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | ❌ |
 | 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | ❌ |
 | 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | ❌ |
@@ -345,9 +345,10 @@ recommendation-lifecycle webhook events; `/api/v1/discoverability/*` namespace w
 **W9 · Canonical Business Truth Record** — ✅ **COMPLETE.** Migration `0055`: `audit_business_truth_records`, `audit_business_truth_versions` and a third table the PRD does not name, `audit_business_truth_conflicts` — because storing the record without comparing it to the pages produces a form, not a finding. Five version states, self-approval refused in three places (pure model, CHECK constraint, and the promotion function), and promotion as ONE SQL function because it is three writes that must not separate. ⚠️ `declared` is deliberately **not** an evidence method: `makeEvidence` requires a source URL, and forcing a customer's own assertion through it would mean fabricating provenance for a fact that was never on a page. The API refuses `observed`/`imported` from a client for the same reason. 🔴 The conflict table **is written**, by every audit whose domain has an approved record — asserted by contract test, because this repo's own history is three columns declared, merged and never written.
 Versioned, audit-historied, approval-gated; `business_truth_records` + `business_truth_versions`.
 
-**W10 · Entity Graph Builder** *(gated on D7)* — `entities`, `entity_relationships`, `entity_evidence`;
-14 types, 9 predicates, evidence + confidence on every relation, approve/reject, conflicts raised as
-diagnostic findings, drill-down to source; bridged to `canonical_entities`.
+**W10 · Entity Graph Builder** — ✅ **COMPLETE.** Migration `0056`: `audit_entities`, `audit_entity_relationships`, `audit_entity_evidence` and a fourth the PRD does not name, `audit_entity_conflicts`. 14 types and 9 predicates, each predicate declaring a **domain and range** that `validateRelation` enforces — without that a graph is a bag of edges and "this review employs that topic" is storable, meaningless and impossible to notice later. ⚠️ **The PRD enumerates neither list anywhere visible in this repo**, the same situation W4 hit with M1–M13; the counts match and the NAMES are derived from schema.org, the vocabulary this module already reads and validates. If the PRD's own list differs, ADD — never renumber. 🔴 Self-edges, duplicate edges and dangling edges are all refused by the schema, and `approve_entity_relationship()` approves an edge's ENDPOINTS in the same statement because an approved edge between two unreviewed nodes is a half-built statement. 🔴 Endpoint types are JOINED from the entities, never stored on the edge — a second copy would drift the first time a node was re-typed, after which EG-03 and EG-04 would check against a type nobody holds. ⚠️ **D7 is not pre-empted:** graph conflicts get their own table rather than retrofitting `subject_type`/`subject_id` onto `audit_issues`, which touches every reader of the P1 queue.
+`entities`, `entity_relationships`, `entity_evidence`; 14 types, 9 predicates, evidence + confidence
+on every relation, approve/reject, conflicts raised as diagnostic findings, drill-down to source;
+bridged to `canonical_entities`.
 
 **W11 · Brand / Product / Service scoring** — BDS, PDS, SFS with their full component signal sets;
 product entity cards, missing-facts matrix, comparison blueprints, service intent coverage map,

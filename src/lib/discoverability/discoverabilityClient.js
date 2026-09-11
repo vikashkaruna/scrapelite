@@ -226,6 +226,46 @@ export const discoverability = {
   resolveTruthConflict: (recordId, conflictId, resolution) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/conflicts/${encodeURIComponent(conflictId)}`,
       "POST", { resolution }),
+
+  // ── Entity graph (W10) ───────────────────────────────────────────────────
+  //
+  // ⚠️ THERE IS NO METHOD THAT CREATES AN APPROVED ROW, and no PATCH that
+  // reaches `approved`. `approveRelationship` is the only way in, because
+  // approving an edge also approves its endpoints — an approved edge between
+  // two unreviewed nodes is a half-built statement, and a second path would be
+  // the one that forgets.
+  graphSchema: () => req("/entity-graph/schema"),
+  getGraph: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/entity-graph${q.toString() ? `?${q}` : ""}`);
+  },
+
+  /** `source` may only be `declared` or `inferred`; the server writes observed. */
+  proposeEntity: (payload) => req("/entity-graph/entities", "POST", payload),
+  /** `reason` is REQUIRED — the server refuses a rejection without one. */
+  rejectEntity: (id, reason) =>
+    req(`/entity-graph/entities/${encodeURIComponent(id)}/reject`, "POST", { reason }),
+
+  proposeRelationship: ({ subjectId, predicate, objectId, source = "declared", note = null }) =>
+    req("/entity-graph/relationships", "POST",
+      { subject_id: subjectId, predicate, object_id: objectId, source, note }),
+  approveRelationship: (id, { note = null, truthRecordId = null } = {}) =>
+    req(`/entity-graph/relationships/${encodeURIComponent(id)}/approve`, "POST",
+      { note, truth_record_id: truthRecordId }),
+  rejectRelationship: (id, reason) =>
+    req(`/entity-graph/relationships/${encodeURIComponent(id)}/reject`, "POST", { reason }),
+
+  graphConflicts: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/entity-graph/conflicts${q.toString() ? `?${q}` : ""}`);
+  },
+  /** resolution: "relationship_removed" | "relationship_corrected" | "entity_merged" | "not_a_conflict". */
+  resolveGraphConflict: (conflictId, resolution) =>
+    req(`/entity-graph/conflicts/${encodeURIComponent(conflictId)}/resolve`, "POST", { resolution }),
 };
 
 async function emailReport(payload) {

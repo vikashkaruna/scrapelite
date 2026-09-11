@@ -18,6 +18,140 @@
 
 ---
 
+## 2026-09-11 (P2 · W10) — the Entity Graph Builder. Edges, not values.
+
+> **Branch:** `claude/p2-w9-work-streams-o4gvmq` · **`main`, `staging` and every
+> other branch: untouched.**
+
+### Start here
+
+**W10 is complete.** W9 gave the module one approved set of FACTS. A fact is a
+value; it says nothing about how things relate. *"Acme sells Acme Cloud"*,
+*"Acme Cloud is a product, not the company"*, *"these two office records are one
+organisation"* — those are edges, and edges are what a knowledge graph resolves
+an entity by.
+
+```
+nvm use 24
+npm ci
+npx vitest run src/lib/discoverability/entityGraph.test.js      # 59
+npx vitest run netlify/__tests__/audit/entity-graph-api.test.js # 31
+npm run test:db                                                 # 56 migrations
+```
+
+### What shipped
+
+| Layer | File |
+|---|---|
+| Pure model | `src/lib/discoverability/entityGraph.js` |
+| Schema | `supabase/migrations/0056_entity_graph.sql` |
+| Store | `auditStore.js` — 12 new exports |
+| API | `/api/discoverability/entity-graph/*` |
+| Client | `discoverabilityClient.js` |
+
+Four tables, per D3's `audit_` prefix: `audit_entities`,
+`audit_entity_relationships`, `audit_entity_evidence`, and
+`audit_entity_conflicts` — the fourth is **ours, not the PRD's**.
+
+### D7 is still open, and W10 did not pre-empt it
+
+Graph conflicts get their own table, exactly as W9's truth conflicts did, rather
+than retrofitting `subject_type` + `subject_id` onto `audit_issues`. That
+retrofit touches every reader of the P1 queue, the diff engine and all four
+exports — doing it as a side effect of building the graph would ship the two one
+bug apart. **When D7 lands, these findings migrate into whatever it decides.**
+
+### The decisions worth carrying
+
+⚠️ **THE PRD ENUMERATES NEITHER THE 14 TYPES NOR THE 9 PREDICATES ANYWHERE
+VISIBLE IN THIS REPO** — the same situation W4 hit with "M1–M13". The counts
+match; the **names are derived from schema.org**, the vocabulary this module
+already reads, validates and generates. 🔴 **If the PRD's own list differs,
+ADD — never renumber or repurpose.**
+
+⚠️ **EVERY PREDICATE DECLARES A DOMAIN AND RANGE, AND THEY ARE ENFORCED.**
+Without that a graph is a bag of edges: *"this review employs that topic"* is
+storable, meaningless and impossible to notice later.
+
+🔴 **THREE THINGS THE SCHEMA REFUSES OUTRIGHT.** A **self-edge** (*"Acme is part
+of Acme"* is vacuously true and pollutes every traversal). A **duplicate edge** —
+without the unique index a crawler re-reading the same page weekly adds a row per
+run, every count doubles, and *"who do we compete with"* answers differently
+depending on how many audits have happened; re-observation **corroborates**, in
+`audit_entity_evidence`. And a **dangling edge** — both endpoints cascade,
+because an edge to a deleted node is a pointer every traversal defends against
+for ever.
+
+🔴 **APPROVING AN EDGE APPROVES ITS ENDPOINTS, IN ONE STATEMENT.** An approved
+edge between two unreviewed nodes is a half-built statement: the graph asserts a
+relationship between two things it has not agreed exist. ⚠️ **The endpoints are
+approved, not created** — a node somebody explicitly rejected blocks the edge
+(`endpoint_rejected`) rather than being silently revived.
+
+🔴 **THE ENDPOINT TYPES ARE JOINED FROM THE ENTITIES, NEVER STORED ON THE EDGE.**
+Denormalising them would be a second copy of a fact that already has an owner,
+and the two would drift the first time a node was re-typed — after which `EG-03`
+and `EG-04` would be checking against a type nobody holds any more.
+
+⚠️ **CONFLICTS READ THE APPROVED GRAPH ONLY.** A proposal that contradicts the
+graph is not a conflict, it is a proposal; reporting it as one would make the
+review queue argue with itself. **`EG-05` fires only on `identifying` types** —
+a Topic nothing points at is ordinary; an Organization nothing points at is a
+node that resolves nobody.
+
+### 🔴 A real bug the route tests caught in my own model
+
+`detectGraphConflicts` read its entity argument **both ways** — `Object.entries`
+for a map, then a second pass for an array. `Object.entries` over an ARRAY yields
+`"0"`, `"1"`, `"2"` as keys, so every entity was registered twice: once under its
+real id and once under its index. `EG-05` then fired on phantom nodes called
+`"0"` and `"1"`.
+
+**The unit test written to cover that path passed against the broken code**,
+because it only asserted that an `EG-05` existed — not that nothing spurious did.
+It now asserts the exact subject ids, and was confirmed RED against the bug.
+
+### Verified
+
+**366 files / 5986 passed / 14 skipped / 0 failed** (+90 over W9) · db-verify
+**56 migrations / 664 assertions / 0 failed** (+46) · referral 17 · workflows 56 ·
+build clean · check:prerender 28 pages / 112 refs · security clean.
+
+**Every behavioural guard confirmed RED first** — 6 in the pure model (self-edge,
+domain/range, approved-only indexing, coverage exclusion, EG-05 scoping,
+self-approval), 6 on the routes (client-claimed provenance, stored-entity shape
+checking, the conflict write, the dedupe, the sweep never failing an approval,
+the self-edge refusal), plus the array/index bug above.
+
+### ⚠️ A finding worth recording: the "(coming)" badge is now unreachable
+
+`IssueMatrix` renders **"(coming)"** beside a module that is not built. As of
+W10, **no issue in `issueCatalog` maps to an unbuilt module** — W9 and W10
+shipped the last two that did. The badge's code path stays covered (W11–W14 will
+map findings onto `brand_discoverability`, `local_directory` and
+`trust_and_proof`), but the test now uses a deliberately synthetic module and
+says why: pointing it at a catalogue issue would make it go
+green-then-silently-dead the moment the next workstream ships, which is exactly
+what just happened to it.
+
+### 🔴 Still unverified anywhere real
+
+**Migration `0056` has only met in-process WASM Postgres** — no GoTrue, no
+PostgREST, shimmed roles — and **no entity has been created against a live
+database**, so no graph conflict has ever been raised by a real approval.
+`approve_entity_relationship` is `security definer` and has only run under
+PGlite. Dev and stage carry `0048`–`0054`; **production carries none of them and
+is now nine behind.**
+
+### Next
+
+**W11 · Brand / Product / Service scoring** (BDS, PDS, SFS). It is the first
+workstream that needs **D7** resolved — those are audits of non-page subjects,
+which is exactly the question D7 asks. Bring a concrete subject-model proposal
+before building it.
+
+---
+
 ## 2026-09-11 (P2 · W9) — the Canonical Business Truth Record. P2 STARTS HERE.
 
 > **Branch:** `claude/p2-w9-work-streams-o4gvmq` · **`main`, `staging` and every

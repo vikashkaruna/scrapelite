@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import IssueMatrix, { IssueList, RootCauseSummary } from "./IssueMatrix.jsx";
+// Labels come from the registry rather than being retyped here: a copy would
+// drift the first time one was reworded, and the test would then assert a
+// label the product no longer shows.
+import { MODULES } from "../../lib/discoverability/gapTaxonomy.js";
 
 const ISSUES = [
   {
@@ -92,11 +96,34 @@ describe("IssueList — observed and inferred are not the same claim", () => {
   });
 
   it("names the module that answers a finding, and says when it is not built yet", () => {
-    // Showing "Entity Graph Builder" as though it were clickable would be
-    // selling a P2 module inside a P1 report.
-    render(<IssueList issues={[ISSUES[3]]} />);
-    expect(screen.getByText(/Entity Graph Builder/)).toBeInTheDocument();
+    // Advertising a module that does not exist yet is selling a referral to
+    // nothing.
+    //
+    // ⚠️ THE MODULE HERE IS DELIBERATELY SYNTHETIC, AND THAT IS ITSELF A FACT
+    // WORTH KNOWING. As of W10, NO issue in `issueCatalog` maps to an unbuilt
+    // module — W9 and W10 shipped the last two that did (business_truth_record
+    // and entity_graph). So this badge is currently unreachable from real P1
+    // data, and it stays covered because W11-W14 will map findings onto
+    // brand_discoverability, local_directory and trust_and_proof, which are
+    // declared and unbuilt today. Pointing the fixture at a catalogue issue
+    // instead would make this test go green-then-silently-dead the moment the
+    // next workstream ships, which is exactly what just happened to it.
+    render(<IssueList issues={[{
+      code: "XX-01", pillar: "entity_authority", severity: "medium",
+      title: "A finding only a P2 module can answer", frameworks: ["geo"],
+      rootCause: "entity_ambiguity", module: "local_directory", owner: "brand",
+    }]} />);
+    expect(screen.getByText(new RegExp(MODULES.local_directory.label))).toBeInTheDocument();
     expect(screen.getByText(/\(coming\)/)).toBeInTheDocument();
+  });
+
+  it("🔴 stops marking a module as coming once it ships", () => {
+    // EA-03 refers findings to the Entity Graph Builder. W10 built it, so the
+    // badge must be gone — a shipped module still advertised as "(coming)" is
+    // the mirror of advertising an unbuilt one.
+    render(<IssueList issues={[ISSUES[3]]} />);
+    expect(screen.getByText(new RegExp(MODULES.entity_graph.label))).toBeInTheDocument();
+    expect(screen.queryByText(/\(coming\)/)).not.toBeInTheDocument();
   });
 
   it("does not mark an available module as coming", () => {

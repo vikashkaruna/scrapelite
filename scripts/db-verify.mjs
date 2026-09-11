@@ -133,11 +133,15 @@ grant usage on schema public to anon, authenticated;
 //   _versions, _conflicts) +1 function (promote_business_truth_version)
 //   +2 triggers. The function exists because promotion is three writes that
 //   must not separate — see the migration's own header.
-// Taking these to 92 / 48 / 22.
+// 0056_entity_graph.sql       +4 tables (audit_entities,
+//   audit_entity_relationships, _evidence, _conflicts) +1 function
+//   (approve_entity_relationship) +2 triggers. That function exists because an
+//   approved edge between two unreviewed nodes is a half-built statement.
+// Taking these to 96 / 49 / 24.
 const EXPECT = {
-  tables: 92,
-  functions: 48,
-  triggers: 22,
+  tables: 96,
+  functions: 49,
+  triggers: 24,
   tablesWithoutRls: 0,
 };
 
@@ -2546,6 +2550,195 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
 
   // ── RLS ───────────────────────────────────────────────────────────────────
   for (const t of ["audit_business_truth_records", "audit_business_truth_versions", "audit_business_truth_conflicts"]) {
+    eq(`${t} has RLS enabled`,
+      (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`,
+      (await q(`select 1 from information_schema.role_table_grants
+                 where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0056 · the entity graph ──────────────────────────────────────────────────
+{
+  group("audit_entities / _relationships / _evidence — a graph that cannot lie about itself");
+
+  const owner = (await one(`insert into auth.users (email) values ('eg-owner@x.com') returning id`)).id;
+  const mate  = (await one(`insert into auth.users (email) values ('eg-mate@x.com') returning id`)).id;
+
+  const mkEntity = async (type, name, over = {}) => (await one(
+    `insert into public.audit_entities (user_id, entity_type, name, source, evidence_json, proposed_by, state)
+     values ($1,$2,$3,$4,$5,$6,coalesce($7,'proposed')) returning id`,
+    [owner, type, name, over.source || 'declared', over.evidence || null, over.proposedBy ?? owner, over.state || null])).id;
+
+  const acme  = await mkEntity("organization", "Acme Technologies");
+  const cloud = await mkEntity("brand", "Acme Cloud");
+
+  eq("everything is created proposed, whatever proposed it",
+    (await one(`select state from public.audit_entities where id=$1`, [acme])).state, "proposed");
+
+  check("an invented entity type is refused — the fourteen are a contract", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'wizard','Merlin','declared')`, [owner])));
+  check("an unnamed node is refused — it resolves nothing", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'organization','   ','declared')`, [owner])));
+  check("🔴 an OBSERVED entity with no evidence is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'organization','Ghost','observed')`, [owner])));
+  check("...and an observed entity WITH evidence is kept", !(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, evidence_json)
+     values ($1,'organization','Seen','observed','{"method":"json_ld"}'::jsonb)`, [owner])));
+  check("a confidence outside 0-1 is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, confidence)
+     values ($1,'organization','X','declared',1.5)`, [owner])));
+
+  check("🔴 self-approval of an entity is refused by the database", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,'organization','Y','declared',$2,$2,now(),'approved')`, [owner, owner])));
+  check("an entity rejection with no reason is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, state, review_note)
+     values ($1,'organization','Z','declared','rejected','  ')`, [owner])));
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  const mkRel = async (s, p, o, over = {}) => one(
+    `insert into public.audit_entity_relationships
+       (user_id, subject_id, predicate, object_id, source, evidence_json, proposed_by)
+     values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+    [owner, s, p, o, over.source || 'declared', over.evidence || null, over.proposedBy ?? owner]);
+
+  const owns = (await mkRel(acme, "owns", cloud)).id;
+  eq("a relation is created proposed too",
+    (await one(`select state from public.audit_entity_relationships where id=$1`, [owns])).state, "proposed");
+
+  check("an invented predicate is refused — the nine are a contract", Boolean(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'vibes',$3,'declared')`, [owner, acme, cloud])));
+
+  check("🔴 A SELF-EDGE IS REFUSED — it is vacuously true and pollutes every traversal",
+    Boolean(await throws(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,'part_of',$2,'declared')`, [owner, acme])));
+
+  check("🔴 THE SAME EDGE CANNOT BE STORED TWICE — a weekly crawler would otherwise double every count",
+    Boolean(await throws(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,'owns',$3,'declared')`, [owner, acme, cloud])));
+  check("...but the same pair under a DIFFERENT predicate is a different edge", !(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'offers',$3,'declared')`, [owner, acme, cloud])));
+
+  check("🔴 an OBSERVED relation with no evidence is refused", Boolean(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'serves',$3,'observed')`, [owner, acme, cloud])));
+  check("🔴 self-approval of a relation is refused by the database", Boolean(await throws(
+    `insert into public.audit_entity_relationships
+       (user_id, subject_id, predicate, object_id, source, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,$2,'about',$3,'declared',$4,$4,now(),'approved')`, [owner, acme, cloud, owner])));
+
+  // 🔴 A dangling edge is worse than a missing one: every traversal has to
+  // defend against it for ever.
+  const tmp = await mkEntity("person", "Temp");
+  const tmpRel = (await mkRel(acme, "employs", tmp)).id;
+  await db.query(`delete from public.audit_entities where id=$1`, [tmp]);
+  eq("🔴 deleting a node deletes the edges that pointed at it — no dangling pointers",
+    (await q(`select id from public.audit_entity_relationships where id=$1`, [tmpRel])).length, 0);
+
+  // ── Approval ──────────────────────────────────────────────────────────────
+  eq("approval refuses an edge that does not exist",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("🔴 approval refuses self-approval",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, owner])).r, "self_approval");
+  eq("approval refuses when no reviewer is supplied",
+    (await one(`select public.approve_entity_relationship($1,null) as r`, [owns])).r, "no_approver");
+
+  eq("an independently-reviewed edge approves",
+    (await one(`select public.approve_entity_relationship($1,$2,'Confirmed from the filings.') as r`,
+      [owns, mate])).r, "ok");
+  eq("...and records who approved it and why",
+    (await one(`select state, reviewed_by, review_note from public.audit_entity_relationships where id=$1`, [owns])),
+    { state: "approved", reviewed_by: mate, review_note: "Confirmed from the filings." });
+
+  // 🔴 An approved edge between two unreviewed nodes is a half-built statement.
+  eq("🔴 approving an edge approves its ENDPOINTS in the same statement",
+    (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [acme, cloud])).length, 2);
+
+  eq("approval is idempotent",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "ok");
+
+  // An endpoint somebody explicitly rejected blocks the edge — reviving it
+  // silently would undo their decision.
+  const dead = await mkEntity("person", "Departed");
+  await db.query(
+    `update public.audit_entities set state='rejected', review_note='Left the company.' where id=$1`, [dead]);
+  const deadRel = (await mkRel(acme, "employs", dead)).id;
+  eq("🔴 an edge to an explicitly REJECTED node is refused, not silently revived",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [deadRel, mate])).r, "endpoint_rejected");
+  eq("...and the rejected node stays rejected",
+    (await one(`select state from public.audit_entities where id=$1`, [dead])).state, "rejected");
+
+  const rejRel = (await mkRel(cloud, "serves", acme)).id;
+  await db.query(
+    `update public.audit_entity_relationships set state='rejected', review_note='Wrong direction.' where id=$1`,
+    [rejRel]);
+  eq("a rejected edge is not revived by approving it again",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [rejRel, mate])).r, "rejected");
+
+  // ── Parity with the pure model ────────────────────────────────────────────
+  //
+  // The CHECK constraints list the types and predicates literally; entityGraph
+  // lists them in ENTITY_TYPE_IDS and PREDICATE_IDS. Those drifting apart would
+  // mean the model proposes edges the database refuses. Assert agreement rather
+  // than hoping, exactly as signalDispatch.parity does.
+  {
+    const { ENTITY_TYPE_IDS, PREDICATE_IDS, GRAPH_CONFLICT_CODES } = await import(
+      "file://" + join(ROOT, "src", "lib", "discoverability", "entityGraph.js"));
+    const src = readFileSync(join(DIR, "0056_entity_graph.sql"), "utf8");
+    const listIn = (col) => {
+      const m = src.match(new RegExp(`${col}\\s+text not null[\\s\\S]*?check \\(${col} in \\(([\\s\\S]*?)\\)\\)`));
+      return m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+    };
+    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
+      listIn("entity_type"), [...ENTITY_TYPE_IDS].sort());
+    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
+      listIn("predicate"), [...PREDICATE_IDS].sort());
+    eq("parity: the conflict-code CHECK matches GRAPH_CONFLICT_CODES exactly",
+      listIn("code"), Object.keys(GRAPH_CONFLICT_CODES).sort());
+    eq("parity: fourteen types and nine predicates, as the plan calls for",
+      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [14, 9]);
+  }
+
+  // ── Evidence and conflicts ────────────────────────────────────────────────
+  check("evidence for nothing at all is refused", Boolean(await throws(
+    `insert into public.audit_entity_evidence (evidence_json) values ('{}'::jsonb)`)));
+  const evId = (await one(
+    `insert into public.audit_entity_evidence (relationship_id, evidence_json, confidence)
+     values ($1,'{"method":"json_ld","source_url":"https://acme.example/"}'::jsonb, 0.99) returning id`,
+    [owns])).id;
+  check("corroboration attaches to an existing edge", Boolean(evId));
+  await db.query(`delete from public.audit_entity_relationships where id=$1`, [owns]);
+  eq("...and is removed with the edge it corroborated",
+    (await q(`select id from public.audit_entity_evidence where id=$1`, [evId])).length, 0);
+
+  check("an invented conflict code is refused", Boolean(await throws(
+    `insert into public.audit_entity_conflicts (user_id, code) values ($1,'EG-99')`, [owner])));
+  const conf = (await one(
+    `insert into public.audit_entity_conflicts (user_id, code, severity, predicate, message)
+     values ($1,'EG-01','high','located_at','Two approved headquarters.') returning id`, [owner])).id;
+  eq("a graph conflict is open until resolved",
+    (await one(`select resolved_at, resolution from public.audit_entity_conflicts where id=$1`, [conf])),
+    { resolved_at: null, resolution: null });
+  check("an invented resolution is refused", Boolean(await throws(
+    `update public.audit_entity_conflicts set resolution='shrug' where id=$1`, [conf])));
+
+  // ── D6 + RLS ──────────────────────────────────────────────────────────────
+  const wsE = (await one(`insert into public.workspaces (owner_id, name) values ($1,'EG') returning id`, [owner])).id;
+  await db.query(`update public.audit_entities set workspace_id=$2 where id=$1`, [acme, wsE]);
+  eq("D6: an entity can carry its workspace",
+    (await one(`select workspace_id from public.audit_entities where id=$1`, [acme])).workspace_id, wsE);
+
+  for (const t of ["audit_entities", "audit_entity_relationships",
+                   "audit_entity_evidence", "audit_entity_conflicts"]) {
     eq(`${t} has RLS enabled`,
       (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
     eq(`${t} grants nothing to anon or authenticated`,

@@ -90,6 +90,11 @@ import {
   summariseRecord, normalizeFieldValue, canTransition,
   factsFromSchemaOrg, detectConflicts, SCHEMA_READABLE,
 } from "../../src/lib/discoverability/businessTruth.js";
+import {
+  ENTITY_TYPES, ENTITY_TYPE_IDS, PREDICATES, PREDICATE_IDS,
+  RELATION_SOURCES, REVIEW_STATES, GRAPH_CONFLICT_CODES, IDENTIFYING_TYPES,
+  validateRelation, detectGraphConflicts, graphCoverage, buildIndex,
+} from "../../src/lib/discoverability/entityGraph.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -669,6 +674,11 @@ export const handler = async (event) => {
         return text(200, recommendationsToCsv(rows), "text/csv");
       }
       return json(200, { recommendations: rows, count: rows.length });
+    }
+
+    // ── /entity-graph ──────────────────────────────────────────────────────
+    if (root === "entity-graph") {
+      return await entityGraphRoute(userId, method, path, body, event);
     }
 
     // ── /business-truth ────────────────────────────────────────────────────
@@ -1795,4 +1805,299 @@ async function businessTruthRoute(userId, method, path, body, event) {
   }
 
   return notFound("Unknown endpoint.");
+}
+
+// ── /entity-graph — the Entity Graph Builder (W10) ─────────────────────────
+//
+// Routes:
+//   GET    /entity-graph/schema                    types, predicates, states
+//   GET    /entity-graph?truth_record_id=          the graph, with its conflicts
+//   POST   /entity-graph/entities                  propose an entity
+//   POST   /entity-graph/entities/:id/reject       reason required
+//   POST   /entity-graph/relationships             propose a relationship
+//   POST   /entity-graph/relationships/:id/approve approve it AND its endpoints
+//   POST   /entity-graph/relationships/:id/reject  reason required
+//   GET    /entity-graph/conflicts
+//   POST   /entity-graph/conflicts/:id/resolve
+//
+// 🔴 THERE IS NO ROUTE THAT CREATES AN APPROVED ROW, and no PATCH that reaches
+// `approved`. Approval is one verb going through one SQL function, because
+// approving an edge also approves its endpoints — an approved edge between two
+// unreviewed nodes is a half-built statement.
+
+async function entityGraphRoute(userId, method, path, body, event) {
+  const [, section, id, verb] = path;
+
+  if (section === "schema" && method === "GET") {
+    return json(200, {
+      entity_types: ENTITY_TYPE_IDS.map((t) => ({ ...ENTITY_TYPES[t] })),
+      identifying_types: IDENTIFYING_TYPES,
+      predicates: PREDICATE_IDS.map((p) => ({ ...PREDICATES[p] })),
+      sources: Object.values(RELATION_SOURCES),
+      review_states: Object.values(REVIEW_STATES),
+      conflict_codes: Object.values(GRAPH_CONFLICT_CODES),
+    });
+  }
+
+  // ── The graph ────────────────────────────────────────────────────────────
+  if (!section && method === "GET") {
+    const q = event.queryStringParameters || {};
+    const truthRecordId = q.truth_record_id || null;
+    const [entities, relationships, conflicts] = await Promise.all([
+      store.listEntities(userId, { truthRecordId }),
+      store.listRelationships(userId),
+      store.listGraphConflicts(userId, { truthRecordId }),
+    ]);
+
+    // Coverage is computed from the rows, in the pure model, so the number the
+    // UI shows and the number a report would print come from one implementation.
+    const asModel = entities.map((e) => ({
+      id: e.id, type: e.entity_type, name: e.name, source: e.source,
+      stated_at: e.created_at,
+    }));
+    const relModel = toRelationModels(relationships, entities);
+
+    return json(200, {
+      entities,
+      relationships,
+      conflicts,
+      coverage: graphCoverage(asModel, relModel),
+      pending: {
+        entities: entities.filter((e) => e.state === "proposed").length,
+        relationships: relationships.filter((r) => r.state === "proposed").length,
+      },
+    });
+  }
+
+  // ── Entities ─────────────────────────────────────────────────────────────
+  if (section === "entities") {
+    if (!id && method === "POST") {
+      const entityType = body.entity_type;
+      if (!ENTITY_TYPES[entityType]) {
+        return bad(`Unknown entity type "${entityType}".`, { code: "INVALID_REQUEST", allowed: ENTITY_TYPE_IDS });
+      }
+      const name = typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim() : "";
+      // An unnamed node resolves nothing, which is the only job an entity has.
+      if (!name) return bad("An entity needs a name.", { code: "INVALID_REQUEST" });
+
+      const source = body.source || "declared";
+      if (!RELATION_SOURCES[source]) {
+        return bad(`Unknown source "${source}".`, { code: "INVALID_REQUEST" });
+      }
+      // Same rule as the truth record: a client may not claim a provenance it
+      // has no evidence for. `observed` is written by the audit pipeline.
+      if (RELATION_SOURCES[source].verifiable) {
+        return bad(
+          `Entities from "${source}" carry evidence and are written by the audit pipeline, not by this endpoint. Submit them as "declared" or "inferred".`,
+          { code: "SOURCE_NOT_ACCEPTED" });
+      }
+
+      const created = await store.createEntity(userId, {
+        entityType, name,
+        description: body.description || null,
+        canonicalDomain: normalizeFieldValue("canonical_domain", body.canonical_domain),
+        externalIds: body.external_ids || null,
+        source,
+        truthRecordId: body.truth_record_id || null,
+        workspaceId: body.workspace_id || null,
+      });
+      return created.ok
+        ? json(201, { entity: created.entity })
+        : json(500, { error: "Could not create the entity.", detail: created.error });
+    }
+
+    if (id && verb === "reject" && method === "POST") {
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) {
+        return bad("A rejection needs a reason. A rejected entity that keeps being re-proposed is itself a finding, and without the reason nobody can tell a decision from a mis-click.",
+          { code: "REASON_REQUIRED" });
+      }
+      const r = await store.rejectGraphRow(userId, "entity", id, reason);
+      return r.ok ? json(200, { entity: r.row }) : notFound("Entity not found.");
+    }
+
+    return notFound("Unknown endpoint.");
+  }
+
+  // ── Relationships ────────────────────────────────────────────────────────
+  if (section === "relationships") {
+    if (!id && method === "POST") {
+      const { subject_id: subjectId, object_id: objectId, predicate } = body;
+      if (!subjectId || !objectId) return bad("A relationship needs both endpoints.", { code: "INVALID_REQUEST" });
+      if (!PREDICATES[predicate]) {
+        return bad(`Unknown predicate "${predicate}".`, { code: "INVALID_REQUEST", allowed: PREDICATE_IDS });
+      }
+      // A self-edge is vacuously true and pollutes every traversal.
+      if (subjectId === objectId) {
+        return bad("A relationship from an entity to itself carries no information.", { code: "SELF_EDGE" });
+      }
+
+      const source = body.source || "declared";
+      if (!RELATION_SOURCES[source]) return bad(`Unknown source "${source}".`, { code: "INVALID_REQUEST" });
+      if (RELATION_SOURCES[source].verifiable) {
+        return bad(
+          `Relationships from "${source}" carry evidence and are written by the audit pipeline, not by this endpoint. Submit them as "declared" or "inferred".`,
+          { code: "SOURCE_NOT_ACCEPTED" });
+      }
+
+      // 🔴 THE SHAPE IS CHECKED AGAINST REAL ROWS, not against types the client
+      // supplied. A caller that could name its own endpoint types could declare
+      // any edge legal, and the domain/range rules would enforce nothing.
+      const [subject, object] = await Promise.all([
+        store.getEntity(userId, subjectId), store.getEntity(userId, objectId),
+      ]);
+      if (!subject || !object) return notFound("One or both entities were not found.");
+
+      const shape = validateRelation({
+        subjectType: subject.entity_type, predicate, objectType: object.entity_type,
+      });
+      if (!shape.ok) {
+        return json(422, {
+          error: shape.problems[0]?.message || "These endpoints do not fit this relationship.",
+          code: "INVALID_RELATIONSHIP",
+          problems: shape.problems,
+        });
+      }
+
+      const created = await store.createRelationship(userId, {
+        subjectId, predicate, objectId, source, note: body.note || null,
+      });
+      if (created.duplicate) {
+        // Re-observing an edge updates the row; it never adds one. Saying so is
+        // more useful than a generic write failure the caller has to guess at.
+        return json(409, {
+          error: "That relationship already exists. Re-observing one corroborates it rather than adding a second copy.",
+          code: "RELATIONSHIP_EXISTS",
+        });
+      }
+      return created.ok
+        ? json(201, { relationship: created.relationship })
+        : json(500, { error: "Could not create the relationship.", detail: created.error });
+    }
+
+    if (id && method === "POST" && verb === "approve") {
+      const r = await store.approveEntityRelationship(userId, id, { note: body.note || null });
+      if (r.ok) {
+        const relationship = await store.getRelationship(userId, id);
+        // The approved graph just changed, so its conflicts just changed.
+        const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null);
+        return json(200, { approved: true, relationship, conflicts: sweep });
+      }
+      if (r.notFound) return notFound("Relationship not found.");
+      const VERDICTS = {
+        self_approval: [403, "You proposed this relationship. Approval means a second person looked."],
+        no_approver: [400, "No approver could be resolved for this request."],
+        rejected: [409, "This relationship was rejected. Propose it again rather than reviving the rejection."],
+        endpoint_rejected: [409, "One of the entities this connects was rejected. Approving the edge would silently revive it."],
+        not_found: [404, "Relationship not found."],
+      };
+      const [status, message] = VERDICTS[r.verdict] || [500, "Could not approve the relationship."];
+      return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
+    }
+
+    if (id && method === "POST" && verb === "reject") {
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) return bad("A rejection needs a reason.", { code: "REASON_REQUIRED" });
+      const r = await store.rejectGraphRow(userId, "relationship", id, reason);
+      return r.ok ? json(200, { relationship: r.row }) : notFound("Relationship not found.");
+    }
+
+    return notFound("Unknown endpoint.");
+  }
+
+  // ── Conflicts ────────────────────────────────────────────────────────────
+  if (section === "conflicts") {
+    if (!id && method === "GET") {
+      const q = event.queryStringParameters || {};
+      const conflicts = await store.listGraphConflicts(userId, { truthRecordId: q.truth_record_id || null });
+      return json(200, { conflicts, count: conflicts.length });
+    }
+    if (id && method === "POST" && verb === "resolve") {
+      const ALLOWED = ["relationship_removed", "relationship_corrected", "entity_merged", "not_a_conflict"];
+      if (!ALLOWED.includes(body.resolution)) {
+        return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
+      }
+      const r = await store.resolveGraphConflict(userId, id, body.resolution);
+      return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
+    }
+    return notFound("Unknown endpoint.");
+  }
+
+  return notFound("Unknown endpoint.");
+}
+
+/**
+ * Stored relationship rows in the shape the pure model expects.
+ *
+ * 🔴 THE ENDPOINT TYPES ARE JOINED FROM THE ENTITIES, NOT STORED ON THE EDGE.
+ * Denormalising them onto the relationship row would be a second copy of a fact
+ * that already has an owner, and the two would drift the first time an entity
+ * was re-typed — after which `EG-03` and `EG-04` would be checking against a
+ * type nobody holds any more. The cost is one lookup; the alternative is a
+ * graph that disagrees with itself about what its own nodes are.
+ */
+function toRelationModels(rows, entities) {
+  const typeOf = new Map(entities.map((e) => [e.id, e.entity_type]));
+  return rows.map((row) => ({
+    subject_id: row.subject_id,
+    subject_type: typeOf.get(row.subject_id) || null,
+    predicate: row.predicate,
+    object_id: row.object_id,
+    object_type: typeOf.get(row.object_id) || null,
+    state: row.state,
+    source: row.source,
+    evidence: row.evidence_json || null,
+    confidence: row.confidence,
+    stated_at: row.created_at,
+    _id: row.id,
+  }));
+}
+
+/**
+ * Recompute the approved graph's conflicts and store the ones that are new.
+ *
+ * 🔴 RUN ON APPROVAL, BECAUSE THAT IS WHEN THE APPROVED GRAPH CHANGES. A
+ * conflict table nothing writes is the failure pattern this repo has already
+ * shipped three times — a column declared, merged, and NULL for the life of the
+ * module, invisible because the read path returns null exactly as it would for
+ * "not applicable".
+ *
+ * ⚠️ ALREADY-OPEN CONFLICTS ARE NOT RE-WRITTEN. Re-approving anything would
+ * otherwise pile up duplicate rows for one unchanged problem, and a queue that
+ * grows while nothing gets worse is a queue people stop reading.
+ *
+ * ⚠️ AND IT NEVER FAILS THE APPROVAL. The edge was approved; a conflict sweep
+ * that cannot write is not a reason to tell the user their approval failed.
+ */
+async function refreshGraphConflicts(userId, truthRecordId = null) {
+  try {
+    const [entities, relationships, open] = await Promise.all([
+      store.listEntities(userId, { truthRecordId }),
+      store.listRelationships(userId),
+      store.listGraphConflicts(userId, { truthRecordId }),
+    ]);
+
+    const entityModels = entities.map((e) => ({
+      id: e.id, type: e.entity_type, name: e.name, source: e.source,
+      stated_at: e.created_at,
+    }));
+    const found = detectGraphConflicts(entityModels, toRelationModels(relationships, entities));
+
+    const byId = new Map(entities.map((e) => [e.id, e]));
+    const seen = new Set(open.map((c) => `${c.code}::${c.subject_id || ""}::${c.predicate || ""}`));
+    const fresh = found
+      .filter((c) => !seen.has(`${c.code}::${c.subject_id || ""}::${c.predicate || ""}`))
+      .map((c) => ({
+        ...c,
+        // Only a real entity id reaches the foreign key. A conflict whose
+        // subject is not a row we hold still gets recorded, with a null
+        // subject, rather than failing the whole batch.
+        subject_entity_id: byId.has(c.subject_id) ? c.subject_id : null,
+      }));
+
+    if (fresh.length) await store.recordGraphConflicts(userId, truthRecordId, null, fresh);
+    return { found: found.length, recorded: fresh.length };
+  } catch {
+    return null;
+  }
 }

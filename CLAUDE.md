@@ -2,7 +2,61 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — P2 BEGINS: W9, THE CANONICAL BUSINESS TRUTH RECORD. THE MODULE COULD SAY WHAT A PAGE CLAIMS; IT COULD NOT SAY WHAT IS TRUE, AND EVERY REMAINING P2 WORKSTREAM WAS WAITING ON THAT. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> **Last updated: 2026-09-11 — P2 · W10: THE ENTITY GRAPH BUILDER. W9 GAVE THE MODULE FACTS; A FACT IS A VALUE AND SAYS NOTHING ABOUT HOW THINGS RELATE. EDGES ARE WHAT A KNOWLEDGE GRAPH RESOLVES AN ENTITY BY. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-MODULE.md §3f](docs/DISCOVERABILITY-MODULE.md).
+>
+> ⚠️ **D7 IS STILL OPEN AND W10 DID NOT PRE-EMPT IT.** Graph conflicts get their own table, as W9's
+> truth conflicts did, rather than retrofitting `subject_type`/`subject_id` onto `audit_issues` —
+> that retrofit touches every reader of the P1 queue, the diff engine and all four exports, so doing
+> it as a side effect of building the graph would ship the two one bug apart. **W11 is the first
+> workstream that genuinely needs D7 resolved.**
+>
+> ⚠️ **THE PRD ENUMERATES NEITHER THE 14 TYPES NOR THE 9 PREDICATES ANYWHERE VISIBLE HERE** — the
+> same situation W4 hit with "M1–M13". The counts match; the **names are derived from schema.org**,
+> the vocabulary this module already reads and validates. 🔴 **If the PRD's list differs, ADD —
+> never renumber.** ⚠️ **Every predicate declares a DOMAIN and RANGE and they are enforced** —
+> without that a graph is a bag of edges, and "this review employs that topic" is storable,
+> meaningless and impossible to notice later.
+>
+> 🔴 **THREE THINGS THE SCHEMA REFUSES OUTRIGHT.** A **self-edge** ("Acme is part of Acme" is
+> vacuously true and pollutes every traversal). A **duplicate edge** — without the unique index a
+> weekly crawler adds a row per run, every count doubles, and "who do we compete with" answers
+> differently depending on how many audits have happened; re-observation **corroborates**, in
+> `audit_entity_evidence`. A **dangling edge** — both endpoints cascade.
+>
+> 🔴 **APPROVING AN EDGE APPROVES ITS ENDPOINTS IN ONE STATEMENT** — an approved edge between two
+> unreviewed nodes asserts a relationship between things the graph has not agreed exist. ⚠️ The
+> endpoints are approved, **not created**: a node somebody rejected blocks the edge rather than
+> being silently revived. 🔴 **AND THE ENDPOINT TYPES ARE JOINED FROM THE ENTITIES, NEVER STORED ON
+> THE EDGE** — a second copy would drift the first time a node was re-typed, after which `EG-03` and
+> `EG-04` would check against a type nobody holds.
+>
+> ⚠️ **CONFLICTS READ THE APPROVED GRAPH ONLY** — a proposal that contradicts the graph is a
+> proposal, and reporting it as a conflict would make the review queue argue with itself. **`EG-05`
+> fires only on `identifying` types**: a Topic nothing points at is ordinary, an Organization
+> nothing points at resolves nobody.
+>
+> 🔴 **A REAL BUG MY OWN ROUTE TESTS CAUGHT.** `detectGraphConflicts` read its entity argument both
+> ways, and `Object.entries` over an ARRAY yields "0"/"1"/"2" as keys — so every entity registered
+> twice, under its id and its index, and EG-05 fired on phantom nodes. **The unit test written to
+> cover that path passed against the broken code**, because it asserted only that an EG-05 existed,
+> not that nothing spurious did. It now asserts the exact subject ids, confirmed RED.
+>
+> ⚠️ **THE "(coming)" BADGE IS NOW UNREACHABLE FROM REAL DATA** — no issue in `issueCatalog` maps to
+> an unbuilt module any more; W9 and W10 shipped the last two. Its test uses a deliberately
+> synthetic module and says why, because pointing it at a catalogue issue makes it go
+> green-then-silently-dead the moment the next workstream ships. W11–W14 will make it live again.
+>
+> **Verified:** **366 files / 5986 passed / 14 skipped / 0 failed** (+90) · db-verify **56
+> migrations / 664 assertions / 0 failed** (+46) · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **12 behavioural guards confirmed RED
+> first.** 🔴 **Migration `0056` has only met WASM Postgres and no entity has been created against a
+> live database** — production is now NINE migrations behind.
+>
+> ── **Prior, and still current — P2 · W9** ───────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — P2 BEGINS: W9, THE CANONICAL BUSINESS TRUTH RECORD. THE MODULE COULD SAY WHAT A PAGE CLAIMS; IT COULD NOT SAY WHAT IS TRUE, AND EVERY REMAINING P2 WORKSTREAM WAS WAITING ON THAT. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > [docs/DISCOVERABILITY-MODULE.md §3e](docs/DISCOVERABILITY-MODULE.md).
 >

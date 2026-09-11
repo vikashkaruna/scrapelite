@@ -162,7 +162,10 @@ export const MODULES = Object.freeze({
   },
   entity_graph: {
     id: "entity_graph", label: "Entity Graph Builder",
-    mCode: null, phase: "P2", available: false,
+    // W10 shipped it. See the note on business_truth_record above: `available`
+    // drives the "(coming)" badge, so leaving it false advertises a built
+    // module as still on the way.
+    mCode: null, phase: "P2", available: true,
     description: "Entities, relationships and the evidence behind each.",
   },
   brand_discoverability: {
