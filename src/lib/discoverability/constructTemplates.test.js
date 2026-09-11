@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildConstruct, hasPlaceholders, CONSTRUCT_BUILDERS, AI_CRAWLERS,
   answerBlock, faqSchema, howToSchema, headingTree, organizationSchema,
-  metaTags, robotsTxtBlock, entityCard,
+  metaTags, robotsTxtBlock, entityCard, META_TITLE_MAX, META_DESCRIPTION_MAX,
 } from "./constructTemplates.js";
 import { ISSUES, ISSUE_CODES } from "./issueCatalog.js";
 
@@ -174,6 +174,57 @@ describe("metaTags", () => {
   });
   it("leads with the phrase, not the brand", () => {
     expect(metaTags({ primaryPhrase: "GEO guide", brand: "DatIQ" }).options[0]).toMatch(/^GEO guide/);
+  });
+
+  // ── W5: description variants ────────────────────────────────────────────
+  // Titles have carried three angles since the scoring engine shipped; the
+  // description carried one. A chooser with three titles and a single fixed
+  // description is not a set of options, it is one option wearing three hats.
+
+  it("offers a description for every title angle", () => {
+    const m = metaTags({ title: "GEO guide", brand: "DatIQ" });
+    expect(m.descriptions).toHaveLength(m.options.length);
+    expect(m.body.match(/name="description"/g)).toHaveLength(3);
+  });
+
+  it("leads with the author's own description when the page has one", () => {
+    const theirs = "A practical guide to generative engine optimization for technical teams.";
+    expect(metaTags({ title: "GEO guide", description: theirs }).descriptions[0]).toBe(theirs);
+  });
+
+  it("does NOT re-angle the author's sentence into the other variants", () => {
+    // Re-angling is writing, not transforming. A machine rewrite of copy that
+    // ships verbatim is the invention this module exists to refuse.
+    const theirs = "A practical guide to generative engine optimization for technical teams.";
+    const m = metaTags({ title: "GEO guide", description: theirs });
+    expect(m.descriptions[1]).toContain("TODO:");
+    expect(m.descriptions[2]).toContain("TODO:");
+    expect(m.descriptions[1]).not.toContain(theirs);
+  });
+
+  it("says so when an observed title will be truncated", () => {
+    const long = "x".repeat(META_TITLE_MAX + 12);
+    expect(metaTags({ title: long, primaryPhrase: long }).body).toMatch(/will truncate/);
+  });
+
+  it("never measures a placeholder, only something observed", () => {
+    // Measuring a TODO reports the length of our own prompt text, which would
+    // tell an author their description fits when they have not written one.
+    const m = metaTags({});
+    expect(m.body).not.toMatch(/\d+ chars/);
+  });
+
+  it("keeps a short observed description unflagged", () => {
+    const ok = "A short, entirely reasonable description.";
+    expect(metaTags({ title: "T", description: ok }).body)
+      .toContain(`${ok.length} chars`);
+    expect(metaTags({ title: "T", description: ok }).body).not.toMatch(/will truncate/);
+  });
+
+  it("still produces a pasteable block with no facts at all", () => {
+    const m = metaTags({});
+    expect(m.body).toContain("<title>");
+    expect(hasPlaceholders(m)).toBe(true);
   });
 });
 

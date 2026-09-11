@@ -264,28 +264,73 @@ export function headingTree(headings = []) {
 }
 
 /** Title and meta description options, sized to what actually renders. */
+export const META_TITLE_MAX = 60;
+export const META_DESCRIPTION_MAX = 155;
+
+/**
+ * Annotate a string we actually observed with its own length.
+ *
+ * Never annotates a scaffold: measuring a `TODO:` line reports the length of
+ * our own prompt text, which is both meaningless and actively misleading — it
+ * would tell an author their description fits when they have not written one.
+ */
+function lengthNote(text, max) {
+  if (!text || /TODO:/.test(text)) return "";
+  const n = text.length;
+  return n > max ? ` · ${n} chars, over ${max} — will truncate` : ` · ${n} chars`;
+}
+
+/**
+ * Title and description options.
+ *
+ * THREE ANGLES, NOT THREE REWORDINGS. Direct, benefit-led, and question form.
+ * The question variant earns its place because answer engines match a query to
+ * a passage, and a title already phrased as the question is the cheapest way to
+ * make that match explicit.
+ *
+ * Where the page already carries a title or description, that text leads as
+ * Option A — the author's own words are the ones they will actually publish,
+ * the same reasoning `answerBlock` applies to its candidate passage.
+ *
+ * ⚠️ THE OTHER TWO ANGLES STAY SCAFFOLDS EVEN WHEN WE HAVE A DESCRIPTION.
+ * Re-angling someone's sentence into "benefit-led" is writing, not
+ * transforming, and there is no deterministic way to do it from the page
+ * alone. A meta description is copy that ships verbatim, so a confident
+ * machine rewrite is exactly the invention this module exists to refuse.
+ */
 export function metaTags({ title = "", description = "", brand = "", primaryPhrase = "" } = {}) {
   const phrase = primaryPhrase || title || TODO("primary phrase");
+  const suffix = brand ? ` | ${brand}` : "";
+
   const options = [
-    `${phrase}${brand ? ` | ${brand}` : ""}`,
-    `${phrase}: ${TODO("the specific benefit or answer")}${brand ? ` | ${brand}` : ""}`,
-    `${TODO("question form")} ${phrase}?${brand ? ` | ${brand}` : ""}`,
+    `${phrase}${suffix}`,
+    `${phrase}: ${TODO("the specific benefit or answer")}${suffix}`,
+    `${TODO("question form")} ${phrase}?${suffix}`,
   ];
+
+  const descriptions = [
+    description || `${TODO("40-155 character answer")}. Resolve the query in the opening clause, then add one supporting fact.`,
+    `${TODO("the outcome the reader gets")}. ${TODO("one concrete detail that proves it")}.`,
+    `${TODO("the question a searcher would type")} ${TODO("the answer, in one self-contained clause")}.`,
+  ];
+
+  const angles = ["direct", "benefit-led", "question form — useful for answer engines"];
+
+  const body = options
+    .map((titleOption, i) => [
+      `<!-- Option ${"ABC"[i]} — ${angles[i]}${lengthNote(titleOption, META_TITLE_MAX)} -->`,
+      `<title>${titleOption}</title>`,
+      `<!-- description${lengthNote(descriptions[i], META_DESCRIPTION_MAX)} -->`,
+      `<meta name="description" content="${descriptions[i]}">`,
+    ].join("\n"))
+    .join("\n\n");
+
   return {
     type: "meta_tags", format: "html", label: "Title & description options",
-    note: "Titles are truncated around 60 characters and descriptions around 155. Lead with the phrase, not the brand.",
-    body: [
-      `<!-- Option A -->`,
-      `<title>${options[0]}</title>`,
-      `<meta name="description" content="${description || TODO("155-character summary that answers the query")}">`,
-      ``,
-      `<!-- Option B -->`,
-      `<title>${options[1]}</title>`,
-      ``,
-      `<!-- Option C (question form, useful for answer engines) -->`,
-      `<title>${options[2]}</title>`,
-    ].join("\n"),
+    note: `Titles are truncated around ${META_TITLE_MAX} characters and descriptions around ${META_DESCRIPTION_MAX}. Lead with the phrase, not the brand. Pick one pairing — the three angles are alternatives, not a sequence.`,
+    body,
     options,
+    descriptions,
   };
 }
 

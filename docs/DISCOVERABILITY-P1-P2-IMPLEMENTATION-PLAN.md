@@ -141,7 +141,7 @@ identically before and after.
 | H1/H2/H3 restructuring plan | ✅ `headingTree` |
 | FAQ content + FAQPage JSON-LD | ✅ `faqContentBlock`, `faqSchema` |
 | Organization + Article JSON-LD | ✅ `organizationSchema`, `articleSchema` (+ Person, HowTo, Breadcrumb, entity card, author bio) |
-| Meta title and description **variants** | ⚠️ `metaTags` emits one set, not variants |
+| Meta title and description **variants** | ✅ **W5.** This row was wrong when written: `metaTags` has emitted **three title angles** since the scoring engine shipped (`c902be9`, present in `staging`), so only the *description* lacked variants. W5 added three descriptions paired to the three title angles, plus a truncation warning measured on observed text only. ⚠️ Angles B and C stay `TODO:` scaffolds even when the page has a description — re-angling an author's sentence is writing, not transforming, and meta copy ships verbatim. |
 | **Internal-link recommendations** | ❌ |
 | **Content brief** for missing category / comparison / use-case / industry page | ❌ |
 | robots.txt and crawler-access remediation | ✅ `robotsTxtBlock` |
