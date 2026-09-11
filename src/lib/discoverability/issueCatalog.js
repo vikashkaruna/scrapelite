@@ -201,6 +201,17 @@ export const ISSUES = Object.freeze({
     fix: "Add the page-type schema that matches this template.",
     asset: "jsonld_article",
   },
+  "EA-11": {
+    pillar: "entity_authority", severity: "critical", frameworks: ["seo", "geo"],
+    // High confidence: this is a structural reading of the markup, not a
+    // judgement about it. Either the block names its entity or it does not.
+    owner: "seo", impact: 65, effort: 15, confidence: 96,
+    title: "Entity markup is present but cannot identify anything",
+    why: "Declaring an entity and then not naming it is worse than declaring nothing: a resolver has a node to build and no identity to attach, which is how a page gets merged into the wrong knowledge-graph entry.",
+    fix: "Give every entity block the property that names it — `name` on Organization, Person and Product, `headline` on Article — or remove the block until it can carry one.",
+    asset: "jsonld_organization",
+    penalty: "ENTITY_SCHEMA_INVALID",
+  },
 
   // ── Structural Hierarchy ─────────────────────────────────────────────────
   "SH-01": {
@@ -419,6 +430,21 @@ export const ISSUES = Object.freeze({
     why: "When crawl policy cannot be read, crawler behaviour becomes unpredictable and this audit has to assume rather than verify.",
     fix: "Serve a reachable robots.txt at the domain root.",
     asset: "robots_txt",
+  },
+  "TA-17": {
+    pillar: "technical_accessibility", severity: "critical", frameworks: ["seo", "aeo", "geo"],
+    // Effort is high and impact is real: this is rarely a one-line fix, and
+    // the priority formula is meant to reflect that rather than putting a
+    // re-platforming job at the top of Monday's queue.
+    owner: "engineering", impact: 60, effort: 65, confidence: 90,
+    title: "Core Web Vitals are severely failing",
+    why: "Past a point, slowness stops being an experience problem and starts being a discovery one: crawl budget contracts and the page competes from behind on every query.",
+    fix: "Treat this as a performance workstream, not a tweak — start with the metric furthest past its threshold and measure again from field data, not the lab.",
+    // null, like every other performance code. There is no snippet that makes
+    // a page fast, and offering one would be the placeholder-vs-invention rule
+    // broken in the other direction.
+    asset: null,
+    penalty: "SEVERE_CWV_FAILURE",
   },
 });
 

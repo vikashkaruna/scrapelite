@@ -25,6 +25,50 @@ const IDENTITY_REQUIREMENTS = Object.freeze({
   WebSite:      ["name", "url"],
 });
 
+/**
+ * The property WITHOUT WHICH a block cannot identify the thing it declares.
+ *
+ * ── NOT THE SAME QUESTION AS COMPLETENESS ──────────────────────────────────
+ * `IDENTITY_REQUIREMENTS` above asks "how well is this entity described"; a
+ * block missing `logo` is thin, and thinness is what the signal score is for.
+ * This asks "is there an entity here AT ALL". A block that declares itself an
+ * Organization and never says which organization gives a resolver a node to
+ * build and no identity to attach — and a half-built node is what gets merged
+ * into the wrong knowledge-graph entry, which is a worse outcome than never
+ * having claimed one. That is why it is a multiplicative blocker and not
+ * another few points off a signal.
+ *
+ * ⚠️ `WebSite` IS DELIBERATELY ABSENT. The sitelinks-searchbox pattern is a
+ * WebSite block carrying `url` and `potentialAction` and nothing else, which is
+ * both extremely common and entirely correct. Including it here would fire this
+ * blocker on a large share of perfectly healthy sites, and a penalty that cries
+ * wolf is worse than no penalty: it teaches its reader to dismiss the ones that
+ * are real.
+ */
+const NAMING_PROPERTY = Object.freeze({
+  Organization: "name",
+  Person: "name",
+  Product: "name",
+  SoftwareApplication: "name",
+  Article: "headline",
+  BlogPosting: "headline",
+});
+
+/** Does a block carry the one property that says what it IS? */
+function identifiesItself(block, type) {
+  const key = NAMING_PROPERTY[type];
+  if (!block || !key) return true;
+  const v = block[key];
+  // schema.org permits a language-tagged object here, and a block using one is
+  // named — just not as a bare string. Reading only `typeof v === "string"`
+  // would report a correctly-internationalised page as broken.
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return Boolean(v["@value"] || v.name);
+  }
+  if (Array.isArray(v)) return v.some((x) => typeof x === "string" && x.trim());
+  return typeof v === "string" && v.trim().length > 0;
+}
+
 /** How complete is one schema block against the properties that matter? */
 export function schemaCompleteness(block, type) {
   const required = IDENTITY_REQUIREMENTS[type];
@@ -109,6 +153,34 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
         details: {},
       });
     }
+  }
+
+  // ── EA-11: declared, and unresolvable ────────────────────────────────────
+  //
+  // Checked OUTSIDE the parts.length branch above, because the two conditions
+  // are independent: a page can have a perfectly complete Organization block
+  // and a nameless Product block beside it, and that Product is exactly as
+  // unresolvable as it would be alone.
+  //
+  // Only blocks that are actually PRESENT are examined. An absent Person block
+  // is not an invalid one — that is EA-01's territory, and firing both on the
+  // same page would report one absence twice.
+  const unresolvable = [
+    ["Organization", org], ["Person", person],
+    [article?.["@type"] === "BlogPosting" ? "BlogPosting" : "Article", article],
+    [product?.["@type"] === "SoftwareApplication" ? "SoftwareApplication" : "Product", product],
+  ].filter(([type, block]) => block && !identifiesItself(block, type));
+
+  if (unresolvable.length > 0) {
+    const types = unresolvable.map(([type]) => type);
+    issues.push({
+      code: "EA-11", signalCode: "schema_identity_completeness",
+      measuredScore: signals.schema_identity_completeness ?? 0,
+      evidence: `${types.join(" and ")} markup is present but carries no ${
+        types.length === 1 ? `\`${NAMING_PROPERTY[types[0]]}\`` : "identifying property"
+      }, so there is nothing for an engine to resolve it to.`,
+      details: { unresolvable: types },
+    });
   }
 
   // ── sameAs / profile linkage ─────────────────────────────────────────────

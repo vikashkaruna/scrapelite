@@ -33,6 +33,13 @@ vi.mock("../../functions/lib/aiProviders.js", () => ({
 
 const { runAudit, inferPageType } = await import("../../functions/lib/audit/auditPipeline.js");
 const { _resetRobotsTextCacheForTests } = await import("../../functions/lib/complianceEngine.js");
+// Imported, not hard-coded. These assertions exist to prove the stamp is
+// PRESENT and CURRENT — a literal "v1" turns every future version bump into a
+// spurious test failure and teaches the next person to edit the assertion
+// rather than ask whether the bump was correct.
+const { SCORING_MODEL_VERSION, PENALTIES } =
+  await import("../../../src/lib/discoverability/scoringModel.js");
+const { analyseTechnical } = await import("../../functions/lib/audit/technicalAnalysis.js");
 
 const GOOD_PAGE = `<!doctype html><html lang="en"><head>
 <title>What is generative engine optimization? | Example</title>
@@ -717,7 +724,7 @@ describe("evidence travels with every score", () => {
     // Without it, a diff cannot tell whether two scores came out of the same
     // maths — and a delta across two models is a number nobody earned.
     const r = await runAudit("https://example.com/geo", baseOpts);
-    expect(r.scoringModelVersion).toBe("v1");
+    expect(r.scoringModelVersion).toBe(SCORING_MODEL_VERSION);
   });
 
   it("records no threshold for a signal that is a curve", async () => {
@@ -757,6 +764,142 @@ describe("an unreachable page still has the shape of a result", () => {
     });
     scrapeChain.mockResolvedValue({ ok: false, error: "unreachable" });
     const r = await runAudit("https://example.com/down", baseOpts);
-    expect(r.scoringModelVersion).toBe("v1");
+    expect(r.scoringModelVersion).toBe(SCORING_MODEL_VERSION);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W3 — THE TWO PENALTY CONDITIONS THE SHIPPED SET HAD NO EQUIVALENT FOR
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ENTITY_SCHEMA_INVALID — declared, and unresolvable", () => {
+  const withSchema = (block) => `<!doctype html><html lang="en"><head>
+<title>Example</title><meta name="viewport" content="width=device-width">
+<script type="application/ld+json">${JSON.stringify(block)}</script>
+</head><body><h1>Example</h1><p>${"word ".repeat(200)}</p></body></html>`;
+
+  const serve = (html) => {
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return htmlResponse(html, 200, url);
+    });
+    scrapeChain.mockResolvedValue({ ok: true, source: "firecrawl", html });
+  };
+
+  it("fires when an Organization block never says which organization", () => {
+    serve(withSchema({ "@context": "https://schema.org", "@type": "Organization", url: "https://example.com" }));
+    return runAudit("https://example.com/x", baseOpts).then((r) => {
+      expect(r.issues.map((i) => i.code)).toContain("EA-11");
+      expect(r.penalties.map((p) => p.code)).toContain("ENTITY_SCHEMA_INVALID");
+      expect(r.penaltyMultiplier).toBeLessThan(1);
+    });
+  });
+
+  it("does NOT fire when the block names itself", async () => {
+    serve(withSchema({
+      "@context": "https://schema.org", "@type": "Organization",
+      name: "Example", url: "https://example.com", logo: "https://example.com/l.png",
+      sameAs: ["https://x.com/example"],
+    }));
+    const r = await runAudit("https://example.com/x", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("EA-11");
+    expect(r.penalties.map((p) => p.code)).not.toContain("ENTITY_SCHEMA_INVALID");
+  });
+
+  it("does NOT fire on a page with no entity markup at all", async () => {
+    // Absence is EA-01's territory. Firing both would report one absence twice,
+    // and would put a multiplicative blocker on the commonest page on the web.
+    const html = `<!doctype html><html lang="en"><head><title>Bare</title>
+<meta name="viewport" content="width=device-width"></head>
+<body><h1>Bare</h1><p>${"word ".repeat(200)}</p></body></html>`;
+    serve(html);
+    const r = await runAudit("https://example.com/x", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("EA-11");
+    expect(r.penalties.map((p) => p.code)).not.toContain("ENTITY_SCHEMA_INVALID");
+  });
+
+  it("accepts a language-tagged name rather than calling it broken", async () => {
+    // schema.org permits {"@value": "..."}; reading only for a bare string
+    // would report a correctly-internationalised page as unresolvable.
+    serve(withSchema({
+      "@context": "https://schema.org", "@type": "Organization",
+      name: { "@value": "Beispiel", "@language": "de" }, url: "https://example.com",
+    }));
+    const r = await runAudit("https://example.com/x", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("EA-11");
+  });
+
+  it("does NOT fire on the sitelinks-searchbox WebSite pattern", async () => {
+    // url + potentialAction and no name is both extremely common and correct.
+    // A penalty that cries wolf teaches its reader to dismiss the real ones.
+    serve(withSchema({
+      "@context": "https://schema.org", "@type": "WebSite",
+      url: "https://example.com",
+      potentialAction: { "@type": "SearchAction", target: "https://example.com/s?q={q}" },
+    }));
+    const r = await runAudit("https://example.com/x", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("EA-11");
+  });
+});
+
+describe("SEVERE_CWV_FAILURE — severe, not merely failing", () => {
+  // Tested at the ANALYSER seam, not through runAudit. The pipeline fetches
+  // Core Web Vitals from PageSpeed and `baseOpts` skips that entirely, so a
+  // `webVitals` key on the audit options is silently ignored — a test written
+  // that way passes or fails for reasons unrelated to the rule it claims to
+  // check. `analyseTechnical` is where the readings actually enter the model.
+  const parsed = {
+    meta: { title: "Example", viewport: "width=device-width", canonical: "https://example.com/x" },
+    jsonLd: [], jsonLdErrors: [], schemaTypes: [], headings: [], links: [],
+    structures: {}, wordCount: 400,
+  };
+  const analyse = (webVitals) => analyseTechnical(parsed, {
+    url: "https://example.com/x",
+    fetch: { status: 200, finalUrl: "https://example.com/x" },
+    webVitals,
+  });
+
+  it("does NOT fire on one metric just past its poor threshold", () => {
+    // "bad" is not "severe". A blocker that treats them alike takes 10% off a
+    // large share of the ordinary web.
+    const r = analyse({ lcp: 4.5, inp: 150, cls: 0.05, source: "crux" });
+    expect(r.penalties).not.toContain("SEVERE_CWV_FAILURE");
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-17");
+    // The ordinary failing-metric issue is still raised — this rule adds a
+    // second, harsher claim, it does not replace the first.
+    expect(r.issues.map((i) => i.code)).toContain("TA-09");
+  });
+
+  it("fires when two metrics are past their poor thresholds", () => {
+    const r = analyse({ lcp: 4.5, inp: 600, cls: 0.05, source: "crux" });
+    expect(r.penalties).toContain("SEVERE_CWV_FAILURE");
+    const issue = r.issues.find((i) => i.code === "TA-17");
+    expect(issue.details.poor.sort()).toEqual(["inp", "lcp"]);
+    expect(issue.evidence).toMatch(/Two or more metrics/);
+  });
+
+  it("fires on a single catastrophic metric, which thin CrUX data would hide", () => {
+    // Low-traffic URLs frequently return only LCP. Without the 2x clause a
+    // 12-second page escapes entirely.
+    const r = analyse({ lcp: 12, source: "crux" });
+    expect(r.penalties).toContain("SEVERE_CWV_FAILURE");
+    expect(r.issues.find((i) => i.code === "TA-17").details.catastrophic).toEqual(["lcp"]);
+  });
+
+  it("holds the 2x line exactly, rather than firing just under it", () => {
+    // poor for LCP is 4.0s, so 8.0 qualifies and 7.9 does not.
+    expect(analyse({ lcp: 7.9, source: "crux" }).penalties).not.toContain("SEVERE_CWV_FAILURE");
+    expect(analyse({ lcp: 8.0, source: "crux" }).penalties).toContain("SEVERE_CWV_FAILURE");
+  });
+
+  it("does not fire when Core Web Vitals were not measured at all", () => {
+    // `unknown` is never `0`, and it is never a blocker either.
+    const r = analyse(null);
+    expect(r.penalties).not.toContain("SEVERE_CWV_FAILURE");
+    expect(r.reasons.core_web_vitals).toBe("not_measured");
+  });
+
+  it("costs exactly 10% — the PRD's own weight", () => {
+    expect(PENALTIES.SEVERE_CWV_FAILURE.factor).toBe(0.10);
   });
 });

@@ -287,8 +287,12 @@ export async function runAudit(url, options = {}) {
   const entity = analyseEntityAuthority(parsed, { now, citationSample: citationResult, evidence });
 
   // The FAQ mismatch penalty belongs to the technical layer but is only
-  // detectable by the structural comparison, so it is threaded across.
+  // detectable by the structural comparison, so it is threaded across. The
+  // entity-schema one is threaded the same way and for the same reason: it is
+  // detected where the markup is read and applied where the multiplicative
+  // layer lives, so there stays exactly one list of reasons a score is scaled.
   const faqMismatch = structure.issues.some((i) => i.code === "SH-07");
+  const entitySchemaInvalid = entity.issues.some((i) => i.code === "EA-11");
   const technical = analyseTechnical(parsed, {
     url,
     fetch: collected.fetch,
@@ -297,6 +301,7 @@ export async function runAudit(url, options = {}) {
     webVitals,
     canonicalStatus,
     faqMismatch,
+    entitySchemaInvalid,
     sitemaps: collected.sitemaps || [],
     evidence,
   });

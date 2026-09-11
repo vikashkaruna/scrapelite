@@ -91,9 +91,9 @@ src/lib/discoverability/          PURE. Imported by BOTH React and netlify/,
                                   user sees and the score the server stored are
                                   computed by the same lines.
   signalRegistry.js               20 signals, 4 pillars, weights summing to 1
-  scoringModel.js                 pillar/framework maths, penalty layer, bands
+  scoringModel.js                 pillar/framework maths, 9 penalties, bands, v2
   signalScorers.js                the individual curves
-  issueCatalog.js                 44 issue codes → severity, owner, fix, penalty
+  issueCatalog.js                 46 issue codes → severity, owner, fix, penalty
   recommendationModel.js          priority formula, per-page lift, ranking
   constructTemplates.js           13 generators for ready-made assets
   auditProfiles.js                8 profiles (lenses) + 12 page-type rule packs
@@ -352,6 +352,106 @@ blocker outranks it.
 
 ---
 
+## 3c. The penalty model — shipped vs the PRD
+
+Nine multiplicative blockers, applied to the weighted sum as `score * (1 - factor)`
+across **every** framework view. They exist because some failures undermine
+discovery no matter how good the content is, and an additive deduction cannot
+express that: a page whose content only exists after hydration is not "a good
+page minus a few points" to a crawler that does not run JavaScript — it is a
+blank page.
+
+### The mapping, and the four deliberate divergences
+
+| PRD critical condition | PRD | Shipped | Why |
+|---|---|---|---|
+| Key URL blocked by robots or `noindex` | 20% | `NOINDEX` **0.20** | matches |
+| Relevant AI-search bot denied access | 15% | `AI_CRAWLER_BLOCKED` **0.20** | **⬆ diverges.** A page an engine cannot fetch is not a discounted page, it is an absent one. 15% understates a total exclusion. |
+| Canonical destination non-200 | 15% | `CANONICAL_TARGET_BROKEN` **0.15** | matches |
+| Major raw-to-rendered content loss | 15% | `CONTENT_HYDRATION_ONLY` **0.20** | **⬆ diverges.** Same reasoning as the crawler block — a non-rendering crawler receives an effectively empty page. |
+| Critical entity schema invalid | 10% | `ENTITY_SCHEMA_INVALID` **0.10** | **added in W3** at the PRD's weight |
+| FAQ schema differs from visible FAQ | 10% | `FAQ_SCHEMA_MISMATCH` **0.10** | matches |
+| Severe CWV failure | 10% | `SEVERE_CWV_FAILURE` **0.10** | **added in W3** at the PRD's weight |
+| *(no PRD row)* | — | `AI_CRAWLER_PARTIAL_BLOCK` **0.05** | **➕ DatIQ extension.** Uneven citation coverage is a real, milder defect the PRD does not model at all. |
+| *(no PRD row)* | — | `MOBILE_PARITY_MISSING` **0.10** | **➕ DatIQ extension.** Mobile is the crawl default; a desktop-only page is a partial block by another name. |
+
+**Priority also diverges, deliberately.** The PRD specifies a linear
+`0.40I + 0.20C + 0.20B + 0.20E`; `recommendationModel.js` uses a multiplicative
+`100 · (I·C) · breadthMul · easeMul`. A linear form lets a high-impact,
+zero-confidence finding outrank a certain one, which is precisely the queue
+nobody trusts twice.
+
+These divergences are **decision D1** in the implementation plan. They are
+recorded here rather than only there because the next person to read the PRD
+beside this code will otherwise see four discrepancies and "fix" them.
+`scoringModel.test.js` asserts every factor above, so an alignment pass that
+silently re-calibrates fails the build with the reasoning attached.
+
+### What "severe" and "invalid" actually mean
+
+Both new blockers had to be given detection rules the PRD does not specify, and
+both rules are deliberately **narrower** than their names suggest. A blocker
+that fires on ordinary pages teaches its reader to dismiss the ones that matter.
+
+**`ENTITY_SCHEMA_INVALID`** fires when an entity block is *present* and cannot
+identify the thing it declares — an `Organization` with no `name`, an `Article`
+with no `headline`. It is not the same claim as EA-01 (*no entity markup*) or
+EA-02 (*thin entity markup*):
+
+```
+absent   →  EA-01, a signal score. An engine infers the publisher from prose.
+thin     →  EA-02, a signal score. The entity resolves, incompletely.
+UNUSABLE →  EA-11 + the blocker. A resolver has a node to build and no
+            identity to attach — and a half-built node is what gets merged
+            into the WRONG knowledge-graph entry.
+```
+
+⚠️ `WebSite` is deliberately excluded from the check. The sitelinks-searchbox
+pattern is a `WebSite` block carrying `url` and `potentialAction` and nothing
+else, which is both extremely common and entirely correct.
+
+**`SEVERE_CWV_FAILURE`** fires on either of two conditions — **two or more
+metrics past their poor threshold**, or **one metric at or beyond twice its
+poor threshold** (LCP ≥ 8s, INP ≥ 1000ms, CLS ≥ 0.5). One marginal reading is a
+fault and is already reported as TA-09/10/11 and priced into the
+`core_web_vitals` signal; this is the separate claim that performance has
+crossed from an experience problem into a discovery one.
+
+The 2× clause exists because CrUX frequently returns only LCP for low-traffic
+URLs, and without it a twelve-second page escapes whenever the field data is
+thin. It is the same `unknown ≠ 0` discipline read the other way: thin data
+must not manufacture a blocker, and must not excuse one either.
+
+### The version, and why a diff refuses to cross it
+
+`SCORING_MODEL_VERSION` is `v2` as of W3. It travels on `audit_results` and
+`auditDiff` **refuses** to compare across versions — see `incomparableDiff()`.
+
+That refusal is the harsher choice and the correct one. A caveat printed under a
+confident `+4.2` is read as a footnote; the number is what gets screenshotted
+and pasted into a board deck. "Re-run to compare" costs the user one audit; a
+delta that mixes two penalty sets costs them their trust in every number in the
+report, and they will never know to spend it.
+
+What the guard still reports, because a version bump does not invalidate it:
+
+| | Across a version boundary |
+|---|---|
+| Framework, pillar, signal deltas | refused — `comparable: false`, `change: null` |
+| Coverage, penalty multiplier | refused |
+| **Issue resolved / remaining / introduced** | **still reported** — issue codes are a public contract that does not move with the scoring model |
+| Penalty cleared / introduced | refused — the penalty **set** is exactly what changed, so "cleared" would credit a fix nobody made |
+
+A row written before migration 0048 carries no version and is treated as `v1`:
+it *was* scored, by the only model this repository had shipped.
+
+⚠️ **v1 → v2 moves the score of a page only if it trips one of the two new
+conditions.** Nothing else changed — no weight, no curve, no existing factor.
+That is what makes the bump narrow rather than a re-calibration, and it is
+asserted in `scoringModel.test.js`.
+
+---
+
 ## 4. Failure modes, and which way each fails
 
 | Condition | Behaviour | Why |
@@ -536,7 +636,7 @@ clause-by-clause gap analysis lives in
 |---|---|
 | Four-pillar model, SEO/AEO/GEO framework views | ✅ weights match the PRD exactly |
 | Evidence envelope and explainability | ✅ W1 — `evidenceModel.js`, migration 0048 |
-| Penalty model | ⚠️ W3 — shipped calibration retained by decision; two PRD conditions still to add |
+| Penalty model | ✅ W3 — 9 blockers, `v2`, cross-version diff guard. Shipped calibration retained per D1 (§3c) |
 | Goal-based intake (audit type, primary goal, geography, 8 profiles) | ✅ W2 — `intakeModel.js`, migration 0049 |
 | Gap analysis v2 (root cause, module, observed-fact/inference split) | ❌ W4 |
 | Recommendation Studio (meta variants, internal links, content brief) | ⚠️ W5 — 13 of 17 constructs |

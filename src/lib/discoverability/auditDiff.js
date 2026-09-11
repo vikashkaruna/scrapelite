@@ -55,6 +55,29 @@ export function direction(change, threshold = 0.5) {
 export function diffAudits(baseline, current) {
   if (!baseline || !current) return null;
 
+  // ── THE VERSION GATE ─────────────────────────────────────────────────────
+  //
+  // Everything below this line subtracts one number from another. That is only
+  // a measurement of change when both numbers came out of the same model —
+  // otherwise part of the delta is the model moving, and no reader can tell
+  // which part. So a cross-version comparison is REFUSED rather than annotated:
+  // a caveat under a confident "+4.2" is read as a footnote, and the number is
+  // what gets screenshotted, quoted in a standup and pasted into a board deck.
+  //
+  // This is deliberately the harsher choice. "Re-run to compare" costs the user
+  // an audit; a delta that mixes two penalty sets costs them their trust in
+  // every other number in the report, and they will not know to spend it.
+  //
+  // Rows written before migration 0048 carry no version and are v1 — the only
+  // model this repository had shipped when they were written. That is the same
+  // fallback `rehydrate()` applies, and it means the guard treats a
+  // pre-versioning baseline as what it actually is rather than as unknown.
+  const baselineVersion = baseline.scoringModelVersion || "v1";
+  const currentVersion = current.scoringModelVersion || "v1";
+  if (baselineVersion !== currentVersion) {
+    return incomparableDiff(baseline, current, baselineVersion, currentVersion);
+  }
+
   // ── frameworks ───────────────────────────────────────────────────────────
   const frameworks = {};
   for (const f of FRAMEWORKS) {
@@ -164,6 +187,84 @@ export function diffAudits(baseline, current) {
     coverage,
     caveats,
     headline: buildHeadline(frameworks.overall, resolved.length, introduced.length),
+    nextBestActions: nextBestActions(current),
+  };
+}
+
+/**
+ * The same shape, with every delta refused.
+ *
+ * ── WHY A FULL SHAPE AND NOT `null` ──────────────────────────────────────
+ * Every consumer of `diffAudits` — the compare route, the report writer, the
+ * dashboard's diff panel, the monitor's regression alert — reads named keys off
+ * the result. Returning `null` here would turn an honest refusal into a
+ * TypeError somewhere downstream, and the user would see "something went wrong"
+ * instead of the one sentence that actually explains their situation.
+ *
+ * So the shape is complete and every delta is non-comparable, with the reason
+ * on each one. `versionMismatch` is the machine-readable form of the same fact,
+ * for a caller that wants to render a "re-run" button rather than a sentence.
+ *
+ * ⚠️ The ISSUE lists are still computed and still true. Issue codes are a
+ * public contract that does not move with the scoring model, so "AC-01 was
+ * resolved" survives a version bump intact — and it is the most actionable
+ * thing left on the page when the numbers cannot be compared. Withholding it
+ * would be refusing more than the model actually invalidated.
+ */
+export function incomparableDiff(baseline, current, baselineVersion, currentVersion) {
+  const refused = (reason) => ({
+    before: null, after: null, change: null, comparable: false, reason, direction: "unknown",
+  });
+  const reason = `scored on ${baselineVersion}, compared against ${currentVersion}`;
+
+  const beforeCodes = new Set((baseline.issues || []).map((i) => i.code));
+  const afterCodes = new Set((current.issues || []).map((i) => i.code));
+  const describe = (code) => ({
+    code,
+    title: ISSUES[code]?.title || code,
+    severity: ISSUES[code]?.severity || "medium",
+    pillar: ISSUES[code]?.pillar || null,
+  });
+  const resolved = [...beforeCodes].filter((c) => !afterCodes.has(c)).map(describe);
+  const remaining = [...afterCodes].filter((c) => beforeCodes.has(c)).map(describe);
+  const introduced = [...afterCodes].filter((c) => !beforeCodes.has(c)).map(describe);
+
+  return {
+    baselineId: baseline.auditId || baseline.id || null,
+    currentId: current.auditId || current.id || null,
+    versionMismatch: {
+      baseline: baselineVersion,
+      current: currentVersion,
+      // What the UI should offer. The baseline is the stale side by
+      // definition — it is the older measurement — so re-running the page is
+      // what restores comparability, not re-running the current audit.
+      remedy: "rerun",
+    },
+    frameworks: Object.fromEntries(FRAMEWORKS.map((f) => [f, refused(reason)])),
+    pillars: Object.fromEntries(PILLAR_IDS.map((p) => [p, { label: pillarLabel(p), ...refused(reason) }])),
+    signals: Object.keys(SIGNALS).map((code) => ({
+      code, label: signalLabel(code), pillar: SIGNALS[code].pillar, ...refused(reason),
+    })),
+    issues: {
+      resolved, remaining, introduced,
+      resolvedCount: resolved.length,
+      remainingCount: remaining.length,
+      introducedCount: introduced.length,
+    },
+    penalties: {
+      // Penalty codes are a contract too, but the SET they are drawn from is
+      // exactly what changed between versions — a code absent from the baseline
+      // may be absent because the page was clean or because the check did not
+      // exist yet. Reporting "cleared" would be reporting a fix nobody made.
+      cleared: [], remaining: [], introduced: [],
+      multiplier: refused(reason),
+    },
+    citation: null,
+    coverage: refused(reason),
+    caveats: [
+      `The baseline was scored with model ${baselineVersion} and this audit with ${currentVersion}. Scores from two different models are not comparable, so no deltas are shown — re-run the baseline page to compare like with like.`,
+    ],
+    headline: `This baseline was scored with an earlier version of the model (${baselineVersion}), so its scores cannot be compared with this audit's. The issue list below is still accurate — issue codes do not change between model versions.`,
     nextBestActions: nextBestActions(current),
   };
 }

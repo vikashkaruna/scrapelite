@@ -205,6 +205,52 @@ export function analyseTechnical(parsed, ctx = {}) {
     if (cwv.lcp != null) raise("TA-09", "lcp", cwv.lcp);
     if (cwv.inp != null) raise("TA-10", "inp", cwv.inp);
     if (cwv.cls != null) raise("TA-11", "cls", cwv.cls);
+
+    // ── TA-17: severe, as distinct from failing ──────────────────────────
+    //
+    // The three issues above already report every metric past its GOOD
+    // threshold, and the signal score already carries the cost of that. This
+    // is a different claim — that performance has crossed from an experience
+    // problem into a discovery one — and it must not fire on a page that is
+    // merely a bit slow, or it stops meaning anything.
+    //
+    // Two rules, either of which qualifies, and neither of which invents a
+    // number that is not already published or arithmetically obvious:
+    //
+    //   * TWO OR MORE metrics past their POOR threshold. One marginal reading
+    //     is a fault; two independent ones is a characteristic of the page.
+    //   * ONE metric at or beyond TWICE its poor threshold — LCP ≥ 8s,
+    //     INP ≥ 1000ms, CLS ≥ 0.5. Each of those is unarguable on its own, and
+    //     without this clause a catastrophic single reading escapes whenever
+    //     CrUX returns only one metric, which for low-traffic URLs is common.
+    //
+    // ⚠️ It is deliberately possible for this NOT to fire on a page with one
+    // poor metric. `unknown ≠ 0` has a sibling: "bad" is not "severe", and a
+    // blocker that treats them alike would take 10% off a large share of the
+    // ordinary web.
+    const measured = [["lcp", cwv.lcp], ["inp", cwv.inp], ["cls", cwv.cls]]
+      .filter(([, v]) => v != null && Number.isFinite(v));
+    const poor = measured.filter(([m, v]) => v > CWV_THRESHOLDS[m].poor);
+    const catastrophic = measured.filter(([m, v]) => v >= CWV_THRESHOLDS[m].poor * 2);
+
+    if (poor.length >= 2 || catastrophic.length >= 1) {
+      const worst = (catastrophic.length ? catastrophic : poor)
+        .map(([m, v]) => `${CWV_THRESHOLDS[m].label} ${v}${CWV_THRESHOLDS[m].unit} (poor above ${CWV_THRESHOLDS[m].poor}${CWV_THRESHOLDS[m].unit})`);
+      penalties.push("SEVERE_CWV_FAILURE");
+      issues.push({
+        code: "TA-17", signalCode: "core_web_vitals", measuredScore: signals.core_web_vitals,
+        evidence: `${worst.join("; ")}. ${
+          catastrophic.length
+            ? "That is at or beyond twice the poor threshold."
+            : "Two or more metrics are past their poor threshold."
+        }`,
+        details: {
+          poor: poor.map(([m]) => m),
+          catastrophic: catastrophic.map(([m]) => m),
+          source: cwv.source || null,
+        },
+      });
+    }
   }
 
   // ── mobile parity ────────────────────────────────────────────────────────
@@ -270,6 +316,13 @@ export function analyseTechnical(parsed, ctx = {}) {
   // trust penalty. The structure analyser raises the issue; the penalty belongs
   // here, where the rest of the multiplicative layer lives.
   if (ctx.faqMismatch) penalties.push("FAQ_SCHEMA_MISMATCH");
+
+  // Entity markup that declares a thing and never names it is an identity
+  // failure, not a technical one — the entity analyser detects it and raises
+  // EA-11. The PENALTY arrives here for the same reason FAQ_SCHEMA_MISMATCH
+  // does: the multiplicative layer lives in one place, so there is one list to
+  // read when asking "why is this page's score scaled down".
+  if (ctx.entitySchemaInvalid) penalties.push("ENTITY_SCHEMA_INVALID");
 
   // ── record what was read ─────────────────────────────────────────────────
   // This pillar's readings come from four different places — the HTTP response,
