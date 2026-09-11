@@ -242,7 +242,7 @@ in the header**, and the **AI-visibility panel** (mention/cite/recommend %, top 
 
 | PRD §  | Module | State |
 |---|---|---|
-| 9.1 | Canonical Business Truth Record (+ versions, approval-before-canonical) | ❌ |
+| 9.1 | Canonical Business Truth Record (+ versions, approval-before-canonical) | ✅ W9 — `0055`, three tables, approval enforced in three layers |
 | 9.2 | Entity Graph Builder (14 entity types, 9 predicates, evidence + confidence on every relation) | ❌ |
 | 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | ❌ |
 | 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | ❌ |
@@ -284,7 +284,7 @@ single largest risk in the whole plan and the one most likely to change what "50
 
 | # | Decision | Default I will proceed on unless told otherwise |
 |---|---|---|
-| **D7** | P2 subject model — how business-level audits (brand/product/service/location) relate to page-level ones | Sibling audit tables per the PRD, **sharing** the P1 evidence, issue and recommendation tables via a polymorphic `subject_type` + `subject_id`, so one queue, one diff engine and one workflow serve every audit kind. Needed at **W10**; I will confirm before building it. |
+| **D7** | P2 subject model — how business-level audits (brand/product/service/location) relate to page-level ones | Sibling audit tables per the PRD, **sharing** the P1 evidence, issue and recommendation tables via a polymorphic `subject_type` + `subject_id`, so one queue, one diff engine and one workflow serve every audit kind. Needed at **W10**; I will confirm before building it. ⚠️ **W9 did not need it and did not pre-empt it:** a truth record is about a BUSINESS, so `target_id` on it is a nullable convenience link and never the identity — the record can exist before any audit runs and outlives every individual one. Whatever D7 resolves to, it attaches to this record rather than replacing it. |
 | **D9** | Entitlement gating for new capabilities (prompt monitoring, brand audits, local/NAP, trust audits) | Follow the existing `audit.benchmark` / `audit.schedule` precedent in `entitlementModel.js`, with capability keys mapped onto the deck's packaging tiers. Needed at **W8**; I will bring a concrete plan→capability matrix for sign-off then. |
 | **D10** | P3 scope | Out of scope on this branch until P1 + P2 are complete and merged, per your instruction. |
 | **D11** | Credentials | `$GITHUB_TOKEN` is an expired classic `ghp_` token; `git fetch` and `git push` both fail. Local build is unblocked. A fine-grained PAT with `contents: read/write`, or `gh auth login`, is needed before I can re-verify against the live remote or push this branch. |
@@ -342,8 +342,8 @@ recommendation-lifecycle webhook events; `/api/v1/discoverability/*` namespace w
 
 ### P2 — 6 workstreams
 
-**W9 · Canonical Business Truth Record** — versioned, audit-historied, approval-gated;
-`business_truth_records` + `business_truth_versions`.
+**W9 · Canonical Business Truth Record** — ✅ **COMPLETE.** Migration `0055`: `audit_business_truth_records`, `audit_business_truth_versions` and a third table the PRD does not name, `audit_business_truth_conflicts` — because storing the record without comparing it to the pages produces a form, not a finding. Five version states, self-approval refused in three places (pure model, CHECK constraint, and the promotion function), and promotion as ONE SQL function because it is three writes that must not separate. ⚠️ `declared` is deliberately **not** an evidence method: `makeEvidence` requires a source URL, and forcing a customer's own assertion through it would mean fabricating provenance for a fact that was never on a page. The API refuses `observed`/`imported` from a client for the same reason. 🔴 The conflict table **is written**, by every audit whose domain has an approved record — asserted by contract test, because this repo's own history is three columns declared, merged and never written.
+Versioned, audit-historied, approval-gated; `business_truth_records` + `business_truth_versions`.
 
 **W10 · Entity Graph Builder** *(gated on D7)* — `entities`, `entity_relationships`, `entity_evidence`;
 14 types, 9 predicates, evidence + confidence on every relation, approve/reject, conflicts raised as

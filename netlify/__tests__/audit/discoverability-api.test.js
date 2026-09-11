@@ -61,6 +61,11 @@ const STORE_EXPORTS = [
   "webhooksForEvent", "recordWebhookDelivery", "deleteWebhook",
   "createSchedule", "listSchedules", "updateSchedule", "deleteSchedule",
   "dueSchedules", "markScheduleRun", "nextRunAt",
+  // W9 — the Canonical Business Truth Record.
+  "createTruthRecord", "listTruthRecords", "getTruthRecord", "getTruthRecordFull",
+  "getTruthVersion", "getCanonicalTruthVersion", "createTruthVersion",
+  "setTruthVersionState", "promoteTruthVersion", "archiveTruthRecord",
+  "recordTruthConflicts", "resolveTruthConflict",
 ];
 vi.mock("../../functions/lib/audit/auditStore.js", () =>
   Object.fromEntries(STORE_EXPORTS.map((name) => [

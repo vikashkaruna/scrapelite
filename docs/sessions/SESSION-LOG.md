@@ -18,6 +18,150 @@
 
 ---
 
+## 2026-09-11 (P2 · W9) — the Canonical Business Truth Record. P2 STARTS HERE.
+
+> **Branch:** `claude/p2-w9-work-streams-o4gvmq` · **`main`, `staging` and every
+> other branch: untouched.**
+
+### Start here
+
+**W9 is complete.** The module could say what a PAGE claims; it could not say
+what is TRUE, and every remaining P2 workstream is waiting on the second thing —
+W10 needs a subject, W11 needs a brand, W12 needs a name-address-phone to match
+*against*, and W13's trust scoring needs an identity to attach proof to.
+
+```
+nvm use 24
+npm ci
+npx vitest run src/lib/discoverability/businessTruth.test.js   # 71
+npx vitest run netlify/__tests__/audit/business-truth-api.test.js  # 46
+npm run test:db                                                # 55 migrations
+```
+
+### What shipped
+
+| Layer | File |
+|---|---|
+| Pure model | `src/lib/discoverability/businessTruth.js` |
+| Schema | `supabase/migrations/0055_business_truth.sql` |
+| Store | `auditStore.js` — 12 new exports |
+| API | `/api/discoverability/business-truth/*` |
+| Client | `discoverabilityClient.js` |
+
+Three tables, per D3's `audit_` prefix: `audit_business_truth_records`,
+`audit_business_truth_versions`, and `audit_business_truth_conflicts` — the
+third is **ours, not the PRD's**, and it is the one that makes this a product
+rather than a form.
+
+### The decisions worth carrying
+
+🔴 **`declared` IS NOT AN EVIDENCE METHOD, DELIBERATELY.** The obvious move is
+to add `customer_declared` to `EVIDENCE_METHODS` and reuse `makeEvidence`. That
+model answers one question — *where on the web did you read this?* — and
+requires a source URL, a selector and an excerpt. A customer typing their own
+legal name has none of those, and forcing it through means **inventing a source
+URL for a fact that was never on a page**. So a fact carries a `source` from
+`FACT_SOURCES`, and where that source is `observed` it carries a real
+`makeEvidence` record: one evidence model used wherever evidence exists, no
+second one invented where it does not. **`makeFact` refuses an observed fact
+with no evidence**, and the API refuses `observed`/`imported` from a client —
+accepting the claim from a request body would make provenance a flag anyone can
+set, which is the `?consented=true` defect again.
+
+🔴 **THE CONTRADICTION IS THE PRODUCT.** A table that stores what the customer
+typed is a form. Comparing it to the pages produces *"you told us Acme
+Technologies Pvt Ltd; your schema says Acme"* — often the explanation for why
+three engines disagree about who they are. `BT-01` (contradicted) and `BT-02`
+(absent) are **different codes** because they have opposite remedies; collapsing
+them would tell a customer their address is wrong when their contact page simply
+never mentions it.
+
+⚠️ **THE CHECK IS SCOPED, AND THE SCOPE IS LOAD-BEARING.** Unscoped, every field
+the record holds that one audited page never mentions becomes a `BT-02`, and a
+single audit of a blog post raises twenty absences. A page not stating the GSTIN
+is not a finding, it is a question that audit did not ask.
+
+⚠️ **AND ONLY AGAINST AN APPROVED VERSION.** Findings raised against an
+un-reviewed draft are the exact effect the approval gate exists to prevent.
+
+🔴 **SELF-APPROVAL IS REFUSED IN THREE PLACES** — `canPromote()`, the
+`audit_btv_no_self_approval` CHECK, and `promote_business_truth_version()`. Same
+three-layer discipline `ops_audit_log` uses for its mandatory reason.
+
+🔴 **PROMOTION IS ONE SQL FUNCTION BECAUSE IT IS THREE WRITES THAT MUST NOT
+SEPARATE** — supersede the outgoing version, approve the incoming one, repoint
+the record. As three PostgREST calls there are windows where the record points
+at a superseded version, at nothing, or at two that both believe they are
+current. `setTruthVersionState` refuses `approved` outright, so there is exactly
+one path in and it is the one carrying the interlocks.
+
+⚠️ **TWO REQUIRED FIELDS, NOT FIFTEEN.** A gate that blocks until fifteen fields
+are filled is a gate people type placeholders past, and the record ends up LESS
+true than if it had never asked. `legal_name` + `canonical_domain` block
+promotion; everything else is reported per-module by `readinessFor()`, which
+names the fields rather than refusing blankly.
+
+⚠️ **`canonical_domain` IS THE BRIDGE KEY** to `public.canonical_entities`
+(0041), so a company is resolved once across the platform. Both sides must spell
+it identically — bare host, lower-case, no `www.`.
+
+### 🔴 The conflict table IS written
+
+This repo's own documented failure pattern is three columns across two
+migrations declared, reviewed, merged and **never written** — invisible, because
+the read path returns `null` exactly as it would for "not applicable".
+`audit_business_truth_conflicts` is not the fourth: `checkAgainstTruthRecord()`
+runs on every audit whose domain has an approved record, and the contract test
+asserting the WRITE was confirmed RED against a version that only returned the
+conflicts.
+
+The observable side comes from `entityAnalysis.js`, which now carries the raw
+identity node (`LocalBusiness` first, `Organization` otherwise) it already
+parsed. It is **not a signal and nothing scores it** — re-parsing the document
+elsewhere to get the same node would be a second parser to keep in step with the
+first, which is how two readings of one page start disagreeing.
+
+⚠️ **It never fails an audit.** The audit ran and was charged for; a truth
+record that is missing, unapproved or briefly unreadable is not a reason to lose
+it. Asserted, not assumed.
+
+### Verified
+
+**364 files / 5896 passed / 14 skipped / 0 failed** (+117 new) · db-verify
+**55 migrations / 618 assertions / 0 failed** (+47 new) · verify-referral 17 ·
+verify-workflows 56 · build clean · check:prerender 28 pages / 112 refs ·
+security clean.
+
+**Every behavioural guard was confirmed RED first** — 4 in the pure model
+(self-approval, observed-without-evidence, BT-01/BT-02 collapse, the `resourced`
+bucket), 5 on the routes (client-claimed provenance, reason-less rejection, the
+transition check, an unknown promote verdict defaulting to 200, domain
+normalisation) and 4 on the audit wiring (the write itself, the scope, the
+draft guard, and the audit surviving a truth-record failure).
+
+⚠️ **`node_modules` was absent on a fresh remote clone** — `npm ci` first, or
+every vitest run dies on a missing package. The container ships Node 22 against
+a pinned `>=24 <25`; the suites run regardless, but CI is the authority.
+
+### 🔴 Still unverified anywhere real
+
+**Migration `0055` has only met in-process WASM Postgres** — no GoTrue, no
+PostgREST, shimmed roles — and **no truth record has been created against a live
+database**, so no conflict has ever been raised by a real audit against a real
+page. The `promote_business_truth_version` function in particular is
+`security definer` and has only run under PGlite. Both gates stand before this
+goes near staging. Dev and stage carry `0048`–`0054`; **production carries
+none of them and is now eight behind.**
+
+### Next
+
+**W10 · Entity Graph Builder**, gated on **D7** (the P2 subject model), which is
+still open. W9 deliberately did not pre-empt it: a truth record is about a
+BUSINESS, so `target_id` is a nullable convenience link and never the identity —
+whatever D7 resolves to attaches to this record rather than replacing it.
+
+---
+
 ## 2026-09-11 (P1 SWEPT) — the workspace a re-audit was dropping. FRESH START HERE.
 
 > **Branch:** `Discoverability-P1-P3-implementation` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, verified at their original commits.

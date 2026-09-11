@@ -94,6 +94,10 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
   const article = findSchema(jsonLd, "Article") || findSchema(jsonLd, "BlogPosting");
   const product = findSchema(jsonLd, "Product") || findSchema(jsonLd, "SoftwareApplication");
   const website = findSchema(jsonLd, "WebSite");
+  // W9. LocalBusiness first where both exist: it is the node that carries the
+  // address and phone a truth record is matched on, and an Organization node
+  // beside it is usually the thinner of the two.
+  const identityNode = findSchema(jsonLd, "LocalBusiness") || org || null;
 
   // ── schema identity completeness ─────────────────────────────────────────
   // Averaged over the types PRESENT, not over all five. A blog post has no
@@ -383,6 +387,13 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
     signals, reasons, issues,
     facts: {
       brand_name: org?.name || website?.name || null,
+      // 🔴 W9 — THE RAW IDENTITY NODE, AND IT IS NOT A SIGNAL.
+      // Nothing scores it. It is carried because the Canonical Business Truth
+      // Record is compared against what the page actually declares, and
+      // re-parsing the document somewhere else to get the same node would be a
+      // second parser to keep in step with this one — which is how two readings
+      // of one page start disagreeing.
+      organization_node: identityNode,
       schema_types: parsed.schemaTypes || [],
       sameAs_links: uniqueSameAs,
       visible_profile_links: visibleProfiles.slice(0, 12),

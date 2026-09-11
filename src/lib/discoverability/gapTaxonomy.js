@@ -153,7 +153,11 @@ export const MODULES = Object.freeze({
   },
   business_truth_record: {
     id: "business_truth_record", label: "Canonical Business Truth Record",
-    mCode: null, phase: "P2", available: false,
+    // W9 shipped it. `available` drives the "(coming)" badge in IssueMatrix, so
+    // leaving it false would keep telling customers a built module is still on
+    // the way — the mirror of the rule that an unbuilt one must never be
+    // advertised.
+    mCode: null, phase: "P2", available: true,
     description: "One approved source of truth for business facts.",
   },
   entity_graph: {

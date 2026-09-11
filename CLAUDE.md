@@ -2,7 +2,58 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE) + W2 (INTAKE) + W3 (PENALTIES, `v2`) + W4 (GAP ANALYSIS). A THIRD COLUMN IN THIS SCHEMA WAS DECLARED AND NEVER WRITTEN — `audit_recommendations.issue_id`, SO EVERY RECOMMENDATION WAS AN ORPHAN. ON `discoverability-p1-to-p3` @ `63de394`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
+> **Last updated: 2026-09-11 — P2 BEGINS: W9, THE CANONICAL BUSINESS TRUTH RECORD. THE MODULE COULD SAY WHAT A PAGE CLAIMS; IT COULD NOT SAY WHAT IS TRUE, AND EVERY REMAINING P2 WORKSTREAM WAS WAITING ON THAT. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-MODULE.md §3e](docs/DISCOVERABILITY-MODULE.md).
+>
+> 🔴 **`declared` IS NOT AN EVIDENCE METHOD, AND THAT IS THE DESIGN.** The obvious move is to add
+> `customer_declared` to `EVIDENCE_METHODS` and reuse `makeEvidence`. That model answers ONE
+> question — *where on the web did you read this?* — and requires a source URL, a selector and an
+> excerpt. A customer typing their own legal name has none of those, so forcing it through means
+> **inventing a source URL for a fact that was never on a page**. A truth fact carries a `source`
+> from `FACT_SOURCES` instead, and where that source is `observed` it carries a real `makeEvidence`
+> record. ⚠️ **`makeFact` REFUSES an observed fact with no evidence**, and the API refuses
+> `observed`/`imported` from a client — accepting that claim from a request body would make
+> provenance a flag anyone can set, which is the `?consented=true` defect wearing a new hat.
+>
+> 🔴 **THE CONTRADICTION IS THE PRODUCT.** A table that stores what the customer typed is a form.
+> Comparing it to the pages produces *"you told us Acme Technologies Pvt Ltd; your schema says
+> Acme"* — frequently the explanation for why three engines disagree about who they are.
+> **`BT-01` (contradicted) and `BT-02` (absent) are DIFFERENT CODES** because they have opposite
+> remedies; collapsing them tells a customer their address is wrong when their contact page simply
+> never mentions it. ⚠️ **The check is SCOPED to fields a page could have stated** — unscoped, one
+> audit of a blog post raises twenty absences — and runs **only against an APPROVED version**,
+> because findings against an un-reviewed draft are what the approval gate exists to prevent.
+>
+> 🔴 **SELF-APPROVAL IS REFUSED IN THREE PLACES** — `canPromote()`, the `audit_btv_no_self_approval`
+> CHECK, and `promote_business_truth_version()`. 🔴 **AND PROMOTION IS ONE SQL FUNCTION BECAUSE IT
+> IS THREE WRITES THAT MUST NOT SEPARATE**: supersede the outgoing version, approve the incoming
+> one, repoint the record. As three PostgREST calls there are windows where the record points at a
+> superseded version, at nothing, or at two that both believe they are current. **`setTruthVersionState`
+> refuses `approved` outright** — do not add a second path in.
+>
+> ⚠️ **TWO REQUIRED FIELDS, NOT FIFTEEN.** A gate blocking on fifteen fields is one people type
+> placeholders past, leaving the record LESS true than if it had never asked. `legal_name` +
+> `canonical_domain` block promotion; everything else is reported per-module by `readinessFor()`,
+> which NAMES the missing fields. ⚠️ **`canonical_domain` is the bridge key to
+> `public.canonical_entities`** (0041) — bare host, lower-case, no `www.`, both sides spelling it
+> identically or the same company gets resolved twice.
+>
+> ✅ **THE CONFLICT TABLE IS ACTUALLY WRITTEN.** This file's own headline pattern is three columns
+> declared, reviewed, merged and never written. `audit_business_truth_conflicts` is not the fourth:
+> `checkAgainstTruthRecord()` runs on every audit whose domain has an approved record, and the
+> contract test asserting the WRITE was confirmed RED first. ⚠️ **It never fails an audit** — the
+> audit ran and was charged for, so a truth record that is unreadable is not a reason to lose it.
+>
+> **Verified:** **364 files / 5896 passed / 14 skipped / 0 failed** (+117) · db-verify **55
+> migrations / 618 assertions / 0 failed** (+47) · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **13 behavioural guards confirmed RED
+> first.** 🔴 **Migration `0055` has only met WASM Postgres and no truth record has been created
+> against a live database** — production is now EIGHT migrations behind.
+>
+> ── **Prior, and still current — P1 (W1–W8)** ────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE) + W2 (INTAKE) + W3 (PENALTIES, `v2`) + W4 (GAP ANALYSIS). A THIRD COLUMN IN THIS SCHEMA WAS DECLARED AND NEVER WRITTEN — `audit_recommendations.issue_id`, SO EVERY RECOMMENDATION WAS AN ORPHAN. ON `discoverability-p1-to-p3` @ `63de394`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).

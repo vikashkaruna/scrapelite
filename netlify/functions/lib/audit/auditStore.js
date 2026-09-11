@@ -1008,3 +1008,220 @@ export function nextRunAt(cadence, from = new Date()) {
   else d.setUTCDate(d.getUTCDate() + 7);
   return d.toISOString();
 }
+
+// ── Business truth records (W9) ─────────────────────────────────────────────
+//
+// The record is the identity; versions are proposals. Every write here keeps
+// that split: nothing edits a version in place once it has been reviewed, and
+// nothing sets `current_version_id` except `promoteTruthVersion`, which goes
+// through the SQL function so the three writes promotion needs cannot separate.
+
+export async function createTruthRecord(userId, { canonicalDomain, displayName = null, targetId = null, workspaceId = null, notApplicable = [] }) {
+  const r = await insert("audit_business_truth_records", [{
+    user_id: userId,
+    canonical_domain: canonicalDomain,
+    display_name: displayName,
+    target_id: targetId,
+    workspace_id: workspaceId,
+    not_applicable: notApplicable,
+  }]);
+  if (!r.ok) {
+    // The partial unique index is the whole point of the table — one live
+    // answer per business — so report the collision as a collision rather than
+    // as a generic write failure the caller has to guess at.
+    const duplicate = /duplicate key|audit_btr_owner_domain_uniq/i.test(r.error || "");
+    return { ok: false, duplicate, error: r.error };
+  }
+  return { ok: true, record: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+export async function listTruthRecords(userId, { workspaceId = null, limit = 50 } = {}) {
+  const ws = workspaceId ? `&workspace_id=eq.${encodeURIComponent(workspaceId)}` : "";
+  const r = await rest(
+    `audit_business_truth_records?user_id=eq.${encodeURIComponent(userId)}&status=eq.active${ws}`
+    + `&${SELECT_ALL}&order=updated_at.desc&limit=${Number(limit) || 50}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getTruthRecord(userId, recordId) {
+  const r = await rest(
+    `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** The record plus its versions, newest first, and its open conflicts. */
+export async function getTruthRecordFull(userId, recordId) {
+  const record = await getTruthRecord(userId, recordId);
+  if (!record) return null;
+  const [versions, conflicts] = await Promise.all([
+    rest(`audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
+      + `&${SELECT_ALL}&order=version_no.desc&limit=100`),
+    rest(`audit_business_truth_conflicts?record_id=eq.${encodeURIComponent(recordId)}`
+      + `&resolved_at=is.null&${SELECT_ALL}&order=created_at.desc&limit=200`),
+  ]);
+  return {
+    ...record,
+    versions: versions.ok ? versions.data || [] : [],
+    conflicts: conflicts.ok ? conflicts.data || [] : [],
+  };
+}
+
+export async function getTruthVersion(userId, recordId, versionId) {
+  const owned = await getTruthRecord(userId, recordId);
+  if (!owned) return null;
+  const r = await rest(
+    `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** The canonical version, or null when nothing has been approved yet. */
+export async function getCanonicalTruthVersion(userId, recordId) {
+  const record = await getTruthRecord(userId, recordId);
+  if (!record?.current_version_id) return null;
+  return getTruthVersion(userId, recordId, record.current_version_id);
+}
+
+/**
+ * Add a version.
+ *
+ * ⚠️ `version_no` IS READ AND INCREMENTED, NOT SUPPLIED BY THE CALLER. Two
+ * concurrent proposals racing to number 4 collide on the unique index rather
+ * than silently overwriting each other — which is the correct outcome, so the
+ * collision is reported as `conflict` and the caller retries against a number
+ * it re-reads. A sequence would gap on rollback and make "version 4 was
+ * rejected" a sentence about a row that does not exist.
+ */
+export async function createTruthVersion(userId, recordId, {
+  fields, completeness = null, origin = "manual", sourceAuditId = null, state = "draft",
+}) {
+  const record = await getTruthRecord(userId, recordId);
+  if (!record) return { ok: false, notFound: true };
+
+  const last = await rest(
+    `audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
+    + `&select=version_no&order=version_no.desc&limit=1`);
+  const nextNo = (last.ok && Array.isArray(last.data) && last.data[0]?.version_no || 0) + 1;
+
+  const r = await insert("audit_business_truth_versions", [{
+    record_id: recordId,
+    version_no: nextNo,
+    state,
+    fields_json: fields,
+    completeness,
+    origin,
+    source_audit_id: sourceAuditId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) {
+    const conflict = /duplicate key|audit_btv_record_version_uniq/i.test(r.error || "");
+    return { ok: false, conflict, error: r.error };
+  }
+  return { ok: true, version: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+/**
+ * Move a version between states, short of approval.
+ *
+ * 🔴 `approved` IS NOT REACHABLE FROM HERE, DELIBERATELY. Approval is
+ * promotion, it is three writes, and it goes through the SQL function. A PATCH
+ * that could set `state='approved'` would be a second promotion path with none
+ * of the interlocks, and the second path is always the one that forgets.
+ */
+export async function setTruthVersionState(userId, recordId, versionId, state, { note = null, reviewerId = null } = {}) {
+  if (state === "approved") return { ok: false, refused: "approval_requires_promotion" };
+  const current = await getTruthVersion(userId, recordId, versionId);
+  if (!current) return { ok: false, notFound: true };
+
+  const patch = { state };
+  if (note !== null) patch.review_note = note;
+  if (state === "rejected") {
+    patch.reviewed_by = reviewerId || userId;
+    patch.reviewed_at = new Date().toISOString();
+  }
+
+  const r = await rest(
+    `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}`,
+    { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(patch) });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, version: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+/**
+ * Approve a version and make it canonical.
+ *
+ * Ownership is checked here; every other rule — reviewable state, a reviewer
+ * who is not the proposer, the two identifying facts — is checked inside the
+ * function, atomically, and its verdict string is returned unchanged so the
+ * route can map it to a status code without re-deriving anything.
+ */
+export async function promoteTruthVersion(userId, recordId, versionId, { note = null } = {}) {
+  const owned = await getTruthVersion(userId, recordId, versionId);
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/promote_business_truth_version", {
+    method: "POST",
+    body: JSON.stringify({ p_version_id: versionId, p_reviewer_id: userId, p_note: note }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+
+  const verdict = typeof r.data === "string" ? r.data : r.data?.promote_business_truth_version || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
+export async function archiveTruthRecord(userId, recordId) {
+  const r = await rest(
+    `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
+ * Record what an audit found that disagrees with the canonical record.
+ *
+ * Stored rather than recomputed on read: the finding is about a MOMENT — the
+ * page said this on that date — and re-deriving it later against a record that
+ * has since changed would rewrite history.
+ */
+export async function recordTruthConflicts(recordId, auditId, versionId, conflicts = []) {
+  const rows = (Array.isArray(conflicts) ? conflicts : [])
+    .filter((c) => c && typeof c.code === "string" && typeof c.field === "string")
+    .map((c) => ({
+      record_id: recordId,
+      audit_id: auditId || null,
+      version_id: versionId || null,
+      code: c.code,
+      field: c.field,
+      severity: c.severity || "medium",
+      canonical_value: c.canonical_value == null ? null : String(c.canonical_value).slice(0, 1000),
+      observed_value: c.observed_value == null ? null : String(c.observed_value).slice(0, 1000),
+      evidence_json: c.evidence || null,
+    }));
+  if (!rows.length) return { ok: true, count: 0 };
+  const r = await insert("audit_business_truth_conflicts", rows, "return=minimal");
+  return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
+}
+
+export async function resolveTruthConflict(userId, recordId, conflictId, resolution) {
+  const owned = await getTruthRecord(userId, recordId);
+  if (!owned) return { ok: false, notFound: true };
+  const r = await rest(
+    `audit_business_truth_conflicts?id=eq.${encodeURIComponent(conflictId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString() }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}

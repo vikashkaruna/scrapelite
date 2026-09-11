@@ -129,11 +129,15 @@ grant usage on schema public to anon, authenticated;
 //   +1 trigger. No new function: the touch trigger reuses 0030's.
 // 0054_workflow_hub.sql       columns + constraint only — the lifecycle lives
 //   on audit_recommendations.status rather than in a table of its own.
-// Taking these to 89 / 47 / 20.
+// 0055_business_truth.sql     +3 tables (audit_business_truth_records,
+//   _versions, _conflicts) +1 function (promote_business_truth_version)
+//   +2 triggers. The function exists because promotion is three writes that
+//   must not separate — see the migration's own header.
+// Taking these to 92 / 48 / 22.
 const EXPECT = {
-  tables: 89,
-  functions: 47,
-  triggers: 20,
+  tables: 92,
+  functions: 48,
+  triggers: 22,
   tablesWithoutRls: 0,
 };
 
@@ -2374,6 +2378,180 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
       `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
        values ($1,$2,'WF-2','technical_accessibility','high','t') returning workspace_id`, [u, a])).workspace_id,
     null);
+}
+
+// ── 0055 · the Canonical Business Truth Record ───────────────────────────────
+{
+  group("audit_business_truth_* — versioned, approval-gated, and enforced twice");
+
+  const owner = (await one(`insert into auth.users (email) values ('bt-owner@x.com') returning id`)).id;
+  const mate  = (await one(`insert into auth.users (email) values ('bt-mate@x.com') returning id`)).id;
+
+  const rec = (await one(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
+     values ($1,'acme.example','Acme') returning id`, [owner])).id;
+
+  eq("a new record is canonical-less until something is promoted",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id,
+    null);
+
+  // 🔴 One live answer to "what is true" per business per owner.
+  check("a second ACTIVE record for the same domain is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain)
+     values ($1,'acme.example')`, [owner])));
+  await db.query(
+    `update public.audit_business_truth_records set status='archived' where id=$1`, [rec]);
+  check("...but archiving one frees the domain, so a record can be retired and rebuilt",
+    !(await throws(
+      `insert into public.audit_business_truth_records (user_id, canonical_domain)
+       values ($1,'acme.example')`, [owner])));
+  await db.query(`delete from public.audit_business_truth_records where user_id=$1 and id<>$2`, [owner, rec]);
+  await db.query(`update public.audit_business_truth_records set status='active' where id=$1`, [rec]);
+  check("a different owner may hold the same domain", !(await throws(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain)
+     values ($1,'acme.example')`, [mate])));
+
+  const FIELDS = JSON.stringify({
+    legal_name: { field: "legal_name", value: "Acme Technologies", source: "declared", stated_at: "2026-09-11T10:00:00Z" },
+    canonical_domain: { field: "canonical_domain", value: "acme.example", source: "declared", stated_at: "2026-09-11T10:00:00Z" },
+  });
+
+  const mkVersion = async (no, fields = FIELDS, proposer = owner) => (await one(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, fields_json, proposed_by)
+     values ($1,$2,'pending_review',$3::jsonb,$4) returning id`, [rec, no, fields, proposer])).id;
+
+  const v1 = await mkVersion(1);
+
+  check("🔴 version numbers are unique per record", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no) values ($1,1)`, [rec])));
+  check("a version number of zero is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no) values ($1,0)`, [rec])));
+  check("an invented state is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state)
+     values ($1,99,'probably_fine')`, [rec])));
+
+  // ── The three constraints that make "approved" mean something ──────────────
+  check("🔴 SELF-APPROVAL is refused by the DATABASE, not only by the handler", Boolean(await throws(
+    `insert into public.audit_business_truth_versions
+       (record_id, version_no, state, proposed_by, reviewed_by, reviewed_at)
+     values ($1,50,'approved',$2,$2,now())`, [rec, owner])));
+  check("...while a genuine second reviewer is accepted", !(await throws(
+    `insert into public.audit_business_truth_versions
+       (record_id, version_no, state, proposed_by, reviewed_by, reviewed_at)
+     values ($1,51,'approved',$2,$3,now())`, [rec, owner, mate])));
+  check("an approved version with no reviewer recorded is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state)
+     values ($1,52,'approved')`, [rec])));
+  check("🔴 a rejection with no reason is refused — same rule as a dismissal reason", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, review_note)
+     values ($1,53,'rejected','   ')`, [rec])));
+  check("...a rejection WITH a reason is kept", !(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, review_note)
+     values ($1,54,'rejected','Address is the old office.')`, [rec])));
+  await db.query(`delete from public.audit_business_truth_versions where version_no >= 50 and record_id=$1`, [rec]);
+
+  // ── Promotion ─────────────────────────────────────────────────────────────
+  eq("promotion refuses a version that does not exist",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("🔴 promotion refuses self-approval, restating the CHECK rather than trusting it",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, owner])).r, "self_approval");
+  eq("promotion refuses when no reviewer is supplied",
+    (await one(`select public.promote_business_truth_version($1,null) as r`, [v1])).r, "no_approver");
+
+  const thin = await mkVersion(2, JSON.stringify({ brand_name: { value: "Acme" } }));
+  eq("promotion refuses a version missing an identifying fact",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [thin, mate])).r, "missing_required");
+  eq("...and that version is untouched by the refusal",
+    (await one(`select state, reviewed_by from public.audit_business_truth_versions where id=$1`, [thin])),
+    { state: "pending_review", reviewed_by: null });
+
+  eq("a complete, independently-reviewed version promotes",
+    (await one(`select public.promote_business_truth_version($1,$2,'Checked against the GST certificate.') as r`,
+      [v1, mate])).r, "ok");
+  eq("...the version records who approved it and why",
+    (await one(`select state, reviewed_by, review_note from public.audit_business_truth_versions where id=$1`, [v1])),
+    { state: "approved", reviewed_by: mate, review_note: "Checked against the GST certificate." });
+  eq("...and the record now points at it",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id, v1);
+
+  eq("🔴 promotion is idempotent — a retry cannot double-supersede",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, mate])).r, "ok");
+
+  // 🔴 The window this function exists to close: promoting a second version
+  // must retire the first in the SAME statement, so no reader ever sees two
+  // approved versions of one record — or a record pointing at nothing.
+  const v3 = await mkVersion(3);
+  eq("a second promotion succeeds", (await one(
+    `select public.promote_business_truth_version($1,$2) as r`, [v3, mate])).r, "ok");
+  eq("🔴 exactly ONE version of a record is ever approved",
+    (await q(`select id from public.audit_business_truth_versions where record_id=$1 and state='approved'`, [rec])).length, 1);
+  eq("...the outgoing version is superseded and dated, not deleted",
+    (await one(`select state, superseded_at is not null as dated from public.audit_business_truth_versions where id=$1`, [v1])),
+    { state: "superseded", dated: true });
+  eq("...and the record repointed",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id, v3);
+
+  eq("a superseded version cannot be re-promoted behind the current one",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, mate])).r, "not_reviewable");
+
+  // ── Parity with the pure model ────────────────────────────────────────────
+  //
+  // The SQL function names the identifying facts literally. `businessTruth.js`
+  // names them in REQUIRED_FOR_CANONICAL. Those two lists drifting apart would
+  // mean the UI gate and the database gate refuse different things — so assert
+  // agreement rather than hoping, exactly as signalDispatch.parity does for the
+  // trigger_source CHECK.
+  {
+    const { REQUIRED_FOR_CANONICAL } = await import(
+      "file://" + join(ROOT, "src", "lib", "discoverability", "businessTruth.js"));
+    const src = readFileSync(join(DIR, "0055_business_truth.sql"), "utf8");
+    const fn = src.slice(src.indexOf("create or replace function public.promote_business_truth_version"));
+    for (const id of REQUIRED_FOR_CANONICAL) {
+      check(`parity: promote_business_truth_version enforces '${id}' like REQUIRED_FOR_CANONICAL does`,
+        fn.includes(`'${id}'`));
+    }
+    eq("parity: the model gates on exactly two identifying facts",
+      [...REQUIRED_FOR_CANONICAL].sort(), ["canonical_domain", "legal_name"]);
+  }
+
+  // ── Conflicts ─────────────────────────────────────────────────────────────
+  check("an invented conflict code is refused — codes are a public contract", Boolean(await throws(
+    `insert into public.audit_business_truth_conflicts (record_id, code, field)
+     values ($1,'BT-99','legal_name')`, [rec])));
+  const conf = (await one(
+    `insert into public.audit_business_truth_conflicts (record_id, version_id, code, field, severity, canonical_value, observed_value)
+     values ($1,$2,'BT-01','legal_name','high','Acme Technologies','Globex') returning id`, [rec, v3])).id;
+  eq("a conflict is open until it is resolved",
+    (await one(`select resolved_at, resolution from public.audit_business_truth_conflicts where id=$1`, [conf])),
+    { resolved_at: null, resolution: null });
+  check("an invented resolution is refused", Boolean(await throws(
+    `update public.audit_business_truth_conflicts set resolution='ignored' where id=$1`, [conf])));
+
+  // ── Referential behaviour ─────────────────────────────────────────────────
+  const cvFk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_business_truth_records'::regclass and contype='f'
+        and pg_get_constraintdef(oid) like '%current_version_id%'`);
+  eq("🔴 current_version_id is ON DELETE SET NULL — losing the pointer never deletes the record",
+    cvFk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  eq("not_applicable defaults to empty, so nothing is excluded from completeness by accident",
+    (await one(`select not_applicable from public.audit_business_truth_records where id=$1`, [rec])).not_applicable, []);
+
+  const wsB = (await one(`insert into public.workspaces (owner_id, name) values ($1,'BT') returning id`, [owner])).id;
+  await db.query(`update public.audit_business_truth_records set workspace_id=$2 where id=$1`, [rec, wsB]);
+  eq("D6: a truth record can carry its workspace, and NULL stays valid",
+    (await one(`select workspace_id from public.audit_business_truth_records where id=$1`, [rec])).workspace_id, wsB);
+
+  // ── RLS ───────────────────────────────────────────────────────────────────
+  for (const t of ["audit_business_truth_records", "audit_business_truth_versions", "audit_business_truth_conflicts"]) {
+    eq(`${t} has RLS enabled`,
+      (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`,
+      (await q(`select 1 from information_schema.role_table_grants
+                 where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

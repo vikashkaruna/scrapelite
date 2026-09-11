@@ -83,6 +83,13 @@ import { scorePillar, scoreFramework } from "../../src/lib/discoverability/scori
 import { attachEvidenceToPillars } from "../../src/lib/discoverability/evidenceModel.js";
 import { PILLAR_IDS, PILLARS } from "../../src/lib/discoverability/signalRegistry.js";
 import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
+import {
+  TRUTH_FIELDS, TRUTH_FIELD_IDS, TRUTH_FIELD_GROUPS, FACT_SOURCES,
+  VERSION_STATES, REQUIRED_FOR_CANONICAL, TRUTH_CONFLICT_CODES,
+  makeFact, buildFieldMap, truthCompleteness, canPromote, diffVersions,
+  summariseRecord, normalizeFieldValue, canTransition,
+  factsFromSchemaOrg, detectConflicts, SCHEMA_READABLE,
+} from "../../src/lib/discoverability/businessTruth.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -349,6 +356,10 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
 
   await store.persistPromptRuns(userId, auditId, result.citationSample || null, options.promptSetId);
   await store.recordEvent(userId, { auditId, eventType: "created", payload: { url: rawUrl, source } });
+
+  // W9 — check the page against the approved record, if there is one.
+  const truth = await checkAgainstTruthRecord(userId, auditId, rawUrl, result);
+  if (truth) result.businessTruth = truth;
 
   // Fire and forget. dispatchAuditEvent swallows its own failures, so a user's
   // endpoint being down cannot fail an audit that already ran and was already
@@ -658,6 +669,11 @@ export const handler = async (event) => {
         return text(200, recommendationsToCsv(rows), "text/csv");
       }
       return json(200, { recommendations: rows, count: rows.length });
+    }
+
+    // ── /business-truth ────────────────────────────────────────────────────
+    if (root === "business-truth") {
+      return await businessTruthRoute(userId, method, path, body, event);
     }
 
     // ── /webhooks ──────────────────────────────────────────────────────────
@@ -1403,4 +1419,380 @@ function num(v) {
 /** Attach the construct a recommendation promises, on demand. */
 export function assetFor(rec) {
   return rec?.implementation_asset_json || buildConstruct(rec?.asset_type, {});
+}
+
+/**
+ * Compare what this audit observed against the business's approved record.
+ *
+ * 🔴 THIS IS WHY THE TRUTH RECORD IS NOT JUST A FORM. A table that only stores
+ * what the customer typed produces nothing. Comparing it to the pages produces
+ * "you told us Acme Technologies Pvt Ltd; your schema says Acme" — which is
+ * frequently the explanation for why three engines disagree about who they are.
+ *
+ * ⚠️ IT NEVER FAILS AN AUDIT. The audit ran and was charged for; a truth record
+ * that is missing, unapproved, or briefly unreadable is not a reason to lose
+ * it. Every failure path here returns null and the audit is returned as normal.
+ *
+ * ⚠️ AND IT ONLY RUNS AGAINST AN APPROVED VERSION. Comparing a page to an
+ * un-reviewed draft would raise findings against facts nobody has agreed are
+ * true, which is the exact effect the approval gate exists to prevent.
+ */
+async function checkAgainstTruthRecord(userId, auditId, rawUrl, result) {
+  try {
+    const host = normalizeFieldValue("canonical_domain", rawUrl);
+    if (!host) return null;
+
+    const records = await store.listTruthRecords(userId);
+    const record = records.find((r) => r.canonical_domain === host);
+    if (!record?.current_version_id) return null;
+
+    const canonicalVersion = await store.getCanonicalTruthVersion(userId, record.id);
+    if (!canonicalVersion) return null;
+
+    const node = result?.facts?.organization_node
+      || result?.pillars?.entity_authority?.facts?.organization_node
+      || null;
+    const observedFacts = node
+      ? factsFromSchemaOrg(node, { sourceUrl: rawUrl, collectedAt: new Date().toISOString() })
+      : {};
+
+    // 🔴 SCOPED TO WHAT THIS PAGE COULD PLAUSIBLY HAVE SAID.
+    // Without a scope, every field in the record that a single audited page
+    // never mentions becomes a BT-02, and one audit of a blog post would raise
+    // twenty absences. The scope is the fields the record holds AND the mapper
+    // knows how to read — anything outside it is not a finding, it is a
+    // question this audit did not ask.
+    const canonicalFields = canonicalVersion.fields_json || {};
+    const scope = Object.keys(canonicalFields).filter((f) => f in SCHEMA_READABLE);
+
+    const conflicts = detectConflicts(canonicalFields, observedFacts, { fields: scope });
+    if (conflicts.length) {
+      await store.recordTruthConflicts(record.id, auditId, canonicalVersion.id, conflicts);
+    }
+
+    return {
+      record_id: record.id,
+      version_id: canonicalVersion.id,
+      version_no: canonicalVersion.version_no,
+      checked_fields: scope,
+      conflicts,
+      // Distinguishes "we compared and found nothing" from "there was nothing
+      // on the page to compare against" — the same distinction BT-01 and BT-02
+      // draw, one level up.
+      identity_markup_present: Boolean(node),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── /business-truth — the Canonical Business Truth Record (W9) ─────────────
+//
+// Routes:
+//   GET    /business-truth/fields                reference data for the form
+//   GET    /business-truth                       list this user's records
+//   POST   /business-truth                       create a record
+//   GET    /business-truth/:id                   record + versions + open conflicts
+//   DELETE /business-truth/:id                   archive
+//   POST   /business-truth/:id/versions          propose a version
+//   GET    /business-truth/:id/versions/:vid     one version, with its gate report
+//   POST   /business-truth/:id/versions/:vid/submit    draft -> pending_review
+//   POST   /business-truth/:id/versions/:vid/reject    -> rejected, reason required
+//   POST   /business-truth/:id/versions/:vid/promote   -> approved + canonical
+//   GET    /business-truth/:id/diff?from=&to=    field-level version diff
+//   POST   /business-truth/:id/conflicts/:cid/resolve
+//
+// 🔴 PROMOTION IS ITS OWN VERB, NOT A PATCH. `setTruthVersionState` refuses
+// `approved` outright and this route sends it through the SQL function, so
+// there is exactly one path by which a fact becomes something other modules
+// assert as true — and it is the path carrying the interlocks.
+
+/** Turn a `{ fieldId: rawValue }` body into facts, reporting what it dropped. */
+function factsFromBody(rawFields, { source, statedBy, statedAt }) {
+  const fields = {};
+  const rejected = [];
+  for (const [id, value] of Object.entries(rawFields || {})) {
+    if (!TRUTH_FIELDS[id]) { rejected.push({ field: id, reason: "unknown_field" }); continue; }
+    // An explicit null clears a field — distinct from omitting it, which leaves
+    // whatever the previous version said. Both are legitimate edits and
+    // collapsing them would make "delete this fact" unexpressible.
+    if (value === null) continue;
+    const fact = makeFact({ field: id, value, source, statedBy, statedAt });
+    if (!fact) {
+      rejected.push({
+        field: id,
+        reason: normalizeFieldValue(id, value) === null ? "unusable_value" : "rejected",
+      });
+      continue;
+    }
+    fields[id] = fact;
+  }
+  return { fields, rejected };
+}
+
+/** A version as the API reports it: the row, plus what the pure model says about it. */
+function describeVersion(row) {
+  if (!row) return null;
+  const version = { state: row.state, fields: row.fields_json || {}, proposed_by: row.proposed_by, reviewed_by: row.reviewed_by };
+  return {
+    ...row,
+    summary: summariseRecord(version),
+    gate: canPromote(version),
+  };
+}
+
+async function businessTruthRoute(userId, method, path, body, event) {
+  // `path` is the whole parsed sub-path, because a version verb lives at
+  // position 4 (`/business-truth/:id/versions/:vid/promote`) and the handler
+  // re-deriving it from the raw event would be a second parser to keep in step
+  // with `resolveSplat`, which this file has already had to teach two URL
+  // shapes.
+  const [, id, sub, subId, verb] = path;
+  // Static reference data for the form. No record needed, so it is checked
+  // before anything that would look one up.
+  if (id === "fields" && method === "GET") {
+    return json(200, {
+      groups: TRUTH_FIELD_GROUPS,
+      fields: TRUTH_FIELD_IDS.map((f) => ({ ...TRUTH_FIELDS[f] })),
+      sources: Object.values(FACT_SOURCES),
+      states: Object.values(VERSION_STATES),
+      required_for_canonical: REQUIRED_FOR_CANONICAL,
+      conflict_codes: Object.values(TRUTH_CONFLICT_CODES),
+    });
+  }
+
+  // ── Collection ───────────────────────────────────────────────────────────
+  if (!id) {
+    if (method === "GET") {
+      const q = event.queryStringParameters || {};
+      const records = await store.listTruthRecords(userId, { workspaceId: q.workspace_id || null });
+      return json(200, { records, count: records.length });
+    }
+
+    if (method === "POST") {
+      const domain = normalizeFieldValue("canonical_domain", body.canonical_domain || body.domain);
+      if (!domain) {
+        return bad("A canonical domain is required, as a bare host such as acme.example.",
+          { code: "INVALID_REQUEST" });
+      }
+      // Membership is re-checked here rather than trusted from the body — the
+      // same rule every other workspace-carrying route in this file follows.
+      const { refusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
+      if (refusal) return json(403, { error: refusal.message, code: refusal.code });
+
+      const notApplicable = Array.isArray(body.not_applicable)
+        ? body.not_applicable.filter((f) => TRUTH_FIELDS[f]) : [];
+
+      const created = await store.createTruthRecord(userId, {
+        canonicalDomain: domain,
+        displayName: body.display_name || null,
+        targetId: body.target_id || null,
+        workspaceId: body.workspace_id || null,
+        notApplicable,
+      });
+      if (created.duplicate) {
+        // 409, not 400: the request was well formed and the collision is the
+        // table doing its job — one live answer to "what is true" per business.
+        return json(409, {
+          error: `A truth record already exists for ${domain}. Open it rather than starting a second one — two records would give two answers to the same question.`,
+          code: "RECORD_EXISTS",
+        });
+      }
+      if (!created.ok) return json(500, { error: "Could not create the record.", detail: created.error });
+      return json(201, { record: created.record });
+    }
+
+    return notFound("Unknown endpoint.");
+  }
+
+  // ── One record ───────────────────────────────────────────────────────────
+  if (!sub) {
+    if (method === "GET") {
+      const full = await store.getTruthRecordFull(userId, id);
+      if (!full) return notFound("Truth record not found.");
+      const canonical = full.versions.find((v) => v.id === full.current_version_id) || null;
+      return json(200, {
+        record: { ...full, versions: full.versions.map(describeVersion) },
+        canonical: describeVersion(canonical),
+        // A record with nothing approved is not "empty" — it is un-reviewed,
+        // and saying which is the difference between a bug and a to-do.
+        canonical_state: canonical ? "approved" : "none_approved",
+      });
+    }
+    if (method === "DELETE") {
+      const r = await store.archiveTruthRecord(userId, id);
+      return r.ok ? json(200, { archived: true }) : notFound("Truth record not found.");
+    }
+    return notFound("Unknown endpoint.");
+  }
+
+  // ── Versions ─────────────────────────────────────────────────────────────
+  if (sub === "versions") {
+    if (!subId && method === "POST") {
+      const record = await store.getTruthRecord(userId, id);
+      if (!record) return notFound("Truth record not found.");
+
+      const source = body.source || "declared";
+      if (!FACT_SOURCES[source]) {
+        return bad(`Unknown fact source "${source}".`, { code: "INVALID_REQUEST" });
+      }
+      // 🔴 A CLIENT MAY NOT CLAIM `observed` OR `imported` HERE. Those two
+      // carry a warranty that somebody could go and check, and this endpoint
+      // has no evidence to attach — the audit pipeline does, and it writes
+      // those facts itself. Accepting the claim from a request body would make
+      // verifiability a flag anyone can set, which is the same defect as an
+      // `?consented=true` query parameter.
+      if (FACT_SOURCES[source].verifiable) {
+        return bad(
+          `Facts from "${source}" carry evidence and are written by the audit pipeline, not by this endpoint. Submit them as "declared" or "inferred".`,
+          { code: "SOURCE_NOT_ACCEPTED" });
+      }
+
+      const { fields, rejected } = factsFromBody(body.fields, {
+        source,
+        statedBy: body.stated_by || userId,
+        statedAt: new Date().toISOString(),
+      });
+
+      if (!Object.keys(fields).length) {
+        return bad("No usable facts in the request.", { code: "INVALID_REQUEST", rejected });
+      }
+
+      const completeness = truthCompleteness(fields, { notApplicable: record.not_applicable || [] });
+      const created = await store.createTruthVersion(userId, id, {
+        fields,
+        completeness: completeness.percent,
+        origin: "manual",
+      });
+      if (created.conflict) {
+        return json(409, {
+          error: "Another version was proposed while this one was being written. Reload and re-apply your changes.",
+          code: "VERSION_CONFLICT",
+        });
+      }
+      if (!created.ok) {
+        return created.notFound
+          ? notFound("Truth record not found.")
+          : json(500, { error: "Could not save the version.", detail: created.error });
+      }
+      // `rejected` is always reported, never silently dropped: a field the
+      // caller sent and we did not store is the one thing they most need told.
+      return json(201, { version: describeVersion(created.version), rejected });
+    }
+
+    if (subId && method === "GET") {
+      const row = await store.getTruthVersion(userId, id, subId);
+      return row ? json(200, { version: describeVersion(row) }) : notFound("Version not found.");
+    }
+
+    // Verbs on one version.
+    if (subId && method === "POST" && verb) {
+      const row = await store.getTruthVersion(userId, id, subId);
+      if (!row) return notFound("Version not found.");
+
+      if (verb === "promote") {
+        const r = await store.promoteTruthVersion(userId, id, subId, { note: body.note || null });
+        if (r.ok) {
+          const full = await store.getTruthRecordFull(userId, id);
+          return json(200, {
+            promoted: true,
+            record: full,
+            canonical: describeVersion((full?.versions || []).find((v) => v.id === subId) || null),
+          });
+        }
+        if (r.notFound) return notFound("Version not found.");
+        // The function's verdict maps to a status code without re-deriving the
+        // rule here — one place decides, one place explains.
+        const VERDICTS = {
+          self_approval: [403, "You proposed this version. Approval means a second person looked at it."],
+          no_approver: [400, "No approver could be resolved for this request."],
+          not_reviewable: [409, "This version is not awaiting review. Only a submitted version can be approved."],
+          missing_required: [422, `A canonical record needs the facts that identify the business: ${REQUIRED_FOR_CANONICAL.map((f) => TRUTH_FIELDS[f].label).join(" and ")}.`],
+          not_found: [404, "Version not found."],
+        };
+        const [status, message] = VERDICTS[r.verdict] || [500, "Could not promote the version."];
+        return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
+      }
+
+      const TARGET = { submit: "pending_review", reject: "rejected", withdraw: "draft" };
+      const next = TARGET[verb];
+      if (!next) return notFound("Unknown endpoint.");
+
+      if (!canTransition(row.state, next)) {
+        return json(409, {
+          error: `A ${(VERSION_STATES[row.state]?.label || row.state).toLowerCase()} version cannot move to ${(VERSION_STATES[next]?.label || next).toLowerCase()}.`,
+          code: "INVALID_TRANSITION",
+        });
+      }
+
+      const note = typeof body.note === "string" ? body.note.trim() : "";
+      // A rejection with no reason is indistinguishable from a mis-click three
+      // months later. Refused here, and again by a CHECK constraint.
+      if (next === "rejected" && !note) {
+        return bad("A rejection needs a reason. Three months from now it is the only thing that explains the decision.",
+          { code: "REASON_REQUIRED" });
+      }
+
+      const r = await store.setTruthVersionState(userId, id, subId, next, { note: note || null });
+      if (!r.ok) {
+        if (r.notFound) return notFound("Version not found.");
+        if (r.refused) return json(409, { error: "Approval goes through promote, which carries the interlocks.", code: "USE_PROMOTE" });
+        return json(500, { error: "Could not update the version.", detail: r.error });
+      }
+      return json(200, { version: describeVersion(r.version) });
+    }
+
+    return notFound("Unknown endpoint.");
+  }
+
+  // ── Diff ─────────────────────────────────────────────────────────────────
+  if (sub === "diff" && method === "GET") {
+    const q = event.queryStringParameters || {};
+    const full = await store.getTruthRecordFull(userId, id);
+    if (!full) return notFound("Truth record not found.");
+
+    const byId = new Map(full.versions.map((v) => [v.id, v]));
+    const to = q.to ? byId.get(q.to) : full.versions[0];
+    const from = q.from
+      ? byId.get(q.from)
+      : full.versions.find((v) => to && v.version_no === to.version_no - 1);
+
+    if (!to) return notFound("Nothing to compare — this record has no versions.");
+    if (!from) {
+      // The first version has no predecessor, and saying so is more useful than
+      // an empty diff that reads as "nothing changed".
+      return json(200, {
+        comparable: false,
+        reason: "This is the first version of the record, so there is nothing to compare it against.",
+        to: { id: to.id, version_no: to.version_no },
+      });
+    }
+
+    return json(200, {
+      comparable: true,
+      from: { id: from.id, version_no: from.version_no, state: from.state },
+      to: { id: to.id, version_no: to.version_no, state: to.state },
+      diff: diffVersions({ fields: from.fields_json || {} }, { fields: to.fields_json || {} }),
+    });
+  }
+
+  // ── Conflicts ────────────────────────────────────────────────────────────
+  if (sub === "conflicts") {
+    if (!subId && method === "GET") {
+      const full = await store.getTruthRecordFull(userId, id);
+      if (!full) return notFound("Truth record not found.");
+      return json(200, { conflicts: full.conflicts, count: full.conflicts.length });
+    }
+    if (subId && method === "POST") {
+      const resolution = body.resolution;
+      const ALLOWED = ["record_updated", "page_updated", "not_a_conflict"];
+      if (!ALLOWED.includes(resolution)) {
+        return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
+      }
+      const r = await store.resolveTruthConflict(userId, id, subId, resolution);
+      return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
+    }
+  }
+
+  return notFound("Unknown endpoint.");
 }

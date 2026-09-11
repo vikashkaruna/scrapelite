@@ -170,6 +170,62 @@ export const discoverability = {
    */
   emailReport: (auditId, { format = "pdf", brandKit = null } = {}) =>
     emailReport({ kind: "discoverability", auditId, format, brandKit }),
+
+  // ── Canonical Business Truth Record (W9) ─────────────────────────────────
+  //
+  // ⚠️ THERE IS NO `approveVersion` HERE, AND THERE MUST NOT BE.
+  // Promotion is the only way a fact becomes canonical, because it is the only
+  // path carrying the interlocks — a reviewer who is not the proposer, the two
+  // identifying facts, and the three writes that must not separate. A second
+  // client method that reached `approved` any other way would be the one that
+  // forgets.
+  truthFields: () => req("/business-truth/fields"),
+  listTruthRecords: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/business-truth${q.toString() ? `?${q}` : ""}`);
+  },
+  createTruthRecord: (payload) => req("/business-truth", "POST", payload),
+  getTruthRecord: (id) => req(`/business-truth/${encodeURIComponent(id)}`),
+  archiveTruthRecord: (id) => req(`/business-truth/${encodeURIComponent(id)}`, "DELETE"),
+
+  /**
+   * Propose a version.
+   *
+   * `source` may only be `declared` or `inferred`. The server refuses
+   * `observed` and `imported` from a client: those carry a warranty that
+   * somebody could go and check, and this path has no evidence to attach.
+   */
+  proposeTruthVersion: (recordId, { fields, source = "declared", statedBy = null }) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions`, "POST",
+      { fields, source, stated_by: statedBy }),
+
+  getTruthVersion: (recordId, versionId) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}`),
+
+  submitTruthVersion: (recordId, versionId) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/submit`, "POST"),
+  withdrawTruthVersion: (recordId, versionId) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/withdraw`, "POST"),
+  /** `note` is REQUIRED — the server refuses a rejection without a reason. */
+  rejectTruthVersion: (recordId, versionId, note) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST", { note }),
+  promoteTruthVersion: (recordId, versionId, note = null) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST", { note }),
+
+  truthDiff: (recordId, { from = null, to = null } = {}) => {
+    const q = new URLSearchParams(
+      Object.entries({ from, to }).filter(([, v]) => v),
+    );
+    return req(`/business-truth/${encodeURIComponent(recordId)}/diff${q.toString() ? `?${q}` : ""}`);
+  },
+
+  truthConflicts: (recordId) => req(`/business-truth/${encodeURIComponent(recordId)}/conflicts`),
+  /** resolution: "record_updated" | "page_updated" | "not_a_conflict". */
+  resolveTruthConflict: (recordId, conflictId, resolution) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/conflicts/${encodeURIComponent(conflictId)}`,
+      "POST", { resolution }),
 };
 
 async function emailReport(payload) {

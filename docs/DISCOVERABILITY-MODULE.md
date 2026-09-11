@@ -579,6 +579,168 @@ disclosure would read as *"we looked and found none"*.
 
 ---
 
+## 3e. The Canonical Business Truth Record (P2 · W9)
+
+Until W9 this module could say what a **page** claims. It could not say what is
+**true**. Those are different questions, and the second one is what every P2
+module is waiting on: the entity graph needs a subject, brand scoring needs a
+brand, NAP matching needs a name-address-phone to match *against*, and the
+accuracy half of citation classification needs something to check an engine's
+answer against — `citationStates.js` narrows its accuracy check to price for
+exactly that reason, and says so in its own header.
+
+| Layer | Where |
+|---|---|
+| Pure model | `src/lib/discoverability/businessTruth.js` |
+| Schema | `supabase/migrations/0055_business_truth.sql` |
+| Store | `netlify/functions/lib/audit/auditStore.js` (`*TruthRecord*`, `*TruthVersion*`, `*TruthConflict*`) |
+| API | `/api/discoverability/business-truth/*` |
+| Client | `discoverabilityClient.js` |
+
+### D3 name mapping
+
+| PRD name | Actual table |
+|---|---|
+| `business_truth_records` | `public.audit_business_truth_records` |
+| `business_truth_versions` | `public.audit_business_truth_versions` |
+| *(not in the PRD)* | `public.audit_business_truth_conflicts` |
+
+The third table is ours. The PRD stops at storing the record; storing it without
+comparing it to the pages produces a form, not a finding.
+
+### `declared` is not an evidence method, and that is deliberate
+
+The obvious move is to add `customer_declared` to `EVIDENCE_METHODS` and reuse
+`makeEvidence` for everything. It is the wrong move.
+
+That model answers one question — *where on the web did you read this?* — and
+requires a source URL, a selector, a section and an excerpt. A customer typing
+their own legal name into a form has none of those, and forcing it through would
+mean **inventing a source URL for a fact that was never on a page**: fabricating
+provenance to satisfy a schema.
+
+So a fact carries a `source` from `FACT_SOURCES`, and where that source is
+`observed` it carries a real `makeEvidence` record. One evidence model, used
+wherever evidence exists; no second one invented where it does not.
+
+🔴 **`makeFact` REFUSES an `observed` or `imported` fact with no evidence
+attached**, and so does the API — a client may only submit `declared` or
+`inferred`. Those two verifiable sources promise that somebody could go and
+check; a claim of verifiability with nothing to verify against is a guess
+wearing a warranty, and accepting it from a request body would make provenance a
+flag anyone can set — the same defect as an `?consented=true` query parameter.
+
+### Authority is not confidence
+
+| Source | Authority | Verifiable |
+|---|---|---|
+| `declared` | 1.00 | no |
+| `imported` | 0.85 | yes |
+| `observed` | 0.70 | yes |
+| `inferred` | 0.30 | no |
+
+A declaration outranks a page reading for the canonical value — the owner knows
+their registered name better than their own footer does, and footers go stale.
+But `observed` carries a warranty `declared` never can.
+
+⚠️ **`pickCanonicalFact` does not discard the losers, and callers must not
+either.** The page reading that lost to a declaration is precisely what
+`detectConflicts` needs; throwing it away would delete the finding before anyone
+saw it.
+
+### The contradiction is the product
+
+🔴 A table that only stores what the customer typed is a form. Comparing it to
+the pages produces *"you told us Acme Technologies Pvt Ltd; your schema says
+Acme"* — frequently the explanation for why three engines disagree about who
+they are. `detectConflicts` is that, which is why this ships with issue codes
+rather than just a table.
+
+| Code | Means | Why it is its own code |
+|---|---|---|
+| `BT-01` | the page states something else | a contradiction |
+| `BT-02` | the page does not state it at all | **an absence, with the opposite remedy** |
+| `BT-03` | a required identifying fact is missing | the record itself is incomplete |
+| `BT-04` | a canonical value rests on inference alone | nobody confirmed it |
+
+Collapsing `BT-01` and `BT-02` would tell a customer their address is *wrong*
+when the real finding is that their contact page never mentions it. Opposite
+remedies, and the wrong one wastes the fix.
+
+⚠️ **The check is SCOPED to fields a page could plausibly have stated**
+(`SCHEMA_READABLE`). Unscoped, every field the record holds that one audited
+page never mentions becomes a `BT-02`, and a single audit of a blog post would
+raise twenty absences. A page not stating the company's GSTIN is not a finding —
+it is a question that audit did not ask.
+
+⚠️ **It runs only against an APPROVED version.** Comparing a page to an
+un-reviewed draft would raise findings against facts nobody has agreed are true,
+which is the exact effect the approval gate exists to prevent.
+
+⚠️ **And it never fails an audit.** The audit ran and was charged for; a truth
+record that is missing, unapproved or briefly unreadable is not a reason to lose
+it. Every failure path returns null and the audit is returned as normal.
+
+### Approval means a second person looked
+
+A version moves `draft → pending_review → approved`, or to `rejected` (with a
+mandatory reason) — and an approved version retires to `superseded` when a newer
+one is promoted, so the history reads as history rather than as a list of rows
+that all claim to be current.
+
+🔴 **Self-approval is refused in three places**: `canPromote()` in the pure
+model, the `audit_btv_no_self_approval` CHECK constraint, and
+`promote_business_truth_version()` itself. The same three-layer discipline
+`ops_audit_log` uses for its mandatory reason — a rule that lives in one
+endpoint is a rule the next endpoint forgets, and this record is about to become
+the thing other modules assert as true.
+
+🔴 **Promotion is one SQL function because it is three writes that must not
+separate**: supersede the outgoing version, approve the incoming one, repoint
+the record. As three PostgREST calls there are windows where the record points
+at a superseded version, at nothing, or at two versions that both believe they
+are current. `setTruthVersionState` refuses `approved` outright, so there is
+exactly one path in — the one carrying the interlocks.
+
+### Two required fields, not fifteen
+
+`REQUIRED_FOR_CANONICAL` is `legal_name` and `canonical_domain` only. A gate
+that blocks promotion until fifteen fields are filled is a gate people type
+placeholders past, and the record ends up **less** true than if it had never
+asked. Everything else a module needs is declared on that module's own field row
+through `requiredFor`, so `readinessFor()` reports *"local intelligence needs a
+locality and a phone"* rather than a blanket refusal that names nothing.
+
+⚠️ `canonical_domain` is also **the bridge key to `public.canonical_entities`**
+(migration 0041), so a company is resolved once across the platform. Both sides
+must spell it identically — bare host, lower-case, no `www.` — which is what
+`normalizeFieldValue("canonical_domain", …)` produces and what the API stores.
+
+⚠️ **Phone normalisation strips presentation and adds no meaning.** Guessing
+that a ten-digit Indian number is `+91` would store an inference as a
+*declaration* and match it against directories as though a human had said it.
+
+### Completeness
+
+`truthCompleteness()` reports `known / applicable` and **names what it excluded**.
+A field the business genuinely does not have (`not_applicable` on the record) is
+excluded and reported, never scored zero — a business with no premises has no
+street address, and counting that against them reports a correct record as a
+deficient one.
+
+⚠️ **But a field that is merely unfilled is missing.** The redistribution rule
+is about what does not *apply*, not about gaps; an inventory that excused every
+gap would always read 100% and mean nothing.
+
+### A source change with no value change is a real event
+
+`diffVersions` gives it its own bucket, `resourced`. *"We inferred your founding
+year, then you confirmed it"* moves nothing on screen but changes what the
+product is entitled to assert — reporting it as `unchanged` would hide the one
+thing that actually happened.
+
+---
+
 ## 4. Failure modes, and which way each fails
 
 | Condition | Behaviour | Why |
@@ -594,6 +756,9 @@ disclosure would read as *"we looked and found none"*.
 | Webhook endpoint down | recorded on the row | Never fails an audit that already ran. |
 | robots.txt unreadable | `TA-16`, crawler access `unknown` | Not a block. "Not checked is never down." |
 | Audit budget exhausted | remaining evidence `null`, `stageErrors` says `skipped: …` | Running out of TIME is just another reason a signal could not be measured. Rule 1.1 applies unchanged. |
+| Truth-record lookup fails mid-audit | audit returned as normal, no `businessTruth` key | The audit ran and was charged for. A record briefly unreadable is not a reason to lose it. |
+| Truth record exists but nothing is approved | **no comparison at all** | Findings against an un-reviewed draft are what the approval gate exists to prevent. |
+| Page carries no identity markup | every in-scope field reports `BT-02`, `identity_markup_present: false` | "We compared and found nothing" and "there was nothing to compare" are different answers. |
 
 ---
 
