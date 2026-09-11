@@ -204,7 +204,7 @@ export function round1(n) {
  * and "does not apply" is carried alongside in `reasons`, for the UI's benefit,
  * and never changes the arithmetic.
  */
-function isMeasured(v) {
+export function isMeasured(v) {
   return typeof v === "number" && Number.isFinite(v);
 }
 

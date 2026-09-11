@@ -18,6 +18,7 @@
 import { PILLAR_IDS, SIGNALS, signalLabel, pillarLabel } from "./signalRegistry.js";
 import { FRAMEWORKS } from "./scoringModel.js";
 import { ISSUES } from "./issueCatalog.js";
+import { classifyIssues } from "./validationLab.js";
 
 /** One before/after pair, with the honesty flag attached. */
 export function delta(before, after) {
@@ -108,10 +109,19 @@ export function diffAudits(baseline, current) {
   };
   const b = signalMap(baseline);
   const c = signalMap(current);
+  // W7 note: this signal-level diff has existed since the module shipped —
+  // §7.7 of the implementation plan records it as missing, and that row is
+  // wrong. What W7 adds is the CLASSIFICATION built on top of it, plus the
+  // weight and ordering a reader needs to know which move mattered.
   const signals = Object.keys(SIGNALS).map((code) => ({
     code, label: signalLabel(code), pillar: SIGNALS[code].pillar,
+    weight: SIGNALS[code].weight,
     ...delta(b[code] ?? null, c[code] ?? null),
-  })).map((s) => ({ ...s, direction: direction(s.change) }));
+  }))
+    .map((s) => ({ ...s, direction: direction(s.change) }))
+    // Biggest move first: a list in registry order buries the one thing that
+    // changed under twenty that did not.
+    .sort((x, y) => Math.abs(y.change ?? 0) - Math.abs(x.change ?? 0));
 
   // ── issues: resolved, remaining, new ─────────────────────────────────────
   const beforeCodes = new Set((baseline.issues || []).map((i) => i.code));
@@ -123,6 +133,10 @@ export function diffAudits(baseline, current) {
     severity: ISSUES[code]?.severity || "medium",
     pillar: ISSUES[code]?.pillar || null,
   });
+
+  // The four-way classification, fed the signal diff computed above so there is
+  // exactly one signal differ in this codebase.
+  const classified = classifyIssues(baseline, current, signals);
 
   const resolved = [...beforeCodes].filter((c2) => !afterCodes.has(c2)).map(describe);
   const remaining = [...afterCodes].filter((c2) => beforeCodes.has(c2)).map(describe);
@@ -178,6 +192,13 @@ export function diffAudits(baseline, current) {
     signals,
     issues: {
       resolved, remaining, introduced,
+      // W7 — the split that separates a backlog item from something actively
+      // deteriorating. `remaining` stays as their union so every existing
+      // reader keeps working.
+      regressed: classified.regressed,
+      unchanged: classified.unchanged,
+      regressedCount: classified.regressedCount,
+      unchangedCount: classified.unchangedCount,
       resolvedCount: resolved.length,
       remainingCount: remaining.length,
       introducedCount: introduced.length,
