@@ -23,6 +23,7 @@
 // An unsampled brand is UNKNOWN, never uncited.
 
 import { runChain, resolveProvider, callGeminiGrounded } from "../aiProviders.js";
+import { generatePrompts, classifyPromptKind } from "../../../../src/lib/discoverability/promptTaxonomy.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -194,6 +195,9 @@ async function askAiChain(prompt, { signal } = {}) {
  */
 export async function sampleCitations({
   brand = "", host = "", topic = "", prompts = null,
+  // Declared dimensions. Absent ones are simply not crossed — see
+  // promptTaxonomy.js for why none of them is ever guessed.
+  competitors = [], geography = null, industries = [],
   env = process.env, engine = null, fetchImpl = fetch, maxPrompts = MAX_PROMPTS_PER_AUDIT,
   // The audit's wall-clock budget, if it has one. `signal` cuts every in-flight
   // prompt short together; `timeoutMs` lowers the per-call ceiling to fit.
@@ -202,8 +206,22 @@ export async function sampleCitations({
   const chosen = resolveEngine(env, engine);
   if (!chosen) return null;
 
-  const list = (prompts && prompts.length ? prompts : defaultPrompts({ brand, topic, host }))
-    .slice(0, maxPrompts);
+  // ── What we ask ──────────────────────────────────────────────────────────
+  // A caller-supplied list is text somebody wrote, so its intent has to be
+  // guessed; a generated set carries its kind by construction. Both arrive here
+  // as records so everything downstream reads one shape, and `kindConfidence`
+  // records which of the two this was.
+  const list = (prompts && prompts.length
+    ? prompts.map((p) => {
+        if (p && typeof p === "object" && p.prompt) {
+          return { prompt: String(p.prompt), kind: p.kind || null, commercial: Boolean(p.commercial), kindConfidence: 100 };
+        }
+        const guess = classifyPromptKind(p);
+        return { prompt: String(p), kind: guess.kind, commercial: guess.commercial, kindConfidence: guess.confidence };
+      })
+    : generatePrompts({ brand, subject: topic || brand || host, competitors, geography, industries, limit: maxPrompts })
+        .map((p) => ({ ...p, kindConfidence: 100 }))
+  ).slice(0, maxPrompts);
   if (list.length === 0) return null;
 
   // Resolved once per sampling run, not once per prompt: the model id comes
@@ -227,29 +245,38 @@ export async function sampleCitations({
   // every result is reduced by counting, and `runs` is rebuilt in list order
   // below so the stored evidence is unchanged. This alone takes the stage from
   // 75s to ~15s.
-  const settled = await Promise.all(list.map(async (prompt) => {
+  const settled = await Promise.all(list.map(async (entry) => {
+    const prompt = entry.prompt;
     try {
       const r = chosen === "perplexity"
         ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs, model: perplexityModel })
         : chosen === "gemini"
           ? await askGemini(prompt, { signal })
           : await askAiChain(prompt, { signal });
-      return { prompt, r };
+      return { entry, r };
     } catch (err) {
-      return { prompt, r: { ok: false, error: err?.message || "sampling threw" } };
+      return { entry, r: { ok: false, error: err?.message || "sampling threw" } };
     }
   }));
 
   const runs = [];
   let failures = 0;
 
-  for (const { prompt, r } of settled) {
-    if (!r.ok) { failures += 1; runs.push({ prompt, error: r.error, mention: null, citation: null }); continue; }
+  for (const { entry, r } of settled) {
+    const prompt = entry.prompt;
+    if (!r.ok) {
+      failures += 1;
+      runs.push({ prompt, kind: entry.kind, commercial: entry.commercial, error: r.error, mention: null, citation: null });
+      continue;
+    }
 
     const mention = mentionsBrand(r.text, brand);
     const citation = citesDomain(r.citations, r.text, host);
     runs.push({
       prompt,
+      kind: entry.kind,
+      commercial: entry.commercial,
+      kindConfidence: entry.kindConfidence,
       mention,
       citation,
       // ⚠️ PER-RUN, NOT PER-ENGINE. Grounded Gemini falls back to its own

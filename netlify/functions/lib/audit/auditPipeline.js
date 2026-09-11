@@ -275,6 +275,9 @@ export async function runAudit(url, options = {}) {
     wantCitations
       ? sampleCitations({
           brand, host, topic: parsed.headingStats?.h1Text || parsed.meta?.title || "",
+          // W6.2 — the declared dimensions W2 already collects. Nothing here is
+          // inferred: an absent dimension drops its prompt kinds entirely.
+          competitors: competitorUrls, geography: targetGeography, industries: [],
           prompts: options.prompts, env, engine: options.citationEngine,
           signal: citationBudget.signal, timeoutMs: citationBudget.ms,
         }).catch(() => null).finally(() => citationBudget.clear())
