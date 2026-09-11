@@ -29,6 +29,7 @@ export const CAPS = Object.freeze([
   "audit",
   "audit.benchmark",
   "audit.schedule",
+  "audit.prompt_monitor",
   "enrich",
   "ai",
   "export.csv",
@@ -464,6 +465,32 @@ export function can(ent, capability, ctx = {}) {
           "select",
         );
       }
+      return ok(L.scheduled_monitoring);
+    }
+
+    case "audit.prompt_monitor": {
+      // W6.5. Follows the `audit.schedule` precedent D9 names: map a new
+      // capability onto the limits that already exist rather than inventing a
+      // plan axis nobody bought.
+      //
+      // ⚠️ GATED BECAUSE IT SPENDS SOMEBODY ELSE'S QUOTA. A monitor makes real
+      // answer-engine calls on a cadence, without a human present to notice
+      // they are happening — which is exactly the shape of thing that should
+      // not be ungated by default.
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Prompt monitoring is not included in your plan.", 0, "go");
+      }
+      if (!L.scheduled_monitoring) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Prompt monitoring needs a plan that includes scheduled monitoring.",
+          0,
+          "select",
+        );
+      }
+      // Shares the scheduled-monitoring allowance rather than holding its own:
+      // a user who may keep five recurring jobs should not get five more by
+      // pointing them at prompts instead of pages.
       return ok(L.scheduled_monitoring);
     }
 

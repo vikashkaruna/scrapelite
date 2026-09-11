@@ -30,6 +30,7 @@ import { setPendingAudit } from "../lib/pendingAudit.js";
 import ScoreTiles, { PillarGrid, PenaltyBanner } from "../components/discoverability/ScoreTiles.jsx";
 import IssueMatrix, { IssueList, RootCauseSummary } from "../components/discoverability/IssueMatrix.jsx";
 import RecommendationQueue from "../components/discoverability/RecommendationQueue.jsx";
+import AiVisibilityPanel from "../components/discoverability/AiVisibilityPanel.jsx";
 import TrendChart from "../components/discoverability/TrendChart.jsx";
 import {
   Panel, HeadingTreePanel, SchemaPanel, AnswerPanel, EntityPanel, TechnicalPanel,
@@ -654,6 +655,10 @@ export default function Discoverability() {
                 faqPairs={audit.evidence?.faq_pairs}
               />
             </Panel>
+            <Panel title="AI visibility" icon="radio" wide>
+              <AiVisibilityPanel sample={audit.citationSample} />
+            </Panel>
+
             <Panel title="Entity & citation" icon="fingerprint">
               <EntityPanel entity={audit.facts?.entity} />
             </Panel>

@@ -111,7 +111,10 @@ describe("jobEnabledMap (J-02)", () => {
     const map = await mod.jobEnabledMap();
     expect(Object.keys(map).sort()).toEqual([
       "billing-lifecycle", "billing-purge", "bulk-runner",
-      "discoverability-monitor", "health-monitor", "reengagement",
+      "discoverability-monitor", "health-monitor",
+      // W6.5. Sorted here by the .sort() above, not by registry order.
+      "prompt-monitor",
+      "reengagement",
       "scheduled-runner", "signal-retry", "watchlist-monitor",
       // The v2 dispatch loop's cron half, registered 2026-09-06. Sorted last
       // by the .sort() above, not by registry order.

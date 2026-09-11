@@ -123,11 +123,15 @@ grant usage on schema public to anon, authenticated;
 //   +1 function (signal_rules_touch_updated_at) +1 trigger.
 // 0051_recommendation_assignment.sql +1 function (assign_recommendation), no
 //   new table: the assignee is two columns on audit_recommendations.
-// Taking these to 87 / 47 / 19.
+// 0052_citation_states.sql     columns only — the seven states sit on
+//   audit_prompt_runs rather than in a table of their own.
+// 0053_prompt_monitors.sql     +2 tables (prompt_monitors, prompt_monitor_runs)
+//   +1 trigger. No new function: the touch trigger reuses 0030's.
+// Taking these to 89 / 47 / 20.
 const EXPECT = {
-  tables: 87,
+  tables: 89,
   functions: 47,
-  triggers: 19,
+  triggers: 20,
   tablesWithoutRls: 0,
 };
 

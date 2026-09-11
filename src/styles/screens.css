@@ -9708,6 +9708,54 @@ html.dark .dsc-page {
 .dsc-rec-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; background: var(--surface-2); border-radius: var(--r-pill); color: var(--text-2); }
 .dsc-rec-fw { font-size: 9.5px; font-weight: 700; letter-spacing: .05em; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-3); }
 .dsc-rec-status { font-size: 11px; font-weight: 600; color: var(--dsc-success); }
+/* W6.5 — the AI visibility panel. Provenance leads, because a citation number
+   whose origin is unclear is worse than no number. */
+.dsc-aiv { display: flex; flex-direction: column; gap: 18px; }
+.dsc-aiv-source {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 13px; color: var(--text-muted, #6b7280);
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--surface-sunk, #f3f4f6);
+}
+.dsc-aiv-score { display: flex; align-items: baseline; gap: 10px; }
+.dsc-aiv-num { font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.dsc-aiv-label { font-size: 13px; color: var(--text-muted, #6b7280); }
+.dsc-aiv-label em { font-style: normal; opacity: .85; }
+
+.dsc-aiv-components { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dsc-aiv-components li {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+  align-items: baseline; font-size: 13px;
+  padding: 4px 0; border-bottom: 1px solid var(--border-soft, #f1f2f4);
+}
+.dsc-aiv-components li.is-unmeasured { opacity: .6; }
+.dsc-aiv-cweight { font-size: 11px; color: var(--text-muted, #6b7280); font-variant-numeric: tabular-nums; }
+.dsc-aiv-cvalue { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+
+.dsc-aiv-h { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.dsc-aiv-statelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dsc-aiv-statelist li {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline;
+  font-size: 13px;
+}
+.dsc-aiv-scount { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 22px; }
+.dsc-aiv-sname { font-weight: 600; }
+.dsc-aiv-statelist li.is-good .dsc-aiv-sname { color: var(--success, #3e7a46); }
+.dsc-aiv-statelist li.is-bad .dsc-aiv-sname { color: var(--warning, #9c5a12); }
+.dsc-aiv-sfix { color: var(--text-muted, #6b7280); }
+
+.dsc-aiv-rates { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; font-size: 13px; }
+.dsc-aiv-rates em { font-style: normal; color: var(--text-muted, #6b7280); font-size: 12px; }
+
+.dsc-aiv-dlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.dsc-aiv-dlist li { padding-left: 14px; position: relative; line-height: 1.5; }
+.dsc-aiv-dlist li::before { content: "\2192"; position: absolute; left: 0; color: var(--text-muted, #6b7280); }
+
+@media (max-width: 560px) {
+  .dsc-aiv-statelist li { grid-template-columns: auto 1fr; }
+  .dsc-aiv-sfix { grid-column: 1 / -1; padding-left: 32px; }
+}
+
 /* W5.5 — who is holding a recommendation. Sits with the queue verbs because it
    is one: assigning is an action on the fix, not metadata about it. */
 .dsc-rec-assign {

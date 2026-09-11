@@ -400,6 +400,120 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
   return insert("audit_prompt_runs", rows, "return=minimal");
 }
 
+// ── Prompt monitors (W6.5) ─────────────────────────────────────────────────
+
+/** Monitors whose clock is up, and that neither the user nor the platform paused. */
+export async function listDuePromptMonitors(now = Date.now(), limit = 25) {
+  const iso = new Date(now).toISOString();
+  const r = await rest(
+    `prompt_monitors?status=eq.active&system_paused=is.false`
+    + `&or=(next_run_at.is.null,next_run_at.lte.${encodeURIComponent(iso)})`
+    + `&${SELECT_ALL}&order=next_run_at.asc.nullsfirst&limit=${limit}`,
+  );
+  const rows = Array.isArray(r.data) ? r.data : [];
+  // `run_until` is filtered here rather than in the query so an expired monitor
+  // is still advanced by the caller and stops appearing, instead of sitting due
+  // for ever and being re-read on every tick.
+  return rows.filter((m) => !m.run_until || Date.parse(m.run_until) >= now);
+}
+
+/** Move a monitor's clock on, whether its run succeeded or not. */
+export async function advancePromptMonitor(monitorId, nextRunAt) {
+  return rest(`prompt_monitors?id=eq.${encodeURIComponent(monitorId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ next_run_at: nextRunAt, last_run_at: new Date().toISOString() }),
+  });
+}
+
+export async function getTargetById(userId, targetId) {
+  const r = await rest(
+    `audit_targets?id=eq.${encodeURIComponent(targetId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`,
+  );
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/**
+ * Store one monitor run, and the per-prompt detail beneath it.
+ *
+ * ⚠️ A FAILED RUN IS STILL RECORDED. A gap in a trend line is indistinguishable
+ * from a period of no visibility, and the second is a finding while the first
+ * is an outage. The row carries `error` and a null WAVI so a reader can tell
+ * them apart.
+ */
+export async function recordPromptMonitorRun(monitor, sample, error = null) {
+  const rates = sample?.states || {};
+  const head = {
+    monitor_id: monitor.id, user_id: monitor.user_id,
+    engine_name: sample?.engine || null,
+    live: Boolean(sample?.live),
+    prompt_count: sample?.promptCount || 0,
+    mention_rate: rates.mentionRate ?? null,
+    citation_rate: rates.citationRate ?? null,
+    recommendation_rate: rates.recommendationRate ?? null,
+    wavi_score: sample?.wavi?.score ?? null,
+    wavi_coverage: sample?.wavi?.coverage ?? null,
+    sov_declared: sample?.shareOfVoice?.sovDeclared ?? null,
+    states_json: rates.counts || null,
+    error: error || sample?.error || null,
+  };
+  const r = await insert("prompt_monitor_runs", [head]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!row?.id || !sample?.runs?.length) return { ok: Boolean(row), run: row || null };
+
+  await insert("audit_prompt_runs", sample.runs.slice(0, 50).map((x) => ({
+    // A monitor run has no audit, so audit_id stays null and monitor_run_id
+    // carries the link instead.
+    audit_id: null, user_id: monitor.user_id, monitor_run_id: row.id,
+    engine_name: sample.engine,
+    live: x.live !== undefined ? Boolean(x.live) : Boolean(sample.live),
+    prompt: String(x.prompt || "").slice(0, 500),
+    mention_detected: x.mention ?? null,
+    citation_detected: x.citation ?? null,
+    state: x.state ?? null,
+    prompt_kind: x.kind ?? null,
+    commercial: x.commercial ?? null,
+    kind_confidence: Number.isFinite(x.kindConfidence) ? x.kindConfidence : null,
+    recommended: x.recommended ?? null,
+    misrepresented: x.misrepresented ?? null,
+    competitors_json: x.competitors?.length ? x.competitors : null,
+    raw_response_excerpt: String(x.excerpt || "").slice(0, 300),
+  })), "return=minimal");
+
+  return { ok: true, run: row };
+}
+
+/** A monitor's runs, newest first, for the trend. */
+export async function listPromptMonitorRuns(userId, monitorId, limit = 30) {
+  const r = await rest(
+    `prompt_monitor_runs?monitor_id=eq.${encodeURIComponent(monitorId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}`
+    + `&order=created_at.desc&limit=${limit}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+export async function listPromptMonitors(userId, limit = 50) {
+  const r = await rest(
+    `prompt_monitors?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=created_at.desc&limit=${limit}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+export async function createPromptMonitor(userId, fields) {
+  const r = await insert("prompt_monitors", [{ ...fields, user_id: userId }]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true, monitor: row } : { ok: false, error: r.error || "Could not create the monitor." };
+}
+
+export async function deletePromptMonitor(userId, monitorId) {
+  const r = await rest(
+    `prompt_monitors?id=eq.${encodeURIComponent(monitorId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: { Prefer: "return=representation" } },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true } : { ok: false, notFound: true };
+}
+
 // ── Reads ──────────────────────────────────────────────────────────────────
 
 export async function getAudit(userId, auditId) {

@@ -18,7 +18,11 @@ describe("the vocabulary is a contract", () => {
     // domain snapshot when one page was fetched.
     expect(SELECTABLE_AUDIT_TYPE_IDS).toEqual(["url"]);
     expect(AUDIT_TYPES.domain.available).toBe(false);
-    expect(AUDIT_TYPES.prompt_monitor.available).toBe(false);
+    // W6.5 turned prompt monitoring ON, and it is still not selectable here —
+    // it is created at POST /monitors, exactly as `rerun` is created by the
+    // rerun route. Available and caller-selectable are different questions.
+    expect(AUDIT_TYPES.prompt_monitor.available).toBe(true);
+    expect(AUDIT_TYPES.prompt_monitor.callerSelectable).toBe(false);
   });
 
   it("gives every unavailable type a reason a customer can read", () => {

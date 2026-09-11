@@ -22,13 +22,19 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the ten platform jobs", () => {
+  it("registers the eleven platform jobs", () => {
     // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
     // is the REALITY: adding a job here does not schedule it, and scheduling one
     // without adding it here means it runs unmonitored. Both halves have to be
     // edited together, and this assertion is what forces the second one.
     expect(JOB_IDS).toEqual([
-      "scheduled-runner", "discoverability-monitor",
+      "scheduled-runner",
+      // W6.5. Deliberately NOT folded into discoverability-monitor: that cron
+      // re-audits a page and compares scores, this re-samples an answer engine
+      // and compares citation states. They share a cadence and nothing else,
+      // and an engine outage must not pause page auditing.
+      "prompt-monitor",
+      "discoverability-monitor",
       // PRD 4 and PRD 3's execution engines. Before these, a watchlist's
       // cadence was stored and never honoured, and a bulk job advanced only
       // while the browser tab that started it stayed open.

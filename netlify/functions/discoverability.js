@@ -614,6 +614,7 @@ export const handler = async (event) => {
 
     // ── /prompts/samples ───────────────────────────────────────────────────
     if (root === "prompts" && id === "samples") return await promptSetRoute(event, userId, method, sub, body);
+    if (root === "monitors") return await promptMonitorRoute(event, userId, method, id, sub, body);
 
     // ── /webhooks ──────────────────────────────────────────────────────────
     if (root === "webhooks") return await webhookRoute(event, userId, method, id, body);
@@ -959,6 +960,69 @@ async function benchmarkRoute(event, userId, method, id, body) {
   if (method === "DELETE" && id) {
     const r = await store.deleteBenchmark(userId, id);
     return r.ok ? json(200, { deleted: true }) : notFound("Benchmark not found.");
+  }
+  return json(405, { error: "Method not allowed." });
+}
+
+/**
+ * Prompt monitors — the recurring answer-engine sample.
+ *
+ * ⚠️ CREATION IS ENTITLEMENT-GATED, READS ARE NOT. A monitor spends real engine
+ * calls on a cadence with nobody watching, which is precisely the shape of
+ * thing that should not be ungated. Reading what you already own costs nothing
+ * and is refused only by ownership.
+ */
+async function promptMonitorRoute(event, userId, method, id, sub, body) {
+  if (method === "GET" && !id) {
+    return json(200, { monitors: await store.listPromptMonitors(userId) });
+  }
+  if (method === "GET" && id && sub === "runs") {
+    return json(200, { runs: await store.listPromptMonitorRuns(userId, id) });
+  }
+  if (method === "POST" && !id) {
+    // Resolved here rather than threaded: every other route in this file does
+    // the same, and one shared lookup would have to be recomputed anyway for
+    // the workspace context each route builds differently.
+    const resolved = await resolveRequestEntitlement(event);
+    const check = checkCapability(resolved, "audit.prompt_monitor", {});
+    if (!check.allowed) {
+      return json(DENY_STATUS, { ...denyBody(check), capability: "audit.prompt_monitor" });
+    }
+    // Shares the scheduled-monitoring allowance with audit schedules, so the
+    // count has to include both — otherwise a user at their limit acquires
+    // more by pointing the next one at prompts instead of pages.
+    const existingMonitors = await store.listPromptMonitors(userId);
+    const existingSchedules = await store.listSchedules(userId);
+    const held = existingMonitors.length + existingSchedules.length;
+    if (Number.isFinite(check.remaining) && held >= check.remaining) {
+      return json(DENY_STATUS, {
+        error: `Your plan allows ${check.remaining} recurring monitor${check.remaining === 1 ? "" : "s"}, and you have ${held}.`,
+        code: "QUOTA_EXCEEDED", capability: "audit.prompt_monitor",
+      });
+    }
+
+    const targetId = String(body.target_id || "").trim();
+    if (!targetId) return bad("target_id is required.");
+    const cadence = ["daily", "weekly", "monthly"].includes(body.cadence) ? body.cadence : "weekly";
+    const engine = ["perplexity", "gemini"].includes(body.engine) ? body.engine : null;
+
+    const r = await store.createPromptMonitor(userId, {
+      target_id: targetId,
+      prompt_set_id: body.prompt_set_id || null,
+      name: body.name ? String(body.name).slice(0, 120) : null,
+      cadence,
+      engine,
+      alert_email: body.alert_email ? String(body.alert_email).slice(0, 200) : null,
+      // Null, not now(): a monitor with no next_run_at is treated as due, so a
+      // new one is sampled on the next tick rather than waiting a full cadence
+      // to produce its first data point.
+      next_run_at: null,
+    });
+    return r.ok ? json(201, { monitor: r.monitor }) : json(503, { error: r.error });
+  }
+  if (method === "DELETE" && id) {
+    const r = await store.deletePromptMonitor(userId, id);
+    return r.ok ? json(200, { deleted: true }) : notFound("Monitor not found.");
   }
   return json(405, { error: "Method not allowed." });
 }

@@ -53,9 +53,16 @@ export const AUDIT_TYPES = Object.freeze({
     description: "One member of a competitive set, audited as part of that set.",
   },
   prompt_monitor: {
-    id: "prompt_monitor", label: "Prompt monitor", available: false, callerSelectable: true,
+    // W6.5 turned this on: the engine, the schedule, the cron and the
+    // entitlement behind it now exist, so `available` stops being a promise.
+    //
+    // ⚠️ NOT caller-selectable, for the same reason `rerun` is not. A prompt
+    // monitor is created at POST /monitors, where it gets a cadence, an engine
+    // and an alert threshold. Accepting it on POST /audits would write a row
+    // that calls itself a monitor while monitoring nothing — one sample, no
+    // schedule, no next run.
+    id: "prompt_monitor", label: "Prompt monitor", available: true, callerSelectable: false,
     description: "Track how answer engines respond to a set of prompts over time.",
-    unavailableReason: "Prompt monitoring is not available yet.",
   },
   rerun: {
     // Set by the rerun route, which also sets the baseline. Accepting it on

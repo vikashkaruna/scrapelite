@@ -43,6 +43,28 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "prompt-monitor",
+    label: "Prompt monitor",
+    schedule: "@daily",
+    cron: "0 0 * * *",
+    expectedIntervalMs: 24 * 60 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Re-samples answer engines over each active prompt set, classifies every answer into one of " +
+      "the seven citation states, and alerts when a state CHANGES — going from cited to absent is " +
+      "news at any score. Separate from the discoverability monitor because an engine outage must " +
+      "not pause page auditing.",
+    destructive: false,
+    // Safe by hand: each monitor advances its own next_run_at, including after
+    // a failure, so a manual run samples what is due and falls back to cadence.
+    manualRunAllowed: true,
+    // Honest about the common degraded case rather than showing green while
+    // measuring nothing.
+    caveat:
+      "With no PERPLEXITY_API_KEY or GEMINI_API_KEY configured this job runs and records nothing, " +
+      "by design: an empty sample would write \"absent everywhere\" into a trend line as though we had asked.",
+  },
+  {
     id: "discoverability-monitor",
     label: "Discoverability monitor",
     schedule: "@daily",

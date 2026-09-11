@@ -49,6 +49,10 @@ const STORE_EXPORTS = [
   "listAudits", "listTargets", "markAuditFailed", "monthStart",
   "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
   "setRecommendationAssignee",
+  // W6.5 — prompt monitors. Listed here because this parity test is what
+  // keeps the double honest: a real export the mock lacks fails the route
+  // under test for a reason that has nothing to do with the route.
+  "listDuePromptMonitors", "advancePromptMonitor", "getTargetById", "recordPromptMonitorRun", "listPromptMonitorRuns", "listPromptMonitors", "createPromptMonitor", "deletePromptMonitor",
   "saveAuditSummary",
   "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
   "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
@@ -464,8 +468,12 @@ describe("input validation", () => {
     // like a domain snapshot in every list, export and trend it appears in.
     const p = parseAuditOptions({ target_url: "https://x.com", audit_type: "domain" });
     expect(p.errors[0]).toMatch(/not available yet/i);
+    // W6.5: prompt monitoring now EXISTS, and POST /audits still cannot create
+    // one — it is created at POST /monitors, where it gets a cadence and an
+    // engine. Accepting it here would write a row calling itself a monitor
+    // while monitoring nothing.
     const q = parseAuditOptions({ target_url: "https://x.com", audit_type: "prompt_monitor" });
-    expect(q.errors[0]).toMatch(/not available yet/i);
+    expect(q.errors.length).toBeGreaterThan(0);
   });
 
   it("refuses a type that only its own endpoint may set", () => {
