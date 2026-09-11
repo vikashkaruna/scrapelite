@@ -3,6 +3,7 @@ import {
   buildConstruct, hasPlaceholders, CONSTRUCT_BUILDERS, AI_CRAWLERS,
   answerBlock, faqSchema, howToSchema, headingTree, organizationSchema,
   metaTags, robotsTxtBlock, entityCard, META_TITLE_MAX, META_DESCRIPTION_MAX,
+  internalLinkPlan, isVagueAnchor, anchorFromHref, VAGUE_ANCHORS,
 } from "./constructTemplates.js";
 import { ISSUES, ISSUE_CODES } from "./issueCatalog.js";
 
@@ -237,5 +238,110 @@ describe("entityCard", () => {
   });
   it("tells the author to write flatly so an engine can quote it verbatim", () => {
     expect(entityCard({}).note).toMatch(/verbatim/);
+  });
+});
+
+
+// ── W5.2 · internal linking ─────────────────────────────────────────────────
+
+describe("isVagueAnchor", () => {
+  it("catches the standard offenders regardless of case and punctuation", () => {
+    for (const t of ["click here", "Click Here", "  READ MORE  ", "Learn more!", "here."]) {
+      expect(isVagueAnchor(t), t).toBe(true);
+    }
+  });
+
+  it("leaves descriptive anchors alone", () => {
+    for (const t of ["answer engine optimization", "2026 pricing", "our security posture"]) {
+      expect(isVagueAnchor(t), t).toBe(false);
+    }
+  });
+
+  it("does not treat empty text as vague", () => {
+    // Empty is a DIFFERENT defect with a different fix — an image link needs
+    // alt text, not a reworded anchor. Collapsing them would misreport it.
+    expect(isVagueAnchor("")).toBe(false);
+    expect(isVagueAnchor(null)).toBe(false);
+  });
+});
+
+describe("anchorFromHref", () => {
+  it("reads the destination's own slug", () => {
+    expect(anchorFromHref("/guides/answer-engines")).toBe("answer engines");
+    expect(anchorFromHref("https://x.com/pricing/team-plan.html")).toBe("team plan");
+  });
+
+  it("returns nothing when the slug describes nothing", () => {
+    // An id or a hash is not a description, and dressing one up as anchor text
+    // would be worse than the "click here" it replaced.
+    expect(anchorFromHref("/")).toBe("");
+    expect(anchorFromHref("/posts/48122")).toBe("");
+    expect(anchorFromHref("/p/9f3a2b7c1d4e")).toBe("");
+    expect(anchorFromHref("not a url at all")).toBe("");
+  });
+
+  it("decodes a percent-encoded slug, so it works outside English", () => {
+    // Found by the test above: `new URL()` silently percent-encodes rather than
+    // rejecting, so without decoding every accented slug became mojibake.
+    expect(anchorFromHref("/guias/optimizaci%C3%B3n")).toBe("optimizaci\u00f3n");
+    expect(anchorFromHref("/a/team%20page")).toBe("team page");
+  });
+});
+
+describe("internalLinkPlan", () => {
+  const links = {
+    internal: [
+      { href: "/pricing/team-plan", text: "click here", host: "x.com" },
+      { href: "/guides/answer-engines", text: "Read more", host: "x.com" },
+      { href: "/security", text: "our security posture", host: "x.com" },
+      { href: "/careers", text: "", host: "x.com" },
+    ],
+    external: [{ href: "https://y.com", text: "y", host: "y.com" }],
+  };
+
+  it("lists every vague anchor with a suggestion from the target's slug", () => {
+    const c = internalLinkPlan({ links, url: "https://x.com/a" });
+    expect(c.vagueCount).toBe(2);
+    expect(c.body).toContain("team plan");
+    expect(c.body).toContain("answer engines");
+  });
+
+  it("leaves the descriptive anchor out of the rewrite table", () => {
+    expect(internalLinkPlan({ links }).body).not.toContain("our security posture");
+  });
+
+  it("reports an empty anchor separately, as its own defect", () => {
+    const c = internalLinkPlan({ links });
+    expect(c.emptyCount).toBe(1);
+    expect(c.body).toMatch(/no text at all/);
+    expect(c.body).toContain("/careers");
+  });
+
+  it("🔴 never proposes a url to link to", () => {
+    // The audit reads ONE page and cannot enumerate the site, so any suggested
+    // target would be a guess pasted into live markup. Every url in the output
+    // must be one the page already links to.
+    const c = internalLinkPlan({ links, url: "https://x.com/a" });
+    const urls = c.body.match(/\/[a-z-]+(?:\/[a-z-]+)*/g) || [];
+    const known = ["/pricing/team-plan", "/guides/answer-engines", "/security", "/careers"];
+    for (const u of urls) {
+      if (u.length < 4) continue;
+      expect(known.some((k) => k.startsWith(u) || u.startsWith(k)), u).toBe(true);
+    }
+  });
+
+  it("says so plainly when a page has no internal links", () => {
+    const c = internalLinkPlan({ links: { internal: [], external: [] }, url: "https://x.com/a" });
+    expect(c.internalCount).toBe(0);
+    expect(c.body).toContain("no internal links");
+    expect(hasPlaceholders(c)).toBe(true);
+  });
+
+  it("reports a clean page as clean rather than inventing work", () => {
+    const clean = { internal: [{ href: "/security", text: "our security posture" }], external: [] };
+    const c = internalLinkPlan({ links: clean, url: "https://x.com/a" });
+    expect(c.vagueCount).toBe(0);
+    expect(c.body).toContain("No anchor-text problems found");
+    expect(hasPlaceholders(c)).toBe(false);
   });
 });

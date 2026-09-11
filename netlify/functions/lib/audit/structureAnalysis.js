@@ -15,6 +15,10 @@ import {
   headingTreeIntegrityScore, singleH1Score,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { findSchema } from "./htmlParse.js";
+// The SAME rule the construct uses. Two copies would drift, and the failure
+// would be silent in the worst direction: the issue fires, then the plan it
+// links to lists nothing to fix.
+import { isVagueAnchor } from "../../../../src/lib/discoverability/constructTemplates.js";
 import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /**
@@ -296,6 +300,27 @@ export function analyseStructure(parsed, ctx = {}) {
       code: "SH-09", signalCode: "breadcrumb_semantics", measuredScore: 20,
       evidence: "No BreadcrumbList markup places this page within the site.",
       details: {},
+    });
+  }
+
+  // ── Internal anchor text ─────────────────────────────────────────────────
+  // 🔴 DELIBERATELY RAISES NO SIGNAL. Anchor quality is a real finding, but
+  // adding a scoring signal would move the score of every page ever audited and
+  // force `scoring_model_version` to v3 one week after W3 set v2 — for a
+  // recommendation, not a scoring correction. `evidenceForIssue` already guards
+  // a falsy signalCode, so an issue may exist purely to carry a fix.
+  const internalLinks = parsed.links?.internal || [];
+  const vagueAnchors = internalLinks.filter((l) => isVagueAnchor(l.text));
+  if (vagueAnchors.length) {
+    const sample = vagueAnchors.slice(0, 3).map((l) => `"${String(l.text).trim()}"`).join(", ");
+    issues.push({
+      code: "SH-11", signalCode: null, measuredScore: null,
+      evidence: `${vagueAnchors.length} of ${internalLinks.length} internal links use non-descriptive anchor text (${sample}).`,
+      details: {
+        vague_count: vagueAnchors.length,
+        internal_count: internalLinks.length,
+        examples: vagueAnchors.slice(0, 10).map((l) => ({ text: String(l.text).trim(), href: l.href })),
+      },
     });
   }
 

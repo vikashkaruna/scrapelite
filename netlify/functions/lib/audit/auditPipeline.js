@@ -88,6 +88,7 @@ function constructFacts(parsed, url) {
       brand: org?.name || "", primaryPhrase: parsed.headingStats?.h1Text || "",
     },
     robots_txt: { sitemapUrl: origin ? `${origin}/sitemap.xml` : "" },
+    internal_links: { links: parsed.links || {}, url },
     entity_card: {
       brand: org?.name || host,
       description: org?.description || parsed.meta?.description || "",

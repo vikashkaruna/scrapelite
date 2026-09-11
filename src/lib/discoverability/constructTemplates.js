@@ -419,6 +419,138 @@ export function authorBio({ name = "", role = "", credentials = [], profileUrl =
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
 /** Asset type → generator. The keys match `asset` in issueCatalog.js. */
+// ── Internal links ─────────────────────────────────────────────────────────
+
+/**
+ * Anchor text that describes the act of clicking rather than the destination.
+ *
+ * These are the standard offenders. Anchor text is one of the few signals that
+ * describes a page from the OUTSIDE, which is why both crawlers and retrieval
+ * systems weight it — and "click here" describes nothing at all.
+ */
+export const VAGUE_ANCHORS = Object.freeze([
+  "click here", "here", "read more", "learn more", "more", "this", "this page",
+  "link", "this link", "find out more", "see more", "details", "read this",
+  "continue", "go", "view", "see", "check it out",
+]);
+
+const normaliseAnchor = (t) => String(t || "").toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+
+/** Is this anchor text one of the known non-descriptive forms? */
+export function isVagueAnchor(text) {
+  const n = normaliseAnchor(text);
+  return n.length > 0 && VAGUE_ANCHORS.includes(n);
+}
+
+/**
+ * A starting-point anchor derived from the target's OWN url slug.
+ *
+ * This is a transformation, not an invention: `/guides/answer-engines` really
+ * does say "answer engines", and it is the site's own word for that page. It is
+ * still only a starting point, which is why it is labelled "suggested" and
+ * never written as though it were final copy.
+ *
+ * Returns "" when the slug yields nothing meaningful — a bare "/", a numeric id,
+ * a hash-like segment. The caller emits a TODO there rather than a guess.
+ */
+export function anchorFromHref(href) {
+  const raw = String(href || "").trim();
+  // ⚠️ A href containing whitespace is malformed, and `new URL()` will NOT tell
+  // you so — given a base it percent-encodes the spaces and hands back a
+  // confident-looking `/not%20a%20url%20at%20all`. Rejecting it here is the
+  // only place that distinction survives.
+  if (!raw || /\s/.test(raw)) return "";
+  let path = "";
+  try { path = new URL(raw, "https://example.invalid").pathname; }
+  catch { return ""; }
+
+  let seg = path.split("/").filter(Boolean).pop() || "";
+  // Real slugs are percent-encoded whenever they carry an accent or a
+  // non-Latin script, so decoding is what makes this work outside English.
+  try { seg = decodeURIComponent(seg); } catch { /* keep the raw segment */ }
+
+  const words = seg
+    .replace(/\.(html?|php|aspx?|jsp)$/i, "")
+    .replace(/[-_+]+/g, " ")
+    .trim();
+  if (!words) return "";
+  if (/^\d+$/.test(words)) return "";                 // an id is not a description
+  if (/^[0-9a-f]{8,}$/i.test(words)) return "";        // nor is a hash
+  return words;
+}
+
+/**
+ * An internal-linking plan built only from the links this page actually has.
+ *
+ * ⚠️ IT NEVER PROPOSES A PAGE TO LINK TO. The audit reads ONE page, and the
+ * sitemap indicator W1 added records only that a sitemap was DECLARED — it does
+ * not enumerate the site. So "add a link to your pricing page" would be a guess
+ * about a url we have never seen, in a construct the user pastes into live
+ * markup. What we can speak to with authority is the anchor text on the links
+ * already in front of us, and that is what this fixes.
+ */
+export function internalLinkPlan({ links = {}, url = "" } = {}) {
+  const internal = asArray(links.internal);
+  const vague = internal.filter((l) => isVagueAnchor(l.text));
+  const empty = internal.filter((l) => !String(l.text || "").trim());
+
+  const rows = vague.map((l) => {
+    const suggestion = anchorFromHref(l.href);
+    return `| \`${String(l.text).trim()}\` | ${l.href} | ${suggestion || TODO("describe the destination in 2-5 words")} |`;
+  });
+
+  const lines = [];
+
+  if (rows.length) {
+    lines.push(
+      `### Rewrite ${rows.length} non-descriptive anchor${rows.length === 1 ? "" : "s"}`,
+      "",
+      "| Current anchor | Target | Suggested anchor |",
+      "|---|---|---|",
+      ...rows,
+      "",
+      "The suggestion column is taken from each target's own url slug. Treat it as a starting point — the page's real subject beats its filename.",
+      "",
+    );
+  }
+
+  if (empty.length) {
+    lines.push(
+      `### ${empty.length} internal link${empty.length === 1 ? " has" : "s have"} no text at all`,
+      "",
+      ...empty.slice(0, 10).map((l) => `- ${l.href}`),
+      "",
+      "An image-only or empty link passes no anchor signal and is unreachable by screen reader. Give each one visible text, or `aria-label` where the design cannot carry it.",
+      "",
+    );
+  }
+
+  if (!rows.length && !empty.length) {
+    lines.push(
+      "### No anchor-text problems found on this page",
+      "",
+      internal.length
+        ? `All ${internal.length} internal link${internal.length === 1 ? "" : "s"} carry descriptive text.`
+        : `This page has no internal links. ${TODO("link to the pages this one should sit between")} — an orphaned page is reachable only from the sitemap, and anchor text is how the rest of the site describes it.`,
+      "",
+    );
+  }
+
+  lines.push(
+    "---",
+    `Observed on ${url || TODO("the audited url")}: ${internal.length} internal link${internal.length === 1 ? "" : "s"}, ${asArray(links.external).length} external.`,
+  );
+
+  return {
+    type: "internal_links", format: "markdown", label: "Internal linking plan",
+    note: "Built only from links already on the page. It never proposes a url to link to, because the audit reads one page and cannot see the rest of the site — a suggested target would be a guess pasted into live markup.",
+    body: lines.join("\n"),
+    vagueCount: vague.length,
+    emptyCount: empty.length,
+    internalCount: internal.length,
+  };
+}
+
 export const CONSTRUCT_BUILDERS = Object.freeze({
   answer_block:        answerBlock,
   content_block:       faqContentBlock,
@@ -430,6 +562,7 @@ export const CONSTRUCT_BUILDERS = Object.freeze({
   jsonld_breadcrumb:   breadcrumbSchema,
   heading_tree:        headingTree,
   meta_tags:           metaTags,
+  internal_links:      internalLinkPlan,
   robots_txt:          robotsTxtBlock,
   entity_card:         entityCard,
   author_bio:          authorBio,

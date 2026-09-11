@@ -358,6 +358,16 @@ export const ISSUES = Object.freeze({
     module: "recommendation_studio",
     asset: "heading_tree",
   },
+  "SH-11": {
+    pillar: "structural_hierarchy", severity: "medium", frameworks: ["seo", "aeo"],
+    owner: "content", impact: 35, effort: 15, confidence: 95,
+    title: "Internal links use anchor text that describes clicking, not the destination",
+    why: "Anchor text is one of the few signals that describes a page from the outside, so crawlers and retrieval systems both weight it \u2014 and \"click here\" describes nothing, leaving the target to be judged on its own content alone.",
+    fix: "Replace each non-descriptive anchor with 2-5 words naming what the reader will find there.",
+    rootCause: "weak_page_structure",
+    module: "recommendation_studio",
+    asset: "internal_links",
+  },
 
   // ── Technical Accessibility ──────────────────────────────────────────────
   "TA-01": {
