@@ -15,6 +15,7 @@
 
 import { getServiceDb } from "../requireEntitlement.js";
 import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
+import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverability/workflowLifecycle.js";
 
 const SELECT_ALL = "select=*";
 
@@ -175,15 +176,25 @@ export async function ensureTarget(userId, canonicalUrl, host, label = null) {
  * the requested-or-derivable value and `persistResult` corrects it to what was
  * actually applied — exactly as it already does for `page_type`.
  */
+/**
+ * D6 — carry the workspace onto the row.
+ *
+ * The columns have existed since 0030 and nothing has ever written them.
+ * Back-filling later costs far more than carrying them now, which is the same
+ * reasoning that made `raw_value` and `audit_recommendations.issue_id` worth
+ * fixing rather than dropping. ⚠️ NULL stays valid and common — most audits are
+ * run by a solo operator with no workspace at all.
+ */
 export async function createAudit(userId, {
   targetId, targetUrl, deviceProfile = "mobile", auditProfile = "balanced",
   auditProfileSource = "default", auditType = "url", primaryGoal = null,
   targetGeography = null, competitorUrls = [],
   pageTypeHint = null, baselineAuditId = null, promptSetId = null,
-  idempotencyKey = null, source = "ui", tags = [],
+  idempotencyKey = null, source = "ui", tags = [], workspaceId = null,
 }) {
   const r = await insert("audits", [{
     user_id: userId, target_id: targetId, target_url: targetUrl,
+    workspace_id: workspaceId || null,
     device_profile: deviceProfile, audit_profile: auditProfile,
     audit_profile_source: auditProfileSource,
     audit_type: auditType, primary_goal: primaryGoal,
@@ -207,7 +218,7 @@ export async function createAudit(userId, {
  * appearing as a finished audit with a score and no evidence behind it — which
  * is the shape a user would reasonably screenshot and act on.
  */
-export async function persistResult(userId, auditId, result) {
+export async function persistResult(userId, auditId, result, { workspaceId = null } = {}) {
   const conn = db();
   if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
 
@@ -285,6 +296,9 @@ export async function persistResult(userId, auditId, result) {
     estimated_lift: r.estimatedLift, owner_role: r.owner,
     title: r.title, rationale: r.rationale, evidence: r.evidence,
     implementation_asset_json: r.implementationAsset || null,
+    // D6 — denormalised from the audit so the queue filters by workspace
+    // without a join. NULL is valid and common.
+    workspace_id: workspaceId || null,
   });
 
   // ── ISSUES ARE WRITTEN FIRST, AND ALONE ──────────────────────────────────
@@ -625,18 +639,30 @@ export async function getTargetTrend(userId, targetId, limit = 30) {
  * dismissal with no reason is indistinguishable from a mis-click three months
  * later, and the recommendation-acceptance metric becomes unreadable.
  */
-export async function setRecommendationStatus(userId, recId, status, reason = null) {
-  const allowed = ["open", "accepted", "dismissed", "done"];
-  if (!allowed.includes(status)) return { ok: false, error: "invalid status" };
-  if (status === "dismissed" && !String(reason || "").trim()) {
-    return { ok: false, error: "A dismissal needs a reason." };
-  }
+export async function setRecommendationStatus(userId, recId, status, reason = null, extra = {}) {
+  // W8 — the full lifecycle. `isWorkflowState` and `requirementsFor` are the
+  // single source for both, so the API, the UI and any future importer cannot
+  // disagree about what a state needs.
+  if (!isWorkflowState(status)) return { ok: false, error: "invalid status" };
+  const req = requirementsFor(status, {
+    reason,
+    validatedByAuditId: extra.validatedByAuditId,
+    assignee: extra.assignee,
+  });
+  if (!req.ok) return { ok: false, error: req.missing[0] };
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ status, dismiss_reason: status === "dismissed" ? String(reason).slice(0, 500) : null }),
+      body: JSON.stringify({
+        status,
+        dismiss_reason: status === "dismissed" ? String(reason).slice(0, 500) : null,
+        status_changed_at: new Date().toISOString(),
+        ...(extra.validatedByAuditId ? { validated_by_audit_id: extra.validatedByAuditId } : {}),
+        ...(extra.dueAt !== undefined ? { due_at: extra.dueAt } : {}),
+        ...(extra.notes !== undefined ? { notes: extra.notes === null ? null : String(extra.notes).slice(0, 4000) } : {}),
+      }),
     },
   );
   if (!r.ok) return { ok: false, error: r.error };

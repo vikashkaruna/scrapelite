@@ -127,6 +127,8 @@ grant usage on schema public to anon, authenticated;
 //   audit_prompt_runs rather than in a table of their own.
 // 0053_prompt_monitors.sql     +2 tables (prompt_monitors, prompt_monitor_runs)
 //   +1 trigger. No new function: the touch trigger reuses 0030's.
+// 0054_workflow_hub.sql       columns + constraint only — the lifecycle lives
+//   on audit_recommendations.status rather than in a table of its own.
 // Taking these to 89 / 47 / 20.
 const EXPECT = {
   tables: 89,
@@ -2310,6 +2312,68 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     (await one(
       `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, kind_confidence)
        values ($1,$2,'perplexity','p',30) returning kind_confidence`, [a, u])).kind_confidence, 30);
+}
+
+// ── 0054 · the workflow lifecycle ────────────────────────────────────────────
+{
+  group("audit_recommendations — eight states, and the one that must be earned");
+
+  const u = (await one(`insert into auth.users (email) values ('wf@x.com') returning id`)).id;
+  const t = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [u])).id;
+  const a = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [u, t])).id;
+
+  // One row per state, each with its own code: (audit_id, code) is unique.
+  const mk = async (status, code) => one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title, status)
+     values ($1,$2,$4,'technical_accessibility','high','t',$3) returning status`, [u, a, status, code]);
+
+  const STATES = ["open", "accepted", "dismissed", "done",
+                  "assigned", "in_progress", "implemented", "validation_scheduled", "validated"];
+  for (const [i, st] of STATES.entries()) {
+    eq(`status '${st}' is storable`, (await mk(st, `ST-${i}`)).status, st);
+  }
+
+  check("🔴 an invented status is still refused", Boolean(await throws(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title, status)
+     values ($1,$2,'ST-BAD','technical_accessibility','high','t','invented')`, [u, a])));
+
+  // 🔴 The column that makes `validated` a measurement rather than a claim.
+  const rec = (await one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+     values ($1,$2,'WF-1','technical_accessibility','high','t') returning id`, [u, a])).id;
+  await db.query(
+    `update public.audit_recommendations set status='validated', validated_by_audit_id=$2 where id=$1`,
+    [rec, a]);
+  eq("validated points at the audit that re-measured it",
+    (await one(`select validated_by_audit_id from public.audit_recommendations where id=$1`, [rec])).validated_by_audit_id, a);
+
+  // Deleting that audit must free the pointer, not delete the recommendation.
+  const fk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_recommendations'::regclass and contype='f'
+        and pg_get_constraintdef(oid) like '%validated_by_audit_id%'`);
+  eq("🔴 validated_by_audit_id is ON DELETE SET NULL, so pruning audits never deletes findings",
+    fk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  eq("due dates and notes are storable, and default to nothing",
+    (await one(`select due_at, notes from public.audit_recommendations where id=$1`, [rec])),
+    { due_at: null, notes: null });
+
+  // D6 — the column 0030 declared and nothing wrote.
+  const ws = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'W') returning id`, [u])).id;
+  await db.query(`update public.audit_recommendations set workspace_id=$2 where id=$1`, [rec, ws]);
+  eq("D6: a recommendation can carry its workspace",
+    (await one(`select workspace_id from public.audit_recommendations where id=$1`, [rec])).workspace_id, ws);
+  eq("...and NULL stays valid, because most audits have no workspace",
+    (await one(
+      `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+       values ($1,$2,'WF-2','technical_accessibility','high','t') returning workspace_id`, [u, a])).workspace_id,
+    null);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

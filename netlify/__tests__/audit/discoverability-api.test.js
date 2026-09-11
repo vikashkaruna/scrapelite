@@ -820,10 +820,41 @@ describe("recommendations", () => {
   it("maps every queue action to the right status", async () => {
     storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
     storeMock.recordEvent = vi.fn(async () => {});
+    // ⚠️ The four original verbs keep their EXACT shipped meanings. `done` maps
+    // to `done`, not to `implemented`, even though W8 made them one state —
+    // every stored row and webhook payload says `done`, and a client posting it
+    // must get back what it expects.
     for (const [action, status] of [["accept", "accepted"], ["done", "done"], ["reopen", "open"]]) {
       await call("POST", `recommendations/r1/${action}`, { body: {} });
-      expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith("user-1", "r1", status, undefined);
+      expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith(
+        "user-1", "r1", status, undefined, expect.any(Object));
     }
+  });
+
+  it("W8: carries the rest of the lifecycle the PRD names", async () => {
+    storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    for (const [action, status] of [
+      ["start", "in_progress"],
+      ["implemented", "implemented"],
+      ["schedule_validation", "validation_scheduled"],
+      ["validate", "validated"],
+    ]) {
+      await call("POST", `recommendations/r1/${action}`, { body: {} });
+      expect(storeMock.setRecommendationStatus, action).toHaveBeenLastCalledWith(
+        "user-1", "r1", status, undefined, expect.any(Object));
+    }
+  });
+
+  it("🔴 W8: passes the validating audit through, which is what makes 'validated' real", async () => {
+    // Without it, `validated` is a second word for `implemented` — a claim by
+    // the person who did the work rather than a measurement.
+    storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    await call("POST", "recommendations/r1/validate", { body: { validated_by_audit_id: "aud-9" } });
+    expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith(
+      "user-1", "r1", "validated", undefined,
+      expect.objectContaining({ validatedByAuditId: "aud-9" }));
   });
 });
 

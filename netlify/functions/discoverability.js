@@ -313,6 +313,10 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     pageTypeHint: options.pageTypeHint, baselineAuditId: options.baselineAuditId,
     promptSetId: options.promptSetId, idempotencyKey: options.idempotencyKey,
     source, tags: options.tags || [],
+    // D6 — the column has existed since 0030 and nothing ever wrote it.
+    // Back-filling later costs far more than carrying it now. NULL stays valid
+    // and common: most audits have no workspace.
+    workspaceId: options.workspaceId || null,
   });
   if (!created.ok) {
     return { ok: false, statusCode: 503, body: { error: "Could not open the audit.", code: "STORAGE_UNAVAILABLE", detail: created.error } };
@@ -330,7 +334,9 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED", auditId } };
   }
 
-  const persisted = await store.persistResult(userId, auditId, result);
+  const persisted = await store.persistResult(userId, auditId, result, {
+    workspaceId: options.workspaceId || null,
+  });
   if (!persisted.ok) {
     // The audit ran; only the write failed. Return the result anyway rather
     // than throwing away work the user has already been charged for — but say
@@ -459,6 +465,11 @@ export function parseAuditOptions(body = {}) {
       skipCitations: body.skip_citations === true,
       tags: Array.isArray(body.tags) ? body.tags.slice(0, 10).map(String) : [],
       label: body.label || null,
+      // D6. Taken as given here and RE-CHECKED by buildWorkspaceCtx before it
+      // gates anything — a workspace id in a request body is a claim, not a
+      // membership, and the entitlement path already refuses one the caller is
+      // not in. Carried onto the row so the queue can filter without a join.
+      workspaceId: body.workspace_id || null,
     },
   };
 }
@@ -575,9 +586,16 @@ export const handler = async (event) => {
         });
         return json(200, { recommendation: r.recommendation });
       }
-      if (method === "POST" && ["accept", "dismiss", "done", "reopen"].includes(sub)) {
-        const status = sub === "accept" ? "accepted" : sub === "reopen" ? "open" : sub === "done" ? "done" : "dismissed";
-        const r = await store.setRecommendationStatus(userId, id, status, body.reason);
+      // W8 — the full lifecycle. The four original verbs keep their exact
+      // meanings so no existing client breaks; the rest are new.
+      if (method === "POST" && VERB_TO_STATE[sub]) {
+        const status = VERB_TO_STATE[sub];
+        const r = await store.setRecommendationStatus(userId, id, status, body.reason, {
+          validatedByAuditId: body.validated_by_audit_id || null,
+          assignee: body.assignee || null,
+          dueAt: body.due_at,
+          notes: body.notes,
+        });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         await store.recordEvent(userId, {
@@ -972,6 +990,26 @@ async function benchmarkRoute(event, userId, method, id, body) {
  * thing that should not be ungated. Reading what you already own costs nothing
  * and is refused only by ownership.
  */
+/**
+ * Queue verbs → lifecycle states.
+ *
+ * ⚠️ THE FIRST FOUR KEEP THEIR EXACT SHIPPED MEANINGS. `done` maps to `done`
+ * and not to `implemented`, even though they are one state, because every
+ * stored row and webhook payload in existence says `done` and a client posting
+ * it must get back what it expects.
+ */
+const VERB_TO_STATE = Object.freeze({
+  accept: "accepted",
+  dismiss: "dismissed",
+  done: "done",
+  reopen: "open",
+  assign_state: "assigned",
+  start: "in_progress",
+  implemented: "implemented",
+  schedule_validation: "validation_scheduled",
+  validate: "validated",
+});
+
 async function promptMonitorRoute(event, userId, method, id, sub, body) {
   if (method === "GET" && !id) {
     return json(200, { monitors: await store.listPromptMonitors(userId) });
