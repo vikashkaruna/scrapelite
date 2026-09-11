@@ -271,6 +271,23 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
     });
   }
 
+  // ── AI visibility (WAVI) ─────────────────────────────────────────────────
+  // v3. The richer read of the same evidence `citation_footprint` scores, which
+  // is why the two SPLIT one weight rather than each carrying a full one.
+  //
+  // 🔴 NULL, NOT ZERO, WHENEVER THE SAMPLE COULD NOT BE TAKEN. A missing engine
+  // key, an outage or an exhausted budget must redistribute this signal's
+  // weight, not mark the brand invisible — the same rule the whole scorer runs
+  // on, and the reason a page whose sample cannot be taken scores identically
+  // on v2 and v3.
+  const wavi = ctx.citationSample?.wavi || null;
+  if (!wavi || wavi.score === null) {
+    signals.ai_visibility = null;
+    reasons.ai_visibility = ctx.citationSample ? "not_measured" : "no_engine_configured";
+  } else {
+    signals.ai_visibility = wavi.score;
+  }
+
   // ── citation footprint (supplied by the sampling layer) ──────────────────
   const sample = ctx.citationSample || null;
   if (!sample || !sample.promptCount) {

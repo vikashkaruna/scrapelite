@@ -26,6 +26,7 @@ import { runChain, resolveProvider, callGeminiGrounded } from "../aiProviders.js
 import { generatePrompts, classifyPromptKind } from "../../../../src/lib/discoverability/promptTaxonomy.js";
 import { classifyCitation, readsAsRecommendation, contradictsPrice, aggregateStates } from "../../../../src/lib/discoverability/citationStates.js";
 import { competitorsInAnswer, shareOfVoice } from "../../../../src/lib/discoverability/competitorTracking.js";
+import { answerProminence, waviFromSample } from "../../../../src/lib/discoverability/aiVisibility.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -298,6 +299,9 @@ export async function sampleCitations({
       recommended,
       misrepresented,
       competitors: rivals,
+      // Null when the brand was absent: that absence is already counted by
+      // MentionRate, and scoring it here too would charge it twice.
+      prominence: answerProminence(r.text, brand),
       // ⚠️ PER-RUN, NOT PER-ENGINE. Grounded Gemini falls back to its own
       // weights whenever Search returns nothing useful, so within one sampling
       // run some answers are retrieved and others remembered. A single
@@ -345,6 +349,9 @@ export async function sampleCitations({
     // stored audit already read them; the rates sit beside, not instead.
     states,
     shareOfVoice: sov,
+    // Computed from the runs above, so every component is a measurement this
+    // sample actually took. Unmeasured components redistribute their weight.
+    wavi: waviFromSample({ promptCount: answered.length, states, runs: answered }),
     sentiment: sentiments.length ? sentiments.reduce((a, b) => a + b, 0) / sentiments.length : null,
     runs,
     failures,

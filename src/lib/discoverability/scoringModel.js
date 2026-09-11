@@ -84,6 +84,13 @@ export const FRAMEWORKS = Object.freeze(["overall", "seo", "aeo", "geo"]);
  *
  * ── HISTORY ────────────────────────────────────────────────────────────────
  *   v1  the shipped four-pillar model: 7 penalties, multiplicative priority.
+ *   v3  W6. Adds the `ai_visibility` signal (WAVI) to entity authority at
+ *       0.15, taken from `citation_footprint`'s 0.25 rather than added on
+ *       top — WAVI's first two components ARE mention and citation rate, so
+ *       carrying both at full weight would count one body of evidence twice.
+ *       The pillar's total exposure to answer-engine evidence is unchanged;
+ *       what moves is how richly it is measured. A page whose sample cannot
+ *       be taken scores identically on v2 and v3.
  *   v2  W3. Adds ENTITY_SCHEMA_INVALID (0.10) and SEVERE_CWV_FAILURE (0.10),
  *       the two PRD critical conditions the shipped set had no equivalent for.
  *       NOTHING ELSE MOVED — every pre-existing penalty keeps the factor it
@@ -96,7 +103,7 @@ export const FRAMEWORKS = Object.freeze(["overall", "seo", "aeo", "geo"]);
  *       pages it does move are precisely the badly-broken ones whose owners
  *       are most likely to be watching a trend line.
  */
-export const SCORING_MODEL_VERSION = "v2";
+export const SCORING_MODEL_VERSION = "v3";
 
 /**
  * Hard blockers, applied MULTIPLICATIVELY after the weighted sum.

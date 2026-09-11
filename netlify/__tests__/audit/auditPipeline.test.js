@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { signalsForPillar } from "../../../src/lib/discoverability/signalRegistry.js";
 
 // ── Mock the network boundary, not the logic ───────────────────────────────
 // The scrape chain, robots fetch, PageSpeed and the AI chain are all mocked so
@@ -122,7 +123,10 @@ describe("runAudit — a healthy page", () => {
     const r = await runAudit("https://example.com/geo", baseOpts);
     for (const p of ["answer_clarity", "entity_authority", "structural_hierarchy", "technical_accessibility"]) {
       expect(r.pillars[p], p).toBeDefined();
-      expect(r.pillars[p].signals.length, p).toBe(5);
+      // Derived from the registry, not restated. A hardcoded count means every
+      // new signal fails this test for the wrong reason — and "bump the number
+      // until it goes green" is how a parity test stops being one.
+      expect(r.pillars[p].signals.length, p).toBe(signalsForPillar(p).length);
     }
     expect(r.evidence.heading_outline.length).toBeGreaterThan(0);
     expect(r.evidence.schema_types).toContain("Organization");

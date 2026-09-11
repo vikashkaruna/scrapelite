@@ -37,11 +37,17 @@ describe("signal registry integrity", () => {
     }
   });
 
-  it("names the three signals that depend on a model or an external service", () => {
+  it("names the four signals that depend on a model or an external service", () => {
     // If this list grows, an audit can silently lose more coverage than the UI
     // is prepared to explain — so the growth should be a deliberate edit here.
+    //
+    // v3 added `ai_visibility`, and it belongs: WAVI is computed from a live
+    // answer-engine sample, so a missing key or an exhausted budget makes it
+    // unmeasurable exactly as it does `citation_footprint`. Two of entity
+    // authority's six signals now depend on an engine being reachable, which is
+    // why they SPLIT one weight rather than each carrying a full one.
     expect(nonDeterministicSignals().sort()).toEqual(
-      ["citation_footprint", "core_web_vitals", "passage_independence"],
+      ["ai_visibility", "citation_footprint", "core_web_vitals", "passage_independence"],
     );
   });
 });
@@ -346,8 +352,8 @@ describe("the penalty model holds its shipped calibration", () => {
     );
   });
 
-  it("declares v2, and every penalty has a label and a description", () => {
-    expect(SCORING_MODEL_VERSION).toBe("v2");
+  it("declares v3, and every penalty has a label and a description", () => {
+    expect(SCORING_MODEL_VERSION).toBe("v3");
     for (const code of PENALTY_CODES) {
       expect(PENALTIES[code].label, code).toBeTruthy();
       expect(PENALTIES[code].description, code).toBeTruthy();

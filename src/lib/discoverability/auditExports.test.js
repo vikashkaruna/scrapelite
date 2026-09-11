@@ -103,7 +103,14 @@ function pdfText(pdf) {
   for (const page of pages) {
     for (const op of page) {
       if (typeof op !== "string") continue;
-      for (const m of op.matchAll(/\((.*?)\)\s*Tj/g)) out.push(m[1]);
+      // ⚠️ jsPDF ESCAPES PARENTHESES IN TEXT, because `(` and `)` delimit a PDF
+      // string. A naive /\((.*?)\)/ therefore stops at the first `\)` and
+      // silently truncates any label containing brackets — which made a
+      // correctly-rendered "AI visibility (WAVI)" read as absent from the PDF.
+      // Match escaped pairs, then unescape.
+      for (const m of op.matchAll(/\(((?:\\.|[^()\\])*)\)\s*Tj/g)) {
+        out.push(m[1].replace(/\\([()\\])/g, "$1"));
+      }
     }
   }
   return out.join("\n");
