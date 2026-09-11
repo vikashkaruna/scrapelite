@@ -1024,6 +1024,112 @@ group("discoverability — targets, idempotency, trends, retention");
   } catch (e) { benchProfile = e.message; }
   eq("a benchmark may use a business-model profile too", benchProfile, null);
 
+  // ── 0050: the gap-analysis fields, and the link nothing ever wrote ───────
+  //
+  // The BRD specifies eleven fields on every issue; the table carried six. The
+  // five it did not carry are the five that make a queue actionable rather
+  // than merely correct.
+  const gapIssue = await one(
+    `insert into public.audit_issues
+       (audit_id, user_id, code, pillar, severity, title, evidence,
+        observed, inference, root_cause, recommended_module, owner_role)
+     values ($1,$2,'EA-11','entity_authority','critical','Entity markup is unusable',
+             'Organization markup carries no name.',
+             'Organization markup carries no name.',
+             'A resolver has a node to build and no identity to attach.',
+             'entity_ambiguity','schema_intelligence','seo')
+     returning id, observed, inference, root_cause, recommended_module, owner_role, status, evidence`,
+    [a1, alice]);
+
+  // The split that is the whole point: one column launders the weaker claim
+  // into the stronger. "We measured this" and "we reason it means that" have
+  // different warranties and must not share a field.
+  eq("an issue stores what was OBSERVED", gapIssue.observed, "Organization markup carries no name.");
+  check("an issue stores the INFERENCE separately",
+    /no identity to attach/.test(gapIssue.inference || ""));
+  check("the two are different sentences", gapIssue.observed !== gapIssue.inference);
+  // `evidence` is kept and keeps its meaning — every export prints it and every
+  // historical diff compares it.
+  check("the original evidence sentence is kept, not replaced",
+    /no name/.test(gapIssue.evidence || ""));
+
+  eq("an issue stores its root cause", gapIssue.root_cause, "entity_ambiguity");
+  eq("an issue stores the module that answers it", gapIssue.recommended_module, "schema_intelligence");
+  eq("an issue stores who fixes it", gapIssue.owner_role, "seo");
+  // Defaulted, unlike 0049's primary_goal, because unlike a goal this one IS
+  // knowable retrospectively: every finding genuinely starts open.
+  eq("an issue starts open", gapIssue.status, "open");
+
+  check("root_cause rejects a cause outside the taxonomy", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, root_cause)
+     values ($1,$2,'AC-02','answer_clarity','high','x','vibes')`, [a1, alice])));
+  check("recommended_module rejects a module that does not exist", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, recommended_module)
+     values ($1,$2,'AC-03','answer_clarity','high','x','M99')`, [a1, alice])));
+  check("owner_role rejects a role outside the five", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, owner_role)
+     values ($1,$2,'AC-04','answer_clarity','high','x','legal')`, [a1, alice])));
+  check("issue status rejects a state outside the lifecycle", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, status)
+     values ($1,$2,'AC-05','answer_clarity','high','x','probably')`, [a1, alice])));
+
+  // The full BRD vocabulary is legal in the column ahead of W8 wiring the
+  // transitions — same reasoning 0049 applies to the audit types the engine
+  // cannot yet produce.
+  for (const state of ["accepted", "assigned", "in_progress", "implemented",
+    "validation_scheduled", "validated", "dismissed"]) {
+    let err = null;
+    try {
+      await db.query(
+        `update public.audit_issues set status = $2 where id = $1`, [gapIssue.id, state]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts issue status '${state}' ahead of W8`, err, null);
+  }
+  await db.query(`update public.audit_issues set status = 'open' where id = $1`, [gapIssue.id]);
+
+  // Two of the eight causes belong to P2 and are unused in P1. They are legal
+  // now because the taxonomy is a contract and one that arrives in two halves
+  // invites the second half to be numbered around the first.
+  for (const cause of ["location_radius_mismatch", "conversion_friction"]) {
+    let err = null;
+    try {
+      await db.query(
+        `update public.audit_issues set root_cause = $2 where id = $1`, [gapIssue.id, cause]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts the P2 cause '${cause}'`, err, null);
+  }
+  await db.query(`update public.audit_issues set root_cause = 'entity_ambiguity' where id = $1`, [gapIssue.id]);
+
+  // 🔴 THE LINK THAT WAS DECLARED IN 0030 AND WRITTEN BY NOTHING.
+  // Every recommendation was an orphan, so "which finding produced this task"
+  // had no answer in the data and the validation loop could not close.
+  let linked = null;
+  try {
+    await db.query(
+      `insert into public.audit_recommendations
+         (audit_id, user_id, code, issue_id, pillar, priority, title)
+       values ($1,$2,'EA-11',$3,'entity_authority','high','Name the organization')`,
+      [a1, alice, gapIssue.id]);
+  } catch (e) { linked = e.message; }
+  eq("a recommendation can name the issue that produced it", linked, null);
+
+  const joined = await one(
+    `select i.code issue_code, r.code rec_code
+       from public.audit_recommendations r
+       join public.audit_issues i on i.id = r.issue_id
+      where r.audit_id = $1 and r.issue_id is not null`, [a1]);
+  eq("the join resolves back to the finding", joined.issue_code, "EA-11");
+
+  // ON DELETE SET NULL, not CASCADE: the work survives the finding being
+  // re-audited away. A recommendation deleted because its issue was resolved
+  // would erase the record that anyone ever did anything about it.
+  await db.query(`delete from public.audit_issues where id = $1`, [gapIssue.id]);
+  const orphaned = await one(
+    `select issue_id from public.audit_recommendations
+      where audit_id = $1 and code = 'EA-11'`, [a1]);
+  eq("deleting the issue nulls the link rather than deleting the work",
+    orphaned.issue_id, null);
+
   // ── constraints that keep the vocabulary honest ───────────────────────────
   const badEnum = async (sql, params) => Boolean(await throws(sql, params));
   check("device_profile rejects an unknown value", await badEnum(

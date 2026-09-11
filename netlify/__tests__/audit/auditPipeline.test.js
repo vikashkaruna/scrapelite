@@ -40,6 +40,9 @@ const { _resetRobotsTextCacheForTests } = await import("../../functions/lib/comp
 const { SCORING_MODEL_VERSION, PENALTIES } =
   await import("../../../src/lib/discoverability/scoringModel.js");
 const { analyseTechnical } = await import("../../functions/lib/audit/technicalAnalysis.js");
+const { ROOT_CAUSES, MODULES, groupByRootCause } =
+  await import("../../../src/lib/discoverability/gapTaxonomy.js");
+const { ISSUES } = await import("../../../src/lib/discoverability/issueCatalog.js");
 
 const GOOD_PAGE = `<!doctype html><html lang="en"><head>
 <title>What is generative engine optimization? | Example</title>
@@ -901,5 +904,72 @@ describe("SEVERE_CWV_FAILURE — severe, not merely failing", () => {
 
   it("costs exactly 10% — the PRD's own weight", () => {
     expect(PENALTIES.SEVERE_CWV_FAILURE.factor).toBe(0.10);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W4 — GAP ANALYSIS v2
+// ═══════════════════════════════════════════════════════════════════════════
+// The BRD specifies eleven fields on every issue and the record carried six.
+
+describe("every finding carries a diagnosis, a referral and an owner", () => {
+  it("gives each issue a root cause, module, owner and status", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.issues.length).toBeGreaterThan(0);
+    for (const issue of r.issues) {
+      expect(ROOT_CAUSES[issue.rootCause], issue.code).toBeTruthy();
+      expect(MODULES[issue.module], issue.code).toBeTruthy();
+      expect(issue.owner, issue.code).toBeTruthy();
+      expect(issue.status, issue.code).toBe("open");
+    }
+  });
+
+  it("states the observed fact and the inference as two different sentences", async () => {
+    // One column launders the weaker claim into the stronger: "the page has two
+    // H1 elements" is measured and defensible; "this dilutes the topical
+    // signal" is reasoned and arguable.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const issue = r.issues.find((i) => i.observed && i.inference);
+    expect(issue).toBeTruthy();
+    expect(issue.observed).not.toBe(issue.inference);
+    // The inference is per-CODE and comes from the catalogue; the observation
+    // is per-AUDIT. That asymmetry is the point.
+    expect(issue.inference).toBe(ISSUES[issue.code].why);
+  });
+
+  it("keeps `evidence` as the sentence it has always been", async () => {
+    // Every export prints it and every historical diff compares it. `observed`
+    // sits beside it rather than replacing it.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    for (const issue of r.issues) {
+      if (issue.evidence) expect(issue.observed).toBe(issue.evidence);
+    }
+  });
+
+  it("carries the same fields on an unreachable page", async () => {
+    // The SHAPE of a result must not depend on whether the fetch succeeded —
+    // and this is the audit where the cause is least ambiguous of all.
+    publicFetch.mockImplementation(async (url) => {
+      if (String(url).endsWith("/robots.txt")) return htmlResponse("", 404, url);
+      return { ok: false, status: 500, url, text: async () => "", headers: { get: () => "text/html" } };
+    });
+    scrapeChain.mockResolvedValue({ ok: false, error: "no html" });
+    const r = await runAudit("https://example.com/down", baseOpts);
+    expect(r.unreachable).toBe(true);
+    const [issue] = r.issues;
+    expect(issue.rootCause).toBe("technical_access");
+    expect(MODULES[issue.module]).toBeTruthy();
+    expect(issue.status).toBe("open");
+  });
+
+  it("groups a real audit's findings into a diagnosis", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const groups = groupByRootCause(r.issues, {
+      severityRank: (i) => ["critical", "high", "medium", "low"].indexOf(i.severity),
+    });
+    expect(groups.length).toBeGreaterThan(0);
+    // Fewer buckets than findings, or the grouping has bought nothing.
+    expect(groups.length).toBeLessThanOrEqual(r.issues.length);
+    expect(groups.reduce((n, g) => n + g.count, 0)).toBe(r.issues.length);
   });
 });

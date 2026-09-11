@@ -1178,9 +1178,29 @@ export function rehydrate(full) {
       code: i.code, pillar: i.pillar, severity: i.severity,
       frameworks: i.framework_scope || [], title: i.title, evidence: i.evidence, details: i.details_json,
       evidenceRecords: Array.isArray(i.evidence_json) ? i.evidence_json : [],
+      // ── The gap-analysis fields (0050), rebuilt key for key ─────────────
+      //
+      // `observed` falls back to the sentence, because on a row written before
+      // 0050 the sentence IS the observed fact — it was just not labelled as
+      // one. `inference`, `rootCause` and `module` do NOT fall back to the
+      // catalogue: those rows were recorded before the taxonomy existed, and
+      // back-filling a diagnosis nobody made at the time would put a claim in
+      // front of a customer that no run ever produced. Null renders as "not
+      // classified", which is true.
+      observed: i.observed ?? i.evidence ?? null,
+      inference: i.inference ?? null,
+      rootCause: i.root_cause ?? null,
+      module: i.recommended_module ?? null,
+      owner: i.owner_role ?? null,
+      status: i.status || "open",
+      statusChangedAt: i.status_changed_at || null,
     })),
     recommendations: (full.recommendations || []).map((x) => ({
       id: x.id, code: x.code, pillar: x.pillar, frameworks: x.frameworks || [],
+      // Declared in 0030 and written by nothing until W4. Null on every row
+      // older than that, which is what "this task predates the link" looks
+      // like — not an error.
+      issueId: x.issue_id || null,
       priority: x.priority, priorityScore: num(x.priority_score),
       impactScore: num(x.impact_score), effortScore: num(x.effort_score),
       confidenceScore: num(x.confidence_score), estimatedLift: num(x.estimated_lift),

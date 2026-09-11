@@ -93,7 +93,10 @@ src/lib/discoverability/          PURE. Imported by BOTH React and netlify/,
   signalRegistry.js               20 signals, 4 pillars, weights summing to 1
   scoringModel.js                 pillar/framework maths, 9 penalties, bands, v2
   signalScorers.js                the individual curves
-  issueCatalog.js                 46 issue codes → severity, owner, fix, penalty
+  issueCatalog.js                 46 issue codes → severity, owner, fix, penalty,
+                                  root cause and module (W4)
+  gapTaxonomy.js                  8 root causes + 13 modules — §3d. WHY a
+                                  finding exists and WHICH capability answers it
   recommendationModel.js          priority formula, per-page lift, ranking
   constructTemplates.js           13 generators for ready-made assets
   auditProfiles.js                8 profiles (lenses) + 12 page-type rule packs
@@ -452,6 +455,130 @@ asserted in `scoringModel.test.js`.
 
 ---
 
+## 3d. Gap analysis — from a list to a diagnosis
+
+The BRD specifies **eleven** fields on every issue. The table carried six, and
+the five it did not carry are the five that make a queue actionable rather than
+merely correct.
+
+| BRD field | Before W4 | Now |
+|---|---|---|
+| Stable code, title, pillar, frameworks, severity | ✅ | unchanged |
+| **Observed fact, separately from inference** | one blended `evidence` column | `observed` + `inference` |
+| Evidence reference `{url, selector, excerpt}` | ✅ W1 | `evidence_json` |
+| **Root cause** | no taxonomy | `root_cause`, 8 causes |
+| **Recommended DatIQ module** | absent | `recommended_module` |
+| Recommended owner role | catalogue-only | `owner_role` |
+| **Workflow state** | issues had no lifecycle | `status` (W8 wires transitions) |
+
+### Why a root cause, when every issue already has a code
+
+46 codes is more than anyone reads. Forty individually-true findings is a
+**list**, not a diagnosis — and the reader's question is *"what is wrong with
+this page"*, which no single code answers.
+
+Grouping by **pillar** does not answer it either, because a pillar is a scoring
+construct. *"Entity authority is 42"* says where points were lost, not what to
+go and do.
+
+Root cause is the axis a person can act on. Eleven findings that all reduce to
+`entity_ambiguity` are **one afternoon's work**, and seeing that is the
+difference between a report that gets worked and one that gets filed.
+
+The eight causes are fixed and ordered — technical access first, because nothing
+downstream matters on a page a crawler cannot reach. `groupByRootCause()` returns
+them in taxonomy order rather than by count, deliberately: the commonest cause on
+a broken page is usually `weak_page_structure` simply because there are more
+structural codes to trip, and leading with it on an unreachable page tells the
+reader to restructure headings nobody will ever see.
+
+⚠️ **Two of the eight are unused in P1 and that is correct.**
+`location_radius_mismatch` and `conversion_friction` belong to P2's local and
+service modules. They are declared now because the taxonomy is a stored contract
+and one that arrives in two halves invites the second half to be numbered around
+the first. `rootCausesInUse()` is what the UI renders, so no customer is shown an
+empty bucket.
+
+### Observed and inferred have different warranties
+
+```
+"The page has two H1 elements"      MEASURED. We will defend it.
+"This dilutes the topical signal"   REASONED. A fair expert could disagree.
+```
+
+Both values already existed — the per-audit sentence and the catalogue's `why` —
+but they reached the reader as **one paragraph**, which gives the second the
+authority of the first. Naming them is the whole fix, and it is the same rule the
+evidence envelope enforces one layer down (`method` carries `observed: true|false`,
+so a judgement cannot be dressed as a reading by a forgetful call site).
+
+`observed` is per-**audit**; `inference` is per-**code**. What we saw varies by
+page; what it means does not.
+
+⚠️ `evidence` is kept and keeps its meaning — every export prints it and every
+historical diff compares it. On a row written before W4 the sentence **is** the
+observed fact; it was just never labelled as one, which is why `observed` falls
+back to it and `inference` does not fall back to the catalogue. Back-filling an
+inference would put a diagnosis in front of a customer that no run ever produced.
+
+### The module referral is stored as a slug, not as "M1–M13"
+
+The BRD names thirteen modules **M1–M13** and does not enumerate which is which
+anywhere this repository can see. Numbering them from a guess and storing those
+numbers would break the rule that matters most — *codes are a public contract;
+never renumber one* — the first time the real list disagreed.
+
+So the stable identifier is the **slug**, derived from the PRD's own §7/§9 section
+names, and `MODULES[].mCode` is a nullable display alias waiting for
+confirmation. **Nothing keys off it.** Filling in thirteen labels later is a
+one-line change; renumbering a shipped column is not.
+
+Each module declares `phase` and `available`, so a finding referred to a P2
+module is still correctly diagnosed and the UI shows it as *"(coming)"* rather
+than implying a customer can click through to something that does not exist.
+
+### 🔴 `audit_recommendations.issue_id` was declared in 0030 and written by nothing
+
+NULL on every row for the life of the module — the same defect class W1 found on
+`audit_signals.raw_value` and `.evidence_json`, in the same table set.
+
+Every recommendation was an **orphan**. *"Which finding produced this task"* had
+no answer in the data, so the validation loop could not close: when a re-audit
+reports AC-01 resolved there was no way to mark the recommendation it produced as
+validated except by matching on `code` — which works only while that mapping
+stays one-to-one and **silently mis-attributes** the moment it does not.
+
+The fix costs a round trip and is worth it. `persistResult` used to fire all four
+child writes concurrently with `return=minimal`; issues are now inserted **first**
+and **alone**, asking for the rows back, and the returned ids are threaded onto
+the recommendation rows. The other three writes still go concurrently behind it.
+
+⚠️ The ordering guarantee is unchanged: every child is written before the parent
+is marked `completed`, so a partial failure leaves the audit visibly `running`
+rather than showing a finished audit with a score and no evidence behind it.
+
+A recommendation whose code matches no issue keeps a **null** link rather than
+guessing — that happens on the unreachable-page path. `ON DELETE SET NULL` means
+re-auditing a finding away nulls the link instead of deleting the work, because a
+recommendation deleted with its issue would erase the record that anyone ever did
+anything about it.
+
+### The evidence envelope finally reaches a screen
+
+W1 built the envelope and threaded it through the pipeline, the store and the API
+— and it rendered **nowhere**. A record that is stored and never shown answers
+*"where exactly did you see that?"* only for whoever can query the database, which
+is not the person asking.
+
+`SignalEvidence` renders it inline and collapsed **on the signal it supports**,
+because the question is always *"why is THIS number what it is"* — an evidence
+drawer elsewhere on the page would make the reader carry a signal code across it.
+Observation and inference are visually distinct, from the record's own `observed`
+flag. It renders nothing at all when there is no evidence: an empty "Evidence"
+disclosure would read as *"we looked and found none"*.
+
+---
+
 ## 4. Failure modes, and which way each fails
 
 | Condition | Behaviour | Why |
@@ -638,7 +765,7 @@ clause-by-clause gap analysis lives in
 | Evidence envelope and explainability | ✅ W1 — `evidenceModel.js`, migration 0048 |
 | Penalty model | ✅ W3 — 9 blockers, `v2`, cross-version diff guard. Shipped calibration retained per D1 (§3c) |
 | Goal-based intake (audit type, primary goal, geography, 8 profiles) | ✅ W2 — `intakeModel.js`, migration 0049 |
-| Gap analysis v2 (root cause, module, observed-fact/inference split) | ❌ W4 |
+| Gap analysis v2 (root cause, module, observed-fact/inference split) | ✅ W4 — `gapTaxonomy.js`, migration 0050 (§3d) |
 | Recommendation Studio (meta variants, internal links, content brief) | ⚠️ W5 — 13 of 17 constructs |
 | AI visibility (prompt taxonomy, 7 citation states, SOV, WAVI, displacement) | ❌ W6 — largest remaining P1 item |
 | Validation Lab (signal diff, regressed/unchanged, trend windows, attribution) | ⚠️ W7 |

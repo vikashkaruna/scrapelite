@@ -379,6 +379,39 @@ export async function runAudit(url, options = {}) {
       // from the signal this finding sits on.
       evidence: i.evidence || "", details: i.details || null,
       evidenceRecords: evidence.evidenceForIssue(i.code, i.signalCode),
+
+      // ── OBSERVED FACT AND INFERENCE, AS TWO FIELDS ─────────────────────
+      //
+      // The BRD is explicit that these are different sentences, and the reason
+      // is that they have different warranties. "The page has two H1 elements"
+      // is something we MEASURED on this run and will defend; "this dilutes
+      // the page's topical signal" is a REASONED consequence that a reasonable
+      // expert could argue with.
+      //
+      // They were already two values in this codebase — the per-audit
+      // `evidence` sentence and the catalogue's `why` — but they arrived at
+      // the reader blended into one paragraph, which gives the second the
+      // authority of the first. Naming them is the whole fix.
+      //
+      // `observed` is per-AUDIT and `inference` is per-CODE, which is exactly
+      // what you would expect: what we saw varies by page, what it means does
+      // not.
+      observed: i.evidence || null,
+      inference: meta.why || null,
+
+      // Diagnosis and referral. See gapTaxonomy.js for why these are two
+      // registries rather than one.
+      rootCause: meta.rootCause || null,
+      module: meta.module || null,
+      // Denormalised from the catalogue onto the row so the queue can be
+      // filtered by owner without a join against a table that does not exist
+      // — `owner` has always been catalogue-only, and "show me everything
+      // engineering has to do" was therefore a client-side filter over a list
+      // the client had to have already fetched in full.
+      owner: meta.owner || null,
+      // Issues have had no lifecycle at all. `open` is the honest starting
+      // state for every finding; W8 wires the transitions.
+      status: "open",
     });
   }
   const packedIssues = applyPageTypePack(issues, pageType);
@@ -550,10 +583,22 @@ function emptyResultShell({ url, deviceProfile, auditProfile, auditProfileSource
       ? `The page returned HTTP ${collected.fetch.status}.`
       : `The page could not be fetched: ${collected.fetch.error}.`,
   });
+  const meta = ISSUES[issueCode];
+  // Every field a reachable page's issue carries, for the same reason the
+  // pillars above are decorated with an empty evidence map rather than left
+  // undecorated: the SHAPE of a result must not depend on whether the fetch
+  // happened to succeed. A consumer reading `issue.rootCause` should get a
+  // cause, not undefined, on the one audit where the cause is least ambiguous.
   const issue = {
-    code: issueCode, pillar: ISSUES[issueCode].pillar, severity: ISSUES[issueCode].severity,
-    frameworks: [...ISSUES[issueCode].frameworks], title: ISSUES[issueCode].title,
+    code: issueCode, pillar: meta.pillar, severity: meta.severity,
+    frameworks: [...meta.frameworks], title: meta.title,
     evidence: rec.evidence, details: { status: collected.fetch.status, error: collected.fetch.error },
+    observed: rec.evidence || null,
+    inference: meta.why || null,
+    rootCause: meta.rootCause || null,
+    module: meta.module || null,
+    owner: meta.owner || null,
+    status: "open",
   };
   return {
     target: {

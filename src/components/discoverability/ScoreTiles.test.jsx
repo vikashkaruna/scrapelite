@@ -14,8 +14,9 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState, useCallback } from "react";
-import { PillarGrid } from "./ScoreTiles.jsx";
+import { PillarGrid, PillarCard } from "./ScoreTiles.jsx";
 import { PILLAR_IDS, PILLARS, SIGNALS, signalsForPillar } from "../../lib/discoverability/signalRegistry.js";
 
 function auditFixture({ dropLabels = false } = {}) {
@@ -113,5 +114,71 @@ describe("PillarGrid — signal names", () => {
     for (const code of signalsForPillar("answer_clarity")) {
       expect(screen.getByText(SIGNALS[code].label)).toBeInTheDocument();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W4 — THE EVIDENCE ENVELOPE FINALLY REACHES A SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+// W1 built the envelope and threaded it through the pipeline, the store and the
+// API — and it reached no screen at all. A record that is stored and never
+// shown answers "where exactly did you see that?" only for whoever can query
+// the database, which is not the person asking.
+
+describe("signal evidence is visible, and says what kind of claim it is", () => {
+  const withEvidence = (evidence, confidence = 0.95) => ({
+    pillarId: "structural_hierarchy",
+    pillar: {
+      score: 60, weight: 0.2, coverage: 100,
+      signals: [{
+        code: "single_h1", label: "Single H1", weight: 0.15,
+        score: 40, measured: true, confidence, evidence,
+      }],
+    },
+    expanded: true,
+    onToggle: () => {},
+  });
+
+  it("shows the observation count and the confidence", () => {
+    render(<PillarCard {...withEvidence([
+      { method: "raw_html", observed: true, selector: "h1", section: "Page H1",
+        excerpt: "Pricing that scales", collected_at: "2026-09-11T09:00:00.000Z" },
+    ])} />);
+    expect(screen.getByText(/1 observation/)).toBeInTheDocument();
+    expect(screen.getByText(/95% confidence/)).toBeInTheDocument();
+  });
+
+  it("shows the selector — the literal answer to 'where on the page'", async () => {
+    render(<PillarCard {...withEvidence([
+      { method: "raw_html", observed: true, selector: "h1", section: "Page H1" },
+    ])} />);
+    await userEvent.click(screen.getByText(/1 observation/));
+    expect(screen.getByText("h1")).toBeInTheDocument();
+    expect(screen.getByText(/Page H1/)).toBeInTheDocument();
+  });
+
+  it("distinguishes a reading from a model judgement", async () => {
+    // `observed` is a property of HOW the thing was learned, not a flag a call
+    // site sets — so a judgement can never be dressed as a reading.
+    render(<PillarCard {...withEvidence([
+      { method: "raw_html", observed: true, selector: "h1" },
+      { method: "model_inference", observed: false, section: "Model re-read" },
+    ])} />);
+    await userEvent.click(screen.getByText(/2 observations/));
+    expect(screen.getByText("Observed")).toBeInTheDocument();
+    expect(screen.getByText("Inferred")).toBeInTheDocument();
+  });
+
+  it("renders nothing when a signal carries no evidence", () => {
+    // Every audit stored before migration 0048, and every unmeasured signal.
+    // An empty "Evidence" disclosure would read as "we looked and found none".
+    render(<PillarCard {...withEvidence([])} />);
+    expect(screen.queryByText(/observation/)).not.toBeInTheDocument();
+  });
+
+  it("survives a signal whose evidence key is absent entirely", () => {
+    const props = withEvidence([]);
+    delete props.pillar.signals[0].evidence;
+    expect(() => render(<PillarCard {...props} />)).not.toThrow();
   });
 });

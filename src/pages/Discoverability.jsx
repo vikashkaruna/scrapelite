@@ -28,7 +28,7 @@ import { useSeo } from "../hooks/useSeo.js";
 import AuditComposer from "../components/discoverability/AuditComposer.jsx";
 import { setPendingAudit } from "../lib/pendingAudit.js";
 import ScoreTiles, { PillarGrid, PenaltyBanner } from "../components/discoverability/ScoreTiles.jsx";
-import IssueMatrix, { IssueList } from "../components/discoverability/IssueMatrix.jsx";
+import IssueMatrix, { IssueList, RootCauseSummary } from "../components/discoverability/IssueMatrix.jsx";
 import RecommendationQueue from "../components/discoverability/RecommendationQueue.jsx";
 import TrendChart from "../components/discoverability/TrendChart.jsx";
 import {
@@ -128,6 +128,11 @@ export default function Discoverability() {
     });
   }, []);
   const [matrixCell, setMatrixCell] = useState(null);
+  // The two filters are mutually exclusive on purpose. Selecting a cause after
+  // a cell would show the intersection, which is almost always empty and reads
+  // as "no issues" — the user's own two clicks having hidden the finding they
+  // were looking for.
+  const [causeFilter, setCauseFilter] = useState(null);
   const [busyRec, setBusyRec] = useState(null);
   const [series, setSeries] = useState(["overall"]);
   const [lastRequest, setLastRequest] = useState(null);
@@ -589,8 +594,17 @@ export default function Discoverability() {
 
           <div className="dsc-grid-2">
             <Panel title={`Issues (${filteredIssueCount})`} icon="alert-triangle">
-              <IssueMatrix issues={issues} activeCell={matrixCell} onSelectCell={setMatrixCell} />
-              <IssueList issues={issues} filter={matrixCell} framework={tab} />
+              <RootCauseSummary
+                issues={issues}
+                activeCause={causeFilter}
+                onSelectCause={(c) => { setCauseFilter(c); setMatrixCell(null); }}
+              />
+              <IssueMatrix
+                issues={issues}
+                activeCell={matrixCell}
+                onSelectCell={(c) => { setMatrixCell(c); setCauseFilter(null); }}
+              />
+              <IssueList issues={issues} filter={matrixCell} cause={causeFilter} framework={tab} />
             </Panel>
 
             <Panel title="Technical" icon="shield-check">

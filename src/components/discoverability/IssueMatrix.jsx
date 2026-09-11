@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Icon from "../Icon.jsx";
 import { SEVERITIES } from "../../lib/discoverability/issueCatalog.js";
 import { PILLAR_IDS, pillarLabel } from "../../lib/discoverability/signalRegistry.js";
+import { groupByRootCause, MODULES } from "../../lib/discoverability/gapTaxonomy.js";
 
 const SEV_META = {
   critical: { label: "Critical", icon: "alert-octagon" },
@@ -89,16 +90,66 @@ export default function IssueMatrix({ issues = [], onSelectCell, activeCell }) {
   );
 }
 
+/**
+ * What is actually wrong, above the list of what is wrong.
+ *
+ * ── WHY THIS SITS ABOVE THE MATRIX ────────────────────────────────────────
+ * The severity x pillar grid answers "what is worst" and "where did points go".
+ * Neither is the question a reader arrives with, which is "what do I have to go
+ * and DO" — and forty individually-true findings do not answer it either.
+ *
+ * Eleven findings that all reduce to `entity_ambiguity` are one afternoon's
+ * work. Seeing that is the difference between a report that gets worked and one
+ * that gets filed, and it is invisible in every other view on this page.
+ */
+export function RootCauseSummary({ issues = [], onSelectCause, activeCause }) {
+  const groups = useMemo(
+    () => groupByRootCause(issues, { severityRank: (i) => SEVERITIES.indexOf(i.severity) }),
+    [issues],
+  );
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="dsc-cause-summary">
+      <h3 className="dsc-cause-heading">What is actually wrong</h3>
+      <ul className="dsc-cause-list">
+        {groups.map((g) => {
+          const isActive = activeCause === g.id;
+          // Severity of the WORST finding in the group — the list is already
+          // sorted worst-first by groupByRootCause.
+          const worst = g.issues[0]?.severity || "low";
+          return (
+            <li key={g.id}>
+              <button
+                type="button"
+                className={`dsc-cause${isActive ? " dsc-cause-on" : ""}`}
+                onClick={() => onSelectCause?.(isActive ? null : g.id)}
+                aria-pressed={isActive}
+              >
+                <span className={`dsc-cause-dot dsc-heat-${worst}`} aria-hidden="true" />
+                <span className="dsc-cause-label">{g.label}</span>
+                <span className="dsc-cause-count">{g.count}</span>
+              </button>
+              <p className="dsc-cause-desc">{g.description}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** The issues themselves, grouped by severity, with their evidence. */
-export function IssueList({ issues = [], filter = null, framework = null }) {
+export function IssueList({ issues = [], filter = null, framework = null, cause = null }) {
   const shown = useMemo(() => {
     let out = issues;
     if (filter) out = out.filter((i) => i.severity === filter.severity && i.pillar === filter.pillar);
+    if (cause) out = out.filter((i) => i.rootCause === cause);
     if (framework && framework !== "overall") {
       out = out.filter((i) => (i.frameworks || []).includes(framework) || (i.frameworks || []).includes("common"));
     }
     return out;
-  }, [issues, filter, framework]);
+  }, [issues, filter, framework, cause]);
 
   if (shown.length === 0) {
     return <p className="dsc-muted">No issues match this filter.</p>;
@@ -119,11 +170,38 @@ export function IssueList({ issues = [], filter = null, framework = null }) {
               <p className="dsc-issue-title">
                 <code className="dsc-issue-code">{i.code}</code> {i.title}
               </p>
-              {i.evidence && <p className="dsc-issue-evidence">{i.evidence}</p>}
+              {/* ── TWO CLAIMS, TWO LABELS ──────────────────────────────
+                  These have different warranties and one paragraph launders
+                  the weaker into the stronger. "The page has two H1 elements"
+                  is something we measured and will defend; "this dilutes the
+                  topical signal" is reasoning a fair expert could argue with.
+                  A reader who disagrees needs to see which is which. */}
+              {(i.observed || i.evidence) && (
+                <p className="dsc-issue-evidence">
+                  <span className="dsc-claim-tag dsc-claim-observed">Observed</span>
+                  {i.observed || i.evidence}
+                </p>
+              )}
+              {i.inference && (
+                <p className="dsc-issue-inference">
+                  <span className="dsc-claim-tag dsc-claim-inferred">Why it matters</span>
+                  {i.inference}
+                </p>
+              )}
               <p className="dsc-issue-meta">
                 {pillarLabel(i.pillar)}
                 {(i.frameworks || []).length > 0 && (
                   <> · affects {i.frameworks.map((f) => f.toUpperCase()).join(", ")}</>
+                )}
+                {i.owner && <> · {i.owner}</>}
+                {/* The referral, and honestly labelled when it is not built
+                    yet. Showing "Entity Graph Builder" as though a customer
+                    could click through to it would be selling a P2 module
+                    inside a P1 report. */}
+                {MODULES[i.module] && (
+                  <> · {MODULES[i.module].label}
+                    {!MODULES[i.module].available && <span className="dsc-soon"> (coming)</span>}
+                  </>
                 )}
               </p>
             </div>

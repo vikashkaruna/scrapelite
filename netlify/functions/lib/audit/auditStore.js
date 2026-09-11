@@ -263,21 +263,72 @@ export async function persistResult(userId, auditId, result) {
     severity: i.severity, framework_scope: i.frameworks || [],
     title: i.title, evidence: i.evidence, details_json: i.details || null,
     evidence_json: i.evidenceRecords?.length ? i.evidenceRecords : null,
+    // The gap-analysis fields (0050). `observed` and `inference` sit BESIDE
+    // `evidence` rather than replacing it — the sentence is what every export
+    // prints and every historical diff compares.
+    observed: i.observed ?? i.evidence ?? null,
+    inference: i.inference ?? null,
+    root_cause: i.rootCause ?? null,
+    recommended_module: i.module ?? null,
+    owner_role: i.owner ?? null,
+    status: i.status || "open",
   }));
 
-  const recRows = (result.recommendations || []).map((r) => ({
+  const recRow = (r, issueId) => ({
     audit_id: auditId, user_id: userId, code: r.code, pillar: r.pillar,
+    // 🔴 DECLARED IN 0030, WRITTEN BY NOTHING UNTIL NOW. See the block below
+    // for why this could not simply be added to the parallel insert.
+    issue_id: issueId ?? null,
     frameworks: r.frameworks || [], priority: r.priority,
     priority_score: r.priorityScore, impact_score: r.impactScore,
     effort_score: r.effortScore, confidence_score: r.confidenceScore,
     estimated_lift: r.estimatedLift, owner_role: r.owner,
     title: r.title, rationale: r.rationale, evidence: r.evidence,
     implementation_asset_json: r.implementationAsset || null,
-  }));
+  });
+
+  // ── ISSUES ARE WRITTEN FIRST, AND ALONE ──────────────────────────────────
+  //
+  // 🔴 `audit_recommendations.issue_id` has existed since migration 0030 and
+  // NOTHING HAS EVER WRITTEN IT — NULL on every row for the life of the module.
+  // Every recommendation has been an orphan, so "which finding produced this
+  // task" had no answer in the data and the validation loop could not close:
+  // when a re-audit reports AC-01 resolved there was no way to mark the
+  // recommendation it produced as validated except by matching on `code`, which
+  // works only while that mapping stays one-to-one and silently mis-attributes
+  // the moment it does not.
+  //
+  // Fixing it costs a round trip, and it is worth it. The four child writes used
+  // to go out concurrently with `return=minimal`; recommendations now need the
+  // issue ids, so the issue insert is pulled ahead and asks for the rows back.
+  // The other three still go concurrently behind it.
+  //
+  // ⚠️ The ordering guarantee this function has always had is UNCHANGED: every
+  // child is written before the parent is marked `completed`, so a partial
+  // failure leaves the audit visibly `running` rather than appearing as a
+  // finished audit with a score and no evidence behind it — which is the shape
+  // a user would reasonably screenshot and act on.
+  let issueIdByCode = new Map();
+  if (issueRows.length) {
+    const written = await insert("audit_issues", issueRows, "return=representation");
+    if (!written.ok) {
+      await markAuditFailed(auditId, `persist failed: ${written.error}`);
+      return { ok: false, error: written.error, degraded: written.degraded };
+    }
+    issueIdByCode = new Map(
+      (Array.isArray(written.data) ? written.data : []).map((row) => [row.code, row.id]),
+    );
+  }
+
+  // `audit_issues` is UNIQUE on (audit_id, code), so a code identifies exactly
+  // one issue within an audit and this map cannot collide. A recommendation
+  // whose code found no issue keeps a null link rather than guessing at one —
+  // that happens for the unreachable-page path, where the recommendation is
+  // built from a code the issue list may have been packed out of.
+  const recRows = (result.recommendations || []).map((r) => recRow(r, issueIdByCode.get(r.code)));
 
   const writes = [insert("audit_results", [resultRow], "return=minimal")];
   if (signalRows.length) writes.push(insert("audit_signals", signalRows, "return=minimal"));
-  if (issueRows.length) writes.push(insert("audit_issues", issueRows, "return=minimal"));
   if (recRows.length) writes.push(insert("audit_recommendations", recRows, "return=minimal"));
 
   const results = await Promise.all(writes);
