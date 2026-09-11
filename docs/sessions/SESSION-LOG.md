@@ -70,8 +70,10 @@ pushes landed this session.
   frees a finding rather than deleting it, asserted on `confdeltype` rather than
   only behaviourally.
 
-⚠️ **MIGRATION `0051` IS NOT APPLIED ANYWHERE.** `0048`–`0050` are on dev and
-stage; assignment does not work outside tests until `0051` joins them.
+✅ **MIGRATION `0051` APPLIED TO DEV AND STAGE** (operator, 2026-09-11), so
+`0048`–`0051` are now all live there and assignment works outside tests.
+⚠️ **Production carries none of `0048`–`0051`** — four migrations behind this
+branch, and W5.5's column plus `assign_recommendation` are among them.
 
 ⚠️ **`CG-` WAS THE WRONG PREFIX AND AN EXISTING TEST CAUGHT IT.** Issue codes
 are pillar-prefixed (`AC|EA|SH|TA`); the content-gap codes were renamed to

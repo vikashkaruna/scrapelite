@@ -151,7 +151,7 @@ Priority formula: PRD specifies linear `Priority = 0.40I + 0.20C + 0.20B + 0.20E
 multiplicative `100 · (I·C) · breadthMul · easeMul`. → **decision D1.**
 
 Acceptance verbs: copy ✅, export ✅, accept ✅, dismiss ✅, mark implemented ✅ (`done`),
-**assign ✅ W5** — migration `0051`, `assign_recommendation`, `POST /recommendations/{id}/assign`, owner control on every open card. The shared-workspace check lives in SQL so the column cannot be set to an arbitrary account id by any path. ⚠️ **`0051` is not applied to any environment yet.**
+**assign ✅ W5** — migration `0051`, `assign_recommendation`, `POST /recommendations/{id}/assign`, owner control on every open card. The shared-workspace check lives in SQL so the column cannot be set to an arbitrary account id by any path. ✅ **`0051` applied to dev and stage (2026-09-11), alongside `0048`–`0050`.** ⚠️ Production has none of `0048`–`0051`.
 
 ### §7.7 Validation Lab
 
