@@ -1381,6 +1381,22 @@ export async function createRelationship(userId, {
   return { ok: true, relationship: Array.isArray(r.data) ? r.data[0] : r.data };
 }
 
+/**
+ * The existing edge behind a duplicate-key refusal, scoped to its owner.
+ *
+ * `createRelationship` reports `duplicate` so the caller can corroborate rather
+ * than retry blindly — but corroboration has to attach to a row id, and the
+ * refused insert never returned one. This finds it.
+ */
+export async function findRelationship(userId, { subjectId, predicate, objectId }) {
+  const r = await rest(
+    `audit_entity_relationships?user_id=eq.${encodeURIComponent(userId)}`
+    + `&subject_id=eq.${encodeURIComponent(subjectId)}`
+    + `&predicate=eq.${encodeURIComponent(predicate)}`
+    + `&object_id=eq.${encodeURIComponent(objectId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
 export async function listRelationships(userId, { state = null, entityId = null, limit = 1000 } = {}) {
   const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
   if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);

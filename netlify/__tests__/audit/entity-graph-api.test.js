@@ -231,11 +231,53 @@ describe("POST /entity-graph/relationships", () => {
 
   it("reports a duplicate as 409 — re-observing corroborates, it does not add a copy", async () => {
     storeMock.createRelationship = vi.fn(async () => ({ ok: false, duplicate: true }));
+    storeMock.findRelationship = vi.fn(async () => ({ id: "rel-1" }));
+    storeMock.recordEntityEvidence = vi.fn(async () => ({ ok: true }));
     const res = await call("POST", "entity-graph/relationships", {
       body: { subject_id: "e-org", predicate: "owns", object_id: "e-brand" },
     });
     expect(res.statusCode).toBe(409);
     expect(parse(res).code).toBe("RELATIONSHIP_EXISTS");
+  });
+
+  // 🔴 THE SENTENCE THAT WAS FALSE. The 409 above has always SAID
+  // "re-observing one corroborates it". Nothing corroborated:
+  // `recordEntityEvidence` was written for this and called by nothing, so
+  // `audit_entity_evidence` was empty for the life of the module — the fourth
+  // time this schema declared storage and wrote to it from nowhere. The test
+  // above passed throughout, because it asserted the CLAIM and not the write.
+  it("🔴 ACTUALLY records the corroboration against the existing edge", async () => {
+    storeMock.createRelationship = vi.fn(async () => ({ ok: false, duplicate: true }));
+    storeMock.findRelationship = vi.fn(async () => ({ id: "rel-1", predicate: "owns" }));
+    storeMock.recordEntityEvidence = vi.fn(async () => ({ ok: true }));
+    const res = await call("POST", "entity-graph/relationships", {
+      body: {
+        subject_id: "e-org", predicate: "owns", object_id: "e-brand",
+        evidence: { source_url: "https://acme.com/about", excerpt: "Acme owns Acme Cloud" },
+      },
+    });
+    expect(storeMock.findRelationship).toHaveBeenCalledWith("user-1", {
+      subjectId: "e-org", predicate: "owns", objectId: "e-brand",
+    });
+    expect(storeMock.recordEntityEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      relationshipId: "rel-1",
+      evidence: expect.objectContaining({ source_url: "https://acme.com/about" }),
+    }));
+    // The body must report what happened, or a caller cannot tell a recorded
+    // sighting from a lost one behind an identical error code.
+    expect(parse(res).corroborated).toBe(true);
+  });
+
+  it("...and says so honestly when the corroboration could NOT be written", async () => {
+    // A storage failure here must not be reported as a successful sighting.
+    storeMock.createRelationship = vi.fn(async () => ({ ok: false, duplicate: true }));
+    storeMock.findRelationship = vi.fn(async () => ({ id: "rel-1" }));
+    storeMock.recordEntityEvidence = vi.fn(async () => ({ ok: false, error: "down" }));
+    const res = await call("POST", "entity-graph/relationships", {
+      body: { subject_id: "e-org", predicate: "owns", object_id: "e-brand" },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(parse(res).corroborated).toBe(false);
   });
 });
 

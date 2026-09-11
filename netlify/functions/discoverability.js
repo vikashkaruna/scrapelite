@@ -2018,11 +2018,35 @@ async function entityGraphRoute(userId, method, path, body, event) {
         subjectId, predicate, objectId, source, note: body.note || null,
       });
       if (created.duplicate) {
-        // Re-observing an edge updates the row; it never adds one. Saying so is
-        // more useful than a generic write failure the caller has to guess at.
+        // 🔴 THIS SENTENCE USED TO BE FALSE. The route said "re-observing one
+        // corroborates it" and corroborated nothing: `recordEntityEvidence`
+        // was written for exactly this and called by NOTHING, so
+        // `audit_entity_evidence` was empty for the life of the module —
+        // the fourth time this schema has declared storage and never written
+        // to it. 0056's own header says why the table exists: "we read this
+        // once in 2024" and "we have read this on six pages across nine
+        // months" are different warranties on the same edge.
+        //
+        // ⚠️ Still 409, and still no new row: nothing was created, and the
+        // status code is a public contract `/api/v1` holders read. What
+        // changed is that the body now reports what actually happened, so a
+        // caller can tell a recorded sighting from a lost one.
+        const existing = await store.findRelationship(userId, { subjectId, predicate, objectId });
+        let corroborated = false;
+        if (existing) {
+          const ev = await store.recordEntityEvidence({
+            relationshipId: existing.id,
+            auditId: body.source_audit_id || null,
+            evidence: body.evidence || null,
+            confidence: body.confidence ?? null,
+          });
+          corroborated = Boolean(ev.ok);
+        }
         return json(409, {
           error: "That relationship already exists. Re-observing one corroborates it rather than adding a second copy.",
           code: "RELATIONSHIP_EXISTS",
+          corroborated,
+          relationship: existing || null,
         });
       }
       return created.ok
