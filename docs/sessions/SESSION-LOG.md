@@ -18,6 +18,88 @@
 
 ---
 
+## 2026-09-11 (later still) — W6 AI Visibility: four of five, and the model moved to v3
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `dd3b3d8` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits
+
+W6 is the largest P1 build. Four sub-workstreams shipped, each through the full
+pre-push gate.
+
+**W6.1 · Grounded Gemini.** D4 chose Perplexity + Gemini with Google Search
+grounding; `callGemini` had no tools at all, so Perplexity was the ONLY live
+engine and a lapsed key took every citation metric to `live: false` with nothing
+behind it. 🔴 **A grounded call that retrieved nothing is not a live answer** —
+Gemini answers from its own weights when Search returns nothing useful and
+signals that only by omitting `groundingMetadata`. `live` is now resolved PER
+RUN, because within one pass some answers are retrieved and others recalled.
+⚠️ The search tool NAME changed between model families and the old one is
+REJECTED, not ignored: 1.5 takes `google_search_retrieval`, 2.0+ takes
+`google_search`, and the wrong one 400s every call in a way that reads as a bad
+key.
+
+**W6.2 · Prompt taxonomy.** The PRD's seven kinds plus a deterministic
+generator, replacing five templates that tested brand and category recall and
+nothing else. 🔴 **An absent dimension is never crossed.** Subject and brand are
+observed; geography, competitors and industries are declared or absent. 🔴 **A
+country is not a place** — `placeFrom` returns null for a country-only
+geography, because "plumbers in India" is a national query wearing a local
+one's clothes. ⚠️ Commercial intent is DECLARED, not classified: we generate the
+prompts so we know each one's intent by construction, and `classifyPromptKind`
+exists only for user-written prompts, returning a confidence so a rate over
+guessed intent reads more cautiously than one over declared intent.
+
+**W6.3 · Seven citation states + competitors.** Migration `0052`. The old
+booleans are KEPT — `citation_footprint` scores from them and every historical
+diff compares them. 🔴 **A NULL state means "not classified", never "absent"**,
+or every historical run becomes evidence of invisibility. 🔴 **`misrepresented`
+is three-valued**: true / false / NULL-could-not-check, and NULL is the common
+case. 🔴 **Declared and discovered competitors are never summed** — `sovDeclared`
+is defensible against the operator's own fixed field; `sovObserved` has a
+denominator that moves with whatever the engine cited. One blended number would
+be quoted as the first and computed as the second.
+
+**W6.4 · WAVI, and `scoring_model_version` → v3.**
+🔴 **THE DOUBLE-COUNTING TRAP, AND HOW IT WAS AVOIDED.** WAVI's first two
+components ARE mention rate and citation rate — 50% of the index is the same
+evidence `citation_footprint` already scored. Adding `ai_visibility` at a full
+weight beside it would have taken answer-engine evidence from 25% to 50% of
+entity authority, rewarding a cited brand twice in one pillar, while looking
+like a routine signal addition. Instead the existing 0.25 is SPLIT: footprint
+0.25 → 0.10, `ai_visibility` 0.15. **Pillar exposure to answer-engine evidence
+is unchanged at 0.25**, the pillar still sums to 1.00, and what moves in v3 is
+how richly the evidence is measured rather than how much it counts. The
+footprint stays because every stored audit was scored on it and because it still
+measures something when WAVI cannot be computed.
+⚠️ **What v3 costs:** `auditDiff` refuses cross-version comparison by design, so
+every target's next audit reports "re-run to compare" until it has a v3
+baseline. **A page whose citation sample cannot be taken scores identically on
+v2 and v3**, so the disruption is confined to pages that are actually sampled.
+
+⚠️ **A TEST-HARNESS BUG SURFACED THAT PREDATED W6.** `auditExports.test.js`
+extracted PDF text with `/\((.*?)\)/`, which stops at the first `)` — but jsPDF
+ESCAPES parentheses, so any label containing brackets was silently truncated and
+read as missing from the PDF. "AI visibility (WAVI)" was the first label to
+contain any. The PDF was correct throughout; the extractor was not.
+
+⚠️ **A hardcoded per-pillar signal count became a registry lookup.** "Bump the
+number until it goes green" is how a parity test stops being one.
+
+✅ **Migration `0051` applied to dev and stage by the operator.** ⚠️ **`0052` is
+committed and applied nowhere.** ⚠️ **Production carries none of `0048`–`0052`.**
+
+⚠️ **VERIFIED AGAINST DOCUMENTED CONTRACTS AND BY TEST, NOT A LIVE KEY.** No
+session has watched a grounded Gemini call or a real Perplexity sample return.
+Watch the first real run, as the Jina URL-form fix was watched.
+
+**Open:** W6.5 — competitor-displacement narrative, prompt-run scheduling, the
+`prompt-runs` endpoints, and the AI-visibility dashboard panel.
+
+**Verified:** unit **3296** · contract **2158** (+14 skipped) · integration
+**436** · db **52 migrations / 559 assertions** + referral 17 + workflows 56 ·
+build · prerender 28 · e2e smoke 142. Five pushes, each through the full gate,
+nothing bypassed. Handoff page:
+<https://claude.ai/code/artifact/090417cb-dcf1-4942-9ad9-8b8d56167e13>
+
 ## 2026-09-11 (later) — W1–W4 verified, and W5 shipped whole
 
 > **Branch:** `Discoverability-P1-P3-implementation` @ `2cf2908` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits
