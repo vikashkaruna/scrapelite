@@ -67,9 +67,29 @@
 > staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
 > **`discoverability-p1-to-p3`** cut from it, **five commits** (HEAD `c93afa5`), **not pushed**.
 >
-> ✅ **GITHUB AUTH WORKS NOW — the expired-token warnings below this line are SUPERSEDED.**
-> `git fetch` succeeds and the branch is pushed to **`Discoverability-P1-P3-implementation`**.
-> `main` and `staging` are untouched and no PR is open.
+> 🔴 **`$GITHUB_TOKEN` IS STILL AN EXPIRED `ghp_` TOKEN AND STILL BREAKS EVERY PUSH — BUT A WORKING
+> CREDENTIAL EXISTS IN THE `gh` KEYRING.** The branch IS pushed to
+> **`Discoverability-P1-P3-implementation`**; `main` and `staging` are untouched and no PR is open.
+>
+> ⚠️ **`git fetch` SUCCEEDING PROVES NOTHING ABOUT PUSH.** This repo is PUBLIC, so fetch resolves
+> anonymously and returns 0 whatever the credentials are. I read a clean `git fetch` as "auth is
+> fixed", wrote that into this file, and the very next `git push` failed with
+> `Invalid username or token`. **Do not infer push access from a successful fetch on a public repo.**
+>
+> The blocker is PRECEDENCE, not absence. `credential.helper` is hard-coded to
+> `password=$GITHUB_TOKEN`, and that dead 40-char `ghp_` var also shadows the good credential in
+> `gh`'s keyring (`gho_`, scopes `gist, read:org, repo`, account `vikashkaruna`) — `gh auth status`
+> reports the keyring account as **inactive** and `gh auth token` hands back the EXPIRED one.
+> Pushing needs BOTH the var dropped and the helper list RESET before `gh`'s is added, because
+> `-c credential.helper=…` APPENDS and the broken helper still answers first:
+>
+> ```bash
+> env -u GITHUB_TOKEN git -c credential.helper= -c credential.helper='!gh auth git-credential' \
+>   push -u origin discoverability-p1-to-p3:Discoverability-P1-P3-implementation
+> ```
+>
+> The permanent fix is to unset `GITHUB_TOKEN` in the shell profile, or replace it with a
+> fine-grained PAT carrying `contents: read/write`.
 >
 > 🔴 **`audit_signals.raw_value` AND `.evidence_json` HAVE EXISTED SINCE MIGRATION 0030 AND NOTHING
 > HAD EVER WRITTEN THEM** — NULL on every row for the whole life of the module — while an issue's

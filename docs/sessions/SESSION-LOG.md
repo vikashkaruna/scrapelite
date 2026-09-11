@@ -33,8 +33,9 @@ model at all, and had **no detection whatsoever** for the remaining two —
 *critical entity schema invalid* and *severe CWV failure*. Both now exist, at the
 PRD's own 0.10, taking the set to **nine blockers**.
 
-✅ **GitHub auth is live again** — `git fetch` succeeds and the branch is pushed.
-The expired `ghp_` token recorded in the W1/W2 entries is no longer the state.
+⚠️ **The branch is pushed — but `$GITHUB_TOKEN` is still expired.** See §3 for the
+trap: a successful `git fetch` on a public repo says nothing about push access,
+and I recorded "auth is fixed" on exactly that evidence before the push failed.
 
 ### 2. What was accomplished
 
@@ -82,6 +83,36 @@ must not arrive as a TypeError.
 
 ### 3. Root cause analyses
 
+#### 🔴 I declared GitHub auth fixed on evidence that could not show it
+
+`git fetch origin` returned cleanly, so I wrote "GitHub auth is live again" into
+CLAUDE.md and this entry, and marked the branch pushed. The next `git push`
+failed with `remote: Invalid username or token`.
+
+**This repo is public.** Fetch resolves anonymously and succeeds whatever the
+credentials are; it exercises no write path at all. The only evidence that push
+works is a push.
+
+The underlying fault is precedence, not absence. `credential.helper` is
+hard-coded to `password=$GITHUB_TOKEN`, and that dead 40-character `ghp_` var
+*also shadows* a perfectly good credential sitting in `gh`'s keyring (`gho_`,
+scopes `gist, read:org, repo`) — `gh auth status` reports that account as
+**inactive**, and `gh auth token` hands back the expired one. So every tool that
+consults the environment agrees the machine is authenticated, and every tool
+that pushes disagrees.
+
+Two non-obvious steps were needed together:
+
+```bash
+env -u GITHUB_TOKEN git -c credential.helper= -c credential.helper='!gh auth git-credential' \
+  push -u origin discoverability-p1-to-p3:Discoverability-P1-P3-implementation
+```
+
+`-c credential.helper=…` **appends** to the helper list rather than replacing
+it, so without the empty `-c credential.helper=` reset first the broken helper
+still answers first and the push still fails. The permanent fix is to unset
+`GITHUB_TOKEN` in the shell profile or replace it with a fine-grained PAT.
+
 #### ⚠️ A test of mine was green for the wrong reason
 
 The first `SEVERE_CWV_FAILURE` tests passed `webVitals` in the audit options.
@@ -128,8 +159,9 @@ db-verify                49 migrations / 505 assertions / 0 failed
 - Branch `discoverability-p1-to-p3`, HEAD `e64629c`, pushed to
   **`Discoverability-P1-P3-implementation`** on `origin`. `main` and `staging`
   untouched, and no PR opened.
-- ✅ GitHub auth works. The expired-token warnings in the W1 and W2 entries are
-  superseded.
+- 🔴 `$GITHUB_TOKEN` is **still** an expired `ghp_` token and still breaks every
+  push. A working `gho_` credential is in the `gh` keyring but is shadowed by
+  that var; see §3 for the exact two-part invocation that works.
 - ⚠️ **Migrations 0048 and 0049 have still only met in-process WASM Postgres** —
   no GoTrue, no PostgREST, shimmed roles. They have not run against a real
   Supabase, and that gate stands before any of this goes near staging.
