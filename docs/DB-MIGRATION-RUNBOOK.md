@@ -100,6 +100,125 @@ Name as many files as you want, in order. Add `0013`, then `0014`, then
 
 ---
 
+## 4b. Applying `0055` + `0056` (P2 · W9 + W10) to dev / stage
+
+> ⚠️ **Not yet applied anywhere.** Both have only met in-process WASM Postgres
+> (PGlite) via `npm run test:db` — no GoTrue, no PostgREST, shimmed roles. The
+> agent sessions that built them have **no database credentials, no `supabase`
+> CLI and no `.env`**, so this is an operator step.
+
+### What they add
+
+| Migration | Objects |
+|---|---|
+| `0055_business_truth.sql` | 3 tables (`audit_business_truth_records`, `_versions`, `_conflicts`) · 1 function `promote_business_truth_version` · 2 triggers |
+| `0056_entity_graph.sql` | 4 tables (`audit_entities`, `audit_entity_relationships`, `_evidence`, `_conflicts`) · 1 function `approve_entity_relationship` · 2 triggers |
+
+Together they take a clean build to **96 tables / 49 functions / 24 triggers**,
+which `npm run test:db` asserts.
+
+### ✅ Both are safely RE-RUNNABLE — proven, not assumed
+
+Every `create table`, `create index`, `create policy` and `create trigger` is
+guarded (`if not exists` / `drop … if exists`), both functions are
+`create or replace`, and the one `alter table … add constraint` is preceded by
+its own `drop constraint if exists`. Applying both a **second** time against a
+database that already has them changes nothing:
+
+```
+after 1st apply : {"tables":96,"funcs":49,"trigs":24,"pols":93,"idx":311}
+after 2nd apply : {"tables":96,"funcs":49,"trigs":24,"pols":93,"idx":311}
+```
+
+So a retried or duplicated apply is safe — but see the ordering note below.
+
+### Apply
+
+`0055` **must** run before `0056`: `audit_entities.truth_record_id` and
+`audit_entity_conflicts.truth_record_id` both reference
+`audit_business_truth_records`. Use the subset runner from §4 — a bare
+`npm run migrate:prod` replays **all 56** migrations, which is wrong for a
+database that already has `0001`–`0054`.
+
+```bash
+# DEV / STAGE project ref (see public/runtime-config.js — do NOT use the prod ref)
+PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.<dev-ref>.supabase.co:5432/postgres" node -e '
+const fs=require("fs"), {Client}=require("pg");
+(async()=>{
+  const c=new Client({connectionString:process.env.PROD_SUPABASE_DB_URL,ssl:{rejectUnauthorized:false}});
+  await c.connect(); await c.query("SET statement_timeout = 0");
+  const {rows}=await c.query("select current_database() db, current_user u");
+  console.log("target:",rows[0].db,"as",rows[0].u);
+  for(const f of process.argv.slice(1)){
+    try{ await c.query("BEGIN"); await c.query(fs.readFileSync(f,"utf8")); await c.query("COMMIT"); console.log("OK  ",f); }
+    catch(e){ await c.query("ROLLBACK").catch(()=>{}); console.error("FAIL",f,e.message); process.exitCode=1; break; }
+  }
+  await c.end();
+})().catch(e=>{console.error("ERR",e.message);process.exit(1)});
+' supabase/migrations/0055_business_truth.sql supabase/migrations/0056_entity_graph.sql
+```
+
+⚠️ Use the **Direct** connection string (port **5432**), not the pooler, and
+URL-encode special characters in the password.
+
+### Verify after applying
+
+```sql
+-- 1. All seven tables exist. Expect 7 rows.
+select table_name from information_schema.tables
+ where table_schema = 'public'
+   and (table_name like 'audit_business_truth%' or table_name like 'audit_entit%')
+ order by table_name;
+
+-- 2. Both functions exist and are SECURITY DEFINER.
+select p.proname, p.prosecdef
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('promote_business_truth_version','approve_entity_relationship');
+-- Expect 2 rows, prosecdef = t for both.
+
+-- 3. 🔴 RLS IS ON AND anon/authenticated HAVE NOTHING. Expect 0 rows.
+select table_name, grantee, privilege_type
+  from information_schema.role_table_grants
+ where table_schema = 'public'
+   and grantee in ('anon','authenticated')
+   and (table_name like 'audit_business_truth%' or table_name like 'audit_entit%');
+
+-- 4. …and RLS is enabled on all seven. Expect every relrowsecurity = true.
+select c.relname, c.relrowsecurity
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public'
+   and (c.relname like 'audit_business_truth%' or c.relname like 'audit_entit%')
+ order by c.relname;
+
+-- 5. The self-approval CHECK is present on both approval paths. Expect 2 rows.
+select conname from pg_constraint
+ where conname in ('audit_btv_no_self_approval','audit_rel_no_self_approval');
+```
+
+### 🔴 The one thing PGlite could not prove
+
+`promote_business_truth_version` and `approve_entity_relationship` are
+**`security definer`** and have only ever run under PGlite, which has **shimmed
+roles** — no real `service_role`, no GoTrue. The first live call is the first
+real test of the `revoke all … grant execute to service_role` pair at the foot
+of each migration. After applying, confirm a non-service role genuinely cannot
+call them:
+
+```sql
+set local role authenticated;
+select public.promote_business_truth_version(
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-0000-0000-000000000000'::uuid);
+-- EXPECT: ERROR permission denied for function promote_business_truth_version
+reset role;
+```
+
+A result of `not_found` instead of a permission error means the grant did not
+take, and the function is callable by any signed-in user.
+
+---
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**
