@@ -662,6 +662,89 @@ export function contentBrief({ kind = "category", brand = "", competitorUrls = [
   };
 }
 
+// ── Technical remediation ──────────────────────────────────────────────────
+
+/**
+ * The consolidated technical work, in the order it has to happen.
+ *
+ * ⚠️ THIS EXISTS FOR THE SEQUENCING, NOT THE LIST. Every technical finding
+ * already carries its own recommendation, so a brief that merely repeats them
+ * is queue noise. What the per-issue view cannot show is that some fixes are
+ * INERT until another lands first: rewriting copy on a `noindex` page changes
+ * nothing, and neither does tuning a page whose content only exists after
+ * hydration. `applyDependencies` already computes that relationship — this
+ * brief is where a developer finally sees it.
+ *
+ * Blockers lead, each with what it unblocks. Everything else follows in
+ * priority order. A page with no blockers gets a plain ordered list and is told
+ * so, rather than being handed a ceremony it does not need.
+ */
+export function technicalBrief({ issues = [], blockers = [], url = "" } = {}) {
+  const list = asArray(issues);
+  const gating = list.filter((i) => i.isBlocker);
+  const blocked = list.filter((i) => i.blockedBy);
+  const rest = list.filter((i) => !i.isBlocker && !i.blockedBy);
+
+  const line = (i, n) => {
+    const parts = [`${n}. **${i.title || i.code}**`];
+    if (i.code) parts.push(`\`${i.code}\``);
+    return parts.join(" ") + (i.fix ? `\n   ${i.fix}` : "");
+  };
+
+  const out = [`# Technical remediation`, ""];
+
+  if (!list.length) {
+    out.push(
+      "No technical findings on this page.",
+      "",
+      `Observed on ${url || TODO("the audited url")}.`,
+    );
+  } else {
+    if (gating.length) {
+      out.push(
+        "## Do these first — everything else waits on them",
+        "",
+        "Each of these makes other fixes inert until it lands. Work is not lost by doing them out of order; it simply has no effect.",
+        "",
+      );
+      gating.forEach((i, idx) => {
+        out.push(line(i, idx + 1));
+        const unblocks = blocked.filter((b) => b.blockedBy === i.code);
+        if (unblocks.length) {
+          out.push(`   _Unblocks ${unblocks.length} further fix${unblocks.length === 1 ? "" : "es"}: ${unblocks.map((b) => b.code).join(", ")}_`);
+        }
+        out.push("");
+      });
+    } else {
+      out.push("## No blockers", "", "Nothing on this page makes another fix inert, so these can be worked in any order. Priority order is suggested.", "");
+    }
+
+    const remaining = gating.length ? [...blocked, ...rest] : list;
+    if (remaining.length) {
+      out.push(gating.length ? "## Then, in priority order" : "## In priority order", "");
+      remaining.forEach((i, idx) => {
+        out.push(line(i, idx + 1));
+        if (i.blockedBy) out.push(`   _Waits on ${i.blockedBy}._`);
+        out.push("");
+      });
+    }
+
+    if (asArray(blockers).length) {
+      out.push("## Scoring penalties currently applied", "", ...asArray(blockers).map((b) => `- \`${b}\``), "");
+    }
+
+    out.push("---", `Observed on ${url || TODO("the audited url")}: ${list.length} technical finding${list.length === 1 ? "" : "s"}, ${gating.length} of them blocking.`);
+  }
+
+  return {
+    type: "technical_brief", format: "markdown", label: "Technical remediation brief",
+    note: "The technical findings in the order they have to happen. Its point is the sequencing — some fixes do nothing until a blocker above them is cleared, which the per-issue view cannot show.",
+    body: out.join("\n"),
+    blockerCount: gating.length,
+    findingCount: list.length,
+  };
+}
+
 export const CONSTRUCT_BUILDERS = Object.freeze({
   answer_block:        answerBlock,
   content_block:       faqContentBlock,
@@ -675,6 +758,7 @@ export const CONSTRUCT_BUILDERS = Object.freeze({
   meta_tags:           metaTags,
   internal_links:      internalLinkPlan,
   content_brief:       contentBrief,
+  technical_brief:     technicalBrief,
   robots_txt:          robotsTxtBlock,
   entity_card:         entityCard,
   author_bio:          authorBio,

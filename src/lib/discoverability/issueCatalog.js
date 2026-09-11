@@ -358,6 +358,16 @@ export const ISSUES = Object.freeze({
     module: "recommendation_studio",
     asset: "heading_tree",
   },
+  "TA-18": {
+    pillar: "technical_accessibility", severity: "medium", frameworks: ["seo", "aeo", "geo"],
+    owner: "engineering", impact: 30, effort: 10, confidence: 90,
+    title: "Several technical fixes need doing in a particular order",
+    why: "Some technical defects make other fixes inert until they are cleared \u2014 rewriting copy on a noindex page changes nothing \u2014 so the order the work happens in decides whether any of it counts.",
+    fix: "Work the blocking items first, then the rest in priority order.",
+    rootCause: "technical_access",
+    module: "technical_remediation",
+    asset: "technical_brief",
+  },
   "AC-09": {
     pillar: "answer_clarity", severity: "medium", frameworks: ["seo", "aeo", "geo"],
     owner: "content", impact: 55, effort: 45, confidence: 60,

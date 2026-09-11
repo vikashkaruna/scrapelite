@@ -1077,3 +1077,30 @@ describe("content coverage — a sitemap we did read", () => {
     expect(issue.observed).not.toMatch(/your site has no/i);
   });
 });
+
+
+// ── W5.4 · technical sequencing ─────────────────────────────────────────────
+
+describe("TA-18 fires only where the order actually matters", () => {
+  it("stays quiet on a healthy page with no blockers", async () => {
+    // Every technical finding already carries its own recommendation, so a
+    // consolidated brief on any page with two findings would be queue noise.
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect((r.issues || []).map((i) => i.code)).not.toContain("TA-18");
+  });
+
+  it("raises a brief when a live blocker gates other work", async () => {
+    const noindex = GOOD_PAGE.replace("<head>", '<head><meta name="robots" content="noindex">');
+    scrapeChain.mockResolvedValue({ ok: true, source: "firecrawl", html: noindex });
+    publicFetch.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/robots.txt")) return htmlResponse("", 404, u);
+      return htmlResponse(noindex, 200, u);
+    });
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const rec = (r.recommendations || []).find((x) => x.code === "TA-18");
+    expect(rec, "TA-18 should be raised on a noindex page").toBeTruthy();
+    expect(rec.implementationAsset?.body).toMatch(/Do these first/);
+    expect(rec.implementationAsset?.blockerCount).toBeGreaterThan(0);
+  });
+});

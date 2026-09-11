@@ -4,6 +4,7 @@ import {
   answerBlock, faqSchema, howToSchema, headingTree, organizationSchema,
   metaTags, robotsTxtBlock, entityCard, META_TITLE_MAX, META_DESCRIPTION_MAX,
   internalLinkPlan, isVagueAnchor, anchorFromHref, VAGUE_ANCHORS,
+  contentBrief, technicalBrief,
 } from "./constructTemplates.js";
 import { ISSUES, ISSUE_CODES } from "./issueCatalog.js";
 
@@ -343,5 +344,76 @@ describe("internalLinkPlan", () => {
     expect(c.vagueCount).toBe(0);
     expect(c.body).toContain("No anchor-text problems found");
     expect(hasPlaceholders(c)).toBe(false);
+  });
+});
+
+
+// ── W5.3 · content briefs ───────────────────────────────────────────────────
+
+describe("contentBrief", () => {
+  it("briefs the kind it was asked for", () => {
+    expect(contentBrief({ kind: "comparison" }).kind).toBe("comparison");
+    expect(contentBrief({ kind: "industry" }).label).toMatch(/Industry/);
+  });
+
+  it("falls back to a real brief for an unknown kind, never nothing", () => {
+    // A stored audit from a newer build must lose precision, not its asset.
+    expect(contentBrief({ kind: "invented" }).kind).toBe("category");
+    expect(contentBrief({}).body).toBeTruthy();
+  });
+
+  it("names the operator's OWN declared competitors in a comparison", () => {
+    const c = contentBrief({ kind: "comparison", brand: "DatIQ", competitorUrls: ["https://www.clay.com/x"] });
+    expect(c.body).toContain("DatIQ vs clay.com");
+    expect(c.body).not.toContain("TODO: the competitor");
+  });
+
+  it("🔴 leaves the rival as a TODO when none was declared", () => {
+    // Inventing "Acme vs Initech" would put two companies into a brief on no
+    // evidence whatsoever.
+    const c = contentBrief({ kind: "comparison", brand: "DatIQ" });
+    expect(c.body).toContain("TODO:");
+    expect(hasPlaceholders(c)).toBe(true);
+  });
+
+  it("tells a comparison writer to name where the rival wins", () => {
+    expect(contentBrief({ kind: "comparison" }).body).toMatch(/alternative genuinely wins/i);
+  });
+});
+
+// ── W5.4 · technical remediation ────────────────────────────────────────────
+
+describe("technicalBrief", () => {
+  const issues = [
+    { code: "TA-03", title: "Page is noindex", fix: "Remove the noindex.", isBlocker: true },
+    { code: "AC-01", title: "No answer block", fix: "Add one.", blockedBy: "TA-03" },
+    { code: "TA-09", title: "Slow LCP", fix: "Compress the hero image." },
+  ];
+
+  it("puts blockers first and says what they unblock", () => {
+    const c = technicalBrief({ issues, blockers: ["NOINDEX"], url: "https://x.com/a" });
+    expect(c.blockerCount).toBe(1);
+    expect(c.body.indexOf("TA-03")).toBeLessThan(c.body.indexOf("TA-09"));
+    expect(c.body).toMatch(/Unblocks 1 further fix/);
+  });
+
+  it("says which fix is waiting, and on what", () => {
+    expect(technicalBrief({ issues }).body).toMatch(/Waits on TA-03/);
+  });
+
+  it("says plainly when nothing blocks anything", () => {
+    const c = technicalBrief({ issues: [{ code: "TA-09", title: "Slow LCP", fix: "Compress." }] });
+    expect(c.blockerCount).toBe(0);
+    expect(c.body).toContain("No blockers");
+  });
+
+  it("handles a page with no technical findings at all", () => {
+    const c = technicalBrief({ issues: [], url: "https://x.com/a" });
+    expect(c.findingCount).toBe(0);
+    expect(c.body).toContain("No technical findings");
+  });
+
+  it("survives being called with nothing", () => {
+    expect(technicalBrief().body).toBeTruthy();
   });
 });

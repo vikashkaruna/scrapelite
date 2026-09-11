@@ -36,6 +36,7 @@ import { scoreAudit, SCORING_MODEL_VERSION } from "../../../../src/lib/discovera
 import { buildRecommendation, rankRecommendations, estimateTotalLift, estimateUnblockedLift, applyDependencies }
   from "../../../../src/lib/discoverability/recommendationModel.js";
 import { buildConstruct } from "../../../../src/lib/discoverability/constructTemplates.js";
+import { BLOCKER_GATES } from "../../../../src/lib/discoverability/recommendationModel.js";
 import { severityTally, ISSUES } from "../../../../src/lib/discoverability/issueCatalog.js";
 import { applyProfile, AUDIT_PROFILES, applyPageTypePack, notApplicableSignals, packFor }
   from "../../../../src/lib/discoverability/auditProfiles.js";
@@ -355,7 +356,34 @@ export async function runAudit(url, options = {}) {
     });
   }
 
-  const analyses = [answer, structure, entity, technical, { signals: {}, reasons: {}, issues: contentIssues, facts: {} }];
+  // ── technical sequencing ─────────────────────────────────────────────────
+  // ⚠️ TA-18 EXISTS ONLY WHERE THE ORDER MATTERS. Every technical finding
+  // already carries its own recommendation, so raising a consolidated brief on
+  // any page with two findings would be pure queue noise. It fires only when an
+  // ACTIVE blocker gates at least one other finding — which is exactly when a
+  // developer working top-down would otherwise waste the effort.
+  const activePenalties = technical.penalties || [];
+  const activeGates = activePenalties.map((pen) => BLOCKER_GATES[pen]).filter(Boolean);
+  const gateCodes = activeGates.map((g) => g.code);
+  // ⚠️ THE GATED WORK IS MOSTLY NOT TECHNICAL. A `noindex` blocks answer
+  // clarity, structure and entity authority — the copy work — which is exactly
+  // why the sequencing is worth stating. An earlier version of this condition
+  // looked only for a SECOND technical finding and stayed silent on the most
+  // important case there is: one blocker, and a page full of writing that will
+  // not count until it is cleared.
+  const gatedPillars = new Set(activeGates.flatMap((g) => g.pillars));
+  const allFindings = [answer, structure, entity, technical].flatMap((a) => a.issues || []);
+  const sequencingMatters = gateCodes.length > 0
+    && allFindings.some((i) => !gateCodes.includes(i.code) && gatedPillars.has(ISSUES[i.code]?.pillar));
+  const sequencingIssues = sequencingMatters ? [{
+    code: "TA-18", signalCode: null, measuredScore: null,
+    evidence: `${gateCodes.length} blocking defect${gateCodes.length === 1 ? "" : "s"} (${gateCodes.join(", ")}) make other fixes on this page inert until cleared.`,
+    details: { blockers: gateCodes, penalties: activePenalties, findings: allFindings.length },
+  }] : [];
+
+  const analyses = [answer, structure, entity, technical,
+    { signals: {}, reasons: {}, issues: contentIssues, facts: {} },
+    { signals: {}, reasons: {}, issues: sequencingIssues, facts: {} }];
   const signalValues = Object.assign({}, ...analyses.map((a) => a.signals));
   const unknownReasons = Object.assign({}, ...analyses.map((a) => a.reasons));
 
@@ -494,6 +522,28 @@ export async function runAudit(url, options = {}) {
       .filter(Boolean),
     technical.penalties || []),
   );
+
+  // ── the technical brief is built LAST, on purpose ────────────────────────
+  // It is the one construct whose content is the OTHER recommendations —
+  // their titles, their order, and which of them `applyDependencies` marked
+  // as waiting. None of that exists until ranking has finished, so a facts
+  // entry resolved during the map above would necessarily describe a
+  // half-built list. A second pass is the honest way to say "this one depends
+  // on all the others".
+  const sequencingRec = recommendations.find((r) => r.code === "TA-18");
+  if (sequencingRec) {
+    const briefIssues = recommendations
+      .filter((r) => r.code !== "TA-18"
+        && (gateCodes.includes(r.code) || r.blockedBy || r.pillar === "technical_accessibility"))
+      .map((r) => ({
+        code: r.code, title: r.title, fix: r.fix,
+        blockedBy: r.blockedBy || null,
+        isBlocker: gateCodes.includes(r.code),
+      }));
+    sequencingRec.implementationAsset = buildConstruct("technical_brief", {
+      issues: briefIssues, blockers: activePenalties, url,
+    });
+  }
 
   // ── 6. report ────────────────────────────────────────────────────────────
   return {
