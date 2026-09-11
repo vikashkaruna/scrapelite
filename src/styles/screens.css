@@ -9708,6 +9708,29 @@ html.dark .dsc-page {
 .dsc-rec-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; background: var(--surface-2); border-radius: var(--r-pill); color: var(--text-2); }
 .dsc-rec-fw { font-size: 9.5px; font-weight: 700; letter-spacing: .05em; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-3); }
 .dsc-rec-status { font-size: 11px; font-weight: 600; color: var(--dsc-success); }
+/* W6 — answer-engine configuration on /admin/ai. */
+.prov-engine {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+  background: var(--surface, #fff);
+}
+.prov-engine-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.prov-engine-head b { font-size: 15px; }
+.prov-engine-head .prov-key { margin-right: auto; }
+.prov-engine-note { font-size: 13px; color: var(--text-muted, #6b7280); margin: 8px 0 0; }
+.prov-engine-result {
+  margin-top: 12px; padding: 10px 12px; border-radius: 6px;
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+  border-left: 3px solid var(--border, #e5e7eb);
+  background: var(--surface-sunk, #f3f4f6);
+}
+.prov-engine-result.is-good { border-left-color: var(--success, #3e7a46); }
+.prov-engine-result.is-bad { border-left-color: var(--warning, #9c5a12); }
+.prov-engine-sample { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; word-break: break-all; }
+.prov-engine-sample li { color: var(--text-muted, #6b7280); }
+.prov-pane-intro, .prov-pane-foot { font-size: 13px; color: var(--text-muted, #6b7280); }
+.prov-pane-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft, #f1f2f4); }
+
 /* W6.5 — the AI visibility panel. Provenance leads, because a citation number
    whose origin is unclear is worse than no number. */
 .dsc-aiv { display: flex; flex-direction: column; gap: 18px; }

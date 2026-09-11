@@ -24,7 +24,7 @@
 
 import { verifyAdminToken, bearerFromEvent } from "./lib/adminToken.js";
 import { pageSpeedKeyAdvice, isCredentialRejection, googleKeyKind } from "./lib/googleApiKey.js";
-import { pingProvider, PROVIDER_ERROR_COPY, classifyProviderError } from "./lib/aiProviders.js";
+import { pingProvider, probeAnswerEngine, PROVIDER_ERROR_COPY, classifyProviderError } from "./lib/aiProviders.js";
 import { SCRAPE_PROVIDERS } from "./lib/scrapeProviders.js";
 import {
   PROVIDERS, PROVIDER_KEYS, PROVIDER_KIND, AI_PROVIDERS,
@@ -190,7 +190,13 @@ export async function testProvider(providerKey, opts = {}) {
   const meta = PROVIDERS[providerKey];
   if (!meta) return { provider: providerKey, ok: false, code: "unknown_provider", error: "Unknown provider" };
   let result;
-  if (meta.kind === PROVIDER_KIND.AI)          result = await pingProvider(providerKey, { model: opts.model });
+  // ⚠️ A GROUNDED PROBE IS A DIFFERENT TEST FROM A PING, AND BOTH ARE NEEDED.
+  // A ping proves the key is valid and the model answers. It says nothing about
+  // whether grounding returns SOURCES — and a Gemini key that answers happily
+  // with no `groundingMetadata` degrades every citation sample to the model's
+  // own recall while the provider card stays green.
+  if (opts.grounded)                           result = await probeAnswerEngine(providerKey);
+  else if (meta.kind === PROVIDER_KIND.AI)     result = await pingProvider(providerKey, { model: opts.model });
   else if (meta.kind === PROVIDER_KIND.SCRAPE) result = await testScrapeProvider(providerKey);
   else                                          result = await testPageSpeed();
   return {
@@ -277,7 +283,7 @@ export const handler = async (event) => {
     // finding out whether a model works BEFORE saving it as the default.
     const model = typeof body.model === "string" && body.model.trim()
       ? body.model.trim().slice(0, 120) : undefined;
-    const result = await testProvider(provider, { model });
+    const result = await testProvider(provider, { model, grounded: body.grounded === true });
     return respond(200, { ok: true, demo: auth.demo, result });
   }
 

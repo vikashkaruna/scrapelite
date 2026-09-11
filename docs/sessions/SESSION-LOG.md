@@ -38,10 +38,10 @@ npm run test:db   # 53 migrations · 560 assertions
 
 ### 🔴 Two things are true and easy to miss
 
-**Migrations `0052` and `0053` are applied NOWHERE.** `0048`–`0051` are on dev
-and stage. Until 0052 and 0053 join them, citation states do not persist and
-prompt monitors cannot be created outside tests. **Production carries none of
-`0048`–`0053`** — six migrations behind this branch.
+✅ **Migrations `0048`–`0053` are ALL applied to dev and stage** (operator,
+2026-09-11), so citation states persist and prompt monitors are creatable.
+⚠️ **Production carries none of `0048`–`0053`** — six migrations behind this
+branch, including the W5.5 assignment column and the W6 citation states.
 
 **`scoring_model_version` is `v3`.** `auditDiff` refuses cross-version
 comparison by design, so every target's next audit reports "re-run to compare"

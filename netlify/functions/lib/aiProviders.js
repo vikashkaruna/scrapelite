@@ -581,6 +581,72 @@ export async function callGeminiGrounded(prompt, { pillar = "citations", tier, s
   return { ok: true, text: r.text, citations: r.citations || [], grounded: Boolean(r.grounded), model };
 }
 
+/**
+ * LIVE check that an answer engine returns SOURCES, not just text.
+ *
+ * 🔴 THIS IS THE CHECK `pingProvider` CANNOT MAKE. A ping proves the key is
+ * valid and the model answers. It says nothing about grounding — a perfectly
+ * good Gemini key returns prose with no `groundingMetadata` whenever the search
+ * tool is misconfigured, the model family takes the other tool name, or the
+ * account lacks grounding entitlement. Every one of those degrades citation
+ * sampling to a model's own recall while the provider card stays green, which
+ * is the exact failure this repo already shipped once with a PageSpeed key that
+ * measured nothing for months.
+ *
+ * Asks something no model could answer from memory alone, so an answer with no
+ * sources is strong evidence grounding did not run rather than evidence the
+ * question was easy.
+ */
+export async function probeAnswerEngine(provider, { signal } = {}) {
+  const PROMPT = "Name two companies that published something about web data extraction in the last month, with links.";
+
+  if (provider === "gemini") {
+    const r = await callGeminiGrounded(PROMPT, { signal, maxTokens: 300 });
+    if (!r.ok) return { ok: false, provider, error: r.error, code: r.code || null };
+    return {
+      ok: true, provider, model: r.model,
+      grounded: r.grounded,
+      citationCount: (r.citations || []).length,
+      sample: (r.citations || []).slice(0, 3).map((c) => c.url),
+      // The distinction the whole citation metric rests on.
+      verdict: r.grounded
+        ? "Grounded — answers are retrieved from the live web and count as live."
+        : "NOT grounded. The key works and the model answered, but no sources came back, so every citation sample through this engine would be the model's own recall labelled live:false. Check that Google Search grounding is enabled for this key and that the model family matches the tool name.",
+    };
+  }
+
+  if (provider === "perplexity") {
+    const key = keyFor("perplexity");
+    if (!key) return { ok: false, provider, error: "PERPLEXITY_API_KEY is not set." };
+    const { model } = await resolveProvider("perplexity", "citations");
+    try {
+      const res = await fetch("https://api.perplexity.ai/chat/completions", {
+        signal, method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, messages: [{ role: "user", content: PROMPT }], max_tokens: 300 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, provider, error: data?.error?.message || `Perplexity ${res.status}` };
+      }
+      const citations = data?.citations || data?.search_results || [];
+      return {
+        ok: true, provider, model,
+        grounded: citations.length > 0,
+        citationCount: citations.length,
+        sample: citations.slice(0, 3).map((c) => (typeof c === "string" ? c : c?.url)).filter(Boolean),
+        verdict: citations.length > 0
+          ? "Returning citations — samples through this engine count as live."
+          : "Answered with no citations. Retrieval is what this provider is for, so an empty citation list here usually means the model id is not a search model.",
+      };
+    } catch (err) {
+      return { ok: false, provider, error: err?.message || "Perplexity request failed" };
+    }
+  }
+
+  return { ok: false, provider, error: `${provider} is not an answer engine.` };
+}
+
 export const PING_TOKENS = 64;          // enough for "ok" on any non-reasoning model
 export const PING_RETRY_TOKENS = 2048;  // enough for a reasoning pass plus "ok"
 

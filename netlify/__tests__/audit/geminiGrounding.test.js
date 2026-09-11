@@ -85,3 +85,30 @@ describe("engine resolution", () => {
     expect(resolveEngine({ PERPLEXITY_API_KEY: "p" }, "none")).toBeNull();
   });
 });
+
+
+// ── The admin probe ─────────────────────────────────────────────────────────
+// `pingProvider` proves a key is valid and a model answers. It says nothing
+// about whether grounding returns SOURCES — and a Gemini key that answers
+// happily with none degrades every citation sample to the model's own recall
+// while the provider card stays green. That is the same shape of silent
+// failure as a PageSpeed key that measured nothing for months.
+
+describe("probeAnswerEngine", () => {
+  it("refuses a provider that is not an answer engine", async () => {
+    const { probeAnswerEngine } = await import("../../functions/lib/aiProviders.js");
+    const r = await probeAnswerEngine("anthropic");
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/not an answer engine/i);
+  });
+
+  it("🔴 distinguishes 'answered' from 'grounded' in its verdict vocabulary", async () => {
+    // The whole reason the probe exists: these are different outcomes and the
+    // operator has to be able to tell them apart at a glance.
+    const { probeAnswerEngine } = await import("../../functions/lib/aiProviders.js");
+    const r = await probeAnswerEngine("perplexity");
+    // No key in the test env, so it reports that rather than inventing a result.
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/PERPLEXITY_API_KEY/);
+  });
+});
