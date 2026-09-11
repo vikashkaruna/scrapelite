@@ -2177,6 +2177,34 @@ async function refreshGraphConflicts(userId, truthRecordId = null) {
 // that actually held the customer's token.
 const CLIENT_ACQUISITION = new Set(["declared_url", "public_listing"]);
 
+/**
+ * Every caller-supplied reference on a W12 request, checked against rows the
+ * caller actually owns.
+ *
+ * ⚠️ The refusal is 404, never 403 — the same choice `invoice-pdf.js` makes and
+ * for the same reason: a 403 confirms the id exists, which turns the endpoint
+ * into an enumeration oracle over other tenants' uuids. "Not found" is true
+ * from where the caller stands.
+ *
+ * ⚠️ `workspace_id` goes through `buildWorkspaceCtx`, not through a store read,
+ * because membership is not ownership — the check is "are you in it", and that
+ * helper is the one place this file asks.
+ */
+async function requireLocalRefs(userId, body) {
+  const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
+  if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
+
+  if (body.truth_record_id) {
+    const rec = await store.getTruthRecord(userId, body.truth_record_id);
+    if (!rec) return { refusal: notFound("Business truth record not found.") };
+  }
+  if (body.subject_id) {
+    const subj = await store.getSubject(userId, body.subject_id);
+    if (!subj) return { refusal: notFound("Subject not found.") };
+  }
+  return { refusal: null };
+}
+
 async function localDirectoryRoute(userId, method, path, body, event) {
   const [, section, id, verb] = path;
   const q = event.queryStringParameters || {};
@@ -2218,6 +2246,15 @@ async function localDirectoryRoute(userId, method, path, body, event) {
       }
       if (!body.listing_url) return bad("A listing URL is required — an observation nobody can go and check is not evidence.");
 
+      // 🔴 A PARENT ID FROM A REQUEST BODY IS A CLAIM, NOT A FACT — the same
+      // rule W9 applies before creating a truth record and W10 applies before
+      // drawing an edge. W12 shipped without either check, so a caller could
+      // attach its own listing to ANOTHER TENANT'S truth record: the row would
+      // carry the attacker's user_id and the victim's foreign key, and every
+      // later join over that record would read a row its owner never wrote.
+      const ref = await requireLocalRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+
       const saved = await store.upsertDirectoryListing(userId, {
         truthRecordId: body.truth_record_id || null,
         sourceId, sourceTier: source.tier, acquisition,
@@ -2247,6 +2284,12 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     const truthRecordId = body.truth_record_id || null;
     const canonical = body.canonical && typeof body.canonical === "object" ? body.canonical : {};
     const region = body.region || null;
+
+    // Same reasoning as the listings POST above, and `subject_id` as well: a
+    // check filed against a subject the caller does not own would put their
+    // local score on somebody else's brand.
+    const ref = await requireLocalRefs(userId, body);
+    if (ref.refusal) return ref.refusal;
 
     const listings = await store.listDirectoryListings(userId, { truthRecordId });
     const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES).map((src) => src.id);

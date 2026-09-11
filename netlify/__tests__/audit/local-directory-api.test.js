@@ -84,6 +84,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   for (const k of Object.keys(storeMock)) delete storeMock[k];
   authenticate.mockResolvedValue({ ok: true, user: { id: "user-1" } });
+  // The caller owns its own references by default, so every test that is not
+  // ABOUT ownership reads as it did before the guard existed. A test that wants
+  // the refusal overrides these to return null, the way the store answers for a
+  // row belonging to someone else.
+  storeMock.getTruthRecord = vi.fn(async () => ({ id: "rec-1", user_id: "user-1" }));
+  storeMock.getSubject = vi.fn(async () => ({ id: "subj-1", user_id: "user-1" }));
   publicUrl.mockResolvedValue(true);
   compliance.mockResolvedValue({ allowed: true, host: "example.com", code: "allowed" });
   consent.mockResolvedValue(false);
@@ -361,5 +367,73 @@ describe("routing", () => {
   it("404s an unknown local-directory endpoint", async () => {
     const res = await call("GET", "local-directory/nonsense");
     expect(res.statusCode).toBe(404);
+  });
+});
+
+
+describe("🔴 a parent id in a request body is a claim, not a fact", () => {
+  // W9 checks a truth record before creating one, and W10 checks BOTH entities
+  // before drawing an edge between them. W12 shipped with neither check, so a
+  // caller could attach a listing — or file a whole local check — against a row
+  // belonging to another tenant. The write would carry the attacker's user_id
+  // and the victim's foreign key, and every later join over that record would
+  // read a row its owner never wrote.
+  it("refuses a listing against a truth record the caller does not own", async () => {
+    storeMock.getTruthRecord = vi.fn(async () => null);
+    storeMock.upsertDirectoryListing = vi.fn();
+    const res = await call("POST", "local-directory/listings", {
+      body: {
+        source_id: "justdial", listing_url: "https://justdial.com/acme",
+        truth_record_id: "someone-elses-record",
+      },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.getTruthRecord).toHaveBeenCalledWith("user-1", "someone-elses-record");
+    expect(storeMock.upsertDirectoryListing).not.toHaveBeenCalled();
+  });
+
+  it("...answers 404 rather than 403, so the id cannot be enumerated", async () => {
+    // A 403 confirms the row exists. That turns the endpoint into an oracle
+    // over other tenants' uuids — the same reason invoice-pdf.js returns 404.
+    storeMock.getTruthRecord = vi.fn(async () => null);
+    const res = await call("POST", "local-directory/listings", {
+      body: { source_id: "justdial", listing_url: "https://x.com", truth_record_id: "rec-x" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(parse(res).error).not.toMatch(/forbidden|not allowed|permission/i);
+  });
+
+  it("refuses a check against a truth record the caller does not own", async () => {
+    storeMock.getTruthRecord = vi.fn(async () => null);
+    storeMock.listDirectoryListings = vi.fn(async () => []);
+    storeMock.saveLocalCheck = vi.fn();
+    const res = await call("POST", "local-directory/check", {
+      body: { truth_record_id: "someone-elses-record", canonical: { name: "Acme" } },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.saveLocalCheck).not.toHaveBeenCalled();
+  });
+
+  it("refuses a check filed against a SUBJECT the caller does not own", async () => {
+    // Otherwise a local score lands on somebody else's brand.
+    storeMock.getSubject = vi.fn(async () => null);
+    storeMock.listDirectoryListings = vi.fn(async () => []);
+    storeMock.saveLocalCheck = vi.fn();
+    const res = await call("POST", "local-directory/check", {
+      body: { subject_id: "someone-elses-subject", canonical: { name: "Acme" } },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.getSubject).toHaveBeenCalledWith("user-1", "someone-elses-subject");
+    expect(storeMock.saveLocalCheck).not.toHaveBeenCalled();
+  });
+
+  it("does not look up references the caller never supplied", async () => {
+    // The guard must not turn an ordinary unscoped check into two wasted reads.
+    storeMock.listDirectoryListings = vi.fn(async () => []);
+    storeMock.saveLocalCheck = vi.fn(async () => ({ ok: true, check: { id: "c-1" } }));
+    const res = await call("POST", "local-directory/check", { body: { canonical: { name: "Acme" } } });
+    expect(res.statusCode).toBe(201);
+    expect(storeMock.getTruthRecord).not.toHaveBeenCalled();
+    expect(storeMock.getSubject).not.toHaveBeenCalled();
   });
 });

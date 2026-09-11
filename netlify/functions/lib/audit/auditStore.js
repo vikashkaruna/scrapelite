@@ -494,6 +494,21 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
  * ever dismissed hands somebody a file that is mostly noise, and they will not
  * notice until they have worked half of it.
  */
+/**
+ * A row cap that is always a number.
+ *
+ * ⚠️ Not a style fix. Every other caller-supplied value in this file goes
+ * through `encodeURIComponent`, but a bare `limit=${x}` interpolates straight
+ * into the PostgREST query string — so the day someone wires a `?limit=` query
+ * parameter to one of these readers, `1&user_id=eq.<anyone>` stops being a
+ * limit and starts being a filter. No route passes caller input here today;
+ * this makes sure the one that eventually does cannot.
+ */
+function rowCap(n, fallback, max = 1000) {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), max) : fallback;
+}
+
 export async function listRecommendationQueue(userId, { status = null, workspaceId = null, limit = 500 } = {}) {
   const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
   if (status) {
@@ -504,7 +519,7 @@ export async function listRecommendationQueue(userId, { status = null, workspace
   if (workspaceId) parts.push(`workspace_id=eq.${encodeURIComponent(workspaceId)}`);
   const r = await rest(
     `audit_recommendations?${parts.join("&")}&${SELECT_ALL}`
-    + `&order=priority_score.desc.nullslast&limit=${limit}`,
+    + `&order=priority_score.desc.nullslast&limit=${rowCap(limit, 500)}`,
   );
   return Array.isArray(r.data) ? r.data : [];
 }
@@ -517,7 +532,7 @@ export async function listDuePromptMonitors(now = Date.now(), limit = 25) {
   const r = await rest(
     `prompt_monitors?status=eq.active&system_paused=is.false`
     + `&or=(next_run_at.is.null,next_run_at.lte.${encodeURIComponent(iso)})`
-    + `&${SELECT_ALL}&order=next_run_at.asc.nullsfirst&limit=${limit}`,
+    + `&${SELECT_ALL}&order=next_run_at.asc.nullsfirst&limit=${rowCap(limit, 25)}`,
   );
   const rows = Array.isArray(r.data) ? r.data : [];
   // `run_until` is filtered here rather than in the query so an expired monitor
@@ -596,14 +611,14 @@ export async function listPromptMonitorRuns(userId, monitorId, limit = 30) {
   const r = await rest(
     `prompt_monitor_runs?monitor_id=eq.${encodeURIComponent(monitorId)}`
     + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}`
-    + `&order=created_at.desc&limit=${limit}`,
+    + `&order=created_at.desc&limit=${rowCap(limit, 30)}`,
   );
   return Array.isArray(r.data) ? r.data : [];
 }
 
 export async function listPromptMonitors(userId, limit = 50) {
   const r = await rest(
-    `prompt_monitors?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=created_at.desc&limit=${limit}`,
+    `prompt_monitors?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`,
   );
   return Array.isArray(r.data) ? r.data : [];
 }
@@ -1052,7 +1067,7 @@ export async function dueSchedules(now = new Date(), limit = 25) {
   const r = await rest(
     `audit_schedules?status=eq.active&system_paused=is.false` +
     `&next_run_at=lte.${encodeURIComponent(now.toISOString())}` +
-    `&select=*,audit_targets(canonical_url,host,label)&order=next_run_at.asc&limit=${limit}`);
+    `&select=*,audit_targets(canonical_url,host,label)&order=next_run_at.asc&limit=${rowCap(limit, 25)}`);
   if (!r.ok) return [];
   // A schedule past its end date is not due; it is finished.
   return (r.data || []).filter((s) => !s.run_until || new Date(s.run_until) > now);
@@ -1607,6 +1622,19 @@ export async function listLocalChecks(userId, { truthRecordId = null, subjectId 
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(`audit_local_checks?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 30}`);
   return r.ok ? r.data || [] : [];
+}
+
+/**
+ * One subject, scoped to its owner. D7's registry has no reader until a caller
+ * supplies a `subject_id` it did not mint — at which point the id has to be
+ * checked against the owner rather than trusted, exactly as `getEntity` is
+ * before an edge is drawn between two nodes.
+ */
+export async function getSubject(userId, subjectId) {
+  const r = await rest(
+    `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 export async function getLocalCheckFull(userId, checkId) {
