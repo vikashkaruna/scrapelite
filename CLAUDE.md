@@ -2,6 +2,50 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 (W14) — THE P2 INTELLIGENCE LAYER HAD NO ENTITLEMENT CHECK AT ALL (`0063` + six capabilities). AND THE LIFECYCLE FIX THE PLAN ASKED FOR WOULD HAVE BEEN DEAD CODE OVERRIDING A WRITTEN DECISION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **W9 THROUGH W13 SHIPPED UNGATED.** Every truth record, graph edge, directory listing and trust
+> observation was writable on **any plan including Free** — nothing checked. The same gap Phases 4-6
+> had, where three cost-bearing operations went unmetered and three of the BRD's own upgrade triggers
+> were unenforceable, and **a green gate proved nothing about it because nothing checked**. Six
+> capabilities added on the `audit.benchmark` precedent D9 names: reuse the audit allowance that
+> already exists rather than invent a plan axis nobody bought. ⚠️ **WRITES ARE GATED, READS ARE NOT** —
+> refusing to show a customer the record they already own is taking away something they were given.
+> ⚠️ **Fails open on infrastructure**, the same asymmetry `requireEntitlement` holds.
+>
+> ✅ **REVALIDATION IS A REQUEST, NOT A BUTTON THAT SPENDS MONEY.** A re-audit is several fetches, a
+> PageSpeed lookup, a citation sample and an AI call — **an "is this fixed yet?" control that silently
+> spends one is the shape of thing a customer discovers on an invoice.** `0063` records the request;
+> the run happens on the monitor's tick. ⚠️ **IDEMPOTENT BY THE `is.null` FILTER, NOT A
+> READ-THEN-WRITE** — the PATCH only matches a row whose `revalidation_requested_at` is still null, so
+> two concurrent clicks produce one claim; a check-then-set would race exactly as
+> `payment-webhook.js:49-59`'s dedup does, and losing that race costs a second paid audit.
+> ⚠️ **Idempotency is checked BEFORE the quota**: a second click is not a new request, so refusing it
+> for quota would refuse something nobody asked for.
+>
+> 🔴 **THE LIFECYCLE FIX THE PLAN ASKED FOR WAS A FALSE PREMISE, AND THE CODE STOPPED IT.** W14's step
+> 2 asks that every transition validate the prior state. I found `canTransition` exported,
+> unit-tested and **called by nothing**, concluded the state machine was unenforced, and wrote the
+> enforcement. Its own header stopped it: *"ALWAYS TRUE FOR A KNOWN STATE, AND THAT IS THE DESIGN.
+> `next` is what the UI should OFFER; it is not a gate. A state machine that refuses a legitimate jump
+> teaches people to work around the tool."* It returns `{allowed, suggested}`, so
+> `!canTransition(...)` is **always false — dead code that reads as enforcement** — and the integrity
+> that matters was never missing: `requirementsFor` has always refused `validated` without the audit
+> that re-measured the signal, *"otherwise it is a claim, not a measurement"*. **Reverted in full**;
+> both halves pinned by test. ⚠️ **A function called by nothing is usually a defect here — four times
+> over — but not always, and the code said which this was.**
+>
+> ⚠️ **STILL OPEN IN W14:** the fourteen-endpoint `/api/v1/discoverability/*` inventory, connector
+> approval-gating, and **D6's seven discoverability roles**, which need the signed role matrix rather
+> than a guess.
+>
+> **Verified:** `npx vitest run` **389 files / 6508 passed / 0 skipped / 0 failed** · db-verify **63
+> migrations / 779 assertions / 0 failed** · build clean · prerender 28 pages / 112 refs · security
+> clean. **7 guards confirmed RED first.** 🔴 **`0062` AND `0063` HAVE ONLY MET WASM POSTGRES.**
+> ⚠️ **The next migration number is `0064`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 (W13) — SCHEMA INTELLIGENCE + TRUST & PROOF (`0062`). THE TRUST MODEL EXISTS TO STOP A COUNTER — TEN TESTIMONIALS MUST NEVER OUTSCORE ONE VERIFIABLE RECORD. AND W12's OWN `built` FLAG HAD BEEN STALE FOR A SESSION, WITH A TEST THAT AGREED WITH IT. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
 > 🔴 **EVIDENCE QUALITY, NEVER EVIDENCE VOLUME.** Ten unattributed testimonials on a page the

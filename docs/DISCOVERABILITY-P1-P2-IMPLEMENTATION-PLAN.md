@@ -18,7 +18,7 @@ ten SECURITY DEFINER functions taking a caller-supplied `p_user_id` were
 executable by `anon`, because PostgreSQL grants EXECUTE to PUBLIC by default
 and nobody had checked functions when 0044 locked the tables. ✅ **All three are
 applied to dev/stage** (owner-confirmed 2026-09-12); production still needs them.
-**The next migration number is `0063`.**
+**The next migration number is `0064`.**
 
 🔴 **AND A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, found in the same review.**
 `audit_entity_evidence` (W10 / `0056`) holds CORROBORATION — every later
@@ -497,7 +497,43 @@ checked rather than trusted.
    foreign IDs and forbidden provenance; score-version comparability; then
    `test:db`, unit, contract, integration, security, build and prerender.
 
-**W14 · Workflow Hub v2 + P2 APIs** *(after W13; entitlement and role design must be signed off)*
+**W14 · Workflow Hub v2 + P2 APIs** — 🟡 **D9 SHIPPED; the lifecycle needed no
+change, and that is a finding rather than a gap.**
+
+🔴 **W9 THROUGH W13 HAD NO ENTITLEMENT CHECK OF ANY KIND.** Every truth record,
+graph edge, directory listing and trust observation was writable on any plan
+including Free — the same gap Phases 4-6 had, where three cost-bearing
+operations went unmetered and three of the BRD's own upgrade triggers were
+unenforceable. Six new capabilities follow the `audit.benchmark` precedent D9
+names: reuse the audit allowance that already exists rather than invent a plan
+axis nobody bought. **Writes are gated; reads are not** — refusing to show a
+customer the record they already own is taking away something they were given.
+
+✅ **Revalidation is now an explicit, idempotent REQUEST** (`0063`,
+`POST /recommendations/{id}/revalidate`). It records intent and charges
+nothing; the run happens on the monitor's tick where it is visible and
+countable. Idempotency is enforced by a `revalidation_requested_at=is.null`
+filter on the PATCH rather than a read-then-write, so two concurrent clicks
+produce one claim — **clicking twice must not cost twice**, and a check-then-set
+would race exactly as `payment-webhook.js`'s dedup does.
+
+🔴 **STEP 2 WAS A FALSE PREMISE AND THE CODE STOPPED IT.** The plan asks that
+every transition validate the prior state. `workflowLifecycle.js` already
+carries all seven stages plus `dismissed`, and `canTransition`'s own header
+says it is **deliberately not a gate**: *"`next` is what the UI should OFFER…
+a state machine that refuses a legitimate jump teaches people to work around
+the tool."* It returns `{allowed, suggested}`, so the obvious enforcement —
+`!canTransition(...)` — is **dead code that reads as a guard**. And the
+integrity that matters was never missing: `requirementsFor` has always refused
+`validated` without the audit that re-measured the signal, *"otherwise it is a
+claim, not a measurement"*. The enforcement was written, then reverted, and
+both halves are pinned by test so it is not attempted again.
+
+⚠️ **STILL OPEN:** the fourteen-endpoint `/api/v1/discoverability/*` inventory
+(step 4), connector approval-gating (step 5), and D6's seven discoverability
+roles — which need the signed role matrix, not a guess.
+
+*Original plan, kept for the record:*
 
 1. **Resolve the two remaining decisions before coding.** D6's workspace-id
    plumbing is complete, but P2's seven discoverability roles are not. Keep

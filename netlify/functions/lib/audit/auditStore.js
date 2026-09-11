@@ -760,6 +760,7 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
     assignee: extra.assignee,
   });
   if (!req.ok) return { ok: false, error: req.missing[0] };
+
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}`,
     {
@@ -1646,6 +1647,47 @@ export async function listLocalChecks(userId, { truthRecordId = null, subjectId 
  * checked against the owner rather than trusted, exactly as `getEntity` is
  * before an edge is drawn between two nodes.
  */
+// ── W14 · Revalidation ─────────────────────────────────────────────────────
+
+/** One recommendation, scoped to its owner. */
+export async function getRecommendation(userId, recId) {
+  const r = await rest(
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/**
+ * Claim a revalidation request.
+ *
+ * 🔴 IDEMPOTENT BY THE `is.null` FILTER, NOT BY A READ-THEN-WRITE. The PATCH
+ * only matches a row whose `revalidation_requested_at` is still null, so two
+ * concurrent clicks produce one claim and one no-op — the loser gets zero rows
+ * back and reads the existing request. A check-then-set would race exactly as
+ * `payment-webhook.js:49-59`'s dedup does, and the cost of losing that race
+ * here is a second paid audit.
+ */
+export async function claimRevalidation(userId, recId, { baselineAuditId = null } = {}) {
+  const r = await rest(
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}`
+    + `&revalidation_requested_at=is.null`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        revalidation_requested_at: new Date().toISOString(),
+        revalidation_baseline_audit_id: baselineAuditId,
+        status: "validation_scheduled",
+      }),
+    });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  // No row means somebody else claimed it first — which is success, not
+  // failure: the request they wanted already exists.
+  return { ok: true, claimed: Boolean(row), recommendation: row || null };
+}
+
 // ── W13 · Schema intelligence + Trust & Proof ──────────────────────────────
 
 /**

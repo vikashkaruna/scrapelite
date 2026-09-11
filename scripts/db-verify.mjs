@@ -171,6 +171,11 @@ grant usage on schema public to anon, authenticated;
 //   CHECK (a three-value trust vocabulary that decides what a claim is worth);
 //   `signal` is NOT (an open registry that grows with the market) — the same
 //   split 0058 made, for the same reason.
+// 0063_revalidation_request.sql columns + one partial index only — the
+//   revalidation REQUEST. `validation_scheduled` has been a legal state since
+//   0054 and `validated_by_audit_id` has recorded the result; between them sat
+//   no way to ASK. Columns rather than a table, because nothing here is
+//   several writes that must not separate.
 // Taking these to 103 / 50 / 29.
 const EXPECT = {
   tables: 103,

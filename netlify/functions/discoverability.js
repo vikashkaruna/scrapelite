@@ -633,6 +633,14 @@ export const handler = async (event) => {
         });
         return json(200, { recommendation: r.recommendation });
       }
+      // W14 — ask for a re-audit. Kept OUT of VERB_TO_STATE deliberately:
+      // every other verb is a pure state change costing nothing, while this
+      // one is gated, idempotent and leads to a paid audit. Folding it in
+      // would make a quota-bearing action look like a label change.
+      if (method === "POST" && sub === "revalidate") {
+        return await revalidateRoute(event, userId, id, body);
+      }
+
       // W8 — the full lifecycle. The four original verbs keep their exact
       // meanings so no existing client breaks; the rest are new.
       if (method === "POST" && VERB_TO_STATE[sub]) {
@@ -1001,7 +1009,7 @@ function reportRoute(event, full) {
  * asymmetry: a Supabase blip must not take auditing down. It fails CLOSED only
  * on an explicitly-read over-quota state.
  */
-async function gateAuditQuota(event, userId, count, rawWorkspaceId) {
+async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability = "audit") {
   const resolved = await resolveRequestEntitlement(event);
   // A refusal here (named a workspace the caller isn't in, or a paused seat)
   // takes priority over the quota read below — same "decline before doing
@@ -1013,16 +1021,119 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId) {
   const { count: used, degraded } = await store.countAuditsThisMonth(userId);
   if (degraded) return { ok: true, resolved };
 
-  const check = checkCapability(resolved, "audit", {
+  // ⚠️ `capability` IS A PARAMETER SO THERE IS ONE QUOTA GATE, NOT TWO.
+  // `audit.revalidate` delegates to `audit` inside the model, so it needs the
+  // same real monthly count — routing it through a feature-only gate reads
+  // `usage.audits` off an object nobody populated and 500s.
+  const check = checkCapability(resolved, capability, {
     usage: { audits: used },
     auditCount: count,
     bonusAudits: resolved.entitlement?.bonus_audits || 0,
     ...workspaceCtx,
   });
   if (!check.allowed) {
-    return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), used, capability: "audit" }) };
+    return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), used, capability }) };
   }
   return { ok: true, resolved };
+}
+
+/**
+ * P2 · W14 / D9 — the feature gate the intelligence layer shipped without.
+ *
+ * 🔴 W9 THROUGH W13 HAD NO ENTITLEMENT CHECK OF ANY KIND. Every truth record,
+ * graph edge, directory listing and trust observation was writable on any plan
+ * including Free — the same gap Phases 4-6 had, where three cost-bearing
+ * operations went unmetered and three of the BRD's own upgrade triggers were
+ * unenforceable. A 100% green gate proved nothing about them, because nothing
+ * checked.
+ *
+ * ⚠️ FAILS OPEN ON INFRASTRUCTURE, CLOSED ONLY ON AN EXPLICIT REFUSAL — the
+ * same asymmetry `requireEntitlement` and `gateAuditQuota` already hold. A
+ * Supabase blip must not take the intelligence layer down.
+ *
+ * ⚠️ READS ARE NOT GATED, WRITES ARE. Refusing to show a customer the record
+ * they already own would be taking away something they were given, which is a
+ * different act from declining to create more.
+ */
+async function gateP2Capability(event, capability, rawWorkspaceId) {
+  const resolved = await resolveRequestEntitlement(event);
+  const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, rawWorkspaceId);
+  if (refusal) {
+    return { ok: false, response: json(403, { error: refusal.message, code: refusal.code }) };
+  }
+  if (resolved.degraded) return { ok: true, resolved };
+
+  const check = checkCapability(resolved, capability, { ...workspaceCtx });
+  if (!check.allowed) {
+    return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), capability }) };
+  }
+  return { ok: true, resolved };
+}
+
+/**
+ * P2 · W14 — ask for a re-audit. Explicit, gated and idempotent.
+ *
+ * 🔴 IT DOES NOT RUN THE AUDIT. A re-audit is a paid action with its own
+ * monthly budget; a control that silently spends one is the shape of thing a
+ * customer discovers on an invoice. This records the request, charges nothing,
+ * and leaves the run to the monitor's own tick where it is visible and
+ * countable.
+ *
+ * ⚠️ THE ENTITLEMENT CHECK STILL HAPPENS HERE, at request time, because
+ * refusing at run time would refuse silently — in a cron, with nobody present
+ * to see it. A refusal has to reach the person who asked.
+ */
+async function revalidateRoute(event, userId, recId, body) {
+  const rec = await store.getRecommendation(userId, recId);
+  if (!rec) return notFound("Recommendation not found.");
+
+  // Only something believed FIXED is worth re-checking. Asking to revalidate
+  // an open item would spend an audit to confirm what the last one said.
+  if (!["implemented", "done", "validation_scheduled"].includes(rec.status)) {
+    return json(409, {
+      error: "Only an implemented recommendation can be revalidated. Mark it implemented first.",
+      code: "NOT_IMPLEMENTED",
+      status: rec.status,
+    });
+  }
+
+  // ⚠️ IDEMPOTENCY IS CHECKED BEFORE THE QUOTA, deliberately. A second click on
+  // an outstanding request must not read as "you are out of audits" — it is
+  // not a new request at all, and refusing it for quota would be a refusal for
+  // something the customer is not asking to do.
+  if (rec.revalidation_requested_at) {
+    return json(200, {
+      revalidation: {
+        requested_at: rec.revalidation_requested_at,
+        baseline_audit_id: rec.revalidation_baseline_audit_id,
+      },
+      already_requested: true,
+    });
+  }
+
+  // 🔴 THE REAL AUDIT QUOTA, not a feature flag — this spends one.
+  const gate = await gateAuditQuota(event, userId, 1, body.workspace_id, "audit.revalidate");
+  if (!gate.ok) return gate.response;
+
+  const claim = await store.claimRevalidation(userId, recId, {
+    baselineAuditId: body.baseline_audit_id || rec.audit_id || null,
+  });
+  if (!claim.ok) {
+    return json(503, { error: "Could not record the request.", code: "STORAGE_UNAVAILABLE", detail: claim.error });
+  }
+  if (!claim.claimed) {
+    // Lost the race to a concurrent click. That is the outcome the caller
+    // wanted, so it is a 200 — not an error and not a second audit.
+    return json(200, { already_requested: true });
+  }
+
+  return json(201, {
+    revalidation: {
+      requested_at: claim.recommendation.revalidation_requested_at,
+      baseline_audit_id: claim.recommendation.revalidation_baseline_audit_id,
+    },
+    recommendation: claim.recommendation,
+  });
 }
 
 async function benchmarkRoute(event, userId, method, id, body) {
@@ -1622,6 +1733,13 @@ function describeVersion(row) {
 }
 
 async function businessTruthRoute(userId, method, path, body, event) {
+  // W14/D9. Writes are gated; reads are not — refusing to show a customer the
+  // record they already own is taking away something they were given, which is
+  // a different act from declining to create more.
+  if (method !== "GET") {
+    const gate = await gateP2Capability(event, "audit.business_truth", body.workspace_id);
+    if (!gate.ok) return gate.response;
+  }
   // `path` is the whole parsed sub-path, because a version verb lives at
   // position 4 (`/business-truth/:id/versions/:vid/promote`) and the handler
   // re-deriving it from the raw event would be a second parser to keep in step
@@ -1896,6 +2014,13 @@ async function businessTruthRoute(userId, method, path, body, event) {
 // unreviewed nodes is a half-built statement.
 
 async function entityGraphRoute(userId, method, path, body, event) {
+  // W14/D9. Writes are gated; reads are not — refusing to show a customer the
+  // record they already own is taking away something they were given, which is
+  // a different act from declining to create more.
+  if (method !== "GET") {
+    const gate = await gateP2Capability(event, "audit.entity_graph", body.workspace_id);
+    if (!gate.ok) return gate.response;
+  }
   const [, section, id, verb] = path;
 
   if (section === "schema" && method === "GET") {
@@ -2255,6 +2380,13 @@ async function requireLocalRefs(userId, body) {
  * to `acquisition: "authorized_api"` and W9 applies to `observed`/`imported`.
  */
 async function schemaTrustRoute(userId, method, path, body, event) {
+  // W14/D9. Writes are gated; reads are not — refusing to show a customer the
+  // record they already own is taking away something they were given, which is
+  // a different act from declining to create more.
+  if (method !== "GET") {
+    const gate = await gateP2Capability(event, "audit.schema_trust", body.workspace_id);
+    if (!gate.ok) return gate.response;
+  }
   const [, section] = path;
   const q = event.queryStringParameters || {};
 
@@ -2424,6 +2556,13 @@ async function requireSchemaTrustRefs(userId, body) {
 }
 
 async function localDirectoryRoute(userId, method, path, body, event) {
+  // W14/D9. Writes are gated; reads are not — refusing to show a customer the
+  // record they already own is taking away something they were given, which is
+  // a different act from declining to create more.
+  if (method !== "GET") {
+    const gate = await gateP2Capability(event, "audit.local_directory", body.workspace_id);
+    if (!gate.ok) return gate.response;
+  }
   const [, section, id, verb] = path;
   const q = event.queryStringParameters || {};
 
