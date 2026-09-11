@@ -2,10 +2,64 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-10 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE). TWO COLUMNS DECLARED IN 0030 HAD NEVER ONCE BEEN WRITTEN, AND INTAKE COULD NOT RECORD A GOAL OR A GEOGRAPHY — THE TWO THINGS THAT CAN NEVER BE BACK-FILLED. ON `discoverability-p1-to-p3`, LOCAL ONLY, **5 COMMITS**, TREE CLEAN.**
+> **Last updated: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE) + W3 (PENALTY MODEL, `v2`). THE BRD NAMES SEVEN CRITICAL CONDITIONS; TWO OF THEM HAD NO DETECTION AT ALL. ON `discoverability-p1-to-p3` @ `e64629c`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
+>
+> 🔴 **THE BRD NAMES SEVEN CRITICAL CONDITIONS AND TWO HAD NO DETECTION AT ALL** — *critical
+> entity schema invalid* and *severe CWV failure*. Both are now blockers at the PRD's own **0.10**,
+> taking the set to **NINE**. ⚠️ **DECISION D1 HELD IN FULL: NOT ONE EXISTING FACTOR MOVED.**
+> `AI_CRAWLER_BLOCKED` stays **0.20** (PRD says 0.15) and `CONTENT_HYDRATION_ONLY` stays **0.20**
+> (PRD says 0.15) — a page an engine cannot fetch or render is not a discounted page, it is an
+> absent one. Both DatIQ extensions stay first-class (`AI_CRAWLER_PARTIAL_BLOCK` 0.05,
+> `MOBILE_PARITY_MISSING` 0.10) and priority stays MULTIPLICATIVE, not the PRD's linear form.
+> ⚠️ **`scoringModel.test.js` NOW ASSERTS EVERY FACTOR**, so an "align to the PRD" pass fails the
+> build with the reasoning attached instead of silently re-calibrating every score in the product.
+> Full shipped-vs-PRD mapping: **`DISCOVERABILITY-MODULE.md` §3c**.
+>
+> ⚠️ **BOTH NEW RULES ARE DELIBERATELY NARROWER THAN THEIR NAMES.** The PRD names the conditions and
+> specifies neither rule, and a blocker that fires on ordinary pages teaches its reader to dismiss
+> the ones that matter. **`ENTITY_SCHEMA_INVALID` (EA-11)** fires only when an entity block is
+> PRESENT and cannot identify what it declares — a third state, not a worse version of an existing
+> one: *absent* is EA-01, *thin* is EA-02, **unusable** is this. The third is worse than the first,
+> which is why it earns a multiplier — a half-built node gets merged into the WRONG knowledge-graph
+> entry. 🔴 **`WebSite` IS EXCLUDED ON PURPOSE**: the sitelinks-searchbox pattern is a WebSite block
+> with `url` + `potentialAction` and no name, which is common AND correct; including it would fire
+> this blocker across a large share of the healthy web. A language-tagged `{"@value": …}` name
+> counts as named. **`SEVERE_CWV_FAILURE` (TA-17)** needs TWO metrics past POOR, or ONE at ≥ TWICE
+> poor (LCP ≥ 8s, INP ≥ 1000ms, CLS ≥ 0.5). The 2× clause exists because CrUX returns only LCP for
+> most low-traffic URLs — without it a twelve-second page escapes whenever field data is thin.
+>
+> ⚠️ **`SCORING_MODEL_VERSION` IS NOW `"v2"`, AND `auditDiff` REFUSES TO COMPARE ACROSS VERSIONS.**
+> A caveat under a confident "+4.2" is read as a footnote; the number is what gets screenshotted.
+> `incomparableDiff()` returns the **FULL SHAPE** with every delta refused, never `null` — four
+> consumers read named keys off it. It **still reports the issue list** (codes are a public contract
+> that does not move with the model, and it is the most actionable thing left) and **still refuses
+> penalty cleared/introduced** (the penalty SET is what changed, so "cleared" would credit a fix
+> nobody made). Pre-0048 rows carry no version and read as `v1`, so two of them still compare.
+> ⚠️ **v1 → v2 moves a score ONLY for a page that trips one of the two new conditions** — no weight,
+> no curve, no existing factor changed. Asserted, not claimed.
+>
+> ⚠️ **A TEST OF MINE WAS GREEN FOR THE WRONG REASON.** The first CWV tests passed `webVitals` in
+> the audit options; `runAudit` FETCHES vitals and `baseOpts` sets `skipWebVitals: true`, so the key
+> was silently ignored. **A test that supplies data through a parameter the code never reads is not
+> a weak test, it is a FALSE one** — and it is most likely exactly where a new rule is being bolted
+> onto an existing seam. Retargeted at `analyseTechnical`. Two assertions also hard-coded `"v1"`;
+> they read `SCORING_MODEL_VERSION` now, so a future bump cannot be "fixed" by editing the
+> assertion. ⚠️ **`auditDiff.js` HAD NO TEST FILE AT ALL** before this — the module the whole
+> validation loop rests on. Twelve now, ten on the version guard.
+>
+> 🔴 **STILL UNVERIFIED ANYWHERE REAL, ACROSS ALL THREE WORKSTREAMS.** Migrations **0048 and 0049
+> have only met in-process WASM Postgres** (no GoTrue, no PostgREST, shimmed roles), and **no audit
+> has been run against a live URL** on W1, W2 or W3 — the pipeline suite mocks the network boundary
+> deliberately, so neither new penalty has ever fired on a real page. Both gates stand before any of
+> this goes near staging.
+>
+> **Verified:** discoverability **23 files / 516 passed** · broader src+netlify **214 files / 2985
+> passed / 14 skipped / 0 failed** · db-verify **49 migrations / 505 assertions / 0 failed**.
+>
+> ── **Prior, and still current — W1 + W2** ───────────────────────────────────────────────────────
 >
 > ✅ **`staging` WAS ALREADY UP TO DATE WITH `main` — NOTHING TO SYNC.**
 > `git rev-list --count --no-merges origin/staging..origin/main` is **0**; the three commits on
@@ -13,11 +67,9 @@
 > staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
 > **`discoverability-p1-to-p3`** cut from it, **five commits** (HEAD `c93afa5`), **not pushed**.
 >
-> 🔴 **`$GITHUB_TOKEN` IS AN EXPIRED CLASSIC `ghp_` TOKEN.** `git fetch` and `git push` both fail
-> with `remote: Invalid username or token`. The credential helper reads that var and it is present
-> but dead, so **`netlify env`-style "it's configured" reasoning will mislead you** — the sync
-> comparison above is against the LAST SUCCESSFUL FETCH, not the live remote. Needs a fine-grained
-> PAT (`contents: read/write`) or `gh auth login` before anything can be pushed or re-verified.
+> ✅ **GITHUB AUTH WORKS NOW — the expired-token warnings below this line are SUPERSEDED.**
+> `git fetch` succeeds and the branch is pushed to **`Discoverability-P1-P3-implementation`**.
+> `main` and `staging` are untouched and no PR is open.
 >
 > 🔴 **`audit_signals.raw_value` AND `.evidence_json` HAVE EXISTED SINCE MIGRATION 0030 AND NOTHING
 > HAD EVER WRITTEN THEM** — NULL on every row for the whole life of the module — while an issue's

@@ -18,6 +18,142 @@
 
 ---
 
+## 2026-09-11 — Discoverability P1/W3: the two blockers the PRD names and the model had no answer for
+
+> **Branch:** `discoverability-p1-to-p3` @ `e64629c` · **Pushed to:** `Discoverability-P1-P3-implementation` · **`main`/`staging`:** untouched
+
+### 1. Quick orientation
+
+Third of the eight P1 workstreams. W1 built the evidence envelope, W2 the
+goal-based intake; W3 closes the penalty model against BRD §7.4.
+
+The BRD lists **seven** critical conditions that scale a page's score down
+multiplicatively. The shipped model answered five, extended two the PRD does not
+model at all, and had **no detection whatsoever** for the remaining two —
+*critical entity schema invalid* and *severe CWV failure*. Both now exist, at the
+PRD's own 0.10, taking the set to **nine blockers**.
+
+✅ **GitHub auth is live again** — `git fetch` succeeds and the branch is pushed.
+The expired `ghp_` token recorded in the W1/W2 entries is no longer the state.
+
+### 2. What was accomplished
+
+**Decision D1 held in full, and is now executable.** Not one existing factor
+moved. `AI_CRAWLER_BLOCKED` stays **0.20** against the PRD's 0.15 and
+`CONTENT_HYDRATION_ONLY` stays **0.20** against its 0.15 — a page an engine
+cannot fetch or cannot render is not a discounted page, it is an absent one, and
+15% understates a total exclusion. Both DatIQ extensions stay first-class
+(`AI_CRAWLER_PARTIAL_BLOCK` 0.05, `MOBILE_PARITY_MISSING` 0.10). Priority stays
+multiplicative rather than the PRD's linear `0.40I + 0.20C + 0.20B + 0.20E`.
+
+The important change is that **`scoringModel.test.js` now asserts every factor**.
+Until this session D1 lived only in a plan document, which is exactly the kind of
+decision a later session overturns in good faith while "aligning to the PRD". It
+now fails the build, with the reasoning attached.
+
+**Both new rules are deliberately narrower than their names.** The PRD names the
+conditions and specifies neither detection rule, and a blocker that fires on
+ordinary pages teaches its reader to dismiss the ones that matter.
+
+`ENTITY_SCHEMA_INVALID` / **EA-11** fires when an entity block is *present* and
+cannot identify what it declares. That is a third state, not a worse version of
+an existing one:
+
+| State | Code | What an engine does |
+|---|---|---|
+| absent | EA-01 (signal) | infers the publisher from prose — badly, but it can |
+| thin | EA-02 (signal) | resolves the entity, incompletely |
+| **unusable** | **EA-11 + blocker** | has a node to build and no identity to attach |
+
+The third case is worse than the first, which is the whole reason it earns a
+multiplier: a half-built node is what gets merged into the **wrong**
+knowledge-graph entry.
+
+`SEVERE_CWV_FAILURE` / **TA-17** fires on **two metrics past their poor
+threshold**, or **one at or beyond twice it** (LCP ≥ 8s, INP ≥ 1000ms, CLS ≥ 0.5).
+One marginal reading is already TA-09/10/11 and already priced into the
+`core_web_vitals` signal; this is the separate claim that performance has crossed
+from an experience problem into a discovery one.
+
+**`SCORING_MODEL_VERSION` → `v2`, and `auditDiff` now refuses to cross it.**
+`incomparableDiff()` returns the full shape with every delta refused rather than
+`null` — four consumers read named keys off that result, and an honest refusal
+must not arrive as a TypeError.
+
+### 3. Root cause analyses
+
+#### ⚠️ A test of mine was green for the wrong reason
+
+The first `SEVERE_CWV_FAILURE` tests passed `webVitals` in the audit options.
+`runAudit` **fetches** vitals from PageSpeed and `baseOpts` sets
+`skipWebVitals: true`, so the key was silently ignored — two of the five went red
+and the rest would have passed whatever the rule did. Retargeted at
+`analyseTechnical`, which is where readings actually enter the model.
+
+The general shape is worth recording: a test that supplies data through a
+parameter the code never reads is not a weak test, it is a **false** one, and it
+is most likely exactly where a new rule is being added to an existing seam.
+
+#### ⚠️ Two assertions hard-coded `"v1"`
+
+`auditPipeline.test.js` asserted `r.scoringModelVersion === "v1"` in two places.
+Those tests exist to prove the stamp is *present and current*; a literal makes
+every future bump look like a regression and teaches the next person to edit the
+assertion rather than ask whether the bump was right. Both now read
+`SCORING_MODEL_VERSION`.
+
+#### ⚠️ `auditDiff.js` had no test file at all
+
+The module the entire validation loop rests on. It has twelve tests now, ten of
+them on the version guard.
+
+#### ⚠️ I pointed TA-17 at a construct that does not exist
+
+`asset: "technical_brief"` — there is no such builder. The existing guard in
+`constructTemplates.test.js` ("every asset an issue promises can actually be
+built") catches it, and it is `null` now, like every other performance code.
+There is no snippet that makes a page fast, and offering one would break the
+placeholder-not-invention rule from the other direction.
+
+### 4. Verification evidence
+
+```
+discoverability suites   23 files / 516 passed / 0 failed
+broader src + netlify    214 files / 2985 passed / 14 skipped / 0 failed
+db-verify                49 migrations / 505 assertions / 0 failed
+```
+
+### 5. Environment state after this session
+
+- Branch `discoverability-p1-to-p3`, HEAD `e64629c`, pushed to
+  **`Discoverability-P1-P3-implementation`** on `origin`. `main` and `staging`
+  untouched, and no PR opened.
+- ✅ GitHub auth works. The expired-token warnings in the W1 and W2 entries are
+  superseded.
+- ⚠️ **Migrations 0048 and 0049 have still only met in-process WASM Postgres** —
+  no GoTrue, no PostgREST, shimmed roles. They have not run against a real
+  Supabase, and that gate stands before any of this goes near staging.
+- ⚠️ **No audit has been run against a live URL** on any of W1–W3. The pipeline
+  suite mocks the network boundary deliberately, so neither penalty has ever
+  fired on a real page.
+
+### 6. Open items for the next session
+
+1. **W4 — gap analysis v2.** Root-cause taxonomy (8 causes), observed-fact /
+   inference separation on the issue record, `recommended_module` (M1–M13), owner
+   role and workflow state persisted, issue↔recommendation linkage tightened.
+   Also the scheduled W1 item: **evidence reaches the API and the JSON export but
+   no screen** — `EvidencePanels.jsx` still renders the human sentence only.
+2. **Run migrations 0048 + 0049 against a real Supabase** before staging.
+3. **Exercise both new blockers against a live URL.** A page with a nameless
+   Organization block, and one with genuinely poor field vitals.
+4. `emphasiseForProfile` is still exported and called by nothing (W2 finding) —
+   wire it safely or delete it, in W5.
+5. Intake reaches the API, the JSON export and the audit header, but **not the
+   markdown/PDF report or the history list**.
+
+---
+
 ## 2026-09-10 — Discoverability P1/W2: goal-based intake, and the four fields that cannot be back-filled
 
 > **Branch:** `discoverability-p1-to-p3` @ `c93afa5` · **Target:** feature branch, **not pushed** · **`main`/`staging`:** untouched
