@@ -102,10 +102,11 @@ Name as many files as you want, in order. Add `0013`, then `0014`, then
 
 ## 4b. Applying `0055` + `0056` (P2 · W9 + W10) to dev / stage
 
-> ⚠️ **Not yet applied anywhere.** Both have only met in-process WASM Postgres
-> (PGlite) via `npm run test:db` — no GoTrue, no PostgREST, shimmed roles. The
-> agent sessions that built them have **no database credentials, no `supabase`
-> CLI and no `.env`**, so this is an operator step.
+> ✅ **APPLIED to dev / stage, 2026-09-11, by the owner.** Kept here because the
+> same procedure is what production will need, and because §4c's `0057`/`0058`
+> depend on both being present first.
+>
+> ⚠️ **PRODUCTION STILL NEEDS THEM**, along with everything from `0050` up.
 
 ### What they add
 
@@ -218,6 +219,112 @@ A result of `not_found` instead of a permission error means the grant did not
 take, and the function is callable by any signed-in user.
 
 ---
+
+## 4c. Applying `0057` + `0058` (D7 + P2 · W12) to dev / stage
+
+> ⚠️ **Not yet applied anywhere.** Both have only met in-process WASM Postgres
+> (PGlite) via `npm run test:db` — no GoTrue, no PostgREST, shimmed roles. The
+> session that built them has **no database credentials, no `supabase` CLI and
+> no `.env`**, so this is an operator step.
+
+### What they add
+
+| Migration | Objects |
+|---|---|
+| `0057_audit_subjects.sql` | 1 table (`audit_subjects`) · 1 function `upsert_audit_subject` · 1 trigger · 1 column `audits.subject_id` |
+| `0058_local_directory.sql` | 4 tables (`audit_directory_listings`, `audit_local_checks`, `audit_directory_matches`, `audit_local_findings`) · 2 triggers · no new function |
+
+Together they take a clean build to **101 tables / 50 functions / 27 triggers**,
+which `npm run test:db` asserts (725 assertions).
+
+### Ordering
+
+`0055` and `0056` **must** already be applied: `audit_subjects` carries real
+foreign keys to `audit_business_truth_records` (0055) and `audit_entities`
+(0056), and `0058`'s check table references `audit_subjects`. The numbering is
+the ordering; apply them in it.
+
+### `0057` runs a BACKFILL, and it is re-runnable
+
+Unlike `0055`/`0056`, `0057` writes data as well as schema: one `page` subject
+per existing `audit_targets` row, then `update audits set subject_id = …` for
+every audit that has none.
+
+🔴 **Both statements are written to be safely re-applied** (`on conflict do
+nothing`, plus `where a.subject_id is null`), and `npm run test:db` proves it by
+running them a second time and asserting the row count does not move. A
+migration that is only correct once cannot be re-applied after a partial
+failure, which is exactly when you most need to.
+
+⚠️ **`audits.subject_id` stays NULLABLE and NULL is valid.** Every audit written
+before this migration has none, and the readers fall back to `target_id`. Do not
+"tidy" it to `not null` later — that is the backward-compatibility contract, and
+`audits.target_id` must never be dropped (see the migration header).
+
+### Apply
+
+Same subset path §4b uses — `npm run migrate:prod` has no stop-at-N flag and a
+bare run replays everything from `0001`:
+
+```bash
+PGPASSWORD=... psql "$DEV_SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+  -f supabase/migrations/0057_audit_subjects.sql \
+  -f supabase/migrations/0058_local_directory.sql
+```
+
+⚠️ Use the **Direct** connection string (port 5432), not the pooler, and
+URL-encode special characters in the password.
+
+### Verify
+
+```sql
+-- 1. The table and the column exist.
+select count(*) from public.audit_subjects;
+select column_name from information_schema.columns
+ where table_schema='public' and table_name='audits' and column_name='subject_id';
+
+-- 2. The backfill adopted every existing audit that had a target.
+select count(*) as orphans
+  from public.audits a
+ where a.target_id is not null and a.subject_id is null;
+-- Expect 0. A non-zero count means the second backfill statement did not run.
+
+-- 3. No subject carries more or fewer than one reference.
+select count(*) as malformed from public.audit_subjects
+ where (target_id is not null)::int
+     + (entity_id is not null)::int
+     + (truth_record_id is not null)::int <> 1;
+-- Expect 0. The CHECK makes this impossible; run it anyway after a backfill.
+
+-- 4. The W12 tables are locked down like every other module table.
+select tablename, rowsecurity from pg_tables
+ where schemaname='public'
+   and tablename in ('audit_subjects','audit_directory_listings',
+                     'audit_local_checks','audit_directory_matches',
+                     'audit_local_findings');
+-- Expect rowsecurity = true on all five.
+
+-- 5. Nothing is granted to anon or authenticated.
+select table_name, grantee from information_schema.role_table_grants
+ where table_schema='public' and grantee in ('anon','authenticated')
+   and table_name like 'audit_%';
+-- Expect zero rows.
+```
+
+### The SECURITY DEFINER grant
+
+`upsert_audit_subject` is `security definer` and is revoked from `public`,
+`anon` and `authenticated`, granted only to `service_role` — the same posture as
+`promote_business_truth_version` and `approve_entity_relationship`. Confirm:
+
+```sql
+select proname, proacl from pg_proc
+ where proname = 'upsert_audit_subject';
+-- proacl must NOT contain =X/ for anon or authenticated.
+```
+
+🔴 **A `security definer` function reachable by `anon` bypasses RLS by
+definition.** Check this after every apply, not only the first.
 
 ## 5. Database functions — no separate step
 

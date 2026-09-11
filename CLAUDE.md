@@ -2,7 +2,109 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — CONSOLIDATION + P2 · W11: SUBJECT SCORING (BDS / PDS / SFS). THE MODULE COULD SCORE A PAGE; IT COULD NOT SCORE THE BRAND, PRODUCT OR SERVICE A BUYER ACTUALLY ASKS AN ENGINE ABOUT. W9 AND W10 ARE NOW MERGED INTO `Discoverability-P1-P3-implementation`, WHICH IS THE ONE LIVE BRANCH. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> **Last updated: 2026-09-11 — D7 SIGNED OFF AND BUILT (`0057`), AND P2 · W12: LOCAL & DIRECTORY INTELLIGENCE (`0058`). THE COMPARE ROUTE WAS COMPARING TWO DIFFERENT PAGES AND PRINTING A CONFIDENT NUMBER FOR IT. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4c](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> ✅ **`0055` AND `0056` ARE APPLIED TO DEV/STAGE** (owner-confirmed). ✅ **`claude/p2-w9-work-streams-o4gvmq`
+> IS FULLY MERGED** — `git merge-base --is-ancestor` passes and it is **0 commits ahead**, re-verified
+> this session rather than carried forward. 🔴 **The remote branch still exists and still cannot be
+> deleted from here** — delete it from the branches page.
+>
+> 🔴 **THE BUG D7 FOUND, WHICH ITS OWN DESIGN DOC DID NOT PREDICT.** That doc says comparability
+> "today is same `target_id`". **In the code it was nothing at all**: `compareRoute` compared any two
+> audits the caller owned, so an audit of `/pricing` against one of `/about` returned a confident
+> **"+6.2"** that meant nothing. The UI never exercised it — it passes the audit's own recorded
+> baseline — but **`/api/v1` key holders reach the same handler**, and a number on a report is what
+> gets screenshotted. `sameSubject()` now gates it.
+>
+> ⚠️ **THE FALLBACK IS THE CAREFUL PART, NOT A CONVENIENCE.** Two pre-0057 audits compare on
+> `target_id`, which every audit has had since 0030 — but **two NULL subjects are NEVER treated as a
+> match**, because `null === null` would make every old audit comparable with every other old audit
+> regardless of what page it was about. That is worse than the question being unanswerable.
+>
+> ⚠️ **A SUBJECT MISMATCH WITHHOLDS THE ISSUE LISTS; A VERSION MISMATCH DOES NOT.** Codes survive a
+> model bump on the same page, so "AC-01 was resolved" stays true and is the most actionable thing
+> left. Across two different subjects it credits a fix on one thing to another — the silent
+> mis-attribution `audit_recommendations.issue_id` already had to be fixed for. `incomparableDiff`
+> now carries a CAUSE; the version path is byte-compatible and its 12 tests passed unchanged.
+>
+> 🔴 **`audits.target_id` IS KEPT AND MUST NEVER BE DROPPED**, and `subject_id` is NULLABLE ON
+> PURPOSE. Every pre-0057 audit has none and keeps working; `ensureSubject` returning null does not
+> fail the audit, because that lands it in a state the readers already handle. **The backfill is
+> proven re-runnable** — db-verify applies it twice and asserts the row count does not move, since a
+> migration that is only correct once cannot be re-applied after a partial failure.
+>
+> ── **P2 · W12 — LOCAL & DIRECTORY INTELLIGENCE** ────────────────────────────────────────────────
+>
+> 🔴 **NORMALISATION IS MOST OF `napModel.js`, AND THAT IS THE POINT.** "Pvt Ltd" against "Private
+> Limited" is the SAME NAME. "Rd" against "Road" is the SAME STREET. `+91 80 4718 2200` against
+> `08047182200` is the SAME PHONE. **A checker that reports those three as mismatches produces a list
+> nobody reads, and then the one real mismatch in it goes unfixed.** Every equivalence is a declared,
+> tested rule, never a fuzzy ratio.
+>
+> ⚠️ **`LD-05` EXISTS BECAUSE THE OBVIOUS CHECK IS WRONG ON REGISTRIES.** A registered office is
+> routinely not a shopfront. Reporting an MCA difference as a NAP mismatch sends a customer to amend
+> a **statutory filing** to match a shopfront — expensive, slow, and the wrong fix — so it gets its
+> own low-severity code that says what it actually means.
+>
+> ⚠️ **THE FIVE TIERS RANK BY REACH, NOT BY TRUST.** A statutory registry is the most trustworthy
+> record a business has and one of the least READ, which is why `registry` sits **below**
+> `major_aggregator`. Ranking by trust tells a customer to fix a filing almost nothing reads while
+> their Google profile says the wrong thing.
+>
+> ⚠️ **AN UNCHECKED SOURCE IS EXCLUDED AND NAMED, NEVER SCORED 0.** Under D5 most customers authorise
+> nothing, so zero-for-unchecked would open every local report near zero — a number about our
+> connectors, not their business — then show a phantom jump the day they connect one. Same for a
+> field a source never publishes: **G2 shows a name and nothing else**, and scoring its three absent
+> fields as 0 would report a perfectly correct G2 listing at 30. ⚠️ **`not_published` and `absent` are
+> still DIFFERENT states** — one is our knowledge of the format, the other is the source leaving a
+> field blank, and only the second is actionable.
+>
+> ⚠️ **`coverageClaim()` IS THE ONE PLACE THE COVERAGE SENTENCE IS BUILT**, and a test sweeps every
+> input for the forbidden flat **"N directories audited"**. That claim is false for every customer who
+> has authorised nothing — D5's copy rule, enforced rather than remembered.
+>
+> ⚠️ **`acquisition: "authorized_api"` IS REFUSED FROM A REQUEST BODY.** Fidelity is a claim about HOW
+> an observation was obtained, and a claim a client can set is not a claim — it is `?consented=true`
+> wearing a third hat. ⚠️ **Source ids are deliberately NOT enumerated in a SQL CHECK** (departing
+> from 0056): a new market is a dozen new sources, and each would otherwise be a migration. The TIER
+> is constrained instead, and `local-directory-parity.test.js` **parses the CHECK out of the
+> migration** rather than restating it — a copy drifts exactly as `EVENT_TO_SOURCE` did.
+>
+> ✅ **THE W12 TABLES ARE ACTUALLY WRITTEN.** This schema's own headline pattern is three columns
+> declared, reviewed, merged and written by nothing. `saveLocalCheck` is called by the route and the
+> contract test asserts the CALL, confirmed RED first.
+>
+> ── **TWO TEST DEFECTS FOUND AND FIXED** ─────────────────────────────────────────────────────────
+>
+> 🔴 **A TEST OF MINE WAS GREEN FOR THE WRONG REASON.** "ignores a stored listing whose source is no
+> longer in the registry" passed against a deliberately broken model, because THREE guards implemented
+> it — a `SOURCE_BY_ID` pre-filter, `matchDirectory`'s own refusal, and `.filter(Boolean)` — and the
+> assertion was pinned to the redundant one. Removed the pre-filter; the test now goes red when the
+> real guard does. **Re-checked in both directions.**
+>
+> ✅ **THE HAND-WRITTEN `STORE_EXPORTS` LIST IS GONE.** It went red on W10 and again on W12, and the
+> fix each time was to retype names into an array. `discoverability-api.test.js` now derives the mock
+> from `importActual` like the newer files, and its parity test asserts the **DERIVATION**, not the
+> contents — a contents check passes the day it is written and fails silently the next time the store
+> grows, which is what happened twice.
+>
+> **Verified:** `npm run test:all` — **9 of its 10 gates green** (readiness · unit · contract ·
+> integration · system · db · build · prerender · security). `npx vitest run` reads **384 files /
+> 6383 passed / 0 skipped / 0 failed** (+139) · db-verify **58 migrations / 725 assertions / 0
+> failed** (+61) · referral 17 · workflows 56 · build clean · check:prerender 28 pages / 112 refs ·
+> security clean. **13 behavioural guards confirmed RED first.** ⚠️ **The 10th gate, Playwright smoke,
+> fails on the CONTAINER** — chromium **1194** installed against `@playwright/test`'s **1234**; re-run
+> against the bundled binary (throwaway untracked config, `executablePath: "/opt/pw-browsers/chromium"`,
+> deleted after) gives **142 passed / 1 skipped / 0 failed**. 🔴 **`0057` AND `0058` HAVE ONLY MET WASM
+> POSTGRES** — [docs/DB-MIGRATION-RUNBOOK.md §4c](docs/DB-MIGRATION-RUNBOOK.md) is the operator
+> procedure, and production is now **ELEVEN** migrations behind.
+>
+> ── **Prior, and still current — CONSOLIDATION + P2 · W11** ──────────────────────────────────────
+>
+> **Prior: 2026-09-11 — CONSOLIDATION + P2 · W11: SUBJECT SCORING (BDS / PDS / SFS). THE MODULE COULD SCORE A PAGE; IT COULD NOT SCORE THE BRAND, PRODUCT OR SERVICE A BUYER ACTUALLY ASKS AN ENGINE ABOUT. W9 AND W10 ARE NOW MERGED INTO `Discoverability-P1-P3-implementation`, WHICH IS THE ONE LIVE BRANCH. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
 > [docs/DB-MIGRATION-RUNBOOK.md §4b](docs/DB-MIGRATION-RUNBOOK.md).
@@ -882,9 +984,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`b7a1c52` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `Discoverability-P1-P3-implementation` — P2/**W11**: subject scoring (`subjectScoring.js`, BDS/PDS/SFS, pure, not yet persisted pending **D7**). Under it `b7a1c52` (14 Stripe tests un-skipped, D7 recommendation, migration runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **56** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**664 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` again this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`04e8df3` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `Discoverability-P1-P3-implementation` — **D7** (`0057_audit_subjects.sql`, the subject registry) + P2/**W12** (`0058_local_directory.sql`, `directorySources.js`, `napModel.js`, `/local-directory/*`). Under it `04e8df3` (**W11** subject scoring), `b7a1c52` (14 Stripe tests un-skipped, the D7 recommendation, runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **58** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**725 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---
@@ -1438,6 +1540,8 @@ ThemeProvider
 | Discoverability scoring | **`unknown` is NEVER `0`.** An unmeasured or not-applicable signal is EXCLUDED from its pillar and its weight redistributed — `weightedMean()` in `scoringModel.js` is the one implementation. Scoring it 0 would subtract points during a third-party outage and then show a phantom improvement when it recovered, making the trend line a fiction. Every score carries `coverage`. `src/lib/discoverability/*` is PURE and imported by BOTH React and `netlify/`, exactly like `entitlementModel.js`, so the score a user sees and the score the server stored cannot be computed by different code. |
 | Discoverability profiles | **A profile is a LENS, not different maths.** All four framework views are always computed with identical weightings; the profile only picks which one leads. Re-weighting per profile would make two audits of the same page incomparable and show movement no page change caused. |
 | Discoverability constructs | Generated assets emit an explicit `TODO:` for anything the audit could not observe. These are pasted into live sites; a block with a hallucinated founder name is worse than no block, because it gets published without being read. FAQ and HowTo markup is built ONLY from visibly-present content — generating it from nothing would manufacture the SH-07 defect the engine exists to report. |
+| D7 — the subject model | **`audit_subjects` (0057) is the registry; `audit_issues` was NOT touched.** The polymorphism lives in two CHECK constraints over three REAL foreign keys, never in a bare uuid the database cannot check — this repo has been burned three times by a pointer nothing could verify. 🔴 **`audits.target_id` must NEVER be dropped** (it is the fast path, and every existing query uses it) and **`audits.subject_id` must stay NULLABLE** (every pre-0057 row has none). Comparability is `sameSubject()`: same subject where both have one, falling back to `target_id` otherwise — **and two NULL subjects are never a match**, or every old audit becomes comparable with every other. A subject mismatch WITHHOLDS the issue lists; a version mismatch keeps them, because codes survive a model bump on the same page but mean nothing across two different things. |
+| W12 — NAP and directories | **The hard part is not comparing strings, it is not crying wolf.** "Pvt Ltd" vs "Private Limited", "Rd" vs "Road" and `+91 80 4718 2200` vs `08047182200` are the SAME values; a checker that flags them produces a list nobody reads, and the one real mismatch in it goes unfixed. Every equivalence in `napModel.js` is a declared, tested rule — never a fuzzy ratio. 🔴 **An unchecked source, and a field a source never publishes, are EXCLUDED and redistributed, never scored 0** (D5 means most customers authorise nothing, and G2 shows a name and nothing else). ⚠️ **Tiers rank by REACH, not trust** — a registry is the most trustworthy record and one of the least read. ⚠️ **`LD-05` is the registry carve-out**: a registered office is not a shopfront, so an MCA difference must never be reported as a NAP mismatch. ⚠️ **`coverageClaim()` is the ONE place the coverage sentence is built** and may never produce a flat "N directories audited" — D5's copy rule. ⚠️ **Source ids are deliberately not in a SQL CHECK** (unlike 0056's entity types); the TIER is, and `local-directory-parity.test.js` parses that CHECK out of the migration rather than restating it. |
 | Discoverability codes | Signal codes and issue codes (`AC-01`, `TA-07`, …) are a **PUBLIC CONTRACT**: they appear in JSON payloads, webhook bodies, stored rows and every historical diff. "AC-02 was resolved" is only a true sentence if AC-02 still means what it did when the baseline was taken. Add codes; never repurpose or renumber one. |
 | Prerendered asset refs | **The asset hashes committed inside `public/<route>/index.html` are NOT load-bearing and must never be trusted to match a deploy.** Those pages are rendered by a LOCAL build; Netlify builds with the site's own `VITE_*` values inlined, so content hashes differ — the entry and `supabaseClient` chunks diverge while `index-*.css` and `apiClient-*.js` often do not, which is why three of four refs resolve and the bug hides. `scripts/sync-prerender-assets.mjs` runs after `vite build` and repoints every `/assets/` ref in `dist/` to what that build produced; it FAILS the build on an unresolved ref. Never "fix" a mismatch by re-running `npm run prerender` and committing — that only re-syncs a local build to a local build, which is what made this invisible twice. Never rewrite `public/` at build time either: it is the reviewable source of the prerendered CONTENT. 🔴 **And never read a 200 as proof an asset exists** — the SPA fallback answers a missing `/assets/*.js` with `index.html` at status 200, and the browser silently refuses the HTML module script, so React just never boots. Check `content-type`. |
 | Help page numbering | `public/help/NN-slug.html` is derived from the `## N.` headings in `docs/DatIQ-User-Guide.md`, so inserting a section renumbers everything after it. Resolve help pages by **SLUG, never by number** — the readiness audit hardcoded `11-plans-usage-and-billing.html` and reported "pricing source missing" when only a digit had moved. Every renumbered URL needs a 301 in `scripts/site-routes.mjs` (mirrored into `netlify.toml`); `page-ownership.test.mjs` asserts they match. |

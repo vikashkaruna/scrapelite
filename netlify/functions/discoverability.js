@@ -68,7 +68,17 @@ import { runAudit } from "./lib/audit/auditPipeline.js";
 import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
 import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
-import { diffAudits, buildTrend } from "../../src/lib/discoverability/auditDiff.js";
+import { diffAudits, buildTrend, incomparableDiff, subjectMismatchCause } from "../../src/lib/discoverability/auditDiff.js";
+import { sameSubject, subjectMismatchReason } from "../../src/lib/discoverability/subjectModel.js";
+import {
+  SOURCE_TIERS, TIER_IDS, ACQUISITION, DIRECTORY_SOURCES, SOURCE_BY_ID,
+  sourcesForRegion, coverageClaim, unlockAction,
+} from "../../src/lib/discoverability/directorySources.js";
+import {
+  NAP_FIELDS, NAP_FIELD_IDS, MATCH_STATES, matchDirectory, napScore,
+  LOCAL_FINDING_CODES, localFindings, correctionPack,
+  serviceRadiusQueries, radiusCoverage,
+} from "../../src/lib/discoverability/napModel.js";
 import {
   buildMarkdownReport, issuesToCsv, recommendationsToCsv, toJsonPayload,
   signalsToCsv, scoresToCsv, bundleToCsv, brandCsv,
@@ -312,8 +322,19 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     return { ok: false, statusCode: 503, body: { error: "Audit storage is unavailable. Try again shortly.", code: "STORAGE_UNAVAILABLE" } };
   }
 
+  // D7 — the subject registry. A page audit gets a `page` subject over the same
+  // target, so every audit from here on is addressable the same way a brand
+  // audit will be. ⚠️ `null` is NOT a failure path: `audits.subject_id` is
+  // nullable precisely because every pre-0057 row carries none, so an audit
+  // whose subject could not be resolved lands in a state the readers already
+  // handle. `target_id` stays authoritative for the page case regardless.
+  const subjectId = await store.ensureSubject(userId, {
+    kind: "page", targetId, label: options.label || canonical, canonicalDomain: host,
+    workspaceId: options.workspaceId || null,
+  });
+
   const created = await store.createAudit(userId, {
-    targetId, targetUrl: rawUrl,
+    targetId, subjectId, targetUrl: rawUrl,
     deviceProfile: options.deviceProfile, auditProfile: options.auditProfile,
     // What is known before the fetch. `persistResult` corrects the profile and
     // its source to whatever the run actually applied, exactly as it already
@@ -676,6 +697,11 @@ export const handler = async (event) => {
       return json(200, { recommendations: rows, count: rows.length });
     }
 
+    // ── /local-directory ───────────────────────────────────────────────────
+    if (root === "local-directory") {
+      return await localDirectoryRoute(userId, method, path, body, event);
+    }
+
     // ── /entity-graph ──────────────────────────────────────────────────────
     if (root === "entity-graph") {
       return await entityGraphRoute(userId, method, path, body, event);
@@ -847,10 +873,39 @@ async function rerunRoute(event, userId, auditId, body) {
 async function compareRoute(userId, currentFull, baselineId) {
   const baselineFull = await store.getAuditFull(userId, baselineId);
   if (!baselineFull) return notFound("Baseline audit not found.");
-  const diff = diffAudits(rehydrate(baselineFull), rehydrate(currentFull));
+
+  // 🔴 D7 — REFUSE A COMPARISON BETWEEN TWO DIFFERENT THINGS.
+  //
+  // This route accepts any baseline the caller owns, and until now it compared
+  // whatever it was given: an audit of /pricing against an audit of /about
+  // produced a confident "+6.2" that meant nothing. The UI happens to pass the
+  // audit's own recorded baseline, so it was never exercised from a browser —
+  // but `/api/v1` key holders reach the same handler, and a number on a report
+  // is what gets screenshotted.
+  //
+  // `sameSubject` carries the backward-compatibility rule: two pre-0057 audits
+  // fall back to `target_id`, which every audit has had since 0030, and two
+  // NULL subjects are NEVER treated as a match.
+  const same = sameSubject(baselineFull.audit, currentFull.audit);
+  const diff = same
+    ? diffAudits(rehydrate(baselineFull), rehydrate(currentFull))
+    : incomparableDiff(
+        rehydrate(baselineFull), rehydrate(currentFull),
+        baselineFull.result?.scoring_model_version || "v1",
+        currentFull.result?.scoring_model_version || "v1",
+        subjectMismatchCause(subjectMismatchReason(baselineFull.audit, currentFull.audit)),
+      );
+
   return json(200, {
-    baseline: { audit_id: baselineFull.audit.id, created_at: baselineFull.audit.created_at },
-    current: { audit_id: currentFull.audit.id, created_at: currentFull.audit.created_at },
+    baseline: {
+      audit_id: baselineFull.audit.id, created_at: baselineFull.audit.created_at,
+      subject_id: baselineFull.audit.subject_id || null,
+    },
+    current: {
+      audit_id: currentFull.audit.id, created_at: currentFull.audit.created_at,
+      subject_id: currentFull.audit.subject_id || null,
+    },
+    comparable: same,
     diff,
   });
 }
@@ -2101,3 +2156,190 @@ async function refreshGraphConflicts(userId, truthRecordId = null) {
     return null;
   }
 }
+
+// ── /local-directory — Local and Directory Intelligence (W12) ──────────────
+//
+//   GET    /local-directory/schema                     tiers, sources, LD codes
+//   GET    /local-directory/listings?truth_record_id=   what each source says
+//   POST   /local-directory/listings                    record an observation
+//   DELETE /local-directory/listings/{id}
+//   POST   /local-directory/check                       run a NAP check and STORE it
+//   GET    /local-directory/checks?truth_record_id=     history
+//   GET    /local-directory/checks/{id}                 one check, with its matches
+//   POST   /local-directory/findings/{id}/resolve
+//   POST   /local-directory/radius                      build service-area queries
+//
+// ⚠️ `acquisition` IS NOT ACCEPTED FROM THE CLIENT AS `authorized_api`.
+// The fidelity of an observation is a claim about HOW it was obtained, and a
+// claim a request body can set is not a claim — it is the `?consented=true`
+// defect wearing a third hat. A client may record `declared_url` or
+// `public_listing`; an API-sourced listing can only be written by the connector
+// that actually held the customer's token.
+const CLIENT_ACQUISITION = new Set(["declared_url", "public_listing"]);
+
+async function localDirectoryRoute(userId, method, path, body, event) {
+  const [, section, id, verb] = path;
+  const q = event.queryStringParameters || {};
+
+  if (section === "schema" && method === "GET") {
+    return json(200, {
+      tiers: TIER_IDS.map((t) => ({ ...SOURCE_TIERS[t] })),
+      acquisition: Object.values(ACQUISITION),
+      sources: DIRECTORY_SOURCES.map((src) => ({ ...src, unlock: unlockAction(src.id) })),
+      nap_fields: NAP_FIELD_IDS.map((f) => ({ ...NAP_FIELDS[f] })),
+      match_states: Object.values(MATCH_STATES),
+      finding_codes: Object.values(LOCAL_FINDING_CODES),
+    });
+  }
+
+  // ── Listings ─────────────────────────────────────────────────────────────
+  if (section === "listings") {
+    if (method === "GET") {
+      const rows = await store.listDirectoryListings(userId, { truthRecordId: q.truth_record_id || null });
+      return json(200, {
+        listings: rows,
+        count: rows.length,
+        // The honest sentence, built in one place so it cannot drift into
+        // marketing copy in a stronger form. See D5.
+        coverage_claim: coverageClaim({ checked: rows.length, region: q.region || null }),
+      });
+    }
+
+    if (method === "POST") {
+      const sourceId = String(body.source_id || "").trim();
+      const source = SOURCE_BY_ID[sourceId];
+      if (!source) return bad(`Unknown directory source: ${sourceId || "(none)"}.`);
+
+      const acquisition = String(body.acquisition || source.acquisition);
+      if (!CLIENT_ACQUISITION.has(acquisition)) {
+        return bad(
+          "A listing recorded through this endpoint is either a declared URL or a public listing. " +
+          "An authorised-API observation can only be written by the connector that held the token.");
+      }
+      if (!body.listing_url) return bad("A listing URL is required — an observation nobody can go and check is not evidence.");
+
+      const saved = await store.upsertDirectoryListing(userId, {
+        truthRecordId: body.truth_record_id || null,
+        sourceId, sourceTier: source.tier, acquisition,
+        listingUrl: body.listing_url,
+        observedName: body.observed_name || null,
+        observedAddress: body.observed_address || null,
+        observedPhone: body.observed_phone || null,
+        observedPostalCode: body.observed_postal_code || null,
+        observedLocality: body.observed_locality || null,
+        observedExtra: body.observed_extra || null,
+        evidence: body.evidence || null,
+        workspaceId: body.workspace_id || null,
+      });
+      if (!saved.ok) return json(503, { error: "Could not record the listing.", code: "STORAGE_UNAVAILABLE", detail: saved.error });
+      return json(201, { listing: saved.listing });
+    }
+
+    if (method === "DELETE" && id) {
+      const r = await store.deleteDirectoryListing(userId, id);
+      if (r.notFound) return notFound("Listing not found.");
+      return json(200, { deleted: true });
+    }
+  }
+
+  // ── Run a check ──────────────────────────────────────────────────────────
+  if (section === "check" && method === "POST") {
+    const truthRecordId = body.truth_record_id || null;
+    const canonical = body.canonical && typeof body.canonical === "object" ? body.canonical : {};
+    const region = body.region || null;
+
+    const listings = await store.listDirectoryListings(userId, { truthRecordId });
+    const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES).map((src) => src.id);
+
+    const matches = listings
+      .map((l) => {
+        const m = matchDirectory(l.source_id, canonical, {
+          name: l.observed_name, address: l.observed_address,
+          phone: l.observed_phone, postal_code: l.observed_postal_code,
+        }, { country: body.country || "IN" });
+        // `matchDirectory` returns null for a source the registry no longer
+        // declares — a source can be retired, and scoring a row whose weighting
+        // nothing declares would be scoring against a number nobody chose.
+        // ⚠️ This is the ONLY place that drop happens. An earlier draft also
+        // pre-filtered on SOURCE_BY_ID, which made the test covering it pass
+        // against a broken model: two guards, one assertion, and the assertion
+        // was pinned to the redundant one.
+        return m ? { ...m, listingId: l.id } : null;
+      })
+      .filter(Boolean);
+
+    const score = napScore(matches, configured);
+    const findings = localFindings(matches, {
+      canonical,
+      // LD-04 is raised only for a TOP-tier source with no listing at all —
+      // absence low down the tiers is ordinary and saying so would bury the
+      // one absence that matters.
+      uncheckedTopTier: score.unchecked,
+    });
+
+    // 🔴 THE WRITE. Declared-and-never-written is this schema's own recorded
+    // failure mode, three times over. The contract test asserts this call.
+    const saved = await store.saveLocalCheck(userId, {
+      truthRecordId, subjectId: body.subject_id || null,
+      workspaceId: body.workspace_id || null, region, score, matches, findings,
+    });
+
+    return json(saved.ok ? 201 : 200, {
+      check: saved.check || null,
+      persisted: Boolean(saved.ok),
+      score, matches, findings,
+      coverage_claim: coverageClaim({ checked: score.checkedCount, region }),
+      corrections: matches
+        .filter((m) => m.mismatches.length > 0)
+        .map((m) => correctionPack(m.sourceId, canonical, m)),
+      ...(saved.ok ? {} : { warning: "The check ran but could not be stored.", detail: saved.error }),
+    });
+  }
+
+  // ── History ──────────────────────────────────────────────────────────────
+  if (section === "checks" && method === "GET") {
+    if (id) {
+      const full = await store.getLocalCheckFull(userId, id);
+      if (!full) return notFound("Check not found.");
+      return json(200, full);
+    }
+    const rows = await store.listLocalChecks(userId, {
+      truthRecordId: q.truth_record_id || null, subjectId: q.subject_id || null,
+    });
+    return json(200, { checks: rows, count: rows.length });
+  }
+
+  // ── Resolve a finding ────────────────────────────────────────────────────
+  if (section === "findings" && id && verb === "resolve" && method === "POST") {
+    const resolution = String(body.resolution || "");
+    if (!LOCAL_RESOLUTIONS.includes(resolution)) {
+      return bad(`Resolution must be one of: ${LOCAL_RESOLUTIONS.join(", ")}.`);
+    }
+    const r = await store.resolveLocalFinding(userId, id, resolution);
+    if (r.notFound) return notFound("Finding not found.");
+    if (!r.ok) return json(503, { error: "Could not resolve the finding.", code: "STORAGE_UNAVAILABLE", detail: r.error });
+    return json(200, { finding: r.finding });
+  }
+
+  // ── Service radius ───────────────────────────────────────────────────────
+  if (section === "radius" && method === "POST") {
+    const built = serviceRadiusQueries({
+      categories: body.categories || [],
+      serviceAreas: body.service_areas || [],
+      brandName: body.brand_name || null,
+    });
+    const coverage = radiusCoverage({
+      serviceAreas: body.service_areas || [],
+      listingLocalities: body.listing_localities || [],
+    });
+    // Built, never run. Sampling them is the citation path's job, under its own
+    // budget — generating and executing in one call is the shape that produced
+    // this module's August 504.
+    return json(200, { ...built, coverage, executed: false });
+  }
+
+  return notFound("Unknown local-directory endpoint.");
+}
+
+/** The listing resolution vocabulary, mirroring 0058's CHECK. */
+const LOCAL_RESOLUTIONS = ["listing_updated", "record_updated", "not_a_conflict", "wont_fix"];

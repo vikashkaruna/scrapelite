@@ -244,9 +244,9 @@ in the header**, and the **AI-visibility panel** (mention/cite/recommend %, top 
 |---|---|---|
 | 9.1 | Canonical Business Truth Record (+ versions, approval-before-canonical) | ✅ W9 — `0055`, three tables, approval enforced in three layers |
 | 9.2 | Entity Graph Builder (14 entity types, 9 predicates, evidence + confidence on every relation) | ✅ W10 — `0056`, four tables, domain/range enforced |
-| 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | 🟡 W11 — model + tests; TC redistributed pending W13; persistence awaits D7 |
+| 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | 🟡 W11 — model + tests; TC redistributed pending W13. **D7 is signed off and built (`0057`)**, so persistence is unblocked; the surface lands with W13 when TC exists to store |
 | 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | 🟡 W11 — model + tests; TP pending W13 |
-| 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | 🟡 W11 — model + tests; GA pending W12, TR pending W13 |
+| 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | 🟡 W11 — model + tests; **GA now measurable (W12 shipped)**, TR pending W13 |
 | 9.6 | Local & Directory Intelligence (5-tier source registry, NAP formula, per-directory match, correction packs, India-first sources) | ❌ |
 | 9.7 | Schema intelligence (8 schema types + `Schema = 0.30O + 0.30L + 0.20S + 0.10F + 0.10G`) | ⚠️ Two signals exist (`schema_identity_completeness`, `structured_data_validity`); no per-type validation matrix, no Schema score |
 | 9.8 | Trust & Proof Audit `TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X` | ❌ |
@@ -354,11 +354,22 @@ bridged to `canonical_entities`.
 BDS, PDS, SFS with their full component signal sets; product entity cards, missing-facts matrix,
 comparison blueprints, service intent coverage map, service/industry/location page backlog.
 
-**W12 · Local & Directory Intelligence** *(gated on D5; longest lead time)* — `directory_sources`
-registry with 5-tier weighting, NAP normalisation, per-directory `Match_d`, weighted NAP score,
-findings, correction packs, service-radius query builder, India-first source pack.
+**W12 · Local & Directory Intelligence** — ✅ **SHIPPED.** `directorySources.js` (18 sources, five
+tiers, D5's three acquisition modes, India-first pack), `napModel.js` (normalisation, per-field match
+states, `Match_d`, the weighted NAP score, eight `LD-xx` findings, correction packs, the
+service-radius query builder), migration `0058` (4 tables), `/local-directory/*`.
+🔴 **NORMALISATION IS MOST OF THE MODULE AND THAT IS THE POINT** — "Pvt Ltd" against "Private
+Limited", "Rd" against "Road" and `+91 80 4718 2200` against `08047182200` are the SAME values, and a
+checker that reports them as mismatches produces a list nobody reads, after which the one real
+mismatch in it goes unfixed. ⚠️ **`LD-05` exists because the obvious check is wrong on registries**: a
+registered office is routinely not a shopfront, so an MCA difference gets its own low-severity code
+rather than sending a customer to amend a statutory filing to match a shop. ⚠️ **An unchecked source
+is EXCLUDED and named, never scored 0** — under D5 most customers authorise nothing, and a
+zero-for-unchecked rule would open every local report near zero and then jump the day they connect
+one. ⚠️ **`coverageClaim()` is the one place the coverage sentence is built**, and a test asserts the
+forbidden flat "N directories audited" phrasing can never come out of it.
 
-**W13 · Schema intelligence + Trust & Proof** — 8-schema validation matrix and Schema score;
+**W13 · Schema intelligence + Trust & Proof** *(next; unblocks TC in BDS and TP in PDS, both currently redistributed)* — 8-schema validation matrix and Schema score;
 `schema_entities`; `trust_evidence` and the TC score with source quality/recency/relevance weighting
 rather than raw counts.
 

@@ -1,9 +1,30 @@
 # D7 — the P2 subject model
 
-> **Status: RECOMMENDATION, not yet built.** Needed before **W11**
-> (brand / product / service scoring), which is the first workstream that audits
-> something other than a page.
-> Written 2026-09-11, after W9 and W10 shipped without pre-empting it.
+> **Status: ✅ SIGNED OFF AND BUILT — migration `0057_audit_subjects.sql`.**
+> Written 2026-09-11 after W9 and W10 shipped without pre-empting it; approved
+> by the owner the same day and implemented as recommended, unchanged.
+>
+> **What shipped, against §5's own sequencing:**
+>
+> | Step | State |
+> |---|---|
+> | Build `audit_subjects` + backfill | ✅ `0057`, backfill proven re-runnable by double-application |
+> | Point comparability at `subject_id` | ✅ `subjectModel.sameSubject()`, with the `target_id` fallback |
+> | Write `BT-xx` / `EG-xx` into `audit_issues` | ⏸ W13/W14, as scheduled — no earlier workstream depends on it |
+> | Drop `audits.target_id` | ❌ never, and a comment in `0057` says so |
+>
+> 🔴 **ONE THING THIS FIXED THAT §3 DID NOT PREDICT.** The doc says comparability
+> "today is same `target_id`". In the code it was **nothing at all**:
+> `compareRoute` compared any two audits the caller owned, so an audit of
+> `/pricing` against one of `/about` produced a confident delta that meant
+> nothing. The UI never exercised it (it passes the audit's own recorded
+> baseline) but `/api/v1` key holders reach the same handler. `sameSubject()`
+> now gates it, and a subject mismatch **withholds the issue lists too** —
+> unlike a version mismatch, where the codes stay true. See §3.
+>
+> ⚠️ **W12 is the first consumer**: `audit_local_checks.subject_id` points here,
+> because a NAP check is about a business, which is exactly the case the
+> page-shaped `audits.target_id` could never carry.
 
 ---
 
@@ -110,6 +131,13 @@ create table public.audit_subjects (
 alter table public.audits
   add column subject_id uuid references public.audit_subjects(id) on delete set null;
 ```
+
+> ⚠️ **ONE DEVIATION BETWEEN THIS SKETCH AND SHIPPED `0057`, DELIBERATE.** The
+> sketch's first CHECK arm reads `subject_kind in ('page','domain')`, which lets
+> a **`page`** subject be satisfied by a truth record via the third arm — the
+> polymorphic bug back again, one column over, which is the exact thing the
+> constraint exists to stop. Shipped, `page` requires a target and `domain`
+> accepts either, written as one arm each. Same intent, one loophole fewer.
 
 ### Why this is the right shape
 

@@ -213,6 +213,58 @@ export function diffAudits(baseline, current) {
 }
 
 /**
+ * ── THE TWO REASONS A COMPARISON IS REFUSED ──────────────────────────────
+ *
+ * Both produce the same full shape with every delta non-comparable; they differ
+ * in one place that matters, and the difference is not cosmetic.
+ *
+ * A VERSION mismatch means the same page measured two ways. The numbers cannot
+ * be compared, but the FINDINGS can: issue codes are a public contract that
+ * does not move with the scoring model, and the issue list is the most
+ * actionable thing left on the page.
+ *
+ * A SUBJECT mismatch (D7) means two different things entirely — a brand audit
+ * against a page audit, or two unrelated URLs. Here the issue lists must be
+ * withheld too, because "AC-01 was resolved" would credit a fix on one subject
+ * to another. That is the silent mis-attribution failure this repository has
+ * already had to fix once, in `audit_recommendations.issue_id`.
+ */
+export function versionMismatchCause(baselineVersion, currentVersion) {
+  return {
+    kind: "version",
+    keepIssues: true,
+    reason: `scored on ${baselineVersion}, compared against ${currentVersion}`,
+    versionMismatch: {
+      baseline: baselineVersion,
+      current: currentVersion,
+      // What the UI should offer. The baseline is the stale side by
+      // definition — it is the older measurement — so re-running the page is
+      // what restores comparability, not re-running the current audit.
+      remedy: "rerun",
+    },
+    subjectMismatch: null,
+    caveat: `The baseline was scored with model ${baselineVersion} and this audit with ${currentVersion}. Scores from two different models are not comparable, so no deltas are shown — re-run the baseline page to compare like with like.`,
+    headline: `This baseline was scored with an earlier version of the model (${baselineVersion}), so its scores cannot be compared with this audit's. The issue list below is still accurate — issue codes do not change between model versions.`,
+  };
+}
+
+export function subjectMismatchCause(explanation) {
+  const text = explanation || "These two audits are about different subjects, so their scores are not comparable.";
+  return {
+    kind: "subject",
+    keepIssues: false,
+    reason: "the two audits are about different subjects",
+    versionMismatch: null,
+    // There is no remedy the customer can apply — nothing is stale, the two
+    // audits are simply about different things — so `remedy` is deliberately
+    // absent rather than a "rerun" that would fix nothing.
+    subjectMismatch: { reason: text },
+    caveat: text,
+    headline: text,
+  };
+}
+
+/**
  * The same shape, with every delta refused.
  *
  * ── WHY A FULL SHAPE AND NOT `null` ──────────────────────────────────────
@@ -232,11 +284,12 @@ export function diffAudits(baseline, current) {
  * thing left on the page when the numbers cannot be compared. Withholding it
  * would be refusing more than the model actually invalidated.
  */
-export function incomparableDiff(baseline, current, baselineVersion, currentVersion) {
-  const refused = (reason) => ({
-    before: null, after: null, change: null, comparable: false, reason, direction: "unknown",
+export function incomparableDiff(baseline, current, baselineVersion, currentVersion, cause = null) {
+  const c = cause || versionMismatchCause(baselineVersion, currentVersion);
+  const refused = (r) => ({
+    before: null, after: null, change: null, comparable: false, reason: r, direction: "unknown",
   });
-  const reason = `scored on ${baselineVersion}, compared against ${currentVersion}`;
+  const reason = c.reason;
 
   const beforeCodes = new Set((baseline.issues || []).map((i) => i.code));
   const afterCodes = new Set((current.issues || []).map((i) => i.code));
@@ -246,21 +299,21 @@ export function incomparableDiff(baseline, current, baselineVersion, currentVers
     severity: ISSUES[code]?.severity || "medium",
     pillar: ISSUES[code]?.pillar || null,
   });
-  const resolved = [...beforeCodes].filter((c) => !afterCodes.has(c)).map(describe);
-  const remaining = [...afterCodes].filter((c) => beforeCodes.has(c)).map(describe);
-  const introduced = [...afterCodes].filter((c) => !beforeCodes.has(c)).map(describe);
+  // 🔴 THE ISSUE LISTS SURVIVE A VERSION BUMP AND MUST NOT SURVIVE A SUBJECT
+  // MISMATCH. Codes are a public contract that does not move with the scoring
+  // model, so "AC-01 was resolved" stays true across v1 → v2 on the same page.
+  // Across two DIFFERENT subjects it is a lie of exactly the shape this repo
+  // has already recorded: a finding on one thing credited as a fix on another,
+  // reported confidently, with nobody seeing an error.
+  const resolved = c.keepIssues ? [...beforeCodes].filter((x) => !afterCodes.has(x)).map(describe) : [];
+  const remaining = c.keepIssues ? [...afterCodes].filter((x) => beforeCodes.has(x)).map(describe) : [];
+  const introduced = c.keepIssues ? [...afterCodes].filter((x) => !beforeCodes.has(x)).map(describe) : [];
 
   return {
     baselineId: baseline.auditId || baseline.id || null,
     currentId: current.auditId || current.id || null,
-    versionMismatch: {
-      baseline: baselineVersion,
-      current: currentVersion,
-      // What the UI should offer. The baseline is the stale side by
-      // definition — it is the older measurement — so re-running the page is
-      // what restores comparability, not re-running the current audit.
-      remedy: "rerun",
-    },
+    versionMismatch: c.versionMismatch,
+    subjectMismatch: c.subjectMismatch || null,
     frameworks: Object.fromEntries(FRAMEWORKS.map((f) => [f, refused(reason)])),
     pillars: Object.fromEntries(PILLAR_IDS.map((p) => [p, { label: pillarLabel(p), ...refused(reason) }])),
     signals: Object.keys(SIGNALS).map((code) => ({
@@ -282,10 +335,8 @@ export function incomparableDiff(baseline, current, baselineVersion, currentVers
     },
     citation: null,
     coverage: refused(reason),
-    caveats: [
-      `The baseline was scored with model ${baselineVersion} and this audit with ${currentVersion}. Scores from two different models are not comparable, so no deltas are shown — re-run the baseline page to compare like with like.`,
-    ],
-    headline: `This baseline was scored with an earlier version of the model (${baselineVersion}), so its scores cannot be compared with this audit's. The issue list below is still accurate — issue codes do not change between model versions.`,
+    caveats: [c.caveat],
+    headline: c.headline,
     nextBestActions: nextBestActions(current),
   };
 }

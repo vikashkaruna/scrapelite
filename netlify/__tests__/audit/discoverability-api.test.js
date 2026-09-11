@@ -39,46 +39,23 @@ vi.mock("../../functions/lib/audit/auditPipeline.js", () => ({
   inferPageType: vi.fn(),
   PIPELINE_STAGES: [],
 }));
-// Every store export, declared explicitly. vitest's ESM mock needs the export
-// names up front — a Proxy factory returns a module with no declared exports
-// and every call fails with "No <name> export is defined on the mock".
-const STORE_EXPORTS = [
-  "ABANDONED_AUDIT_MS",
-  "countAuditsThisMonth", "createAudit", "deleteAudit", "ensureTarget",
-  "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
-  "listAudits", "listTargets", "markAuditFailed", "monthStart",
-  "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
-  "setRecommendationAssignee",
-  // W6.5 — prompt monitors. Listed here because this parity test is what
-  // keeps the double honest: a real export the mock lacks fails the route
-  // under test for a reason that has nothing to do with the route.
-  "listDuePromptMonitors", "advancePromptMonitor", "getTargetById", "recordPromptMonitorRun", "listPromptMonitorRuns", "listPromptMonitors", "createPromptMonitor", "deletePromptMonitor",
-  "listRecommendationQueue",
-  "saveAuditSummary",
-  "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
-  "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
-  "getPromptSet", "deletePromptSet", "createWebhook", "listWebhooks",
-  "webhooksForEvent", "recordWebhookDelivery", "deleteWebhook",
-  "createSchedule", "listSchedules", "updateSchedule", "deleteSchedule",
-  "dueSchedules", "markScheduleRun", "nextRunAt",
-  // W9 — the Canonical Business Truth Record.
-  "createTruthRecord", "listTruthRecords", "getTruthRecord", "getTruthRecordFull",
-  "getTruthVersion", "getCanonicalTruthVersion", "createTruthVersion",
-  "setTruthVersionState", "promoteTruthVersion", "archiveTruthRecord",
-  "recordTruthConflicts", "resolveTruthConflict",
-  // W10 — the entity graph.
-  "createEntity", "listEntities", "getEntity",
-  "createRelationship", "listRelationships", "getRelationship",
-  "approveEntityRelationship", "rejectGraphRow", "recordEntityEvidence",
-  "recordGraphConflicts", "listGraphConflicts", "resolveGraphConflict",
-];
-vi.mock("../../functions/lib/audit/auditStore.js", () =>
-  Object.fromEntries(STORE_EXPORTS.map((name) => [
+// 🔴 THE MOCK'S EXPORT LIST IS DERIVED FROM THE REAL MODULE, NOT COPIED.
+//
+// This file kept a hand-written `STORE_EXPORTS` array guarded by a parity test.
+// That guard worked — it went red on W10 and again on W12 — but every time it
+// did, the fix was to retype names into a list, and a list that must be retyped
+// every workstream is a list somebody eventually gets wrong at the worst moment.
+// An async factory can `importActual`, so the names come from the module
+// itself: a store export added tomorrow is mocked tomorrow, with nothing to
+// remember. `entity-graph-api.test.js` already uses this pattern; this is the older
+// file catching up.
+vi.mock("../../functions/lib/audit/auditStore.js", async () => {
+  const real = await vi.importActual("../../functions/lib/audit/auditStore.js");
+  return Object.fromEntries(Object.keys(real).map((name) => [
     name,
     (...args) => (storeMock[name] || (storeMock[name] = vi.fn()))(...args),
-  ])));
-
-
+  ]));
+});
 
 const summarise = vi.fn();
 vi.mock("../../functions/lib/audit/aiEvaluator.js", () => ({
@@ -133,6 +110,7 @@ function happyStore() {
   storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 0, degraded: false }));
   storeMock.findByIdempotencyKey = vi.fn(async () => null);
   storeMock.ensureTarget = vi.fn(async () => "target-1");
+  storeMock.ensureSubject = vi.fn(async () => "subject-1");
   storeMock.createAudit = vi.fn(async () => ({ ok: true, audit: { id: "audit-1" } }));
   storeMock.persistResult = vi.fn(async () => ({ ok: true }));
   storeMock.persistPromptRuns = vi.fn(async () => ({ ok: true }));
@@ -143,9 +121,13 @@ function happyStore() {
 // does not know about, the suite fails loudly here rather than silently
 // exercising a route that always throws.
 describe("test scaffolding", () => {
-  it("the store mock covers every real export", async () => {
+  it("the store mock is DERIVED from the real module, not a hand-written list", async () => {
+    // Asserting the derivation rather than the contents. A hand-written list
+    // would pass a contents check on the day it was written and fail silently
+    // the next time the store grows — which is precisely what happened twice.
     const real = await vi.importActual("../../functions/lib/audit/auditStore.js");
-    expect([...STORE_EXPORTS].sort()).toEqual(Object.keys(real).sort());
+    const mocked = await import("../../functions/lib/audit/auditStore.js");
+    expect(Object.keys(mocked).sort()).toEqual(Object.keys(real).sort());
   });
 });
 
@@ -1098,4 +1080,124 @@ describe("workspace member pause", () => {
     // The workspace lookup is never even attempted for a personal request.
     expect(globalThis.fetch).not.toHaveBeenCalled();
   }));
+});
+
+// ── D7 · the subject registry, forward and backward ─────────────────────────
+describe("D7 — every audit gets a subject, and every pre-0057 audit still works", () => {
+  const auditFull = (id, { subjectId = null, targetId = null, issues = [], score = 78 } = {}) => ({
+    audit: {
+      id, target_url: "https://example.com", created_at: "2026-09-11T00:00:00Z",
+      subject_id: subjectId, target_id: targetId,
+    },
+    result: { final_score: score, scoring_model_version: "v2", coverage: 90 },
+    signals: [], issues, recommendations: [], promptRuns: [],
+  });
+
+  it("a new audit carries the subject it was opened against", async () => {
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com" } });
+
+    expect(storeMock.ensureSubject).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      kind: "page", targetId: "target-1",
+    }));
+    expect(storeMock.createAudit).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      subjectId: "subject-1", targetId: "target-1",
+    }));
+  });
+
+  it("🔴 an audit still RUNS when the subject could not be resolved", async () => {
+    // subject_id is nullable precisely because every pre-0057 row carries none.
+    // Failing the audit here would take the product down for a registry that is
+    // additive — the opposite of the trade D7 was chosen to make.
+    happyStore();
+    storeMock.ensureSubject = vi.fn(async () => null);
+
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    expect(res.statusCode).toBe(201);
+    expect(storeMock.createAudit).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      subjectId: null,
+    }));
+  });
+
+  it("compares two audits of the same subject", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: "subj-1", targetId: "t-1", score: id === "base" ? 70 : 78 }));
+
+    const res = await call("GET", "audits/current/compare/base");
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.comparable).toBe(true);
+    expect(body.diff.frameworks.overall.comparable).toBe(true);
+  });
+
+  it("🔴 REFUSES to compare two DIFFERENT subjects instead of printing a number", async () => {
+    // Until D7 this route compared whatever it was given: an audit of /pricing
+    // against an audit of /about produced a confident delta that meant nothing.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? "subj-1" : "subj-2", targetId: "t-1",
+    }));
+
+    const res = await call("GET", "audits/current/compare/base");
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.comparable).toBe(false);
+    expect(body.diff.frameworks.overall.comparable).toBe(false);
+    expect(body.diff.subjectMismatch.reason).toMatch(/different subjects/);
+    expect(body.diff.versionMismatch).toBeNull();
+  });
+
+  it("🔴 WITHHOLDS the issue lists on a subject mismatch, unlike a version bump", async () => {
+    // Codes survive a model version change on the same page. Across two
+    // different subjects, "AC-01 was resolved" credits a fix on one thing to
+    // another — the silent mis-attribution audit_recommendations.issue_id
+    // already had to be fixed for.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? "subj-1" : "subj-2",
+      targetId: "t-1",
+      issues: id === "base" ? [{ code: "AC-01" }] : [],
+    }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.diff.issues.resolved).toEqual([]);
+    expect(body.diff.issues.resolvedCount).toBe(0);
+  });
+
+  it("🔴 BACKWARD COMPATIBLE: two pre-0057 audits over the same target still compare", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: null, targetId: "t-1", score: id === "base" ? 70 : 78 }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.comparable).toBe(true);
+    expect(body.diff.frameworks.overall.change).toBeCloseTo(8, 5);
+  });
+
+  it("🔴 two NULL subjects over DIFFERENT targets are still refused", async () => {
+    // The trap the fallback exists to avoid: null === null would make every
+    // pre-0057 audit comparable with every other one.
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: null, targetId: id === "base" ? "t-1" : "t-2" }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.comparable).toBe(false);
+    expect(body.diff.subjectMismatch.reason).toMatch(/different pages/);
+  });
+
+  it("compares a backfilled audit against one that has not been backfilled yet", async () => {
+    // The state a real database is in DURING the backfill: some rows adopted,
+    // some not. Both are about the same target, so both must still compare.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? null : "subj-1", targetId: "t-1",
+    }));
+
+    expect(parse(await call("GET", "audits/current/compare/base")).comparable).toBe(true);
+  });
+
+  it("reports the subject on both sides so a caller can see WHY", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: "subj-1", targetId: "t-1" }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.baseline.subject_id).toBe("subj-1");
+    expect(body.current.subject_id).toBe("subj-1");
+  });
 });

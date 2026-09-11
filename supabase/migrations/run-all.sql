@@ -70,6 +70,8 @@
 --   0054  0054_workflow_hub.sql — W8. The lifecycle a queue needs to be a queue.
 --   0055  0055_business_truth.sql — W9. The Canonical Business Truth Record.
 --   0056  0056_entity_graph.sql — W10. The Entity Graph Builder.
+--   0057  0057_audit_subjects.sql — D7. The subject registry.
+--   0058  0058_local_directory.sql — W12. Local and directory intelligence.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -7883,6 +7885,444 @@ comment on function public.approve_entity_relationship(uuid, uuid, text) is
 
 revoke all on function public.approve_entity_relationship(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.approve_entity_relationship(uuid, uuid, text) to service_role;
+
+
+-- ============================================================
+-- 0057_audit_subjects.sql
+-- ============================================================
+-- 0057_audit_subjects.sql — D7. The subject registry.
+--
+-- ── THE QUESTION D7 ANSWERS ───────────────────────────────────────────────
+-- P1 audits a PAGE: `audits.target_id` points at `audit_targets`, and every
+-- finding hangs off the audit. P2 audits things that are NOT pages — a brand, a
+-- product, a service, a location. W11's BDS/PDS/SFS score exactly those. So how
+-- does a business-level audit relate to a page-level one?
+--
+-- 🔴 THE RECORDED DEFAULT WAS A POLYMORPHIC `subject_type` + `subject_id` ON
+-- `audit_issues`, AND IT IS THE WRONG SHAPE. A `subject_id` that points at
+-- `audit_targets` on one row and `audit_entities` on the next CANNOT CARRY A
+-- FOREIGN KEY, so nothing stops an issue referencing a brand deleted last
+-- month. This repository has already been burned three times by a pointer the
+-- database could not check — `audit_signals.raw_value`, `.evidence_json` and
+-- `audit_recommendations.issue_id` were all declared and written by nothing,
+-- and the read path returned `null` identically to "not applicable". An
+-- unenforceable pointer is that same failure with a different spelling: it is
+-- wrong SILENTLY. It would also have touched every reader of the P1 queue, the
+-- diff engine and all four export formats at once.
+--
+-- ── SO THE AUDIT BECOMES POLYMORPHIC, ONE LEVEL UP ────────────────────────
+--   audit_subjects ─< audits ─< audit_issues            ← UNCHANGED
+--                           └─< audit_recommendations   ← UNCHANGED
+--                           └─< audit_signals           ← UNCHANGED
+--
+-- The polymorphism lives in a CHECK constraint the database enforces, over
+-- three columns each of which is a REAL foreign key, instead of in one bare
+-- uuid the database cannot check at all. One queue is preserved — findings
+-- still hang off `audit_id` — which was the actual goal all along.
+--
+-- ⚠️ `audits.target_id` IS KEPT AND MUST NEVER BE DROPPED. It is not redundant:
+-- it is the fast path for the page case, it is what every existing query uses,
+-- and dropping it would recreate the exact blast radius this design exists to
+-- avoid. `subject_id` is ADDITIVE. A pre-0057 audit has a NULL subject_id and
+-- keeps working unchanged — that is the backward-compatibility contract, and
+-- `auditDiff` falls back to `target_id` for precisely those rows.
+--
+-- Naming follows D3: the `audit_` prefix, not the PRD's `discoverability_`.
+
+-- ── Subjects ───────────────────────────────────────────────────────────────
+create table if not exists public.audit_subjects (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  workspace_id     uuid,
+
+  subject_kind     text not null check (subject_kind in
+                     ('page','domain','brand','product','service','location')),
+
+  -- 🔴 EXACTLY ONE of these is non-null, and every one is a REAL foreign key.
+  target_id        uuid references public.audit_targets(id)                on delete cascade,
+  entity_id        uuid references public.audit_entities(id)               on delete cascade,
+  truth_record_id  uuid references public.audit_business_truth_records(id) on delete cascade,
+
+  label            text not null check (length(btrim(label)) > 0),
+
+  -- The same bridge key W9 and W10 already use, and public.canonical_entities
+  -- (0041) before them. Bare host, lower-case, no `www.`, or one company gets
+  -- resolved twice and the halves disagree.
+  canonical_domain text,
+
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+
+  constraint audit_subjects_exactly_one_ref check (
+    (target_id       is not null)::int
+  + (entity_id       is not null)::int
+  + (truth_record_id is not null)::int = 1
+  ),
+
+  -- Without this, `subject_kind` and the actual reference could disagree —
+  -- which is the polymorphic bug back again, one column over. A `page` subject
+  -- pointing at a brand entity would score a brand and report it as a page.
+  constraint audit_subjects_kind_matches_ref check (
+    (subject_kind = 'page' and target_id is not null)
+    or (subject_kind = 'domain' and (target_id is not null or truth_record_id is not null))
+    or (subject_kind in ('brand','product','service','location') and entity_id is not null)
+  )
+);
+
+-- One subject per owner per referenced row per kind. Three partial indexes
+-- rather than one composite, because a composite over three nullable columns
+-- does not constrain anything in Postgres: NULLs never collide. Without these
+-- a re-audit mints a second subject and the history scatters — the same defect
+-- `audit_targets_owner_url_idx` exists to prevent for pages.
+create unique index if not exists audit_subjects_target_idx
+  on public.audit_subjects (user_id, subject_kind, target_id) where target_id is not null;
+create unique index if not exists audit_subjects_entity_idx
+  on public.audit_subjects (user_id, subject_kind, entity_id) where entity_id is not null;
+create unique index if not exists audit_subjects_truth_idx
+  on public.audit_subjects (user_id, subject_kind, truth_record_id) where truth_record_id is not null;
+
+create index if not exists audit_subjects_owner_kind_idx
+  on public.audit_subjects (user_id, subject_kind, created_at desc);
+create index if not exists audit_subjects_domain_idx
+  on public.audit_subjects (user_id, canonical_domain) where canonical_domain is not null;
+
+comment on table public.audit_subjects is
+  'D7. One row per audited thing. The polymorphism lives in CHECK constraints over three real foreign keys, never in a bare uuid. audits.target_id is kept and must never be dropped.';
+
+-- ── The audit points at its subject ────────────────────────────────────────
+-- Nullable, and `on delete set null`: losing the subject registry entry must
+-- never destroy an audit that was run and charged for.
+alter table public.audits
+  add column if not exists subject_id uuid references public.audit_subjects(id) on delete set null;
+
+create index if not exists audits_subject_idx
+  on public.audits (subject_id, created_at desc) where subject_id is not null;
+
+comment on column public.audits.subject_id is
+  'D7. NULL on every pre-0057 audit and that is valid — readers fall back to target_id. Comparability is "same subject" where both sides have one, "same target" otherwise.';
+
+-- ── Backfill ───────────────────────────────────────────────────────────────
+-- One `page` subject per existing target, then point every audit at its own.
+-- Written to be RE-RUNNABLE: `on conflict do nothing` plus a `where` that skips
+-- audits already pointed, so applying this file twice changes nothing the
+-- second time. A migration that is only correct once is a migration nobody can
+-- safely re-apply after a partial failure.
+insert into public.audit_subjects (user_id, workspace_id, subject_kind, target_id, label, canonical_domain)
+select t.user_id, t.workspace_id, 'page', t.id,
+       coalesce(nullif(btrim(t.label), ''), t.canonical_url),
+       t.host
+  from public.audit_targets t
+on conflict do nothing;
+
+update public.audits a
+   set subject_id = s.id
+  from public.audit_subjects s
+ where s.target_id = a.target_id
+   and s.subject_kind = 'page'
+   and s.user_id = a.user_id
+   and a.subject_id is null;
+
+-- ── Get-or-create ──────────────────────────────────────────────────────────
+-- Mirrors upsert_audit_target: the application asks for a subject and gets one,
+-- whether or not it already existed. Idempotent by the partial unique indexes
+-- above, so two concurrent audits of the same brand cannot mint two subjects.
+create or replace function public.upsert_audit_subject(
+  p_user_id uuid,
+  p_kind text,
+  p_target_id uuid default null,
+  p_entity_id uuid default null,
+  p_truth_record_id uuid default null,
+  p_label text default null,
+  p_canonical_domain text default null,
+  p_workspace_id uuid default null
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  -- The CHECKs would refuse this anyway; naming it here makes the refusal
+  -- legible to the caller instead of surfacing as a constraint violation.
+  if (p_target_id is not null)::int
+   + (p_entity_id is not null)::int
+   + (p_truth_record_id is not null)::int <> 1 then
+    raise exception 'upsert_audit_subject: exactly one reference is required';
+  end if;
+
+  select id into v_id from public.audit_subjects
+   where user_id = p_user_id
+     and subject_kind = p_kind
+     and target_id is not distinct from p_target_id
+     and entity_id is not distinct from p_entity_id
+     and truth_record_id is not distinct from p_truth_record_id;
+
+  if v_id is not null then
+    update public.audit_subjects
+       set label = coalesce(nullif(btrim(p_label), ''), label),
+           canonical_domain = coalesce(p_canonical_domain, canonical_domain),
+           workspace_id = coalesce(p_workspace_id, workspace_id),
+           updated_at = now()
+     where id = v_id;
+    return v_id;
+  end if;
+
+  insert into public.audit_subjects
+    (user_id, workspace_id, subject_kind, target_id, entity_id, truth_record_id,
+     label, canonical_domain)
+  values
+    (p_user_id, p_workspace_id, p_kind, p_target_id, p_entity_id, p_truth_record_id,
+     coalesce(nullif(btrim(p_label), ''), p_kind), p_canonical_domain)
+  returning id into v_id;
+
+  return v_id;
+end $$;
+
+comment on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid) is
+  'D7 get-or-create. Refuses anything but exactly one reference, so the CHECK can never be reached with a confusing message.';
+
+revoke all on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid) from public, anon, authenticated;
+grant execute on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid) to service_role;
+
+-- ── RLS ────────────────────────────────────────────────────────────────────
+alter table public.audit_subjects enable row level security;
+
+drop policy if exists audit_subjects_service on public.audit_subjects;
+create policy audit_subjects_service on public.audit_subjects
+  for all to service_role using (true) with check (true);
+
+revoke all on public.audit_subjects from anon, authenticated;
+
+drop trigger if exists audit_subjects_touch on public.audit_subjects;
+create trigger audit_subjects_touch
+  before update on public.audit_subjects
+  for each row execute function public.audit_touch_updated_at();
+
+
+-- ============================================================
+-- 0058_local_directory.sql
+-- ============================================================
+-- 0058_local_directory.sql — W12. Local and directory intelligence.
+--
+-- W9 recorded what is TRUE about a business. W12 measures whether the records
+-- the business does not own agree with it: a Google Business Profile, a
+-- Justdial listing, an MCA filing. When they disagree about the name, the
+-- address or the phone, an engine asked "where is Acme" has several answers and
+-- picks one. It does not error.
+--
+-- Naming follows D3: the `audit_` prefix, not the PRD's `discoverability_`.
+--
+-- ── THIS IS THE FIRST TABLE SET BUILT ON D7 ───────────────────────────────
+-- `audit_local_checks.subject_id` points at `audit_subjects` (0057). A local
+-- check is about a BUSINESS or a LOCATION, not about a page, which is exactly
+-- the case the page-shaped `audits.target_id` could never carry. Nullable, for
+-- the same reason `audits.subject_id` is: a check whose subject could not be
+-- resolved is degraded, not lost.
+--
+-- ── WHY SOURCE IDS ARE NOT ENUMERATED IN A CHECK CONSTRAINT ───────────────
+-- 🔴 THIS DEPARTS FROM W10, DELIBERATELY. 0056 puts its fourteen entity types
+-- in a CHECK because that vocabulary is a closed, slow-moving contract derived
+-- from schema.org. The directory registry is neither: a new market is a dozen
+-- new sources, and a CHECK would make each one a migration plus a deploy plus a
+-- window where the API and the database disagree about what is legal — the very
+-- cost 0049's header cites for widening a live enum. What IS closed is the
+-- TIER, so the tier is constrained here and `directorySources.js` stays the one
+-- place a source is declared. `napModel.matchDirectory` refuses an unknown
+-- source id before anything reaches this table.
+
+-- ── One observed listing ───────────────────────────────────────────────────
+create table if not exists public.audit_directory_listings (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  workspace_id     uuid,
+
+  truth_record_id  uuid references public.audit_business_truth_records(id) on delete cascade,
+
+  source_id        text not null check (length(btrim(source_id)) > 0),
+  source_tier      text not null check (source_tier in
+                     ('authoritative','major_aggregator','registry','vertical','social_review')),
+  -- D5's three acquisition tiers. Stored per listing, because the SAME source
+  -- can be read two ways and the fidelity differs: a Google profile read
+  -- through the customer's own OAuth is not the same evidence as one scraped
+  -- from a public page, and a reader must be able to tell them apart.
+  acquisition      text not null check (acquisition in ('authorized_api','declared_url','public_listing')),
+
+  listing_url      text,
+
+  -- What the directory actually said. NULL means the listing did not state it,
+  -- which is a different fact from "we did not look" (no row at all) and from
+  -- "this source never publishes it" (the registry knows that, not the row).
+  observed_name        text,
+  observed_address     text,
+  observed_phone       text,
+  observed_postal_code text,
+  observed_locality    text,
+  observed_extra       jsonb not null default '{}'::jsonb,
+
+  -- The same envelope W1 built and W9/W10 reuse. A listing nobody can drill
+  -- into is indistinguishable from one somebody made up.
+  evidence_json    jsonb,
+
+  observed_at      timestamptz not null default now(),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+
+  -- An observed listing claims somebody could go and check it, so it carries
+  -- the URL that was read — except for an authorised API, where the evidence is
+  -- the connection itself and there is no page.
+  constraint audit_dir_listing_public_has_url check (
+    acquisition = 'authorized_api' or listing_url is not null
+  )
+);
+
+-- One current listing per owner per source per record. A weekly re-read
+-- UPDATES what the source says; it does not stack a second opinion, or every
+-- count doubles and "what does Justdial say" answers differently depending on
+-- how many checks have run. That is the same defect 0056's unique edge index
+-- exists to prevent.
+create unique index if not exists audit_dir_listing_unique
+  on public.audit_directory_listings (user_id, coalesce(truth_record_id, '00000000-0000-0000-0000-000000000000'::uuid), source_id);
+create index if not exists audit_dir_listing_owner_idx
+  on public.audit_directory_listings (user_id, source_tier, observed_at desc);
+
+-- ── One NAP check run ──────────────────────────────────────────────────────
+create table if not exists public.audit_local_checks (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  workspace_id     uuid,
+
+  truth_record_id  uuid references public.audit_business_truth_records(id) on delete cascade,
+  -- D7. What this check is ABOUT.
+  subject_id       uuid references public.audit_subjects(id) on delete set null,
+
+  -- 🔴 NULLABLE, AND NULL IS NOT ZERO. A run where nothing could be read scores
+  -- null and reports its coverage, because scoring it 0 would say the business
+  -- is inconsistent when the truth is that we checked nothing — and would then
+  -- show a phantom jump the day the customer authorises one connection.
+  nap_score        numeric check (nap_score is null or (nap_score >= 0 and nap_score <= 100)),
+  coverage         numeric check (coverage is null or (coverage >= 0 and coverage <= 1)),
+
+  checked_count    integer not null default 0 check (checked_count >= 0),
+  configured_count integer not null default 0 check (configured_count >= 0),
+  region           text,
+
+  -- Set membership, so a later reader can tell "not authorised" from
+  -- "authorised and unreadable" without re-deriving it from the registry.
+  unchecked_sources  text[] not null default '{}',
+  unreadable_sources text[] not null default '{}',
+
+  created_at       timestamptz not null default now(),
+
+  constraint audit_local_check_counts check (checked_count <= configured_count)
+);
+
+create index if not exists audit_local_checks_owner_idx
+  on public.audit_local_checks (user_id, created_at desc);
+create index if not exists audit_local_checks_subject_idx
+  on public.audit_local_checks (subject_id, created_at desc) where subject_id is not null;
+
+-- ── Per-directory match ────────────────────────────────────────────────────
+create table if not exists public.audit_directory_matches (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  check_id         uuid not null references public.audit_local_checks(id) on delete cascade,
+  listing_id       uuid references public.audit_directory_listings(id) on delete set null,
+
+  source_id        text not null,
+  source_tier      text not null check (source_tier in
+                     ('authoritative','major_aggregator','registry','vertical','social_review')),
+  tier_weight      numeric not null check (tier_weight > 0 and tier_weight <= 1),
+
+  match_score      numeric check (match_score is null or (match_score >= 0 and match_score <= 100)),
+  coverage         numeric check (coverage is null or (coverage >= 0 and coverage <= 1)),
+
+  -- Per-field states, as the model produced them. Stored whole rather than as
+  -- four columns, because the field set is the model's to grow — and because a
+  -- reader asking "why is this 55" needs the states, not a re-derivation.
+  fields_json      jsonb not null default '[]'::jsonb,
+  mismatched       text[] not null default '{}',
+  absent_fields    text[] not null default '{}',
+
+  created_at       timestamptz not null default now()
+);
+
+create unique index if not exists audit_dir_match_unique
+  on public.audit_directory_matches (check_id, source_id);
+create index if not exists audit_dir_match_owner_idx
+  on public.audit_directory_matches (user_id, created_at desc);
+
+-- ── Findings ───────────────────────────────────────────────────────────────
+-- Its own table, and its own lifecycle, for the reason D7 §4 records: these are
+-- about a RECORD, not about an audit, and their resolution vocabulary is not
+-- the recommendation queue's eight workflow states. Collapsing them would lose
+-- the difference between "this listing now agrees" and "somebody did the task".
+create table if not exists public.audit_local_findings (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  workspace_id     uuid,
+
+  check_id         uuid references public.audit_local_checks(id) on delete cascade,
+  truth_record_id  uuid references public.audit_business_truth_records(id) on delete cascade,
+  source_id        text,
+
+  code             text not null check (code ~ '^LD-[0-9]{2}$'),
+  severity         text not null check (severity in ('critical','high','medium','low')),
+  fields           text[] not null default '{}',
+  detail           text,
+
+  resolution       text check (resolution in ('listing_updated','record_updated','not_a_conflict','wont_fix')),
+  resolved_at      timestamptz,
+  resolved_by      uuid references auth.users(id) on delete set null,
+
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+
+  -- A resolution with no timestamp, or a timestamp with no resolution, is half
+  -- a record: the list would show it as open while a reader believed it closed.
+  constraint audit_local_finding_resolution_paired check (
+    (resolution is null and resolved_at is null)
+    or (resolution is not null and resolved_at is not null)
+  )
+);
+
+create index if not exists audit_local_findings_open_idx
+  on public.audit_local_findings (user_id, created_at desc) where resolved_at is null;
+create index if not exists audit_local_findings_code_idx
+  on public.audit_local_findings (user_id, code);
+
+-- ── RLS ────────────────────────────────────────────────────────────────────
+alter table public.audit_directory_listings enable row level security;
+alter table public.audit_local_checks       enable row level security;
+alter table public.audit_directory_matches  enable row level security;
+alter table public.audit_local_findings     enable row level security;
+
+drop policy if exists audit_dir_listings_service on public.audit_directory_listings;
+create policy audit_dir_listings_service on public.audit_directory_listings
+  for all to service_role using (true) with check (true);
+
+drop policy if exists audit_local_checks_service on public.audit_local_checks;
+create policy audit_local_checks_service on public.audit_local_checks
+  for all to service_role using (true) with check (true);
+
+drop policy if exists audit_dir_matches_service on public.audit_directory_matches;
+create policy audit_dir_matches_service on public.audit_directory_matches
+  for all to service_role using (true) with check (true);
+
+drop policy if exists audit_local_findings_service on public.audit_local_findings;
+create policy audit_local_findings_service on public.audit_local_findings
+  for all to service_role using (true) with check (true);
+
+revoke all on public.audit_directory_listings from anon, authenticated;
+revoke all on public.audit_local_checks       from anon, authenticated;
+revoke all on public.audit_directory_matches  from anon, authenticated;
+revoke all on public.audit_local_findings     from anon, authenticated;
+
+drop trigger if exists audit_dir_listings_touch on public.audit_directory_listings;
+create trigger audit_dir_listings_touch
+  before update on public.audit_directory_listings
+  for each row execute function public.audit_touch_updated_at();
+
+drop trigger if exists audit_local_findings_touch on public.audit_local_findings;
+create trigger audit_local_findings_touch
+  before update on public.audit_local_findings
+  for each row execute function public.audit_touch_updated_at();
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

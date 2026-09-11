@@ -18,7 +18,147 @@
 
 ---
 
-## 2026-09-11 (CONSOLIDATION + P2 · W11) — merged to the long-lived branch, 14 skipped tests recovered, D7 answered. FRESH START HERE.
+## 2026-09-11 (D7 SIGNED OFF + P2 · W12) — the subject registry is built, the compare route stopped lying, and local/directory intelligence shipped. FRESH START HERE.
+
+**Branch:** `Discoverability-P1-P3-implementation`. `main` (`2042348`) and
+`staging` (`4922c04`) untouched and re-verified.
+
+**Operator confirmed:** `0055` and `0056` are APPLIED to dev/stage. `0057` and
+`0058` are new in this session and have met WASM Postgres only —
+`DB-MIGRATION-RUNBOOK.md` §4c is the procedure.
+
+**Branch containment re-verified, not assumed:**
+`git merge-base --is-ancestor origin/claude/p2-w9-work-streams-o4gvmq origin/Discoverability-P1-P3-implementation`
+passes and the branch is **0 commits ahead** — W9 and W10 are fully merged. The
+remote feature branch still exists; deleting it needs the branches page (the
+session credential cannot delete refs, and the GitHub MCP set has no tool).
+
+---
+
+### 1. D7 is signed off and built — `0057_audit_subjects.sql`
+
+Implemented exactly as recommended, with one deliberate tightening recorded in
+the doc: the sketch's CHECK let a `page` subject be satisfied by a truth record
+through its third arm, which is the polymorphic bug back again one column over.
+Shipped, `page` requires a target and `domain` accepts either.
+
+What it is: `audit_subjects ─< audits`, three reference columns each a REAL
+foreign key, an `exactly_one_ref` CHECK and a `kind_matches_ref` CHECK. **No P1
+table changed.** `audits.target_id` is kept and a comment says it must never be
+dropped.
+
+**🔴 THE BUG THIS FOUND, WHICH THE D7 DOC DID NOT PREDICT.** The doc says
+comparability "today is same `target_id`". In the code it was **nothing at
+all** — `compareRoute` compared any two audits the caller owned, so an audit of
+`/pricing` against one of `/about` produced a confident "+6.2" that meant
+nothing. The UI never exercised it (it passes the audit's own recorded
+baseline), but `/api/v1` key holders reach the same handler, and a number on a
+report is what gets screenshotted.
+
+`sameSubject()` now gates it, and the fallback is the careful part: two
+pre-0057 audits compare on `target_id`, but **two NULL subjects are never
+treated as a match** — that would make every old audit comparable with every
+other old audit regardless of page.
+
+⚠️ **A subject mismatch WITHHOLDS the issue lists; a version mismatch does
+not.** Codes survive a model bump on the same page, so "AC-01 was resolved"
+stays true. Across two different subjects it credits a fix on one thing to
+another — the silent mis-attribution `audit_recommendations.issue_id` already
+had to be fixed for. `incomparableDiff` was generalised to carry a cause, with
+the version path byte-compatible (its 12 existing tests passed unchanged).
+
+**Backward compatibility is the contract, not a leftover.** `subject_id` is
+nullable, `ensureSubject` returning null does not fail the audit, and the
+backfill is proven re-runnable by applying it twice under PGlite and asserting
+the row count does not move.
+
+### 2. W12 — Local & Directory Intelligence
+
+`directorySources.js` (18 sources, five tiers, D5's three acquisition modes,
+India-first pack) · `napModel.js` · `0058` (4 tables) · `/local-directory/*`.
+
+🔴 **NORMALISATION IS MOST OF THE MODULE, AND THAT IS THE POINT.** "Pvt Ltd"
+against "Private Limited" is the SAME NAME. "Rd" against "Road" is the SAME
+STREET. `+91 80 4718 2200` against `08047182200` is the SAME PHONE. A checker
+that reports those three as mismatches produces a list nobody reads, and then
+the one real mismatch in it goes unfixed. Every equivalence is a declared,
+tested rule rather than a fuzzy ratio.
+
+⚠️ **`LD-05` exists because the obvious check is WRONG on registries.** A
+registered office is routinely not a shopfront. Reporting an MCA difference as a
+NAP mismatch sends a customer to amend a statutory filing to match a shop —
+expensive, slow, the wrong fix — so it gets its own low-severity code.
+
+⚠️ **Tiers rank by REACH, not by trust.** A statutory registry is the most
+trustworthy record a business has and one of the least read, which is why it
+sits below the aggregators. Ranking by trust would send a customer to fix a
+filing almost nothing reads while their Google profile stays wrong.
+
+⚠️ **An unchecked source is EXCLUDED and NAMED, never scored 0.** Under D5 most
+customers authorise nothing; zero-for-unchecked would open every local report
+near zero — a number about our connectors, not their business — and then jump
+the day they connect one. Same for a field a source never publishes: G2 shows a
+name and nothing else, and scoring its three absent fields as 0 would report a
+perfectly correct G2 listing at 30.
+
+⚠️ **`coverageClaim()` is the one place the coverage sentence is built**, and a
+test sweeps every input for the forbidden flat "N directories audited" phrasing.
+D5's copy rule, enforced rather than remembered.
+
+⚠️ **`acquisition: "authorized_api"` is REFUSED from a request body.** Fidelity
+is a claim about how an observation was obtained, and a claim a client can set is
+not a claim — it is `?consented=true` wearing a third hat.
+
+✅ **The tables are actually WRITTEN.** This schema's own recorded failure mode
+is three columns declared, reviewed, merged and written by nothing. `saveLocalCheck`
+is called by the route and the contract test asserts the call.
+
+### 3. Two test defects found and fixed
+
+**🔴 A test of mine was GREEN FOR THE WRONG REASON.** "ignores a stored listing
+whose source is no longer in the registry" passed against a broken model,
+because the route pre-filtered on `SOURCE_BY_ID` *and* `matchDirectory` refuses
+unknown sources *and* `.filter(Boolean)` dropped the nulls — three guards, one
+assertion, pinned to the redundant one. Removed the pre-filter; the test now
+fails when the real guard is removed. Confirmed both ways.
+
+**The hand-written `STORE_EXPORTS` list is gone.** It went red on W10 and again
+on W12, and the fix each time was to retype names. `discoverability-api.test.js`
+now derives the mock from `importActual` like the newer files, and its parity
+test asserts the DERIVATION rather than the contents.
+
+### Verified
+
+`npm run test:all` — **9 of its 10 gates green**. `npx vitest run` reads
+**384 files / 6383 passed / 0 skipped / 0 failed** (+139 over the last session).
+db-verify **58 migrations / 725 assertions / 0 failed** (+61) · referral 17 ·
+workflows 56 · build clean · check:prerender 28 pages / 112 refs · security clean.
+
+⚠️ **The 10th gate, Playwright smoke, fails on the CONTAINER, not the code** —
+the documented image mismatch (chromium **1194** installed, `@playwright/test`
+wants **1234**). Re-run against the bundled binary with a throwaway untracked
+config setting `executablePath: "/opt/pw-browsers/chromium"` (deleted
+afterwards): **142 passed / 1 skipped / 0 failed.**
+
+**Behavioural guards confirmed RED first: 13.** Two on the `0057` constraints
+(kind/ref agreement, backfill idempotency), two on `sameSubject`, three on the
+compare-route guard, one on subject wiring, four on the W12 model
+(legal-suffix stripping, `not_published` redistribution, the registry carve-out,
+unchecked-excluded), one on the W12 route acquisition guard, plus the
+green-for-the-wrong-reason fix re-checked in both directions.
+
+### Next
+
+1. **Apply `0057` + `0058` to dev/stage** — `DB-MIGRATION-RUNBOOK.md` §4c.
+2. **Delete `claude/p2-w9-work-streams-o4gvmq`** from the GitHub branches page.
+3. **W13 — Schema intelligence + Trust & Proof.** It unblocks `TC` (20% of BDS)
+   and `TP` (15% of PDS), both currently excluded and redistributed with
+   `blockedBy: ["W13"]`. W11's persistence surface lands with it, since that is
+   when there is a complete score worth storing.
+
+---
+
+## 2026-09-11 (CONSOLIDATION + P2 · W11) — merged to the long-lived branch, 14 skipped tests recovered, D7 answered.
 
 > **Branch: `Discoverability-P1-P3-implementation`** — W9, W10 and W11 all live
 > here now. **`main`, `staging` and every other branch: untouched.**

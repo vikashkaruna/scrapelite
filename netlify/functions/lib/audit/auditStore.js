@@ -16,6 +16,7 @@
 import { getServiceDb } from "../requireEntitlement.js";
 import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverability/workflowLifecycle.js";
+import { makeSubject } from "../../../../src/lib/discoverability/subjectModel.js";
 
 const SELECT_ALL = "select=*";
 
@@ -164,6 +165,69 @@ export async function ensureTarget(userId, canonicalUrl, host, label = null) {
 }
 
 /**
+ * D7 — get or create the SUBJECT this audit is about.
+ *
+ * Mirrors `ensureTarget` above: the application asks, and gets one back whether
+ * or not it already existed. `upsert_audit_subject` is idempotent by the
+ * partial unique indexes in 0057, so two concurrent audits of the same brand
+ * cannot mint two subjects and scatter the history between them.
+ *
+ * 🔴 RETURNS `null` ON FAILURE, AND THAT IS NOT FATAL. `audits.subject_id` is
+ * nullable by design: a pre-0057 audit has none and works unchanged, so an
+ * audit whose subject lookup failed is in exactly the same, already-supported
+ * state rather than a broken one. Failing the whole audit here would take the
+ * product down for a registry that is additive — the opposite of the trade D7
+ * was chosen to make. The error is logged so the failure is visible, which is
+ * the distinction this repo has had to learn three times: degraded is fine,
+ * SILENTLY degraded is not.
+ */
+export async function ensureSubject(userId, {
+  kind = "page", targetId = null, entityId = null, truthRecordId = null,
+  label = null, canonicalDomain = null, workspaceId = null,
+} = {}) {
+  const conn = db();
+  if (!conn) {
+    console.error("[discoverability] ensureSubject: Supabase is not configured");
+    return null;
+  }
+  const built = makeSubject({
+    kind, targetId, entityId, truthRecordId,
+    label: label || kind, canonicalDomain, workspaceId,
+  });
+  if (!built.ok) {
+    console.error("[discoverability] ensureSubject: refused by the model", { kind, reason: built.reason });
+    return null;
+  }
+  try {
+    const res = await fetch(`${conn.base}/rpc/upsert_audit_subject`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_kind: built.subject.subject_kind,
+        p_target_id: built.subject.target_id,
+        p_entity_id: built.subject.entity_id,
+        p_truth_record_id: built.subject.truth_record_id,
+        p_label: built.subject.label,
+        p_canonical_domain: built.subject.canonical_domain,
+        p_workspace_id: built.subject.workspace_id,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error(`[discoverability] ensureSubject: upsert_audit_subject rejected (HTTP ${res.status})`, {
+        kind, status: res.status, detail: detail.slice(0, 500),
+      });
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.error("[discoverability] ensureSubject: request failed", { kind, message: err?.message });
+    return null;
+  }
+}
+
+/**
  * Open an audit row before the work starts, so an in-flight run is visible.
  *
  * ── THE INTAKE IS WRITTEN HERE, THE RESOLVED PROFILE IS NOT ───────────────
@@ -191,10 +255,14 @@ export async function createAudit(userId, {
   targetGeography = null, competitorUrls = [],
   pageTypeHint = null, baselineAuditId = null, promptSetId = null,
   idempotencyKey = null, source = "ui", tags = [], workspaceId = null,
+  subjectId = null,
 }) {
   const r = await insert("audits", [{
     user_id: userId, target_id: targetId, target_url: targetUrl,
     workspace_id: workspaceId || null,
+    // D7. NULL is valid and is what every pre-0057 row carries; target_id
+    // stays authoritative for the page case either way.
+    subject_id: subjectId || null,
     device_profile: deviceProfile, audit_profile: auditProfile,
     audit_profile_source: auditProfileSource,
     audit_type: auditType, primary_goal: primaryGoal,
@@ -1407,4 +1475,168 @@ export async function resolveGraphConflict(userId, conflictId, resolution) {
       body: JSON.stringify({ resolution, resolved_at: new Date().toISOString() }),
     });
   return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+// ── W12 · local and directory intelligence ───────────────────────────────────
+//
+// 🔴 THE POINT OF THIS SECTION IS THAT THE TABLES ARE ACTUALLY WRITTEN.
+// This schema's own recorded history is three columns declared, reviewed,
+// merged and written by nothing — `audit_signals.raw_value`, `.evidence_json`
+// and `audit_recommendations.issue_id`, each invisible because the read path
+// returned `null` exactly as it would for "not applicable". W9's conflict table
+// and W10's broke that pattern on purpose and so does this one: `runLocalCheck`
+// below is called by the route, and its contract test asserts the WRITE.
+
+export async function upsertDirectoryListing(userId, {
+  truthRecordId = null, sourceId, sourceTier, acquisition, listingUrl = null,
+  observedName = null, observedAddress = null, observedPhone = null,
+  observedPostalCode = null, observedLocality = null, observedExtra = null,
+  evidence = null, workspaceId = null,
+}) {
+  // One CURRENT listing per source. A weekly re-read updates what the source
+  // says rather than stacking a second opinion — without that, every count
+  // doubles and "what does Justdial say" answers differently depending on how
+  // many checks have run.
+  const r = await rest("audit_directory_listings?on_conflict=user_id,truth_record_id,source_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+    user_id: userId,
+    truth_record_id: truthRecordId,
+    source_id: sourceId,
+    source_tier: sourceTier,
+    acquisition,
+    listing_url: listingUrl,
+    observed_name: observedName,
+    observed_address: observedAddress,
+    observed_phone: observedPhone,
+    observed_postal_code: observedPostalCode,
+    observed_locality: observedLocality,
+    observed_extra: observedExtra || {},
+    evidence_json: evidence,
+    observed_at: new Date().toISOString(),
+    workspace_id: workspaceId,
+  }]),
+  });
+  return r.ok ? { ok: true, listing: Array.isArray(r.data) ? r.data[0] : r.data } : { ok: false, error: r.error };
+}
+
+export async function listDirectoryListings(userId, { truthRecordId = null, limit = 200 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(`audit_directory_listings?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${Number(limit) || 200}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function deleteDirectoryListing(userId, listingId) {
+  const r = await rest(
+    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: { Prefer: "return=representation" } },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
+ * Persist one NAP check: the run, every per-directory match, and the findings.
+ *
+ * ⚠️ THE CHECK ROW GOES FIRST AND ALONE, because the matches and the findings
+ * both reference it. Same ordering rule `persistResult` had to learn for
+ * `audit_recommendations.issue_id`: the ids do not exist until the first insert
+ * returns, so this cannot be collapsed into one `Promise.all`.
+ */
+export async function saveLocalCheck(userId, {
+  truthRecordId = null, subjectId = null, workspaceId = null, region = null,
+  score, matches = [], findings = [],
+}) {
+  const checkRow = await insert("audit_local_checks", [{
+    user_id: userId,
+    truth_record_id: truthRecordId,
+    subject_id: subjectId,
+    workspace_id: workspaceId,
+    // null, not 0 — a run that read nothing is not a business that is wrong.
+    nap_score: score?.score ?? null,
+    coverage: score?.coverage ?? null,
+    checked_count: score?.checkedCount ?? 0,
+    configured_count: score?.configuredCount ?? 0,
+    region,
+    unchecked_sources: score?.unchecked || [],
+    unreadable_sources: score?.unreadable || [],
+  }]);
+  if (!checkRow.ok) return { ok: false, error: checkRow.error };
+  const check = Array.isArray(checkRow.data) ? checkRow.data[0] : checkRow.data;
+
+  if (matches.length) {
+    const r = await insert("audit_directory_matches", matches.map((m) => ({
+      user_id: userId,
+      check_id: check.id,
+      listing_id: m.listingId || null,
+      source_id: m.sourceId,
+      source_tier: m.tier,
+      tier_weight: m.tierWeight,
+      match_score: m.score,
+      coverage: m.coverage,
+      fields_json: m.fields || [],
+      mismatched: m.mismatches || [],
+      absent_fields: m.absent || [],
+    })));
+    if (!r.ok) return { ok: false, error: r.error, checkId: check.id };
+  }
+
+  if (findings.length) {
+    const r = await insert("audit_local_findings", findings.map((f) => ({
+      user_id: userId,
+      check_id: check.id,
+      truth_record_id: truthRecordId,
+      source_id: f.sourceId || null,
+      code: f.code,
+      severity: f.severity,
+      fields: f.fields || [],
+      detail: f.why || null,
+      workspace_id: workspaceId,
+    })));
+    if (!r.ok) return { ok: false, error: r.error, checkId: check.id };
+  }
+
+  return { ok: true, check };
+}
+
+export async function listLocalChecks(userId, { truthRecordId = null, subjectId = null, limit = 30 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_local_checks?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 30}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getLocalCheckFull(userId, checkId) {
+  const check = await rest(
+    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+  const row = check.ok && Array.isArray(check.data) ? check.data[0] : null;
+  if (!row) return null;
+  const [matches, findings] = await Promise.all([
+    rest(`audit_directory_matches?check_id=eq.${encodeURIComponent(checkId)}&${SELECT_ALL}&order=tier_weight.desc`),
+    rest(`audit_local_findings?check_id=eq.${encodeURIComponent(checkId)}&${SELECT_ALL}&order=created_at.asc`),
+  ]);
+  return {
+    check: row,
+    matches: matches.ok ? matches.data || [] : [],
+    findings: findings.ok ? findings.data || [] : [],
+  };
+}
+
+export async function resolveLocalFinding(userId, findingId, resolution) {
+  // Paired, because the CHECK constraint refuses half a record — a resolution
+  // with no timestamp shows as open while a reader believes it closed.
+  const r = await rest(
+    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString(), resolved_by: userId }),
+    },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!r.ok) return { ok: false, error: r.error };
+  return row ? { ok: true, finding: row } : { ok: false, notFound: true };
 }
