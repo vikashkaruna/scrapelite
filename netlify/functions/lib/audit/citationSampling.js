@@ -22,7 +22,7 @@
 // then drops out of the Entity Authority pillar and the other four re-weight.
 // An unsampled brand is UNKNOWN, never uncited.
 
-import { runChain, resolveProvider } from "../aiProviders.js";
+import { runChain, resolveProvider, callGeminiGrounded } from "../aiProviders.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -65,12 +65,45 @@ export function defaultPrompts({ brand = "", topic = "", host = "" } = {}) {
 }
 
 /** Which engine can we actually use here? */
+/**
+ * Engines that actually retrieve from the live web, in preference order.
+ *
+ * Perplexity leads because retrieval-with-citations is the product rather than
+ * a mode of it. Grounded Gemini is the second live engine D4 chose, and having
+ * two matters more than the ordering does: with one, a lapsed key takes the
+ * whole feature to `live: false` and every citation metric silently becomes a
+ * statement about a model's memory.
+ */
+export const LIVE_ENGINES = Object.freeze(["perplexity", "gemini"]);
+
+/** Does this engine read the live web, or answer from its own weights? */
+export function isLiveEngine(engine) {
+  return LIVE_ENGINES.includes(engine);
+}
+
 export function resolveEngine(env = process.env, requested = null) {
   if (requested === "none") return null;
   if (env.PERPLEXITY_API_KEY && (!requested || requested === "perplexity")) return "perplexity";
   if (requested === "perplexity") return null;      // asked for it, no key
+  if (env.GEMINI_API_KEY && (!requested || requested === "gemini")) return "gemini";
+  if (requested === "gemini") return null;          // asked for it, no key
   if (env.DISABLE_AI_CITATION_SAMPLING === "1") return null;
   return "ai-chain";                                 // degraded but honest
+}
+
+/**
+ * Ask grounded Gemini, and treat an ungrounded reply as NOT live.
+ *
+ * 🔴 THIS IS THE LINE THAT KEEPS THE METRIC HONEST. Gemini answers from its own
+ * weights whenever Search returns nothing useful, and says so only by omitting
+ * groundingMetadata. Counting that as a live citation would credit the open web
+ * for a brand the model merely remembers — which is exactly the measurement
+ * this module exists to replace.
+ */
+async function askGemini(prompt, { signal } = {}) {
+  const r = await callGeminiGrounded(prompt, { signal, pillar: PILLAR });
+  if (!r.ok) return { ok: false, error: r.error || "Gemini grounding unavailable" };
+  return { ok: true, text: r.text, citations: r.citations || [], live: Boolean(r.grounded) };
 }
 
 /** Does an answer name the brand? Word-boundary matched to avoid substring hits. */
@@ -198,7 +231,9 @@ export async function sampleCitations({
     try {
       const r = chosen === "perplexity"
         ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs, model: perplexityModel })
-        : await askAiChain(prompt, { signal });
+        : chosen === "gemini"
+          ? await askGemini(prompt, { signal })
+          : await askAiChain(prompt, { signal });
       return { prompt, r };
     } catch (err) {
       return { prompt, r: { ok: false, error: err?.message || "sampling threw" } };
@@ -217,6 +252,12 @@ export async function sampleCitations({
       prompt,
       mention,
       citation,
+      // ⚠️ PER-RUN, NOT PER-ENGINE. Grounded Gemini falls back to its own
+      // weights whenever Search returns nothing useful, so within one sampling
+      // run some answers are retrieved and others remembered. A single
+      // engine-level flag would label the whole set by whichever it was called,
+      // and the two are different measurements.
+      live: r.live !== undefined ? Boolean(r.live) : isLiveEngine(chosen),
       sentiment: mention ? estimateSentiment(r.text, brand) : null,
       citedDomains: (r.citations || [])
         .map((c) => (typeof c === "string" ? c : c?.url || ""))
@@ -233,16 +274,21 @@ export async function sampleCitations({
     // the difference between "we asked and you were absent" and "we could not
     // ask", which must never be scored the same way.
     return {
-      engine: chosen, live: chosen === "perplexity",
+      engine: chosen, live: isLiveEngine(chosen),
       promptCount: 0, mentions: 0, citations: 0, sentiment: null,
       runs, error: runs[0]?.error || "sampling failed",
     };
   }
 
   const sentiments = answered.map((r) => r.sentiment).filter((s) => Number.isFinite(s));
+  // The run is live only where the answers were. A grounded engine that fell
+  // back to recall on every prompt produced a non-live sample, whatever it is
+  // called, and `liveAnswers` is what a reader needs to judge the rest by.
+  const liveAnswers = answered.filter((r) => r.live).length;
   return {
     engine: chosen,
-    live: chosen === "perplexity",
+    live: isLiveEngine(chosen) && liveAnswers > 0,
+    liveAnswers,
     promptCount: answered.length,
     mentions: answered.filter((r) => r.mention).length,
     citations: answered.filter((r) => r.citation).length,

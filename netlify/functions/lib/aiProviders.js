@@ -253,8 +253,38 @@ function geminiThinkingPlan(model, maxTokens) {
   return { config: null, outputTokens: answer + reserved, reserved };
 }
 
+/**
+ * Which tool name this model family uses for Google Search grounding.
+ *
+ * ⚠️ THE NAME CHANGED BETWEEN FAMILIES AND THE OLD ONE IS REJECTED, NOT
+ * IGNORED. 1.5 takes `google_search_retrieval`; 2.0 and later take
+ * `google_search`. Sending the wrong one 400s every call, which reads as "the
+ * key is bad" rather than "the tool is misnamed" — the same class of misread
+ * that made a wrong PageSpeed key look like a quota problem for months.
+ */
+export function geminiSearchTool(model = "") {
+  return /gemini-1\.5/i.test(String(model)) ? "google_search_retrieval" : "google_search";
+}
+
+/**
+ * Pull the sources a grounded answer actually retrieved.
+ *
+ * These ARE the citations. Without them a grounded call is just a slower
+ * ungrounded one — the point of grounding, here, is learning which pages the
+ * engine read in order to answer.
+ */
+export function geminiGroundingCitations(data) {
+  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const out = [];
+  for (const c of chunks) {
+    const uri = c?.web?.uri || c?.retrievedContext?.uri;
+    if (uri) out.push({ url: uri, title: c?.web?.title || c?.retrievedContext?.title || null });
+  }
+  return out;
+}
+
 async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
-  const { signal, schema } = opts;
+  const { signal, schema, grounded } = opts;
   const contents = [];
   let systemText = "";
   for (const m of messages) {
@@ -268,12 +298,18 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
   const generationConfig = { maxOutputTokens: plan.outputTokens };
   if (plan.config) generationConfig.thinkingConfig = plan.config;
   let structured = false;
-  if (schema) {
+  // ⚠️ GROUNDING AND A RESPONSE SCHEMA ARE MUTUALLY EXCLUSIVE. Gemini rejects a
+  // request carrying both, so when a caller asks for grounding we drop the
+  // schema rather than send a request we know will 400. Grounding wins because
+  // a caller that asks for it wants CITATIONS, and a grounded answer in prose
+  // is useful where a schema-shaped answer with no sources is not.
+  if (schema && !grounded) {
     generationConfig.responseMimeType = "application/json";
     generationConfig.responseSchema = toGeminiSchema(schema);
     structured = true;
   }
   const body = { contents, generationConfig };
+  if (grounded) body.tools = [{ [geminiSearchTool(model)]: {} }];
   if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
 
   const res = await fetch(
@@ -299,7 +335,14 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
     }
     return { ok: false, status: 200, error: `Gemini returned no text (${reason})` };
   }
-  return { ok: true, status: 200, text, structured };
+  const citations = grounded ? geminiGroundingCitations(data) : [];
+  // 🔴 GROUNDED BUT UNSOURCED IS A REAL STATE, AND IT IS NOT AN ERROR.
+  // Gemini answers from its own weights when Search returns nothing useful, and
+  // signals that only by the ABSENCE of groundingMetadata. Reporting it as a
+  // failure would discard a perfectly good answer; reporting it as grounded
+  // would credit sources that were never read. `grounded` on the result is what
+  // the citation layer branches on to decide whether this counts as live.
+  return { ok: true, status: 200, text, structured, citations, grounded: grounded ? citations.length > 0 : false };
 }
 
 async function callPerplexity(messages, model, maxTokens, apiKey, opts = {}) {
@@ -516,6 +559,26 @@ export async function resolveProvider(provider, pillar, tier) {
     enabled: chain.enabled[provider] !== false,
     apiKey: keyFor(provider),
   };
+}
+
+/**
+ * One grounded Gemini call, for callers that need SOURCES and not just text.
+ *
+ * Deliberately not part of `runChain`: the chain's job is to get an answer from
+ * whichever provider is up, and a grounded answer from one provider is not
+ * interchangeable with an ungrounded answer from another. A citation sample
+ * that silently fell back to a model's own recall would report a brand as
+ * "cited by a live engine" on the strength of its training data.
+ */
+export async function callGeminiGrounded(prompt, { pillar = "citations", tier, signal, maxTokens = 500 } = {}) {
+  const { model, enabled, apiKey } = await resolveProvider("gemini", pillar, tier);
+  if (!enabled) return { ok: false, error: "Gemini is disabled in the provider chain." };
+  if (!apiKey) return { ok: false, error: "GEMINI_API_KEY is not set." };
+  const r = await callGemini(
+    [{ role: "user", content: prompt }], model, maxTokens, apiKey, { signal, grounded: true },
+  );
+  if (!r.ok) return { ok: false, error: r.error, code: r.code || null };
+  return { ok: true, text: r.text, citations: r.citations || [], grounded: Boolean(r.grounded), model };
 }
 
 export const PING_TOKENS = 64;          // enough for "ok" on any non-reasoning model
