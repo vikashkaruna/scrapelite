@@ -152,6 +152,18 @@ grant usage on schema public to anon, authenticated;
 //   with a NULLS NOT DISTINCT column constraint. It adds no objects, but it is
 //   load-bearing: PostgREST can only name column conflict arbiters, so the
 //   normal listing upsert would otherwise fail for every save.
+// 0060_audit_subject_upsert_atomic.sql replaces upsert_audit_subject with an
+//   atomic INSERT .. ON CONFLICT per reference. It adds NO objects — 0057's
+//   select-then-insert made a concurrent caller raise unique_violation instead
+//   of receiving the existing subject, which `ensureSubject` swallowed into a
+//   NULL subject_id. Counts are unchanged.
+// 0061_rpc_lockdown.sql       grants only. 🔴 The 0044 defect one layer down:
+//   PostgreSQL grants EXECUTE on a new function to PUBLIC by default, so ten
+//   SECURITY DEFINER functions taking a caller-supplied p_user_id were callable
+//   by anon through PostgREST — and SECURITY DEFINER bypasses RLS, making each
+//   an impersonation primitive. Also fixes 0012's no-op revoke (revoking from
+//   anon while PUBLIC still holds the grant changes nothing) and states three
+//   service_role grants that were inherited from Supabase defaults.
 // Taking these to 101 / 50 / 27.
 const EXPECT = {
   tables: 101,
@@ -2819,6 +2831,56 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   const b1 = (await one(`select public.upsert_audit_subject($1,'brand',null,$2,null,'Acme Cloud','acme.com') as id`, [owner, ent])).id;
   check("a brand subject over the same domain is a DIFFERENT subject from the page", b1 !== s1);
 
+  // 🔴 THE RACE `upsert_audit_target` DOES NOT HAVE. 0057 shipped this as a
+  // SELECT-then-INSERT whose own comment claimed the partial unique indexes
+  // made it safe under concurrency. They make a SECOND ROW impossible — they
+  // do NOT make the loser return the winner's id: a concurrent snapshot cannot
+  // see the uncommitted row, so its select misses and its insert raises
+  // unique_violation, which `ensureSubject` swallows into a NULL subject.
+  // Today `sameSubject()` falls back to `target_id` so a page audit survives
+  // it; an entity-backed subject has NO fallback, so W13 would have turned a
+  // race into a scattered history. 0060 makes it atomic.
+  //
+  // ⚠️ THIS IS A STRUCTURAL ASSERTION AND IT SAYS SO. PGlite is a single
+  // connection, so the interleaving cannot be reproduced here — and a
+  // BEHAVIOURAL test cannot tell the two implementations apart, because the
+  // select fast-path answers first in every single-threaded call. An earlier
+  // draft of this block asserted "returns the existing subject rather than
+  // raising" and passed against the UNFIXED function for exactly that reason.
+  // What is checkable is that the atomicity is present at all: once the insert
+  // carries its own ON CONFLICT arbiter, Postgres owns the guarantee.
+  const subjSrc = (await one(
+    `select pg_get_functiondef(p.oid) src from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname='public' and p.proname='upsert_audit_subject'`)).src;
+  check("🔴 upsert_audit_subject is ATOMIC — every insert carries ON CONFLICT",
+    (subjSrc.match(/insert into public\.audit_subjects/g) || []).length ===
+    (subjSrc.match(/on conflict/gi) || []).length &&
+    (subjSrc.match(/on conflict/gi) || []).length === 3);
+  check("...inferring each PARTIAL index by restating its predicate",
+    /on conflict \(user_id, subject_kind, target_id\) where target_id is not null/i.test(subjSrc)
+    && /on conflict \(user_id, subject_kind, entity_id\) where entity_id is not null/i.test(subjSrc)
+    && /on conflict \(user_id, subject_kind, truth_record_id\) where truth_record_id is not null/i.test(subjSrc));
+
+  // A bare duplicate must STILL be refused: 0060 makes the function absorb the
+  // conflict, it does not weaken the constraint that creates one.
+  check("a bare duplicate INSERT is still refused — the invariant is intact", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, label)
+     values ($1,'page',$2,'page')`, [owner, tgt])));
+  const merged = await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Raced label','acme.com') as id`, [owner, tgt]);
+  eq("the conflict path returns the EXISTING subject", merged.id, s1);
+  eq("...and still only one row exists for that target",
+    (await q(`select 1 from public.audit_subjects where target_id=$1 and subject_kind='page'`, [tgt])).length, 1);
+  eq("...having merged the newer label rather than discarding it",
+    (await one(`select label from public.audit_subjects where id=$1`, [s1])).label, "Raced label");
+  // The merge must never BLANK what another caller established.
+  await q(`select public.upsert_audit_subject($1,'page',$2,null,null,null,null)`, [owner, tgt]);
+  eq("...and a caller supplying nothing does not erase the label",
+    (await one(`select label from public.audit_subjects where id=$1`, [s1])).label, "Raced label");
+  eq("...nor the canonical domain",
+    (await one(`select canonical_domain from public.audit_subjects where id=$1`, [s1])).canonical_domain, "acme.com");
+
   check("upsert refuses two references with a named error, not a raw constraint violation",
     (await throws(`select public.upsert_audit_subject($1,'page',$2,$3,null,'x',null)`, [owner, tgt, ent]) || "")
       .includes("exactly one reference"));
@@ -3072,6 +3134,77 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
       (await q(`select 1 from information_schema.role_table_grants
                  where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
   }
+}
+
+// ── 0061 · RPC lockdown ─────────────────────────────────────────────────────
+// 🔴 THE 0044 DEFECT ONE LAYER DOWN. 0044 locked fifteen TABLES that anon could
+// read and write; nobody checked FUNCTIONS. PostgreSQL grants EXECUTE on a new
+// function to PUBLIC by default, and SECURITY DEFINER bypasses RLS — so an
+// anon-executable definer function that takes a caller-supplied user id and
+// never consults auth.uid() is an impersonation primitive, not merely a loose
+// grant. This sweep is DERIVED from the catalog rather than being a list to
+// keep in step: a future migration that adds such a function fails here on the
+// day it lands, which a hand-written list could not do.
+group("RPC lockdown — no SECURITY DEFINER function lets anon act as someone else");
+{
+  const definer = await q(`
+    select p.proname, pg_get_function_identity_arguments(p.oid) ia,
+           has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+           pg_get_functiondef(p.oid) ~* 'auth\\.uid\\(\\)' checks_uid
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef
+     order by 1`);
+  check("the schema still has SECURITY DEFINER functions to check", definer.length > 0);
+
+  // The dangerous shape, stated once: reachable by an untrusted role, accepts
+  // the identity it is supposed to be enforcing, and never checks the real one.
+  const impersonable = definer.filter((f) =>
+    (f.anon_x || f.auth_x) && /p_user_?id|p_uid/i.test(f.ia) && !f.checks_uid);
+  eq(`🔴 no definer function takes a caller-supplied user id AND is reachable by anon/authenticated${
+      impersonable.length ? " — " + impersonable.map((f) => f.proname).join(", ") : ""}`,
+    impersonable.length, 0);
+
+  // The ten 0061 names, asserted individually so a partial revoke cannot pass
+  // as a whole one.
+  for (const n of ["set_account_frozen", "request_account_deletion", "cancel_account_deletion",
+                   "credit_spend", "credit_balance", "redeem_admin_coupon",
+                   "create_admin_coupon_assignment", "issue_referral_code",
+                   "accept_workspace_invite", "upsert_audit_target"]) {
+    const f = definer.find((x) => x.proname === n);
+    check(`${n} is not executable by anon`, Boolean(f) && !f.anon_x);
+  }
+
+  // ...and service_role must KEEP it, or the revoke has taken the product down
+  // instead of securing it. Every one of these is called from netlify/.
+  //
+  // ⚠️ SCOPED TO THE FUNCTIONS 0061 GRANTS EXPLICITLY, deliberately. A sweep
+  // over EVERY definer function would be testing a PGlite artifact, not the
+  // product: a stock Supabase project carries `ALTER DEFAULT PRIVILEGES ...
+  // GRANT ALL ON FUNCTIONS TO service_role`, so functions whose migration
+  // revokes without granting still work there and fail only here. 0061 states
+  // those grants rather than inheriting them; this asserts the stated ones.
+  const NEEDS_SERVICE = [
+    "set_account_frozen", "request_account_deletion", "cancel_account_deletion",
+    "credit_spend", "credit_balance", "redeem_admin_coupon",
+    "create_admin_coupon_assignment", "issue_referral_code",
+    "accept_workspace_invite", "upsert_audit_target", "claim_billing_session",
+    "assign_recommendation", "prune_ops_history", "record_pql_score",
+  ];
+  const svc = await q(`
+    select p.proname, has_function_privilege('service_role', p.oid, 'EXECUTE') x
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef and p.proname = any($1)`, [NEEDS_SERVICE]);
+  eq("...while service_role keeps EXECUTE on every one of them", svc.filter((f) => !f.x).length, 0);
+  eq("...and all of them were actually found", svc.length, NEEDS_SERVICE.length);
+
+  // `claim_billing_session` is the shape the other ten should have had: it
+  // reads auth.uid() itself and takes no user id, so `authenticated` may keep
+  // it. Pinned so a later sweep does not "tidy" the one correct exception away.
+  const claim = definer.find((f) => f.proname === "claim_billing_session");
+  check("claim_billing_session stays available to authenticated — it derives auth.uid() itself",
+    Boolean(claim) && claim.auth_x && claim.checks_uid && !/p_user_?id/i.test(claim.ia));
+  check("...and is still not reachable by anon", Boolean(claim) && !claim.anon_x);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
