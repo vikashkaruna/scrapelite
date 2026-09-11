@@ -18,6 +18,77 @@
 
 ---
 
+## 2026-09-11 (P1 SWEPT) — the workspace a re-audit was dropping. FRESH START HERE.
+
+> **Branch:** `Discoverability-P1-P3-implementation` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, verified at their original commits.
+
+### Start here
+
+**P1 is complete and swept.** W1–W8 built, D8's gate is a test
+(`src/lib/discoverability/p1Gate.test.js`), and a deliberate pass over every
+§7.x clause found three things still pending. All three are now done. **P2
+begins at W9** (Canonical Business Truth Record).
+
+✅ **Migrations `0048`–`0054` are ALL applied to dev and stage.**
+⚠️ **Production carries none of them** — seven behind this branch.
+
+```
+git fetch origin
+git checkout Discoverability-P1-P3-implementation
+nvm use 24
+npm run test:db                                        # 54 migrations
+npx vitest run src/lib/discoverability/p1Gate.test.js   # the D8 gate
+```
+
+### 🔴 What the sweep found
+
+**A re-audit silently left its workspace behind.** Every other intake field is
+inherited from the prior audit — goal, geography, competitors, page-type hint,
+prompt set. `workspace_id` was added in W8 and missed here, which would have
+made **the one path the validation loop depends on** — "re-run and compare" —
+the path that drops it. The baseline would sit in a workspace queue and its
+re-audit would not.
+
+It was found by walking §7.1's own acceptance line ("inputs saved and reusable
+on re-audit") against the code, rather than trusting a summary of what W2 had
+done. **The lesson is the one this branch keeps re-learning: check the clause
+against the code, not against the notes.**
+
+**§7.12's two remaining header gaps** are built — the baseline delta (shown only
+when the audits are comparable; "not comparable" rather than blank, because a
+missing delta with no explanation reads as "nothing changed") and the framework
+lens (which changes the LENS, not the maths, and says so).
+
+### ⚠️ §1 of the plan is now marked HISTORY
+
+It records the state on 2026-09-10, and **two of its rows were wrong about the
+code even then** — §7.6 said `metaTags` emitted no variants when it had emitted
+three since the scoring engine shipped, and §7.7 said the signal-level diff was
+missing when `auditDiff` had built one all along. **A second differ was written
+against that row before it was caught.** Read that section as a hypothesis
+somebody held once, never as a survey.
+
+### The one deferred P1 item
+
+**Evidence attachments** on a recommendation (§7.9). They need file storage with
+its own quota, lifecycle and purge path — a larger call than a column. Recorded
+as deferred rather than quietly dropped; everything else in P1 is built.
+
+### Still unproven
+
+**Nothing in W6 has met a live answer engine.** `/admin/ai` has an **Answer
+engines** tab whose probe answers what a ping cannot: does grounding return
+SOURCES. A valid key with grounding returning nothing degrades every citation
+sample to model recall while the provider card stays green — the same silent
+failure as the PageSpeed key that measured nothing for months. Watch the first
+real run.
+
+**Verified:** unit **3385** · contract **2163** (+14 skipped) · integration
+**436** · db **54 migrations / 576 assertions** + referral 17 + workflows 56 ·
+build · security · P1 gate **11/11**. Every push through the full gate, nothing
+bypassed. Handoff:
+<https://claude.ai/code/artifact/090417cb-dcf1-4942-9ad9-8b8d56167e13>
+
 ## 2026-09-11 (P1 COMPLETE) — W7, W8 and the D8 gate. FRESH START HERE.
 
 > **Branch:** `Discoverability-P1-P3-implementation` @ `da08369` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, verified at their original commits.
