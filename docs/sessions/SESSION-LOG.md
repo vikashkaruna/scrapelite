@@ -18,6 +18,78 @@
 
 ---
 
+## 2026-09-11 (later) — W1–W4 verified, and W5 shipped whole
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `2cf2908` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits
+
+**W1–W4 were reviewed line by line against §4 of the implementation plan and
+needed no changes.** Every gate re-run from a clean tree on `d1192ec`: db 603
+assertions, unit 3165, contract 2128, integration 436, build, security — 0
+failures. The review was against the plan's own deliverable list, not inferred
+from green tests, which is how the two stale claims below surfaced at all.
+
+🔴 **§7.6 WAS WRONG ABOUT META TAGS, AND THE ERROR WOULD HAVE COST A DAY.** It
+records `metaTags` as emitting "one set, not variants" and scopes title *and*
+description variants into W5. Three title angles have shipped since the scoring
+engine landed in `c902be9` — which is on `staging` and predates this branch
+entirely. Only the description lacked variants. Building titles again would have
+duplicated working code.
+
+✅ **D11 IS STALE — THE PUSH PATH IS OPEN.** It records an expired classic
+`ghp_` token with fetch and push both failing. A valid `gho_` token with `repo`
+scope is active and a full `--dry-run` cleared the entire pre-push gate. Six
+pushes landed this session.
+
+**W5 · Recommendation Studio — all five deliverables:**
+
+- **W5.1** description variants paired to the three existing title angles, with
+  truncation warnings measured on observed text only. Measuring a `TODO:` line
+  reports the length of our own prompt copy.
+- **W5.2** `internalLinkPlan` + `SH-11`. ⚠️ **It never proposes a url to link
+  to** — one page is read, and W1's sitemap indicator records only that a
+  sitemap was *declared*. A test asserts every url in the output is one the page
+  already links to. ⚠️ The analyser imports `isVagueAnchor` from the construct;
+  two copies would drift and the issue would fire over a plan listing nothing.
+- **W5.3** sitemap fetch + `contentCoverage.js` + `contentBrief` +
+  `AC-09`–`AC-12`. 🔴 **`fetched` and `urls` are separate and callers branch on
+  `fetched` first.** No declaration, no budget, a 404, a throw or a TRUNCATED
+  crawl all yield zero findings — never "you publish no comparison page", which
+  is a statement about the customer built from a fact about us. This repo shipped
+  that confusion once already, when a budget-skipped gather returned `[]` and
+  resolved to `no_match`.
+- **W5.4** `technicalBrief` + `TA-18`. ⚠️ **It exists for the sequencing, not
+  the list** — `applyDependencies` has computed which fixes are inert behind a
+  blocker since the module shipped and nothing rendered it. 🔴 The first version
+  of the fire condition required a second *technical* finding and was therefore
+  silent on the most important case: one `noindex` and a page full of copy that
+  will not count. NOINDEX gates the copy pillars, and the condition now reads
+  those.
+- **W5.5** migration `0051` + `assign_recommendation` + the route + an owner
+  control. 🔴 **The shared-workspace check is in SQL, not the handler** — without
+  it the endpoint is a membership oracle. `on delete set null`, so offboarding
+  frees a finding rather than deleting it, asserted on `confdeltype` rather than
+  only behaviourally.
+
+⚠️ **MIGRATION `0051` IS NOT APPLIED ANYWHERE.** `0048`–`0050` are on dev and
+stage; assignment does not work outside tests until `0051` joins them.
+
+⚠️ **`CG-` WAS THE WRONG PREFIX AND AN EXISTING TEST CAUGHT IT.** Issue codes
+are pillar-prefixed (`AC|EA|SH|TA`); the content-gap codes were renamed to
+`AC-09`–`AC-12` before anything was pushed, so no public code changed meaning.
+
+⚠️ **TWO TESTS CAUGHT BUGS IN THEIR OWN FIXES.** `new URL("not a url at all",
+base)` does not throw — it percent-encodes the spaces and returns a
+confident-looking path; rejecting malformed hrefs and decoding the segment also
+made `anchorFromHref` work for accented slugs. And a db-verify assertion written
+as `row?.assigned_to ?? "ROW GONE"` turned a *correct* `null` into a failure
+string — the migration was never broken, the assertion was.
+
+**Verified:** unit **3222** · contract **2141** (+14 skipped) · integration
+**436** · db **51 migrations / 545 assertions** + referral 17 + workflows 56 ·
+build · prerender 28 · e2e smoke 142. Six pushes, each through the full
+pre-push gate, nothing bypassed. Handoff page:
+<https://claude.ai/code/artifact/090417cb-dcf1-4942-9ad9-8b8d56167e13>
+
 ## 2026-09-11 — Discoverability P1/W4: gap analysis v2, and a foreign key nothing has ever written
 
 > **Branch:** `discoverability-p1-to-p3` @ `63de394` · **Pushed to:** `Discoverability-P1-P3-implementation` · **`main`/`staging`:** untouched

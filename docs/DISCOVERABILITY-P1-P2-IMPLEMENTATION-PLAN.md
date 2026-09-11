@@ -142,16 +142,16 @@ identically before and after.
 | FAQ content + FAQPage JSON-LD | ✅ `faqContentBlock`, `faqSchema` |
 | Organization + Article JSON-LD | ✅ `organizationSchema`, `articleSchema` (+ Person, HowTo, Breadcrumb, entity card, author bio) |
 | Meta title and description **variants** | ✅ **W5.** This row was wrong when written: `metaTags` has emitted **three title angles** since the scoring engine shipped (`c902be9`, present in `staging`), so only the *description* lacked variants. W5 added three descriptions paired to the three title angles, plus a truncation warning measured on observed text only. ⚠️ Angles B and C stay `TODO:` scaffolds even when the page has a description — re-angling an author's sentence is writing, not transforming, and meta copy ships verbatim. |
-| **Internal-link recommendations** | ❌ |
-| **Content brief** for missing category / comparison / use-case / industry page | ❌ |
+| **Internal-link recommendations** | ✅ **W5.** `internalLinkPlan` + issue `SH-11`. ⚠️ It never proposes a url to link to — the audit reads one page and the sitemap indicator records only that a sitemap was *declared*, so a suggested target would be a guess pasted into live markup. It fixes the anchor text on links already present. |
+| **Content brief** for missing category / comparison / use-case / industry page | ✅ **W5.** `fetchSitemapUrls` (budget-aware, one index level, capped) + pure `contentCoverage.js` + `contentBrief` + issues `AC-09`–`AC-12`. ⚠️ `fetched` and `urls` are separate and callers branch on `fetched` first: no declaration, no budget, a 404 or a TRUNCATED crawl all yield **zero** findings, never "you publish none". Classification is by url shape, so every sentence states what we MATCHED, at confidence 60. |
 | robots.txt and crawler-access remediation | ✅ `robotsTxtBlock` |
-| **Basic technical remediation brief** | ❌ |
+| **Basic technical remediation brief** | ✅ **W5.** `technicalBrief` + issue `TA-18`. ⚠️ It exists for the SEQUENCING, not the list — `applyDependencies` has computed which fixes are inert behind a blocker since the module shipped and nothing rendered it. Fires only when an active blocker gates other work, so an ordinary page raises nothing. |
 
 Priority formula: PRD specifies linear `Priority = 0.40I + 0.20C + 0.20B + 0.20E`. Shipped is
 multiplicative `100 · (I·C) · breadthMul · easeMul`. → **decision D1.**
 
 Acceptance verbs: copy ✅, export ✅, accept ✅, dismiss ✅, mark implemented ✅ (`done`),
-**assign ❌**.
+**assign ✅ W5** — migration `0051`, `assign_recommendation`, `POST /recommendations/{id}/assign`, owner control on every open card. The shared-workspace check lives in SQL so the column cannot be set to an arbitrary account id by any path. ⚠️ **`0051` is not applied to any environment yet.**
 
 ### §7.7 Validation Lab
 
