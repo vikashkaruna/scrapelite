@@ -17,6 +17,13 @@
 // CMS publishing as explicitly out of scope, and generating copy-ready assets
 // while leaving the publish decision with a human is the whole point.
 
+import { CONTENT_KINDS } from "./contentCoverage.js";
+
+/** Query shapes, taken from the coverage model so the two cannot drift. */
+const CONTENT_KIND_QUERY = Object.fromEntries(
+  Object.entries(CONTENT_KINDS).map(([k, v]) => [k, v.query]),
+);
+
 const TODO = (what) => `TODO: ${what}`;
 
 /**
@@ -551,6 +558,110 @@ export function internalLinkPlan({ links = {}, url = "" } = {}) {
   };
 }
 
+// ── Content briefs ─────────────────────────────────────────────────────────
+
+/**
+ * What each kind of page has to contain to be worth publishing.
+ *
+ * These are structural requirements, not prose. We know what a comparison page
+ * NEEDS — a verdict, a dimension table, an honest weakness — without knowing
+ * anything about the reader's product, and that is exactly the line a
+ * deterministic brief can hold: the shape is ours, every fact is theirs.
+ */
+const BRIEF_SECTIONS = Object.freeze({
+  comparison: [
+    ["The verdict, first", "One sentence naming who should pick each option. A comparison that withholds its conclusion until the end is quoted by nobody."],
+    ["Dimension table", "One row per axis a buyer actually weighs — price, limits, integrations, support. Same axes for both sides, or it is not a comparison."],
+    ["Where the alternative genuinely wins", "Name at least one. A comparison with no losses is read as marketing and cited as nothing."],
+    ["Who each is for", "Two short profiles. This is the passage answer engines lift when asked \"which should I use\"."],
+    ["FAQ + FAQPage JSON-LD", "The \"is X better than Y\" question, answered in 40-60 words, marked up."],
+  ],
+  use_case: [
+    ["The job, in the reader's words", "Named as the outcome they want, not as the feature that delivers it."],
+    ["Before and after", "The current workaround, and what replaces it. Concrete enough to recognise."],
+    ["The steps", "Numbered, each independently completable. Mark up with HowTo only if these steps are genuinely visible on the page."],
+    ["Proof", "One real example, number or quote. TODO: the proof — an invented customer is worse than no proof."],
+    ["What it costs and what it needs", "Plan, prerequisites, limits. The questions that otherwise become support tickets."],
+  ],
+  industry: [
+    ["The constraint this sector has and others do not", "Regulatory, procurement, data residency, seasonality. This is the whole reason the page exists."],
+    ["Vocabulary", "The sector's own terms for what you do. A buyer searching their own jargon will not find your general page."],
+    ["Compliance and certifications", "TODO: what you actually hold — never list a certification you have not been granted."],
+    ["Proof from this sector", "A customer, a number or a case study from the same industry. Cross-industry proof does not transfer here."],
+    ["Objections specific to this sector", "Answered directly, each in its own heading so it can be retrieved on its own."],
+  ],
+  category: [
+    ["What this category is", "A 40-60 word definition answering the unbranded plural query. The passage most likely to be quoted."],
+    ["Selection criteria", "How to choose, before naming any option. This is what makes the page useful rather than a list."],
+    ["The options", "Including ones that are not yours. A category page that lists only your product is a product page with a category title."],
+    ["When each fits", "One line per option. Turns a list into a decision."],
+    ["ItemList or CollectionPage JSON-LD", "Marks the page as an enumeration so it can be surfaced as one."],
+  ],
+});
+
+const BRIEF_LABEL = Object.freeze({
+  comparison: "Comparison page brief",
+  use_case: "Use-case page brief",
+  industry: "Industry page brief",
+  category: "Category page brief",
+});
+
+/**
+ * A brief for a page this site does not appear to publish.
+ *
+ * ⚠️ THE BRIEF NEVER NAMES THE PAGE'S SUBJECT UNLESS WE OBSERVED IT. For a
+ * comparison we DO have subjects when the operator typed competitor urls at
+ * intake (W2 records them and deliberately fetches nothing), so those are the
+ * author's own declared competitors and safe to name. Everywhere else the
+ * subject is a TODO. Inventing "Acme vs Initech" would put two companies into
+ * a brief on no evidence at all.
+ */
+export function contentBrief({ kind = "category", brand = "", competitorUrls = [], subject = "" } = {}) {
+  const id = BRIEF_SECTIONS[kind] ? kind : "category";
+  const sections = BRIEF_SECTIONS[id];
+  const you = brand || TODO("your product");
+
+  let target;
+  if (id === "comparison") {
+    const rivals = asArray(competitorUrls).map((u) => {
+      try { return new URL(String(u)).hostname.replace(/^www\./, ""); } catch { return String(u); }
+    }).filter(Boolean);
+    target = rivals.length
+      ? `${you} vs ${rivals[0]}${rivals.length > 1 ? ` (then one page each for ${rivals.slice(1).join(", ")})` : ""}`
+      : `${you} vs ${TODO("the competitor you lose deals to most often")}`;
+  } else if (id === "use_case") {
+    target = subject ? `${you} for ${subject}` : `${you} for ${TODO("the job your best customers hire you to finish")}`;
+  } else if (id === "industry") {
+    target = `${you} for ${TODO("the sector you already have customers in")}`;
+  } else {
+    target = subject || TODO("the category a reader searches before they know your name");
+  }
+
+  const body = [
+    `# ${BRIEF_LABEL[id]}`,
+    "",
+    `**Page:** ${target}`,
+    `**Answers queries shaped like:** ${CONTENT_KIND_QUERY[id]}`,
+    "",
+    "## Required sections",
+    "",
+    ...sections.flatMap(([h, note], i) => [`${i + 1}. **${h}** — ${note}`]),
+    "",
+    "## Before publishing",
+    "",
+    "- Every `TODO:` above is a fact this audit could not observe. Fill them from what you know, not from what sounds right.",
+    "- Link this page from somewhere a reader already lands. A page reachable only from the sitemap is reachable by crawlers and nobody else.",
+    "- Give it one H1 that contains the query phrase, and question-shaped H2s.",
+  ].join("\n");
+
+  return {
+    type: "content_brief", format: "markdown", label: BRIEF_LABEL[id],
+    note: "A structural brief, not copy. The shape is ours and every fact is yours — anything this audit could not observe is left as a TODO rather than filled with something plausible.",
+    body,
+    kind: id,
+  };
+}
+
 export const CONSTRUCT_BUILDERS = Object.freeze({
   answer_block:        answerBlock,
   content_block:       faqContentBlock,
@@ -563,6 +674,7 @@ export const CONSTRUCT_BUILDERS = Object.freeze({
   heading_tree:        headingTree,
   meta_tags:           metaTags,
   internal_links:      internalLinkPlan,
+  content_brief:       contentBrief,
   robots_txt:          robotsTxtBlock,
   entity_card:         entityCard,
   author_bio:          authorBio,

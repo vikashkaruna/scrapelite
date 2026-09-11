@@ -973,3 +973,107 @@ describe("every finding carries a diagnosis, a referral and an owner", () => {
     expect(groups.reduce((n, g) => n + g.count, 0)).toBe(r.issues.length);
   });
 });
+
+
+const CONTENT_GAP_CODES = ["AC-09", "AC-10", "AC-11", "AC-12"];
+
+// ── W5.3 · content coverage ────────────────────────────────────────────────
+// The pure gating logic is covered in contentCoverage.test.js. These prove the
+// PIPELINE honours it, which is the join where the mistake would actually ship.
+
+describe("content coverage — an unread sitemap raises nothing", () => {
+  const xml = (body, status = 200, url = "https://example.com/sitemap.xml") => ({
+    ok: status >= 200 && status < 300, status, url,
+    headers: { get: () => "application/xml" },
+    text: async () => body,
+  });
+  const declaresSitemap = "Sitemap: https://example.com/sitemap.xml\n";
+  const cgCodes = (r) => (r.issues || []).map((i) => i.code).filter((c) => CONTENT_GAP_CODES.includes(c));
+
+  it("🔴 raises no content gap when the sitemap 404s", async () => {
+    // The costly mistake: reporting "you publish no comparison page" because
+    // OUR fetch failed. An absence we could not verify is not a finding.
+    publicFetch.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/robots.txt")) return htmlResponse(declaresSitemap, 200, u);
+      if (u.endsWith("/sitemap.xml")) return xml("", 404, u);
+      return htmlResponse(GOOD_PAGE, 200, u);
+    });
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.status).toBe("completed");
+    expect(cgCodes(r)).toEqual([]);
+  });
+
+  it("raises no content gap when robots.txt declares no sitemap", async () => {
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(cgCodes(r)).toEqual([]);
+  });
+
+  it("raises no content gap when the sitemap fetch throws", async () => {
+    publicFetch.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/robots.txt")) return htmlResponse(declaresSitemap, 200, u);
+      if (u.endsWith("/sitemap.xml")) throw new Error("network down");
+      return htmlResponse(GOOD_PAGE, 200, u);
+    });
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect(r.status).toBe("completed");
+    expect(cgCodes(r)).toEqual([]);
+  });
+});
+
+describe("content coverage — a sitemap we did read", () => {
+  const xml = (body, status = 200, url = "https://example.com/sitemap.xml") => ({
+    ok: status >= 200 && status < 300, status, url,
+    headers: { get: () => "application/xml" },
+    text: async () => body,
+  });
+  const declaresSitemap = "Sitemap: https://example.com/sitemap.xml\n";
+  const urlset = (locs) =>
+    `<?xml version="1.0"?><urlset>${locs.map((l) => `<url><loc>${l}</loc></url>`).join("")}</urlset>`;
+
+  const withSitemap = (locs) => {
+    publicFetch.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/robots.txt")) return htmlResponse(declaresSitemap, 200, u);
+      if (u.endsWith("/sitemap.xml")) return xml(urlset(locs), 200, u);
+      return htmlResponse(GOOD_PAGE, 200, u);
+    });
+  };
+
+  it("names the kinds that matched nothing", async () => {
+    withSitemap(["https://example.com/", "https://example.com/pricing"]);
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const codes = (r.issues || []).map((i) => i.code);
+    expect(codes).toContain("AC-09");   // no comparison page matched
+    expect(codes).toContain("AC-12");   // no category page matched
+  });
+
+  it("does not flag a kind the site clearly publishes", async () => {
+    withSitemap([
+      "https://example.com/vs/clay", "https://example.com/use-cases/sales",
+      "https://example.com/industries/legal", "https://example.com/category/tools",
+    ]);
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    expect((r.issues || []).map((i) => i.code).filter((c) => CONTENT_GAP_CODES.includes(c))).toEqual([]);
+  });
+
+  it("attaches a brief of the RIGHT kind to each gap", async () => {
+    // Four issues share one asset type, so the per-recommendation facts
+    // function is what keeps them from all briefing the same page.
+    withSitemap(["https://example.com/", "https://example.com/pricing"]);
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const rec = (r.recommendations || []).find((x) => x.code === "AC-09");
+    expect(rec).toBeTruthy();
+    expect(rec.implementationAsset?.kind).toBe("comparison");
+    expect(rec.implementationAsset?.body).toMatch(/Comparison page brief/);
+  });
+
+  it("states what we matched, not what the site has", async () => {
+    withSitemap(["https://example.com/", "https://example.com/pricing"]);
+    const r = await runAudit("https://example.com/geo", baseOpts);
+    const issue = (r.issues || []).find((i) => i.code === "AC-09");
+    expect(issue.observed).toMatch(/None of the 2 urls/);
+    expect(issue.observed).not.toMatch(/your site has no/i);
+  });
+});

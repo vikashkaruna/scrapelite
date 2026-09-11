@@ -22,7 +22,8 @@
 // API, the scheduled monitor and the test suite without a Supabase in sight.
 
 import { parsePage, findSchema } from "./htmlParse.js";
-import { collectPage, checkCanonicalTarget, CANONICAL_TIMEOUT_MS } from "./fetchLayer.js";
+import { collectPage, checkCanonicalTarget, CANONICAL_TIMEOUT_MS, fetchSitemapUrls } from "./fetchLayer.js";
+import { analyseContentCoverage, describeAbsence, CONTENT_KINDS } from "../../../../src/lib/discoverability/contentCoverage.js";
 import { analyseAnswerClarity } from "./answerAnalysis.js";
 import { analyseStructure } from "./structureAnalysis.js";
 import { analyseEntityAuthority } from "./entityAnalysis.js";
@@ -49,7 +50,12 @@ export const PIPELINE_STAGES = Object.freeze([
 ]);
 
 /** Facts the construct generators need, gathered from the parsed page. */
-function constructFacts(parsed, url) {
+/** Which content kind each gap issue briefs. One issue per kind, by design. */
+const CONTENT_GAP_KIND = Object.freeze({
+  "AC-09": "comparison", "AC-10": "use_case", "AC-11": "industry", "AC-12": "category",
+});
+
+function constructFacts(parsed, url, extra = {}) {
   const org = findSchema(parsed.jsonLd || [], "Organization");
   const article = findSchema(parsed.jsonLd || [], "Article")
     || findSchema(parsed.jsonLd || [], "BlogPosting");
@@ -89,6 +95,14 @@ function constructFacts(parsed, url) {
     },
     robots_txt: { sitemapUrl: origin ? `${origin}/sitemap.xml` : "" },
     internal_links: { links: parsed.links || {}, url },
+    // A FUNCTION, not an object: four content-gap issues share one asset type
+    // and each needs its own kind, so the facts are resolved per recommendation.
+    content_brief: (rec) => ({
+      kind: CONTENT_GAP_KIND[rec?.code] || "category",
+      brand: org?.name || host,
+      competitorUrls: extra.competitorUrls || [],
+      subject: parsed.headingStats?.h1Text || "",
+    }),
     entity_card: {
       brand: org?.name || host,
       description: org?.description || parsed.meta?.description || "",
@@ -307,7 +321,41 @@ export async function runAudit(url, options = {}) {
     evidence,
   });
 
-  const analyses = [answer, structure, entity, technical];
+  // ── content coverage ─────────────────────────────────────────────────────
+  // Runs LAST among the network stages and takes whatever budget is left over.
+  // Everything above it scores the page the customer asked about; this is a
+  // side quest about the rest of the site, and it must never be the reason the
+  // audit they requested came back thin.
+  //
+  // 🔴 `usable` GATES EVERY FINDING BELOW. `fetchSitemapUrls` reports
+  // `fetched: false` for a missing robots declaration, a 404, a timeout or an
+  // exhausted budget, and `analyseContentCoverage` returns an EMPTY `missing`
+  // list in every one of those cases. A sitemap we could not read produces no
+  // recommendation at all — never "you publish no comparison page", which is a
+  // statement about the customer built out of a fact about us.
+  const sitemap = await fetchSitemapUrls(collected.sitemaps || [], { deadline });
+  const coverage = analyseContentCoverage(sitemap);
+  const contentIssues = [];
+  const KIND_TO_GAP_CODE = { comparison: "AC-09", use_case: "AC-10", industry: "AC-11", category: "AC-12" };
+  for (const kindId of coverage.missing) {
+    const code = KIND_TO_GAP_CODE[kindId];
+    if (!code) continue;
+    contentIssues.push({
+      code, signalCode: null, measuredScore: null,
+      evidence: describeAbsence(kindId, coverage),
+      details: {
+        kind: kindId,
+        urls_seen: coverage.urlsSeen,
+        documents_read: sitemap.documentsRead,
+        kinds_present: coverage.present,
+      },
+      // Url-shape matching is a heuristic: a site may publish comparisons at a
+      // path we do not recognise, and saying so is cheaper than being wrong.
+      confidenceOverride: 60,
+    });
+  }
+
+  const analyses = [answer, structure, entity, technical, { signals: {}, reasons: {}, issues: contentIssues, facts: {} }];
   const signalValues = Object.assign({}, ...analyses.map((a) => a.signals));
   const unknownReasons = Object.assign({}, ...analyses.map((a) => a.reasons));
 
@@ -417,7 +465,7 @@ export async function runAudit(url, options = {}) {
   }
   const packedIssues = applyPageTypePack(issues, pageType);
 
-  const facts = constructFacts(parsed, url);
+  const facts = constructFacts(parsed, url, { competitorUrls });
   const recommendations = rankRecommendations(
     applyDependencies(rawIssues
       .filter((i, idx) => rawIssues.findIndex((x) => x.code === i.code) === idx)
@@ -435,8 +483,11 @@ export async function runAudit(url, options = {}) {
           activePenalties: technical.penalties || [],
         });
         if (!rec) return null;
+        const assetFacts = typeof facts[rec.assetType] === "function"
+          ? facts[rec.assetType](rec)
+          : facts[rec.assetType];
         rec.implementationAsset = rec.assetType
-          ? buildConstruct(rec.assetType, facts[rec.assetType])
+          ? buildConstruct(rec.assetType, assetFacts)
           : null;
         return rec;
       })
