@@ -18,6 +18,90 @@
 
 ---
 
+## 2026-09-11 (P1 COMPLETE) — W7, W8 and the D8 gate. FRESH START HERE.
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `da08369` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, verified at their original commits.
+
+### 🔴 P1 IS COMPLETE. W1 THROUGH W8, AND THE GATE IS A TEST.
+
+D8 asks that P1 be "verified against the PRD §16 completion definition before
+any P2 work starts". That verification is now
+`src/lib/discoverability/p1Gate.test.js` — **11 assertions reading the real
+registries**, not a claim in a document. A completion claim that lives only in
+prose goes stale the first time somebody deletes a function and nothing says so,
+which is exactly how four crons sat unscheduled from R19 with no build error and
+no runtime error.
+
+```
+git fetch origin
+git checkout Discoverability-P1-P3-implementation   # expect da08369
+nvm use 24        # 26.x breaks every jsdom test
+npm run test:db   # 54 migrations · 576 assertions
+npx vitest run src/lib/discoverability/p1Gate.test.js   # the D8 gate
+```
+
+### ⚠️ Two things before P2
+
+**Migration `0054` is applied nowhere.** `0048`–`0053` are on dev and stage;
+`0054` (the lifecycle, due dates, notes, `validated_by_audit_id`, `workspace_id`)
+is not. **Production carries none of `0048`–`0054`.**
+
+**Nothing in W6 has met a live engine.** `/admin/ai` now has an **Answer
+engines** tab whose probe answers the question a ping cannot: does grounding
+return SOURCES. A green ping with an ungrounded engine degrades every citation
+sample to model recall while the provider card stays green — the same shape of
+silent failure as the PageSpeed key that measured nothing for months.
+
+### What W7 and W8 found
+
+🔴 **§7.7's "signal-level diff missing" WAS WRONG, and I nearly shipped a second
+differ because of it.** `auditDiff` has compared every signal through `delta()`
+since the module shipped. Two differs agree today and drift on the first change
+to either — the exact defect this module has found in itself twice already
+(`EVENT_TO_SOURCE` against a CHECK constraint; a cron registry against
+netlify.toml). **The second wrong gap row in this plan, after §7.6's metaTags.**
+Treat the gap analysis as a hypothesis, not a survey.
+
+🔴 **ATTRIBUTION DECLARES ITSELF A CORRELATION IN THE DATA, not only the copy.**
+Every record carries `relationship: "correlation"` and a caveat, so a consumer
+rendering the number without the label has to have gone out of its way to drop
+it. A fix followed by a FALL is reported, not hidden — it is the most useful row
+on the screen.
+
+⚠️ **Eight lifecycle states, not the PRD's seven.** `dismissed` is ours and
+load-bearing. `done` and `implemented` are one state under two names because
+every stored row and webhook payload says `done`. **`validated` requires
+`validated_by_audit_id`** — without it, it is a claim by the person who did the
+work rather than a measurement.
+
+⚠️ **`canTransition` ALLOWS an unusual jump** and only marks it unsuggested. A
+state machine that refuses a legitimate move teaches people to work around the
+tool.
+
+⚠️ **D2's bare prefixes are PERMANENT aliases, not deprecated ones.** An alias
+quietly removed a year later is worse than one never offered.
+
+⚠️ **Evidence attachments are DEFERRED, not done** — they need file storage,
+which is a larger call than a column. Recorded rather than quietly dropped.
+
+### Traps re-hit
+
+- **A unique `(audit_id, code)` constraint** breaks the obvious "insert one row
+  per state" test loop. Use distinct codes.
+- **The store-mock parity test** catches every new `auditStore` export. That is
+  the guard working, not an obstacle.
+- **e2e smoke flakes under contention** — 3 specs timed out, then 14 passed in
+  isolation in 15.9s. Verify before assuming regression.
+
+**Verified:** unit **3378** · contract **2163** (+14 skipped) · integration
+**436** · db **54 migrations / 576 assertions** + referral 17 + workflows 56 ·
+build · security · P1 gate **11/11**. Every push through the full gate, nothing
+bypassed. Handoff:
+<https://claude.ai/code/artifact/090417cb-dcf1-4942-9ad9-8b8d56167e13>
+
+**Next:** P2 begins at W9 (Canonical Business Truth Record), gated by D8 on P1
+being complete — which it now is, and which the gate test keeps true.
+
 ## 2026-09-11 (final) — W6 complete. FRESH-START ORIENTATION FOR THE NEXT SESSION.
 
 > **Branch:** `Discoverability-P1-P3-implementation` @ `bb807fe` · **`main`, `staging`, `workflow-implementation-and-optimization`, `prospect_engagement_engine_audit`:** untouched, at their original commits — verified, not assumed.
