@@ -18,6 +18,135 @@
 
 ---
 
+## 2026-09-11 — Discoverability P1/W4: gap analysis v2, and a foreign key nothing has ever written
+
+> **Branch:** `discoverability-p1-to-p3` @ `63de394` · **Pushed to:** `Discoverability-P1-P3-implementation` · **`main`/`staging`:** untouched
+
+### 1. Quick orientation
+
+Fourth of the eight P1 workstreams. W1 built the evidence envelope, W2 the
+goal-based intake, W3 the penalty model; W4 closes BRD §7.5.
+
+The BRD specifies **eleven** fields on every issue. The table carried six, and
+the five missing ones are the five that make a queue actionable rather than
+merely correct.
+
+### 2. What was accomplished
+
+**A list is not a diagnosis.** `gapTaxonomy.js` adds the deck's eight root
+causes, assigned to all 46 issue codes, plus a thirteen-module referral registry.
+46 codes is more than anyone reads, and grouping by *pillar* does not help
+because a pillar is a scoring construct — *"entity authority is 42"* says where
+points went, not what to go and do.
+
+`groupByRootCause()` returns causes in **taxonomy order, not by count**. The
+commonest cause on a broken page is usually `weak_page_structure` simply because
+there are more structural codes to trip; leading with it on a page a crawler
+cannot fetch tells the reader to restructure headings nobody will ever see.
+
+**Observed and inferred are now two labelled fields.** Both values already
+existed — the per-audit sentence and the catalogue's `why` — but they reached the
+reader as one paragraph, which gives the reasoned half the authority of the
+measured half. `observed` is per-audit, `inference` is per-code: what we saw
+varies by page, what it means does not.
+
+**Owner role and workflow state are stored.** `owner` had lived in the catalogue
+since the module shipped and had never been persisted, so *"show me everything
+engineering owns"* was a client-side filter over a list the client had to fetch
+in full first. Issues also had no lifecycle at all; the full seven-stage BRD
+vocabulary is declared and only `open` is reachable until W8.
+
+**W1's evidence envelope finally reaches a screen.** It was threaded through the
+pipeline, the store and the API in W1 and rendered nowhere.
+
+### 3. Root cause analyses
+
+#### 🔴 `audit_recommendations.issue_id` was declared in 0030 and written by nothing
+
+NULL on every row for the life of the module. **The second time** a column in
+this schema has been readable, plausible and empty — W1 found
+`audit_signals.raw_value` and `.evidence_json` in the same table set.
+
+Every recommendation was an orphan. *"Which finding produced this task"* had no
+answer in the data, so the validation loop could not close: when a re-audit
+reports AC-01 resolved, the only way to mark the recommendation it produced as
+validated was to match on `code`. That works while the mapping is one-to-one and
+**silently mis-attributes** the moment it is not — which is the worst failure
+shape available, because the wrong recommendation gets marked done and nobody
+sees an error.
+
+The fix costs a round trip and is worth it: issues insert **first and alone**
+with `return=representation`, and the returned ids thread onto the recommendation
+rows. The other three child writes still go concurrently behind it, and the
+ordering guarantee is unchanged — every child before the parent is marked
+`completed`.
+
+**The pattern worth naming:** three columns across two migrations were declared,
+reviewed, merged and never written. A schema is a promise; a column nothing
+writes is a promise nobody kept, and it is invisible because the read path
+returns `null` exactly as it would for "not applicable". `auditStore.test.js` —
+the first test file this store has ever had — now pins the write path.
+
+#### ⚠️ The BRD's M1–M13 numbering is not in this repository
+
+The PRD names thirteen modules and does not enumerate which is which anywhere
+visible here. I did **not** guess the numbers: storing a guessed `M7` and then
+renumbering it would break the rule that matters most in this codebase — *codes
+are a public contract; never repurpose or renumber one*.
+
+The stable identifier is the **slug**, derived from the PRD's own §7/§9 section
+names, which cannot be wrong about itself. `MODULES[].mCode` is a nullable
+display alias that nothing keys off. **This needs the PRD's module list to
+close** — it is a one-line change per module once confirmed.
+
+#### ⚠️ A regex of mine failed a db-verify assertion, and the assertion was wrong
+
+`/nothing to attach/` against text that read *"no identity to attach"*. The code
+was right and the check was not — the same shape as the sitemap assertion in W1
+that contradicted its own comment. Worth noting only because it is twice now:
+when a fresh assertion fails on the first run, suspect the assertion.
+
+### 4. Verification evidence
+
+```
+full unit + contract   305 files / 5288 passed / 14 skipped / 1 failed
+db-verify              50 migrations / 530 assertions / 0 failed
+build                  clean · check:prerender 28 pages / 112 refs
+```
+
+⚠️ **The one failure is pre-existing and unrelated** —
+`whiteLabelTemplate.test.js` "accepts a file exactly at the MAX_BYTES boundary".
+Confirmed during W3 by stashing all branch work and re-running, where it still
+failed.
+
+### 5. Environment state after this session
+
+- Branch `discoverability-p1-to-p3`, HEAD `63de394`, pushed to
+  **`Discoverability-P1-P3-implementation`**. `main` and `staging` untouched, no
+  PR opened.
+- 🔴 `$GITHUB_TOKEN` is still an expired `ghp_` token. Pushing needs the var
+  dropped **and** the credential-helper list reset first — see the W3 entry.
+- ⚠️ **Migrations 0048, 0049 and 0050 have only met in-process WASM Postgres.**
+- ⚠️ **No audit has run against a live URL on any of W1–W4.**
+
+### 6. Open items for the next session
+
+1. **Confirm the BRD's M1–M13 module numbering** and fill in `MODULES[].mCode`.
+   Nothing keys off it, so this is safe to do late — but it is the one W4
+   deliverable that is deliberately incomplete.
+2. **W5 — Recommendation Studio completion.** Meta title/description *variants*,
+   internal-link recommendations, the content-brief generator (category /
+   comparison / use-case / industry), technical remediation brief, and the
+   `assign` verb on the queue. Also `emphasiseForProfile` (W2 finding), still
+   exported and called by nothing — wire it safely or delete it.
+3. **Run migrations 0048–0050 against a real Supabase** before staging.
+4. **Exercise the engine against a live URL.** Neither W3 penalty has ever fired
+   on a real page, and no evidence record has been produced by a real fetch.
+5. `whiteLabelTemplate.test.js` MAX_BYTES boundary — pre-existing, unowned, and
+   now the only red test in the suite.
+
+---
+
 ## 2026-09-11 — Discoverability P1/W3: the two blockers the PRD names and the model had no answer for
 
 > **Branch:** `discoverability-p1-to-p3` @ `e64629c` · **Pushed to:** `Discoverability-P1-P3-implementation` · **`main`/`staging`:** untouched

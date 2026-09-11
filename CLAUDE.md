@@ -2,10 +2,66 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE ENVELOPE) + W2 (GOAL-BASED INTAKE) + W3 (PENALTY MODEL, `v2`). THE BRD NAMES SEVEN CRITICAL CONDITIONS; TWO OF THEM HAD NO DETECTION AT ALL. ON `discoverability-p1-to-p3` @ `e64629c`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
+> **Last updated: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE) + W2 (INTAKE) + W3 (PENALTIES, `v2`) + W4 (GAP ANALYSIS). A THIRD COLUMN IN THIS SCHEMA WAS DECLARED AND NEVER WRITTEN — `audit_recommendations.issue_id`, SO EVERY RECOMMENDATION WAS AN ORPHAN. ON `discoverability-p1-to-p3` @ `63de394`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
+>
+> 🔴 **`audit_recommendations.issue_id` WAS DECLARED IN MIGRATION 0030 AND WRITTEN BY NOTHING** —
+> NULL on every row for the life of the module. **THE THIRD SUCH COLUMN IN THIS SCHEMA**; W1 found
+> `audit_signals.raw_value` and `.evidence_json` in the same table set. Every recommendation was an
+> ORPHAN, so "which finding produced this task" had no answer and the validation loop could not
+> close: a re-audit reporting AC-01 resolved could only match on `code`, which works while that
+> mapping is one-to-one and **SILENTLY MIS-ATTRIBUTES** the moment it is not — the worst failure
+> shape available, because the wrong recommendation is marked done and nobody sees an error.
+> ⚠️ **`persistResult` NO LONGER WRITES ALL FOUR CHILDREN CONCURRENTLY** — issues go FIRST and ALONE
+> with `return=representation`, and the ids thread onto the rec rows. **Do not "optimise" that back
+> into one `Promise.all`**; the ids do not exist until the first insert returns. The ordering
+> guarantee is unchanged: every child before the parent is marked `completed`. `auditStore.test.js`
+> — the FIRST test file this store has ever had — pins it, and the assertion was confirmed RED.
+>
+> **The pattern worth naming:** three columns across two migrations were declared, reviewed, merged
+> and never written. A column nothing writes is invisible, because the read path returns `null`
+> exactly as it would for "not applicable".
+>
+> ⚠️ **THE BRD's "M1-M13" MODULE NUMBERING IS NOT IN THIS REPOSITORY, AND I DID NOT GUESS IT.**
+> The PRD names thirteen modules and enumerates which is which nowhere visible here. Storing a
+> guessed `M7` and renumbering later would break the rule that matters most — codes are a public
+> contract, never renumber one. **The SLUG is the stored identifier**, derived from the PRD's own
+> §7/§9 section names; `MODULES[].mCode` is a nullable display alias and **nothing keys off it**.
+> 🔴 **This is the one W4 deliverable that is deliberately incomplete** — it needs the PRD's list.
+>
+> ⚠️ **A LIST IS NOT A DIAGNOSIS.** 46 codes is more than anyone reads, and grouping by PILLAR does
+> not help — a pillar is a scoring construct, so "entity authority is 42" says where points went,
+> not what to do. Eight root causes now classify all 46 codes. **`groupByRootCause` orders by
+> TAXONOMY, NOT BY COUNT**, deliberately: the commonest cause on a broken page is usually
+> `weak_page_structure` (more structural codes exist to trip), and leading with it on an unreachable
+> page tells the reader to restructure headings nobody will ever see. ⚠️ Two causes
+> (`location_radius_mismatch`, `conversion_friction`) are declared for P2 and **must stay unused in
+> P1** or a customer is shown a referral to nothing. Ordinary CWV is `ux_friction` (the page IS
+> reachable, just unpleasant); **TA-17 is `technical_access`**, which is the whole basis of the W3
+> blocker.
+>
+> ⚠️ **`observed` AND `inference` ARE TWO COLUMNS BECAUSE THEY CARRY DIFFERENT WARRANTIES.**
+> "The page has two H1 elements" is MEASURED; "this dilutes the topical signal" is REASONED. Both
+> values already existed — the per-audit sentence and the catalogue's `why` — but arrived as one
+> paragraph, which gives the second the authority of the first. `observed` is per-AUDIT,
+> `inference` is per-CODE. ⚠️ **`evidence` is KEPT**, and `observed` falls back to it on a pre-W4
+> row (the sentence IS the observed fact, just unlabelled) while `inference` does **NOT** fall back
+> to the catalogue — back-filling one would put a diagnosis in front of a customer that no run
+> produced.
+>
+> ✅ **W1's EVIDENCE ENVELOPE FINALLY RENDERS.** It reached the pipeline, the store and the API in
+> W1 and **no screen**. Now inline and collapsed on the signal it supports, because the question is
+> always "why is THIS number what it is". Renders nothing when there is no evidence — an empty
+> "Evidence" disclosure would read as "we looked and found none".
+>
+> **Verified:** **305 files / 5288 passed / 14 skipped** · db-verify **50 migrations / 530
+> assertions / 0 failed** · build clean · check:prerender 28 pages / 112 refs. ⚠️ **One PRE-EXISTING
+> failure remains** — `whiteLabelTemplate.test.js` MAX_BYTES boundary, confirmed unrelated in W3 by
+> stashing all branch work and re-running.
+>
+> ── **Prior, and still current — W3 (penalty model)** ────────────────────────────────────────────
 >
 > 🔴 **THE BRD NAMES SEVEN CRITICAL CONDITIONS AND TWO HAD NO DETECTION AT ALL** — *critical
 > entity schema invalid* and *severe CWV failure*. Both are now blockers at the PRD's own **0.10**,
