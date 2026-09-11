@@ -342,6 +342,9 @@ definition.** Check this after every apply, not only the first.
 
 ## 4d. Applying `0060` + `0061` (D7 atomicity + the RPC lockdown) — **security, apply promptly**
 
+> ✅ **APPLIED TO DEV/STAGE 2026-09-12** (owner-confirmed), together with `0059`
+> and `0060`. 🔴 **PRODUCTION STILL NEEDS ALL THREE.**
+>
 > 🔴 **`0061` IS A SECURITY FIX, NOT A FEATURE.** Until it is applied, ten
 > `SECURITY DEFINER` functions are callable by `anon` through PostgREST with a
 > caller-supplied `p_user_id` and no `auth.uid()` check — and `SECURITY DEFINER`

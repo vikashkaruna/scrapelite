@@ -16,8 +16,9 @@ back to `target_id`, and not harmless once W13 persists an entity-backed
 subject that has no fallback. `0061` — 🔴 **the 0044 defect one layer down**:
 ten SECURITY DEFINER functions taking a caller-supplied `p_user_id` were
 executable by `anon`, because PostgreSQL grants EXECUTE to PUBLIC by default
-and nobody had checked functions when 0044 locked the tables. **The next
-migration number is `0062`.**
+and nobody had checked functions when 0044 locked the tables. ✅ **All three are
+applied to dev/stage** (owner-confirmed 2026-09-12); production still needs them.
+**The next migration number is `0063`.**
 
 🔴 **AND A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, found in the same review.**
 `audit_entity_evidence` (W10 / `0056`) holds CORROBORATION — every later
@@ -434,7 +435,24 @@ and merged, so they are stated here rather than rediscovered:
     the endpoint is not an enumeration oracle over other tenants' uuids.
     W9 and W10 did this; W12 shipped without it.
 
-**W13 · Schema intelligence + Trust & Proof** *(next; unblocks TC in BDS and TP in PDS, both currently redistributed)*
+**W13 · Schema intelligence + Trust & Proof** — ✅ **SHIPPED.** `trustProof.js`
+(three independence tiers, seven trust signals, the PRD's six TC terms),
+`schemaIntelligence.js` (eight approved types, the PRD's five Schema terms),
+migration `0062` (2 tables), `/schema-trust/*`. **`trust_proof` and
+`local_directory` are now `built: true`**, so TC (20% of BDS), TP (15% of PDS),
+TR (10% of SFS) and GA (15% of SFS) stop being redistributed.
+
+🔴 **W12's OWN FLAG WAS STILL `false` AND NOBODY NOTICED FOR A SESSION.** It
+shipped `napModel.js` and `/local-directory/*` and never flipped
+`local_directory.built`, so `geographic_availability` kept reading `null` and
+kept telling the customer it was "waiting on W12" for a module that was already
+live. The old test simply restated the stale list and agreed with it —
+**a list that restates the thing it checks cannot catch it drifting**, the same
+defect as the hand-written `STORE_EXPORTS` array. The registry now names the
+module implementing each source and the parity test imports it, so the flag is
+checked rather than trusted.
+
+*Original plan, kept for the record:*
 
 1. **Freeze the two scoring registries before wiring a route.** The repository
    records the two exact formulas, but not the PRD expansions for

@@ -164,11 +164,18 @@ grant usage on schema public to anon, authenticated;
 //   an impersonation primitive. Also fixes 0012's no-op revoke (revoking from
 //   anon while PUBLIC still holds the grant changes nothing) and states three
 //   service_role grants that were inherited from Supabase defaults.
-// Taking these to 101 / 50 / 27.
+// 0062_schema_trust.sql       +2 tables (audit_schema_entities,
+//   audit_trust_evidence) +2 triggers. NO new function — nothing here is
+//   several writes that must not separate. W13: the `trust_proof` source W11
+//   bound three components to and nobody had built. ⚠️ `independence` IS a
+//   CHECK (a three-value trust vocabulary that decides what a claim is worth);
+//   `signal` is NOT (an open registry that grows with the market) — the same
+//   split 0058 made, for the same reason.
+// Taking these to 103 / 50 / 29.
 const EXPECT = {
-  tables: 101,
+  tables: 103,
   functions: 50,
-  triggers: 27,
+  triggers: 29,
   tablesWithoutRls: 0,
 };
 
@@ -3133,6 +3140,112 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     eq(`${t} grants nothing to anon or authenticated`,
       (await q(`select 1 from information_schema.role_table_grants
                  where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0062 · W13, schema intelligence + trust & proof ────────────────────────
+group("audit_schema_entities / audit_trust_evidence — the W13 storage");
+{
+  const owner = (await one(`insert into auth.users (email) values ('w13-owner@x.com') returning id`)).id;
+  const other = (await one(`insert into auth.users (email) values ('w13-other@x.com') returning id`)).id;
+  const tgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [owner])).id;
+  const subj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home','acme.com') as id`, [owner, tgt])).id;
+
+  // ── The API's exact on_conflict shape ────────────────────────────────────
+  // 🔴 0059's LESSON, APPLIED FORWARD. PostgREST can only name COLUMN
+  // arbiters, so a NULLS NOT DISTINCT constraint is what makes the normal save
+  // legal when subject_id is nullable. 0058 shipped an expression index that
+  // enforced the invariant AND refused every save.
+  const noSubject = await one(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'Organization','valid')
+     on conflict (user_id, subject_id, schema_type)
+     do update set validity = excluded.validity
+     returning id, validity`, [owner]);
+  eq("🔴 a NULL-subject schema row supports the API's column-based upsert", noSubject.validity, "valid");
+
+  const reupsert = await one(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'Organization','incomplete')
+     on conflict (user_id, subject_id, schema_type)
+     do update set validity = excluded.validity
+     returning validity`, [owner]);
+  eq("...and a re-observation UPDATES rather than stacking a second opinion", reupsert.validity, "incomplete");
+  eq("...leaving exactly one row", (await one(
+    `select count(*)::int n from public.audit_schema_entities
+      where user_id=$1 and subject_id is null and schema_type='Organization'`, [owner])).n, 1);
+
+  check("a subject-scoped row is a DIFFERENT row from the null-subject one", Boolean(await one(
+    `insert into public.audit_schema_entities (user_id, subject_id, schema_type)
+     values ($1,$2,'Organization') returning id`, [owner, subj])));
+
+  // Present-but-unusable is a third state, not a worse absence.
+  for (const v of ["valid", "incomplete", "unparseable"]) {
+    check(`validity '${v}' is storable`, Boolean(await one(
+      `insert into public.audit_schema_entities (user_id, schema_type, validity)
+       values ($1,$2,$3) returning id`, [owner, `T_${v}`, v])));
+  }
+  check("an invented validity is refused", Boolean(await throws(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'X','probably_fine')`, [owner])));
+
+  // ── Trust evidence ───────────────────────────────────────────────────────
+  check("a self-published observation needs no source", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','self_published',12) returning id`, [owner])));
+
+  // 🔴 THE CHECK THAT MAKES THE DATABASE AGREE WITH THE MODEL. An independent
+  // record nobody can go and check is not an independent record.
+  check("🔴 a third_party observation with NO source_url is refused by the DATABASE", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','third_party',3)`, [owner])));
+  check("...but is accepted with one", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count, source_url)
+     values ($1,'ratings','third_party',3,'https://g2.com/acme') returning id`, [owner])));
+
+  check("an invented independence is refused", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence)
+     values ($1,'ratings','trust_me_bro')`, [owner])));
+  check("a negative observed_count is refused", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','self_published',-4)`, [owner])));
+
+  // ⚠️ `signal` is deliberately NOT constrained — a new trust source is a code
+  // change, not a migration. The TIER-equivalent (independence) is.
+  check("an unregistered signal is ACCEPTED — the registry is code, not a CHECK", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence)
+     values ($1,'a_source_invented_next_quarter','self_published') returning id`, [owner])));
+
+  // ── Ownership and cascade ────────────────────────────────────────────────
+  const otherTgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [other])).id;
+  const otherSubj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home',null) as id`, [other, otherTgt])).id;
+  check("another owner's identical schema row does not collide", Boolean(await one(
+    `insert into public.audit_schema_entities (user_id, subject_id, schema_type)
+     values ($1,$2,'Organization') returning id`, [other, otherSubj])));
+
+  const before = (await one(`select count(*)::int n from public.audit_trust_evidence where user_id=$1`, [owner])).n;
+  check("the owner has trust rows before the cascade test", before > 0);
+  await db.query(`delete from auth.users where id=$1`, [owner]);
+  eq("deleting the owner cascades their trust evidence away",
+    (await one(`select count(*)::int n from public.audit_trust_evidence where user_id=$1`, [owner])).n, 0);
+  eq("...and their schema entities",
+    (await one(`select count(*)::int n from public.audit_schema_entities where user_id=$1`, [owner])).n, 0);
+}
+
+group("W13 RLS lockdown");
+{
+  for (const t of ["audit_schema_entities", "audit_trust_evidence"]) {
+    eq(`${t} has RLS enabled`, (await one(
+      `select relrowsecurity from pg_class where relname=$1`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`, (await q(
+      `select 1 from information_schema.role_table_grants
+        where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
   }
 }
 

@@ -1646,6 +1646,95 @@ export async function listLocalChecks(userId, { truthRecordId = null, subjectId 
  * checked against the owner rather than trusted, exactly as `getEntity` is
  * before an edge is drawn between two nodes.
  */
+// ── W13 · Schema intelligence + Trust & Proof ──────────────────────────────
+
+/**
+ * Record one observed schema type for a subject.
+ *
+ * ⚠️ THE CONFLICT TARGET NAMES COLUMNS, and 0062 backs it with a
+ * `NULLS NOT DISTINCT` constraint — because `subject_id` is nullable and an
+ * expression index cannot be a PostgREST arbiter. That combination is exactly
+ * what 0059 had to repair in W12, where every listing save was refused.
+ */
+export async function saveSchemaEntity(userId, {
+  subjectId = null, auditId = null, schemaType, validity = "valid",
+  missingProperties = [], nodeId = null, sameAs = [],
+  componentScores = null, evidence = null, workspaceId = null,
+}) {
+  const r = await rest("audit_schema_entities?on_conflict=user_id,subject_id,schema_type", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      schema_type: schemaType,
+      validity,
+      missing_properties: Array.isArray(missingProperties) ? missingProperties : [],
+      node_id: nodeId,
+      same_as: Array.isArray(sameAs) ? sameAs : [],
+      component_scores: componentScores || {},
+      evidence_json: evidence,
+      observed_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, entity: row || null };
+}
+
+/**
+ * Record one trust observation.
+ *
+ * 🔴 `independence` IS NOT TAKEN FROM A REQUEST BODY — the route resolves it
+ * from how the observation was obtained. See `schemaTrustRoute`.
+ */
+export async function saveTrustObservation(userId, {
+  subjectId = null, auditId = null, signal, independence,
+  observedCount = 0, verifiable = false, sourceUrl = null,
+  evidence = null, workspaceId = null,
+}) {
+  const r = await rest("audit_trust_evidence?on_conflict=user_id,subject_id,signal,independence", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      signal,
+      independence,
+      observed_count: Math.max(0, Math.floor(Number(observedCount) || 0)),
+      verifiable: Boolean(verifiable),
+      source_url: sourceUrl,
+      evidence_json: evidence,
+      observed_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, observation: row || null };
+}
+
+/** Every schema observation for a subject, scoped to its owner. */
+export async function listSchemaEntities(userId, { subjectId = null, limit = 100 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_schema_entities?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/** Every trust observation for a subject, scoped to its owner. */
+export async function listTrustObservations(userId, { subjectId = null, limit = 200 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_trust_evidence?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 200)}`);
+  return r.ok ? r.data || [] : [];
+}
+
 export async function getSubject(userId, subjectId) {
   const r = await rest(
     `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`

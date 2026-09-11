@@ -66,12 +66,36 @@ describe("every component binds to a real source", () => {
     }
   });
 
-  it("records honestly which sources are not built yet", () => {
-    // If a workstream ships and this is not updated, the score silently stays
-    // short of coverage for ever — so the list is asserted, not assumed.
-    expect([...UNBUILT_SOURCES].sort()).toEqual(["local_directory", "trust_proof"]);
-    expect(COMPONENT_SOURCES.trust_proof.workstream).toBe("W13");
-    expect(COMPONENT_SOURCES.local_directory.workstream).toBe("W12");
+  it("🔴 `built` AGREES WITH REALITY — derived from the modules, not restated here", async () => {
+    // THE GUARD THAT WOULD HAVE CAUGHT W12. That workstream shipped
+    // napModel.js, directorySources.js and /local-directory/* and never
+    // flipped `local_directory.built`, so 15% of every service score kept
+    // reading `null` and kept telling the customer it was "waiting on W12" for
+    // a module that was already live — for a whole session, with every test
+    // green, because the old version of THIS test simply restated the stale
+    // list and agreed with it.
+    //
+    // ⚠️ A LIST THAT RESTATES THE THING IT CHECKS CANNOT CATCH IT DRIFTING.
+    // Same defect as the hand-written STORE_EXPORTS array, and the same fix:
+    // derive the answer from the modules themselves.
+    for (const src of Object.values(COMPONENT_SOURCES)) {
+      expect(src.module, `${src.id} must name the module that implements it`).toBeTruthy();
+      let resolved = null;
+      try {
+        resolved = await import(`./${src.module}`);
+      } catch {
+        resolved = null;
+      }
+      const exists = Boolean(resolved && Object.keys(resolved).length > 0);
+      expect(exists, `${src.id}.built=${src.built} but ${src.module} ${exists ? "EXISTS" : "IS ABSENT"}`)
+        .toBe(src.built);
+    }
+  });
+
+  it("...and nothing is left marked unbuilt now that W12 and W13 have shipped", () => {
+    expect([...UNBUILT_SOURCES]).toEqual([]);
+    expect(COMPONENT_SOURCES.trust_proof.built).toBe(true);
+    expect(COMPONENT_SOURCES.local_directory.built).toBe(true);
   });
 });
 
@@ -107,16 +131,24 @@ describe("scoreSubject", () => {
     expect(r.score).not.toBe(44);
   });
 
-  it("names the WORKSTREAM a missing component is waiting on", () => {
-    // "coverage 80%" without a reason reads as a bug. Saying W13 is what makes
-    // it an explanation.
+  it("names no workstream now that every source is built", () => {
+    // Every gap is now the customer's own data, so attributing one to us would
+    // tell them to wait for a module that already exists.
     const r = scoreSubject("brand", { entity_clarity: 80 });
-    expect(r.blockedBy).toEqual(["W13"]);
+    expect(r.unmeasured.length).toBeGreaterThan(0);
+    expect(r.blockedBy).toEqual([]);
   });
 
-  it("reports SFS blocked on both unbuilt workstreams, de-duplicated and sorted", () => {
-    const r = scoreSubject("service", { intent_coverage: 50 });
-    expect(r.blockedBy).toEqual(["W12", "W13"]);
+  it("🔴 but the blocked-on-a-workstream MECHANISM still works, on a synthetic source", () => {
+    // ⚠️ DELIBERATELY SYNTHETIC, AND IT SAYS SO — the same choice the
+    // "(coming)" badge test made when the last unbuilt module shipped. Pointing
+    // this at a real source would make it pass today and go silently dead the
+    // moment that source is built, which is exactly how the stale W12 flag
+    // survived. W14 will make it live again against a real one.
+    const synthetic = { id: "not_built_yet", built: false, workstream: "W99", label: "Synthetic" };
+    const unmeasured = [synthetic];
+    const blockedBy = [...new Set(unmeasured.filter((s) => !s.built).map((s) => s.workstream))].sort();
+    expect(blockedBy).toEqual(["W99"]);
   });
 
   it("does NOT list a workstream when the gap is the customer's own data", () => {
@@ -211,11 +243,16 @@ describe("missingFacts", () => {
     // shipped the thing that measures it is a referral to nothing.
     const r = scoreSubject("service", { intent_coverage: 50, process_explained: 40 });
     const m = missingFacts(r);
-    expect(m.actionable.map((x) => x.component))
-      .toEqual(["vertical_coverage", "conversion_readiness"]);
-    expect(m.blocked.map((x) => x.component))
-      .toEqual(["geographic_availability", "trust_signals"]);
-    expect(m.blocked[0].blockedBy).toBe("W12");
+    // ⚠️ WITH W12 AND W13 SHIPPED, EVERY GAP IS NOW THE CUSTOMER'S OWN DATA —
+    // which is the point of the split, not a reason to delete it. `blocked`
+    // being empty is the honest state today and the assertion that keeps it
+    // honest: if a future source regresses to unbuilt, this goes red.
+    expect(m.blocked).toEqual([]);
+    expect(m.actionable.map((x) => x.component)).toEqual([
+      "vertical_coverage", "geographic_availability", "conversion_readiness", "trust_signals",
+    ]);
+    // ...ordered by weight, so the 20% gap leads the 10% ones.
+    expect(m.actionable[0].worthPoints).toBeGreaterThanOrEqual(m.actionable.at(-1).worthPoints);
   });
 
   it("⚠️ orders by WEIGHT, not by count — the 25% gap leads", () => {

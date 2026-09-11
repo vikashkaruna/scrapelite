@@ -18,6 +18,99 @@
 
 ---
 
+## 2026-09-12 IST (W13) — SCHEMA INTELLIGENCE + TRUST & PROOF. THE TRUST MODEL EXISTS TO STOP A COUNTER, AND W12's OWN "BUILT" FLAG HAD BEEN STALE FOR A SESSION.
+
+**Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging` and
+every other branch untouched, verified before and after.
+
+W11 shipped three components binding to a `trust_proof` source nobody had
+built — `trust_credibility` (20% of BDS), `trust_proof` (15% of PDS) and
+`trust_signals` (10% of SFS) all read `null` and were redistributed. W13 is
+that source.
+
+### 🔴 The rule the trust model exists for
+
+**EVIDENCE QUALITY, NEVER EVIDENCE VOLUME.** Ten unattributed testimonials on a
+page the business controls must never outscore one verifiable third-party
+record. A counting model is trivially gamed by the party being measured — and
+worse, it *rewards* the behaviour, so the number rises while the thing it
+claims to measure falls. Scored by `INDEPENDENCE × VERIFIABILITY`, saturating,
+so one independent verified record (60) beats any quantity of self-published
+material (capped at 25 by the weight table).
+
+⚠️ **AND THE CAP IS A DERIVED FACT, NOT A SECOND GUARD.** A first draft applied
+`Math.min(best, 40)` — a ceiling that **could never fire**, because
+`self_published`'s 0.25 weight already bounds the score at 25. A redundant
+guard reading as load-bearing invites a test pinned to the guard rather than
+the mechanism, which is exactly how W12's "ignores a stored listing whose
+source is no longer in the registry" passed against a deliberately broken
+model. Removed; the property is asserted instead.
+
+⚠️ **`trustGaps` USED TO INFER PROVENANCE FROM THE SCORE** (`value < 40`) —
+a guess about how a number was produced, which would start lying the moment a
+weight moved. `signalProvenance()` reads it from the observations, which
+already carry it.
+
+### 🔴 W12's flag was still `false`, and the test agreed with it
+
+`local_directory.built` stayed `false` for a whole session after W12 shipped
+`napModel.js`, `directorySources.js` and `/local-directory/*`. So
+`geographic_availability` — 15% of every service score — kept reading `null`,
+kept being redistributed, and kept telling the customer it was **"waiting on
+W12"** for a module that was already live.
+
+⚠️ **THE OLD TEST RESTATED THE STALE LIST AND PASSED.** `expect([...UNBUILT_SOURCES].sort())
+.toEqual(["local_directory", "trust_proof"])` — a list that restates the thing
+it checks cannot catch it drifting, the same defect as the hand-written
+`STORE_EXPORTS` array which went red twice and was "fixed" by retyping names.
+The registry now carries `module` per source and the parity test **imports it**,
+so `built` is checked against reality rather than trusted. Confirmed RED by
+reverting the flag.
+
+### Where the component names come from
+
+🔴 **THE PRD GIVES `TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X` AND
+`Schema = 0.30O + 0.30L + 0.20S + 0.10F + 0.10G`, AND EXPANDS THE INITIALS
+NOWHERE IN THIS REPOSITORY** — the fourth time, after W4's "M1–M13", W10's
+fourteen types and W11's own component ids. **Every WEIGHT is verbatim and
+asserted**; only the names are derived, under W11's constraint that each binds
+to something already extracted, recorded as `binding` and `derivedFrom`.
+⚠️ **If the PRD differs, change the `label` and `binding` — never the weight
+and never the id**, which travels in stored rows and every historical diff.
+
+### Two decisions worth the next session's time
+
+⚠️ **`fidelity` IS THE ONE SCORE WHERE MORE MARKUP MEANS A LOWER NUMBER.** A
+declared `FAQPage` with no visible questions scores **0** — below having none.
+It is a machine-readable false statement, it is what gets rich results revoked,
+and `constructTemplates` already refuses to generate one for that reason, so
+rewarding its presence would recommend the defect we elsewhere report.
+`schemaGaps` puts a contradiction ahead of an absence whatever the weights say.
+
+⚠️ **TC, TP AND TR ASK DIFFERENT QUESTIONS** and W11's own `describes` strings
+are the specification. Marking a service down for having no product reviews
+reports a category error as a failing and sends the customer to collect
+something that would not help them.
+
+### Two assertions of mine that were wrong
+
+🔴 **I asserted the evidence envelope in camelCase; it is the snake_case wire
+shape W1 stores.** The model was right, the test was wrong.
+🔴 **I asserted an empty page scores `null`; it scores 0 at 20% coverage, and
+the code is right.** "The page carries none of the types it should" is a
+MEASUREMENT, not a failure to measure — it is exactly what EA-01 reports. Only
+the three components that genuinely could not be evaluated stay `null`.
+
+**Verified:** db-verify **62 migrations / 778 assertions / 0 failed** ·
+discoverability + audit suites **46 files / 1229 passed**. **18 guards confirmed
+RED first** — the quality-over-volume property against a counting model, absent
+-as-zero, unsourced-third-party-accepted, the stale W12 flag, the expression
+index as an upsert arbiter (0058's defect, which crashes db-verify outright),
+the `third_party` source CHECK, the provenance refusal, and the write itself.
+🔴 **`0062` HAS ONLY MET WASM POSTGRES.**
+
+---
+
 ## 2026-09-12 IST (later) — THE 0044 DEFECT ONE LAYER DOWN: TEN SECURITY DEFINER FUNCTIONS WERE CALLABLE BY `anon`, AND A FOURTH TABLE WAS DECLARED AND WRITTEN BY NOTHING.
 
 **Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging`,

@@ -2,7 +2,68 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 (W13) — SCHEMA INTELLIGENCE + TRUST & PROOF (`0062`). THE TRUST MODEL EXISTS TO STOP A COUNTER — TEN TESTIMONIALS MUST NEVER OUTSCORE ONE VERIFIABLE RECORD. AND W12's OWN `built` FLAG HAD BEEN STALE FOR A SESSION, WITH A TEST THAT AGREED WITH IT. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **EVIDENCE QUALITY, NEVER EVIDENCE VOLUME.** Ten unattributed testimonials on a page the
+> business controls must never outscore one verifiable third-party record. **A counting model is
+> trivially gamed by the party being measured — and worse, it REWARDS the behaviour**, so the number
+> rises while the thing it measures falls. `trustProof.js` scores every signal by `INDEPENDENCE ×
+> VERIFIABILITY`, saturating: one independent verified record (**60**) beats any quantity of
+> self-published material (**capped at 25 by the weight table**).
+>
+> ⚠️ **AND THE CAP IS A DERIVED FACT, NOT A SECOND GUARD.** A first draft applied `Math.min(best,
+> 40)` — a ceiling that **could never fire**, because `self_published`'s 0.25 weight already bounds
+> the score at 25. **A redundant guard that reads as load-bearing invites a test pinned to the guard
+> rather than the mechanism** — exactly how W12's "ignores a stored listing whose source is no longer
+> in the registry" passed against a deliberately broken model. ⚠️ **`trustGaps` also used to INFER
+> provenance from the score** (`value < 40`), a guess about how a number was produced that would start
+> lying the moment a weight moved; `signalProvenance()` reads it from the observations.
+>
+> 🔴 **W12's OWN FLAG WAS STILL `false`, AND THE TEST AGREED WITH IT.** `local_directory.built` stayed
+> `false` for a whole session after W12 shipped `napModel.js` and `/local-directory/*` — so
+> `geographic_availability`, **15% of every service score**, kept reading `null` and kept telling the
+> customer it was *"waiting on W12"* for a module that was already live. ⚠️ **The old test restated
+> the stale list and passed**: `expect([...UNBUILT_SOURCES].sort()).toEqual(["local_directory",
+> "trust_proof"])`. **A LIST THAT RESTATES THE THING IT CHECKS CANNOT CATCH IT DRIFTING** — the same
+> defect as the hand-written `STORE_EXPORTS` array. `COMPONENT_SOURCES` now carries `module` per
+> source and the parity test **imports it**, so `built` is checked rather than trusted.
+>
+> 🔴 **THE PRD EXPANDS NEITHER FORMULA'S INITIALS ANYWHERE IN THIS REPOSITORY** — the fourth time,
+> after W4's "M1–M13", W10's fourteen types and W11's component ids. **Every WEIGHT is verbatim and
+> asserted** (`TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X`, `Schema = 0.30O + 0.30L + 0.20S +
+> 0.10F + 0.10G`); only the names are derived, under W11's constraint that each binds to something
+> already extracted, recorded as `binding` + `derivedFrom`. ⚠️ **If the PRD differs, change the
+> `label` and `binding` — NEVER the weight and never the id**, which travels in stored rows and
+> every historical diff.
+>
+> ⚠️ **`fidelity` IS THE ONE SCORE WHERE MORE MARKUP MEANS A LOWER NUMBER.** A declared `FAQPage`
+> with no visible questions scores **0 — below having none.** It is a machine-readable false
+> statement, it is what gets rich results revoked, and `constructTemplates` already refuses to
+> generate one for that reason, so rewarding its presence would recommend the defect we elsewhere
+> report. `schemaGaps` puts a **contradiction ahead of an absence** whatever the weights say.
+>
+> ⚠️ **TC, TP AND TR ASK DIFFERENT QUESTIONS**, and W11's own `describes` strings are the
+> specification. Marking a service down for having no product reviews reports a **category error as a
+> failing** and sends the customer to collect something that would not help them.
+>
+> 🔴 **TWO ASSERTIONS OF MINE WERE WRONG AND THE CODE WAS RIGHT.** I asserted the evidence envelope
+> in camelCase (it is the **snake_case** wire shape W1 stores), and I asserted an empty page scores
+> `null` (**it scores 0 at 20% coverage, correctly**) — "the page carries none of the types it should"
+> is a MEASUREMENT, not a failure to measure, which is exactly what EA-01 reports.
+>
+> **Verified:** db-verify **62 migrations / 778 assertions / 0 failed** · discoverability + audit
+> **46 files / 1229 passed**. **18 guards confirmed RED first**, including the quality-over-volume
+> property against a counting model and the expression index as an upsert arbiter (0058's defect,
+> which crashes db-verify outright). 🔴 **`0062` HAS ONLY MET WASM POSTGRES.** ⚠️ **The next migration
+> number is `0063`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 (later) — SECURITY REVIEW THROUGH P2/W12. TEN `SECURITY DEFINER` FUNCTIONS WERE EXECUTABLE BY `anon` WITH A CALLER-SUPPLIED `p_user_id` — THE 0044 DEFECT ONE LAYER DOWN. PLUS A D7 GET-OR-CREATE RACE, A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, AND W12 TRUSTING PARENT IDS FROM A REQUEST BODY. ALL FIXED (`0059`–`0061`). ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> ✅ **`0059`, `0060` AND `0061` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12).
+> 🔴 **PRODUCTION STILL NEEDS ALL THREE**, and `0061` is a SECURITY fix that should not wait on a
+> feature release to carry it — [docs/DB-MIGRATION-RUNBOOK.md §4d](docs/DB-MIGRATION-RUNBOOK.md).
 >
 > 🔴 **`0061` — THE HEADLINE. `0044` LOCKED FIFTEEN TABLES AND NOBODY CHECKED FUNCTIONS.** PostgreSQL
 > grants `EXECUTE` on a new function to **PUBLIC** by default, so every migration that created one and

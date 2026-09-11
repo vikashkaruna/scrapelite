@@ -54,13 +54,33 @@ import { weightedMean } from "./scoringModel.js";
 //
 // `built` is the honest state of its source today. A component whose source is
 // not built yet reads `null` and is redistributed — it is never defaulted.
+//
+// ⚠️ `module` EXISTS SO `built` CAN BE CHECKED RATHER THAN TRUSTED. A boolean
+// nobody verifies is a boolean that goes stale silently, which is exactly what
+// happened to `local_directory`: W12 shipped and left it `false` for a whole
+// session, so 15% of every service score was reported as blocked on a module
+// that was already live. The parity test imports each named module and fails
+// if a source claims to be built while its module is absent, or claims to be
+// unbuilt while its module is present.
 export const COMPONENT_SOURCES = Object.freeze({
-  truth_record:   { id: "truth_record",   built: true,  workstream: "W9",  label: "Canonical Business Truth Record" },
-  entity_graph:   { id: "entity_graph",   built: true,  workstream: "W10", label: "Entity Graph Builder" },
-  page_signals:   { id: "page_signals",   built: true,  workstream: "P1",  label: "Page-level audit signals" },
-  ai_visibility:  { id: "ai_visibility",  built: true,  workstream: "W6",  label: "AI Visibility Intelligence" },
-  trust_proof:    { id: "trust_proof",    built: false, workstream: "W13", label: "Trust & Proof Audit" },
-  local_directory:{ id: "local_directory",built: false, workstream: "W12", label: "Local & Directory Intelligence" },
+  truth_record:   { id: "truth_record",   built: true,  workstream: "W9",  label: "Canonical Business Truth Record", module: "businessTruth.js" },
+  entity_graph:   { id: "entity_graph",   built: true,  workstream: "W10", label: "Entity Graph Builder",             module: "entityGraph.js" },
+  page_signals:   { id: "page_signals",   built: true,  workstream: "P1",  label: "Page-level audit signals",         module: "scoringModel.js" },
+  ai_visibility:  { id: "ai_visibility",  built: true,  workstream: "W6",  label: "AI Visibility Intelligence",       module: "aiVisibility.js" },
+  trust_proof:    { id: "trust_proof",    built: true,  workstream: "W13", label: "Trust & Proof Audit",            module: "trustProof.js" },
+  // 🔴 THIS FLAG WAS STALE AND NOBODY NOTICED. W12 shipped `napModel.js`,
+  // `directorySources.js` and `/local-directory/*` in the previous session and
+  // never flipped its own source here — so `geographic_availability` (15% of
+  // SFS) kept reading `null`, kept being redistributed, and kept telling the
+  // customer it was "waiting on W12" for a module that was already live.
+  //
+  // ⚠️ THE SHAPE IS THE ONE THIS SCHEMA KEEPS REPEATING: a declaration and its
+  // implementation in two places with nothing asserting they agree — the same
+  // `AUTOMATION_JOBS` vs `netlify.toml` gap, and the same four
+  // declared-and-never-written columns. `subjectScoring.test.js` now derives
+  // the built set from the modules that actually exist rather than restating
+  // this table, so the next workstream cannot forget in the same way.
+  local_directory:{ id: "local_directory",built: true,  workstream: "W12", label: "Local & Directory Intelligence", module: "napModel.js" },
 });
 
 export const UNBUILT_SOURCES = Object.freeze(

@@ -64,6 +64,16 @@ import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
+import {
+  APPROVED_TYPES, APPROVED_TYPE_IDS, EXCLUDED_TYPES,
+  SCHEMA_COMPONENTS, SCHEMA_COMPONENT_IDS,
+  schemaScore, schemaGaps,
+} from "../../src/lib/discoverability/schemaIntelligence.js";
+import {
+  INDEPENDENCE, TRUST_SIGNALS, TRUST_SIGNAL_IDS,
+  TC_COMPONENTS, TC_COMPONENT_IDS,
+  makeObservation, trustScore, tcScore, trustGaps,
+} from "../../src/lib/discoverability/trustProof.js";
 import { runAudit } from "./lib/audit/auditPipeline.js";
 import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
@@ -695,6 +705,11 @@ export const handler = async (event) => {
         return text(200, recommendationsToCsv(rows), "text/csv");
       }
       return json(200, { recommendations: rows, count: rows.length });
+    }
+
+    // ── /schema-trust ──────────────────────────────────────────────────────
+    if (root === "schema-trust") {
+      return await schemaTrustRoute(userId, method, path, body, event);
     }
 
     // ── /local-directory ───────────────────────────────────────────────────
@@ -2225,6 +2240,185 @@ async function requireLocalRefs(userId, body) {
   if (body.subject_id) {
     const subj = await store.getSubject(userId, body.subject_id);
     if (!subj) return { refusal: notFound("Subject not found.") };
+  }
+  return { refusal: null };
+}
+
+/**
+ * P2 · W13 — schema intelligence and trust & proof.
+ *
+ * 🔴 `independence` IS DERIVED, NEVER ACCEPTED. It is the field the entire
+ * trust model rests on: it decides whether a claim is worth 25% or 100%, so a
+ * client that could set it could mint third-party standing for its own
+ * testimonials. The route resolves it from what the request actually
+ * demonstrates — a checkable source URL — which is the same rule W12 applies
+ * to `acquisition: "authorized_api"` and W9 applies to `observed`/`imported`.
+ */
+async function schemaTrustRoute(userId, method, path, body, event) {
+  const [, section] = path;
+  const q = event.queryStringParameters || {};
+
+  if (section === "schema-registry" && method === "GET") {
+    return json(200, {
+      approved_types: APPROVED_TYPE_IDS.map((t) => ({ ...APPROVED_TYPES[t] })),
+      excluded_types: EXCLUDED_TYPES,
+      components: SCHEMA_COMPONENT_IDS.map((id) => ({ ...SCHEMA_COMPONENTS[id] })),
+      trust_signals: TRUST_SIGNAL_IDS.map((id) => ({ ...TRUST_SIGNALS[id] })),
+      independence: Object.values(INDEPENDENCE),
+      tc_components: TC_COMPONENT_IDS.map((id) => ({ ...TC_COMPONENTS[id] })),
+    });
+  }
+
+  // ── Schema observations ──────────────────────────────────────────────────
+  if (section === "schema") {
+    if (method === "GET") {
+      const rows = await store.listSchemaEntities(userId, { subjectId: q.subject_id || null });
+      return json(200, { entities: rows, count: rows.length });
+    }
+
+    if (method === "POST") {
+      const ref = await requireSchemaTrustRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+
+      const blocks = Array.isArray(body.json_ld) ? body.json_ld : [];
+      if (blocks.length === 0 && !body.schema_type) {
+        return bad("Supply either `json_ld` blocks to validate, or a `schema_type` to record.");
+      }
+
+      const scored = schemaScore({
+        jsonLd: blocks,
+        microdata: Array.isArray(body.microdata) ? body.microdata : [],
+        pageType: body.page_type || null,
+        visibleFaq: numOrNullBody(body.visible_faq),
+        visibleSteps: numOrNullBody(body.visible_steps),
+        canonicalDomain: body.canonical_domain || null,
+        parseFailures: Number(body.parse_failures) || 0,
+      });
+
+      // 🔴 THE WRITE. Declared-and-never-written is this schema's own recorded
+      // failure mode, four times over; the contract test asserts this call.
+      const saved = [];
+      for (const b of scored.blocks) {
+        const r = await store.saveSchemaEntity(userId, {
+          subjectId: body.subject_id || null,
+          auditId: body.audit_id || null,
+          workspaceId: body.workspace_id || null,
+          schemaType: b.type,
+          validity: b.valid ? "valid" : "incomplete",
+          missingProperties: b.missing,
+          componentScores: Object.fromEntries(scored.components.map((c) => [c.id, c.value])),
+        });
+        if (r.ok) saved.push(r.entity);
+      }
+
+      return json(201, {
+        schema: scored,
+        gaps: schemaGaps(scored),
+        persisted: saved.length,
+      });
+    }
+  }
+
+  // ── Trust observations ───────────────────────────────────────────────────
+  if (section === "trust") {
+    if (method === "GET") {
+      const rows = await store.listTrustObservations(userId, { subjectId: q.subject_id || null });
+      const kind = q.kind || "brand";
+      const bySignal = {};
+      for (const row of rows) {
+        (bySignal[row.signal] ||= []).push({
+          signal: row.signal,
+          independence: row.independence,
+          count: row.observed_count,
+          verifiable: row.verifiable,
+        });
+      }
+      const scored = trustScore(kind, bySignal);
+      return json(200, {
+        observations: rows,
+        count: rows.length,
+        trust: scored,
+        tc: kind === "brand" ? tcScore(bySignal) : null,
+        gaps: scored ? trustGaps(scored) : [],
+      });
+    }
+
+    if (method === "POST") {
+      const ref = await requireSchemaTrustRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+
+      const signal = String(body.signal || "").trim();
+      if (!TRUST_SIGNALS[signal]) {
+        return bad(`Unknown trust signal: ${signal || "(none)"}.`);
+      }
+
+      // 🔴 REFUSED FROM THE BODY. Provenance is a claim about who holds the
+      // evidence; a claim the measured party can set is not a claim.
+      if (body.independence) {
+        return bad(
+          "`independence` is derived from the evidence, not supplied. An observation with a "
+          + "checkable source URL is recorded as independent; one without is recorded as a claim "
+          + "about an independent record.");
+      }
+
+      const sourceUrl = typeof body.source_url === "string" ? body.source_url.trim() : "";
+      // The route states WHAT it saw; `makeObservation` decides what that is
+      // worth, and demotes an unsourced independent claim rather than refusing
+      // it — so there is exactly one place the rule lives.
+      const observation = makeObservation({
+        signal,
+        independence: sourceUrl ? "third_party" : "self_published",
+        count: Number(body.observed_count) || 0,
+        verifiable: Boolean(sourceUrl) && body.verifiable !== false,
+        sourceUrl: sourceUrl || null,
+        excerpt: body.excerpt || null,
+      });
+      if (!observation) return bad("That observation could not be recorded.");
+
+      const saved = await store.saveTrustObservation(userId, {
+        subjectId: body.subject_id || null,
+        auditId: body.audit_id || null,
+        workspaceId: body.workspace_id || null,
+        signal: observation.signal,
+        independence: observation.independence,
+        observedCount: observation.count,
+        verifiable: observation.verifiable,
+        sourceUrl: sourceUrl || null,
+        evidence: observation.evidence,
+      });
+      if (!saved.ok) {
+        return json(503, { error: "Could not record the observation.", code: "STORAGE_UNAVAILABLE", detail: saved.error });
+      }
+      return json(201, { observation: saved.observation });
+    }
+  }
+
+  return notFound("Unknown schema-trust endpoint.");
+}
+
+/** A number from a request body, or null — never 0 for an absent key. */
+function numOrNullBody(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The W13 equivalent of `requireLocalRefs` — a parent id in a request body is
+ * a claim, not a fact. 404 rather than 403, so the endpoint is not an
+ * enumeration oracle over other tenants' uuids.
+ */
+async function requireSchemaTrustRefs(userId, body) {
+  const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
+  if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
+
+  if (body.subject_id) {
+    const subj = await store.getSubject(userId, body.subject_id);
+    if (!subj) return { refusal: notFound("Subject not found.") };
+  }
+  if (body.audit_id) {
+    const audit = await store.getAudit(userId, body.audit_id);
+    if (!audit) return { refusal: notFound("Audit not found.") };
   }
   return { refusal: null };
 }
