@@ -9708,6 +9708,36 @@ html.dark .dsc-page {
 .dsc-rec-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; background: var(--surface-2); border-radius: var(--r-pill); color: var(--text-2); }
 .dsc-rec-fw { font-size: 9.5px; font-weight: 700; letter-spacing: .05em; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-3); }
 .dsc-rec-status { font-size: 11px; font-weight: 600; color: var(--dsc-success); }
+/* W5.5 — who is holding a recommendation. Sits with the queue verbs because it
+   is one: assigning is an action on the fix, not metadata about it. */
+.dsc-rec-assign {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.dsc-rec-assign-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+.dsc-rec-assign-select {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, #111827);
+  max-width: 180px;
+}
+.dsc-rec-assign-select:focus-visible {
+  outline: 2px solid var(--accent, #4f46e5);
+  outline-offset: 1px;
+}
+
 .dsc-rec-actions { display: flex; gap: 6px; margin-top: 11px; flex-wrap: wrap; }
 
 .dsc-construct { margin-top: 11px; }

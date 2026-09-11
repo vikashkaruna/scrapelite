@@ -562,6 +562,19 @@ export const handler = async (event) => {
 
     // ── /recommendations ───────────────────────────────────────────────────
     if (root === "recommendations" && id) {
+      if (method === "POST" && sub === "assign") {
+        // `assignee: null` puts it down. Anything else is checked against
+        // shared workspace membership by the database, not here.
+        const r = await store.setRecommendationAssignee(userId, id, body.assignee ?? null);
+        if (r.notFound) return notFound("Recommendation not found.");
+        if (!r.ok) return bad(r.error);
+        await store.recordEvent(userId, {
+          auditId: r.recommendation?.audit_id || null,
+          eventType: body.assignee ? "recommendation.assigned" : "recommendation.unassigned",
+          payload: { code: r.recommendation?.code || null, assignee: body.assignee ?? null },
+        });
+        return json(200, { recommendation: r.recommendation });
+      }
       if (method === "POST" && ["accept", "dismiss", "done", "reopen"].includes(sub)) {
         const status = sub === "accept" ? "accepted" : sub === "reopen" ? "open" : sub === "done" ? "done" : "dismissed";
         const r = await store.setRecommendationStatus(userId, id, status, body.reason);

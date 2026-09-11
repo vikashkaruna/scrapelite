@@ -48,6 +48,7 @@ const STORE_EXPORTS = [
   "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
   "listAudits", "listTargets", "markAuditFailed", "monthStart",
   "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
+  "setRecommendationAssignee",
   "saveAuditSummary",
   "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
   "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
@@ -763,6 +764,49 @@ describe("recommendations", () => {
     expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
       eventType: "recommendation.dismissed",
     }));
+  });
+
+  // ── W5.5 · assign ───────────────────────────────────────────────────────
+
+  it("hands a recommendation to a person", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: true, recommendation: { id: "r1", audit_id: "a1", code: "AC-01", assigned_to: "user-2" },
+    }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "user-2" } });
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.setRecommendationAssignee).toHaveBeenCalledWith("user-1", "r1", "user-2");
+    expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      eventType: "recommendation.assigned",
+    }));
+  });
+
+  it("treats a null assignee as putting the work down", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: true, recommendation: { id: "r1", audit_id: "a1", code: "AC-01", assigned_to: null },
+    }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    await call("POST", "recommendations/r1/assign", { body: {} });
+    expect(storeMock.setRecommendationAssignee).toHaveBeenCalledWith("user-1", "r1", null);
+    expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      eventType: "recommendation.unassigned",
+    }));
+  });
+
+  it("🔴 refuses an assignee who shares no workspace, and says why", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: false, error: "You can only assign work to someone who shares a workspace with you.",
+    }));
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "stranger" } });
+    expect(res.statusCode).toBe(400);
+    expect(parse(res).error).toMatch(/shares a workspace/);
+  });
+
+  it("🔴 answers 404, never 403, for a recommendation that is not theirs", async () => {
+    // A 403 confirms the id is real, which is how an id space gets enumerated.
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({ ok: false, notFound: true }));
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "user-2" } });
+    expect(res.statusCode).toBe(404);
   });
 
   it("maps every queue action to the right status", async () => {

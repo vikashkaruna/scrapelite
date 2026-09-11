@@ -519,6 +519,49 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
   return { ok: true, recommendation: row };
 }
 
+/**
+ * Hand a recommendation to a person, or put it down.
+ *
+ * ⚠️ THE MEMBERSHIP CHECK IS THE DATABASE'S, NOT OURS. `assign_recommendation`
+ * verifies the assignee shares a workspace with the owner, and this function
+ * only translates its verdict. Doing the check here instead would leave the
+ * column settable to any account id by any other path into the table — and
+ * would turn this endpoint into a membership oracle, where a caller assigns to
+ * a guessed uuid and learns from the response whether the account is real.
+ *
+ * `not_found` covers both "no such recommendation" and "not yours", so an id
+ * space cannot be enumerated by comparing the two.
+ */
+export async function setRecommendationAssignee(userId, recId, assigneeId) {
+  const conn = db();
+  if (!conn) return { ok: false, error: "Audit storage is unavailable." };
+  try {
+    const res = await fetch(`${conn.base}/rpc/assign_recommendation`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({ p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `assign failed: ${res.status} ${detail}`.trim() };
+    }
+    const verdict = await res.json();
+    if (verdict === "not_found") return { ok: false, notFound: true, error: "Recommendation not found." };
+    if (verdict === "not_a_member") {
+      return { ok: false, error: "You can only assign work to someone who shares a workspace with you." };
+    }
+    if (verdict !== "ok") return { ok: false, error: "Assignment was refused." };
+
+    const row = await rest(
+      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}&select=id,audit_id,code,assigned_to,assigned_at`,
+    );
+    const rec = Array.isArray(row.data) ? row.data[0] : row.data;
+    return { ok: true, recommendation: rec || { id: recId, assigned_to: assigneeId || null } };
+  } catch (err) {
+    return { ok: false, error: err?.message || "assign failed" };
+  }
+}
+
 export async function deleteAudit(userId, auditId) {
   const r = await rest(
     `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,

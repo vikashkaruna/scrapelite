@@ -121,6 +121,14 @@ export const discoverability = {
   dismiss: (recId, reason) => req(`/recommendations/${encodeURIComponent(recId)}/dismiss`, "POST", { reason }),
   markDone: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/done`, "POST", {}),
   reopen: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/reopen`, "POST", {}),
+  /**
+   * Hand a recommendation to someone, or put it down with `null`.
+   *
+   * The server checks that the assignee shares a workspace with you; there is
+   * deliberately no client-side membership list to bypass.
+   */
+  assign: (recId, assignee) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/assign`, "POST", { assignee: assignee ?? null }),
 
   // ── Targets and trends ───────────────────────────────────────────────────
   listTargets: () => req("/targets"),

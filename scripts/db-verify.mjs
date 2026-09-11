@@ -121,10 +121,12 @@ grant usage on schema public to anon, authenticated;
 //   +1 function (watchlists_touch_updated_at) +1 trigger.
 // 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
 //   +1 function (signal_rules_touch_updated_at) +1 trigger.
-// Taking these to 87 / 46 / 19.
+// 0051_recommendation_assignment.sql +1 function (assign_recommendation), no
+//   new table: the assignee is two columns on audit_recommendations.
+// Taking these to 87 / 47 / 19.
 const EXPECT = {
   tables: 87,
-  functions: 46,
+  functions: 47,
   triggers: 19,
   tablesWithoutRls: 0,
 };
@@ -2169,6 +2171,82 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
           and grantee in ('anon','authenticated')`, [t]);
     eq(`${t}: anon and authenticated hold no grants`, grants.length, 0);
   }
+}
+
+// ── 0051 · assigning a recommendation ────────────────────────────────────────
+{
+  group("assign_recommendation() — you can only hand work to someone you share a workspace with");
+
+  const owner   = (await one(`insert into auth.users (email) values ('own@w.com') returning id`)).id;
+  const mate    = (await one(`insert into auth.users (email) values ('mate@w.com') returning id`)).id;
+  const outsider= (await one(`insert into auth.users (email) values ('out@w.com') returning id`)).id;
+
+  const ws = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'W') returning id`, [owner])).id;
+  await db.query(`insert into public.workspace_members (workspace_id, user_id, role)
+                  values ($1,$2,'owner'), ($1,$3,'member')`, [ws, owner, mate]);
+
+  const target = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [owner])).id;
+  const audit = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [owner, target])).id;
+  const rec = (await one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+     values ($1,$2,'TA-03','technical_accessibility','high','Remove the noindex') returning id`,
+    [owner, audit])).id;
+
+  eq("a new recommendation starts unassigned",
+    (await one(`select assigned_to from public.audit_recommendations where id=$1`, [rec])).assigned_to, null);
+
+  eq("the owner can assign to a workspace mate",
+    (await one(`select public.assign_recommendation($1,$2,$3) as r`, [owner, rec, mate])).r, "ok");
+
+  const held = await one(`select assigned_to, assigned_at from public.audit_recommendations where id=$1`, [rec]);
+  eq("...and the row records who holds it", held.assigned_to, mate);
+  check("...and when they took it", held.assigned_at !== null);
+
+  eq("🔴 assigning to someone outside every shared workspace is refused",
+    (await one(`select public.assign_recommendation($1,$2,$3) as r`, [owner, rec, outsider])).r, "not_a_member");
+
+  eq("...and the refusal changed nothing",
+    (await one(`select assigned_to from public.audit_recommendations where id=$1`, [rec])).assigned_to, mate);
+
+  eq("a solo operator can always assign to themselves",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [outsider, rec])).r, "not_found");
+
+  eq("the owner can take it themselves with no workspace check",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [owner, rec])).r, "ok");
+
+  eq("unassigning is always allowed",
+    (await one(`select public.assign_recommendation($1,$2,null) as r`, [owner, rec])).r, "ok");
+  const freed = await one(`select assigned_to, assigned_at from public.audit_recommendations where id=$1`, [rec]);
+  eq("...and clears the timestamp with the pointer", [freed.assigned_to, freed.assigned_at], [null, null]);
+
+  eq("🔴 another tenant cannot assign a recommendation that is not theirs",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [mate, rec])).r, "not_found");
+
+  eq("an unknown recommendation reports not_found, never a different error",
+    (await one(`select public.assign_recommendation($1,'00000000-0000-0000-0000-000000000000',$1) as r`, [owner])).r,
+    "not_found");
+
+  // 🔴 Offboarding must FREE a finding, never destroy one. Asserted on the
+  // constraint itself rather than only by deleting a user, because the
+  // behavioural version passes for the wrong reason if some other cascade
+  // reaches the row first — and it is the constraint that is the guarantee.
+  const fk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_recommendations'::regclass
+        and contype='f' and pg_get_constraintdef(oid) like '%assigned_to%'`);
+  eq("assigned_to is ON DELETE SET NULL, so offboarding frees work rather than deleting it",
+    fk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  await db.query(`select public.assign_recommendation($1,$2,$3)`, [owner, rec, mate]);
+  await db.query(`delete from auth.users where id=$1`, [mate]);
+  const survivor = await one(`select id, assigned_to from public.audit_recommendations where id=$1`, [rec]);
+  check("the recommendation outlives the person who held it", Boolean(survivor),
+    `\n      the row was deleted, not freed`);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

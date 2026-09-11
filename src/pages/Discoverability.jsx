@@ -342,6 +342,26 @@ export default function Discoverability() {
     }
   }, [showToast]);
 
+  const assignRecommendation = useCallback(async (rec, assignee) => {
+    if (!rec.id) { showToast("This audit was not saved, so its queue can't be updated."); return; }
+    setBusyRec(rec.id);
+    try {
+      await discoverability.assign(rec.id, assignee);
+      setAudit((a) => ({
+        ...a,
+        recommendations: a.recommendations.map((r) =>
+          (r.id === rec.id ? { ...r, assigned_to: assignee } : r)),
+      }));
+      showToast(assignee ? "Assigned" : "Unassigned");
+    } catch (err) {
+      // The server refuses an assignee who shares no workspace, and its message
+      // says so in those words — worth showing verbatim rather than generically.
+      showToast(err.message || "Could not assign that recommendation");
+    } finally {
+      setBusyRec(null);
+    }
+  }, [showToast]);
+
   // ── Export ───────────────────────────────────────────────────────────────
   const exportReport = useCallback(async (format) => {
     if (!audit?.auditId) return;
@@ -658,6 +678,8 @@ export default function Discoverability() {
               recommendations={audit.recommendations}
               framework={tab}
               onStatusChange={changeStatus}
+              onAssign={assignRecommendation}
+              currentUserId={user?.id || null}
               busyId={busyRec}
             />
           </Panel>
