@@ -2,7 +2,9 @@
 
 **Branch:** `discoverability-p1-to-p3` (cut from `staging`)
 **Source of truth:** *DatIQ Discoverability Intelligence System — Consolidated BRD and PRD, P1/P2/P3* (37pp) and the Perplexity architecture/mindmap deck (18pp).
-**Status:** awaiting approval. Nothing in this plan has been implemented yet.
+**Status (2026-09-12):** P1/W1–W8 and P2/W9–W12 are implemented on
+`Discoverability-P1-P3-implementation`. W13 and W14 are planned below; P3 has
+not started.
 
 ---
 
@@ -247,7 +249,7 @@ in the header**, and the **AI-visibility panel** (mention/cite/recommend %, top 
 | 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | 🟡 W11 — model + tests; TC redistributed pending W13. **D7 is signed off and built (`0057`)**, so persistence is unblocked; the surface lands with W13 when TC exists to store |
 | 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | 🟡 W11 — model + tests; TP pending W13 |
 | 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | 🟡 W11 — model + tests; **GA now measurable (W12 shipped)**, TR pending W13 |
-| 9.6 | Local & Directory Intelligence (5-tier source registry, NAP formula, per-directory match, correction packs, India-first sources) | ❌ |
+| 9.6 | Local & Directory Intelligence (5-tier source registry, NAP formula, per-directory match, correction packs, India-first sources) | ✅ W12 — registry, pure matcher, correction packs, service-radius builder, `0058`; `0059` repairs the live listing-upsert arbiter |
 | 9.7 | Schema intelligence (8 schema types + `Schema = 0.30O + 0.30L + 0.20S + 0.10F + 0.10G`) | ⚠️ Two signals exist (`schema_identity_completeness`, `structured_data_validity`); no per-type validation matrix, no Schema score |
 | 9.8 | Trust & Proof Audit `TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X` | ❌ |
 | 9.9 | Service-radius query builder (5 coverage bands) | ❌ |
@@ -369,12 +371,89 @@ zero-for-unchecked rule would open every local report near zero and then jump th
 one. ⚠️ **`coverageClaim()` is the one place the coverage sentence is built**, and a test asserts the
 forbidden flat "N directories audited" phrasing can never come out of it.
 
-**W13 · Schema intelligence + Trust & Proof** *(next; unblocks TC in BDS and TP in PDS, both currently redistributed)* — 8-schema validation matrix and Schema score;
-`schema_entities`; `trust_evidence` and the TC score with source quality/recency/relevance weighting
-rather than raw counts.
+**W13 · Schema intelligence + Trust & Proof** *(next; unblocks TC in BDS and TP in PDS, both currently redistributed)*
 
-**W14 · Workflow Hub v2 + P2 APIs** *(gated on D6, D9)* — 7 approval stages, agency/client permission
-model, revalidation trigger on "implemented", the 14 P2 endpoints, entitlement gating.
+1. **Freeze the two scoring registries before wiring a route.** The repository
+   records the two exact formulas, but not the PRD expansions for
+   `Schema = 0.30O + 0.30L + 0.20S + 0.10F + 0.10G` and
+   `TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X`. Resolve those names
+   from the signed PRD, then make each a versioned registry entry with its
+   source, applicability and weight. Do not guess an expansion from the
+   initials: a plausible but wrong metric is worse than an explicit hold.
+2. **Reuse the P1 extraction, not a second crawler.** Build pure
+   `schemaIntelligence` and `trustProof` models from the existing JSON-LD,
+   microdata inventory, visible content, dates, authorship and evidence
+   envelope. The schema matrix will cover the PRD's eight approved types,
+   validate only types applicable to the page, and return `null` for an
+   unmeasured fact. Missing or malformed markup is an observed fact; any
+   citation, ranking or trust implication remains a labelled inference.
+3. **Score evidence quality, never raw volume.** Each trust item must retain
+   evidence URL, extraction location, observed value, collection time,
+   source-quality, recency and relevance inputs. The TC model weights those
+   inputs, excludes unavailable components and reports coverage/reasons; ten
+   low-quality testimonials must never outscore one independently verifiable
+   source. It must not fabricate reviews, customers, credentials or claims.
+4. **Persist additively in `0060`.** Add `audit_schema_entities` and
+   `audit_trust_evidence`, plus the W11 subject-scoring result/subject data only
+   where an immutable historical result is required. Reuse `audit_issues` for
+   actionable findings and W1's evidence envelope rather than inventing a
+   second issue queue. Every table is owner-scoped, workspace-aware, RLS locked
+   to `service_role`, and has a retention/purge classification before merge.
+5. **Land W11's withheld result surface together with its inputs.** Persist
+   BDS/PDS/SFS against `audit_subjects`, preserving component values, coverage,
+   model version and `blockedBy`. Once W13 supplies TC and TP, stop
+   redistributing those two components only; do not reinterpret historical
+   scores under the new model version. Expose a read-only scorecard that shows
+   evidence, unknowns and the reason a component is absent.
+6. **Use narrow internal routes first.** Add authenticated, owner-filtered
+   schema/trust/subject-score endpoints and client methods; W14 owns the final
+   canonical `/api/v1/discoverability/*` inventory. No client-provided
+   `observed`, `verified`, source-quality or approval flags may create a
+   higher-fidelity record, and any future evidence fetch must go through the
+   existing SSRF, robots, allowlist, consent and wall-clock gates.
+7. **Acceptance gates.** Confirm every new pure-model test RED first; migration
+   constraints and owner isolation under real PGlite; route contracts for
+   foreign IDs and forbidden provenance; score-version comparability; then
+   `test:db`, unit, contract, integration, security, build and prerender.
+
+**W14 · Workflow Hub v2 + P2 APIs** *(after W13; entitlement and role design must be signed off)*
+
+1. **Resolve the two remaining decisions before coding.** D6's workspace-id
+   plumbing is complete, but P2's seven discoverability roles are not. Keep
+   global workspace membership roles unchanged; introduce a
+   discoverability-scoped role mapping only if the signed role matrix cannot be
+   derived from existing membership. D9 must name capability, plan, quota,
+   upgrade copy and failure behaviour for brand, product, service, local,
+   schema, trust, prompt-monitoring and revalidation actions. No UI-only gate.
+2. **Extend the existing lifecycle; do not create a competing state machine.**
+   Map the PRD's seven approval stages onto `workflowLifecycle.js`, retain the
+   existing load-bearing `dismissed` state, and make every transition validate
+   actor role, prior state, required note/assignee/evidence and workspace
+   membership on the server. Preserve the current audit/recommendation history
+   rather than backfilling a guessed state.
+3. **Make revalidation an explicit, idempotent request.** An approved
+   `implemented` item may create one `validation_scheduled` record linked to
+   the recommendation and baseline, but it must not silently run a paid audit
+   or publish a correction. The worker checks entitlement, workspace access,
+   compliance and idempotency before a re-audit; refusals are visible and cost
+   nothing.
+4. **Lock the API contract before implementation.** Build the requested
+   fourteen-endpoint table from the signed PRD, mapping every endpoint to its
+   existing internal route or a new handler, request/response schema,
+   capability check, role requirement, idempotency requirement and audit event.
+   Make `/api/v1/discoverability/*` canonical and retain established aliases;
+   no endpoint is considered delivered until its owner and cross-tenant 404
+   contract are tested.
+5. **Connector effects remain approval-gated.** HubSpot, Slack, Notion,
+   Airtable and Zapier payloads are generated from approved records only,
+   revalidated immediately before delivery, destination-validated, idempotent
+   and logged. A connector failure cannot move a recommendation to implemented
+   or expose another workspace's payload.
+6. **Acceptance gates.** Add a role × action matrix test, all lifecycle
+   transition tests, two-tenant IDOR tests, entitlement-denial/no-charge tests,
+   revalidation idempotency tests and API-schema parity tests. Finish with the
+   full DB, unit, contract, integration, security, build, prerender and smoke
+   suite before any production migration.
 
 ---
 

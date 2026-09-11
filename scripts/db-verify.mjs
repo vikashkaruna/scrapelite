@@ -148,6 +148,10 @@ grant usage on schema public to anon, authenticated;
 //   separate, so there is nothing for one to buy. ⚠️ Source ids are NOT
 //   enumerated in a CHECK — see the migration's header for why this departs
 //   from 0056 on purpose.
+// 0059_local_directory_listing_upsert.sql replaces 0058's expression index
+//   with a NULLS NOT DISTINCT column constraint. It adds no objects, but it is
+//   load-bearing: PostgREST can only name column conflict arbiters, so the
+//   normal listing upsert would otherwise fail for every save.
 // Taking these to 101 / 50 / 27.
 const EXPECT = {
   tables: 101,
@@ -2941,6 +2945,35 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
      values ($1,'google_business_profile','authoritative','authorized_api','Acme') returning id`, [owner])).id;
   check("...but an authorised-API listing needs none — the connection IS the evidence", Boolean(apiListing));
+
+  // 🔴 This is the API's exact `on_conflict` shape.  0058's expression index
+  // enforced uniqueness but could NOT be selected by this column list, making
+  // PostgREST reject saves before its update branch.  0059's NULLS NOT DISTINCT
+  // constraint must make both the non-null and null-record forms legal.
+  const upsertedNullRecord = await one(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
+     values ($1,'google_business_profile','authoritative','authorized_api','Acme corrected')
+     on conflict (user_id, truth_record_id, source_id)
+     do update set observed_name = excluded.observed_name
+     returning id, observed_name`, [owner]);
+  eq("🔴 a NULL-record listing supports the API's column-based upsert",
+    upsertedNullRecord.observed_name, "Acme corrected");
+  eq("...without stacking a second current listing",
+    (await one(`select count(*)::int n from public.audit_directory_listings
+                 where user_id=$1 and truth_record_id is null and source_id='google_business_profile'`, [owner])).n, 1);
+
+  // The operator may need to retry 0059 after a connection hiccup. Re-apply
+  // its real SQL against the already-migrated database: a constraint-backed
+  // index must be dropped THROUGH its constraint, not directly.
+  await db.exec(readFileSync(join(DIR, "0059_local_directory_listing_upsert.sql"), "utf8"));
+  const reupsertedNullRecord = await one(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
+     values ($1,'google_business_profile','authoritative','authorized_api','Acme rechecked')
+     on conflict (user_id, truth_record_id, source_id)
+     do update set observed_name = excluded.observed_name
+     returning observed_name`, [owner]);
+  eq("🔴 0059 is safely re-runnable and keeps the NULL-record upsert legal",
+    reupsertedNullRecord.observed_name, "Acme rechecked");
 
   check("a SECOND listing for the same source and record is refused", Boolean(await throws(
     `insert into public.audit_directory_listings

@@ -18,6 +18,42 @@
 
 ---
 
+## 2026-09-12 IST — P2/W12 review: the local-directory upsert had no usable conflict arbiter; W13/W14 are now implementation-ready.
+
+**Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging` and
+every other branch were not checked out, modified or pushed.
+
+### What the review found and fixed
+
+`auditStore.upsertDirectoryListing()` correctly sends PostgREST the column
+conflict target `user_id,truth_record_id,source_id`. Migration `0058`, however,
+implemented the same unique rule with an **expression index** over
+`coalesce(truth_record_id, zero_uuid)`. PostgreSQL cannot use that expression
+index for the column target, so a normal listing save could fail before its
+update branch — an API write path that its unit mock could not exercise.
+
+New forward-only `0059_local_directory_listing_upsert.sql` replaces the index
+with a named `UNIQUE NULLS NOT DISTINCT (user_id, truth_record_id, source_id)`
+constraint. That preserves the important NULL-record uniqueness rule *and*
+makes the existing PostgREST upsert legal. `0058` was not rewritten because the
+owner reports `0057` + `0058` applied to dev/stage offline. The database test
+runs the exact `ON CONFLICT` statement, confirms an update rather than a second
+row, re-applies `0059`, and passed with **59 migrations / 729 assertions**.
+
+### Environment and next work
+
+- ✅ Owner-reported: `0057` + `0058` applied to dev/stage.
+- [ ] Apply `0059` to dev/stage, then verify the named constraint and one real
+  authenticated listing upsert through PostgREST. No production migration was
+  attempted.
+- ✅ `docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md` now contains W13/W14
+  sequencing, persistence, security, API and acceptance-gate plans. W13 starts
+  by resolving the PRD expansions of the Schema and TC formula initials rather
+  than inventing business metrics; W14 is blocked on an explicit role matrix and
+  server-enforced D9 entitlement matrix.
+
+---
+
 ## 2026-09-11 (D7 SIGNED OFF + P2 · W12) — the subject registry is built, the compare route stopped lying, and local/directory intelligence shipped. FRESH START HERE.
 
 **Branch:** `Discoverability-P1-P3-implementation`. `main` (`2042348`) and

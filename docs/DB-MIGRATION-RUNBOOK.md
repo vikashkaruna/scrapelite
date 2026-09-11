@@ -220,12 +220,13 @@ take, and the function is callable by any signed-in user.
 
 ---
 
-## 4c. Applying `0057` + `0058` (D7 + P2 · W12) to dev / stage
+## 4c. Applying `0057` + `0058` (D7 + P2 · W12) and `0059` (W12 upsert repair) to dev / stage
 
-> ⚠️ **Not yet applied anywhere.** Both have only met in-process WASM Postgres
-> (PGlite) via `npm run test:db` — no GoTrue, no PostgREST, shimmed roles. The
-> session that built them has **no database credentials, no `supabase` CLI and
-> no `.env`**, so this is an operator step.
+> ✅ **`0057` and `0058` were applied to dev/stage offline, owner-reported on
+> 2026-09-12.** This code review found a forward-only W12 repair in `0059`;
+> **`0059` still needs applying** to those environments before the normal
+> PostgREST listing upsert can work. All three still need their first real
+> PostgREST verification; PGlite proves the SQL shape, not a deployed API.
 
 ### What they add
 
@@ -233,16 +234,17 @@ take, and the function is callable by any signed-in user.
 |---|---|
 | `0057_audit_subjects.sql` | 1 table (`audit_subjects`) · 1 function `upsert_audit_subject` · 1 trigger · 1 column `audits.subject_id` |
 | `0058_local_directory.sql` | 4 tables (`audit_directory_listings`, `audit_local_checks`, `audit_directory_matches`, `audit_local_findings`) · 2 triggers · no new function |
+| `0059_local_directory_listing_upsert.sql` | replaces 0058's expression unique index with a `NULLS NOT DISTINCT` column constraint; no new table/function/trigger |
 
 Together they take a clean build to **101 tables / 50 functions / 27 triggers**,
-which `npm run test:db` asserts (725 assertions).
+which `npm run test:db` asserts (729 assertions).
 
 ### Ordering
 
 `0055` and `0056` **must** already be applied: `audit_subjects` carries real
 foreign keys to `audit_business_truth_records` (0055) and `audit_entities`
-(0056), and `0058`'s check table references `audit_subjects`. The numbering is
-the ordering; apply them in it.
+(0056), and `0058`'s check table references `audit_subjects`. `0059` must run
+after `0058`. The numbering is the ordering; apply them in it.
 
 ### `0057` runs a BACKFILL, and it is re-runnable
 
@@ -269,8 +271,12 @@ bare run replays everything from `0001`:
 ```bash
 PGPASSWORD=... psql "$DEV_SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
   -f supabase/migrations/0057_audit_subjects.sql \
-  -f supabase/migrations/0058_local_directory.sql
+  -f supabase/migrations/0058_local_directory.sql \
+  -f supabase/migrations/0059_local_directory_listing_upsert.sql
 ```
+
+For a dev/stage project already carrying `0057` and `0058`, run **only** the
+last file above. It is idempotent and preserves the existing unique invariant.
 
 ⚠️ Use the **Direct** connection string (port 5432), not the pooler, and
 URL-encode special characters in the password.
@@ -309,6 +315,14 @@ select table_name, grantee from information_schema.role_table_grants
  where table_schema='public' and grantee in ('anon','authenticated')
    and table_name like 'audit_%';
 -- Expect zero rows.
+
+-- 6. The column-based upsert arbiter exists. `connullsnotdistinct = true`
+-- means two NULL truth_record_id values conflict, so PostgREST can use
+-- on_conflict=user_id,truth_record_id,source_id.
+select conname, connullsnotdistinct
+  from pg_constraint
+ where conname = 'audit_dir_listing_unique';
+-- Expect one row with connullsnotdistinct = true.
 ```
 
 ### The SECURITY DEFINER grant

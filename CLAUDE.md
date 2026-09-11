@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — D7 SIGNED OFF AND BUILT (`0057`), AND P2 · W12: LOCAL & DIRECTORY INTELLIGENCE (`0058`). THE COMPARE ROUTE WAS COMPARING TWO DIFFERENT PAGES AND PRINTING A CONFIDENT NUMBER FOR IT. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> **Last updated: 2026-09-12 — REVIEWED THROUGH P2/W12 ON `Discoverability-P1-P3-implementation`. `0057` + `0058` ARE OPERATOR-REPORTED APPLIED TO DEV/STAGE; NEW `0059` REPAIRS W12'S POSTGREST LISTING UPSERT AND MUST FOLLOW THEM. W13/W14 NOW HAVE AN IMPLEMENTATION-READY PLAN. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
 > [docs/DB-MIGRATION-RUNBOOK.md §4c](docs/DB-MIGRATION-RUNBOOK.md).
