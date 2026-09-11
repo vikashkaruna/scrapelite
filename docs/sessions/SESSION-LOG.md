@@ -18,6 +18,164 @@
 
 ---
 
+## 2026-09-11 (CONSOLIDATION + P2 · W11) — merged to the long-lived branch, 14 skipped tests recovered, D7 answered. FRESH START HERE.
+
+> **Branch: `Discoverability-P1-P3-implementation`** — W9, W10 and W11 all live
+> here now. **`main`, `staging` and every other branch: untouched.**
+
+### Start here
+
+```
+git checkout Discoverability-P1-P3-implementation
+nvm use 24 && npm ci
+npx vitest run                    # 379 files / 6244 / 0 skipped
+npm run test:db                   # 56 migrations / 664 assertions
+```
+
+### What happened
+
+**1. W9 + W10 merged into `Discoverability-P1-P3-implementation`** by
+fast-forward — `claude/p2-w9-work-streams-o4gvmq` was a strict ancestor, zero
+divergence, and the merged tree is byte-identical to the tested one. Every gate
+re-run on the merged branch.
+
+🔴 **The old branch could NOT be deleted from the remote.** `git push origin
+--delete` fails on every attempt, and the GitHub MCP set has `create_branch` but
+**no delete-branch tool** — the documented credential limitation. The local
+branch is gone and the remote one has **zero unique commits**, so it is inert;
+**delete it from the GitHub branches page.**
+
+**2. 🔴 The 14 skipped tests were skipped for a reason that was never true.**
+All 14 were Stripe contract tests carrying *"VITE_STRIPE_PUBLISHABLE_KEY not
+set; skipped until payment keys are wired"*. They need no credential and never
+did: `stripe` is mocked at the module boundary and every key in them is the
+literal string `"sk_test"`. **13 passed the instant they were un-skipped.**
+
+🔴 **The 14th did not, and that is the finding.** It asserted that a Stripe
+webhook with **no signature and no configured secret** should be accepted as
+genuine and upsert a subscription — *"signature check skipped (warns), still
+200"*. The handler was since hardened to refuse with **503** unless
+`DATIQ_ALLOW_UNSIGNED_WEBHOOKS=1` **and** the context is dev or test, but the
+block was `describe.skip`, so the stale assertion never went red. **The suite
+was carrying an anti-assertion**: anyone un-skipping it would have "fixed" the
+failure by weakening the handler back.
+
+It now pins the refusal — 503, `constructEvent` never called, and **nothing
+written**, because a refused webhook that still upserts is the whole
+vulnerability with a different status code — plus a test for the double-gated
+dev hatch. Confirmed RED against the pre-hardening handler.
+
+⚠️ **Stripe is still DISABLED in the product** (v1.0 is Razorpay-only). What was
+restored is the contract coverage `STRIPE-DEFERRAL.md` already claims exists.
+**The suite is now 0 skipped.**
+
+**3. D7 answered** — [`DISCOVERABILITY-D7-SUBJECT-MODEL.md`](../DISCOVERABILITY-D7-SUBJECT-MODEL.md).
+
+**4. W11's scoring model built.** See below.
+
+### 🔴 D7 — the recommendation, in one paragraph
+
+**Do not make `audit_issues` polymorphic.** A `subject_id` pointing at different
+tables per row **cannot carry a foreign key**, and this repo has been burned
+three times by pointers nothing enforces (`raw_value`, `evidence_json`,
+`issue_id`). It also touches every reader of the P1 queue, the diff engine and
+all four exports.
+
+**Instead make the AUDIT polymorphic, one level up**, via an `audit_subjects`
+registry where every reference is a real FK and a CHECK constraint enforces
+exactly-one-of. `audit_issues` and `audit_recommendations` are **UNCHANGED** —
+one queue and one differ are preserved *because* findings still hang off
+`audit_id`. A new subject kind then costs one nullable FK plus one CHECK arm,
+instead of a discriminator every reader must learn. `audits.target_id` **stays**;
+`subject_id` is additive. Needed **before W11 can persist anything.**
+
+### W11 — what shipped, and what deliberately did not
+
+✅ **`src/lib/discoverability/subjectScoring.js`** — all three formulas at the
+PRD's exact weights, the missing-facts matrix, the service intent-coverage map.
+30 tests.
+
+⚠️ **THE WEIGHTS ARE THE PRD'S AND ARE ASSERTED TO THE DIGIT**, so an "align the
+numbers" pass fails the build with the reasoning attached. ⚠️ **The component
+NAMES are derived** — the abbreviations are expanded nowhere visible in this
+repo, the same situation W4 hit with M1–M13 and W10 with its types — and every
+component is bound to a named `source`, because **a component with no source is
+a weight applied to a number nobody produces.**
+
+🔴 **TC IS 20% OF BDS AND W13 HAS NOT SHIPPED.** It is EXCLUDED and its weight
+redistributed through `weightedMean` — the one implementation — and the result
+carries `blockedBy: ["W13"]`. Scoring it 0 would take every brand score down
+twenty points for a module that does not exist, then show a **phantom
+twenty-point gain the day W13 lands**, making the trend line a fiction. That is
+the rule the whole module rests on, finally carrying real weight rather than
+covering a third-party outage.
+
+⚠️ **The missing-facts matrix SPLITS actionable from blocked.** Telling somebody
+to "improve trust and credibility" when we have not built the thing that
+measures it is a referral to nothing.
+
+⏸ **PERSISTENCE, THE API AND THE UI ARE DELIBERATELY NOT BUILT.** They need a
+subject model, which is D7, and implementing an unapproved schema decision is
+much harder to reverse than deferring it. The scoring model needs no schema, so
+it is complete and fully tested; the moment D7 is signed off, W11 finishes with
+a migration and a route.
+
+### ⚠️ A test of mine was wrong, and the code was right
+
+The first `contributions sum to the score` assertion multiplied by weight a
+second time — `contribution` is already `value × (weight / coverage)`, i.e. the
+weight-scaled share. It failed by a factor of the weight. Fixed in the test, and
+the corrected version also pins that an excluded component contributes `null`
+rather than zero points.
+
+### 🔴 Migrations 0055 + 0056 — NOT applied, and not applicable from here
+
+This session has **no database credentials, no `supabase` CLI and no `.env`**.
+Applying them is an operator step; the procedure, ordering (**0055 first** —
+0056 references it), the subset runner and five verification queries are now in
+[`DB-MIGRATION-RUNBOOK.md` §4b](../DB-MIGRATION-RUNBOOK.md).
+
+✅ **Both proven safely RE-RUNNABLE**, by applying them a second time to a
+fully-migrated database and confirming zero object drift:
+`{"tables":96,"funcs":49,"trigs":24,"pols":93,"idx":311}` before and after.
+
+🔴 **The one thing PGlite could not prove:** both functions are
+`security definer` and have only run against shimmed roles. The runbook carries
+the `set local role authenticated` check that proves the grant actually took —
+a result of `not_found` instead of a permission error means any signed-in user
+can call them.
+
+### Verified
+
+`npm run test:all` — **9 of its 10 gates green**: readiness, unit, contract,
+integration, system, db, build, prerender, security. A full `npx vitest run`
+reads **379 files / 6244 passed / 0 skipped / 0 failed**; **0 skipped is the
+number that moved.** db-verify **56 migrations / 664 assertions / 0 failed** ·
+referral 17 · workflows 56 · build clean · check:prerender 28 pages / 112 refs ·
+security clean.
+
+⚠️ **The 10th gate, Playwright smoke, fails on the CONTAINER and not on this
+change** — the documented image mismatch (chromium **1194** installed,
+`@playwright/test` wants **1234**), so all 143 specs die in ~4ms launching a
+missing `chrome-headless-shell`. Re-run against the bundled binary with a
+throwaway untracked config setting `executablePath: "/opt/pw-browsers/chromium"`
+(deleted afterwards): **142 passed / 1 skipped / 0 failed.** Do not read the red
+`test:all` line as a regression without re-running it this way first.
+
+**Behavioural guards confirmed RED first:** 6 on W11 (zero-instead-of-exclude,
+null-not-zero, blocked-vs-actionable split, weight ordering, unchecked intents,
+workstream attribution) and 1 on the Stripe webhook refusal.
+
+### Next
+
+1. **Sign off D7** — it blocks W11's persistence and all of W12–W14.
+2. **Apply `0055` + `0056` to dev/stage** (runbook §4b), then re-check RLS.
+3. **Delete `claude/p2-w9-work-streams-o4gvmq`** from the GitHub branches page.
+4. Then **finish W11** (migration + route + UI) and start **W12**, which is the
+   longest-lead workstream and gated on **D5**.
+
+---
+
 ## 2026-09-11 (P2 · W10) — the Entity Graph Builder. Edges, not values.
 
 > **Branch:** `claude/p2-w9-work-streams-o4gvmq` · **`main`, `staging` and every

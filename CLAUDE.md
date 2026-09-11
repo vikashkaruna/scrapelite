@@ -2,7 +2,84 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-11 — P2 · W10: THE ENTITY GRAPH BUILDER. W9 GAVE THE MODULE FACTS; A FACT IS A VALUE AND SAYS NOTHING ABOUT HOW THINGS RELATE. EDGES ARE WHAT A KNOWLEDGE GRAPH RESOLVES AN ENTITY BY. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> **Last updated: 2026-09-11 — CONSOLIDATION + P2 · W11: SUBJECT SCORING (BDS / PDS / SFS). THE MODULE COULD SCORE A PAGE; IT COULD NOT SCORE THE BRAND, PRODUCT OR SERVICE A BUYER ACTUALLY ASKS AN ENGINE ABOUT. W9 AND W10 ARE NOW MERGED INTO `Discoverability-P1-P3-implementation`, WHICH IS THE ONE LIVE BRANCH. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4b](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> ✅ **BRANCH CONSOLIDATION: `claude/p2-w9-work-streams-o4gvmq` FAST-FORWARDED INTO
+> `Discoverability-P1-P3-implementation`** (no merge commit; `git merge-base --is-ancestor`
+> confirmed containment before and after). 🔴 **THE REMOTE FEATURE BRANCH COULD NOT BE DELETED** —
+> `git push origin --delete` fails with `send-pack: unexpected disconnect` on every attempt, and the
+> GitHub MCP set has `create_branch` but **NO delete-branch tool**. Same shape as the
+> `claude/session-w7kxmu` item this file already carries. **Delete it from the branches page.**
+>
+> 🔴 **THE 14 SKIPPED TESTS NEEDED NO CREDENTIALS AND ONE OF THEM WAS AN ANTI-ASSERTION.** They were
+> the Stripe contract suite behind `describe.skip`, carried since the v1.0 Stripe deferral — twelve
+> pure-logic, two env-gated, **zero** requiring a live key. Un-skipping found the real defect:
+> **a test asserting that an UNSIGNED payment webhook returns 200 and upserts a subscription.** The
+> handler had since been hardened to **503**, and the skip is the only reason that stale assertion
+> never went red. ⚠️ **A skipped test is not a neutral one — it is an assertion nobody is checking,
+> and it rots in the direction of whatever the code used to do.** Rewritten to pin the refusal AND
+> that **nothing is written**, plus a second test covering the double-gated dev hatch
+> (`DATIQ_ALLOW_UNSIGNED_WEBHOOKS=1` **and** a dev/test context). **The suite now runs 0 skipped.**
+>
+> ✅ **D7 IS ANSWERED, IN WRITING, AND NOTHING WAS RETROFITTED TO GET THERE.**
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) recommends a
+> **`audit_subjects` JOIN TABLE** — one row per audited thing, an `exactly_one_ref` CHECK across
+> `target_id` / `entity_id` / `truth_record_id`, a `kind_matches_ref` CHECK, and a nullable
+> `audits.subject_id`. 🔴 **The rejected alternative is the obvious one:** a bare
+> `(subject_type, subject_id)` pair on `audit_issues` — a polymorphic FK Postgres cannot enforce,
+> which would let an issue point at a deleted entity for ever and touches every reader of the P1
+> queue, the diff engine and all four exports at once. **The join table keeps referential integrity
+> AND changes no P1 table**, so P1 readers that never ask about subjects keep working unchanged.
+> ⚠️ **It is a RECOMMENDATION, not a migration — no `0057` exists.** It needs the owner's sign-off,
+> and it blocks W11's persistence, API and UI plus all of W12–W14.
+>
+> ⚠️ **W11 SHIPS THE PURE MODEL ONLY, AND THAT IS THE DECISION.** `subjectScoring.js` is complete,
+> tested and imported by nothing yet; persisting a subject score before D7 is settled would be
+> choosing D7 by accident, in the hardest place to reverse it. The three PRD formulas are copied
+> **verbatim** and `subjectScoring.test.js` asserts **every weight**, so an "align the numbers" pass
+> fails the build with the reasoning attached — the same guard `scoringModel.test.js` puts on the
+> penalty model after D1.
+>
+> 🔴 **THE COMPONENT ABBREVIATIONS ARE EXPANDED NOWHERE IN THIS REPOSITORY** (BDS's `EC`, `SD`,
+> `ASOV`, `TC`, `RA` and the twelve others) — the third time, after W4's "M1–M13" and W10's fourteen
+> types. Each id is DERIVED under one hard constraint: **every component binds to something this
+> engine can already measure**, recorded as `source` on the component. ⚠️ **Three components bind to
+> W13, which is NOT BUILT** — `trust_credibility` alone is **20% of BDS**. Scoring it `0` would take
+> every brand score down twenty points for a module we have not shipped and then show a phantom
+> twenty-point "improvement" the day W13 lands. It is **EXCLUDED and redistributed** through the one
+> `weightedMean` in `scoringModel.js`, and `blockedBy` **names the workstream**, so "we cannot
+> measure this yet" and "you are failing at this" never render the same.
+>
+> ⚠️ **`missingFacts()` SPLITS `actionable` FROM `blocked`** for the same reason: telling a customer
+> to improve a component whose engine does not exist is advice they cannot act on. ⚠️ And
+> **`intentCoverage()` EXCLUDES UNCHECKED INTENTS AND NAMES THEM** rather than counting them as
+> gaps — an intent nobody sampled is not an intent you lost.
+>
+> ⚠️ **A TEST OF MINE WAS WRONG AND THE CODE WAS RIGHT.** My "contributions sum to the score"
+> assertion multiplied by the weight a second time; `contribution` is already `value · (weight /
+> coverage)`, i.e. weight-scaled, so contributions sum to the score directly. Fixed the assertion,
+> not the model, and added one pinning that an excluded component contributes **`null`**, never `0`.
+>
+> **Verified, full `npm run test:all` (9 of 10 gates green in this container):** readiness · unit ·
+> contract · integration · system · db · build · prerender · security ALL PASS. `npx vitest run`
+> reads **379 files / 6244 passed / 0 skipped / 0 failed** — **0 skipped is the number that moved**.
+> db-verify **56 migrations / 664 assertions / 0 failed** · referral 17 · workflows 56 · build clean
+> · check:prerender 28 pages / 112 refs · security clean. **6 behavioural guards confirmed RED
+> first.** ⚠️ **The 10th gate, Playwright smoke, fails on the CONTAINER, not the code** — the image
+> ships chromium **1194** while `@playwright/test` wants **1234**, so all 143 specs die in ~4ms on a
+> missing `chrome-headless-shell`. Re-run against the bundled binary (throwaway untracked config
+> setting `executablePath: "/opt/pw-browsers/chromium"`, deleted afterwards): **142 passed / 1
+> skipped / 0 failed**. 🔴 **`0055` AND `0056` STILL HAVE NOT BEEN APPLIED TO ANY REAL DATABASE** —
+> this sandbox holds no Supabase credential and no CLI, so the deliverable is a verified procedure,
+> not an apply: **[docs/DB-MIGRATION-RUNBOOK.md §4b](docs/DB-MIGRATION-RUNBOOK.md)**, with both proven
+> **re-runnable** by double-application under PGlite. Production is **NINE** migrations behind.
+>
+> ── **Prior, and still current — P2 · W10** ──────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — P2 · W10: THE ENTITY GRAPH BUILDER. W9 GAVE THE MODULE FACTS; A FACT IS A VALUE AND SAYS NOTHING ABOUT HOW THINGS RELATE. EDGES ARE WHAT A KNOWLEDGE GRAPH RESOLVES AN ENTITY BY. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > [docs/DISCOVERABILITY-MODULE.md §3f](docs/DISCOVERABILITY-MODULE.md).
 >
@@ -805,9 +882,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-10: **`main` and `staging` are content-identical** — `git rev-list --count --no-merges origin/staging..origin/main` is **0**, and the three commits `main` leads by are all GitHub merge commits from staging PRs #161/#162/#164. `staging` is **one commit ahead** (`4922c04`). Active work is on **`discoverability-p1-to-p3`** (cut from `staging`, **five commits**, HEAD `c93afa5`, tree clean, **local only — cannot be pushed, see the expired-token note above**). ✅ **`main` = `b073218` and `staging` = `4922c04`, both verified unchanged**; `git branch --contains c93afa5` returns only this branch. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `discoverability-p1-to-p3` @ `c93afa5`, 2026-09-11 — `chore`: `.claude/worktrees/` ignored (see the worktree note below). Under it, 2026-09-10 — P1/**W2**: goal-based intake. `audit_type`, `primary_goal`, `target_geography`, `competitor_urls` and `audit_profile_source` on the audit row; 8 profiles and 12 page-type packs; profile inference with a recorded source. Under it, **W1** (`84d3a5e`): the evidence envelope. Run `git log --oneline staging..discoverability-p1-to-p3`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **49** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**505 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`b7a1c52` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `Discoverability-P1-P3-implementation` — P2/**W11**: subject scoring (`subjectScoring.js`, BDS/PDS/SFS, pure, not yet persisted pending **D7**). Under it `b7a1c52` (14 Stripe tests un-skipped, D7 recommendation, migration runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **56** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**664 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---

@@ -244,9 +244,9 @@ in the header**, and the **AI-visibility panel** (mention/cite/recommend %, top 
 |---|---|---|
 | 9.1 | Canonical Business Truth Record (+ versions, approval-before-canonical) | ✅ W9 — `0055`, three tables, approval enforced in three layers |
 | 9.2 | Entity Graph Builder (14 entity types, 9 predicates, evidence + confidence on every relation) | ✅ W10 — `0056`, four tables, domain/range enforced |
-| 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | ❌ |
-| 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | ❌ |
-| 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | ❌ |
+| 9.3 | Brand Discoverability Score `BDS = 0.25EC + 0.20SD + 0.25ASOV + 0.20TC + 0.10RA` | 🟡 W11 — model + tests; TC redistributed pending W13; persistence awaits D7 |
+| 9.4 | Product Discoverability `PDS = 0.25CF + 0.20EA + 0.20CC + 0.15TP + 0.10AR + 0.10RA` | 🟡 W11 — model + tests; TP pending W13 |
+| 9.5 | Service Findability `SFS = 0.25IC + 0.20VC + 0.20PE + 0.15GA + 0.10TR + 0.10CR` | 🟡 W11 — model + tests; GA pending W12, TR pending W13 |
 | 9.6 | Local & Directory Intelligence (5-tier source registry, NAP formula, per-directory match, correction packs, India-first sources) | ❌ |
 | 9.7 | Schema intelligence (8 schema types + `Schema = 0.30O + 0.30L + 0.20S + 0.10F + 0.10G`) | ⚠️ Two signals exist (`schema_identity_completeness`, `structured_data_validity`); no per-type validation matrix, no Schema score |
 | 9.8 | Trust & Proof Audit `TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X` | ❌ |
@@ -284,7 +284,7 @@ single largest risk in the whole plan and the one most likely to change what "50
 
 | # | Decision | Default I will proceed on unless told otherwise |
 |---|---|---|
-| **D7** | P2 subject model — how business-level audits (brand/product/service/location) relate to page-level ones | Sibling audit tables per the PRD, **sharing** the P1 evidence, issue and recommendation tables via a polymorphic `subject_type` + `subject_id`, so one queue, one diff engine and one workflow serve every audit kind. Needed at **W10**; I will confirm before building it. ⚠️ **W9 did not need it and did not pre-empt it:** a truth record is about a BUSINESS, so `target_id` on it is a nullable convenience link and never the identity — the record can exist before any audit runs and outlives every individual one. Whatever D7 resolves to, it attaches to this record rather than replacing it. |
+| **D7** | P2 subject model — how business-level audits relate to page-level ones | 📄 **RECOMMENDATION WRITTEN — awaiting sign-off: [`DISCOVERABILITY-D7-SUBJECT-MODEL.md`](DISCOVERABILITY-D7-SUBJECT-MODEL.md).** Short version: do NOT make `audit_issues` polymorphic — a `subject_id` pointing at different tables per row cannot carry a foreign key, and it touches every reader of the P1 queue. Instead make the AUDIT polymorphic one level up, via an `audit_subjects` registry where every reference is a real FK and a CHECK enforces exactly-one-of. `audit_issues` and `audit_recommendations` stay UNCHANGED; one queue and one differ are preserved because findings still hang off `audit_id`. **Needed before W11 can persist anything.** |
 | **D9** | Entitlement gating for new capabilities (prompt monitoring, brand audits, local/NAP, trust audits) | Follow the existing `audit.benchmark` / `audit.schedule` precedent in `entitlementModel.js`, with capability keys mapped onto the deck's packaging tiers. Needed at **W8**; I will bring a concrete plan→capability matrix for sign-off then. |
 | **D10** | P3 scope | Out of scope on this branch until P1 + P2 are complete and merged, per your instruction. |
 | **D11** | Credentials | `$GITHUB_TOKEN` is an expired classic `ghp_` token; `git fetch` and `git push` both fail. Local build is unblocked. A fine-grained PAT with `contents: read/write`, or `gh auth login`, is needed before I can re-verify against the live remote or push this branch. |
@@ -350,9 +350,9 @@ Versioned, audit-historied, approval-gated; `business_truth_records` + `business
 on every relation, approve/reject, conflicts raised as diagnostic findings, drill-down to source;
 bridged to `canonical_entities`.
 
-**W11 · Brand / Product / Service scoring** — BDS, PDS, SFS with their full component signal sets;
-product entity cards, missing-facts matrix, comparison blueprints, service intent coverage map,
-service/industry/location page backlog.
+**W11 · Brand / Product / Service scoring** — 🟡 **SCORING MODEL COMPLETE; PERSISTENCE AWAITS D7.** `subjectScoring.js` implements all three formulas at the PRD's exact weights (asserted, so an "align the numbers" pass fails the build), the missing-facts matrix and the service intent-coverage map. ⚠️ **The weights are the PRD's; the component NAMES are derived** — the abbreviations are expanded nowhere visible in this repo, the same situation W4 and W10 hit — and every component is bound to a named `source`, because a component with no source is a weight applied to a number nobody produces. 🔴 **TC is 20% of BDS and W13 has not shipped**, so it is EXCLUDED and redistributed and the result carries `blockedBy: ["W13"]` — scoring it 0 would take every brand score down twenty points for a module that does not exist, then show a phantom twenty-point gain the day it lands. The missing-facts matrix **splits what the customer can act on from what WE have not built**: telling somebody to improve trust when the thing that measures it is unbuilt is a referral to nothing. ⏸ **Persistence, the API and the UI are deliberately NOT built** — they need a subject model, which is D7, and implementing an unapproved schema decision is harder to reverse than deferring it. See `DISCOVERABILITY-D7-SUBJECT-MODEL.md`.
+BDS, PDS, SFS with their full component signal sets; product entity cards, missing-facts matrix,
+comparison blueprints, service intent coverage map, service/industry/location page backlog.
 
 **W12 · Local & Directory Intelligence** *(gated on D5; longest lead time)* — `directory_sources`
 registry with 5-tier weighting, NAP normalisation, per-directory `Match_d`, weighted NAP score,
