@@ -340,6 +340,78 @@ select proname, proacl from pg_proc
 🔴 **A `security definer` function reachable by `anon` bypasses RLS by
 definition.** Check this after every apply, not only the first.
 
+## 4d. Applying `0060` + `0061` (D7 atomicity + the RPC lockdown) — **security, apply promptly**
+
+> 🔴 **`0061` IS A SECURITY FIX, NOT A FEATURE.** Until it is applied, ten
+> `SECURITY DEFINER` functions are callable by `anon` through PostgREST with a
+> caller-supplied `p_user_id` and no `auth.uid()` check — and `SECURITY DEFINER`
+> bypasses RLS. Anyone holding the **publishable key** (committed in
+> `public/runtime-config.js` by design) can freeze any account, schedule any
+> account for deletion, drain any user's credits, read any user's balance, mint
+> coupons and referral codes, or write rows attributed to another tenant.
+> **Apply this to production as well as dev/stage, and do not wait on a feature
+> release to carry it.**
+
+| file | what it adds |
+|---|---|
+| `0060_audit_subject_upsert_atomic.sql` | replaces `upsert_audit_subject` with one `INSERT .. ON CONFLICT` per reference. No new table, function or trigger — the function is replaced in place. |
+| `0061_rpc_lockdown.sql` | grants only. Revokes ten `SECURITY DEFINER` functions from `public, anon, authenticated`; repairs `0012`'s no-op revoke on `claim_billing_session`; states three `service_role` grants that were previously inherited from Supabase defaults. |
+
+Both are **forward-only and idempotent** — `0060` is a `create or replace`,
+`0061` is `revoke`/`grant`, so re-running either changes nothing. Neither
+touches data, so there is no backfill to verify.
+
+```bash
+psql "$PROD_SUPABASE_DB_URL" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/migrations/0060_audit_subject_upsert_atomic.sql \
+  -f supabase/migrations/0061_rpc_lockdown.sql
+```
+
+### Verify — this is the one that matters
+
+```sql
+-- 1. No SECURITY DEFINER function takes a caller-supplied user id AND is
+--    reachable by an untrusted role. Expect ZERO rows.
+select p.proname, pg_get_function_identity_arguments(p.oid) as args
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.prosecdef
+   and (has_function_privilege('anon', p.oid, 'EXECUTE')
+     or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+   and pg_get_function_identity_arguments(p.oid) ~* 'p_user_?id'
+   and pg_get_functiondef(p.oid) !~* 'auth\.uid\(\)';
+
+-- 2. ...while service_role kept EXECUTE on all of them. Expect ZERO rows.
+select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.prosecdef
+   and p.proname in ('set_account_frozen','request_account_deletion',
+     'cancel_account_deletion','credit_spend','credit_balance',
+     'redeem_admin_coupon','create_admin_coupon_assignment',
+     'issue_referral_code','accept_workspace_invite','upsert_audit_target',
+     'claim_billing_session','assign_recommendation','prune_ops_history',
+     'record_pql_score')
+   and not has_function_privilege('service_role', p.oid, 'EXECUTE');
+
+-- 3. claim_billing_session keeps `authenticated` — the browser calls it.
+--    Expect anon=false, authenticated=true, service_role=true.
+select has_function_privilege('anon', 'public.claim_billing_session(text)', 'EXECUTE')          as anon,
+       has_function_privilege('authenticated', 'public.claim_billing_session(text)', 'EXECUTE') as authenticated,
+       has_function_privilege('service_role', 'public.claim_billing_session(text)', 'EXECUTE')  as service_role;
+
+-- 4. The subject upsert is atomic: three inserts, three ON CONFLICT clauses.
+select (length(lower(src)) - length(replace(lower(src), 'on conflict', ''))) / length('on conflict') as on_conflict_count
+  from (select pg_get_functiondef(p.oid) src from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname='public' and p.proname='upsert_audit_subject') t;
+-- Expect 3.
+```
+
+⚠️ **The end-to-end check that does not need psql** is `npm run verify:rls`,
+which asks PostgREST as an anonymous caller would. It covers **tables**, not
+functions — extending it to `/rpc` is worth doing and has not been done.
+
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

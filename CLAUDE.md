@@ -2,6 +2,73 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 (later) — SECURITY REVIEW THROUGH P2/W12. TEN `SECURITY DEFINER` FUNCTIONS WERE EXECUTABLE BY `anon` WITH A CALLER-SUPPLIED `p_user_id` — THE 0044 DEFECT ONE LAYER DOWN. PLUS A D7 GET-OR-CREATE RACE, A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, AND W12 TRUSTING PARENT IDS FROM A REQUEST BODY. ALL FIXED (`0059`–`0061`). ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **`0061` — THE HEADLINE. `0044` LOCKED FIFTEEN TABLES AND NOBODY CHECKED FUNCTIONS.** PostgreSQL
+> grants `EXECUTE` on a new function to **PUBLIC** by default, so every migration that created one and
+> did not revoke left it callable by `anon` through PostgREST's `/rpc/<name>` — and **`SECURITY
+> DEFINER` bypasses RLS.** Ten functions took a caller-supplied `p_user_id` and never consulted
+> `auth.uid()`, which makes each an **impersonation primitive**, not a loose grant: freeze **any**
+> account (`set_account_frozen`), schedule **any** account for deletion (`request_account_deletion`),
+> drain **any** user's credits (`credit_spend`), read **any** balance (`credit_balance`), plus
+> `cancel_account_deletion`, `redeem_admin_coupon`, `create_admin_coupon_assignment`,
+> `issue_referral_code`, `accept_workspace_invite` and `upsert_audit_target`.
+>
+> ⚠️ **NOTHING LEGITIMATE CALLS THESE FROM A BROWSER — that is what makes the revoke safe rather than
+> a behaviour change.** The only direct `supabase.rpc()` in `src/` is `claim_billing_session`; every
+> caller of all ten lives in `netlify/functions/` with the service key, and `service_role` keeps
+> `EXECUTE` throughout.
+>
+> 🔴 **`revoke ... from public` IS THE LOAD-BEARING CLAUSE, AND `0012` PROVES IT.** That migration
+> wrote `revoke execute on function public.claim_billing_session(text) from anon` and nothing else —
+> **a no-op**, because the default PUBLIC grant remained and anon inherits it (its ACL still read
+> `=X/postgres`). So that function has been anon-reachable since `0012` behind a line that reads as
+> though it were not. ⚠️ **And three definer functions revoke without granting `service_role`**,
+> depending on Supabase's `ALTER DEFAULT PRIVILEGES` — true on a stock project, **false on a restored
+> dump or self-hosted Postgres**, where `assign_recommendation` would simply stop working.
+>
+> ✅ **THE db-verify SWEEP IS DERIVED FROM THE CATALOG, NOT A LIST** — a future migration adding such
+> a function fails on the day it lands, which a hand-written list could not do.
+>
+> 🔴 **`0060` — THE D7 RACE `upsert_audit_target` DOES NOT HAVE.** `0057` shipped
+> `upsert_audit_subject` as SELECT-then-INSERT, claiming the partial unique indexes made it
+> concurrency-safe. **Half true:** they make a second ROW impossible; they do **not** make the losing
+> caller return the winner's id — its insert raises `unique_violation`, which `ensureSubject` swallows
+> into a NULL `subject_id`. Harmless **today** (`sameSubject()` falls back to `target_id`); **not
+> harmless once W13 persists an entity-backed subject**, which has no fallback. ⚠️ **THE GUARD IS
+> STRUCTURAL AND SAYS SO** — PGlite is one connection, and a behavioural test cannot tell the two
+> implementations apart because the select fast-path answers first. **An earlier draft asserted
+> "returns the existing subject rather than raising" and passed against the UNFIXED function.**
+>
+> 🔴 **THE FOURTH DECLARED-AND-NEVER-WRITTEN TABLE.** `audit_entity_evidence` (W10) holds
+> CORROBORATION — `0056`'s header says *"we read this once in 2024"* and *"we have read this on six
+> pages across nine months"* are different warranties. **`recordEntityEvidence` was called by
+> NOTHING.** Worse than silence: the duplicate-edge route returned a 409 reading *"Re-observing one
+> corroborates it"* — **false** — and ⚠️ **its test asserted the CLAIM, not the write, so it stayed
+> green.** Now wired; still 409 (nothing was created, and the code is an `/api/v1` contract) but the
+> body carries `corroborated`. **Running count: four** — `audit_signals.raw_value`,
+> `.evidence_json`, `audit_recommendations.issue_id`, and this.
+>
+> 🔴 **W12 TRUSTED PARENT IDS FROM THE REQUEST BODY.** W9 checks a truth record before creating one;
+> W10 checks **both** entities before drawing an edge. W12 did neither, so a caller could attach a
+> listing — or file a whole local check — against **another tenant's** row. New `requireLocalRefs()`
+> checks `truth_record_id` and `subject_id` against owned rows and `workspace_id` through
+> `buildWorkspaceCtx`. ⚠️ **404, NEVER 403** — a 403 confirms the row exists and makes the endpoint an
+> enumeration oracle over other tenants' uuids.
+>
+> ⚠️ **`0059` (from a concurrent session) — W12'S UPSERT HAD NO USABLE ARBITER.** PostgREST's
+> `on_conflict=` names COLUMNS, and PostgreSQL will not select `0058`'s `coalesce(...)` **expression**
+> index as that arbiter — so every listing save would have been refused. `unique nulls not distinct`
+> expresses the same rule as a column constraint.
+>
+> **Verified:** `npx vitest run` **384 files / 6390 passed / 0 skipped / 0 failed** · db-verify **61
+> migrations / 755 assertions / 0 failed** · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **18 guards confirmed RED first.** 🔴 **`0059`,
+> `0060` AND `0061` HAVE ONLY MET WASM POSTGRES** — production is now **FOURTEEN** migrations behind.
+> ⚠️ **The next migration number is `0062`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 — REVIEWED THROUGH P2/W12 ON `Discoverability-P1-P3-implementation`. `0057` + `0058` ARE OPERATOR-REPORTED APPLIED TO DEV/STAGE; NEW `0059` REPAIRS W12'S POSTGREST LISTING UPSERT AND MUST FOLLOW THEM. W13/W14 NOW HAVE AN IMPLEMENTATION-READY PLAN. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
@@ -1540,6 +1607,10 @@ ThemeProvider
 | Discoverability scoring | **`unknown` is NEVER `0`.** An unmeasured or not-applicable signal is EXCLUDED from its pillar and its weight redistributed — `weightedMean()` in `scoringModel.js` is the one implementation. Scoring it 0 would subtract points during a third-party outage and then show a phantom improvement when it recovered, making the trend line a fiction. Every score carries `coverage`. `src/lib/discoverability/*` is PURE and imported by BOTH React and `netlify/`, exactly like `entitlementModel.js`, so the score a user sees and the score the server stored cannot be computed by different code. |
 | Discoverability profiles | **A profile is a LENS, not different maths.** All four framework views are always computed with identical weightings; the profile only picks which one leads. Re-weighting per profile would make two audits of the same page incomparable and show movement no page change caused. |
 | Discoverability constructs | Generated assets emit an explicit `TODO:` for anything the audit could not observe. These are pasted into live sites; a block with a hallucinated founder name is worse than no block, because it gets published without being read. FAQ and HowTo markup is built ONLY from visibly-present content — generating it from nothing would manufacture the SH-07 defect the engine exists to report. |
+| SECURITY DEFINER grants | 🔴 **A new `SECURITY DEFINER` function MUST `revoke all ... from public, anon, authenticated` and then `grant execute ... to service_role` explicitly.** Revoking from `anon` alone is a **no-op** — PostgreSQL grants EXECUTE to PUBLIC by default and both roles inherit it, so the narrower revoke reads as though it worked and changes nothing (`0012` did exactly this to `claim_billing_session`, which stayed anon-reachable until `0061`). And `SECURITY DEFINER` **bypasses RLS**, so any such function taking a caller-supplied `p_user_id` without consulting `auth.uid()` is an impersonation primitive reachable with the committed publishable key — that is what `0061` had to remove ten of. ⚠️ **Grant `service_role` explicitly rather than inheriting it** from Supabase's `ALTER DEFAULT PRIVILEGES`: a restored dump or self-hosted Postgres does not carry those, and the server then cannot call its own RPC. `db-verify`'s sweep is DERIVED from `pg_proc`, so a new offender fails on the day it lands. |
+| Upsert arbiters | 🔴 **A unique constraint that backs a PostgREST upsert must name COLUMNS, never an expression.** `on_conflict=` takes a column list and PostgreSQL will not select an expression index as that arbiter — `0058`'s `coalesce(truth_record_id, '000…')` index enforced the invariant correctly AND made every save fail, until `0059` replaced it with `unique nulls not distinct (...)`. Use `NULLS NOT DISTINCT` whenever a nullable column is part of the key. |
+| Get-or-create | 🔴 **`INSERT .. ON CONFLICT`, never SELECT-then-INSERT.** A unique index makes a second row impossible; it does **not** make the losing caller return the winner's id — it raises `unique_violation`, which a non-fatal caller swallows into a null. `upsert_audit_target` was always atomic; `upsert_audit_subject` was not until `0060`. Infer a **partial** index by restating its predicate in the `ON CONFLICT` clause. |
+| Caller-supplied parent ids | 🔴 **A parent id in a request body is a claim, not a fact.** Check `truth_record_id`, `subject_id`, `entity_id` and every other reference against a row the caller owns **before writing** — W9 and W10 do, W12 shipped without it. ⚠️ **Refuse with 404, never 403**: a 403 confirms the row exists and turns the endpoint into an enumeration oracle over other tenants' uuids, which is why `invoice-pdf.js` makes the same choice. Membership (`workspace_id`) goes through `buildWorkspaceCtx`, not a store read — membership is not ownership. |
 | D7 — the subject model | **`audit_subjects` (0057) is the registry; `audit_issues` was NOT touched.** The polymorphism lives in two CHECK constraints over three REAL foreign keys, never in a bare uuid the database cannot check — this repo has been burned three times by a pointer nothing could verify. 🔴 **`audits.target_id` must NEVER be dropped** (it is the fast path, and every existing query uses it) and **`audits.subject_id` must stay NULLABLE** (every pre-0057 row has none). Comparability is `sameSubject()`: same subject where both have one, falling back to `target_id` otherwise — **and two NULL subjects are never a match**, or every old audit becomes comparable with every other. A subject mismatch WITHHOLDS the issue lists; a version mismatch keeps them, because codes survive a model bump on the same page but mean nothing across two different things. |
 | W12 — NAP and directories | **The hard part is not comparing strings, it is not crying wolf.** "Pvt Ltd" vs "Private Limited", "Rd" vs "Road" and `+91 80 4718 2200` vs `08047182200` are the SAME values; a checker that flags them produces a list nobody reads, and the one real mismatch in it goes unfixed. Every equivalence in `napModel.js` is a declared, tested rule — never a fuzzy ratio. 🔴 **An unchecked source, and a field a source never publishes, are EXCLUDED and redistributed, never scored 0** (D5 means most customers authorise nothing, and G2 shows a name and nothing else). ⚠️ **Tiers rank by REACH, not trust** — a registry is the most trustworthy record and one of the least read. ⚠️ **`LD-05` is the registry carve-out**: a registered office is not a shopfront, so an MCA difference must never be reported as a NAP mismatch. ⚠️ **`coverageClaim()` is the ONE place the coverage sentence is built** and may never produce a flat "N directories audited" — D5's copy rule. ⚠️ **Source ids are deliberately not in a SQL CHECK** (unlike 0056's entity types); the TIER is, and `local-directory-parity.test.js` parses that CHECK out of the migration rather than restating it. |
 | Discoverability codes | Signal codes and issue codes (`AC-01`, `TA-07`, …) are a **PUBLIC CONTRACT**: they appear in JSON payloads, webhook bodies, stored rows and every historical diff. "AC-02 was resolved" is only a true sentence if AC-02 still means what it did when the baseline was taken. Add codes; never repurpose or renumber one. |

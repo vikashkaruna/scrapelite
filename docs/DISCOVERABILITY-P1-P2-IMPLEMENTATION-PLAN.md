@@ -398,6 +398,42 @@ zero-for-unchecked rule would open every local report near zero and then jump th
 one. ⚠️ **`coverageClaim()` is the one place the coverage sentence is built**, and a test asserts the
 forbidden flat "N directories audited" phrasing can never come out of it.
 
+**W13 / W14 preflight — five rules the 2026-09-12 review earned.** Each of
+these cost a migration or a route fix on work that had already been reviewed
+and merged, so they are stated here rather than rediscovered:
+
+0a. **Every new table gets a contract test that asserts the WRITE, confirmed
+    RED before the table is merged.** Four tables in this schema have now been
+    declared, reviewed, merged and written by nothing
+    (`audit_signals.raw_value`, `audit_signals.evidence_json`,
+    `audit_recommendations.issue_id`, `audit_entity_evidence`). A column
+    nothing writes is invisible, because the read path returns `null` exactly
+    as it would for "not applicable". ⚠️ Assert the CALL, not the claim: the
+    409 that said "re-observing corroborates" had a passing test that checked
+    the *sentence*.
+0b. **A unique constraint that backs an upsert must name COLUMNS, not an
+    expression.** PostgREST's `on_conflict=` takes a column list, and
+    PostgreSQL will not select an expression index as that arbiter — so 0058's
+    `coalesce(...)` index enforced the invariant and refused every save. Use
+    `unique nulls not distinct (...)` when a nullable column is part of the key
+    (`0059`).
+0c. **Get-or-create is `INSERT .. ON CONFLICT`, never SELECT-then-INSERT.**
+    A unique index makes a second row impossible; it does not make the losing
+    caller return the winner's id. Infer a partial index by restating its
+    predicate (`0060`).
+0d. **A new SECURITY DEFINER function revokes from `public`, not just from
+    `anon` and `authenticated`.** PostgreSQL grants EXECUTE to PUBLIC by
+    default and both roles inherit it, so the narrower revoke is a no-op that
+    reads as though it worked — which is how ten impersonation primitives
+    shipped and how `claim_billing_session` stayed anon-reachable from 0012 to
+    `0061`. Then grant `service_role` explicitly rather than relying on
+    Supabase's default privileges, which a restored dump does not carry.
+0e. **A parent id in a request body is a claim, not a fact.** Check
+    `truth_record_id`, `subject_id`, `entity_id` and any new reference against
+    a row the caller owns before writing, and refuse with **404, not 403**, so
+    the endpoint is not an enumeration oracle over other tenants' uuids.
+    W9 and W10 did this; W12 shipped without it.
+
 **W13 · Schema intelligence + Trust & Proof** *(next; unblocks TC in BDS and TP in PDS, both currently redistributed)*
 
 1. **Freeze the two scoring registries before wiring a route.** The repository

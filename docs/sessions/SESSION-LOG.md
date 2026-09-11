@@ -18,6 +18,148 @@
 
 ---
 
+## 2026-09-12 IST (later) — THE 0044 DEFECT ONE LAYER DOWN: TEN SECURITY DEFINER FUNCTIONS WERE CALLABLE BY `anon`, AND A FOURTH TABLE WAS DECLARED AND WRITTEN BY NOTHING.
+
+**Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging`,
+`feat/prospect-engagement-engine` and `workflow-implementation-and-optimization`
+were not checked out, modified or pushed. Verified before and after.
+
+Asked to review P1→P2/W12 for code quality and security and fix what was found,
+then plan W13/W14. Four defects, three of them in work that had already been
+reviewed and merged.
+
+### 🔴 1. Ten impersonation primitives reachable with the public anon key
+
+`0041`–`0043` once shipped fifteen TABLES readable and writable by anyone
+holding the publishable key, and `0044` locked them. **Nobody checked
+FUNCTIONS.** PostgreSQL grants EXECUTE on a new function to PUBLIC by default,
+so every migration that created one and did not revoke left it callable by
+`anon` through PostgREST's `/rpc/<name>` — and **SECURITY DEFINER bypasses
+RLS**, so a function that takes a caller-supplied `p_user_id` and never
+consults `auth.uid()` is not merely over-permissive, it is an impersonation
+primitive:
+
+| function | what an anonymous caller could do |
+|---|---|
+| `set_account_frozen` | freeze **any** account |
+| `request_account_deletion` | schedule **any** account for deletion, and freeze it |
+| `cancel_account_deletion` | silently undo a user's own deletion request |
+| `credit_spend` | drain **any** user's credit ledger |
+| `credit_balance` | read **any** user's balance |
+| `redeem_admin_coupon` | grant plan value to an arbitrary account |
+| `create_admin_coupon_assignment` | mint a coupon assignment |
+| `issue_referral_code` | mint referral codes for arbitrary accounts |
+| `accept_workspace_invite` | consume an invite as somebody else |
+| `upsert_audit_target` | write rows attributed to another tenant |
+
+Fixed by **`0061`**. ⚠️ **Nothing legitimate calls these from a browser, and
+that is what makes the revoke safe rather than a behaviour change** — the only
+direct `supabase.rpc()` in `src/` is `claim_billing_session`, and every caller
+of all ten lives in `netlify/functions/` with the service key.
+
+⚠️ **`revoke ... from public` is the load-bearing clause.** `0012` wrote
+`revoke execute on function public.claim_billing_session(text) from anon` and
+nothing else — a **no-op**, because the default PUBLIC grant remained and anon
+inherits it. Its ACL still read `=X/postgres`. That function has therefore been
+anon-reachable since `0012` behind a line that reads as though it were not.
+Harmless in itself (`auth.uid()` is NULL for anon, so it claims nothing) but a
+revoke that silently fails is worth correcting wherever it appears.
+
+⚠️ **And three definer functions revoke without granting `service_role`**,
+depending entirely on Supabase's `ALTER DEFAULT PRIVILEGES` having been in
+force when they were created — true on a stock project, false on a restored
+dump or self-hosted Postgres, where `assign_recommendation` (reached on every
+assignment) would simply stop working. Now stated rather than inherited.
+
+✅ **The db-verify sweep is DERIVED from the catalog, not a list to keep in
+step:** a future migration that adds such a function fails on the day it lands.
+
+### 🔴 2. The D7 get-or-create race `upsert_audit_target` does not have
+
+`0057` shipped `upsert_audit_subject` as SELECT-then-INSERT, its own comment
+claiming the partial unique indexes made it "idempotent ... so two concurrent
+audits of the same brand cannot mint two subjects". **Half true, and the
+missing half is the defect:** the indexes make a second ROW impossible; they do
+not make the losing caller return the winner's id. A concurrent snapshot cannot
+see the uncommitted row, so its insert raises `unique_violation`, which
+`ensureSubject` swallows into a NULL `subject_id`.
+
+Harmless **today** — `sameSubject()` falls back to `target_id` and the only
+call site is a page subject. **Not harmless once W13 persists an entity-backed
+subject**, which has no fallback: a lost race would scatter exactly the history
+D7 exists to keep together. **`0060`** makes it one `INSERT .. ON CONFLICT` per
+reference, each inferring its partial index by restating the predicate.
+
+⚠️ **THE GUARD IS STRUCTURAL AND SAYS SO.** PGlite is a single connection, so
+the interleaving cannot be reproduced — and a BEHAVIOURAL test cannot tell the
+two implementations apart, because the select fast-path answers first in every
+single-threaded call. **An earlier draft asserted "returns the existing subject
+rather than raising" and passed against the UNFIXED function for exactly that
+reason.** What is checkable is that the atomicity is present at all.
+
+### 🔴 3. The fourth declared-and-never-written table
+
+`audit_entity_evidence` (W10 / `0056`) holds CORROBORATION. The migration's own
+header says why it exists: *"we read this once in 2024"* and *"we have read
+this on six pages across nine months"* are different warranties on the same
+edge, and collapsing them throws the difference away.
+**`recordEntityEvidence` was written for it and called by NOTHING.**
+
+Worse than silence: the duplicate-edge route returned a 409 reading *"Re-
+observing one corroborates it rather than adding a second copy"* — **a sentence
+that was false**. `createRelationship`'s own comment names the seam it was
+meant to use ("report the collision so the caller can corroborate instead of
+retrying blindly"); the caller never did. ⚠️ **The test covering it passed
+throughout, because it asserted the CLAIM and not the write.**
+
+Now wired. **Still 409 and still no new row** — nothing was created, and the
+status code is a contract `/api/v1` holders read — but the body carries
+`corroborated` so a caller can tell a recorded sighting from a lost one behind
+an identical error code, and reports `false` when the write fails.
+
+**Running count of this defect in this schema: four** — `audit_signals
+.raw_value`, `audit_signals.evidence_json`, `audit_recommendations.issue_id`,
+and this.
+
+### 🔴 4. W12 trusted parent ids from the request body
+
+W9 checks a truth record before creating one; W10 checks **both** entities
+before drawing an edge, with a comment saying why. **W12 shipped with neither**,
+so `truth_record_id`, `subject_id` and `workspace_id` went from the body into
+the write untouched — a caller could attach a listing, or file a whole local
+check, against another tenant's row. Reads were already scoped both ways so
+nothing leaked; what was missing was the refusal on the write.
+
+New `requireLocalRefs()` applies all three in one place: `workspace_id` through
+`buildWorkspaceCtx` (membership is not ownership), the other two through
+user-scoped store reads. ⚠️ **404, never 403** — a 403 confirms the row exists
+and turns the endpoint into an enumeration oracle over other tenants' uuids,
+the same choice `invoice-pdf.js` makes.
+
+Also: five PostgREST readers interpolated `limit` without coercion while every
+other caller-supplied value goes through `encodeURIComponent`. No route passes
+caller input to them today, so it is latent — but `1&user_id=eq.<anyone>` stops
+being a limit and starts being a filter the day one does.
+
+### W13 / W14
+
+The plan already carried both workstreams. Added a **preflight of five rules
+this review earned** (0a–0e), each of which cost a migration or a route fix on
+already-merged work, plus corrections: D7 read "awaiting sign-off" after it
+shipped as `0057`; W11 read "persistence awaits D7" when the blocker is TC and
+TP from W13; W13's step 4 said to persist in `0060`, which the repairs have
+taken. **The next migration number is `0062`.**
+
+**Verified:** `npx vitest run` **384 files / 6390 passed / 0 skipped / 0
+failed** · db-verify **61 migrations / 755 assertions / 0 failed** · referral 17
+· workflows 56 · build clean · check:prerender 28 pages / 112 refs · security
+clean. **18 behavioural and structural guards confirmed RED first** (13 on the
+RPC lockdown and atomicity, 4 on the W12 ownership refusals, 1 on the
+corroboration write). 🔴 **`0059`, `0060` and `0061` have only met WASM
+Postgres** — production is now **fourteen** migrations behind.
+
+---
+
 ## 2026-09-12 IST — P2/W12 review: the local-directory upsert had no usable conflict arbiter; W13/W14 are now implementation-ready.
 
 **Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging` and
