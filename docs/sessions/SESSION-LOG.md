@@ -18,6 +18,86 @@
 
 ---
 
+## 2026-09-12 22:40 IST — Fresh-start handoff: Train A and homepage refinements deployed to staging
+
+### Quick orientation
+
+| Property | Fresh-start state |
+|---|---|
+| **Production-facing branch** | `origin/staging` @ `c74fea6` |
+| **Current primary workspace** | `face-lift` @ `3171765` — same delivered code plus this fresh-start record |
+| **Final Netlify staging deploy** | `6aa5860421c37e0008bba6fd` — **ready** at https://staging.datiq.app |
+| **Runtime payload commit** | `ba95d43`; `c74fea6` records final deployment evidence only |
+| **Safe branch reference** | Use `origin/staging`, not the local `staging` ref: that ref is checked out in a separate external worktree at `4922c04`. |
+| **Primary deployment blocker** | Netlify Edge Access returns HTTP 401 for all public pages, assets and tested APIs. |
+
+### What is delivered
+
+- **Train A face-lift:** DatIQ — *Intelligence, Connected.* positioning, factual dashboard-reveal
+  visual, URL-focused secondary CTA, a tested six-pillar catalog, Discover as the quiet sixth
+  **Beta** pillar, updated shared public branding, metadata, exports, invoices and prerendered
+  public output.
+- **R0 trust/tooling slice:** release plan, privacy/share and export contracts, OpenAPI 3.1
+  specification, pSEO governance, precise webhook/analytics documentation, and the parameterized
+  `npm run test:release` runner.
+- **Homepage refinement:** removed the redundant `No code · structured in seconds` eyebrow;
+  catalog order is **Extract → Enrich → Discover → Compete → Connect → Engage**; the illustrative
+  DatIQ Intelligence preview reads **Discover → Connect → Compete**.
+- **Guest allowance UX:** the former full-width trial band is now a compact, right-aligned floating
+  status card below account controls, preserving its status role, counts, signup path, urgent
+  state and small-screen wrapping.
+
+### Verification evidence
+
+- Initial Train A merged gate: `npm run test:all -- --visual` — **all 11 suites passed** in
+  202.48s, including 146 Chromium smoke checks and 11 visual comparisons.
+- Homepage refinement candidate: readiness, unit, contract, integration, system, database,
+  build/sync, prerender, security and **144 Chromium smoke** checks passed. The global trial-card
+  redesign intentionally changed eight non-Home visual images; after review/refresh, the complete
+  visual suite passed **11/11**.
+- Git’s mandatory staging pre-push gate passed in **195s** before advancing
+  `origin/staging` from `19f4467` to `ba95d43`.
+- Final Netlify branch deployment for `c74fea6` is **ready**. No build or deployment error is
+  reported.
+
+### Deployment exception and exact next command
+
+The deployed read-only runner returns **0 passed / 4 failed / 4 skipped** because Netlify Edge
+Access rejects every tested public route with HTTP 401. This is not an application pass and must
+not be suppressed in the runner. Configure the approved non-interactive test path for at least
+public pages/assets, `/api/v1/_health`, and `/api/discoverability/*`, then run:
+
+```bash
+DATIQ_TEST_BEARER_TOKEN=... npm run test:release -- \
+  --full --environment staging --base-url https://staging.datiq.app \
+  --discover-url https://owned-test-url.example --allow-live-write \
+  --report artifacts/staging-release.json
+```
+
+Use an owned disposable target and test account; the authenticated audit path creates and tears
+down its tagged test data. Do not run this with a production customer token or URL.
+
+### Preserve and defer
+
+- Do not touch the user-owned untracked items in the primary workspace:
+  `Analysis-1/DatIQ - Prioritised Features Release Roadmap - Backlog Tracker.numbers`,
+  `Analysis-1/Datiq_Market_Product_Analysis copy.pdf`, `Analysis-2/`, and
+  `docs/DATIQ-3MIN-EXPLAINER-VIDEO-PRODUCTION-PACKAGE.md`.
+- Keep `workflow-implementation-and-optimization`, `feat/prospect-engagement-engine` and
+  `Discoverability-P1-P3-implementation` deferred until their owners complete them and their
+  migration/RLS/API/claim reviews pass.
+- An isolated promotion worktree remains at
+  `/private/tmp/datiq-staging-promotion.eAGfEe/checkout`; it is a disposable staging checkout and
+  is not the primary user workspace.
+
+### First step next session
+
+Read this entry, run `git fetch origin --prune`, confirm `origin/staging` is still `c74fea6` or
+its expected successor, then either resolve the Edge Access test path or begin the next approved
+feature on a new scoped branch. Do not merge the deferred parallel work as part of that step.
+
+---
+
 ## 2026-09-12 22:32 IST — Homepage refinements merged and staging deploy verified
 
 **Staging commit.** `ba95d43` (`test: refresh trial status visual baselines`), following the

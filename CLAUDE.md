@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-12 — Homepage refinements are merged to `staging` and deployed via Netlify (`ba95d43`); external staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-12 — Fresh start: homepage refinements are deployed to `origin/staging` (`c74fea6`; runtime change `ba95d43`), and Netlify is ready. Continue from the current `face-lift` workspace or `origin/staging`; external staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
 >
