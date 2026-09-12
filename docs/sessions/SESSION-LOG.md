@@ -103,6 +103,45 @@ importer guard is the one this gap actually needed.
 
 🔴 **`0062`, `0063` and `0064` have only met WASM Postgres.** ⚠️ **Next migration number: `0065`.**
 
+### Quick orientation for the next session
+
+| Property | Value |
+|---|---|
+| **Branch** | `Discoverability-P1-P3-implementation` @ `62878d7` |
+| **`main` / `staging`** | `2042348` / `4922c04` — untouched all session, verified before and after the push |
+| **Status** | P1 (W1–W8) and P2 (W9–W14) complete; every module has an importer, every table a writer |
+| **Next migration** | `0065` |
+
+### 🔴 Operator items — outstanding
+
+- [ ] **Apply `0062`, `0063`, `0064` to dev/stage** — [runbook §4e](../DB-MIGRATION-RUNBOOK.md).
+      All three additive and re-runnable; no security fix among them, so they can travel with a
+      normal feature release. **Production is now fifteen migrations behind.**
+- [ ] **`0059`–`0061` are applied to dev/stage but NOT production**, and `0061` is the RPC lockdown —
+      it should not wait on a feature release to carry it ([§4d](../DB-MIGRATION-RUNBOOK.md)).
+- [ ] **Delete the remote branch `claude/p2-w9-work-streams-o4gvmq`** from the GitHub branches page.
+      It is fully merged; `git push origin --delete` fails here with `send-pack: unexpected
+      disconnect` and the GitHub MCP set has no delete-branch tool.
+
+### ⏸ Deliberately not built — with the reason, so it is not mistaken for an oversight
+
+- **The `/api/v1/discoverability/*` fourteen-endpoint inventory** (W14). The canonical prefix and its
+  permanent aliases exist (D2); the full published inventory does not.
+- **Connector approval-gating** (W14).
+- **D6's seven discoverability roles.** Needs the signed role matrix — guessing a role vocabulary is
+  the same mistake as guessing the PRD's component expansions, in a place that is harder to reverse.
+- **A UI for subject scores.** `0064` and `/subject-score/*` are the storage and the contract; no
+  screen reads them yet. The same staged approach W11 took, but now the model is wired, so the next
+  step is a read surface rather than plumbing.
+- **`supabase/migrations/rollback.sql` stops at `0027`** while claiming to drop everything v1.0
+  creates. Pre-existing; nothing depends on it (db-verify builds a fresh database each run).
+
+### ⚠️ What has still never been verified against anything real
+
+Every discoverability migration from `0062` on has met only in-process WASM Postgres — no GoTrue, no
+PostgREST, shimmed roles. **No subject score, schema entity or trust observation has been written
+against a live database**, and no audit has run against a live URL with the W13/W14 paths active.
+
 ---
 
 ## 2026-09-12 IST (W14) — THE P2 INTELLIGENCE LAYER HAD NO ENTITLEMENT CHECK AT ALL. AND THE LIFECYCLE FIX THE PLAN ASKED FOR WOULD HAVE BEEN DEAD CODE OVERRIDING A WRITTEN DECISION.

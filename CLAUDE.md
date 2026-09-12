@@ -4,6 +4,10 @@
 > It captures the complete state of the project so work can continue seamlessly.
 > **Last updated: 2026-09-12 (W11 CLOSE-OUT) — P1 AND P2 ARE COMPLETE. THE LAST GAP WAS W11's OWN: A SCORING MODEL THAT HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE TWO BLOCKERS HAD BOTH SHIPPED. `0064`. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4e](docs/DB-MIGRATION-RUNBOOK.md).
+>
 > 🔴 **`subjectScoring.js` WAS COMPLETE, TESTED, AND CALLED BY NOTHING SINCE W11.** The
 > withholding was deliberate and written down: persisting a subject score needed a subject model
 > (D7) and two components that did not exist (TC, TP). **D7 shipped as `0057` and TC/TP as `0062`** —
