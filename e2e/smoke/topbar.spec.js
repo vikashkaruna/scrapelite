@@ -38,7 +38,7 @@ test("TopBar shows the brand + a single Sign in CTA for unauthenticated visitors
   await expect(actions.getByRole("button", { name: /^sign up$/i })).toHaveCount(0);
 });
 
-test("guest trial status aligns with the Sign in button's menu edge", async ({ page }) => {
+test("the first-visit offer aligns with the Sign in button's menu edge", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
 
@@ -63,4 +63,54 @@ test("guest trial status aligns with the Sign in button's menu edge", async ({ p
       signInBox.x + signInBox.width - (trialStatusBox.x + trialStatusBox.width),
     ),
   ).toBeLessThanOrEqual(1);
+});
+
+test("the home offer does not push DatIQ Intelligence below the hero headline", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+
+  const [headingBox, previewBox] = await Promise.all([
+    page.getByRole("heading", { level: 1, name: /Intelligence, Connected/i }).boundingBox(),
+    page.locator(".home-dashboard-reveal").boundingBox(),
+  ]);
+  if (!headingBox || !previewBox) throw new Error("Expected hero heading and DatIQ Intelligence preview boxes.");
+
+  // Grid/font layout can round to a fractional pixel; the former offer rule
+  // created an 88px displacement, so 2px is still a meaningful alignment gate.
+  expect(Math.abs(headingBox.y - previewBox.y)).toBeLessThanOrEqual(2);
+});
+
+test("home shows the active offer without a trial meter before the visitor uses the trial", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+
+  const trialStatus = page.locator(".guest-trial-bar");
+  const offer = trialStatus.locator(".offers-banner-trial");
+
+  await expect(offer).toContainText("LAUNCH20");
+  await expect(page.locator("#extract-composer .offers-banner")).toHaveCount(0);
+  await expect(trialStatus.locator(".guest-trial-bar-inner")).toHaveCount(0);
+  await expect(trialStatus.getByRole("button", { name: /dismiss trial status/i })).toHaveCount(0);
+
+  const [trialBox, offerBox] = await Promise.all([
+    trialStatus.boundingBox(), offer.boundingBox(),
+  ]);
+  if (!trialBox || !offerBox) throw new Error("Expected the trial offer layout boxes.");
+
+  expect(Math.abs(offerBox.width - trialBox.width)).toBeLessThanOrEqual(2);
+});
+
+test("a used trial shows a dismissible status without restoring the Sign up CTA", async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem("datiq.guestTrial", JSON.stringify({ count: 1, batchCount: 0 }));
+  });
+  await page.goto("/");
+
+  const trialStatus = page.locator(".guest-trial-bar");
+  await expect(trialStatus).toContainText(/Trial mode/i);
+  await expect(trialStatus.getByRole("button", { name: /dismiss trial and offer/i })).toBeVisible();
+  await expect(trialStatus.getByRole("button", { name: /sign up free|create free account/i })).toHaveCount(0);
+
+  await trialStatus.getByRole("button", { name: /dismiss trial and offer/i }).click();
+  await expect(trialStatus).toHaveCount(0);
 });

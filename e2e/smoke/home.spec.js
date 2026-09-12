@@ -18,6 +18,19 @@ test("home shows the connected-intelligence H1, brand text, tagline, and footer"
   await expect(page.locator(".site-footer-slim")).toBeVisible();
 });
 
+test("home uses the approved Train A hero without the retired answer paragraph", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/DatIQ is a zero-code web intelligence platform/i)).toHaveCount(0);
+});
+
+test("DatIQ Intelligence preview tiles link to their product surfaces", async ({ page }) => {
+  await page.goto("/");
+  const preview = page.locator(".home-dashboard-reveal");
+  await expect(preview.getByRole("link", { name: "Open Discoverability" })).toHaveAttribute("href", "/discoverability");
+  await expect(preview.getByRole("link", { name: "Open Integrations" })).toHaveAttribute("href", "/integrations");
+  await expect(preview.getByRole("link", { name: "Open Account Lists" })).toHaveAttribute("href", "/lists");
+});
+
 test("home composer (URL textarea) is visible", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("textarea").first()).toBeVisible();
