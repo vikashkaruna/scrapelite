@@ -44,12 +44,20 @@ for (const { name, url } of PAGES) {
       });
       return results.violations
         .filter((v) => v.impact === "serious" || v.impact === "critical")
-        .map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length }));
+        .map((v) => ({
+          id: v.id,
+          impact: v.impact,
+          help: v.help,
+          nodes: v.nodes.map((node) => ({
+            target: node.target.join(", "),
+            summary: node.failureSummary?.replace(/\s+/g, " ").trim(),
+          })),
+        }));
     });
     // If there are serious/critical violations, fail with a readable summary.
     if (violations.length) {
       const summary = violations
-        .map((v) => `${v.id} (${v.impact}) — ${v.nodes} node(s) — ${v.help}`)
+        .map((v) => `${v.id} (${v.impact}) — ${v.nodes.length} node(s) — ${v.help}\n${v.nodes.map((node) => `    ${node.target}: ${node.summary}`).join("\n")}`)
         .join("\n  ");
       throw new Error(`Serious/critical a11y violations on ${url}:\n  ${summary}`);
     }

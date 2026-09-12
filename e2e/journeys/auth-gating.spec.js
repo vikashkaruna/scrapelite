@@ -28,7 +28,7 @@ test("Guest 3 → soft prompt; 10 → hard block; 'Sign in' opens AuthModal", as
   // The brand-tagline assertion covers the TopBar (the only place the
   // "Intelligence from Web" tagline appears in the chrome — R1 rebrand
   // changed "every URL" → "Web"). Pinning the locator to the brand element
-  // avoids false matches from the Home H1 ("Intelligence from the Web.").
+  // avoids false matches from the Home H1 ("Intelligence, Connected.").
   await page.goto("/");
   await expect(page.locator(".brand-tagline")).toContainText(/Intelligence from Web/i);
   await expect(page.getByRole("dialog", { name: /Trial limit reached/i })).toHaveCount(0);

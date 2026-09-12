@@ -1,5 +1,16 @@
 import { defineConfig, devices } from "playwright/test";
 
+// A release gate may point the same browser suite at a deployed preview,
+// staging, or production URL.  Keep the normal local developer experience
+// unchanged: only an explicit absolute PW_BASE_URL suppresses the local Vite
+// server.  The deploy suite still installs its deterministic API fixtures, so
+// it validates the shipped UI and routing without consuming customer quota.
+const remoteBaseURL = process.env.PW_BASE_URL?.trim() || "";
+if (remoteBaseURL && !/^https?:\/\//i.test(remoteBaseURL)) {
+  throw new Error(`PW_BASE_URL must be absolute, got: ${remoteBaseURL}`);
+}
+const baseURL = remoteBaseURL || "http://127.0.0.1:4173";
+
 // Browser tests intentionally run with every optional integration disabled.
 // The specs mock the local API boundary, so they never require .env values or
 // reach Firecrawl, Supabase, AI, webhooks, or payment providers.
@@ -40,13 +51,13 @@ export default defineConfig({
     ? [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]]
     : "list",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL,
     browserName: "chromium",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  webServer: {
+  webServer: remoteBaseURL ? undefined : {
     command: "npm run dev -- --host 127.0.0.1 --port 4173 --strictPort",
     url: "http://127.0.0.1:4173",
     // Do not silently reuse an arbitrary process already listening on 4173.

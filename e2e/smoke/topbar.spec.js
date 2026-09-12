@@ -37,3 +37,30 @@ test("TopBar shows the brand + a single Sign in CTA for unauthenticated visitors
   // The redundant Sign up button was intentionally removed.
   await expect(actions.getByRole("button", { name: /^sign up$/i })).toHaveCount(0);
 });
+
+test("guest trial status aligns with the Sign in button's menu edge", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+
+  const signIn = page
+    .locator(".topbar-desktop-actions")
+    .getByRole("button", { name: /^sign in$/i });
+  const trialStatus = page.locator(".guest-trial-bar");
+
+  await expect(signIn).toBeVisible();
+  await expect(trialStatus).toBeVisible();
+
+  const [signInBox, trialStatusBox] = await Promise.all([
+    signIn.boundingBox(),
+    trialStatus.boundingBox(),
+  ]);
+  if (!signInBox || !trialStatusBox) {
+    throw new Error("Expected the Sign in button and trial status to have layout boxes.");
+  }
+
+  expect(
+    Math.abs(
+      signInBox.x + signInBox.width - (trialStatusBox.x + trialStatusBox.width),
+    ),
+  ).toBeLessThanOrEqual(1);
+});
