@@ -18,6 +18,49 @@
 
 ---
 
+## 2026-09-12 22:47 IST — Guest-trial status aligned with the Sign in menu edge
+
+**Branch.** `face-lift` @ `5117ac1` (`refine: align guest trial status with menu`).
+**Deployment status.** Intentionally **not promoted**; `origin/staging` remains at `c74fea6`.
+
+### Delivered
+
+- Adjusted the compact guest-trial status card so its desktop right edge exactly matches the right
+  edge of the **Sign in** button inside the centred menu container. It remains directly below that
+  control rather than using the browser viewport's outer gutter.
+- Used the same 1080px maximum header geometry and responsive inline padding as `.topbar-inner`.
+  On small screens, the card follows the header's 20px gutter and retains its compact wrapping.
+- Added a browser layout assertion that measures the Sign in button and trial-card boxes at 1280px
+  and fails if their right edges diverge. Refreshed the affected Chromium visual baselines across
+  all pages that render the shared status card.
+
+### Root cause and resolution
+
+- **Symptom:** the status card was visually right-aligned to the browser edge, not the Sign in
+  button, on wide screens.
+- **Cause:** its `right` inset used only the viewport gutter (`clamp(16px, 4vw, 44px)`), while the
+  top bar is a centred 1080px container with its own inline padding.
+- **Resolution:** the inset now takes the greater of the header padding and the outer-centre margin
+  plus that padding. This produces the exact menu-content edge at every desktop width.
+
+### Verification
+
+- `npx playwright test --project=chromium e2e/smoke/topbar.spec.js e2e/smoke/home.spec.js` —
+  **15 passed**, including the new measured-alignment assertion.
+- `npx playwright test --project=chromium e2e/visual/ --update-snapshots=all` followed by
+  `npx playwright test --project=chromium e2e/visual/` — **11 passed**.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 rendered/generated pages**;
+  **112 asset references present**.
+- `git diff --check` — passed. Vite reported only the pre-existing chunk/dynamic-import advisories.
+
+### Next action
+
+Promote `5117ac1` through the isolated staging-worktree path only when requested, then re-run the
+complete merged release gate. The external staging regression exception remains unchanged: Netlify
+Edge Access returns HTTP 401 until the approved test path is configured.
+
+---
+
 ## 2026-09-12 22:40 IST — Fresh-start handoff: Train A and homepage refinements deployed to staging
 
 ### Quick orientation
