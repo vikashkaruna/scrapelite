@@ -60,7 +60,8 @@ see that warning should not have to re-derive this.
 
 ### 📋 New: the manual test document
 
-[`MANUAL-TEST-DISCOVERABILITY-P1-P2.md`](../MANUAL-TEST-DISCOVERABILITY-P1-P2.md) — 60+ checks
+[`AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md`](../AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md)
+(renamed 2026-09-12 when the pass was automated) — 61 automated checks + 13 manual rows
 across P1 regression, W9–W10, W12, W13, W14, W11 and security, plus a sign-off grid.
 
 🔴 **Ordered branch → staging → production, because each answers a different question** — does the

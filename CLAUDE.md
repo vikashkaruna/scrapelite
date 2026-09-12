@@ -11,13 +11,36 @@
 > that tested clean twice into a 500** — [docs/DB-MIGRATION-RUNBOOK.md §4d + §4e](docs/DB-MIGRATION-RUNBOOK.md).
 > ⚠️ **`0061` is the RPC lockdown and should not wait on a feature release to carry it.**
 >
-> 📋 **NEW: [docs/MANUAL-TEST-DISCOVERABILITY-P1-P2.md](docs/MANUAL-TEST-DISCOVERABILITY-P1-P2.md)** —
-> the branch → staging → production pass, **run in that order because each environment answers a
-> different question** and passing on one does not answer for the next. Scoped to what CI *cannot*
-> assert (a real session, a real database, a real clock, a populated account) rather than repeating
-> the 6 530 tests. ⚠️ **Its §2 pre-flight is five minutes and is the part that saves an afternoon** —
-> P-02 confirms the migrations are on *that* environment's database, and P-03 confirms `score` came
-> back NULLABLE, which is unrecoverable if wrong.
+> 📋 **THE BRANCH → STAGING → PRODUCTION PASS IS NOW ONE COMMAND.**
+> `npm run verify:discoverability -- --base-url=<host> --target=<url>` runs **61 checks** against a
+> real deployment, a real session and a real database
+> ([scripts/verify-discoverability-e2e.mjs](scripts/verify-discoverability-e2e.mjs); the sheet is
+> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md),
+> renamed from `MANUAL-TEST-…`). **Run in that order because each environment answers a different
+> question**; passing on one does not answer for the next. **13 rows genuinely cannot be automated**
+> and are listed rather than quietly omitted. ⚠️ **Exit 2 means INCONCLUSIVE, not pass** — a run that
+> exercised nothing must never print READY. 🔴 **Production is READ-ONLY by default**: a full pass
+> creates real rows and spends real audit quota, and `audit_subject_scores` **appends by design**, so
+> that residue cannot be tidied away; `--allow-writes` / `--allow-audits` must be passed by hand.
+>
+> 🔴 **THE RUNNER FOUND A REAL GAP ON ITS FIRST DESIGN PASS, AND IT IS THE SAME CLASS THIS PHASE
+> CLOSED TWICE.** `POST /subject-score/scores` is **unreachable for any API caller**:
+> `audit_subjects` rows are minted by exactly one caller — `ensureSubject`, always with
+> `kind: "page"` — and `0057`'s `kind_matches_ref` CHECK requires `entity_id` for
+> `brand`/`product`/`service`, which **nothing in the API creates**. Model, store, route, migration
+> and tests are each complete in isolation; the chain from *"I have a brand"* to *"here is its BDS"*
+> has **no first link**. Recorded as **DEV-01** rather than patched, because the fix is a design
+> decision (auto-mint a subject per entity, or make it an explicit act?) that belongs to the owner.
+>
+> 🔴 **AND `npm run verify:rls` COULD REPORT "0044 IS APPLIED" FROM A MACHINE THAT NEVER REACHED THE
+> PROJECT.** Behind an egress proxy that allow-lists hosts, every anonymous probe is answered **403
+> by the proxy** before it reaches Supabase, and the loop counted each as an RLS refusal. It handled
+> a *thrown* network error and missed the case where something in the middle **answers on the host's
+> behalf** — which does not throw and looks exactly like a real response. **Reproduced, then fixed**:
+> `scripts/lib/postgrestAnswer.mjs` is now the one predicate both verifiers use (PostgREST answers in
+> JSON, always, including errors; a proxy answers in its own prose), and anything else is
+> **INCONCLUSIVE**, exit 2. ⚠️ **A security gate that reports "locked down" when it could not reach
+> the host is worse than no gate: it is a green light nobody looks behind.**
 >
 > ✅ **RE-VERIFIED AFTER THE APPLY, NOT CARRIED FORWARD:** `npx vitest run` **391 files / 6530 passed
 > / 0 skipped / 0 failed** · db-verify **64 migrations / 791 assertions / 0 failed** · referral 17 ·

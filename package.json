@@ -50,6 +50,7 @@
     "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs",
     "test:workflow": "node scripts/test-workflow-pipeline.mjs",
     "verify:rls": "node scripts/verify-workflow-rls.mjs",
+    "verify:discoverability": "node scripts/verify-discoverability-e2e.mjs",
     "verify:workflows": "node scripts/verify-workflows-e2e.mjs"
   },
   "dependencies": {

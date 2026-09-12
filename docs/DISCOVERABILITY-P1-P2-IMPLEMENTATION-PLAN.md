@@ -13,10 +13,21 @@ the apply turns a feature that tested clean twice into a 500.
 See [DB-MIGRATION-RUNBOOK.md §4d + §4e](DB-MIGRATION-RUNBOOK.md).
 **The next migration number is `0065`.**
 
-📋 **The manual pass before any promotion is
-[MANUAL-TEST-DISCOVERABILITY-P1-P2.md](MANUAL-TEST-DISCOVERABILITY-P1-P2.md)** —
-branch → staging → production, in that order, because each environment answers
-a different question.
+📋 **The pass before any promotion is now automated.**
+[AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md](AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md)
+(renamed from `MANUAL-TEST-…`; P3 extends it rather than replacing it) drives
+`npm run verify:discoverability` — **61 checks across branch → staging →
+production, in that order**, because each environment answers a different
+question. **13 rows genuinely cannot be automated** and are listed there rather
+than quietly omitted. 🔴 **Production is READ-ONLY by default**: a full write
+pass creates real rows in a customer's account and spends real audit quota, and
+several P2 tables have no delete endpoint — `audit_subject_scores` **appends by
+design**, because the trend is the product — so that residue cannot be tidied
+away. `--allow-writes` and `--allow-audits` must be passed by hand there.
+
+⚠️ **§7 below is the DEVIATION REGISTER** — every place the shipped code differs
+from this plan, and every thing deliberately deferred, with the reason. Read it
+before concluding anything here is missing by accident.
 
 ✅ **Two completion sweeps close this plan out, and both are clean.** Every one
 of the 32 `src/lib/discoverability/*` modules has a production importer
@@ -653,3 +664,49 @@ Then W3–W8 in order, with a P1 completion review against the PRD §16 definiti
 > displacing them.*
 
 — before any P2 work begins.
+
+---
+
+## 7. Deviation register — what differs from this plan, and why
+
+> **Added 2026-09-12.** This section exists because a plan read six months later
+> is indistinguishable from a specification, and every gap in it then reads as an
+> oversight. Each row below is either a **deliberate departure** from what §4
+> proposed or a **deferment with a named blocker**. None is an accident.
+>
+> ⚠️ **Rule for whoever extends this into P3: add rows, never delete them.** A
+> deferment that later ships is marked ✅ RESOLVED with the migration or commit
+> that did it — the record of *why it waited* is the part that stops the same
+> debate happening twice.
+
+### 7.1 Deviations — the code differs from the plan, deliberately
+
+| # | What the plan implies | What shipped | Why |
+|---|---|---|---|
+| **DEV-01** | 🔴 W11 scores a brand, product or service, and W13 unblocks TC/TP so `trust_credibility` reads as measured. | **`POST /subject-score/scores` is unreachable for any API caller today.** `audit_subjects` rows are minted by exactly one caller — `ensureSubject`, from the audit pipeline — always with `kind: "page"`. `0057`'s `kind_matches_ref` CHECK requires `entity_id is not null` for `brand`/`product`/`service`, and **nothing in the API creates a subject over an entity.** So `scoreIdFor("page")` returns null and the route correctly 400s. | The model, the store, the route, the migration and the tests are each complete and correct **in isolation**; the chain from *"I have a brand"* to *"here is its BDS"* has no first link. **This is the same class of defect this phase closed twice already** — a module whose only reader was its own test, and a capability with no caller. It is recorded rather than patched because the fix is a **design decision, not a mechanical one**: does creating an entity mint a subject automatically, or is a subject an explicit act? Auto-minting puts a row in `audit_subjects` for every proposed-and-later-rejected node; explicit minting needs an endpoint nobody has specified. **That choice belongs to the owner.** Detected by `F-02`, which reports DEVIATION with this text rather than a false green. |
+| **DEV-02** | The trust model refuses an unsourced third-party claim, and the refusal is testable through the API. | **The database CHECK is unreachable through the route**, and that is correct. The route refuses a body-supplied `independence` **outright** (D-09), so a caller can never reach the state the CHECK guards. | Two layers, one decision: `makeObservation()` derives independence from whether a checkable source URL is present, and the CHECK is the backstop for a writer that bypasses the route. The old test sheet's `D-08` described exercising the CHECK through the API, which cannot be done; it is now a manual/db-verify row. **A guard you cannot reach from the route is not dead code — it is the second lock.** |
+| **DEV-03** | §4's W14 step 2 asks that every recommendation transition validate the prior state. | **Reverted in full.** `canTransition` returns `{allowed, suggested}` and is **always true for a known state, by design** — its own header says so: *"`next` is what the UI should OFFER; it is not a gate. A state machine that refuses a legitimate jump teaches people to work around the tool."* So `!canTransition(...)` is permanently false: **dead code that reads as enforcement.** | The integrity that matters was never missing — `requirementsFor` has always refused `validated` without the audit that re-measured the signal. Both halves are pinned by test. ⚠️ **A function called by nothing is usually a defect in this codebase — four times over — but not always, and here the code said which.** |
+| **DEV-04** | D1 aligns the penalty model to the PRD. | **Not one existing factor moved.** `AI_CRAWLER_BLOCKED` stays **0.20** (PRD says 0.15), `CONTENT_HYDRATION_ONLY` stays **0.20** (PRD says 0.15), both DatIQ extensions stay first-class, and priority stays **multiplicative**, not the PRD's linear form. Only the two PRD conditions with no shipped equivalent were **added**. | A page an engine cannot fetch or render is not a discounted page, it is an absent one. `scoringModel.test.js` asserts **every** factor, so an "align to the PRD" pass fails the build with the reasoning attached rather than silently re-calibrating every score in the product. Full mapping: `DISCOVERABILITY-MODULE.md` §3c. |
+| **DEV-05** | One model version. | **Two series, deliberately.** `SCORING_MODEL_VERSION` is `v3` (page penalties and pillars); `SUBJECT_MODEL_VERSION` is `s1` (BDS/PDS/SFS). | Different formulas moving for different reasons. **One number for both would make both comparability claims false.** ⚠️ Bump the `s` series when a **weight** moves — never when a component's **source** arrives; TC becoming measurable is coverage rising under the same formula, which `coverage` and `blockedBy` already record. |
+| **DEV-06** | The PRD's component, type and predicate names are implemented as written. | **The PRD expands none of them anywhere in this repository** — BDS's `EC`/`SD`/`ASOV`/`TC`/`RA`, W4's "M1–M13", W10's fourteen entity types and nine predicates, W11's component ids, W13's TC and Schema initials. **Counts match; names are derived**, each recorded with its `binding` and `derivedFrom`, under the constraint that every component binds to something already extractable. | 🔴 **If the PRD's list differs, change the `label` and the `binding` — NEVER the weight and never the id.** Ids travel in stored rows and in every historical diff; a renumbered code silently mis-attributes a fix. Every **weight** is verbatim and asserted by test. |
+| **DEV-07** | `audit_*` tables behave consistently. | **`audit_subject_scores` APPENDS; every sibling UPSERTS.** | They answer different questions. `audit_schema_entities` answers *"what does this page declare NOW"* — a second opinion is not wanted, and without the upsert a weekly crawler doubles every count. `audit_subject_scores` answers *"what did this brand score on the 12th"*, which **is** the product. An arbiter there would collapse a subject's whole history into one row on every re-score. ⚠️ **Two scorings on the same day are two MEASUREMENTS**; refusing the second to prevent a duplicate would be refusing a re-measure. Pinned by `F-04`. |
+
+### 7.2 Deferments — not built, with the blocker named
+
+| # | Deferred | Blocked on | Notes |
+|---|---|---|---|
+| **DEF-01** | 🔴 **Any UI for the P2 modules.** `0062`–`0064` and their routes are the storage and the contract; **no screen reads them.** | Product design. | The automated pass is API-level throughout for this reason, and says so. This is the largest single gap between "P2 is complete" and "a customer can use P2". |
+| **DEF-02** | The fourteen-endpoint `/api/v1/discoverability/*` **published inventory**. | Nothing technical — the canonical prefix and its permanent aliases exist. | The routes work; the public inventory document does not. |
+| **DEF-03** | **D6's seven discoverability roles.** | The signed role matrix. | Guessing a role vocabulary is the same mistake as guessing the PRD's component expansions, in a place that is harder to reverse: a role id ends up in stored grants. |
+| **DEF-04** | **Connector approval-gating** for directory sources. | D5's connector design. | Until then `acquisition: "authorized_api"` is refused from any request body — fidelity is not a flag a client can set. |
+| **DEF-05** | **Workspace-level rollups.** | A workspaces table this module does not own. | Every P2 table already carries a nullable `workspace_id` as the hook, so this is additive when it lands. |
+| **DEF-06** | Exercising **any** P2 path against a **live third-party engine**. | Nothing — it simply has not been done. | The citation and PageSpeed paths are P1's and unchanged. ⚠️ P2's own network surface (directory listing fetches) has never run against a real directory. |
+| **DEF-07** | 🔴 **Applying `0050`–`0064` to production.** | An operator with production credentials. | **Fifteen migrations behind.** Every P2 endpoint reads a table that does not exist there. ⚠️ **`0061` is a SECURITY fix and should not wait on a feature release to carry it** — see [DB-MIGRATION-RUNBOOK.md §4d](DB-MIGRATION-RUNBOOK.md). |
+| **DEF-08** | Deleting the stale remote branch `claude/p2-w9-work-streams-o4gvmq`. | A branch-deletion path that works from here. | `git push origin --delete` fails with `send-pack: unexpected disconnect` and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. |
+
+### 7.3 Found while building the automated pass, and fixed
+
+| # | What | Where |
+|---|---|---|
+| **FIX-01** | 🔴 **`npm run verify:rls` could report "0044 is applied" from a machine that never reached the project.** Behind an egress proxy that allow-lists hosts, every anonymous probe is answered **403 by the proxy** before it reaches Supabase, and the loop counted each as an RLS refusal. It handled a *thrown* network error correctly and missed the case where something in the middle **answers on the host's behalf** — which does not throw and looks exactly like a real response. **Reproduced, then fixed.** | `scripts/lib/postgrestAnswer.mjs` is now the one predicate both verifiers use: PostgREST answers in JSON, always, including its errors; a proxy answers with its own content type and prose. Anything else is **INCONCLUSIVE** (exit 2), a third verdict and not a synonym for either of the others. ⚠️ **A security gate that reports "locked down" when it could not reach the host is worse than no gate.** |
+| **FIX-02** | The first draft of the runner's own summary printed **"PRODUCTION: READY"** off a run with **zero passes and sixty-one skips**, because it counted only failures. The same fail-open shape as FIX-01, one level up. | The verdict is now computed from what was **actually exercised**: a stop-ship check that was skipped or blocked leaves the question open, and an open question is not a yes. Pinned by `verify-discoverability-e2e.test.mjs`. |
