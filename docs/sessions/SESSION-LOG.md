@@ -18,6 +18,50 @@
 
 ---
 
+## 2026-09-13 00:45 IST — Homepage offer and module hierarchy refined; staging merge ready
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge** | `e39ca53` — `codex/homepage-offer-layout` merged onto staging @ `0aa8f1e`. |
+| **Scope** | Home-only promotion placement, hierarchy/spacing refinement, regenerated public output, and regression coverage. |
+| **Deployment** | Push to `origin/staging` is the next operation; Netlify will create the branch deployment automatically. |
+
+### Delivered
+
+- Moved the active, data-driven public offer from beneath the extraction composer into the
+  home guest-trial floating card. It appears below the trial-status message and **Sign up free**
+  action, uses the existing green offer language, fills the card width, and disappears when the
+  campaign is no longer active. The composer no longer carries a duplicate promotion.
+- Added desktop-only clearance so the taller trial-and-offer card never covers the DatIQ
+  Intelligence preview. The guest card remains aligned below the account controls.
+- Clarified the connected-intelligence hierarchy as **From signal to next step.** → its
+  explanatory sentence → **One connected intelligence layer**, and increased the space before
+  **What can DatIQ extract from a page?** so the capability section no longer crowds the module grid.
+
+### Verification evidence
+
+- Focused browser regression — **18 Chromium smoke tests passed**, including a geometric assertion
+  that the offer is below the trial decision row and spans the floating card; it also proves the
+  composer no longer renders an offer banner.
+- Homepage visual regression — **3/3 Chromium snapshots passed** (desktop light/dark and mobile).
+- `npm run test:prepush` — **9/9 release suites passed**.
+- `npm run build && npm run check:prerender` — build passed; **28 generated pages** and
+  **112 asset references** verified.
+- `git diff --check` — passed. Existing Vite dynamic-import/chunk-size advisories remain
+  non-blocking and unchanged in nature.
+
+### Fresh-start action
+
+1. Confirm the automatic Netlify staging deployment for the pushed merge is ready.
+2. Public post-deploy regression remains gated by Netlify Edge Access HTTP 401; do not treat that
+   policy as an application failure. Use the approved non-interactive path before running the
+   parameterized deployed release runner.
+3. Keep the named parallel feature branches deferred until their owners complete integration.
+
+---
+
 ## 2026-09-13 00:20 IST — Face-lift cutover merged to staging and deployed
 
 ### Quick orientation

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-13 — Face-lift cutover is deployed to staging (`d219333`; Netlify `6aa59fc26d1d0c0008c91b0f`) at https://staging.datiq.app. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-13 — Homepage offer and module hierarchy refinement is merged to staging (`e39ca53`) and ready to push for its automatic Netlify branch deployment. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
 >
