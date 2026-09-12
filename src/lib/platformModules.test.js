@@ -4,7 +4,7 @@ import { MODULE_STATUS, PLATFORM_MODULES, hasModuleCta, moduleStatusLabel } from
 describe("platformModules", () => {
   it("publishes the six DatIQ pillars exactly once", () => {
     expect(PLATFORM_MODULES.map((module) => module.key)).toEqual([
-      "extract", "enrich", "compete", "connect", "engage", "discover",
+      "extract", "enrich", "discover", "compete", "connect", "engage",
     ]);
   });
 

@@ -114,9 +114,9 @@ function DashboardReveal() {
         <span className="hdr-source-state">Structured</span>
       </div>
       <div className="hdr-signal-grid">
-        <div><Icon name="list-tree" size={14} /><span>Extract</span></div>
-        <div><Icon name="sparkles" size={14} /><span>Enrich</span></div>
         <div><Icon name="scan-search" size={14} /><span>Discover</span></div>
+        <div><Icon name="share" size={14} /><span>Connect</span></div>
+        <div><Icon name="eye" size={14} /><span>Compete</span></div>
       </div>
       <div className="hdr-evidence-row">
         <Icon name="check-circle" size={14} />
@@ -467,7 +467,7 @@ export default function Home() {
   // ── Copy for hero section ─────────────────────────────────────────────
   // The product positioning stays stable whether a persona is selected. A
   // persona changes quick starts and guidance, not the public brand promise.
-  const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
+  const eyebrow = persona ? persona.badge : null;
   const subtext = "Turn public web signals into structured intelligence, then move the evidence into the work that follows.";
   const greeting = userName ? `Hi ${userName} —` : null;
 
@@ -493,11 +493,13 @@ export default function Home() {
 
         <section className="home-rebrand-hero" aria-labelledby="home-rebrand-title">
           <div className="home-rebrand-copy">
-            <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
-              <Icon name="sparkles" size={14} />
-              {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
-              {eyebrow}
-            </div>
+            {eyebrow && (
+              <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
+                <Icon name="sparkles" size={14} />
+                {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
+                {eyebrow}
+              </div>
+            )}
 
             <h1 id="home-rebrand-title" className="home-rebrand-title rise" style={{ animationDelay: ".06s" }}>
               Intelligence, <span>Connected.</span>
