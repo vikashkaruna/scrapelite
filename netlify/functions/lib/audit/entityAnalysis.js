@@ -20,6 +20,7 @@ const IDENTITY_REQUIREMENTS = Object.freeze({
   Person:       ["name", "url", "jobTitle"],
   Article:      ["headline", "author", "datePublished"],
   Product:      ["name", "description", "offers"],
+  SoftwareApplication: ["name", "description", "offers"],
   WebSite:      ["name", "url"],
 });
 
@@ -45,7 +46,7 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
   const org = findSchema(jsonLd, "Organization");
   const person = findSchema(jsonLd, "Person");
   const article = findSchema(jsonLd, "Article") || findSchema(jsonLd, "BlogPosting");
-  const product = findSchema(jsonLd, "Product");
+  const product = findSchema(jsonLd, "Product") || findSchema(jsonLd, "SoftwareApplication");
   const website = findSchema(jsonLd, "WebSite");
 
   // ── schema identity completeness ─────────────────────────────────────────
@@ -56,7 +57,7 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
     org && schemaCompleteness(org, "Organization"),
     person && schemaCompleteness(person, "Person"),
     article && schemaCompleteness(article, "Article"),
-    product && schemaCompleteness(product, "Product"),
+    product && (schemaCompleteness(product, "Product") ?? schemaCompleteness(product, "SoftwareApplication")),
     website && schemaCompleteness(website, "WebSite"),
   ].filter((v) => typeof v === "number");
 

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-06 — PROSPECT ENGAGEMENT ENGINE SHIPPED ON `feat/prospect-engagement-engine` (main & staging untouched).**
+> **Last updated: 2026-09-13 — The Prospect Engagement Engine and current staging homepage/module refinements are integrated on `feat/prospect-engagement-engine`. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
 >

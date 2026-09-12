@@ -18,7 +18,7 @@ function Brand({ onClick }) {
       </div>
       <div className="brand-text">
         <div className="brand-name">Dat<b>IQ</b></div>
-        <div className="brand-tagline">Intelligence from the Web</div>
+        <div className="brand-tagline">Intelligence, Connected.</div>
       </div>
     </div>
   );
@@ -422,38 +422,9 @@ export default function TopBar() {
   const isExploreActive = EXPLORE_ACTIVE_PATHS.some((p) => pathname.startsWith(p));
 
   const mainLinks = [
-    // "Extract" covers batch too: the Home composer detects 2+ URLs (or a CSV,
-    // or links inside pasted prose) and routes to /batch itself, so a separate
-    // Batch nav item advertised a second front door to the same feature. The
-    // route still exists — it's the run + results surface, reached from the
-    // composer and from Dashboard's batch-run history.
     { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
-    // Schedules is deliberately NOT a nav item. Every place a person forms the
-    // intent to schedule something already offers the door: the Home composer's
-    // cadence dropdown, Workspace's Schedules tab and quick actions, Dashboard's
-    // run history, and the Explore menu. A fifth entry competed with the four
-    // primary verbs for the widest breakpoint's worth of space while duplicating
-    // routes the user reaches from where they already are. The /schedules route
-    // is unchanged and every existing link still works.
-    // Discoverability is its own entry rather than a tab inside Extract: it
-    // answers a different question ("can this page be found and cited?") about
-    // a page the user usually already owns, whereas Extract answers "what is on
-    // this page?" about one they usually do not.
-    // Labelled "Discover", not "Discoverability". The full word is 15
-    // characters against 7-9 for every sibling, so it dominated the nav and was
-    // the first item to force the tablet breakpoint to compress. The ROUTE, the
-    // page <h1> and every piece of copy stay "Discoverability" — this is the
-    // nav label only, where space is the constraint and the icon plus context
-    // carry the rest of the meaning.
-    // Templates is the activation path (PRD 1): the fastest route from "I have
-    // a job to do" to a finished piece of work. It earns a primary slot because
-    // it is where a new user's first successful session starts — the catalogue
-    // is also a public acquisition surface, so it must be reachable without
-    // already knowing it exists. "Templates" is 9 chars, matching Dashboard and
-    // Schedules, so it does not repeat the tablet-breakpoint crowding that made
-    // "Discoverability" become "Discover".
-    { to: "/templates",   label: "Templates",   icon: "layout-list", match: (p) => p.startsWith("/templates") },
     { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
+    { to: "/templates",   label: "Templates",   icon: "layout-list", match: (p) => p.startsWith("/templates") },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Workspace moved into the signed-in user menu (2026-08-28), same
     // reasoning already applied to Schedules below: it's a destination people

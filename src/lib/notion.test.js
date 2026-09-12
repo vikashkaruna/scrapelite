@@ -10,6 +10,9 @@ import {
   pushToNotion,
   readNotionConfig,
   writeNotionConfig,
+  autoMapNotionSchema,
+  mapNotionColumnToKey,
+  buildNotionPageChildren,
   _internal,
 } from "./notion.js";
 
@@ -232,6 +235,104 @@ describe("notion (F18)", () => {
       expect(r.ok).toBe(false);
       expect(r.pushed).toBe(0);
       expect(r.failedRecords[0].error).toMatch(/400/);
+    });
+
+    it("creates page with populated properties when raw schema { Name: 'title', URL: 'url' } is passed", async () => {
+      let createdBody = null;
+      const fetchFn = vi.fn().mockImplementation(async (url, init) => {
+        if (url.includes("/query")) {
+          return { ok: true, status: 200, json: async () => ({ results: [] }) };
+        }
+        if (url.includes("/pages")) {
+          createdBody = JSON.parse(init.body);
+          return { ok: true, status: 200, json: async () => ({ id: "page_123" }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+      const item = {
+        url: "https://lumio.ai",
+        page_title: "Lumio - Visual Intelligence",
+        host: "lumio.ai",
+        ai_summary: "Visual AI platform",
+        headings: ["Heading 1", "Heading 2"],
+        created_at: "2026-09-08T00:00:00.000Z",
+      };
+      const rawSchema = { Name: "title", URL: "url", Summary: "rich_text" };
+      const r = await pushToNotion([item], { ...validConfig, schema: rawSchema, fetchFn });
+      expect(r.ok).toBe(true);
+      expect(r.pushed).toBe(1);
+      expect(createdBody).not.toBeNull();
+      expect(createdBody.properties.Name.title[0].text.content).toBe("Lumio - Visual Intelligence");
+      expect(createdBody.properties.URL.url).toBe("https://lumio.ai");
+      expect(createdBody.properties.Summary.rich_text[0].text.content).toBe("Visual AI platform");
+      expect(createdBody.children).toBeDefined();
+      expect(createdBody.children.length).toBeGreaterThan(0);
+    });
+
+    it("falls back to creating page when deduplication query returns 400", async () => {
+      let created = false;
+      const fetchFn = vi.fn().mockImplementation(async (url) => {
+        if (url.includes("/query")) {
+          return { ok: false, status: 400, json: async () => ({ message: "Property not found" }) };
+        }
+        if (url.includes("/pages")) {
+          created = true;
+          return { ok: true, status: 200, json: async () => ({ id: "page_new" }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+      const r = await pushToNotion(
+        [{ url: "https://lumio.ai", page_title: "Lumio", host: "lumio.ai", ai_summary: "AI" }],
+        { ...validConfig, fetchFn },
+      );
+      expect(r.ok).toBe(true);
+      expect(r.pushed).toBe(1);
+      expect(created).toBe(true);
+    });
+  });
+
+  describe("autoMapNotionSchema", () => {
+    it("converts raw Notion property types to normalized schema map", () => {
+      const raw = {
+        Name: "title",
+        Website: "url",
+        Notes: "rich_text",
+        FormulaCol: "formula",
+        RollupCol: "rollup",
+      };
+      const schema = autoMapNotionSchema(raw, "Name");
+      expect(schema.Name).toEqual({ type: "title", key: "page_title" });
+      expect(schema.Website).toEqual({ type: "url", key: "url" });
+      expect(schema.Notes).toEqual({ type: "rich_text", key: "ai_summary" });
+      expect(schema.FormulaCol).toBeUndefined(); // read-only skipped
+      expect(schema.RollupCol).toBeUndefined(); // read-only skipped
+    });
+
+    it("preserves already normalized schema maps", () => {
+      const existing = {
+        Title: { type: "title", key: "page_title" },
+        URL: { type: "url", key: "url" },
+      };
+      const schema = autoMapNotionSchema(existing);
+      expect(schema).toBe(existing);
+    });
+  });
+
+  describe("buildNotionPageChildren", () => {
+    it("builds callout for summary, link for url, and bullet items for headings", () => {
+      const item = {
+        url: "https://lumio.ai",
+        ai_summary: "AI powered scraper",
+        headings: ["H1 Alpha", "H2 Beta"],
+      };
+      const blocks = buildNotionPageChildren(item);
+      expect(blocks.some((b) => b.type === "callout")).toBe(true);
+      expect(blocks.some((b) => b.type === "paragraph")).toBe(true);
+      expect(blocks.some((b) => b.type === "bulleted_list_item")).toBe(true);
+    });
+
+    it("returns empty array when item has no content", () => {
+      expect(buildNotionPageChildren({})).toEqual([]);
     });
   });
 

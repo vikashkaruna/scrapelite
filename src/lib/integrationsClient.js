@@ -198,18 +198,20 @@ export async function pushToIntegration(slug, items) {
         }
         return {
           ok: false,
-          pushed: 0,
+          pushed: body?.pushed ?? 0,
           total: clean.length,
-          errors: [body?.error || "push_failed"],
-          failedRecords: [],
-          message: body?.error || "Push failed",
+          errors: body?.errors || [body?.error || "push_failed"],
+          failedRecords: body?.failedRecords || [],
+          message: body?.error || body?.errors?.[0] || "Push failed",
         };
       }
+      const pushedCount = body.pushed ?? 0;
+      const isOk = body.ok === true && (pushedCount > 0 || clean.length === 0);
       return {
-        ok: body.ok !== false,
-        pushed: body.pushed ?? clean.length,
+        ok: isOk,
+        pushed: pushedCount,
         total: body.total ?? clean.length,
-        errors: body.errors || [],
+        errors: body.errors || (!isOk ? ["Push failed"] : []),
         failedRecords: body.failedRecords || [],
       };
     }
@@ -342,26 +344,11 @@ export async function patchIntegrationConnection(slug, patch) {
  * the integration is still wired up correctly. Returns the test result
  * (e.g. for Airtable: { ok, tableName, fieldCount, matched, fieldMap }).
  */
-export async function testIntegrationConnection(slug) {
+export async function testIntegrationConnection(slug, options = {}) {
   try {
-    // Zapier's public `/test` endpoint is for the Zapier private app: it
-    // requires the plaintext per-Zap token in X-Zapier-Token. The Account UI
-    // intentionally never reads that token back after it is minted, so a
-    // browser POST to `/test` cannot be a valid user-side connection check.
-    // Confirm the stored connection through the authenticated status endpoint
-    // instead. This also avoids calling `/test` with POST when Zapier exposes
-    // that endpoint as GET only.
-    if (slug === "zapier") {
-      const status = await getIntegrationStatus(slug);
-      if (!status?.connected) {
-        return { ok: false, error: status?.error || "Zapier is not connected." };
-      }
-      return { ok: true };
-    }
-
     const { ok, body, status } = await authedFetch(`/api/integrations/${slug}/test`, {
       method: "POST",
-      body: JSON.stringify({ action: "test" }),
+      body: JSON.stringify({ action: "test", ...(options || {}) }),
     });
     if (!ok) {
       return { ok: false, error: body?.error || `HTTP ${status}` };

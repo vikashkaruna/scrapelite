@@ -47,7 +47,7 @@ import { generateApiKey, envOf } from "./lib/apiKeyService.js";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Zapier-Token",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
 };
 
 function respond(statusCode, body) {
@@ -257,6 +257,7 @@ async function handleStatus(userId) {
       ...safe,
       token_hint: config?.token_hint || null, // last 4 chars
       webhook_hint: config?.webhook_url ? (config.webhook_url.slice(0, 32) + "…") : null,
+      webhook_url: config?.webhook_url || null,
       has_token: !!config?.token_hash,
     },
   });
@@ -268,29 +269,40 @@ async function handleConnect(event, userId) {
 
   const webhookUrl = typeof body?.webhookUrl === "string" && body.webhookUrl.trim().startsWith("http")
     ? body.webhookUrl.trim()
-    : null;
+    : (body?.webhookUrl === null ? null : undefined);
 
-  const regenerate = body?.regenerate === true || (!body?.token && !webhookUrl);
+  const existing = await getConnection({ userId, provider: "zapier" });
+  const existingConfig = existing?.connection?.config || {};
+
+  const regenerate = body?.regenerate === true || (!body?.token && webhookUrl === undefined && !existingConfig.token_hash);
   let plaintext = body?.token;
-  if (regenerate || !plaintext) {
+  let tokenHash = existingConfig.token_hash;
+  let tokenHint = existingConfig.token_hint;
+
+  if (regenerate || (!tokenHash && !plaintext)) {
     plaintext = generateZapierToken();
+    tokenHash = hashToken(plaintext);
+    tokenHint = plaintext.slice(-4);
+  } else if (plaintext) {
+    if (!plaintext.startsWith("zap_")) {
+      return respond(400, { error: "Token must start with 'zap_'." });
+    }
+    tokenHash = hashToken(plaintext);
+    tokenHint = plaintext.slice(-4);
   }
 
-  if (!plaintext || !plaintext.startsWith("zap_")) {
-    return respond(400, { error: "Token must start with 'zap_'." });
-  }
+  const finalWebhookUrl = webhookUrl !== undefined ? webhookUrl : (existingConfig.webhook_url || null);
 
-  const tokenHash = hashToken(plaintext);
   const r = await upsertConnection({
     userId,
     provider: "zapier",
     fields: {
       config: {
         token_hash: tokenHash,
-        token_hint: plaintext.slice(-4),
-        webhook_url: webhookUrl,
+        token_hint: tokenHint,
+        webhook_url: finalWebhookUrl,
       },
-      account_label: "Zapier",
+      account_label: body?.accountLabel || existing?.connection?.account_label || "Zapier",
     },
   });
   if (!r.ok) return respond(500, { error: r.error });
@@ -298,7 +310,6 @@ async function handleConnect(event, userId) {
   // Also create a per-user DatIQ API key so the user's other integrations
   // (and the Zapier action handlers) can hit /api/v1.
   let apiKey = null;
-  const existing = await getConnection({ userId, provider: "zapier" });
   if (existing?.connection?.config?.api_key_id && !regenerate) {
     // Don't re-mint.
   } else {
@@ -308,9 +319,129 @@ async function handleConnect(event, userId) {
   return respond(200, {
     ok: true,
     connected: true,
-    ...(regenerate || !body?.token ? { token: plaintext } : {}),
-    webhook_url: webhookUrl,
+    ...((regenerate || !body?.token) && plaintext ? { token: plaintext } : {}),
+    webhook_url: finalWebhookUrl,
+    token_hint: tokenHint,
   });
+}
+
+/**
+ * PATCH /connect — partial update. Accepts:
+ *   - accountLabel  string   rename the connection in the UI
+ *   - webhookUrl    string   set, update, or clear the Zapier Catch Hook URL
+ */
+async function handlePatch(event, userId) {
+  let body = {};
+  try { body = await readJsonBody(event); } catch { /* tolerate */ }
+  const conn = await getConnection({ userId, provider: "zapier" });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) {
+    return respond(400, { error: "Zapier is not connected. Use POST /connect to set it up first." });
+  }
+  const existingConfig = conn.connection.config || {};
+  const fields = {};
+  const configPatch = { ...existingConfig };
+
+  if (typeof body?.accountLabel === "string" && body.accountLabel.trim()) {
+    fields.account_label = body.accountLabel.trim();
+  }
+
+  if (body?.webhookUrl !== undefined) {
+    const raw = typeof body.webhookUrl === "string" ? body.webhookUrl.trim() : "";
+    if (raw && !raw.startsWith("http")) {
+      return respond(400, { error: "webhookUrl must be a valid URL starting with http:// or https://" });
+    }
+    configPatch.webhook_url = raw || null;
+  }
+
+  fields.config = configPatch;
+  const r = await upsertConnection({ userId, provider: "zapier", fields });
+  if (!r.ok) return respond(500, { error: r.error });
+
+  return respond(200, {
+    ok: true,
+    connected: true,
+    webhook_url: configPatch.webhook_url,
+    webhook_hint: configPatch.webhook_url ? (configPatch.webhook_url.slice(0, 32) + "…") : null,
+    token_hint: configPatch.token_hint || null,
+  });
+}
+
+/**
+ * POST /test — authenticated test endpoint called by Account UI / Edit modal.
+ * Tests configured Zapier Catch Hook webhook URL or validates a secret token.
+ */
+async function handleUserTest(event, userId) {
+  const conn = await getConnection({ userId, provider: "zapier" });
+  if (!conn.ok) return respond(500, { error: conn.error });
+  if (!conn.connection) {
+    return respond(412, { error: "Zapier is not connected. Connect Zapier in Account → Integrations." });
+  }
+  const config = conn.connection.config || {};
+  const webhookUrl = config.webhook_url;
+  const hasToken = !!config.token_hash;
+  const tokenHint = config.token_hint;
+
+  let body = {};
+  try { body = await readJsonBody(event); } catch { /* ignore */ }
+
+  // 1. If testing a specific secret key provided in body:
+  if (body.token) {
+    if (!body.token.startsWith("zap_")) {
+      return respond(400, { error: "Token must start with 'zap_'." });
+    }
+    const testHash = hashToken(body.token);
+    if (testHash !== config.token_hash) {
+      return respond(401, { error: "Secret key does not match the active Zapier token for this account." });
+    }
+    return respond(200, {
+      ok: true,
+      type: "token",
+      detail: "Secret key verified successfully against stored token",
+      has_token: true,
+      token_hint: tokenHint,
+    });
+  }
+
+  // 2. If a Zapier Catch Hook Webhook URL is configured, send test ping:
+  if (webhookUrl) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "test.ping",
+          message: "DatIQ Zapier test connection",
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        return respond(502, { error: `Zapier catch hook returned HTTP ${res.status}` });
+      }
+      return respond(200, {
+        ok: true,
+        type: "webhook",
+        detail: "Catch Hook received test ping successfully",
+        has_token: hasToken,
+        token_hint: tokenHint,
+      });
+    } catch (err) {
+      return respond(502, { error: `Zapier webhook ping failed: ${err.message}` });
+    }
+  }
+
+  // 3. If token is configured:
+  if (hasToken) {
+    return respond(200, {
+      ok: true,
+      type: "token",
+      detail: `Token (ending in ${tokenHint || "...."}) stored and ready`,
+      has_token: true,
+      token_hint: tokenHint,
+    });
+  }
+
+  return respond(400, { error: "Neither a Webhook URL nor a token is configured for Zapier." });
 }
 
 async function handlePush(event, userId) {
@@ -416,6 +547,12 @@ export const handler = async (event) => {
     }
     if (event.httpMethod === "POST" && subPath[0] === "connect") {
       return await handleConnect(event, auth.user.id);
+    }
+    if (event.httpMethod === "PATCH" && (subPath[0] === "connect" || subPath.length === 0)) {
+      return await handlePatch(event, auth.user.id);
+    }
+    if (event.httpMethod === "POST" && (subPath[0] === "test" || body.action === "test")) {
+      return await handleUserTest(event, auth.user.id);
     }
     if (event.httpMethod === "POST" && (subPath[0] === "push" || body.action === "push")) {
       return await handlePush(event, auth.user.id);

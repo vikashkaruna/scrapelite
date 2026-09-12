@@ -28,7 +28,7 @@
 import { extractionsToCsv, extractionsToMarkdown, extractionsToJson, isValidEmail, hostOf } from "../../src/lib/utils.js";
 import { extractionsPdfBuffer, extractionsPdfFilename } from "../../src/lib/pdfExport.js";
 import { buildBrandingContext, brandingEmailHtml, brandingEmailText } from "../../src/lib/exportBranding.js";
-import { validateBrandKit } from "../../src/lib/whiteLabelTemplate.js";
+import { validateBrandKit } from "../../src/lib/brandKitValidation.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
 
@@ -237,9 +237,20 @@ export const handler = async (event) => {
       }),
     });
     if (!res.ok) {
-      // Deliberately do NOT echo the response body — it can contain the key.
-      console.error(`[export-email] Resend HTTP ${res.status}`);
-      return respond(502, { error: `Email delivery failed (Resend HTTP ${res.status}).` });
+      let resendMsg = "";
+      try {
+        if (typeof res.json === "function") {
+          const errJson = await res.json();
+          if (errJson?.message && typeof errJson.message === "string") {
+            resendMsg = errJson.message.replace(/[\r\n]+/g, " ").slice(0, 200);
+          }
+        }
+      } catch { /* ignore */ }
+      // Deliberately do NOT echo the full response body — it can contain secrets.
+      console.error(`[export-email] Resend HTTP ${res.status}${resendMsg ? `: ${resendMsg}` : ""}`);
+      return respond(502, {
+        error: `Email delivery failed (Resend HTTP ${res.status}${resendMsg ? `: ${resendMsg}` : ""}).`,
+      });
     }
   } catch (err) {
     console.error("[export-email] threw:", err?.message);

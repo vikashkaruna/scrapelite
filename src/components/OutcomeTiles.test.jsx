@@ -36,11 +36,11 @@ describe("Q3 (single-select) — OutcomeTiles: above-hero grid", () => {
 
   it("marks the active tile with aria-pressed=true and the .outcome-tile-active class", () => {
     render(<OutcomeTiles activeKey={OUTCOME_TILES[2].key} onToggle={() => {}} />);
-    const items = screen.getAllByRole("listitem");
-    expect(items[2]).toHaveAttribute("aria-pressed", "true");
-    expect(items[2]).toHaveClass("outcome-tile-active");
-    expect(items[0]).toHaveAttribute("aria-pressed", "false");
-    expect(items[1]).toHaveAttribute("aria-pressed", "false");
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[2]).toHaveAttribute("aria-pressed", "true");
+    expect(buttons[2]).toHaveClass("outcome-tile-active");
+    expect(buttons[0]).toHaveAttribute("aria-pressed", "false");
+    expect(buttons[1]).toHaveAttribute("aria-pressed", "false");
   });
 
   it("never shows a multi-select Clear (N) button", () => {
@@ -55,9 +55,9 @@ describe("Q3 (single-select) — OutcomeTiles: above-hero grid", () => {
 
   it("disables every tile when disabled=true", () => {
     render(<OutcomeTiles onToggle={() => {}} disabled />);
-    const items = screen.getAllByRole("listitem");
-    for (const item of items) {
-      expect(item).toBeDisabled();
+    const buttons = screen.getAllByRole("button");
+    for (const button of buttons) {
+      expect(button).toBeDisabled();
     }
   });
 

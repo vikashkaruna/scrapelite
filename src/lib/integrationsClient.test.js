@@ -229,29 +229,28 @@ describe("integrationsClient — getIntegrationStatus", () => {
 });
 
 describe("integrationsClient — testIntegrationConnection(zapier)", () => {
-  it("uses the authenticated status endpoint instead of POSTing to Zapier's public GET-only test endpoint", async () => {
+  it("POSTs to the authenticated /api/integrations/zapier/test endpoint", async () => {
     globalThis.fetch.mockResolvedValue({
       ok: true,
       status: 200,
       headers: { get: () => "application/json" },
-      text: async () => JSON.stringify({ connected: true, provider: "zapier" }),
+      text: async () => JSON.stringify({ ok: true, type: "webhook", detail: "Catch Hook received test ping successfully" }),
     });
 
     const result = await testIntegrationConnection("zapier");
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, type: "webhook", detail: "Catch Hook received test ping successfully" });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/integrations/zapier/status",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-    expect(globalThis.fetch.mock.calls[0][1].method).toBeUndefined();
-    expect(globalThis.fetch).not.toHaveBeenCalledWith(
       "/api/integrations/zapier/test",
-      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ action: "test" }),
+      }),
     );
   });
 
-  it("returns the status error when Zapier is disconnected", async () => {
+  it("returns the error when Zapier is disconnected", async () => {
     globalThis.fetch.mockResolvedValue({
       ok: false,
       status: 412,

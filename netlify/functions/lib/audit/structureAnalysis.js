@@ -216,9 +216,19 @@ export function analyseStructure(parsed, ctx = {}) {
 
   // ── breadcrumbs ──────────────────────────────────────────────────────────
   const crumb = findSchema(jsonLd, "BreadcrumbList");
+  const isRootPage = (() => {
+    try {
+      const u = new URL(parsed.url || "");
+      return u.pathname === "" || u.pathname === "/";
+    } catch { return false; }
+  })();
+
   if (crumb) {
     const items = [].concat(crumb.itemListElement || []).filter(Boolean);
     signals.breadcrumb_semantics = items.length >= 2 ? 100 : 60;
+  } else if (isRootPage) {
+    // The root homepage is the apex of the site hierarchy and has no parent breadcrumbs.
+    signals.breadcrumb_semantics = 100;
   } else {
     signals.breadcrumb_semantics = 20;
     issues.push({

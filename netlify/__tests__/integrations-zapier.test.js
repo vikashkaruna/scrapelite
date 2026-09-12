@@ -284,6 +284,179 @@ describe("integrations-zapier", () => {
       expect(JSON.parse(r.body).ok).toBe(true);
       expect(mockEventStore.append).toHaveBeenCalled();
     });
+
+    it("PATCH /connect updates webhook_url and account_label without changing token_hash", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: {
+          id: "c1",
+          account_label: "Old Label",
+          config: { token_hash: TOKEN_HASH, token_hint: "DEF", webhook_url: "https://hooks.zapier.com/old" },
+        },
+      });
+      mockStore.upsert.mockResolvedValue({ ok: true });
+
+      const r = await handler(baseEvent({
+        httpMethod: "PATCH",
+        queryStringParameters: { splat: "connect" },
+        body: JSON.stringify({
+          accountLabel: "New Zapier Label",
+          webhookUrl: "https://hooks.zapier.com/hooks/catch/new/path",
+        }),
+      }));
+
+      expect(r.statusCode).toBe(200);
+      const res = JSON.parse(r.body);
+      expect(res.ok).toBe(true);
+      expect(res.webhook_url).toBe("https://hooks.zapier.com/hooks/catch/new/path");
+
+      expect(mockStore.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        fields: expect.objectContaining({
+          account_label: "New Zapier Label",
+          config: expect.objectContaining({
+            token_hash: TOKEN_HASH,
+            token_hint: "DEF",
+            webhook_url: "https://hooks.zapier.com/hooks/catch/new/path",
+          }),
+        }),
+      }));
+    });
+
+    it("GET /status returns full webhook_url in connection object", async () => {
+      mockStore.get.mockResolvedValue({
+        ok: true,
+        connection: {
+          id: "c1",
+          account_label: "Zapier",
+          config: {
+            token_hash: TOKEN_HASH,
+            token_hint: "DEF",
+            webhook_url: "https://hooks.zapier.com/hooks/catch/123/456",
+          },
+        },
+      });
+
+      const r = await handler(baseEvent({
+        httpMethod: "GET",
+        queryStringParameters: { splat: "status" },
+      }));
+
+      expect(r.statusCode).toBe(200);
+      const res = JSON.parse(r.body);
+      expect(res.connection.webhook_url).toBe("https://hooks.zapier.com/hooks/catch/123/456");
+      expect(res.connection.webhook_hint).toBe("https://hooks.zapier.com/hooks/c…");
+    });
+
+    describe("authenticated POST /test (Account UI / Edit modal)", () => {
+      it("pings Zapier Catch Hook webhook URL when configured", async () => {
+        mockStore.get.mockResolvedValue({
+          ok: true,
+          connection: {
+            id: "c1",
+            config: {
+              token_hash: TOKEN_HASH,
+              token_hint: "DEF",
+              webhook_url: "https://hooks.zapier.com/hooks/catch/123/456",
+            },
+          },
+        });
+        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "success" }), { status: 200 }));
+        globalThis.fetch = fetchMock;
+
+        const r = await handler(baseEvent({
+          httpMethod: "POST",
+          queryStringParameters: { splat: "test" },
+          body: JSON.stringify({ action: "test" }),
+        }));
+
+        expect(r.statusCode).toBe(200);
+        const res = JSON.parse(r.body);
+        expect(res.ok).toBe(true);
+        expect(res.type).toBe("webhook");
+        expect(res.detail).toMatch(/Catch Hook received test ping successfully/);
+        expect(fetchMock).toHaveBeenCalledWith(
+          "https://hooks.zapier.com/hooks/catch/123/456",
+          expect.objectContaining({
+            method: "POST",
+            body: expect.stringContaining("test.ping"),
+          })
+        );
+      });
+
+      it("returns token confirmation when only token is configured", async () => {
+        mockStore.get.mockResolvedValue({
+          ok: true,
+          connection: {
+            id: "c1",
+            config: {
+              token_hash: TOKEN_HASH,
+              token_hint: "DEF",
+              webhook_url: null,
+            },
+          },
+        });
+
+        const r = await handler(baseEvent({
+          httpMethod: "POST",
+          queryStringParameters: { splat: "test" },
+          body: JSON.stringify({ action: "test" }),
+        }));
+
+        expect(r.statusCode).toBe(200);
+        const res = JSON.parse(r.body);
+        expect(res.ok).toBe(true);
+        expect(res.type).toBe("token");
+        expect(res.detail).toMatch(/Token \(ending in DEF\) stored and ready/);
+      });
+
+      it("verifies a valid secret token sent in body", async () => {
+        mockStore.get.mockResolvedValue({
+          ok: true,
+          connection: {
+            id: "c1",
+            config: {
+              token_hash: TOKEN_HASH,
+              token_hint: "DEF",
+            },
+          },
+        });
+
+        const r = await handler(baseEvent({
+          httpMethod: "POST",
+          queryStringParameters: { splat: "test" },
+          body: JSON.stringify({ action: "test", token: TOKEN }),
+        }));
+
+        expect(r.statusCode).toBe(200);
+        const res = JSON.parse(r.body);
+        expect(res.ok).toBe(true);
+        expect(res.type).toBe("token");
+        expect(res.detail).toMatch(/Secret key verified successfully/);
+      });
+
+      it("rejects an invalid secret token sent in body", async () => {
+        mockStore.get.mockResolvedValue({
+          ok: true,
+          connection: {
+            id: "c1",
+            config: {
+              token_hash: TOKEN_HASH,
+              token_hint: "DEF",
+            },
+          },
+        });
+
+        const r = await handler(baseEvent({
+          httpMethod: "POST",
+          queryStringParameters: { splat: "test" },
+          body: JSON.stringify({ action: "test", token: "zap_wrongtoken12345678901234567890" }),
+        }));
+
+        expect(r.statusCode).toBe(401);
+        const res = JSON.parse(r.body);
+        expect(res.error).toMatch(/does not match/);
+      });
+    });
   });
 
   it("returns 404 for unknown sub-paths", async () => {

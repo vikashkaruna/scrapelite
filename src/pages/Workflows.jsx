@@ -16,6 +16,7 @@ import { SEVERITY, STAGES, nextStep } from "../lib/workflows/workflowGraph.js";
 import InlineFix from "../components/workflows/InlineFix.jsx";
 import TracePanel from "../components/workflows/TracePanel.jsx";
 import { getWorkflowGraph } from "../lib/workflows/workflowClient.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
 const STAGE_META = {
   lists: { title: "Account lists", icon: "list", blurb: "Who you care about", href: "/lists" },
@@ -73,8 +74,9 @@ function GuidePanel({ step }) {
 
 export default function Workflows() {
   const { user } = useAuth();
-  const [graph, setGraph] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedGraph = readPageCache("workflowGraph")?.data || null;
+  const [graph, setGraph] = useState(cachedGraph);
+  const [loading, setLoading] = useState(!cachedGraph);
   const [error, setError] = useState(null);
 
   // No SEO call here, matching /rules and /watchlists: /workflows is a PRIVATE
@@ -92,9 +94,12 @@ export default function Workflows() {
     (async () => {
       try {
         const g = await getWorkflowGraph();
-        if (!cancelled) setGraph(g);
+        if (!cancelled) {
+          setGraph(g);
+          writePageCache("workflowGraph", g);
+        }
       } catch (e) {
-        if (!cancelled) setError(e.message);
+        if (!cancelled && !graph) setError(e.message);
       } finally {
         if (!cancelled) setLoading(false);
       }

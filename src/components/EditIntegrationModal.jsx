@@ -45,6 +45,7 @@ import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import {
   patchIntegrationConnection,
+  testIntegrationConnection,
   fetchAirtableTablesClient,
   createAirtableTableClient,
 } from "../lib/integrationsClient.js";
@@ -72,10 +73,8 @@ const PROVIDER_FIELDS = {
     { key: "webhookUrl",   label: "Webhook URL",   kind: "text", placeholder: "https://hooks.slack.com/services/..." },
   ],
   zapier: [
-    // Zapier has no editable fields — the "Generate new token" action
-    // is the only thing the modal does. Listed here for completeness so
-    // the field renderer doesn't crash; the component short-circuits
-    // before reaching it (see render()).
+    { key: "accountLabel", label: "Account label", kind: "text", placeholder: "Zapier" },
+    { key: "webhookUrl",   label: "Zap Webhook URL (Catch Hook)", kind: "text", placeholder: "https://hooks.zapier.com/hooks/catch/..." },
   ],
 };
 
@@ -84,7 +83,7 @@ const PROVIDER_META = {
   notion:   { title: "Edit Notion",   icon: "bookmark",      saveLabel: "Save & refresh schema" },
   airtable: { title: "Edit Airtable", icon: "layers",        saveLabel: "Save & refresh schema" },
   slack:    { title: "Edit Slack",    icon: "message-square", saveLabel: "Save changes" },
-  zapier:   { title: "Edit Zapier",   icon: "share",         saveLabel: "Generate new token" },
+  zapier:   { title: "Edit Zapier",   icon: "share",         saveLabel: "Save changes" },
 };
 
 // Map our internal field keys → PATCH /connect body keys. Keeps the
@@ -105,6 +104,9 @@ function buildPatchBody(slug, values) {
   } else if (slug === "slack") {
     if (values.accountLabel) body.accountLabel = values.accountLabel;
     if (values.webhookUrl)   body.webhookUrl = values.webhookUrl;
+  } else if (slug === "zapier") {
+    if (values.accountLabel !== undefined) body.accountLabel = values.accountLabel;
+    if (values.webhookUrl !== undefined) body.webhookUrl = values.webhookUrl;
   }
   return body;
 }
@@ -127,6 +129,15 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
   const [mintedToken, setMintedToken]   = useState(null);
   const [mintingToken, setMintingToken] = useState(false);
 
+  // Secret key testing state (Zapier)
+  const [testKey, setTestKey]           = useState("");
+  const [testingKey, setTestingKey]     = useState(false);
+  const [keyTestResult, setKeyTestResult] = useState(null);
+
+  // Connection testing state
+  const [testingConn, setTestingConn]   = useState(false);
+  const [connTestResult, setConnTestResult] = useState(null);
+
   // Airtable dynamic table discovery & creation state
   const [airtableTables, setAirtableTables]   = useState([]);
   const [loadingTables, setLoadingTables]     = useState(false);
@@ -142,7 +153,7 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
         databaseId:   status.connection.database_id   || "",
         baseId:       status.connection.base_id       || "",
         tableId:      status.connection.table_id      || "",
-        webhookUrl:   status.connection.webhook_hint  || "", // hint, not the full URL — user can re-paste
+        webhookUrl:   status.connection.webhook_url   || status.connection.webhook_hint || "",
       });
       setError(null);
       setSuccess(null);
@@ -152,6 +163,11 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
       setMintingToken(false);
       setShowCreateTable(false);
       setNewTableName("DatIQ Extractions");
+      setTestKey("");
+      setTestingKey(false);
+      setKeyTestResult(null);
+      setTestingConn(false);
+      setConnTestResult(null);
     }
   }, [open, status]);
 
@@ -331,63 +347,45 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
     }
   };
 
-  // Zapier has its own body shape — only the "Generate new token"
-  // action, no editable fields. Render a focused variant.
-  if (slug === "zapier") {
-    return (
-      <div className="icm-backdrop" onClick={onClose}>
-        <div className="icm-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="icm-head">
-            <div className="icm-head-icon"><Icon name={config.icon} size={20} /></div>
-            <div>
-              <h3>{config.title}</h3>
-              <p className="icm-desc">
-                Generate a fresh Zapier token. Your previous token is invalidated the moment a new one is issued.
-                The plaintext is shown ONCE — copy it into Zapier immediately.
-              </p>
-            </div>
-            <button className="icm-close" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
-          </div>
-          <div className="icm-body">
-            {error && (
-              <div className="icm-error">
-                <Icon name="alert-circle" size={15} /><span>{error}</span>
-              </div>
-            )}
-            {mintedToken ? (
-              <>
-                <div className="icm-success">
-                  <Icon name="check-circle" size={18} /><strong>Token generated.</strong> Copy it now — it won't be shown again.
-                </div>
-                <div className="icm-token-box">
-                  <code>{mintedToken}</code>
-                  <Button size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(mintedToken)}>Copy</Button>
-                </div>
-                <div className="icm-foot">
-                  <Button onClick={onClose}>Done</Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="icm-help" style={{ marginBottom: 12 }}>
-                  Current token: {connection.token_hint ? <code>{connection.token_hint}</code> : <em>none</em>}
-                  {connection.created_at && (
-                    <> · issued {new Date(connection.created_at).toLocaleDateString()}</>
-                  )}
-                </div>
-                <div className="icm-foot">
-                  <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
-                  <Button onClick={handleGenerateToken} disabled={mintingToken} loading={mintingToken}>
-                    {mintingToken ? "Generating…" : "Generate new token"}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleTestKey = async (e) => {
+    if (e) e.preventDefault();
+    if (!testKey.trim()) return;
+    setTestingKey(true);
+    setKeyTestResult(null);
+    try {
+      const res = await testIntegrationConnection("zapier", { token: testKey.trim() });
+      if (res.ok) {
+        setKeyTestResult({ ok: true, message: res.detail || "Secret key is valid and matches active token." });
+      } else {
+        setKeyTestResult({ ok: false, message: res.error || "Secret key verification failed." });
+      }
+    } catch (err) {
+      setKeyTestResult({ ok: false, message: err?.message || "Network error" });
+    } finally {
+      setTestingKey(false);
+    }
+  };
+
+  const handleTestConnection = async (e) => {
+    if (e) e.preventDefault();
+    setTestingConn(true);
+    setConnTestResult(null);
+    try {
+      const res = await testIntegrationConnection(slug);
+      if (res.ok) {
+        setConnTestResult({
+          ok: true,
+          message: res.detail || (slug === "slack" ? "Welcome message posted to your channel." : "Connection test passed."),
+        });
+      } else {
+        setConnTestResult({ ok: false, message: res.error || "Connection test failed." });
+      }
+    } catch (err) {
+      setConnTestResult({ ok: false, message: err?.message || "Network error" });
+    } finally {
+      setTestingConn(false);
+    }
+  };
 
   return (
     <div className="icm-backdrop" onClick={onClose}>
@@ -517,6 +515,11 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
                     placeholder={f.placeholder}
                     autoComplete="off"
                   />
+                  {slug === "zapier" && f.key === "webhookUrl" && (
+                    <p className="icm-help" style={{ margin: "4px 0 0 0" }}>
+                      Paste your Zapier Catch Hook URL (https://hooks.zapier.com/hooks/catch/...) to push extractions directly to your Zap.
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -561,6 +564,100 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
               </div>
             )}
 
+            {/* Zapier: token management & secret key validation sub-form */}
+            {slug === "zapier" && (
+              <div className="eim-token-rotate">
+                <div className="eim-token-rotate-head">
+                  <Icon name="key" size={13} />
+                  <span>DatIQ Zapier Secret Token</span>
+                  <span className="eim-token-hint">
+                    {connection.token_hint ? `ending in ${connection.token_hint}` : "none"}
+                  </span>
+                </div>
+                <p className="icm-help" style={{ marginTop: 0, marginBottom: 8 }}>
+                  {connection.token_hint ? (
+                    <>Active token ending in <code>{connection.token_hint}</code>{connection.created_at ? ` · issued ${new Date(connection.created_at).toLocaleDateString()}` : ""}.</>
+                  ) : (
+                    <>No secret token generated yet. Generate one to use with the DatIQ Zapier private app.</>
+                  )}
+                </p>
+
+                {mintedToken ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <div className="icm-success" style={{ marginBottom: 6 }}>
+                      <Icon name="check-circle" size={15} />
+                      <span><strong>New token minted.</strong> Copy it now — it won't be shown again.</span>
+                    </div>
+                    <div className="icm-token-box">
+                      <code>{mintedToken}</code>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => navigator.clipboard?.writeText(mintedToken)}
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 12 }}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleGenerateToken}
+                      disabled={mintingToken}
+                      loading={mintingToken}
+                    >
+                      {connection.token_hint ? "Rotate / mint new secret token" : "Generate secret token"}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Secret Key Validation */}
+                <div style={{ borderTop: "1px solid var(--border-subtle, rgba(255,255,255,0.08))", paddingTop: 10, marginTop: 10 }}>
+                  <label htmlFor="eim-zapier-test-key" style={{ fontSize: "0.82em", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                    Test / Validate a Secret Key
+                  </label>
+                  <div className="eim-token-rotate-row">
+                    <input
+                      id="eim-zapier-test-key"
+                      type="password"
+                      value={testKey}
+                      onChange={(e) => { setTestKey(e.target.value); setKeyTestResult(null); }}
+                      placeholder="Paste zap_... token to test"
+                      autoComplete="off"
+                      disabled={testingKey}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleTestKey}
+                      loading={testingKey}
+                      disabled={testingKey || !testKey.trim()}
+                    >
+                      Verify key
+                    </Button>
+                  </div>
+                  {keyTestResult && (
+                    <p
+                      className="icm-help"
+                      style={{
+                        marginTop: 6,
+                        color: keyTestResult.ok ? "var(--accent, #10b981)" : "var(--danger, #ef4444)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      <Icon name={keyTestResult.ok ? "check-circle" : "alert-circle"} size={12} />{" "}
+                      {keyTestResult.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Notion + Airtable: "Save" already passes refreshSchema:true
                 so the column count / title column / field map are re-fetched
                 server-side. No extra UI needed. */}
@@ -570,8 +667,29 @@ export default function EditIntegrationModal({ open, slug, status, onClose, onSa
                 returns 400 if the URL doesn't look like a Slack
                 incoming-webhook. The error above is the surface. */}
 
+            {connTestResult && (
+              <div
+                className={connTestResult.ok ? "icm-success" : "icm-error"}
+                style={{ marginBottom: 10 }}
+              >
+                <Icon name={connTestResult.ok ? "check-circle" : "alert-circle"} size={15} />
+                <span>{connTestResult.message}</span>
+              </div>
+            )}
+
             <div className="icm-foot">
-              <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleTestConnection}
+                  loading={testingConn}
+                  disabled={testingConn || submitting}
+                >
+                  <Icon name="activity" size={14} /> Test connection
+                </Button>
+              </div>
               <Button type="submit" disabled={submitting} loading={submitting}>
                 {submitting ? "Saving…" : config.saveLabel}
               </Button>

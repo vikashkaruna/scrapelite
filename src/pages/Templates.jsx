@@ -26,6 +26,7 @@ import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
 import * as api from "../lib/templates/templatesClient.js";
 import { readTemplatesCache, writeTemplatesCache } from "../lib/templates/templatesCache.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 import { createReport } from "../lib/reports/reportsClient.js";
 import { lifecycle } from "../lib/analyticsService.js";
 import ShareReportDialog from "../components/ShareReportDialog.jsx";
@@ -36,8 +37,8 @@ import { CAPABILITY_SCHEMAS } from "../lib/extractionSchemas.js";
 
 export default function Templates() {
   const [params, setParams] = useSearchParams();
-  const key = params.get("key");
-  const runId = params.get("runId");
+  const key = params.get("key") || params.get("t");
+  const runId = params.get("runId") || params.get("run");
   return (key || runId) ? <TemplateRunner templateKey={key} runId={runId} onBack={() => setParams({})} />
              : <TemplateGalleryView onPick={(k) => setParams({ key: k })} />;
 }
@@ -224,10 +225,24 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
   useEffect(() => {
     if (!runId) return;
     let alive = true;
+    const cached = readPageCache(`templateRun_${runId}`)?.data;
+    if (cached) {
+      setActiveKey(cached.template_key);
+      setValues(cached.input || {});
+      setResult({
+        output: cached.output || {},
+        summary: cached.output_summary || cached.output?.summary || null,
+        talking_points: cached.output?.talking_points || null,
+        sources: cached.sources || cached.output?.sources || [],
+        run: cached,
+      });
+    }
+
     api.getRun(runId)
       .then(async (r) => {
         if (!alive || !r?.run) return;
         const runData = r.run;
+        writePageCache(`templateRun_${runId}`, runData);
         setActiveKey(runData.template_key);
         setValues(runData.input || {});
         setResult({
@@ -239,7 +254,7 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         });
       })
       .catch((e) => {
-        if (alive) setLoadError(e.message);
+        if (alive && !cached) setLoadError(e.message);
       });
     return () => { alive = false; };
   }, [runId]);
@@ -344,8 +359,14 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         if (done.reconciliation?.needsDisclosure) {
           showToast(`This run used ${done.charged} credits — more than the ${done.run.credits_estimated} we estimated.`);
         }
+        if (done.run?.id) {
+          writePageCache(`templateRun_${done.run.id}`, done.run);
+        }
       } else {
         setResult(exec);
+        if (runId && exec) {
+          writePageCache(`templateRun_${runId}`, { ...exec, id: runId, template_key: template.template_key, input: values });
+        }
         // Same event on the path where reconciliation did not happen: the
         // user still completed a template run, and scoring must not depend on
         // an accounting detail they never see.
@@ -355,6 +376,9 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
       // Hand the dock the run id so "View report" can reopen it after the user
       // has navigated away — the whole point of surviving navigation.
       tplRun?.finishTemplateRun(tplToken, { runId });
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     } catch (e) {
       setProgress(null);
       tplRun?.finishTemplateRun(tplToken, { error: e.message });
@@ -418,43 +442,43 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         </div>
       )}
 
-      <div className="card tpl-form">
-        {fields.map((f) => (
-          <FieldInput
-            key={f.name} field={f} value={values[f.name]}
-            onChange={(val) => setValues((v) => ({ ...v, [f.name]: val }))}
-          />
-        ))}
+      {result ? (
+        <RunResult
+          result={result}
+          template={template}
+          onShare={makeReport}
+          onEditInputs={() => setResult(null)}
+        />
+      ) : (
+        <div className="card tpl-form">
+          {fields.map((f) => (
+            <FieldInput
+              key={f.name} field={f} value={values[f.name]}
+              onChange={(val) => setValues((v) => ({ ...v, [f.name]: val }))}
+            />
+          ))}
 
-        {errors.length > 0 && (
-          <ul className="tpl-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
-        )}
+          {errors.length > 0 && (
+            <ul className="tpl-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          )}
 
-        <div className="tpl-run-row">
-          <Button onClick={run} disabled={busy || degraded}>
-            {handoff ? handoff.label : busy ? "Running…" : "Run this template"}
-          </Button>
-          {/* A hand-off spends nothing HERE, so showing this template's credit
-              estimate beside it would be a straightforward lie about what the
-              button does. The module states its own audit cost on arrival. */}
-          {handoff ? (
-            <span className="tpl-estimate">{handoff.why}</span>
-          ) : estimate ? (
-            <span className="tpl-estimate" title="Estimated before the run; you are charged for what actually runs.">
-              {describeEstimate(estimate)}
-            </span>
-          ) : null}
-        </div>
-
-        {progress && (
-          <div className="tpl-progress">
-            <div className="tpl-progress-bar"><span style={{ width: `${progress.percent}%` }} /></div>
-            <span>{progress.message}</span>
+          <div className="tpl-run-row">
+            <Button onClick={run} disabled={busy || degraded}>
+              {handoff ? handoff.label : busy ? "Running…" : "Run this template"}
+            </Button>
+            {/* A hand-off spends nothing HERE, so showing this template's credit
+                estimate beside it would be a straightforward lie about what the
+                button does. The module states its own audit cost on arrival. */}
+            {handoff ? (
+              <span className="tpl-estimate">{handoff.why}</span>
+            ) : estimate ? (
+              <span className="tpl-estimate" title="Estimated before the run; you are charged for what actually runs.">
+                {describeEstimate(estimate)}
+              </span>
+            ) : null}
           </div>
-        )}
-      </div>
-
-      {result && <RunResult result={result} template={template} onShare={makeReport} />}
+        </div>
+      )}
 
       {shareFor && (
         <ShareReportDialog
@@ -604,13 +628,20 @@ function resolveBlockData(result, block) {
   return Array.isArray(field) ? field : [field];
 }
 
-function RunResult({ result, template, onShare }) {
+function RunResult({ result, template, onShare, onEditInputs }) {
   const blocks = template.output_schema?.blocks || [];
   const talkingPoints = result.talking_points || result.output?.talking_points || null;
   return (
     <div className="card tpl-result">
       <div className="tpl-result-head">
-        <h2>Result</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <h2>Result</h2>
+          {onEditInputs && (
+            <Button variant="secondary" size="sm" onClick={onEditInputs}>
+              <Icon name="edit" size={14} /> Edit inputs / Run again
+            </Button>
+          )}
+        </div>
         {/* Every template run is a deliverable someone forwards. Until now the
             only way out of this screen was a shareable link — no CSV, no PDF,
             nothing to paste into a deck. Same menu as Dashboard and Preview,

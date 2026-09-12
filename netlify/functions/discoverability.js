@@ -58,6 +58,7 @@ import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
+import { consumeGuestCredit } from "./lib/guestUsage.js";
 import { createDeadline, budgetFromEnv } from "./lib/audit/deadline.js";
 import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
@@ -251,6 +252,29 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   let host = "";
   try { host = new URL(rawUrl).hostname; } catch { host = compliance.host || ""; }
 
+  if (!userId) {
+    let result;
+    try {
+      result = await runAudit(rawUrl, {
+        deadline,
+        deviceProfile: options.deviceProfile,
+        auditProfile: options.auditProfile,
+        pageTypeHint: options.pageTypeHint,
+        prompts: options.prompts,
+        citationEngine: options.citationEngine,
+        skipWebVitals: options.skipWebVitals,
+        skipCitations: options.skipCitations,
+      });
+    } catch (err) {
+      return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
+    }
+    const auditId = `guest-${Date.now()}`;
+    return {
+      ok: true, statusCode: 200,
+      body: { ...result, auditId, targetId: null, persisted: false, guest: true },
+    };
+  }
+
   const targetId = await store.ensureTarget(userId, canonical, host, options.label || null);
   if (!targetId) {
     return { ok: false, statusCode: 503, body: { error: "Audit storage is unavailable. Try again shortly.", code: "STORAGE_UNAVAILABLE" } };
@@ -359,14 +383,25 @@ export const handler = async (event) => {
   let userId = delegatedUserId;
   if (!userId) {
     const auth = await authenticateBearer(event, { label: "discoverability" });
-    if (!auth.ok || !auth.user) return unauthorized();
-    userId = auth.user.id;
+    if (auth.ok && auth.user) {
+      userId = auth.user.id;
+    }
   }
 
   let body = {};
   try { body = readBody(event); } catch { return bad("Request body is not valid JSON."); }
 
   const [root, id, sub, subId] = path;
+
+  // Profiles is static reference data for the UI
+  if (root === "profiles" && method === "GET") return json(200, { profiles: AUDIT_PROFILES });
+
+  // Guest audit: allow unauthenticated visitors to run 1 free discoverability audit
+  const isGuestAudit = !userId && root === "audits" && method === "POST" && !id && Boolean(body?.guest);
+
+  if (!userId && !isGuestAudit) {
+    return unauthorized();
+  }
 
   try {
     // ── /audits ────────────────────────────────────────────────────────────
@@ -499,6 +534,24 @@ async function createAuditRoute(event, userId, body) {
   const { errors, url, options } = parseAuditOptions(body);
   if (errors.length) return bad(errors.join(" "), { code: "INVALID_REQUEST" });
 
+  if (!userId) {
+    // ── Guest Audit Quota Check (1 free audit) ─────────────────────────
+    const guestUsage = await consumeGuestCredit(event, "single");
+    if (!guestUsage.allowed) {
+      return json(402, {
+        error: "You have used your free Discoverability audit. Sign in to save reports and unlock ongoing monitoring.",
+        code: "UPGRADE_REQUIRED",
+        upgradeTo: "starter",
+      });
+    }
+
+    const run = await executeAudit({
+      event, userId: null, rawUrl: url, options, resolved: null, source: "guest_ui",
+    });
+    const extraHeaders = guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {};
+    return json(run.statusCode, run.body, extraHeaders);
+  }
+
   // Idempotency BEFORE the quota check: a retried request must return the
   // original audit, not spend a second credit on the same work.
   if (options.idempotencyKey) {
@@ -519,6 +572,18 @@ async function createAuditRoute(event, userId, body) {
 }
 
 async function rerunRoute(event, userId, auditId, body) {
+  if (!userId) return unauthorized();
+
+  const resolved = await resolveRequestEntitlement(event);
+  const planId = resolved.plan?.id || "free";
+  if (planId === "free") {
+    return json(402, {
+      error: "Re-discovery and comparative re-auditing require a paid DatIQ plan.",
+      code: "UPGRADE_REQUIRED",
+      upgradeTo: "starter",
+    });
+  }
+
   const prior = await store.getAudit(userId, auditId);
   if (!prior) return notFound("Audit not found.");
 

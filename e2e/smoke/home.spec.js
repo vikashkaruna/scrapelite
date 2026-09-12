@@ -8,18 +8,27 @@ test.beforeEach(async ({ page }) => {
   await installOfflineMocks(page);
 });
 
-test("home shows the H1, brand text, tagline, and footer", async ({ page }) => {
+test("home shows the connected-intelligence H1, brand text, tagline, and footer", async ({ page }) => {
   await page.goto("/");
   // Brand mark + name in TopBar.
   await expect(page.getByText("DatIQ").first()).toBeVisible();
-  // Brand tagline (R1: "Intelligence from Web" — rebrand-datiq-and-fix-checkout-bugs).
-  // Scope to the brand element so persona/headline copy elsewhere on the page
-  // doesn't accidentally satisfy this.
-  await expect(page.locator(".brand-tagline").first()).toBeVisible();
-  // H1 — varies by persona, so match a stable substring.
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator(".brand-tagline").first()).toHaveText("Intelligence, Connected.");
+  await expect(page.getByRole("heading", { level: 1, name: /Intelligence, Connected/i })).toBeVisible();
   // Footer social/legal row.
   await expect(page.locator(".site-footer-slim")).toBeVisible();
+});
+
+test("home uses the approved Train A hero without the retired answer paragraph", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/DatIQ is a zero-code web intelligence platform/i)).toHaveCount(0);
+});
+
+test("DatIQ Intelligence preview tiles link to their product surfaces", async ({ page }) => {
+  await page.goto("/");
+  const preview = page.locator(".home-dashboard-reveal");
+  await expect(preview.getByRole("link", { name: "Open Discoverability" })).toHaveAttribute("href", "/discoverability");
+  await expect(preview.getByRole("link", { name: "Open Integrations" })).toHaveAttribute("href", "/integrations");
+  await expect(preview.getByRole("link", { name: "Open Account Lists" })).toHaveAttribute("href", "/lists");
 });
 
 test("home composer (URL textarea) is visible", async ({ page }) => {
@@ -40,23 +49,22 @@ test("home renders 8 feature cards (clickable)", async ({ page }) => {
   await expect(cards).toHaveCount(8);
 });
 
-// TODO: DatIQ architecture (Pillar 0/1/2) banner hidden on Home 2026-08-06 —
-// re-enable this test when the banner is re-enabled (src/pages/Home.jsx).
-test.skip("home shows the Pillar 0 (Web Intelligence Core) banner", async ({ page }) => {
-  // R1 rebrand: the URL-extraction engine is formally named Pillar 0 — Web
-  // Intelligence (Core) and is presented as the proven foundation the rest
-  // of the platform is built on. This contract pins the banner so a future
-  // refactor that drops the architecture callout is caught at the gate.
+test("home shows a truthful six-module catalog", async ({ page }) => {
   await page.goto("/");
-  const banner = page.locator(".home-pillars-banner");
-  await expect(banner).toBeVisible();
-  // Eyebrow + headline + the three pillar rows (P0/P1/P2).
-  await expect(banner).toContainText(/Pillar 0/i);
-  await expect(banner).toContainText(/Web Intelligence \(Core\)/i);
-  await expect(banner.locator(".hp-pillar")).toHaveCount(3);
-  // Pillar 0 specifically has the highlighted styling — pinned by class so
-  // a refactor that swaps the row order is caught.
-  await expect(banner.locator(".hp-pillar-p0")).toBeVisible();
+  const modules = page.locator(".home-module-card");
+  await expect(modules).toHaveCount(6);
+  await expect(modules.filter({ hasText: "DatIQ Discover" })).toContainText("Beta");
+  await expect(modules.filter({ hasText: "DatIQ Discover" }).getByRole("button", { name: /Run a visibility audit/i })).toBeVisible();
+
+  const upcoming = modules.filter({ hasText: "DatIQ Engage" });
+  await expect(upcoming).toContainText("Upcoming");
+  await expect(upcoming.getByRole("button")).toHaveCount(0);
+});
+
+test("the secondary hero CTA focuses the extraction composer", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Paste a URL and see it work/i }).click();
+  await expect(page.locator("#extract-composer textarea")).toBeFocused();
 });
 
 test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", async ({ page }) => {
@@ -66,25 +74,16 @@ test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", asy
   await expect(page.getByText(/Use Batch mode/i)).toHaveCount(0);
 });
 
-test("TopBar nav shows Extract / Templates / Discover / Dashboard (in that order)", async ({ page }) => {
+test("TopBar nav shows Extract / Discover / Templates / Dashboard (in that order)", async ({ page }) => {
   await page.goto("/");
   // mainLinks are buttons in .topbar-desktop-actions.
-  //
-  // The order encodes a claim about the product, not just a layout: the two
-  // "start some work" verbs lead (Extract for a URL you already have,
-  // Templates for a job you want done), Discover is the analysis surface, and
-  // Dashboard — the "look at what you made" screen — stays last.
-  //
-  // Templates was inserted at index 1 in 2026-09 (PRD 1). It sits beside
-  // Extract rather than after Discover because it is the ACTIVATION path: it
-  // is where a new user's first successful session starts.
   const nav = page.locator(".topbar-desktop-actions .nav-link");
   await expect(nav.nth(0)).toContainText(/Extract/i);
-  await expect(nav.nth(1)).toContainText(/^Templates$/i);
   // "Discover", not "Discoverability": the nav label is deliberately the
   // short form (TopBar.jsx explains why). The route and the page heading
   // keep the full word, so this must NOT be loosened to match both.
-  await expect(nav.nth(2)).toContainText(/^Discover$/i);
+  await expect(nav.nth(1)).toContainText(/^Discover$/i);
+  await expect(nav.nth(2)).toContainText(/^Templates$/i);
   await expect(nav.nth(3)).toContainText(/Dashboard/i);
 });
 

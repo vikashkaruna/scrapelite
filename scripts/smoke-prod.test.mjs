@@ -28,7 +28,7 @@ function makeFetcher(handlers = {}) {
     // Bodies carry an <h1> because production now serves PRERENDERED documents
     // at / and /pricing, not the SPA shell. The smoke script asserts that, so a
     // shell-shaped fixture here would be testing the wrong world.
-    "/": { status: 200, body: "<html><body><h1>Intelligence from the Web.</h1>DatIQ — Extract & enrich</body></html>", contentType: "text/html; charset=UTF-8" },
+    "/": { status: 200, body: "<html><body><h1>Intelligence, Connected.</h1>DatIQ — Extract & enrich</body></html>", contentType: "text/html; charset=UTF-8" },
     "/dashboard": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },
     "/pricing": { status: 200, body: "<html><body><h1>Simple, transparent pricing</h1></body></html>", contentType: "text/html" },
     "/batch": { status: 200, body: "<html>SPA</html>", contentType: "text/html" },

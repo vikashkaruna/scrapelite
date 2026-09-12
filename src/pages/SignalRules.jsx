@@ -13,14 +13,16 @@ import SignedInRequired from "../components/SignedInRequired.jsx";
 import { TRIGGER_SOURCES, ACTION_TYPES, evaluateSignalRule, formatActionPayload } from "../lib/rules/ruleModel.js";
 import * as rulesApi from "../lib/rules/rulesClient.js";
 import { getIntegrationStatus } from "../lib/integrationsClient.js";
+import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
 export default function SignalRules() {
   const showToast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [rules, setRules] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedRules = readPageCache("signalRules")?.data || [];
+  const [rules, setRules] = useState(cachedRules);
+  const [loading, setLoading] = useState(cachedRules.length === 0);
 
   // Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -98,13 +100,15 @@ export default function SignalRules() {
   );
   const [testResult, setTestResult] = useState(null);
 
-  const loadRules = async () => {
-    setLoading(true);
+  const loadRules = async (silent = false) => {
+    if (!silent && rules.length === 0) setLoading(true);
     try {
       const res = await rulesApi.listRules();
-      setRules(res.rules || []);
+      const fresh = res.rules || [];
+      setRules(fresh);
+      writePageCache("signalRules", fresh);
     } catch (e) {
-      showToast(e.message);
+      if (rules.length === 0) showToast(e.message);
     } finally {
       setLoading(false);
     }

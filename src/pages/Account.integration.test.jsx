@@ -53,6 +53,7 @@ const integrationMocks = vi.hoisted(() => ({
     { slug: "notion",   name: "Notion",   icon: "bookmark",      desc: "DB" },
     { slug: "airtable", name: "Airtable", icon: "layers",        desc: "Base" },
     { slug: "slack",    name: "Slack",    icon: "message-square", desc: "Channel" },
+    { slug: "zapier",   name: "Zapier",   icon: "share",          desc: "Zapier" },
   ],
 }));
 
@@ -380,6 +381,89 @@ describe("I-39 — Account: Integrations rich status (2026-08-11)", () => {
           refreshSchema: true,
         }),
       );
+    });
+  });
+
+  it("clicking Edit on Zapier opens EditIntegrationModal pre-populated with webhookUrl and saving updates it", async () => {
+    const user = userEvent.setup();
+    setupSignedInWithStatuses({
+      zapier: {
+        connected: true,
+        provider: "zapier",
+        connection: {
+          account_label: "My Zapier",
+          token_hint: "abcd",
+          webhook_url: "https://hooks.zapier.com/hooks/catch/123/old",
+          webhook_hint: "hooks.zapier.com/hooks/catch/123/old",
+        },
+      },
+    });
+    render(<Tree />);
+
+    const editButtons = await screen.findAllByRole("button", { name: /^Edit$/ });
+    await user.click(editButtons[0]);
+
+    expect(await screen.findByRole("heading", { name: /Edit Zapier/i })).toBeInTheDocument();
+    const webhookInput = screen.getByDisplayValue("https://hooks.zapier.com/hooks/catch/123/old");
+    expect(webhookInput).toBeInTheDocument();
+
+    await user.clear(webhookInput);
+    await user.type(webhookInput, "https://hooks.zapier.com/hooks/catch/456/new");
+    await user.click(screen.getByRole("button", { name: /^Save changes$/ }));
+
+    await waitFor(() => {
+      expect(integrationMocks.patchIntegrationConnection).toHaveBeenCalledWith(
+        "zapier",
+        expect.objectContaining({
+          accountLabel: "My Zapier",
+          webhookUrl: "https://hooks.zapier.com/hooks/catch/456/new",
+        }),
+      );
+    });
+  });
+
+  it("allows testing secret key and testing connection from Zapier Edit modal", async () => {
+    const user = userEvent.setup();
+    integrationMocks.testIntegrationConnection.mockResolvedValue({
+      ok: true,
+      detail: "Secret key verified",
+    });
+    setupSignedInWithStatuses({
+      zapier: {
+        connected: true,
+        provider: "zapier",
+        connection: {
+          account_label: "My Zapier",
+          token_hint: "abcd",
+          webhook_url: "https://hooks.zapier.com/hooks/catch/123/old",
+        },
+      },
+    });
+    render(<Tree />);
+
+    const editButtons = await screen.findAllByRole("button", { name: /^Edit$/ });
+    await user.click(editButtons[0]);
+
+    expect(await screen.findByRole("heading", { name: /Edit Zapier/i })).toBeInTheDocument();
+
+    // 1. Verify key sub-form
+    const keyInput = screen.getByPlaceholderText(/Paste zap_\.\.\. token to test/i);
+    await user.type(keyInput, "zap_test_secret_12345");
+    await user.click(screen.getByRole("button", { name: /^Verify key$/ }));
+
+    await waitFor(() => {
+      expect(integrationMocks.testIntegrationConnection).toHaveBeenCalledWith("zapier", {
+        token: "zap_test_secret_12345",
+      });
+    });
+    expect(await screen.findByText(/Secret key verified/i)).toBeInTheDocument();
+
+    // 2. Test connection footer button
+    const testConnBtn = screen.getByRole("button", { name: /Test connection/i });
+    await user.click(testConnBtn);
+
+    await waitFor(() => {
+      expect(integrationMocks.testIntegrationConnection).toHaveBeenCalledWith("zapier");
     });
   });
 });
