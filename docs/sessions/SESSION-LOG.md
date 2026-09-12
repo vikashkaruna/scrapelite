@@ -18,6 +18,46 @@
 
 ---
 
+## 2026-09-12 23:06 IST — Trial-status alignment merged to staging and deployed
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Runtime staging commit** | `a5b0b6c` — merge of `face-lift` into staging |
+| **Netlify deployment** | `6aa58d4b1c115400081e2848` — **ready** at https://staging.datiq.app |
+| **Deployment contents** | Header-aligned compact guest-trial status, measured browser assertion, refreshed Chromium visual baselines, and regenerated public pages. |
+| **External verification exception** | Netlify Edge Access returns HTTP 401 for both the public Home route and static assets. |
+
+### Promotion and quality evidence
+
+- Merged `face-lift` in the isolated staging worktree; source conflicts were limited to the
+  concurrently refreshed visual snapshots and session documentation. The newer reviewed Chromium
+  baselines and the complete historical session log were retained. No application-source conflict
+  occurred.
+- The protected push reran and passed every mandatory gate in **196 seconds**: readiness;
+  **3,047 unit** tests; **2,016 contract** tests (14 skipped); **435 integration** tests;
+  **8 system** tests; database verification (**47 migrations, 463 assertions**); referral
+  verification (**17 assertions**); workflow verification (**56 assertions**); build/sync;
+  prerender integrity; security; and **145 Chromium smoke** tests.
+- Netlify completed branch deployment `6aa58d4b1c115400081e2848` for `a5b0b6c` in 19 seconds,
+  with no build, redirect, header, function, or secret-scan failure.
+
+### Deployed verification boundary
+
+Direct unauthenticated checks of `https://staging.datiq.app/` and `/favicon.svg` both return
+**HTTP 401** from Netlify Edge Access. That policy prevents public deployed browser/API regression
+and is unchanged by this release; do not record it as an application test failure or success.
+
+### Next action
+
+Configure the approved non-interactive Edge Access route for public assets, `/api/v1/_health`, and
+Discoverability endpoints, then run the parameterized staging release runner with an owned,
+disposable discoverability target. Keep the three deferred parallel branches unmerged until their
+owners complete their integration and review gates.
+
+---
+
 ## 2026-09-12 22:47 IST — Guest-trial status aligned with the Sign in menu edge
 
 **Branch.** `face-lift` @ `5117ac1` (`refine: align guest trial status with menu`).
