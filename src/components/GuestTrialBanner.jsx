@@ -1,5 +1,6 @@
 // GuestTrialBanner.jsx — slim info bar shown to non-logged-in users.
 // Shows remaining extraction headroom against the hard limits, nudges sign-up.
+import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
 import { useLocation } from "react-router";
@@ -8,20 +9,44 @@ import OffersBanner from "./OffersBanner.jsx";
 import { getHeadlineOffer } from "../lib/offersService.js";
 
 export default function GuestTrialBanner() {
-  const { user, openAuth } = useAuth();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const { count, batchCount, SINGLE_LIMIT, BATCH_LIMIT } = useGuestTrial();
-
-  if (user) return null;
 
   const singleRemaining = Math.max(0, SINGLE_LIMIT - count);
   const batchRemaining  = Math.max(0, BATCH_LIMIT  - batchCount);
   const atSingleLimit   = count >= SINGLE_LIMIT;
   const atBatchLimit    = batchCount >= BATCH_LIMIT;
   const atAnyLimit      = atSingleLimit || atBatchLimit;
+  const trialFingerprint = `${count}:${batchCount}:${atAnyLimit ? "limit" : "active"}`;
+  const [dismissedFingerprint, setDismissedFingerprint] = useState(() => {
+    try { return sessionStorage.getItem("datiq.guestTrialBannerDismissed"); } catch { return null; }
+  });
+  // Do not introduce the trial meter before someone has actually used it.
+  // The campaign remains useful to a first-time visitor, so it stays visible
+  // on Home even while this status row is absent.
+  const showTrialMessage = (count > 0 || batchCount > 0 || atAnyLimit)
+    && dismissedFingerprint !== trialFingerprint;
   // A home-only offer belongs with the guest decision point, not in the
   // extraction workflow. Keep it data-driven so an expired campaign vanishes.
   const showHomeOffer = pathname === "/" && Boolean(getHeadlineOffer());
+
+  useEffect(() => {
+    // A new usage state deserves a fresh, informative trial status even when
+    // the previous state was dismissed. In particular, never hide a limit.
+    if (dismissedFingerprint && dismissedFingerprint !== trialFingerprint) {
+      setDismissedFingerprint(null);
+      try { sessionStorage.removeItem("datiq.guestTrialBannerDismissed"); } catch { /* ignore */ }
+    }
+  }, [dismissedFingerprint, trialFingerprint]);
+
+  const dismissTrialMessage = () => {
+    setDismissedFingerprint(trialFingerprint);
+    try { sessionStorage.setItem("datiq.guestTrialBannerDismissed", trialFingerprint); } catch { /* ignore */ }
+  };
+
+  if (user) return null;
+  if (!showTrialMessage && !showHomeOffer) return null;
 
   let message;
   if (atSingleLimit && atBatchLimit) {
@@ -39,8 +64,8 @@ export default function GuestTrialBanner() {
   }
 
   return (
-    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "") + (showHomeOffer ? " gtb-home-offer" : "")} role="status">
-      <div className="guest-trial-bar-inner">
+    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "") + (showHomeOffer ? " gtb-home-offer" : "") + (!showTrialMessage ? " gtb-offer-only" : "")} role={showTrialMessage ? "status" : undefined}>
+      {showTrialMessage && <div className="guest-trial-bar-inner">
         <span className="gtb-text">
           <Icon name={atAnyLimit ? "alert-triangle" : "flask"} size={13} />
           {/* The message is wrapped so it is ONE flex item.
@@ -53,10 +78,10 @@ export default function GuestTrialBanner() {
               from the words they count. */}
           <span className="gtb-message">{message}</span>
         </span>
-        <button className="gtb-cta" onClick={() => openAuth("signup")}>
-          {atAnyLimit ? "Create free account" : "Sign up free"} →
+        <button type="button" className="gtb-dismiss" onClick={dismissTrialMessage} aria-label="Dismiss trial status">
+          <Icon name="x" size={14} />
         </button>
-      </div>
+      </div>}
       {showHomeOffer && <OffersBanner variant="trial" />}
     </div>
   );

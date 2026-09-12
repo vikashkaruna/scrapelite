@@ -422,6 +422,18 @@ export default function Preview() {
     }
   };
 
+  // Custom enrichment and custom content both need a reader-defined prompt.
+  // The Home composer is the one place that captures that safely, so keep the
+  // page URL and hand the reader there with its Custom option already open.
+  const openCustomExtraction = () => {
+    navigate("/", {
+      state: {
+        openCustomExtraction: true,
+        url: data.url,
+      },
+    });
+  };
+
   // Groke QW#2 — tags + the global tag catalogue for auto-suggest.
   const [knownTags, setKnownTags] = useState(() => new Set());
   useEffect(() => {
@@ -772,6 +784,15 @@ export default function Preview() {
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-custom"
+                  onClick={openCustomExtraction}
+                  title="Describe the enrichment you want to run"
+                >
+                  <span className="qa-ico"><Icon name="code" size={14} /></span>
+                  Custom enrichment
+                </button>
               </div>
 
               {/* Generated content (SEO outline, competitor summary, …).
@@ -810,6 +831,15 @@ export default function Preview() {
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-custom"
+                    onClick={openCustomExtraction}
+                    title="Describe the content you want DatIQ to create"
+                  >
+                    <span className="qa-ico"><Icon name="code" size={14} /></span>
+                    Custom content
+                  </button>
                 </div>
               </div>
             </div>
