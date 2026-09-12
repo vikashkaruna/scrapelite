@@ -32,6 +32,16 @@ export const PLATFORM_MODULES = Object.freeze([
     action: "enrich-composer",
   },
   {
+    key: "discover",
+    name: "DatIQ Discover",
+    icon: "scan-search",
+    headline: "Be found where decisions start.",
+    description: "Measure visibility across search, answer engines and AI. Act on evidence-backed priorities and track progress.",
+    status: MODULE_STATUS.BETA,
+    cta: "Run a visibility audit",
+    to: "/discoverability",
+  },
+  {
     key: "compete",
     name: "DatIQ Compete",
     icon: "eye",
@@ -58,16 +68,6 @@ export const PLATFORM_MODULES = Object.freeze([
     headline: "Turn research into next steps.",
     description: "Organise prospect intelligence and outreach workflows.",
     status: MODULE_STATUS.UPCOMING,
-  },
-  {
-    key: "discover",
-    name: "DatIQ Discover",
-    icon: "scan-search",
-    headline: "Be found where decisions start.",
-    description: "Measure visibility across search, answer engines and AI. Act on evidence-backed priorities and track progress.",
-    status: MODULE_STATUS.BETA,
-    cta: "Run a visibility audit",
-    to: "/discoverability",
   },
 ]);
 

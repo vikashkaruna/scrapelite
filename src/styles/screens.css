@@ -5892,52 +5892,70 @@
 
 [data-theme="dark"] .batch-runs-ok { color: #4ade80; }
 
-/* ── Guest Trial Banner ───────────────────────────────────────────── */
+/* ── Guest trial status ──────────────────────────────────────────────
+   The guest allowance is contextual help, not site-wide navigation. Keep it
+   close to the account action as a compact floating card rather than taking a
+   full horizontal band away from the product page. */
 .guest-trial-bar {
-  width: 100%;
-  background: var(--accent);
-  color: #fff;
-  font-size: .82em;
-  font-weight: 500;
-  position: relative;
+  position: fixed;
+  top: 76px; /* 68px top bar + an 8px breathing gap */
+  right: clamp(16px, 4vw, 44px);
   z-index: 90;
+  width: fit-content;
+  max-width: min(430px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text-2);
+  font-size: .82em;
+  font-weight: 650;
 }
 .guest-trial-bar.gtb-urgent {
-  background: var(--warning, #f59e0b);
+  border-color: color-mix(in srgb, var(--warning, #b45309) 60%, var(--border));
+  background: color-mix(in srgb, var(--warning, #b45309) 12%, var(--surface));
+  color: var(--text-1);
 }
 .guest-trial-bar-inner {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 6px clamp(16px, 4vw, 44px);
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
 }
 .gtb-text {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
+.gtb-text > svg { color: var(--accent); flex: 0 0 auto; }
+.gtb-urgent .gtb-text > svg { color: var(--warning, #b45309); }
 /* The sentence is a single flex item, so it wraps as prose rather than the
    flex container breaking it into one box per text node. See the comment in
    GuestTrialBanner.jsx — without this the numbers separate from the words. */
 .gtb-message { min-width: 0; }
 .gtb-cta {
-  background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.45);
-  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-contrast);
   border-radius: 6px;
-  padding: 5px 13px;
-  font-size: 1em;
+  padding: 5px 9px;
+  font-size: .94em;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .15s;
+  transition: background .15s, border-color .15s;
 }
-.gtb-cta:hover { background: rgba(255,255,255,.28); }
+.gtb-cta:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.gtb-urgent .gtb-cta { background: var(--warning, #b45309); border-color: var(--warning, #b45309); color: #fff; }
+.gtb-urgent .gtb-cta:hover { background: #92400e; border-color: #92400e; }
+@media (max-width: 600px) {
+  .guest-trial-bar { top: 74px; right: 10px; max-width: calc(100vw - 20px); }
+  .guest-trial-bar-inner { align-items: flex-start; flex-wrap: wrap; gap: 7px 10px; }
+  .gtb-text { flex: 1 1 200px; }
+  .gtb-cta { margin-left: auto; }
+}
 
 /* ── Guest Trial Modal ────────────────────────────────────────────── */
 .guest-trial-overlay {

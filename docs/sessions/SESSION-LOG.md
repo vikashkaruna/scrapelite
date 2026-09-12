@@ -18,6 +18,78 @@
 
 ---
 
+## 2026-09-12 22:17 IST — Guest-trial status made compact and non-disruptive
+
+**Branch.** `face-lift` @ `8b9c8b8` (`refine: compact guest trial status`).
+**Deployment status.** Intentionally **not promoted**; remote `staging` remains at Train A merge
+`19f4467`.
+
+### Delivered
+
+- Replaced the full-width guest allowance strip with a content-sized floating status card below
+  the sticky account controls, right-aligned on desktop. It no longer consumes vertical page
+  space or interrupts the Home hero.
+- Preserved the status role, exact allowance text, normal sign-up route, urgent-limit treatment,
+  and responsive wrapping. The card uses the normal surface token rather than an attention-heavy
+  full-width accent band; only a reached allowance receives the stronger warning state.
+
+### Verification
+
+- Desktop and 375px mobile Home visual baselines were intentionally refreshed and re-run:
+  `npx playwright test --project=chromium e2e/visual/home.spec.js` — **3 passed**.
+- `npx playwright test --project=chromium e2e/smoke/home.spec.js` — **11 passed**.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 rendered, 28 generated
+  pages, 112 asset references present**.
+- `git diff --check` — passed.
+
+### Next action
+
+Promote this and the prior homepage-flow follow-up together only when requested. Run the complete
+merged staging gate, then address the outstanding Netlify Edge Access release-test path before
+calling deployed staging regression green.
+
+---
+
+## 2026-09-12 22:10 IST — Homepage intelligence-flow refinement verified locally
+
+**Branch.** `face-lift` @ `e7dc5bc` (`refine: focus homepage intelligence flow`).
+**Deployment status.** Intentionally **not promoted**; remote `staging` remains at Train A merge
+`19f4467`.
+
+### Delivered
+
+- Removed the generic Home eyebrow, `No code · structured in seconds`. It repeated the composer
+  and answer-block value proposition without explaining a user outcome, so the hero now starts
+  directly with `Intelligence, Connected.` for non-persona visitors. Persona-specific badges are
+  retained.
+- Set the data-driven One Connected Intelligence Layer order to **Extract → Enrich → Discover →
+  Compete → Connect → Engage**, with a unit/UI assertion that prevents accidental reordering.
+- Changed the top-right DatIQ Intelligence preview from Extract/Enrich/Discover to
+  **Discover/Connect/Compete**, matching the connected-workflow story while keeping the preview
+  illustrative and claim-safe.
+
+### Verification
+
+- `npx vitest run src/lib/platformModules.test.js src/pages/Home.test.jsx
+  src/pages/Home.integration.test.jsx src/pages/Home.outcome-singleselect.integration.test.jsx
+  src/pages/Home.cloud-bi.integration.test.jsx` — **5 files, 23 passed**.
+- `npx playwright test --project=chromium e2e/visual/home.spec.js` — **3 passed** after
+  deliberately refreshing the three changed Home baselines.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 rendered, 28 generated
+  pages, 112 asset references present**.
+- `npx playwright test --project=chromium e2e/smoke/home.spec.js` — **11 passed**.
+- `git diff --check` — passed.
+
+### Next action
+
+1. When approved, promote `e7dc5bc` through the same isolated staging-worktree path used for
+   Train A, then run the complete merged gate before push.
+2. Retest deployed staging only after the approved Netlify Edge Access path allows public assets,
+   `/api/v1/_health`, and Discoverability endpoints. Do not treat the current HTTP 401 policy as
+   an application pass.
+
+---
+
 ## 2026-09-12 13:00 IST — Train A face-lift verified and ready for isolated staging promotion
 
 **Source branch.** `face-lift` @ `be2d650` (`feat: deliver Train A DatIQ face-lift`).
