@@ -18,6 +18,38 @@
 
 ---
 
+## 2026-09-12 22:17 IST — Guest-trial status made compact and non-disruptive
+
+**Branch.** `face-lift` @ `8b9c8b8` (`refine: compact guest trial status`).
+**Deployment status.** Intentionally **not promoted**; remote `staging` remains at Train A merge
+`19f4467`.
+
+### Delivered
+
+- Replaced the full-width guest allowance strip with a content-sized floating status card below
+  the sticky account controls, right-aligned on desktop. It no longer consumes vertical page
+  space or interrupts the Home hero.
+- Preserved the status role, exact allowance text, normal sign-up route, urgent-limit treatment,
+  and responsive wrapping. The card uses the normal surface token rather than an attention-heavy
+  full-width accent band; only a reached allowance receives the stronger warning state.
+
+### Verification
+
+- Desktop and 375px mobile Home visual baselines were intentionally refreshed and re-run:
+  `npx playwright test --project=chromium e2e/visual/home.spec.js` — **3 passed**.
+- `npx playwright test --project=chromium e2e/smoke/home.spec.js` — **11 passed**.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 rendered, 28 generated
+  pages, 112 asset references present**.
+- `git diff --check` — passed.
+
+### Next action
+
+Promote this and the prior homepage-flow follow-up together only when requested. Run the complete
+merged staging gate, then address the outstanding Netlify Edge Access release-test path before
+calling deployed staging regression green.
+
+---
+
 ## 2026-09-12 22:10 IST — Homepage intelligence-flow refinement verified locally
 
 **Branch.** `face-lift` @ `e7dc5bc` (`refine: focus homepage intelligence flow`).
