@@ -38,7 +38,7 @@ test("TopBar shows the brand + a single Sign in CTA for unauthenticated visitors
   await expect(actions.getByRole("button", { name: /^sign up$/i })).toHaveCount(0);
 });
 
-test("guest trial status aligns with the Sign in button's menu edge", async ({ page }) => {
+test("the first-visit offer aligns with the Sign in button's menu edge", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
 
@@ -65,22 +65,38 @@ test("guest trial status aligns with the Sign in button's menu edge", async ({ p
   ).toBeLessThanOrEqual(1);
 });
 
-test("home places the active discount below the trial decision row", async ({ page }) => {
+test("home shows the active offer without a trial meter before the visitor uses the trial", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
 
   const trialStatus = page.locator(".guest-trial-bar");
-  const decisionRow = trialStatus.locator(".guest-trial-bar-inner");
   const offer = trialStatus.locator(".offers-banner-trial");
 
   await expect(offer).toContainText("LAUNCH20");
   await expect(page.locator("#extract-composer .offers-banner")).toHaveCount(0);
+  await expect(trialStatus.locator(".guest-trial-bar-inner")).toHaveCount(0);
+  await expect(trialStatus.getByRole("button", { name: /dismiss trial status/i })).toHaveCount(0);
 
-  const [trialBox, rowBox, offerBox] = await Promise.all([
-    trialStatus.boundingBox(), decisionRow.boundingBox(), offer.boundingBox(),
+  const [trialBox, offerBox] = await Promise.all([
+    trialStatus.boundingBox(), offer.boundingBox(),
   ]);
-  if (!trialBox || !rowBox || !offerBox) throw new Error("Expected the trial offer layout boxes.");
+  if (!trialBox || !offerBox) throw new Error("Expected the trial offer layout boxes.");
 
-  expect(offerBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height);
   expect(Math.abs(offerBox.width - trialBox.width)).toBeLessThanOrEqual(2);
+});
+
+test("a used trial shows a dismissible status without restoring the Sign up CTA", async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem("datiq.guestTrial", JSON.stringify({ count: 1, batchCount: 0 }));
+  });
+  await page.goto("/");
+
+  const trialStatus = page.locator(".guest-trial-bar");
+  await expect(trialStatus).toContainText(/Trial mode/i);
+  await expect(trialStatus.getByRole("button", { name: /dismiss trial status/i })).toBeVisible();
+  await expect(trialStatus.getByRole("button", { name: /sign up free|create free account/i })).toHaveCount(0);
+
+  await trialStatus.getByRole("button", { name: /dismiss trial status/i }).click();
+  await expect(trialStatus.locator(".guest-trial-bar-inner")).toHaveCount(0);
+  await expect(trialStatus.locator(".offers-banner-trial")).toBeVisible();
 });
