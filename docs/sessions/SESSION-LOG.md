@@ -18,6 +18,140 @@
 
 ---
 
+## 2026-09-12 13:00 IST — Train A face-lift verified and ready for isolated staging promotion
+
+**Source branch.** `face-lift` @ `be2d650` (`feat: deliver Train A DatIQ face-lift`).
+**Promotion base.** `origin/staging` @ `0227e03`.
+
+### Delivered
+
+- Completed the Train A public cutover: `Intelligence, Connected.` hero, immediate composer
+  anchor, a non-fictional dashboard-reveal illustration, shared public branding, static metadata,
+  and refreshed 28 prerendered public pages.
+- Added one tested six-pillar catalog with truthful status/CTA behavior: Extract and Enrich are
+  Available; Compete, Connect and Discover are Beta; Engage is Upcoming with no live CTA.
+  Discover uses the approved concise message and `Run a visibility audit` CTA.
+- Added the R0 contract/documentation slice: privacy/share boundary, cross-surface export
+  contract tests, OpenAPI 3.1 API description, pSEO governance, accurate webhook boundaries and
+  analytics vocabulary. This distinguishes beta and roadmap work from released capabilities.
+- Added `npm run test:release`, a parameterized, report-producing regression runner for local,
+  deployed public, RLS, authenticated Discover audit and export paths. Live writes require an
+  explicit owned URL, bearer token and opt-in, and are always cleaned up.
+
+### Quality evidence
+
+- `npm run test:all -- --visual` — **PASS** in 216.44s: readiness, unit, contract, integration,
+  system, database/referral, production-build/sync, prerender integrity, security, 144 Chromium
+  smoke checks and 11 visual comparisons.
+- Focused Home/module/export/OpenAPI suites, full build, 28-page prerender, `git diff --check`,
+  and six-page axe accessibility checks all passed before the final gate.
+- Production’s read-only release runner reached **10/10** smoke probes and **3/3** public API
+  contracts. It was intentionally not treated as an authenticated production sign-off.
+
+### Promotion and deployment condition
+
+- `origin/staging` advanced with `0227e03`, which tracks the supplied `Analysis-2` reference
+  files. The current workspace retains a divergent, user-owned untracked copy of that directory,
+  so promotion must run from an isolated Git worktree to preserve it. No user file will be moved,
+  overwritten or staged.
+- The staging hostname currently returns Netlify Edge Access **401** before every public page,
+  asset and API route. Push may trigger deployment, but external staging regression cannot pass
+  until the approved test access path is configured. This remains a release exception, not a
+  passing application result.
+
+### Next action
+
+1. Merge `face-lift` with current `origin/staging` in the isolated promotion worktree; rerun a
+   proportional post-merge gate; fast-forward/push `staging` only if clean.
+2. Confirm the Netlify staging build, retain its deployment evidence, and rerun the unchanged
+   staging release command once Edge Access permits the approved test path.
+3. Keep the three parallel implementation branches deferred until their owners finish and their
+   migration/RLS/API/claim reviews pass.
+
+---
+
+## 2026-09-12 12:11 IST — DatIQ Discover positioning tightened
+
+**Branch.** `face-lift` @ `4922c04`, with uncommitted face-lift work under review.
+
+- Replaced the long Discover description on the Home spotlight and the six-pillar release catalog
+  with: **“Be found where decisions start.”** / “Measure visibility across search, answer engines
+  and AI. Act on evidence-backed priorities and track progress.”
+- The visible CTA is now **“Run a visibility audit.”** The `DatIQ Discover · Beta` label remains
+  deliberately quiet and truthful while parallel P1–P3 work awaits integration review.
+- Verification: `npx vitest run` across all four Home suites — **4 files, 19 passed**; production
+  build and 28-page prerender sync passed.
+
+---
+
+## 2026-09-12 12:05 IST — Face-lift cutover: R0–R2 release audit and deploy regression gate
+
+**Branch.** Created `face-lift` directly from the current local `staging` tip (`4922c04`), leaving
+all parallel feature branches untouched. This branch currently has uncommitted, review-ready
+planning and test-harness changes; it has not been deployed or merged.
+
+### 1. Release audit and honest product positioning
+
+- Added [`docs/FACE-LIFT-R0-R2-RELEASE-PLAN.md`](../FACE-LIFT-R0-R2-RELEASE-PLAN.md), which
+  separates the user's requested work from stale/aspirational implementation prompts in the
+  supplied analysis documents. It maps every R0, R1, and R2 item to **Available**, **Beta**,
+  **Upcoming**, **partial**, or a concrete gap—not a marketing claim.
+- The safe delivery order is two trains: **Train A** establishes Release 0 trust and cuts over the
+  homepage to **“DatIQ — Intelligence, Connected.”** with a quiet six-module overview; **Train B**
+  finishes the R0 gaps and proves staging before promotion. R1/R2 remain gated roadmap work after
+  their dependencies are actually integrated.
+- The module overview preserves truthful status: Extract and Enrich are Available; Compete,
+  Connect, and **DatIQ Discover** are Beta; Engage is Upcoming. Discover is positioned as the
+  sixth pillar with evidence-backed SEO/AEO/GEO audits and monitoring, explicitly without claims
+  that it predicts rankings, citations, or traffic.
+- `workflow-implementation-and-optimization`, `feat/prospect-engagement-engine`, and
+  `Discoverability-P1-P3-implementation` were audited only at branch level. Their work is
+  deliberately deferred to a post-merge integration review; no cherry-picks or implementation
+  claims were made from them.
+
+### 2. Parameterized release regression harness
+
+- Added [`scripts/release-regression.mjs`](../../scripts/release-regression.mjs) and six focused
+  tests in `scripts/release-regression.test.mjs`. `npm run test:release` accepts a deployment URL,
+  environment, optional owned Discoverability URL, retry/timeout settings, RLS verification, and
+  a JSON/CSV/Markdown report path.
+- The default is read-only. A live Discoverability audit is only permitted with both
+  `--allow-live-write` and an environment-only `DATIQ_TEST_BEARER_TOKEN`; it uses a tagged test
+  audit and deletes it in `finally`. The harness never probes CRM, email, webhooks, or payments
+  against a real deployment and reports those deliberate exclusions as deviations.
+- `playwright.config.js` now honours an explicit absolute `PW_BASE_URL`: the existing Chromium
+  smoke suite can run against a branch deploy, staging, or production without launching Vite. The
+  local default and deterministic API fixtures are unchanged. `npm run test:e2e:deploy` is the
+  explicit deploy entry point.
+
+### 3. Verification
+
+- `npx vitest run scripts/release-regression.test.mjs` — **1 file, 6 passed**.
+- `npm run test:unit -- scripts/release-regression.test.mjs` — **184 files, 3,041 passed**.
+- `npm run test:contract -- scripts/release-regression.test.mjs` — **116 files, 2,018 passed;
+  14 skipped**.
+- `npm run test:e2e:smoke` — completed with Playwright’s recorded status **passed**.
+- `npm run build` — passed; prerender assets synced (**28 generated pages / 28 references**).
+- `git diff --check` — passed.
+- `npm run test:release -- --base-url https://datiq.app --environment production --skip-ui` —
+  **10/10** deployed smoke probes and **3/3** public API contracts passed. The omitted local,
+  browser, RLS and authenticated-audit phases were correctly reported as intentional deviations.
+- The equivalent staging read-only invocation failed as designed: Netlify Edge Access answered
+  HTTP 401 before every public page, static asset and API route. The report identifies this as an
+  access prerequisite; it was not downgraded to a passing result.
+
+### 4. Next action
+
+1. Configure an approved non-interactive Netlify Edge Access route for the staging release gate;
+   rerun the unchanged read-only test and retain its report.
+2. Review and commit the `face-lift` changes as the planning/test-gate commit.
+3. Implement Train A only, then run the documented staging read-only gate and a dedicated,
+   disposable authenticated test account for the live-write Discoverability gate.
+4. Do not label in-flight branch capabilities public until their migrations, RLS/auth boundary,
+   API contracts, regression suite, and UI claims pass the deferred integration review.
+
+---
+
 ## 2026-09-09 — Discoverability Report Remediation: Full Resolution of Audit Signals on datiq.app
 
 **Branches.** Implemented on `staging`. Passed all 9 pre-push gates (`npm run test:prepush`): 354 Vitest test files (5,490 tests passed, 0 failed), production readiness clean, contract tests clean, integration tests clean, database & referral tests clean, prerender check clean (28 static pages in `dist/` and `public/`), security check clean.

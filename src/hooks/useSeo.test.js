@@ -4,9 +4,9 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useSeo } from "./useSeo.js";
 
-const SITE_TITLE = "DatIQ: The Unified Web Intelligence Platform | Intelligence from the Web";
+const SITE_TITLE = "DatIQ — Intelligence, Connected.";
 const SITE_DESCRIPTION =
-  "DatIQ is the unified web intelligence platform — extract, enrich and operationalize data from any public URL, batch, or scheduled run.";
+  "DatIQ turns public web signals into structured intelligence and connected workflows. Extract, enrich, monitor and audit a URL with evidence you can use.";
 
 function setSiteDefaults() {
   document.title = SITE_TITLE;
