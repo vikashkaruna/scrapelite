@@ -78,10 +78,10 @@
 /* Six public modules. Status is data-driven by platformModules.js; Upcoming
    cards intentionally have no interaction affordance. */
 .home-module-overview { width: 100%; max-width: 1080px; margin-top: 42px; text-align: left; }
-.home-module-intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
-.home-module-intro .eyebrow { margin: 0 0 9px; }
+.home-module-intro { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 18px; }
+.home-module-intro .eyebrow { order: 3; margin: 4px 0 0; }
 .home-module-intro h2 { margin: 0; font-size: clamp(24px, 3vw, 35px); letter-spacing: -.035em; line-height: 1.1; }
-.home-module-intro p { max-width: 42ch; margin: 0; color: var(--text-2); font-size: .93em; line-height: 1.55; }
+.home-module-intro p { max-width: 58ch; margin: 0; color: var(--text-2); font-size: .93em; line-height: 1.55; }
 .home-module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .home-module-card { display: flex; min-height: 228px; flex-direction: column; align-items: flex-start; padding: 18px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .home-module-card:hover:not(.home-module-card-upcoming) { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); box-shadow: var(--shadow-md); transform: translateY(-2px); }
@@ -108,8 +108,7 @@
   .home-rebrand-hero { text-align: center; }
   .home-rebrand-title, .home-rebrand-sub { margin-left: auto; margin-right: auto; }
   .home-rebrand-actions { justify-content: center; }
-  .home-module-intro { display: block; }
-  .home-module-intro p { margin-top: 10px; }
+  .home-module-intro { gap: 8px; }
   .home-module-grid { grid-template-columns: 1fr; }
   .home-module-card { min-height: 0; }
 }
@@ -1759,7 +1758,7 @@
 .home-section-h {
   width: 100%;
   max-width: 1080px;
-  margin: 40px 0 4px;
+  margin: 64px 0 4px;
   font-size: clamp(19px, 2.4vw, 26px);
   font-weight: 700;
   letter-spacing: -.02em;
@@ -5905,6 +5904,9 @@
   background: color-mix(in srgb, var(--warning, #b45309) 12%, var(--surface));
   color: var(--text-1);
 }
+.guest-trial-bar.gtb-home-offer {
+  width: min(430px, calc(100vw - 32px));
+}
 .guest-trial-bar-inner {
   display: flex;
   align-items: center;
@@ -5939,6 +5941,22 @@
 .gtb-cta:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .gtb-urgent .gtb-cta { background: var(--warning, #b45309); border-color: var(--warning, #b45309); color: #fff; }
 .gtb-urgent .gtb-cta:hover { background: #92400e; border-color: #92400e; }
+.offers-banner-trial {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  margin: 0;
+  border-width: 1px 0 0;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  padding: 8px 10px;
+  font-size: .86em;
+}
+@media (min-width: 821px) {
+  /* The home-only offer extends the floating guest card beneath the account
+     controls. Keep the adjacent intelligence preview clear of that card. */
+  .guest-trial-bar.gtb-home-offer ~ main .home-dashboard-reveal { margin-top: 88px; }
+}
 @media (max-width: 600px) {
   .guest-trial-bar { top: 74px; right: 20px; max-width: calc(100vw - 40px); }
   .guest-trial-bar-inner { align-items: flex-start; flex-wrap: wrap; gap: 7px 10px; }
