@@ -18,6 +18,52 @@
 
 ---
 
+## 2026-09-13 00:20 IST — Face-lift cutover merged to staging; deployment queued
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge commit** | `1f017df` — `face-lift` merged onto `origin/staging` @ `000c008` in an isolated staging worktree. |
+| **Included work** | Train A homepage refinements, restored DatIQ favicon/app-icon assets, requested Analysis-1/Analysis-2 repository cleanup, and the current remote staging release work. |
+| **Deployment state** | Staging push and Netlify branch deployment are the next operations in this cutover. |
+| **Primary workspace safety** | The user-owned `docs/DATIQ-3MIN-EXPLAINER-VIDEO-PRODUCTION-PACKAGE.md` remains untracked and untouched in `/Users/vikash/Extracta`. |
+
+### What changed in this cutover
+
+- Promoted the approved homepage changes: **Intelligence, Connected.**, aligned intelligence-preview
+  card, no unapproved duplicate hero paragraph, and interactive preview routes for
+  **Discover → Discoverability**, **Connect → Integrations**, and **Compete → Account Lists**.
+- Restored the complete browser/app favicon set: SVG, ICO, 192px/512px PNG, Apple touch icon,
+  manifest, and all public document references, with smoke coverage.
+- Preserved the user-requested removal of the obsolete analysis artifacts. No incomplete parallel
+  feature branch was merged as part of this cutover.
+- Replaced an obsolete release test that required the exact hero paragraph the owner asked to
+  remove. The test now prevents that retired, unapproved answer block from being reintroduced;
+  it does not change Discoverability's public `AC-01` code or audit semantics.
+
+### Verification evidence
+
+- `npm run test:prepush` — **9/9 suites passed**: readiness; **3,047 unit** tests; contract;
+  integration; system; database/referral/workflow verification; production build/sync; prerender
+  integrity; and security.
+- `npm run test:e2e:smoke` — **149 Chromium smoke tests passed**.
+- Focused homepage regression before the cutover — **17 Chromium smoke tests** and **3 visual
+  checks** passed, followed by a production build with **28 rendered pages** and **112 verified
+  asset references**.
+- `git diff --check` — passed.
+
+### Deployment and next fresh-start action
+
+1. Confirm the pushed branch deployment is **ready** at `https://staging.datiq.app`.
+2. Netlify Edge Access currently returns HTTP 401 to unauthenticated public-route/API regression.
+   After the approved bypass/test credential exists, run the parameterized staging runner against
+   a disposable owned Discoverability URL; do not use a customer URL or production account.
+3. Keep `workflow-implementation-and-optimization`, `feat/prospect-engagement-engine`, and
+   `Discoverability-P1-P3-implementation` deferred for their owners' integration and review.
+
+---
+
 ## 2026-09-12 23:06 IST — Trial-status alignment merged to staging and deployed
 
 ### Quick orientation

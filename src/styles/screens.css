@@ -1754,22 +1754,6 @@
   font-size: .86em;
 }
 
-/* ── Answer-first block (AC-01) ──────────────────────────────────────────────
-   The passage answer engines quote. Styled to read as a definition rather than
-   as marketing body copy: slightly larger than the surrounding text, an accent
-   rule on the leading edge, and a measure that keeps it to a few lines so it
-   stays visibly a single self-contained statement. */
-.home-answer-block {
-  margin: 18px 0 0;
-  padding: 0 0 0 16px;
-  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  max-width: 62ch;
-  font-size: clamp(14.5px, 1.6vw, 17px);
-  line-height: 1.65;
-  color: var(--text-1);
-  font-weight: 450;
-}
-
 /* Section headings. The page previously had one H1 and one H3 and nothing
    else, so it was a single undifferentiated chunk to any retrieval system. */
 .home-section-h {
