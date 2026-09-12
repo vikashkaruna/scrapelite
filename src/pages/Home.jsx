@@ -114,9 +114,15 @@ function DashboardReveal() {
         <span className="hdr-source-state">Structured</span>
       </div>
       <div className="hdr-signal-grid">
-        <div><Icon name="scan-search" size={14} /><span>Discover</span></div>
-        <div><Icon name="share" size={14} /><span>Connect</span></div>
-        <div><Icon name="eye" size={14} /><span>Compete</span></div>
+        <Link className="hdr-signal-tile" to="/discoverability" aria-label="Open Discoverability">
+          <Icon name="scan-search" size={14} /><span>Discover</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/integrations" aria-label="Open Integrations">
+          <Icon name="share" size={14} /><span>Connect</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/lists" aria-label="Open Account Lists">
+          <Icon name="eye" size={14} /><span>Compete</span>
+        </Link>
       </div>
       <div className="hdr-evidence-row">
         <Icon name="check-circle" size={14} />
@@ -518,14 +524,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* A self-contained answer engines can cite without surrounding UI. */}
-            <p className="rise home-answer-block" style={{ animationDelay: ".14s" }}>
-              DatIQ is a zero-code web intelligence platform that turns public
-              URLs into structured data. Extract headings, links, contacts,
-              pricing and AI summaries, then route the evidence into a workflow
-              or monitor the page as it changes. Save, compare and export the
-              results with confidence.
-            </p>
           </div>
           <DashboardReveal />
         </section>
