@@ -18,6 +18,37 @@
 
 ---
 
+## 2026-09-12 22:32 IST — Homepage refinements merged and staging deploy verified
+
+**Staging commit.** `ba95d43` (`test: refresh trial status visual baselines`), following the
+merged homepage-refinement candidate `ad427f7`.
+**Netlify deploy.** `6aa58565c392e200084115fc` — **ready**, branch `staging`,
+https://staging.datiq.app.
+
+### Promotion evidence
+
+- `face-lift` homepage refinements were merged cleanly into the current remote staging line:
+  focused hero copy, six-pillar ordering, DatIQ Intelligence preview sequence, compact guest
+  trial card, regenerated static pages, and the matching visual snapshots.
+- The complete local candidate gate passed all non-visual suites plus **144 Chromium smoke**
+  checks. The global trial-status redesign initially made eight unrelated visual baselines stale;
+  those screenshots were deliberately reviewed/refreshed, and the complete visual suite then
+  passed **11/11**. No product defect was found.
+- Git’s mandatory pre-push gate then passed in **195s** and advanced `origin/staging` from
+  `19f4467` to `ba95d43`.
+
+### Deployed verification exception
+
+- The Netlify build completed successfully, but the read-only release runner receives HTTP 401
+  from Netlify Edge Access for every public page, static asset, `/api/v1/_health`, and
+  Discoverability endpoint. It correctly reports **0 passed / 4 failed / 4 skipped** rather than
+  treating the access policy as an application pass.
+- Enable the approved non-interactive release-test path before rerunning the unchanged staging
+  command. The local and pre-push quality evidence is green; deployed end-to-end/RLS/authenticated
+  flow evidence remains intentionally outstanding.
+
+---
+
 ## 2026-09-12 22:17 IST — Guest-trial status made compact and non-disruptive
 
 **Branch.** `face-lift` @ `8b9c8b8` (`refine: compact guest trial status`).
