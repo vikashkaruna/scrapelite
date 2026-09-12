@@ -18,15 +18,16 @@
 
 ---
 
-## 2026-09-13 00:20 IST — Face-lift cutover merged to staging; deployment queued
+## 2026-09-13 00:20 IST — Face-lift cutover merged to staging and deployed
 
 ### Quick orientation
 
 | Property | Current state |
 |---|---|
 | **Staging merge commit** | `1f017df` — `face-lift` merged onto `origin/staging` @ `000c008` in an isolated staging worktree. |
+| **Published staging commit** | `d219333` — merge plus test-contract correction and this fresh-start handoff. |
 | **Included work** | Train A homepage refinements, restored DatIQ favicon/app-icon assets, requested Analysis-1/Analysis-2 repository cleanup, and the current remote staging release work. |
-| **Deployment state** | Staging push and Netlify branch deployment are the next operations in this cutover. |
+| **Netlify deployment** | `6aa59fc26d1d0c0008c91b0f` — **ready** at `https://staging.datiq.app` for `d219333`. |
 | **Primary workspace safety** | The user-owned `docs/DATIQ-3MIN-EXPLAINER-VIDEO-PRODUCTION-PACKAGE.md` remains untracked and untouched in `/Users/vikash/Extracta`. |
 
 ### What changed in this cutover
@@ -53,9 +54,9 @@
   asset references**.
 - `git diff --check` — passed.
 
-### Deployment and next fresh-start action
+### Deployment verification and next fresh-start action
 
-1. Confirm the pushed branch deployment is **ready** at `https://staging.datiq.app`.
+1. Netlify completed the branch deployment in 22 seconds without a reported build or deploy error.
 2. Netlify Edge Access currently returns HTTP 401 to unauthenticated public-route/API regression.
    After the approved bypass/test credential exists, run the parameterized staging runner against
    a disposable owned Discoverability URL; do not use a customer URL or production account.
