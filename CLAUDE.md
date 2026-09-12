@@ -2,6 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 — Guest-trial status alignment is merged to staging (`a5b0b6c`) and Netlify deploy `6aa58d4b1c115400081e2848` is ready at https://staging.datiq.app. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 > **Last updated: 2026-09-12 (VERIFIED + APPLIED) — P1 AND P2 ARE COMPLETE, AND `0060`–`0064` ARE NOW ON DEV/STAGE. RE-VERIFIED GREEN END TO END AFTER THE APPLY. MANUAL TEST PLAN WRITTEN FOR BRANCH → STAGING → PRODUCTION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
 > ✅ **`0062`, `0063` AND `0064` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12), joining

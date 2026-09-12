@@ -150,4 +150,30 @@ describe("F-01 — Home composer", () => {
     const cards = container.querySelectorAll(".feature-cell");
     expect(cards.length).toBe(8);
   });
+
+  it("renders the connected-intelligence hero and the truthful six-module catalog", async () => {
+    const { container } = render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByRole("heading", { level: 1, name: /Intelligence, Connected/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Paste a URL and see it work/i })).toBeInTheDocument();
+    expect(screen.queryByText(/No code · structured in seconds/i)).not.toBeInTheDocument();
+
+    const modules = container.querySelectorAll(".home-module-card");
+    expect(modules).toHaveLength(6);
+    expect([...modules].map((module) => module.querySelector("h3")?.textContent)).toEqual([
+      "DatIQ Extract", "DatIQ Enrich", "DatIQ Discover", "DatIQ Compete", "DatIQ Connect", "DatIQ Engage",
+    ]);
+    expect(screen.getByText("DatIQ Discover")).toBeInTheDocument();
+
+    const upcoming = container.querySelector('[data-module-status="upcoming"]');
+    expect(upcoming).toHaveTextContent("DatIQ Engage");
+    expect(upcoming.querySelector("button")).toBeNull();
+    expect(upcoming).toHaveTextContent("Upcoming");
+
+    const discover = [...container.querySelectorAll('[data-module-status="beta"]')]
+      .find((module) => module.textContent?.includes("DatIQ Discover"));
+    expect(discover).toBeTruthy();
+    expect(discover).toHaveTextContent("Run a visibility audit");
+  });
 });

@@ -51,7 +51,7 @@ export default function Footer() {
             with an aria-label that says so, so it reads as a version and still
             explains where it goes. One source: package.json via __APP_VERSION__. */}
         <span className="footer-copy">
-          © {new Date().getFullYear()} DatIQ · The Unified Web Intelligence Platform · Intelligence from the Web
+          © {new Date().getFullYear()} DatIQ · The Unified Web Intelligence Platform · Intelligence, Connected.
           <a
             className="footer-version-tag"
             href="/changelog"
