@@ -5950,11 +5950,6 @@
   padding: 8px 10px;
   font-size: .86em;
 }
-@media (min-width: 821px) {
-  /* The home-only offer extends the floating guest card beneath the account
-     controls. Keep the adjacent intelligence preview clear of that card. */
-  .guest-trial-bar.gtb-home-offer ~ main .home-dashboard-reveal { margin-top: 88px; }
-}
 @media (max-width: 600px) {
   .guest-trial-bar { top: 74px; right: 20px; max-width: calc(100vw - 40px); }
   .guest-trial-bar-inner { align-items: flex-start; flex-wrap: wrap; gap: 7px 10px; }

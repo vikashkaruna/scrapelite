@@ -8,6 +8,8 @@ import Icon from "./Icon.jsx";
 import OffersBanner from "./OffersBanner.jsx";
 import { getHeadlineOffer } from "../lib/offersService.js";
 
+export const GUEST_TRIAL_AUTO_DISMISS_MS = 6_000;
+
 export default function GuestTrialBanner() {
   const { user } = useAuth();
   const { pathname } = useLocation();
@@ -25,11 +27,17 @@ export default function GuestTrialBanner() {
   // Do not introduce the trial meter before someone has actually used it.
   // The campaign remains useful to a first-time visitor, so it stays visible
   // on Home even while this status row is absent.
+  const panelDismissed = dismissedFingerprint === trialFingerprint;
   const showTrialMessage = (count > 0 || batchCount > 0 || atAnyLimit)
-    && dismissedFingerprint !== trialFingerprint;
+    && !panelDismissed;
   // A home-only offer belongs with the guest decision point, not in the
   // extraction workflow. Keep it data-driven so an expired campaign vanishes.
-  const showHomeOffer = pathname === "/" && Boolean(getHeadlineOffer());
+  const showHomeOffer = pathname === "/" && Boolean(getHeadlineOffer()) && !panelDismissed;
+
+  const dismissTrialPanel = () => {
+    setDismissedFingerprint(trialFingerprint);
+    try { sessionStorage.setItem("datiq.guestTrialBannerDismissed", trialFingerprint); } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     // A new usage state deserves a fresh, informative trial status even when
@@ -40,10 +48,14 @@ export default function GuestTrialBanner() {
     }
   }, [dismissedFingerprint, trialFingerprint]);
 
-  const dismissTrialMessage = () => {
-    setDismissedFingerprint(trialFingerprint);
-    try { sessionStorage.setItem("datiq.guestTrialBannerDismissed", trialFingerprint); } catch { /* ignore */ }
-  };
+  useEffect(() => {
+    // A progress update is useful briefly, then should get out of the way.
+    // On Home this dismisses the attached offer too, matching the explicit
+    // close affordance. Hard-limit warnings remain until the user acts.
+    if (!showTrialMessage || atAnyLimit) return undefined;
+    const timer = window.setTimeout(dismissTrialPanel, GUEST_TRIAL_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [atAnyLimit, showTrialMessage, trialFingerprint]);
 
   if (user) return null;
   if (!showTrialMessage && !showHomeOffer) return null;
@@ -78,7 +90,7 @@ export default function GuestTrialBanner() {
               from the words they count. */}
           <span className="gtb-message">{message}</span>
         </span>
-        <button type="button" className="gtb-dismiss" onClick={dismissTrialMessage} aria-label="Dismiss trial status">
+        <button type="button" className="gtb-dismiss" onClick={dismissTrialPanel} aria-label="Dismiss trial and offer">
           <Icon name="x" size={14} />
         </button>
       </div>}

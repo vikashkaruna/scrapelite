@@ -65,6 +65,21 @@ test("the first-visit offer aligns with the Sign in button's menu edge", async (
   ).toBeLessThanOrEqual(1);
 });
 
+test("the home offer does not push DatIQ Intelligence below the hero headline", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+
+  const [headingBox, previewBox] = await Promise.all([
+    page.getByRole("heading", { level: 1, name: /Intelligence, Connected/i }).boundingBox(),
+    page.locator(".home-dashboard-reveal").boundingBox(),
+  ]);
+  if (!headingBox || !previewBox) throw new Error("Expected hero heading and DatIQ Intelligence preview boxes.");
+
+  // Grid/font layout can round to a fractional pixel; the former offer rule
+  // created an 88px displacement, so 2px is still a meaningful alignment gate.
+  expect(Math.abs(headingBox.y - previewBox.y)).toBeLessThanOrEqual(2);
+});
+
 test("home shows the active offer without a trial meter before the visitor uses the trial", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
@@ -93,10 +108,9 @@ test("a used trial shows a dismissible status without restoring the Sign up CTA"
 
   const trialStatus = page.locator(".guest-trial-bar");
   await expect(trialStatus).toContainText(/Trial mode/i);
-  await expect(trialStatus.getByRole("button", { name: /dismiss trial status/i })).toBeVisible();
+  await expect(trialStatus.getByRole("button", { name: /dismiss trial and offer/i })).toBeVisible();
   await expect(trialStatus.getByRole("button", { name: /sign up free|create free account/i })).toHaveCount(0);
 
-  await trialStatus.getByRole("button", { name: /dismiss trial status/i }).click();
-  await expect(trialStatus.locator(".guest-trial-bar-inner")).toHaveCount(0);
-  await expect(trialStatus.locator(".offers-banner-trial")).toBeVisible();
+  await trialStatus.getByRole("button", { name: /dismiss trial and offer/i }).click();
+  await expect(trialStatus).toHaveCount(0);
 });
