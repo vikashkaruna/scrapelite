@@ -18,6 +18,44 @@
 
 ---
 
+## 2026-09-13 03:00 IST — Fresh-start checkpoint: aligned hero and calm trial panel
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Release source** | `origin/staging` @ `620dc36` |
+| **Staging deploy** | Ready at https://staging.datiq.app |
+| **Active focus completed** | Homepage hero alignment and guest-trial panel behavior |
+| **Local primary-worktree note** | Preserve the user-owned roadmap edit and video-production document; neither belongs to this release. |
+
+### Delivered
+
+- The **DatIQ Intelligence** preview now aligns with the top of the
+  **Intelligence, Connected.** headline, including while the home offer is present.
+- The close control dismisses the complete floating home panel: both the trial status and the
+  attached discount offer disappear together for the unchanged trial state.
+- An active, non-limit trial panel automatically dismisses after **6 seconds**. Hard-limit
+  warnings deliberately remain visible so a blocked visitor still sees the required next step.
+
+### Verification
+
+- `src/components/GuestTrialBanner.test.jsx` — **2 passed**: complete panel auto-dismiss and
+  hard-limit persistence.
+- Chromium homepage/topbar smoke suite — **20 passed**, including precise hero alignment and
+  complete-panel manual dismissal.
+- Protected pre-push gate completed before `620dc36` reached `origin/staging`.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 generated pages** and
+  **112 asset references** verified.
+
+### Next session
+
+- Start from `origin/staging`, not the older local `face-lift` checkout.
+- The homepage trial/offer behavior is intentionally session-scoped: a changed usage state can
+  surface fresh status, while the same state stays dismissed after the visitor closes it.
+
+---
+
 ## 2026-09-13 02:15 IST — Custom Preview handoffs and calmer first-visit Home are ready for staging
 
 ### Quick orientation
