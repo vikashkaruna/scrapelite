@@ -194,6 +194,36 @@ owners complete their integration and review gates.
 
 ---
 
+## 2026-09-13 02:42 IST — Fresh-start checkpoint: Train A hero remains concise
+
+**Branch.** `staging` (pre-record head `bf4c931`).
+**Deployment status.** Requested staging redeploy follows this record.
+
+### Verified state
+
+- The homepage does **not** ship the retired, citation-ready answer-first paragraph. The concise
+  **Intelligence, Connected.** Train A hero remains the approved homepage presentation.
+- The staging SEO contract explicitly guards that decision: it asserts the retired
+  `.home-answer-block` cannot reappear, rather than requiring obsolete marketing copy.
+- No product-code or static-page change was needed for this checkpoint: the intended source,
+  prerendered homepage, and test contract were already present on `origin/staging`.
+
+### Verification
+
+- `npx vitest run scripts/seo-homepage.test.mjs --reporter=verbose` — **16 passed**.
+- `npm run build && npm run check:prerender` — build passed; **28 generated pages** and
+  **112 asset references** verified.
+- `git diff --check` — passed.
+
+### Fresh-start direction
+
+- Treat `origin/staging` as the release source of truth. Do not transplant the older local
+  `face-lift` SEO test state into staging; it predates the approved Train A contract.
+- The standard Netlify Edge Access limitation for unauthenticated external route checks remains
+  unchanged; the Git-triggered deploy itself is expected to complete normally.
+
+---
+
 ## 2026-09-12 22:47 IST — Guest-trial status aligned with the Sign in menu edge
 
 **Branch.** `face-lift` @ `5117ac1` (`refine: align guest trial status with menu`).
