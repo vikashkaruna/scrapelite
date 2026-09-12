@@ -2,6 +2,38 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 (VERIFIED + APPLIED) — P1 AND P2 ARE COMPLETE, AND `0060`–`0064` ARE NOW ON DEV/STAGE. RE-VERIFIED GREEN END TO END AFTER THE APPLY. MANUAL TEST PLAN WRITTEN FOR BRANCH → STAGING → PRODUCTION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> ✅ **`0062`, `0063` AND `0064` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12), joining
+> `0059`–`0061` from the prior pass. **Every migration through `0064` has now met a real Postgres.**
+> 🔴 **PRODUCTION HAS NONE OF THEM AND IS FIFTEEN MIGRATIONS BEHIND (`0050`–`0064`).** Every P2
+> endpoint reads a table that does not exist there, so **a deploy without the apply turns a feature
+> that tested clean twice into a 500** — [docs/DB-MIGRATION-RUNBOOK.md §4d + §4e](docs/DB-MIGRATION-RUNBOOK.md).
+> ⚠️ **`0061` is the RPC lockdown and should not wait on a feature release to carry it.**
+>
+> 📋 **NEW: [docs/MANUAL-TEST-DISCOVERABILITY-P1-P2.md](docs/MANUAL-TEST-DISCOVERABILITY-P1-P2.md)** —
+> the branch → staging → production pass, **run in that order because each environment answers a
+> different question** and passing on one does not answer for the next. Scoped to what CI *cannot*
+> assert (a real session, a real database, a real clock, a populated account) rather than repeating
+> the 6 530 tests. ⚠️ **Its §2 pre-flight is five minutes and is the part that saves an afternoon** —
+> P-02 confirms the migrations are on *that* environment's database, and P-03 confirms `score` came
+> back NULLABLE, which is unrecoverable if wrong.
+>
+> ✅ **RE-VERIFIED AFTER THE APPLY, NOT CARRIED FORWARD:** `npx vitest run` **391 files / 6530 passed
+> / 0 skipped / 0 failed** · db-verify **64 migrations / 791 assertions / 0 failed** · referral 17 ·
+> workflows 56 · build clean · prerender 28 pages / 112 refs · security clean · `run-all.sql` up to
+> date. ⚠️ **The `✗` marks in the vitest log are probes inside a readiness smoke test against a
+> non-running server** — that file passes; they are not failures.
+>
+> ⚠️ **A VITE WARNING ON `subjectScoring.test.js` WAS CHECKED RATHER THAN ASSUMED COSMETIC.** The
+> built-flag parity test resolves its module by template literal, which Vite cannot analyse
+> statically, and its `try/catch` swallows a failure into `null` — the exact shape of a guard that
+> passes for the wrong reason. **Re-confirmed RED** by pointing a source at a module that does not
+> exist: it fails with `truth_record.built=true but doesNotExist.js IS ABSENT`. The warning is
+> build-time analysis noise; the guard is live.
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 (W11 CLOSE-OUT) — P1 AND P2 ARE COMPLETE. THE LAST GAP WAS W11's OWN: A SCORING MODEL THAT HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE TWO BLOCKERS HAD BOTH SHIPPED. `0064`. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·

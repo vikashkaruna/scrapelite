@@ -18,6 +18,73 @@
 
 ---
 
+## 2026-09-12 — `0062`–`0064` APPLIED TO DEV/STAGE; RE-VERIFIED GREEN; MANUAL TEST PLAN FOR BRANCH → STAGING → PRODUCTION
+
+**Branch:** `Discoverability-P1-P3-implementation`. `main` (`2042348`) and `staging` (`4922c04`)
+untouched, re-verified before and after the push.
+
+### What happened
+
+The owner applied `0062`, `0063` and `0064` to dev/stage. This pass re-ran every gate against that
+state, recorded the apply in the plan, runbook and CLAUDE.md, and wrote the manual test document
+for promoting the work.
+
+### ✅ Re-verified, not carried forward
+
+`npx vitest run` **391 files / 6530 passed / 0 skipped / 0 failed** · db-verify **64 migrations /
+791 assertions / 0 failed** · referral 17 · workflows 56 · build clean · check:prerender 28 pages /
+112 refs · security clean · `run-all.sql --check` up to date.
+
+⚠️ **The `✗` marks in the vitest log are probes inside a readiness smoke test against a non-running
+server.** That file passes. They are not failures, and a grep for `FAIL|✗` will mislead whoever
+runs one next.
+
+### ⚠️ One warning checked rather than assumed cosmetic
+
+Vite warned that `subjectScoring.test.js` has a dynamic import it cannot analyse statically:
+`await import(\`./${src.module}\`)`, inside a `try/catch` that swallows a failure into `null`.
+
+**That is the exact shape of a guard that passes for the wrong reason** — if the import could never
+resolve, every module would read as absent, and the test would only stay green if nothing were
+marked `built`. It is the parity test written in W13 *specifically* to catch a stale `built` flag,
+so it being hollow would have re-opened the defect it exists to close.
+
+**Re-confirmed RED** by pointing one source at a module that does not exist:
+
+```
+truth_record.built=true but doesNotExist.js IS ABSENT: expected false to be true
+```
+
+The guard is live; the warning is build-time analysis noise. Recorded because the next person to
+see that warning should not have to re-derive this.
+
+### 📋 New: the manual test document
+
+[`MANUAL-TEST-DISCOVERABILITY-P1-P2.md`](../MANUAL-TEST-DISCOVERABILITY-P1-P2.md) — 60+ checks
+across P1 regression, W9–W10, W12, W13, W14, W11 and security, plus a sign-off grid.
+
+🔴 **Ordered branch → staging → production, because each answers a different question** — does the
+code work at all against a real Postgres and a real session; does it work against the data a real
+tenant has; does it work for customers. Passing on one does not answer for the next, and its §1
+table makes the difference explicit rather than leaving it to be assumed.
+
+⚠️ **Scoped to what CI cannot assert.** Repeating the 6 530 tests by hand wastes the one thing a
+manual pass is for. Every row needs a real session, a real database, a real clock or a populated
+account.
+
+🔴 **Its §2 pre-flight is the part that saves an afternoon.** P-02 confirms the migrations are on
+*that* environment's database — the single most likely cause of a P2 endpoint 500ing on production.
+P-03 confirms `score` came back NULLABLE, which is **unrecoverable if wrong**: a stored `0` is
+indistinguishable, for ever, from a subject that genuinely scored zero.
+
+### 🔴 Outstanding — production
+
+**Production has none of `0050`–`0064` and is fifteen migrations behind.** Every P2 endpoint reads
+a table that does not exist there. `0061` is the RPC lockdown and should not wait on a feature
+release to carry it — [runbook §4d](../DB-MIGRATION-RUNBOOK.md), then §4e.
+
+---
+
 ## 2026-09-12 — P1 AND P2 CLOSE-OUT: W11's SCORING MODEL HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE BLOCKERS HAD BOTH SHIPPED (`0064`)
 
 **Branch:** `Discoverability-P1-P3-implementation`. `main` (`2042348`), `staging` (`4922c04`) and

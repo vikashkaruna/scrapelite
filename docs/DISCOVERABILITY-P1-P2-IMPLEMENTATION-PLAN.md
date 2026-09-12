@@ -2,9 +2,37 @@
 
 **Branch:** `Discoverability-P1-P3-implementation` (the one live branch; `discoverability-p1-to-p3` was folded into it)
 **Source of truth:** *DatIQ Discoverability Intelligence System — Consolidated BRD and PRD, P1/P2/P3* (37pp) and the Perplexity architecture/mindmap deck (18pp).
-**Status (2026-09-12):** P1/W1–W8 and P2/W9–W12 are implemented on
-`Discoverability-P1-P3-implementation`. W13 and W14 are planned below; P3 has
-not started.
+**Status (2026-09-12, final):** ✅ **P1 (W1–W8) AND P2 (W9–W14) ARE COMPLETE**
+on `Discoverability-P1-P3-implementation`. P3 has not started.
+
+✅ **Every migration through `0064` is applied to dev/stage** (owner-confirmed
+2026-09-12) — `0055`–`0058` earlier, `0059`–`0061` and `0062`–`0064` since.
+🔴 **Production has none of `0050`–`0064` and is fifteen migrations behind.**
+Every P2 endpoint reads a table that does not exist there, so a deploy without
+the apply turns a feature that tested clean twice into a 500.
+See [DB-MIGRATION-RUNBOOK.md §4d + §4e](DB-MIGRATION-RUNBOOK.md).
+**The next migration number is `0065`.**
+
+📋 **The manual pass before any promotion is
+[MANUAL-TEST-DISCOVERABILITY-P1-P2.md](MANUAL-TEST-DISCOVERABILITY-P1-P2.md)** —
+branch → staging → production, in that order, because each environment answers
+a different question.
+
+✅ **Two completion sweeps close this plan out, and both are clean.** Every one
+of the 32 `src/lib/discoverability/*` modules has a production importer
+(`subjectScoring.js` was the only orphan, and closing it is what `0064` did);
+every `audit_*` table across `0030`–`0064` has a writer. ⚠️ Five tables look
+unwritten to a JS-only grep and are **not** defects — `report_access_log` is
+written by a SQL function in `0039`, the rest belong to other phases.
+
+⚠️ **What is deliberately NOT built, so it is not mistaken for an oversight:**
+the fourteen-endpoint `/api/v1/discoverability/*` published inventory (the
+canonical prefix and its permanent aliases exist; the inventory does not),
+connector approval-gating, **D6's seven discoverability roles** (needs the
+signed role matrix — guessing a role vocabulary is the same mistake as guessing
+the PRD's component expansions, somewhere harder to reverse), and **any UI for
+the P2 modules**: `0062`–`0064` and their routes are the storage and the
+contract, and no screen reads them yet.
 
 ⚠️ **Migrations `0059`–`0061` are repairs, not features, and all three were
 found by review rather than by a failing test.** `0059` — W12's listing upsert
@@ -18,7 +46,6 @@ ten SECURITY DEFINER functions taking a caller-supplied `p_user_id` were
 executable by `anon`, because PostgreSQL grants EXECUTE to PUBLIC by default
 and nobody had checked functions when 0044 locked the tables. ✅ **All three are
 applied to dev/stage** (owner-confirmed 2026-09-12); production still needs them.
-**The next migration number is `0064`.**
 
 🔴 **AND A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, found in the same review.**
 `audit_entity_evidence` (W10 / `0056`) holds CORROBORATION — every later

@@ -415,7 +415,14 @@ which asks PostgREST as an anonymous caller would. It covers **tables**, not
 functions — extending it to `/rpc` is worth doing and has not been done.
 
 
-## 4e. Applying `0062` + `0063` + `0064` (P2 · W13, W14 and W11's close-out) to dev / stage
+## 4e. Applying `0062` + `0063` + `0064` (P2 · W13, W14 and W11's close-out)
+
+> ✅ **APPLIED TO DEV / STAGE — owner-confirmed 2026-09-12.**
+> 🔴 **PRODUCTION STILL NEEDS ALL THREE**, and production is now **fifteen**
+> migrations behind (`0050`–`0064`). Verify with §6 before deploying any P2
+> surface there: every P2 endpoint reads a table that does not exist on
+> production yet, so a deploy without this apply turns a feature that tested
+> clean twice into a 500.
 
 Three additive migrations. **No security fix among them**, so unlike §4d these can travel with a
 normal feature release.
