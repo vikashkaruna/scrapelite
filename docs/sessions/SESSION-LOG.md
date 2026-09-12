@@ -18,6 +18,51 @@
 
 ---
 
+## 2026-09-13 02:15 IST — Custom Preview handoffs and calmer first-visit Home are ready for staging
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge** | `e1c0257` — `codex/preview-custom-actions` merged onto current staging `ac8b22d`. |
+| **Scope** | Custom Preview entry points, Home custom-composer handoff, first-visit offer/trial refinement, and consent-banner containment. |
+| **Deployment** | The protected push of this record promotes the merge to `origin/staging`; Netlify branch deployment should follow automatically. |
+
+### Delivered
+
+- Added **Custom enrichment** in Preview’s Quick enrichment row and **Custom content** in its
+  Generate content row. Both preserve the current source URL, route to Home, select **Custom…**,
+  reveal the custom-extraction prompt, scroll it into view, and focus it for immediate typing.
+- Removed the redundant Home quick-example chip strip.
+- Simplified the hero action to one linked CTA: **Start free, paste a URL and see it work**;
+  the opening phrase inherits the Connected accent treatment.
+- Centered the connected-intelligence introduction and held its supporting sentence on one line at
+  desktop widths, while allowing normal wrapping on small screens.
+- A first-time guest now sees the active public offer without a Trial mode meter. After trial usage,
+  the meter contains no signup CTA and can be dismissed with a small accessible × without removing
+  the offer. A new usage state restores the appropriate status.
+- Constrained the analytics-consent panel to the same 1080px content measure as the primary menu,
+  rather than tinting the entire viewport width.
+
+### Verification evidence
+
+- Targeted Home, Preview, and consent tests — **19/19 passed**.
+- Chromium Home/topbar smoke — **6/6 passed**, including fresh-visitor offer-only, used-trial
+  dismiss, and no redundant signup-action coverage.
+- Homepage visual regression — **3/3 Chromium snapshots passed** (desktop light/dark and mobile).
+- `npm run build && npm run prerender && npm run check:prerender` — passed; **28 generated pages**
+  and **112 asset references** verified.
+- `git diff --check` — passed. Existing Vite chunk/dynamic-import advisories remain non-blocking.
+
+### Fresh-start action
+
+1. Confirm Netlify reports the automatically triggered staging deploy ready for the pushed commit.
+2. Staging browser/API checks remain externally Edge Access-gated; do not interpret its HTTP 401 as
+   an application regression until the approved bypass is available.
+3. Keep parallel feature branches deferred until their owners complete and integrate them.
+
+---
+
 ## 2026-09-13 00:45 IST — Homepage offer and module hierarchy refined; staging merge ready
 
 ### Quick orientation
