@@ -1,6 +1,6 @@
 # Face-lift release plan — R0, R1, R2
 
-**Branch baseline:** `face-lift` from local `staging` at `4922c04` (2026-09-12)  
+**Branch baseline:** `face-lift` from local `staging` at `4922c04` (2026-09-12)
 **Purpose:** move DatIQ's public positioning to **“DatIQ — Intelligence, Connected.”** while closing the highest-value R0 gaps and truthfully presenting later capabilities.
 
 ## Scope and source interpretation
