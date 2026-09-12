@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-12 — FACE-LIFT BRANCH CUT FROM `staging`; R0–R2 RELEASE AUDIT, DEPLOY REGRESSION GATE, AND DATIQ DISCOVER POSITIONING ARE READY FOR REVIEW.**
+> **Last updated: 2026-09-12 — Train A face-lift is committed and fully verified on `face-lift` (`be2d650`); staging promotion is next. Netlify Edge Access still blocks external staging regression until its approved release-test path is configured.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
 >

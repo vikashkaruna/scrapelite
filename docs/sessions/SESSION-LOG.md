@@ -18,6 +18,58 @@
 
 ---
 
+## 2026-09-12 13:00 IST — Train A face-lift verified and ready for isolated staging promotion
+
+**Source branch.** `face-lift` @ `be2d650` (`feat: deliver Train A DatIQ face-lift`).
+**Promotion base.** `origin/staging` @ `0227e03`.
+
+### Delivered
+
+- Completed the Train A public cutover: `Intelligence, Connected.` hero, immediate composer
+  anchor, a non-fictional dashboard-reveal illustration, shared public branding, static metadata,
+  and refreshed 28 prerendered public pages.
+- Added one tested six-pillar catalog with truthful status/CTA behavior: Extract and Enrich are
+  Available; Compete, Connect and Discover are Beta; Engage is Upcoming with no live CTA.
+  Discover uses the approved concise message and `Run a visibility audit` CTA.
+- Added the R0 contract/documentation slice: privacy/share boundary, cross-surface export
+  contract tests, OpenAPI 3.1 API description, pSEO governance, accurate webhook boundaries and
+  analytics vocabulary. This distinguishes beta and roadmap work from released capabilities.
+- Added `npm run test:release`, a parameterized, report-producing regression runner for local,
+  deployed public, RLS, authenticated Discover audit and export paths. Live writes require an
+  explicit owned URL, bearer token and opt-in, and are always cleaned up.
+
+### Quality evidence
+
+- `npm run test:all -- --visual` — **PASS** in 216.44s: readiness, unit, contract, integration,
+  system, database/referral, production-build/sync, prerender integrity, security, 144 Chromium
+  smoke checks and 11 visual comparisons.
+- Focused Home/module/export/OpenAPI suites, full build, 28-page prerender, `git diff --check`,
+  and six-page axe accessibility checks all passed before the final gate.
+- Production’s read-only release runner reached **10/10** smoke probes and **3/3** public API
+  contracts. It was intentionally not treated as an authenticated production sign-off.
+
+### Promotion and deployment condition
+
+- `origin/staging` advanced with `0227e03`, which tracks the supplied `Analysis-2` reference
+  files. The current workspace retains a divergent, user-owned untracked copy of that directory,
+  so promotion must run from an isolated Git worktree to preserve it. No user file will be moved,
+  overwritten or staged.
+- The staging hostname currently returns Netlify Edge Access **401** before every public page,
+  asset and API route. Push may trigger deployment, but external staging regression cannot pass
+  until the approved test access path is configured. This remains a release exception, not a
+  passing application result.
+
+### Next action
+
+1. Merge `face-lift` with current `origin/staging` in the isolated promotion worktree; rerun a
+   proportional post-merge gate; fast-forward/push `staging` only if clean.
+2. Confirm the Netlify staging build, retain its deployment evidence, and rerun the unchanged
+   staging release command once Edge Access permits the approved test path.
+3. Keep the three parallel implementation branches deferred until their owners finish and their
+   migration/RLS/API/claim reviews pass.
+
+---
+
 ## 2026-09-12 12:11 IST — DatIQ Discover positioning tightened
 
 **Branch.** `face-lift` @ `4922c04`, with uncommitted face-lift work under review.
