@@ -97,6 +97,11 @@ function Seeder({ item }) {
   return null;
 }
 
+function HomeHandoff() {
+  const location = useLocation();
+  return <div data-testid="home"><div data-testid="home-handoff">{JSON.stringify(location.state)}</div></div>;
+}
+
 function Tree({ item }) {
   if (item) {
     localStorage.setItem("datiq.current", JSON.stringify(item));
@@ -114,7 +119,7 @@ function Tree({ item }) {
                   <ExtractionProvider>
                     <Routes>
                       <Route path="/preview" element={<Preview />} />
-                      <Route path="/" element={<div data-testid="home">home</div>} />
+                      <Route path="/" element={<HomeHandoff />} />
                       <Route path="/dashboard" element={<div data-testid="dashboard">dashboard</div>} />
                     </Routes>
                   </ExtractionProvider>
@@ -186,6 +191,24 @@ describe("I-35 — Preview: Generate content in-page section", () => {
     for (const label of ["SEO Blog Outline", "Competitor Summary", "Social Posts", "Compare", "Explain"]) {
       expect(screen.getByRole("button", { name: new RegExp(label, "i") })).toBeInTheDocument();
     }
+    expect(screen.getByRole("button", { name: /custom content/i })).toBeInTheDocument();
+  });
+
+  it("sends custom enrichment and custom content to the Home custom prompt for this URL", async () => {
+    const item = buildExtraction({ id: "ext_custom", url: "https://example.com/pricing" });
+    const { unmount } = render(<Tree item={item} />);
+    await act(async () => { await Promise.resolve(); });
+
+    fireEvent.click(screen.getByRole("button", { name: /custom enrichment/i }));
+    expect(screen.getByTestId("home-handoff")).toHaveTextContent("openCustomExtraction");
+    expect(screen.getByTestId("home-handoff")).toHaveTextContent("https://example.com/pricing");
+
+    unmount();
+    render(<Tree item={item} />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: /custom content/i }));
+    expect(screen.getByTestId("home-handoff")).toHaveTextContent("openCustomExtraction");
+    expect(screen.getByTestId("home-handoff")).toHaveTextContent("https://example.com/pricing");
   });
 
   it("clicking a Generate content button creates a stacked tab and renders the markdown", async () => {

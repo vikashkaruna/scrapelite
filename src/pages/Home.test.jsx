@@ -97,10 +97,10 @@ beforeEach(() => {
   window.history.replaceState(null, "", window.location.pathname);
 });
 
-function Tree() {
+function Tree({ initialEntries = ["/"] } = {}) {
   return (
     <MemoryRouter
-      initialEntries={["/"]}
+      initialEntries={initialEntries}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -149,5 +149,44 @@ describe("F-01 — Home composer", () => {
     await act(async () => { await Promise.resolve(); });
     const cards = container.querySelectorAll(".feature-cell");
     expect(cards.length).toBe(8);
+  });
+
+  it("renders the connected-intelligence hero and the truthful six-module catalog", async () => {
+    const { container } = render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByRole("heading", { level: 1, name: /Intelligence, Connected/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start free\s*,\s*paste a URL and see it work/i })).toBeInTheDocument();
+    expect(screen.queryByText(/No code · structured in seconds/i)).not.toBeInTheDocument();
+
+    const modules = container.querySelectorAll(".home-module-card");
+    expect(modules).toHaveLength(6);
+    expect([...modules].map((module) => module.querySelector("h3")?.textContent)).toEqual([
+      "DatIQ Extract", "DatIQ Enrich", "DatIQ Discover", "DatIQ Compete", "DatIQ Connect", "DatIQ Engage",
+    ]);
+    expect(screen.getByText("DatIQ Discover")).toBeInTheDocument();
+
+    const upcoming = container.querySelector('[data-module-status="upcoming"]');
+    expect(upcoming).toHaveTextContent("DatIQ Engage");
+    expect(upcoming.querySelector("button")).toBeNull();
+    expect(upcoming).toHaveTextContent("Upcoming");
+
+    const discover = [...container.querySelectorAll('[data-module-status="beta"]')]
+      .find((module) => module.textContent?.includes("DatIQ Discover"));
+    expect(discover).toBeTruthy();
+    expect(discover).toHaveTextContent("Run a visibility audit");
+  });
+
+  it("opens the custom extraction prompt from a Preview handoff", async () => {
+    render(<Tree initialEntries={[{
+      pathname: "/",
+      state: { openCustomExtraction: true, url: "https://example.com/pricing" },
+    }]} />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 260)); });
+
+    const customPrompt = screen.getByRole("textbox", { name: /custom extraction instructions/i });
+    expect(customPrompt).toBeInTheDocument();
+    expect(customPrompt).toHaveFocus();
+    expect(document.querySelector(".hero-composer-input")).toHaveValue("https://example.com/pricing");
   });
 });

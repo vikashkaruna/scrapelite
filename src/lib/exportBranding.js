@@ -22,7 +22,7 @@
 
 export const BRAND = "DatIQ";
 export const SITE_URL = "https://datiq.app";
-export const TAGLINE = "Intelligence from the Web";
+export const TAGLINE = "Intelligence, Connected.";
 export const FAVICON_URL = `${SITE_URL}/favicon.png`;
 export const DEFAULT_ACCENT = "#4f46e5"; // --accent, matches the brand
 export const LOGO_URL = `${SITE_URL}/favicon.png`;

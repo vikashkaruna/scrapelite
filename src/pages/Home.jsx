@@ -9,7 +9,7 @@
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, Link } from "react-router";
+import { useLocation, useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
@@ -18,7 +18,6 @@ import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import TrustStrip from "../components/TrustStrip.jsx";
-import OffersBanner from "../components/OffersBanner.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -30,6 +29,7 @@ import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
 import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
+import { PLATFORM_MODULES, hasModuleCta, moduleStatusLabel } from "../lib/platformModules.js";
 
 // Derive the pricing prompt from the existing QUICK_ACTIONS config.
 const PRICING_PROMPT = QUICK_ACTIONS.find((a) => a.key === "pricing")?.prompt || "";
@@ -96,6 +96,62 @@ const ALL_FEATURES = [
   { key: "pricing",  icon: "hash",      title: "Pricing extraction", desc: "Structured pricing tiers from any page" },
 ];
 
+function DashboardReveal() {
+  return (
+    <aside className="home-dashboard-reveal rise" aria-label="DatIQ intelligence workflow preview">
+      <div className="hdr-topline">
+        <span className="hdr-mark"><Icon name="layers" size={14} /></span>
+        <span>DatIQ intelligence</span>
+        <span className="hdr-live-dot" aria-hidden="true" />
+      </div>
+      <div className="hdr-source-row">
+        <Icon name="globe" size={14} />
+        <span>Public web signal</span>
+        <Icon name="arrow-right" size={13} />
+        <span className="hdr-source-state">Structured</span>
+      </div>
+      <div className="hdr-signal-grid">
+        <Link className="hdr-signal-tile" to="/discoverability" aria-label="Open Discoverability">
+          <Icon name="scan-search" size={14} /><span>Discover</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/integrations" aria-label="Open Integrations">
+          <Icon name="share" size={14} /><span>Connect</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/lists" aria-label="Open Account Lists">
+          <Icon name="eye" size={14} /><span>Compete</span>
+        </Link>
+      </div>
+      <div className="hdr-evidence-row">
+        <Icon name="check-circle" size={14} />
+        <span>Evidence ready for the next decision</span>
+      </div>
+    </aside>
+  );
+}
+
+function ModuleCard({ module, onAction }) {
+  const hasCta = hasModuleCta(module);
+  const status = moduleStatusLabel(module.status);
+  return (
+    <article
+      className={`home-module-card${hasCta ? "" : " home-module-card-upcoming"}`}
+      data-module-status={module.status}
+    >
+      <div className="home-module-topline">
+        <span className="home-module-icon"><Icon name={module.icon} size={18} /></span>
+        <span className={`home-module-status home-module-status-${module.status}`}>{status}</span>
+      </div>
+      <h3>{module.name}</h3>
+      <p><strong>{module.headline}</strong> {module.description}</p>
+      {hasCta && (
+        <button type="button" className="home-module-cta" onClick={() => onAction(module)}>
+          {module.cta} <Icon name="arrow-right" size={14} />
+        </button>
+      )}
+    </article>
+  );
+}
+
 function GuideTip({ tip, onDismiss }) {
   return (
     <div className="guide-tip rise">
@@ -110,18 +166,18 @@ function GuideTip({ tip, onDismiss }) {
 
 export default function Home() {
   useSeo({
-    title: "DatIQ: The Unified Web Intelligence Platform | Intelligence from the Web",
+    title: "DatIQ — Intelligence, Connected.",
     description:
-      "DatIQ is the unified web intelligence platform — paste any public URL and get headings, links, contacts, pricing, AI summary, and custom fields in seconds. DatIQ.app is the zero-code web data extraction platform.",
+      "DatIQ turns public web signals into structured intelligence and connected workflows. Extract, enrich, monitor and audit a URL with evidence you can use.",
     canonical: "https://datiq.app/",
     jsonLd: [
       {
         "@context": "https://schema.org",
         "@type": "WebPage",
-        name: "DatIQ: The Unified Web Intelligence Platform",
+        name: "DatIQ — Intelligence, Connected.",
         url: "https://datiq.app/",
         description:
-          "Paste any public URL and get headings, links, contacts, pricing and an AI summary in seconds — one page, a batch, or a scheduled run.",
+          "Turn public web signals into structured intelligence with extraction, enrichment, discoverability audits and connected workflows.",
         inLanguage: "en",
         ...(CONTENT_DATE ? { dateModified: CONTENT_DATE } : {}),
         author: AUTHOR_SCHEMA,
@@ -138,7 +194,7 @@ export default function Home() {
         name: "DatIQ",
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
-        description: "Zero-code web data extraction, enrichment, and AI discoverability platform.",
+        description: "Web intelligence platform for structured extraction, enrichment, discoverability audits and connected workflows.",
         url: "https://datiq.app/",
         offers: {
           "@type": "Offer",
@@ -148,12 +204,37 @@ export default function Home() {
         },
         author: AUTHOR_SCHEMA,
       },
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: "DatIQ Web Intelligence Platform",
+        description: "Web intelligence platform for structured extraction, enrichment, discoverability audits and connected workflows.",
+        url: "https://datiq.app/",
+        brand: {
+          "@type": "Brand",
+          name: "DatIQ",
+        },
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+        },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: "DatIQ Editorial Team",
+        email: "hello@datiq.app",
+        worksFor: AUTHOR_SCHEMA,
+      },
     ],
   });
   const { personaId, userName, resetOnboarding } = usePersona();
   const billing = useBilling();
   const showToast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
@@ -261,6 +342,50 @@ export default function Home() {
     }
   }, [navigate, url]);
 
+  const focusComposer = useCallback((nextIntent, focusCustomInput = false) => {
+    if (nextIntent) {
+      setIntent(nextIntent);
+      if (nextIntent !== "custom") setCustomPrompt("");
+    }
+    const composer = document.querySelector("#extract-composer");
+    composer?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      const target = focusCustomInput
+        ? composer?.querySelector(".custom-extract-input")
+        : composer?.querySelector(".hero-composer-input, textarea");
+      target?.focus();
+    }, 240);
+  }, []);
+
+  // Preview's custom actions return the reader to the same single-URL
+  // composer, with the custom intent visibly selected and ready for a prompt.
+  // Replace the history state immediately so a later Home re-render never
+  // replays the scroll/focus handoff.
+  useEffect(() => {
+    const handoff = location.state?.openCustomExtraction;
+    if (!handoff) return;
+
+    if (location.state?.url) setUrl(location.state.url);
+    setTouched(false);
+    setPreview(null);
+    setActiveTileKey(null);
+    setCustomPrompt(location.state?.customPrompt || "");
+    focusComposer("custom", true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [focusComposer, location.pathname, location.state, navigate]);
+
+  const handleModuleAction = useCallback((module) => {
+    if (module.action === "composer") {
+      focusComposer();
+      return;
+    }
+    if (module.action === "enrich-composer") {
+      focusComposer("contacts");
+      return;
+    }
+    if (module.to) navigate(module.to);
+  }, [focusComposer, navigate]);
+
   // Resolve the per-intent prompt that the composer carries into the extraction.
   // (contacts / pricing have canned prompts; custom uses the user's text.)
   const resolvedCustomPrompt =
@@ -357,26 +482,11 @@ export default function Home() {
   }, [navigate]);
 
   // ── Copy for hero section ─────────────────────────────────────────────
-  // Primary tagline is "Intelligence from the Web." — sleek, single-statement,
-  // futuristic. The functional subtext (what to paste, what to expect) sits
-  // underneath so first-time visitors know what to do without us having to
-  // squeeze the positioning into the H1.
-  const eyebrow  = persona ? persona.badge   : "No code · structured in seconds";
-  const headline = persona ? persona.tagline : "Intelligence from the Web.";
-  // Only persona-specific subtitles render below the headline now. The
-  // default (no persona) copy used to repeat here almost verbatim what the
-  // answer-first block below it says — two paragraphs saying the same thing
-  // back to back — so the generic subtext was removed and the answer block
-  // (which is the one held to the AEO citability rules) is the only copy
-  // left for a first-time, no-persona visitor.
-  const subtext  = persona ? persona.subtitle : null;
+  // The product positioning stays stable whether a persona is selected. A
+  // persona changes quick starts and guidance, not the public brand promise.
+  const eyebrow = persona ? persona.badge : null;
+  const subtext = "Turn public web signals into structured intelligence, then move the evidence into the work that follows.";
   const greeting = userName ? `Hi ${userName} —` : null;
-
-  const DEFAULT_QUICK_CONTEXTS = [
-    { label: "example.com",      url: "https://example.com",         icon: "globe" },
-    { label: "stripe.com/pricing", url: "https://stripe.com/pricing", icon: "tag" },
-    { label: "anthropic.com",    url: "https://anthropic.com",       icon: "sparkles" },
-  ];
 
   return (
     <div className="page">
@@ -392,149 +502,37 @@ export default function Home() {
       >
         <div className="hero-glow" style={persona ? { "--accent": persona.color } : {}} />
 
-        {/* Eyebrow */}
-        <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
-          <Icon name="sparkles" size={14} />
-          {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
-          {eyebrow}
-        </div>
-
-        {/* Headline */}
-        <h1
-          className="rise"
-          style={{
-            animationDelay: ".06s",
-            fontSize: "clamp(30px, 5vw, 58px)",
-            lineHeight: 1.08, letterSpacing: "-.03em",
-            fontWeight: 800, margin: "20px 0 0", maxWidth: "760px",
-          }}
-        >
-          {persona ? (
-            <>
-              {headline.split("—")[0]}
-              {headline.includes("—") && (
-                <><br />—{" "}
-                  <span style={{ color: persona ? persona.color : "var(--accent)" }}>
-                    {headline.split("—")[1]}
-                  </span>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              Intelligence from the <span style={{ color: "var(--accent)" }}>Web.</span>
-            </>
-          )}
-        </h1>
-
-        {/* Subtext — persona-specific only; see the comment above `subtext`. */}
-        {subtext && (
-          <p
-            className="rise"
-            style={{
-              animationDelay: ".12s",
-              fontSize: "clamp(15px, 1.8vw, 19px)",
-              color: "var(--text-2)", maxWidth: "58ch",
-              margin: "20px 0 0", lineHeight: 1.6, fontWeight: 450,
-            }}
-          >
-            {subtext}
-          </p>
-        )}
-
-        {/* ── Answer-first block (AC-01) ────────────────────────────────────
-            A discoverability audit of this page found no passage that is a
-            self-contained answer of even 15 words, so answer engines had
-            nothing to lift even when the page ranked — they quote a passage,
-            not a page.
-
-            Rules this paragraph obeys, and must keep obeying:
-              * 40-60 words, and it names its subject explicitly. It has to
-                still make sense when quoted alone, with no page around it.
-              * It never opens with "this", "it" or "as mentioned above".
-              * It sits ABOVE the fold and above any narrative build-up.
-            Persona copy is deliberately NOT substituted in: a passage that
-            changes per visitor is not a stable thing to be cited. */}
-        <p
-          className="rise home-answer-block"
-          style={{ animationDelay: ".14s" }}
-        >
-          DatIQ is a zero-code web intelligence platform that turns any public
-          URL into structured data. Paste a link and DatIQ returns headings,
-          links, contacts, pricing and an AI summary in seconds — for one page,
-          a batch of up to 500, or a scheduled run that alerts you when the
-          page changes.
-        </p>
-
-        {/* Persona hero stat */}
-        {persona && (
-          <div className="persona-stat rise" style={{ animationDelay: ".15s" }}>
-            <span className="persona-stat-num" style={{ color: persona.color }}>{persona.heroStat}</span>
-            <span className="persona-stat-label">{persona.heroStatLabel}</span>
-          </div>
-        )}
-
-        {/* Guide tip */}
-        {showTip && persona && (
-          <div className="rise" style={{ animationDelay: ".16s", width: "100%", maxWidth: 620 }}>
-            <GuideTip tip={persona.guideTip} onDismiss={dismissTip} />
-          </div>
-        )}
-
-        {/* Q3 — Outcome tiles above the hero composer */}
-        <div className="rise" style={{ animationDelay: ".17s", width: "100%", maxWidth: 880, margin: "8px 0 0" }}>
-          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle} />
-        </div>
-
-        {/* Quick-context chips */}
-        {(() => {
-          const contexts = persona
-            ? persona.examples.map((ex, i) => ({
-                label: ex, url: ex.startsWith("http") ? ex : `https://${ex}`,
-                icon: ["target", "eye", "bar-chart"][i % 3],
-              }))
-            : DEFAULT_QUICK_CONTEXTS;
-          return (
-            <div className="persona-contexts rise" style={{ animationDelay: ".16s" }}>
-              <span className="persona-ctx-label">
-                <Icon name="sparkles" size={12} />
-                {persona ? `${persona.badge} quick-start` : "Try a quick example"}
-              </span>
-              <div className="persona-ctx-chips">
-                {contexts.map((ctx) => (
-                  <button
-                    key={ctx.url} type="button" className="persona-ctx-chip"
-                    onClick={() => { setUrl(ctx.url); setTouched(false); setPreview(null); }}
-                    title={`Use: ${ctx.url}`}
-                  >
-                    <Icon name={ctx.icon} size={11} /> {ctx.label}
-                  </button>
-                ))}
+        <section className="home-rebrand-hero" aria-labelledby="home-rebrand-title">
+          <div className="home-rebrand-copy">
+            {eyebrow && (
+              <div className="eyebrow rise" style={{ animationDelay: ".02s" }}>
+                <Icon name="sparkles" size={14} />
+                {greeting && <span style={{ fontWeight: 800 }}>{greeting}</span>}
+                {eyebrow}
               </div>
-            </div>
-          );
-        })()}
+            )}
 
-        {/* ── Discoverability spotlight ─────────────────────────────────── */}
-        <div className="home-discoverability-spotlight rise" style={{ animationDelay: ".175s" }}>
-          <div className="hds-inner">
-            <div className="hds-badge">
-              <Icon name="scan-search" size={13} />
-              <span>SEO, AEO &amp; GEO Discoverability</span>
+            <h1 id="home-rebrand-title" className="home-rebrand-title rise" style={{ animationDelay: ".06s" }}>
+              Intelligence, <span>Connected.</span>
+            </h1>
+
+            <p className="home-rebrand-sub rise" style={{ animationDelay: ".1s" }}>
+              {subtext}
+            </p>
+
+            <div className="home-rebrand-actions rise" style={{ animationDelay: ".12s" }}>
+              <button type="button" className="home-secondary-cta" onClick={() => focusComposer()}>
+                <span className="home-secondary-cta-lead">Start free</span>, paste a URL and see it work <Icon name="chevron-down" size={15} />
+              </button>
             </div>
-            <div className="hds-text">
-              <strong>Can AI models &amp; search crawlers cite your site?</strong>
-              <span>Audit 30 search &amp; citation signals. First audit is 100% Free with instant actionable fixes.</span>
-            </div>
-            <Link to="/discoverability" className="hds-cta" state={{ auditUrl: url }}>
-              <span>Audit URL Free</span>
-              <Icon name="arrow-right" size={13} />
-            </Link>
+
           </div>
-        </div>
+          <DashboardReveal />
+        </section>
 
         {/* ── Main extraction composer ─────────────────────────────────── */}
         <div
+          id="extract-composer"
           className="rise"
           style={{ animationDelay: ".18s", width: "100%", maxWidth: 760, margin: "12px 0 0" }}
         >
@@ -574,11 +572,6 @@ export default function Home() {
               )}
             </div>
           )}
-
-          {/* Active coupons/discounts — hidden entirely when nothing is active */}
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-            <OffersBanner variant="compact" />
-          </div>
 
           {/* F14 — in-product trust strip (under the composer) */}
           <TrustStrip />
@@ -718,52 +711,36 @@ export default function Home() {
 
         </div>
 
-        {/* TODO: DatIQ architecture (Pillar 0/1/2) banner hidden on 2026-08-06 —
-            re-enable later. Kept in the DOM (display:none), not unmounted, so
-            re-enabling is just removing the display:none below. */}
-        <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 1080, display: "none" }}>
-          <div className="home-pillars-banner">
-            <div className="hp-banner-head">
-              <span className="hp-banner-eyebrow">
-                <Icon name="layers" size={12} />
-                DatIQ architecture
-              </span>
-              <h2 className="hp-banner-title">
-                Everything runs on <span className="hp-p0-tag">Pillar 0</span> — Web Intelligence (Core)
-              </h2>
-              <p className="hp-banner-sub">
-                The proven single, batch, and scheduled URL-extraction engine is the foundation. Every
-                capability below is layered on top of it.
-              </p>
-            </div>
-            <div className="hp-pillar-row">
-              <div className="hp-pillar hp-pillar-p0">
-                <span className="hp-pillar-label">P0</span>
-                <div className="hp-pillar-text">
-                  <div className="hp-pillar-name">Web Intelligence (Core)</div>
-                  <div className="hp-pillar-desc">Single · Batch · Scheduled URL extraction</div>
-                </div>
-                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
-              </div>
-              <div className="hp-pillar">
-                <span className="hp-pillar-label">P1</span>
-                <div className="hp-pillar-text">
-                  <div className="hp-pillar-name">Enrichment &amp; Insight</div>
-                  <div className="hp-pillar-desc">AI summaries, leads, content briefs</div>
-                </div>
-                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
-              </div>
-              <div className="hp-pillar">
-                <span className="hp-pillar-label">P2</span>
-                <div className="hp-pillar-text">
-                  <div className="hp-pillar-name">Distribution &amp; Workflow</div>
-                  <div className="hp-pillar-desc">Export, schedule, webhook, CRM sync</div>
-                </div>
-                <span className="hp-pillar-badge hp-pillar-badge-live">Live</span>
-              </div>
-            </div>
+        {/* Persona guidance follows the composer: the activation path stays first. */}
+        {persona && (
+          <div className="persona-stat rise" style={{ animationDelay: ".2s" }}>
+            <span className="persona-stat-num" style={{ color: persona.color }}>{persona.heroStat}</span>
+            <span className="persona-stat-label">{persona.heroStatLabel}</span>
           </div>
+        )}
+
+        {showTip && persona && (
+          <div className="rise" style={{ animationDelay: ".21s", width: "100%", maxWidth: 620 }}>
+            <GuideTip tip={persona.guideTip} onDismiss={dismissTip} />
+          </div>
+        )}
+
+        <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 880, margin: "18px 0 0" }}>
+          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle} />
         </div>
+
+        <section className="home-module-overview rise" aria-labelledby="modules-title" style={{ animationDelay: ".24s" }}>
+          <div className="home-module-intro">
+            <h2 id="modules-title">From signal to next step.</h2>
+            <p>Start with a URL, then use the right DatIQ module when the work needs to go further.</p>
+            <span className="eyebrow"><Icon name="layers" size={13} /> One connected intelligence layer</span>
+          </div>
+          <div className="home-module-grid">
+            {PLATFORM_MODULES.map((module) => (
+              <ModuleCard key={module.key} module={module} onAction={handleModuleAction} />
+            ))}
+          </div>
+        </section>
 
         {/* ── Recent extractions widget (QW#4) ─────────────────────────── */}
         <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 1080 }}>
@@ -781,7 +758,7 @@ export default function Home() {
         <h2 className="home-section-h rise" style={{ animationDelay: ".25s" }}>
           What can DatIQ extract from a page?
         </h2>
-        <div className="rise home-features" style={{ animationDelay: ".26s" }}>
+        <ul className="rise home-features" role="list" style={{ animationDelay: ".26s", listStyle: "none", padding: 0 }}>
           {ALL_FEATURES.map((f) => {
             const isHighlighted  = persona && persona.featuresHighlight?.includes(f.key);
             const mappedIntent   = CARD_TO_INTENT[f.key];
@@ -789,7 +766,7 @@ export default function Home() {
             const isClickable    = Boolean(mappedIntent);
 
             return (
-              <div
+              <li
                 key={f.key}
                 className={[
                   "feature-cell",
@@ -797,63 +774,45 @@ export default function Home() {
                   isClickable    ? "feature-cell-clickable" : "",
                   isSelected     ? "feature-cell-selected" : "",
                 ].filter(Boolean).join(" ")}
-                onClick={isClickable ? () => handleCardClick(f.key) : undefined}
-                role={isClickable ? "button" : undefined}
-                tabIndex={isClickable ? 0 : undefined}
-                onKeyDown={isClickable ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleCardClick(f.key); }
-                } : undefined}
-                title={isClickable ? `Click to use: ${f.title}` : undefined}
               >
-                <div
-                  className="feature-ico"
-                  style={
-                    isSelected
+                {isClickable ? (
+                  <button
+                    type="button"
+                    className="feature-cell-action"
+                    onClick={() => handleCardClick(f.key)}
+                    title={`Click to use: ${f.title}`}
+                  >
+                    <span className="feature-ico" style={isSelected
                       ? { background: "var(--accent-soft)", color: "var(--accent-on-dark)" }
                       : isHighlighted
                       ? { background: `color-mix(in srgb, ${persona.color} 14%, transparent)`, color: persona.color }
-                      : {}
-                  }
-                >
-                  <Icon name={f.icon} size={19} />
-                </div>
-                <div className="feature-body">
-                  <div className="feature-title-row">
-                    <span className="feature-title">{f.title}</span>
-                    {f.popular && !isSelected && (
-                      <span
-                        className="feature-tag"
-                        style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}
-                      >
-                        Popular
+                      : {}}
+                    >
+                      <Icon name={f.icon} size={19} />
+                    </span>
+                    <span className="feature-body">
+                      <span className="feature-title-row">
+                        <span className="feature-title">{f.title}</span>
+                        {f.popular && !isSelected && <span className="feature-tag" style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}>Popular</span>}
+                        {isSelected && <span className="feature-tag" style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}>Active</span>}
+                        {isHighlighted && !isSelected && <span className="feature-tag" style={{ background: `color-mix(in srgb, ${persona.color} 12%, transparent)`, color: persona.color }}>Recommended</span>}
                       </span>
-                    )}
-                    {isSelected && (
-                      <span
-                        className="feature-tag"
-                        style={{ background: "var(--accent-soft)", color: "var(--accent-on-dark)" }}
-                      >
-                        Active
-                      </span>
-                    )}
-                    {isHighlighted && !isSelected && (
-                      <span
-                        className="feature-tag"
-                        style={{
-                          background: `color-mix(in srgb, ${persona.color} 12%, transparent)`,
-                          color: persona.color,
-                        }}
-                      >
-                        Recommended
-                      </span>
-                    )}
+                      <span className="feature-desc">{f.desc}</span>
+                    </span>
+                  </button>
+                ) : (
+                  <div className="feature-cell-static">
+                    <span className="feature-ico"><Icon name={f.icon} size={19} /></span>
+                    <span className="feature-body">
+                      <span className="feature-title-row"><span className="feature-title">{f.title}</span></span>
+                      <span className="feature-desc">{f.desc}</span>
+                    </span>
                   </div>
-                  <div className="feature-desc">{f.desc}</div>
-                </div>
-              </div>
+                )}
+              </li>
             );
           })}
-        </div>
+        </ul>
 
         {/* Q1 (alt) — Interactive Try-an-Example demo.
             Previously this wrapper was nested INSIDE the template-gallery
@@ -911,7 +870,10 @@ export default function Home() {
             only when we actually have one. */}
         <div className="home-updated rise" style={{ animationDelay: ".31s", textAlign: "center" }}>
           <p style={{ margin: "0 0 6px" }}>
-            Published by <strong>DatIQ Editorial Team</strong> (<a href="mailto:hello@datiq.app">hello@datiq.app</a>) · <a href="/about">Axiom Minds</a>
+            Published by{" "}
+            <span className="author" rel="author">
+              <strong>DatIQ Editorial Team</strong> (<a href="mailto:hello@datiq.app">hello@datiq.app</a>) · <a href="/about">Axiom Minds</a>
+            </span>
             {CONTENT_DATE && (
               <>
                 {" · "}Last updated{" "}

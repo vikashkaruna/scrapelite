@@ -18,7 +18,7 @@ function Brand({ onClick }) {
       </div>
       <div className="brand-text">
         <div className="brand-name">Dat<b>IQ</b></div>
-        <div className="brand-tagline">Intelligence from the Web</div>
+        <div className="brand-tagline">Intelligence, Connected.</div>
       </div>
     </div>
   );

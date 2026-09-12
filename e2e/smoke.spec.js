@@ -8,10 +8,10 @@ test.beforeEach(async ({ page }) => {
 test("the core SPA routes are served without configured integrations", async ({ page }) => {
   const home = await page.goto("/");
   expect(home?.ok()).toBeTruthy();
-  // H1 is the new brand tagline post-rebrand (rebrand-datiq-and-fix-checkout-bugs).
+  // Pin the public rebrand here, not just in a component test.
   // Pin the copy so a regression in Home.jsx hero is caught here, not just on
   // the about page.
-  await expect(page.getByRole("heading", { name: /Intelligence from the Web/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Intelligence, Connected/i })).toBeVisible();
 
   const dashboard = await page.goto("/dashboard");
   expect(dashboard?.ok()).toBeTruthy();
@@ -22,5 +22,5 @@ test("the core SPA routes are served without configured integrations", async ({ 
   const preview = await page.goto("/preview");
   expect(preview?.ok()).toBeTruthy();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: /Intelligence from the Web/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Intelligence, Connected/i })).toBeVisible();
 });
