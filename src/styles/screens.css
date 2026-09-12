@@ -5899,7 +5899,12 @@
 .guest-trial-bar {
   position: fixed;
   top: 76px; /* 68px top bar + an 8px breathing gap */
-  right: clamp(16px, 4vw, 44px);
+  /* Match the right edge of the centred .topbar-inner content, where the
+     desktop Sign in button ends (1080px max width + shared inline padding). */
+  right: max(
+    clamp(20px, 4vw, 44px),
+    calc((100vw - 1080px) / 2 + clamp(20px, 4vw, 44px))
+  );
   z-index: 90;
   width: fit-content;
   max-width: min(430px, calc(100vw - 32px));
@@ -5951,7 +5956,7 @@
 .gtb-urgent .gtb-cta { background: var(--warning, #b45309); border-color: var(--warning, #b45309); color: #fff; }
 .gtb-urgent .gtb-cta:hover { background: #92400e; border-color: #92400e; }
 @media (max-width: 600px) {
-  .guest-trial-bar { top: 74px; right: 10px; max-width: calc(100vw - 20px); }
+  .guest-trial-bar { top: 74px; right: 20px; max-width: calc(100vw - 40px); }
   .guest-trial-bar-inner { align-items: flex-start; flex-wrap: wrap; gap: 7px 10px; }
   .gtb-text { flex: 1 1 200px; }
   .gtb-cta { margin-left: auto; }

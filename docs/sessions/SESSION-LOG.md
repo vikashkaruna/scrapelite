@@ -18,6 +18,129 @@
 
 ---
 
+## 2026-09-12 22:47 IST — Guest-trial status aligned with the Sign in menu edge
+
+**Branch.** `face-lift` @ `5117ac1` (`refine: align guest trial status with menu`).
+**Deployment status.** Intentionally **not promoted**; `origin/staging` remains at `c74fea6`.
+
+### Delivered
+
+- Adjusted the compact guest-trial status card so its desktop right edge exactly matches the right
+  edge of the **Sign in** button inside the centred menu container. It remains directly below that
+  control rather than using the browser viewport's outer gutter.
+- Used the same 1080px maximum header geometry and responsive inline padding as `.topbar-inner`.
+  On small screens, the card follows the header's 20px gutter and retains its compact wrapping.
+- Added a browser layout assertion that measures the Sign in button and trial-card boxes at 1280px
+  and fails if their right edges diverge. Refreshed the affected Chromium visual baselines across
+  all pages that render the shared status card.
+
+### Root cause and resolution
+
+- **Symptom:** the status card was visually right-aligned to the browser edge, not the Sign in
+  button, on wide screens.
+- **Cause:** its `right` inset used only the viewport gutter (`clamp(16px, 4vw, 44px)`), while the
+  top bar is a centred 1080px container with its own inline padding.
+- **Resolution:** the inset now takes the greater of the header padding and the outer-centre margin
+  plus that padding. This produces the exact menu-content edge at every desktop width.
+
+### Verification
+
+- `npx playwright test --project=chromium e2e/smoke/topbar.spec.js e2e/smoke/home.spec.js` —
+  **15 passed**, including the new measured-alignment assertion.
+- `npx playwright test --project=chromium e2e/visual/ --update-snapshots=all` followed by
+  `npx playwright test --project=chromium e2e/visual/` — **11 passed**.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 rendered/generated pages**;
+  **112 asset references present**.
+- `git diff --check` — passed. Vite reported only the pre-existing chunk/dynamic-import advisories.
+
+### Next action
+
+Promote `5117ac1` through the isolated staging-worktree path only when requested, then re-run the
+complete merged release gate. The external staging regression exception remains unchanged: Netlify
+Edge Access returns HTTP 401 until the approved test path is configured.
+
+---
+
+## 2026-09-12 22:40 IST — Fresh-start handoff: Train A and homepage refinements deployed to staging
+
+### Quick orientation
+
+| Property | Fresh-start state |
+|---|---|
+| **Production-facing branch** | `origin/staging` @ `c74fea6` |
+| **Current primary workspace** | `face-lift` @ `3171765` — same delivered code plus this fresh-start record |
+| **Final Netlify staging deploy** | `6aa5860421c37e0008bba6fd` — **ready** at https://staging.datiq.app |
+| **Runtime payload commit** | `ba95d43`; `c74fea6` records final deployment evidence only |
+| **Safe branch reference** | Use `origin/staging`, not the local `staging` ref: that ref is checked out in a separate external worktree at `4922c04`. |
+| **Primary deployment blocker** | Netlify Edge Access returns HTTP 401 for all public pages, assets and tested APIs. |
+
+### What is delivered
+
+- **Train A face-lift:** DatIQ — *Intelligence, Connected.* positioning, factual dashboard-reveal
+  visual, URL-focused secondary CTA, a tested six-pillar catalog, Discover as the quiet sixth
+  **Beta** pillar, updated shared public branding, metadata, exports, invoices and prerendered
+  public output.
+- **R0 trust/tooling slice:** release plan, privacy/share and export contracts, OpenAPI 3.1
+  specification, pSEO governance, precise webhook/analytics documentation, and the parameterized
+  `npm run test:release` runner.
+- **Homepage refinement:** removed the redundant `No code · structured in seconds` eyebrow;
+  catalog order is **Extract → Enrich → Discover → Compete → Connect → Engage**; the illustrative
+  DatIQ Intelligence preview reads **Discover → Connect → Compete**.
+- **Guest allowance UX:** the former full-width trial band is now a compact, right-aligned floating
+  status card below account controls, preserving its status role, counts, signup path, urgent
+  state and small-screen wrapping.
+
+### Verification evidence
+
+- Initial Train A merged gate: `npm run test:all -- --visual` — **all 11 suites passed** in
+  202.48s, including 146 Chromium smoke checks and 11 visual comparisons.
+- Homepage refinement candidate: readiness, unit, contract, integration, system, database,
+  build/sync, prerender, security and **144 Chromium smoke** checks passed. The global trial-card
+  redesign intentionally changed eight non-Home visual images; after review/refresh, the complete
+  visual suite passed **11/11**.
+- Git’s mandatory staging pre-push gate passed in **195s** before advancing
+  `origin/staging` from `19f4467` to `ba95d43`.
+- Final Netlify branch deployment for `c74fea6` is **ready**. No build or deployment error is
+  reported.
+
+### Deployment exception and exact next command
+
+The deployed read-only runner returns **0 passed / 4 failed / 4 skipped** because Netlify Edge
+Access rejects every tested public route with HTTP 401. This is not an application pass and must
+not be suppressed in the runner. Configure the approved non-interactive test path for at least
+public pages/assets, `/api/v1/_health`, and `/api/discoverability/*`, then run:
+
+```bash
+DATIQ_TEST_BEARER_TOKEN=... npm run test:release -- \
+  --full --environment staging --base-url https://staging.datiq.app \
+  --discover-url https://owned-test-url.example --allow-live-write \
+  --report artifacts/staging-release.json
+```
+
+Use an owned disposable target and test account; the authenticated audit path creates and tears
+down its tagged test data. Do not run this with a production customer token or URL.
+
+### Preserve and defer
+
+- Do not touch the user-owned untracked items in the primary workspace:
+  `Analysis-1/DatIQ - Prioritised Features Release Roadmap - Backlog Tracker.numbers`,
+  `Analysis-1/Datiq_Market_Product_Analysis copy.pdf`, `Analysis-2/`, and
+  `docs/DATIQ-3MIN-EXPLAINER-VIDEO-PRODUCTION-PACKAGE.md`.
+- Keep `workflow-implementation-and-optimization`, `feat/prospect-engagement-engine` and
+  `Discoverability-P1-P3-implementation` deferred until their owners complete them and their
+  migration/RLS/API/claim reviews pass.
+- An isolated promotion worktree remains at
+  `/private/tmp/datiq-staging-promotion.eAGfEe/checkout`; it is a disposable staging checkout and
+  is not the primary user workspace.
+
+### First step next session
+
+Read this entry, run `git fetch origin --prune`, confirm `origin/staging` is still `c74fea6` or
+its expected successor, then either resolve the Edge Access test path or begin the next approved
+feature on a new scoped branch. Do not merge the deferred parallel work as part of that step.
+
+---
+
 ## 2026-09-12 22:32 IST — Homepage refinements merged and staging deploy verified
 
 **Staging commit.** `ba95d43` (`test: refresh trial status visual baselines`), following the
