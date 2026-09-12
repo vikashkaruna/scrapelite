@@ -2,10 +2,14 @@
 // Shows remaining extraction headroom against the hard limits, nudges sign-up.
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
+import { useLocation } from "react-router";
 import Icon from "./Icon.jsx";
+import OffersBanner from "./OffersBanner.jsx";
+import { getHeadlineOffer } from "../lib/offersService.js";
 
 export default function GuestTrialBanner() {
   const { user, openAuth } = useAuth();
+  const { pathname } = useLocation();
   const { count, batchCount, SINGLE_LIMIT, BATCH_LIMIT } = useGuestTrial();
 
   if (user) return null;
@@ -15,6 +19,9 @@ export default function GuestTrialBanner() {
   const atSingleLimit   = count >= SINGLE_LIMIT;
   const atBatchLimit    = batchCount >= BATCH_LIMIT;
   const atAnyLimit      = atSingleLimit || atBatchLimit;
+  // A home-only offer belongs with the guest decision point, not in the
+  // extraction workflow. Keep it data-driven so an expired campaign vanishes.
+  const showHomeOffer = pathname === "/" && Boolean(getHeadlineOffer());
 
   let message;
   if (atSingleLimit && atBatchLimit) {
@@ -32,7 +39,7 @@ export default function GuestTrialBanner() {
   }
 
   return (
-    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "")} role="status">
+    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "") + (showHomeOffer ? " gtb-home-offer" : "")} role="status">
       <div className="guest-trial-bar-inner">
         <span className="gtb-text">
           <Icon name={atAnyLimit ? "alert-triangle" : "flask"} size={13} />
@@ -50,6 +57,7 @@ export default function GuestTrialBanner() {
           {atAnyLimit ? "Create free account" : "Sign up free"} →
         </button>
       </div>
+      {showHomeOffer && <OffersBanner variant="trial" />}
     </div>
   );
 }

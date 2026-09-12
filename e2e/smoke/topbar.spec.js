@@ -64,3 +64,23 @@ test("guest trial status aligns with the Sign in button's menu edge", async ({ p
     ),
   ).toBeLessThanOrEqual(1);
 });
+
+test("home places the active discount below the trial decision row", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+
+  const trialStatus = page.locator(".guest-trial-bar");
+  const decisionRow = trialStatus.locator(".guest-trial-bar-inner");
+  const offer = trialStatus.locator(".offers-banner-trial");
+
+  await expect(offer).toContainText("LAUNCH20");
+  await expect(page.locator("#extract-composer .offers-banner")).toHaveCount(0);
+
+  const [trialBox, rowBox, offerBox] = await Promise.all([
+    trialStatus.boundingBox(), decisionRow.boundingBox(), offer.boundingBox(),
+  ]);
+  if (!trialBox || !rowBox || !offerBox) throw new Error("Expected the trial offer layout boxes.");
+
+  expect(offerBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height);
+  expect(Math.abs(offerBox.width - trialBox.width)).toBeLessThanOrEqual(2);
+});

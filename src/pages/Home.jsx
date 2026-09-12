@@ -19,7 +19,6 @@ import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import TrustStrip from "../components/TrustStrip.jsx";
-import OffersBanner from "../components/OffersBanner.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
@@ -571,11 +570,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Active coupons/discounts — hidden entirely when nothing is active */}
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-            <OffersBanner variant="compact" />
-          </div>
-
           {/* F14 — in-product trust strip (under the composer) */}
           <TrustStrip />
 
@@ -762,9 +756,9 @@ export default function Home() {
 
         <section className="home-module-overview rise" aria-labelledby="modules-title" style={{ animationDelay: ".24s" }}>
           <div className="home-module-intro">
-            <span className="eyebrow"><Icon name="layers" size={13} /> One connected intelligence layer</span>
             <h2 id="modules-title">From signal to next step.</h2>
             <p>Start with a URL, then use the right DatIQ module when the work needs to go further.</p>
+            <span className="eyebrow"><Icon name="layers" size={13} /> One connected intelligence layer</span>
           </div>
           <div className="home-module-grid">
             {PLATFORM_MODULES.map((module) => (
