@@ -18,6 +18,93 @@
 
 ---
 
+## 2026-09-12 — P1 AND P2 CLOSE-OUT: W11's SCORING MODEL HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE BLOCKERS HAD BOTH SHIPPED (`0064`)
+
+**Branch:** `Discoverability-P1-P3-implementation`. `main` (`2042348`), `staging` (`4922c04`) and
+every other branch untouched and re-verified before the push, not carried forward.
+
+### What the close-out pass was looking for
+
+The user asked to confirm completion across **all** P1 and P2 workstreams. The check that matters in
+this repository is not "does the code run" but **does each workstream's declared state match the
+shipped code** — the same declared-vs-actual check that found the stale `local_directory.built` flag
+and `recordEntityEvidence`'s missing writer. It found one more, and it was the largest.
+
+### 🔴 THE FINDING: A COMPLETE, TESTED MODEL THAT NOTHING IMPORTED
+
+`subjectScoring.js` shipped in **W11** implementing all three PRD formulas, the missing-facts matrix
+and the intent-coverage map — and was **called by nothing** through W12, W13 and W14. That was
+deliberate and it was written down: persisting a subject score needed a subject model (**D7**) and
+two components that did not exist (**TC** and **TP**).
+
+**Both blockers had since shipped** — D7 as `0057`, TC/TP as `0062` — and nothing connected those two
+facts to the row that was waiting on them. The plan's own W13 row listed *"land W11's withheld result
+surface"* as **step 5** and was marked ✅ SHIPPED with that step unactioned.
+
+⚠️ **The deferral reason expired silently.** When you defer wiring on a blocker, nothing is watching
+for the day that blocker lands. This is the same drift W13 itself caught in `local_directory.built`.
+
+⚠️ **AND W14 HAD ALREADY ADDED `audit.subject_score`** — a capability with no caller, added by the
+very session that was closing this class of defect elsewhere.
+
+### What shipped — `0064_subject_scores.sql`
+
+🔴 **THIS TABLE APPENDS; EVERY SIBLING UPSERTS.** `audit_schema_entities` answers *"what does this
+page declare NOW"* so a re-observation must update. `audit_subject_scores` answers *"what did this
+brand score on the 12th"*, which **is** the product. A unique arbiter would have collapsed a
+subject's whole history into one row on every re-score, leaving one row claiming to be the trend.
+Two scorings on the same day are two measurements; refusing the second to prevent a duplicate would
+be refusing a re-measure. **The absence of an arbiter is pinned by test**, because every neighbouring
+table has one and a reader will wonder why this differs.
+
+🔴 **`score` NULLABLE, `coverage` NOT NULL.** A stored `0` is indistinguishable, for ever, from a
+subject that genuinely scored zero. A score without its coverage is a *different* measurement, not a
+smaller one — 72 at 80% with TC excluded is not 72 at 100%, and a trend through coverage-less scores
+shows a phantom jump the day an excluded component becomes measurable. That is `weightedMean`'s own
+failure mode re-created at the storage layer.
+
+⚠️ **`SUBJECT_MODEL_VERSION = "s1"`, a separate series from the page model's `v3`.** Two formulas
+that move for different reasons; one number for both makes both comparability claims false. Bump on a
+WEIGHT change, never when a component's SOURCE arrives — that is coverage rising under the same
+formula, which `coverage` and `blockedBy` already record. The model stamps it; a caller never
+supplies one (the `0048` rule).
+
+⚠️ **Kind comes from the STORED subject, never the body**, and the CHECK allows only the three
+scorable kinds — `scoreIdFor()` returns `null` for `page`/`domain`/`location`. Refused in both layers
+so they cannot disagree about who decides. **The score is computed server-side**; a client-supplied
+score is a number somebody typed.
+
+### ✅ Two completion sweeps, both now clean
+
+- **Every one of the 32 `src/lib/discoverability/*` modules has a production importer.**
+  `subjectScoring.js` was the only orphan.
+- **Every `audit_*` table across `0030`–`0064` has a writer.**
+
+⚠️ `report_access_log`, `canonical_entities`, `credit_ledger`, `extracted_fields` and
+`field_provenance` look unwritten to a JS-only grep and are **not** defects — the first is written by
+a SQL function in `0039`, the rest belong to other phases. Checked before reporting rather than
+after.
+
+⚠️ **`supabase/migrations/rollback.sql` stops at `0027`** and claims to drop "every table the v1.0
+migrations create" while covering none of `0030`–`0064`. Pre-existing, out of scope, flagged not
+fixed — nothing depends on it (db-verify builds a fresh database each run).
+
+### Verified
+
+`npx vitest run` **391 files / 6530 passed / 0 skipped / 0 failed** (+22) · db-verify **64 migrations
+/ 791 assertions / 0 failed** (+12) · referral 17 · workflows 56 · build clean · check:prerender 28
+pages / 112 refs · security clean.
+
+**10 guards confirmed RED first** — six by breaking the route (removing the write; coercing a null
+score to 0; taking the version from the body; taking the kind from the body; returning 403 instead of
+404; removing the entitlement gate) and four structurally (adding a unique arbiter; making `score`
+NOT NULL; giving `model_version` a default; removing the only production importer). The
+importer guard is the one this gap actually needed.
+
+🔴 **`0062`, `0063` and `0064` have only met WASM Postgres.** ⚠️ **Next migration number: `0065`.**
+
+---
+
 ## 2026-09-12 IST (W14) — THE P2 INTELLIGENCE LAYER HAD NO ENTITLEMENT CHECK AT ALL. AND THE LIFECYCLE FIX THE PLAN ASKED FOR WOULD HAVE BEEN DEAD CODE OVERRIDING A WRITTEN DECISION.
 
 **Branch:** `Discoverability-P1-P3-implementation` only. `main`, `staging` and

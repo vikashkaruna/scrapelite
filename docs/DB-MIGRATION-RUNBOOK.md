@@ -415,6 +415,49 @@ which asks PostgREST as an anonymous caller would. It covers **tables**, not
 functions — extending it to `/rpc` is worth doing and has not been done.
 
 
+## 4e. Applying `0062` + `0063` + `0064` (P2 · W13, W14 and W11's close-out) to dev / stage
+
+Three additive migrations. **No security fix among them**, so unlike §4d these can travel with a
+normal feature release.
+
+```bash
+PROD_SUPABASE_DB_URL='postgresql://...' \
+  npm run migrate:prod -- --include=0062_schema_trust.sql,0063_revalidation_request.sql,0064_subject_scores.sql
+```
+
+| Migration | Adds | Shape |
+|---|---|---|
+| `0062_schema_trust.sql` | `audit_schema_entities`, `audit_trust_evidence` | 2 tables, 2 triggers, no function |
+| `0063_revalidation_request.sql` | `revalidation_requested_at`, `revalidation_baseline_audit_id` on `audit_recommendations` | 2 columns, both nullable |
+| `0064_subject_scores.sql` | `audit_subject_scores` | 1 table, no trigger, no function |
+
+**All three are additive and re-runnable.** `0063` adds nullable columns with `if not exists`; the
+two table migrations use `create table if not exists`. Nothing is backfilled, so there is no
+first-run-only step and no ordering constraint against live traffic.
+
+⚠️ **`0064` deliberately has NO unique constraint.** If a future reviewer "notices the missing
+arbiter" and adds one, it will silently collapse every subject's score history into a single row on
+the next re-score. The table appends because the trend is the product — see the migration header and
+`subject-score-parity.test.js`, which fails if an arbiter appears.
+
+Verify after applying:
+
+```sql
+select count(*) from information_schema.tables
+ where table_schema='public'
+   and table_name in ('audit_schema_entities','audit_trust_evidence','audit_subject_scores');
+-- expect 3
+
+select column_name, is_nullable from information_schema.columns
+ where table_name='audit_subject_scores' and column_name in ('score','coverage','model_version');
+-- expect score=YES, coverage=NO, model_version=NO
+```
+
+The `score`/`coverage` nullability is worth checking by hand: a `score` that came back NOT NULL would
+mean an unmeasurable subject gets stored as a real zero, which is unrecoverable after the fact.
+
+---
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

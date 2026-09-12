@@ -79,7 +79,11 @@ import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
 import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend, incomparableDiff, subjectMismatchCause } from "../../src/lib/discoverability/auditDiff.js";
-import { sameSubject, subjectMismatchReason } from "../../src/lib/discoverability/subjectModel.js";
+import { sameSubject, subjectMismatchReason, scoreIdFor } from "../../src/lib/discoverability/subjectModel.js";
+import {
+  scoreSubject, missingFacts, isThin, intentCoverage,
+  SUBJECT_SCORES, SUBJECT_SCORE_IDS, SUBJECT_MODEL_VERSION, THIN_COVERAGE,
+} from "../../src/lib/discoverability/subjectScoring.js";
 import {
   SOURCE_TIERS, TIER_IDS, ACQUISITION, DIRECTORY_SOURCES, SOURCE_BY_ID,
   sourcesForRegion, coverageClaim, unlockAction,
@@ -713,6 +717,11 @@ export const handler = async (event) => {
         return text(200, recommendationsToCsv(rows), "text/csv");
       }
       return json(200, { recommendations: rows, count: rows.length });
+    }
+
+    // ── /subject-score ─────────────────────────────────────────────────────
+    if (root === "subject-score") {
+      return await subjectScoreRoute(userId, method, path, body, event);
     }
 
     // ── /schema-trust ──────────────────────────────────────────────────────
@@ -2379,6 +2388,127 @@ async function requireLocalRefs(userId, body) {
  * demonstrates — a checkable source URL — which is the same rule W12 applies
  * to `acquisition: "authorized_api"` and W9 applies to `observed`/`imported`.
  */
+/**
+ * P2 · W11's result surface — the one W13's step 5 asked for.
+ *
+ * 🔴 W11 SHIPPED A COMPLETE SCORING MODEL THAT NOTHING IMPORTED. That was
+ * recorded as deliberate and it was: it needed a subject model (D7) and two
+ * components that did not exist (TC and TP, both W13). `0057` and `0062` removed
+ * both blockers, so the deferral expired — and a module called by nothing is
+ * this repository's own documented failure mode, four times in this schema
+ * alone. It is not the fifth.
+ *
+ * ⚠️ THE SCORE IS COMPUTED HERE AND STORED; IT IS NEVER SUPPLIED BY A CLIENT.
+ * A caller-supplied score is not a measurement, it is a number somebody typed —
+ * the same reason `acquisition: "authorized_api"` and `independence` are both
+ * refused from a request body. Component VALUES are inputs and may be sent;
+ * the score, coverage, and model version are ours.
+ */
+async function subjectScoreRoute(userId, method, path, body, event) {
+  // W14/D9. Writes are gated; reads are not — refusing to show a customer the
+  // record they already own is taking away something they were given, which is
+  // a different act from declining to create more.
+  if (method !== "GET") {
+    const gate = await gateP2Capability(event, "audit.subject_score", body.workspace_id);
+    if (!gate.ok) return gate.response;
+  }
+  const [, section] = path;
+  const q = event.queryStringParameters || {};
+
+  // The registry, so a client renders the same component names and weights the
+  // server scores with rather than keeping a copy that drifts.
+  if (section === "registry" && method === "GET") {
+    return json(200, {
+      model_version: SUBJECT_MODEL_VERSION,
+      thin_coverage: THIN_COVERAGE,
+      scores: SUBJECT_SCORE_IDS.map((id) => ({
+        id,
+        code: SUBJECT_SCORES[id].code,
+        label: SUBJECT_SCORES[id].label,
+        components: Object.entries(SUBJECT_SCORES[id].components)
+          .map(([cid, c]) => ({ id: cid, ...c })),
+      })),
+    });
+  }
+
+  // Service intent coverage — excluded intents are NAMED, never counted as
+  // gaps. An intent nobody sampled is not an intent you lost.
+  if (section === "intent-coverage" && method === "POST") {
+    return json(200, intentCoverage(Array.isArray(body.intents) ? body.intents : []));
+  }
+
+  if (section === "scores") {
+    if (method === "GET") {
+      const rows = await store.listSubjectScores(userId, { subjectId: q.subject_id || null });
+      return json(200, { scores: rows, count: rows.length });
+    }
+
+    if (method === "POST") {
+      if (!body.subject_id) return bad("`subject_id` is required — a score with no subject is not a score.");
+
+      const ref = await requireSubjectScoreRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+
+      // ⚠️ THE KIND COMES FROM THE STORED SUBJECT, NOT THE REQUEST. A body that
+      // could name its own kind would let a page be filed with a brand score,
+      // which is the category error the CHECK constraint refuses one layer down
+      // — and the two must not disagree about who decides.
+      const scoreId = scoreIdFor(ref.subject.subject_kind);
+      if (!scoreId) {
+        return bad(
+          `A ${ref.subject.subject_kind} subject has no single-number formula. `
+          + `Scorable kinds are: ${SUBJECT_SCORE_IDS.join(", ")}.`);
+      }
+
+      const values = (body.components && typeof body.components === "object") ? body.components : {};
+      const result = scoreSubject(scoreId, values);
+      if (!result) return bad("Could not score this subject.");
+
+      // 🔴 THE WRITE. Declared-and-never-written is this schema's own recorded
+      // failure mode; the contract test asserts this call, confirmed RED first.
+      const saved = await store.saveSubjectScore(userId, {
+        subjectId: body.subject_id,
+        auditId: body.audit_id || null,
+        workspaceId: body.workspace_id || null,
+        result,
+      });
+      if (!saved.ok) return json(502, { error: "Could not record the subject score." });
+
+      return json(201, {
+        score: saved.score,
+        result,
+        // Reported beside the score rather than left for the reader to derive:
+        // a number built from half its formula is a different number, and the
+        // caveat does not travel with a screenshot.
+        thin: isThin(result),
+        missing_facts: missingFacts(result),
+      });
+    }
+  }
+
+  return notFound("Unknown subject-score endpoint.");
+}
+
+/**
+ * ⚠️ A PARENT ID IN A REQUEST BODY IS A CLAIM, NOT A FACT — the rule W12 shipped
+ * without and `requireLocalRefs` exists for. Refused 404, never 403: a 403
+ * confirms the row exists and makes the endpoint an enumeration oracle over
+ * other tenants' uuids.
+ */
+async function requireSubjectScoreRefs(userId, body) {
+  const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
+  if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
+
+  const subject = await store.getSubject(userId, body.subject_id);
+  if (!subject) return { refusal: notFound("Subject not found.") };
+
+  if (body.audit_id) {
+    const audit = await store.getAudit(userId, body.audit_id);
+    if (!audit) return { refusal: notFound("Audit not found.") };
+  }
+  return { refusal: null, subject };
+}
+
 async function schemaTrustRoute(userId, method, path, body, event) {
   // W14/D9. Writes are gated; reads are not — refusing to show a customer the
   // record they already own is taking away something they were given, which is

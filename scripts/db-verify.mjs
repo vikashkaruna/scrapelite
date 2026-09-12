@@ -178,7 +178,7 @@ grant usage on schema public to anon, authenticated;
 //   several writes that must not separate.
 // Taking these to 103 / 50 / 29.
 const EXPECT = {
-  tables: 103,
+  tables: 104,
   functions: 50,
   triggers: 29,
   tablesWithoutRls: 0,
@@ -3323,6 +3323,106 @@ group("RPC lockdown — no SECURITY DEFINER function lets anon act as someone el
   check("claim_billing_session stays available to authenticated — it derives auth.uid() itself",
     Boolean(claim) && claim.auth_x && claim.checks_uid && !/p_user_?id/i.test(claim.ia));
   check("...and is still not reachable by anon", Boolean(claim) && !claim.anon_x);
+}
+
+// ── 0064 · W11's result surface, landed as W13's step 5 ────────────────────
+group("audit_subject_scores — the table W11's model was waiting for");
+{
+  const owner = (await one(`insert into auth.users (email) values ('w11-owner@x.com') returning id`)).id;
+  const other = (await one(`insert into auth.users (email) values ('w11-other@x.com') returning id`)).id;
+  const tgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [owner])).id;
+  const subj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home','acme.com') as id`, [owner, tgt])).id;
+
+  // 🔴 THE APPEND. Two scorings of the same subject are two MEASUREMENTS, and
+  // the trend is what W11 exists for. Every sibling table in W12/W13 upserts;
+  // an arbiter here would collapse a subject's history into one row on every
+  // re-score, leaving a single row claiming to be the whole history.
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',61.5,80.0,'s1')`, [owner, subj]);
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',68.0,100.0,'s1')`, [owner, subj]);
+  eq("🔴 re-scoring APPENDS — the trend is the product, not the latest row",
+    (await one(`select count(*)::int n from public.audit_subject_scores where subject_id=$1`, [subj])).n, 2);
+
+  // 🔴 THE ONE THING THIS MODULE EXISTS TO PREVENT. A stored 0 is
+  // indistinguishable, for ever, from a subject that genuinely scored zero.
+  const nullScore = await one(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'service','SFS',null,0.0,'s1') returning score, coverage`, [owner, subj]);
+  check("🔴 `score` accepts NULL — unknown is never 0", nullScore.score === null);
+  eq("...while `coverage` still travels with it", Number(nullScore.coverage), 0);
+
+  // A score without its coverage is a DIFFERENT measurement, not a smaller
+  // one, so the column cannot be skipped.
+  check("coverage is NOT NULL — a score without it makes the trend lie",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, model_version)
+     values ($1,$2,'brand','BDS',61.5,'s1')`, [owner, subj])));
+
+  // ⚠️ THE 0048 RULE. A default lets a writer that forgets the stamp file a
+  // future score under the current version — the exact mislabelling the column
+  // exists to prevent.
+  check("model_version is NOT NULL with no default",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage)
+     values ($1,$2,'brand','BDS',61.5,80.0)`, [owner, subj])));
+
+  // ⚠️ THREE KINDS, NOT SIX. `audit_subjects` legitimately holds page, domain
+  // and location too, and `scoreIdFor` returns null for all three. A row
+  // claiming a page has a BDS is a category error.
+  check("a non-scorable subject kind is refused by the database, not just the route",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'page','BDS',61.5,80.0,'s1')`, [owner, subj])));
+
+  check("a score outside 0-100 is refused",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',140.0,80.0,'s1')`, [owner, subj])));
+
+  // 🔴 subject_id is NOT NULL — a subject score with no subject is the
+  // polymorphic pointer D7 was written to refuse.
+  check("a score with no subject is refused — D7 is why this table can exist",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,null,'brand','BDS',61.5,80.0,'s1')`, [owner])));
+
+  // Deleting the subject takes its scores with it; a score pointing at a
+  // subject nobody holds explains nothing.
+  const subj2 = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Other','acme.com') as id`, [other, tgt])).id;
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',50.0,90.0,'s1')`, [other, subj2]);
+  await q(`delete from public.audit_subjects where id = $1`, [subj2]);
+  eq("deleting a subject cascades its scores",
+    (await one(`select count(*)::int n from public.audit_subject_scores where subject_id=$1`, [subj2])).n, 0);
+}
+
+group("W11 score RLS lockdown");
+{
+  const r = await one(
+    `select relrowsecurity rls from pg_class where relname = 'audit_subject_scores'`);
+  check("audit_subject_scores has RLS enabled", r.rls === true);
+  const pol = await q(
+    `select polname, polroles::regrole[] roles from pg_policy p
+       join pg_class c on c.oid = p.polrelid where c.relname = 'audit_subject_scores'`);
+  check("...and its only policy is service_role",
+    pol.length === 1 && String(pol[0].roles).includes("service_role"));
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

@@ -1777,6 +1777,68 @@ export async function listTrustObservations(userId, { subjectId = null, limit = 
   return r.ok ? r.data || [] : [];
 }
 
+/**
+ * Record one subject score. P2 · W11, landed as W13's step 5.
+ *
+ * 🔴 THIS APPENDS. There is no `on_conflict` and there must not be one: the
+ * trend is the product. An upsert arbiter would silently collapse a subject's
+ * whole history into one row every time it was re-scored.
+ *
+ * ⚠️ `score` IS SENT AS `null` WHEN NOTHING WAS MEASURED, never coerced to 0 —
+ * and `coverage` always travels with it, because a score without its coverage
+ * is a different measurement, not a smaller one.
+ *
+ * ⚠️ THE VERSION COMES FROM THE RESULT, NOT FROM THE CALLER. `scoreSubject`
+ * stamps `modelVersion`; a writer that supplied its own could file a future
+ * score under the current version, which is the mislabelling the NOT NULL /
+ * no-default column exists to prevent.
+ */
+export async function saveSubjectScore(userId, {
+  subjectId, auditId = null, workspaceId = null, result,
+}) {
+  if (!result || !result.code) return { ok: false, error: "no score to save" };
+
+  const r = await rest("audit_subject_scores", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      kind: result.kind,
+      code: result.code,
+      // Never `|| 0` — that would turn "we could not measure this" into a
+      // measured zero, permanently and undetectably.
+      score: typeof result.score === "number" ? result.score : null,
+      coverage: result.coverage,
+      model_version: result.modelVersion,
+      components: result.components || [],
+      measured: result.measured || [],
+      unmeasured: result.unmeasured || [],
+      blocked_by: result.blockedBy || [],
+      scored_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, score: row || null };
+}
+
+/**
+ * A subject's score history, newest first — the trend W11 exists for.
+ *
+ * ⚠️ Owner-scoped at the query, like every other read here. The subject id
+ * alone is not authorisation.
+ */
+export async function listSubjectScores(userId, { subjectId = null, limit = 50 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_subject_scores?${parts.join("&")}&${SELECT_ALL}&order=scored_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
 export async function getSubject(userId, subjectId) {
   const r = await rest(
     `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`

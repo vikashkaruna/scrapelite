@@ -2,6 +2,66 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-12 (W11 CLOSE-OUT) — P1 AND P2 ARE COMPLETE. THE LAST GAP WAS W11's OWN: A SCORING MODEL THAT HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE TWO BLOCKERS HAD BOTH SHIPPED. `0064`. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **`subjectScoring.js` WAS COMPLETE, TESTED, AND CALLED BY NOTHING SINCE W11.** The
+> withholding was deliberate and written down: persisting a subject score needed a subject model
+> (D7) and two components that did not exist (TC, TP). **D7 shipped as `0057` and TC/TP as `0062`** —
+> and nothing ever connected those two facts to the row that was waiting on them. **This is the same
+> declared-vs-actual drift W13 itself caught** in `local_directory.built`, which stayed `false` for a
+> session after W12 went live. ⚠️ **A MODULE WHOSE ONLY READER IS ITS OWN TEST IS NOT WIRED** — its
+> suite passes exactly as the four declared-and-never-written columns' readers returned `null`.
+> `subject-score-parity.test.js` now asserts a **non-test importer exists**, which is the guard the
+> gap actually needed.
+>
+> ⚠️ **AND W14 HAD ALREADY ADDED `audit.subject_score` FOR A ROUTE THAT DID NOT EXIST** — a
+> capability with no caller, introduced by the very session that was closing this class of defect
+> elsewhere. It has a caller now.
+>
+> 🔴 **THIS TABLE APPENDS. EVERY SIBLING UPSERTS, AND THE DIFFERENCE IS WHAT EACH IS FOR.**
+> `audit_schema_entities` answers *"what does this page declare NOW"* — a second opinion is not
+> wanted. `audit_subject_scores` answers *"what did this brand score on the 12th"*, which **is** the
+> product. An arbiter here would silently collapse a subject's whole history into one row on every
+> re-score, leaving one row claiming to be the trend. ⚠️ **Two scorings on the same day are two
+> MEASUREMENTS**; refusing the second to prevent a duplicate would be refusing a re-measure.
+>
+> 🔴 **`score` IS NULLABLE AND `coverage` IS NOT NULL.** A stored `0` would be indistinguishable,
+> for ever, from a subject that genuinely scored zero. And a score without its coverage is not a
+> smaller score, it is a **different** one — 72 at 80% with TC excluded and 72 at 100% are not the
+> same measurement, so a trend drawn through scores whose coverage was dropped shows a phantom jump
+> the day an excluded component starts being measured. That is `weightedMean`'s own failure mode,
+> re-created at the storage layer.
+>
+> ⚠️ **`SUBJECT_MODEL_VERSION` IS AN `s`-SERIES, NEVER THE PAGE MODEL'S `v`.**
+> `SCORING_MODEL_VERSION` is `v3` and describes the penalty and pillar maths; BDS/PDS/SFS is a
+> different formula moving for different reasons, and one number for both would make **both**
+> comparability claims false. ⚠️ **Bump it when a WEIGHT moves, never when a component's SOURCE
+> arrives** — TC becoming measurable is coverage rising under the same formula, which `coverage` and
+> `blockedBy` already record. ⚠️ **The model stamps its own version; a caller never supplies one** —
+> the `0048` rule, one layer up.
+>
+> ⚠️ **THE KIND COMES FROM THE STORED SUBJECT, NEVER THE REQUEST BODY**, and the CHECK allows only
+> the three scorable kinds: `audit_subjects` also holds `page`, `domain` and `location`, for which
+> `scoreIdFor()` returns `null` because they have no single-number formula. A row claiming a page has
+> a BDS is a category error, refused in **both** layers so they cannot disagree about who decides.
+> **The score is computed server-side and never accepted from a client** — a supplied score is not a
+> measurement, it is a number somebody typed.
+>
+> ✅ **TWO COMPLETION SWEEPS RUN ACROSS P1 AND P2, AND BOTH ARE NOW CLEAN.** Every one of the 32
+> `src/lib/discoverability/*` modules has a production importer (`subjectScoring.js` was the only
+> orphan). Every `audit_*` table across `0030`–`0064` has a writer. ⚠️ `report_access_log`,
+> `canonical_entities`, `credit_ledger`, `extracted_fields` and `field_provenance` look unwritten to
+> a JS-only grep and are **not** defects — the first is written by a SQL function in `0039`, the rest
+> belong to other phases.
+>
+> **Verified:** `npx vitest run` **391 files / 6530 passed / 0 skipped / 0 failed** · db-verify **64
+> migrations / 791 assertions / 0 failed** · referral 17 · workflows 56 · build clean · prerender 28
+> pages / 112 refs · security clean. **10 guards confirmed RED first** (6 route breaks, 4 structural).
+> 🔴 **`0062`, `0063` AND `0064` HAVE ONLY MET WASM POSTGRES.** ⚠️ **The next migration number is
+> `0065`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 (W14) — THE P2 INTELLIGENCE LAYER HAD NO ENTITLEMENT CHECK AT ALL (`0063` + six capabilities). AND THE LIFECYCLE FIX THE PLAN ASKED FOR WOULD HAVE BEEN DEAD CODE OVERRIDING A WRITTEN DECISION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
 > 🔴 **W9 THROUGH W13 SHIPPED UNGATED.** Every truth record, graph edge, directory listing and trust
@@ -1158,7 +1218,7 @@
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` again this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`04e8df3` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
 | **Latest commit** | `Discoverability-P1-P3-implementation` — **D7** (`0057_audit_subjects.sql`, the subject registry) + P2/**W12** (`0058_local_directory.sql`, `directorySources.js`, `napModel.js`, `/local-directory/*`). Under it `04e8df3` (**W11** subject scoring), `b7a1c52` (14 Stripe tests un-skipped, the D7 recommendation, runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **58** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**725 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Verify the schema locally** | `npm run test:db` — applies all **64** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**791 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---
@@ -1715,6 +1775,8 @@ ThemeProvider
 | SECURITY DEFINER grants | 🔴 **A new `SECURITY DEFINER` function MUST `revoke all ... from public, anon, authenticated` and then `grant execute ... to service_role` explicitly.** Revoking from `anon` alone is a **no-op** — PostgreSQL grants EXECUTE to PUBLIC by default and both roles inherit it, so the narrower revoke reads as though it worked and changes nothing (`0012` did exactly this to `claim_billing_session`, which stayed anon-reachable until `0061`). And `SECURITY DEFINER` **bypasses RLS**, so any such function taking a caller-supplied `p_user_id` without consulting `auth.uid()` is an impersonation primitive reachable with the committed publishable key — that is what `0061` had to remove ten of. ⚠️ **Grant `service_role` explicitly rather than inheriting it** from Supabase's `ALTER DEFAULT PRIVILEGES`: a restored dump or self-hosted Postgres does not carry those, and the server then cannot call its own RPC. `db-verify`'s sweep is DERIVED from `pg_proc`, so a new offender fails on the day it lands. |
 | Upsert arbiters | 🔴 **A unique constraint that backs a PostgREST upsert must name COLUMNS, never an expression.** `on_conflict=` takes a column list and PostgreSQL will not select an expression index as that arbiter — `0058`'s `coalesce(truth_record_id, '000…')` index enforced the invariant correctly AND made every save fail, until `0059` replaced it with `unique nulls not distinct (...)`. Use `NULLS NOT DISTINCT` whenever a nullable column is part of the key. |
 | Get-or-create | 🔴 **`INSERT .. ON CONFLICT`, never SELECT-then-INSERT.** A unique index makes a second row impossible; it does **not** make the losing caller return the winner's id — it raises `unique_violation`, which a non-fatal caller swallows into a null. `upsert_audit_target` was always atomic; `upsert_audit_subject` was not until `0060`. Infer a **partial** index by restating its predicate in the `ON CONFLICT` clause. |
+| Append vs upsert | 🔴 **Ask what the table ANSWERS before giving it a unique arbiter.** `audit_schema_entities` answers *"what does this page declare now"* — a re-observation must UPDATE, or every count doubles (0056/0058's reasoning). `audit_subject_scores` answers *"what did this brand score on the 12th"* — an arbiter there would silently collapse a subject's whole history into one row on every re-score, and **the trend is the product**. Two measurements of the same thing on the same day are two rows. ⚠️ **A score is stored with its `coverage` or not at all**: 72 at 80% coverage and 72 at 100% are different measurements, and a trend drawn through scores that dropped it shows a phantom jump the day an excluded component starts being measured — `weightedMean`'s failure mode re-created in storage. And `score` stays NULLABLE: a stored `0` is indistinguishable, for ever, from a real zero. |
+| A module with no importer | ⚠️ **A pure model whose only reader is its own test is NOT wired, and its green suite proves nothing** — exactly as the four declared-and-never-written columns' readers returned `null`. `subjectScoring.js` sat unused for three workstreams behind a deferral whose two blockers had both shipped. **When you defer wiring, the reason expires when its blocker lands and nobody is watching for that.** `subject-score-parity.test.js` asserts a non-test importer exists; `subjectScoring.js`'s `COMPONENT_SOURCES` carries `module` per source for the same reason, so `built` is checked rather than trusted. 🔴 **But a function called by nothing is not ALWAYS a defect** — `canTransition` is deliberately not a gate and says so in its header. Read the code's own comments before wiring or deleting. |
 | Caller-supplied parent ids | 🔴 **A parent id in a request body is a claim, not a fact.** Check `truth_record_id`, `subject_id`, `entity_id` and every other reference against a row the caller owns **before writing** — W9 and W10 do, W12 shipped without it. ⚠️ **Refuse with 404, never 403**: a 403 confirms the row exists and turns the endpoint into an enumeration oracle over other tenants' uuids, which is why `invoice-pdf.js` makes the same choice. Membership (`workspace_id`) goes through `buildWorkspaceCtx`, not a store read — membership is not ownership. |
 | D7 — the subject model | **`audit_subjects` (0057) is the registry; `audit_issues` was NOT touched.** The polymorphism lives in two CHECK constraints over three REAL foreign keys, never in a bare uuid the database cannot check — this repo has been burned three times by a pointer nothing could verify. 🔴 **`audits.target_id` must NEVER be dropped** (it is the fast path, and every existing query uses it) and **`audits.subject_id` must stay NULLABLE** (every pre-0057 row has none). Comparability is `sameSubject()`: same subject where both have one, falling back to `target_id` otherwise — **and two NULL subjects are never a match**, or every old audit becomes comparable with every other. A subject mismatch WITHHOLDS the issue lists; a version mismatch keeps them, because codes survive a model bump on the same page but mean nothing across two different things. |
 | W12 — NAP and directories | **The hard part is not comparing strings, it is not crying wolf.** "Pvt Ltd" vs "Private Limited", "Rd" vs "Road" and `+91 80 4718 2200` vs `08047182200` are the SAME values; a checker that flags them produces a list nobody reads, and the one real mismatch in it goes unfixed. Every equivalence in `napModel.js` is a declared, tested rule — never a fuzzy ratio. 🔴 **An unchecked source, and a field a source never publishes, are EXCLUDED and redistributed, never scored 0** (D5 means most customers authorise nothing, and G2 shows a name and nothing else). ⚠️ **Tiers rank by REACH, not trust** — a registry is the most trustworthy record and one of the least read. ⚠️ **`LD-05` is the registry carve-out**: a registered office is not a shopfront, so an MCA difference must never be reported as a NAP mismatch. ⚠️ **`coverageClaim()` is the ONE place the coverage sentence is built** and may never produce a flat "N directories audited" — D5's copy rule. ⚠️ **Source ids are deliberately not in a SQL CHECK** (unlike 0056's entity types); the TIER is, and `local-directory-parity.test.js` parses that CHECK out of the migration rather than restating it. |

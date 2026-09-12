@@ -192,6 +192,25 @@ export const SUBJECT_SCORES = Object.freeze({
 
 export const SUBJECT_SCORE_IDS = Object.freeze(Object.keys(SUBJECT_SCORES));
 
+/**
+ * The version of THIS formula set — not the page model's.
+ *
+ * ⚠️ NAMESPACED `s`, DELIBERATELY. `SCORING_MODEL_VERSION` in `scoringModel.js`
+ * is at "v3" and describes the penalty and pillar maths. The BDS/PDS/SFS
+ * weights are a different formula that moves for different reasons. Filing both
+ * under one number would make both comparability claims false: a page-model
+ * bump would wrongly invalidate every subject trend, and a weight change here
+ * would wrongly leave page diffs comparable. `v` and `s` can never be confused
+ * in a stored row or a diff.
+ *
+ * 🔴 BUMP THIS WHEN A WEIGHT MOVES OR A COMPONENT IS ADDED OR REMOVED — not
+ * when a component's SOURCE becomes available. TC arriving is coverage going
+ * up under the same formula, which `coverage` and `blockedBy` already record;
+ * calling that a new model would make every pre-W13 brand score incomparable
+ * with every later one for no reason.
+ */
+export const SUBJECT_MODEL_VERSION = "s1";
+
 // ── Scoring ────────────────────────────────────────────────────────────────
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -239,6 +258,12 @@ export function scoreSubject(kind, values = {}) {
     kind,
     code: spec.code,
     label: spec.label,
+    // ⚠️ THE MODEL STAMPS ITS OWN VERSION; a caller never supplies it. A writer
+    // that picks the version can file a future score under the current one,
+    // which is exactly the mislabelling the NOT NULL / no-default column was
+    // written to prevent — the rule `audit_results.scoring_model_version`
+    // already established in 0048.
+    modelVersion: SUBJECT_MODEL_VERSION,
     score: score === null ? null : Math.round(score * 10) / 10,
     coverage: Math.round(coverage * 1000) / 10,
     measured: Object.freeze(measured),
