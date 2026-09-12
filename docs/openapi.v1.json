@@ -1,0 +1,126 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DatIQ API",
+    "version": "1.0.0-preview",
+    "description": "Machine-readable contract for DatIQ's public v1 API. See DatIQ-Developer-API.md for examples, limits and beta-surface notes."
+  },
+  "servers": [
+    { "url": "https://datiq.app/api/v1", "description": "Production" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/_health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Read API reachability and version",
+        "security": [],
+        "responses": { "200": { "description": "API is reachable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } }
+      }
+    },
+    "/extractions": {
+      "get": { "operationId": "listExtractions", "summary": "List the caller's extractions", "parameters": [{ "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }], "responses": { "200": { "$ref": "#/components/responses/ExtractionList" }, "401": { "$ref": "#/components/responses/ApiError" } } },
+      "post": { "operationId": "createExtraction", "summary": "Extract one public URL", "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateExtraction" } } } }, "responses": { "201": { "$ref": "#/components/responses/Extraction" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "429": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/extractions/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "operationId": "getExtraction", "summary": "Retrieve one extraction", "responses": { "200": { "$ref": "#/components/responses/Extraction" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } },
+      "delete": { "operationId": "deleteExtraction", "summary": "Delete one extraction", "responses": { "204": { "description": "Deleted" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/extractions/{id}/enrichments": {
+      "post": { "operationId": "enrichExtraction", "summary": "Run a targeted enrichment", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrichmentRequest" } } } }, "responses": { "200": { "description": "Enrichment result", "content": { "application/json": { "schema": { "type": "object" } } } }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/extractions/{id}/content": {
+      "post": { "operationId": "generateExtractionContent", "summary": "Generate content from an extraction", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ContentRequest" } } } }, "responses": { "200": { "description": "Generated content", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeneratedContent" } } } }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/extractions/{id}/share": {
+      "post": { "operationId": "shareExtraction", "summary": "Create or refresh an opt-in public report", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "$ref": "#/components/parameters/IdempotencyKey" }], "responses": { "200": { "description": "Public report", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicReport" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } },
+      "delete": { "operationId": "unshareExtraction", "summary": "Revoke the public report for an extraction", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "204": { "description": "Revoked" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/extractions/{id}/feedback": {
+      "post": { "operationId": "submitExtractionFeedback", "summary": "Submit feedback on an extraction", "parameters": [{ "$ref": "#/components/parameters/Id" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["rating"], "properties": { "rating": { "type": "integer", "minimum": 1, "maximum": 5 }, "comment": { "type": "string", "maxLength": 2000 } } } } } }, "responses": { "200": { "description": "Feedback recorded" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/batches": {
+      "post": { "operationId": "createBatch", "summary": "Submit a batch extraction", "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateBatch" } } } }, "responses": { "202": { "$ref": "#/components/responses/Batch" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "429": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/batches/{id}": {
+      "get": { "operationId": "getBatch", "summary": "Get batch status and results", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "$ref": "#/components/responses/Batch" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/schedules": {
+      "get": { "operationId": "listSchedules", "summary": "List schedules", "responses": { "200": { "description": "Schedule list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Schedule" } } } } }, "401": { "$ref": "#/components/responses/ApiError" } } },
+      "post": { "operationId": "createSchedule", "summary": "Create a recurring extraction", "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSchedule" } } } }, "responses": { "201": { "$ref": "#/components/responses/Schedule" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/schedules/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "operationId": "getSchedule", "summary": "Get a schedule", "responses": { "200": { "$ref": "#/components/responses/Schedule" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } },
+      "patch": { "operationId": "updateSchedule", "summary": "Update a schedule", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSchedule" } } } }, "responses": { "200": { "$ref": "#/components/responses/Schedule" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } },
+      "delete": { "operationId": "deleteSchedule", "summary": "Delete a schedule", "responses": { "204": { "description": "Deleted" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/schedules/{id}/run": {
+      "post": { "operationId": "runSchedule", "summary": "Run one schedule immediately", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "$ref": "#/components/parameters/IdempotencyKey" }], "responses": { "202": { "$ref": "#/components/responses/Schedule" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/gallery": {
+      "get": { "operationId": "listGallery", "summary": "List the public report gallery", "responses": { "200": { "description": "Gallery entries", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PublicReport" } } } } }, "401": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/audits": {
+      "get": { "operationId": "listAudits", "summary": "List Discoverability audits", "responses": { "200": { "description": "Audit list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Audit" } } } } }, "401": { "$ref": "#/components/responses/ApiError" } } },
+      "post": { "operationId": "createAudit", "summary": "Run a Discoverability audit", "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAudit" } } } }, "responses": { "201": { "$ref": "#/components/responses/Audit" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "402": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/audits/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": { "operationId": "getAudit", "summary": "Get audit status and summary", "responses": { "200": { "$ref": "#/components/responses/Audit" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } },
+      "delete": { "operationId": "deleteAudit", "summary": "Delete an audit", "responses": { "204": { "description": "Deleted" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } }
+    },
+    "/audits/{id}/results": { "get": { "operationId": "getAuditResults", "summary": "Get full audit results", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "$ref": "#/components/responses/Audit" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/report": { "get": { "operationId": "exportAuditReport", "summary": "Export an audit as markdown, CSV or JSON", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "name": "format", "in": "query", "schema": { "type": "string", "enum": ["markdown", "csv", "json"] } }], "responses": { "200": { "description": "Report content", "content": { "application/json": { "schema": { "type": "object" } }, "text/markdown": { "schema": { "type": "string" } }, "text/csv": { "schema": { "type": "string" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/rerun": { "post": { "operationId": "rerunAudit", "summary": "Re-run an audit", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "$ref": "#/components/parameters/IdempotencyKey" }], "responses": { "201": { "$ref": "#/components/responses/Audit" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/compare/{baseline}": { "get": { "operationId": "compareAudits", "summary": "Compare an audit to its baseline", "parameters": [{ "$ref": "#/components/parameters/Id" }, { "name": "baseline", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Comparison", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/recommendations": { "get": { "operationId": "listAuditRecommendations", "summary": "List an audit's recommendations", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Recommendations", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/headings": { "get": { "operationId": "getAuditHeadings", "summary": "Get audit heading analysis", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Heading analysis", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/schema": { "get": { "operationId": "getAuditSchema", "summary": "Get audit schema analysis", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Schema analysis", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/answers": { "get": { "operationId": "getAuditAnswers", "summary": "Get answer-engine analysis", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Answer analysis", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/entities": { "get": { "operationId": "getAuditEntities", "summary": "Get entity analysis", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Entity analysis", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/audits/{id}/technical": { "get": { "operationId": "getAuditTechnical", "summary": "Get technical analysis", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Technical analysis", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/recommendations/{id}/accept": { "post": { "operationId": "acceptRecommendation", "summary": "Accept an audit recommendation", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Recommendation updated" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/recommendations/{id}/dismiss": { "post": { "operationId": "dismissRecommendation", "summary": "Dismiss an audit recommendation with a reason", "parameters": [{ "$ref": "#/components/parameters/Id" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "minLength": 1 } } } } } }, "responses": { "200": { "description": "Recommendation updated" }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/targets": { "get": { "operationId": "listAuditTargets", "summary": "List audited targets", "responses": { "200": { "description": "Target list", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } }, "401": { "$ref": "#/components/responses/ApiError" } } } },
+    "/targets/{id}/history": { "get": { "operationId": "getTargetHistory", "summary": "Get target audit history", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Target history", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Audit" } } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/targets/{id}/trends": { "get": { "operationId": "getTargetTrends", "summary": "Get target score trends", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Trend series", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } },
+    "/benchmarks": { "post": { "operationId": "createBenchmark", "summary": "Create a multi-target Discoverability benchmark", "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["target_urls"], "properties": { "target_urls": { "type": "array", "minItems": 2, "items": { "type": "string", "format": "uri" } } } } } } }, "responses": { "201": { "description": "Benchmark", "content": { "application/json": { "schema": { "type": "object" } } } }, "400": { "$ref": "#/components/responses/ApiError" }, "401": { "$ref": "#/components/responses/ApiError" }, "402": { "$ref": "#/components/responses/ApiError" } } } },
+    "/benchmarks/{id}": { "get": { "operationId": "getBenchmark", "summary": "Get a benchmark", "parameters": [{ "$ref": "#/components/parameters/Id" }], "responses": { "200": { "description": "Benchmark", "content": { "application/json": { "schema": { "type": "object" } } } }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } } } }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "DatIQ API key" } },
+    "parameters": {
+      "Id": { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 } },
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string", "minLength": 1, "maxLength": 255 } }
+    },
+    "responses": {
+      "ApiError": { "description": "API error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+      "Extraction": { "description": "Extraction", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Extraction" } } } },
+      "ExtractionList": { "description": "Paginated extractions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExtractionList" } } } },
+      "Batch": { "description": "Batch", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Batch" } } } },
+      "Schedule": { "description": "Schedule", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Schedule" } } } },
+      "Audit": { "description": "Discoverability audit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Audit" } } } }
+    },
+    "schemas": {
+      "Health": { "type": "object", "required": ["ok", "version", "ts"], "properties": { "ok": { "const": true }, "version": { "const": "v1" }, "ts": { "type": "string", "format": "date-time" } } },
+      "ApiError": { "type": "object", "required": ["error"], "properties": { "error": { "type": "string" }, "code": { "type": "string" } } },
+      "CreateExtraction": { "type": "object", "required": ["url"], "properties": { "url": { "type": "string", "format": "uri" }, "intent": { "type": "string", "enum": ["summary", "contacts", "pricing", "map", "custom"], "default": "summary" }, "prompt": { "type": "string" }, "render_js": { "type": "boolean", "default": false } } },
+      "Extraction": { "type": "object", "required": ["id", "url", "created_at"], "properties": { "id": { "type": "string" }, "url": { "type": "string", "format": "uri" }, "title": { "type": ["string", "null"] }, "intent": { "type": "string" }, "summary": { "type": ["string", "null"] }, "headings": { "type": "array", "items": { "type": "object", "properties": { "level": { "type": "integer", "minimum": 1, "maximum": 6 }, "text": { "type": "string" } } } }, "links": { "type": "array", "items": { "type": "object", "properties": { "text": { "type": "string" }, "href": { "type": "string" }, "category": { "type": "string" } } } }, "enrichments": { "type": "object" }, "created_at": { "type": "string", "format": "date-time" } } },
+      "ExtractionList": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Extraction" } }, "next_cursor": { "type": ["string", "null"] } } },
+      "EnrichmentRequest": { "type": "object", "required": ["focus"], "properties": { "focus": { "type": "string", "enum": ["contacts", "leadership", "social", "mission", "pricing"] } } },
+      "ContentRequest": { "type": "object", "required": ["format"], "properties": { "format": { "type": "string", "enum": ["seo_outline", "competitor_summary", "social_posts"] } } },
+      "GeneratedContent": { "type": "object", "required": ["format", "content"], "properties": { "format": { "type": "string" }, "content": { "type": "string" } } },
+      "PublicReport": { "type": "object", "required": ["slug"], "properties": { "slug": { "type": "string" }, "url": { "type": "string", "format": "uri" }, "public_url": { "type": "string", "format": "uri" } } },
+      "CreateBatch": { "type": "object", "required": ["urls"], "properties": { "urls": { "type": "array", "minItems": 1, "items": { "type": "string", "format": "uri" } }, "intent": { "type": "string" }, "prompt": { "type": "string" } } },
+      "Batch": { "type": "object", "required": ["id", "status", "created_at"], "properties": { "id": { "type": "string" }, "status": { "type": "string", "enum": ["queued", "running", "completed", "failed"] }, "created_at": { "type": "string", "format": "date-time" }, "results": { "type": "array", "items": { "type": "object" } } } },
+      "CreateSchedule": { "type": "object", "required": ["url", "cadence"], "properties": { "url": { "type": "string", "format": "uri" }, "intent": { "type": "string" }, "cadence": { "type": "string" }, "alert_email": { "type": "string", "format": "email" }, "expires_at": { "type": "string", "format": "date-time" }, "name": { "type": "string" } } },
+      "Schedule": { "type": "object", "required": ["id", "url", "cadence"], "properties": { "id": { "type": "string" }, "url": { "type": "string", "format": "uri" }, "cadence": { "type": "string" }, "status": { "type": "string" } } },
+      "CreateAudit": { "type": "object", "required": ["target_url"], "properties": { "target_url": { "type": "string", "format": "uri" }, "device_profile": { "type": "string", "enum": ["mobile", "desktop"], "default": "mobile" }, "audit_profile": { "type": "string", "enum": ["balanced", "seo", "aeo", "geo"], "default": "balanced" }, "page_type_hint": { "type": "string", "enum": ["article", "faq", "howto", "pricing", "product", "docs"] }, "baseline_audit_id": { "type": "string" }, "idempotency_key": { "type": "string" }, "prompt_sample_set_id": { "type": "string" }, "tags": { "type": "array", "maxItems": 10, "items": { "type": "string" } } } },
+      "Audit": { "type": "object", "required": ["id", "target_url", "status", "created_at"], "properties": { "id": { "type": "string" }, "target_url": { "type": "string", "format": "uri" }, "status": { "type": "string" }, "created_at": { "type": "string", "format": "date-time" }, "scores": { "type": "object", "properties": { "overall": { "type": "number" }, "seo": { "type": "number" }, "aeo": { "type": "number" }, "geo": { "type": "number" } } } } }
+    }
+  }
+}

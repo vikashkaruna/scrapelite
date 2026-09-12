@@ -8,15 +8,15 @@
 > internal implementation. You don't need to know how DatIQ works inside to build against it — you
 > only need the contract below.
 >
-> **Availability:** the public API is part of **API access**, included on the **Business** plan and above.
-> This reference is published ahead of general availability; treat unreleased endpoints as a preview and
-> pin to the versioned base URL.
+> **Availability:** API access is included on the **Business** plan and above. The versioned API contract
+> is available in [`openapi.v1.json`](./openapi.v1.json). Endpoints explicitly marked beta in this guide
+> remain subject to their documented release gate; do not treat an unpublished integration as available.
 
 ---
 
 ## Overview
 
-- **Base URL:** `https://api.datiq.app/v1`
+- **Base URL:** `https://datiq.app/api/v1`
 - **Protocol:** HTTPS only. All requests and responses are JSON (`Content-Type: application/json`).
 - **Versioning:** the major version is in the path (`/v1`). Breaking changes ship under a new version; additive changes do not.
 - **Authentication:** a secret API key sent as a bearer token (see below).
@@ -29,8 +29,8 @@ lists, competitor watchlists — do not yet have public REST endpoints (see *Pla
 this document). They are, however, already programmatically reachable in the direction most integrations
 want: a **signal routing rule** configured in the app can call **your** webhook whenever a watched
 competitor changes, an account crosses your ICP threshold, or a workflow run finishes. That is a push, so
-you receive events as they happen instead of polling for them. See **Webhooks** below for the envelope,
-signing and retry behaviour.
+you receive events as they happen instead of polling for them. See **Webhooks** below for the current
+delivery boundary and signing behaviour.
 
 ---
 
@@ -273,24 +273,22 @@ Returns a **Schedule object**.
 
 ---
 
-## Webhooks
+## Webhooks — beta boundary
 
-To receive change alerts programmatically instead of (or in addition to) email, register a webhook URL in
-**Account → API keys → Webhooks**. When a scheduled run detects a change, DatIQ POSTs an event:
+The only server-side webhook subscription currently covered by this API is **Discoverability audit**
+delivery: `audit.completed`, `audit.failed`, `audit.regressed`, and `recommendation.created`. It posts a
+summary payload (score, issue counts, top recommendations and links to the full report), not a customer's
+full extraction payload.
 
-```json
-{
-  "type": "schedule.changed",
-  "created_at": "2026-06-20T09:00:00Z",
-  "data": {
-    "schedule_id": "sch_123",
-    "url": "https://example.com/pricing",
-    "extraction_id": "ex_456"
-  }
-}
-```
+When a subscriber configures a secret, DatIQ includes a timestamped `X-DatIQ-Signature` header that
+cryptographically verifies the exact JSON body. Reject a signature outside the five-minute replay window.
+`X-DatIQ-Event: discoverability` identifies the producer.
 
-Respond with `2xx` within 5 seconds to acknowledge. DatIQ retries failed deliveries with exponential backoff.
+Each delivery has an eight-second timeout and updates the subscription's last delivery status/time. There
+is **no durable retry queue or per-attempt replay log yet**. Generic schedule-change webhooks and the old
+five-second acknowledgement/exponential-backoff promise are not part of v1. See
+[`R0-OPERATING-CONTRACT.md`](./R0-OPERATING-CONTRACT.md) before treating webhooks as an integration
+boundary.
 
 ---
 

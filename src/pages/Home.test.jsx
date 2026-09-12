@@ -150,4 +150,24 @@ describe("F-01 — Home composer", () => {
     const cards = container.querySelectorAll(".feature-cell");
     expect(cards.length).toBe(8);
   });
+
+  it("renders the connected-intelligence hero and the truthful six-module catalog", async () => {
+    const { container } = render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByRole("heading", { level: 1, name: /Intelligence, Connected/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Paste a URL and see it work/i })).toBeInTheDocument();
+
+    const modules = container.querySelectorAll(".home-module-card");
+    expect(modules).toHaveLength(6);
+    expect(screen.getByText("DatIQ Discover")).toBeInTheDocument();
+
+    const upcoming = container.querySelector('[data-module-status="upcoming"]');
+    expect(upcoming).toHaveTextContent("DatIQ Engage");
+    expect(upcoming.querySelector("button")).toBeNull();
+    expect(upcoming).toHaveTextContent("Upcoming");
+
+    const discover = container.querySelector('[data-module-status="beta"]:last-child');
+    expect(discover).toHaveTextContent("Run a visibility audit");
+  });
 });

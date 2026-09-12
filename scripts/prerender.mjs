@@ -209,11 +209,11 @@ async function renderAll() {
         waitUntil: "networkidle",
         timeout: 30000,
       });
-      // useSeo writes the title/canonical in an effect, so wait for the real
-      // title rather than the shell's default before capturing.
+      // Wait for React to mount rather than comparing against a brand string:
+      // the shell and Home now intentionally share the same rebrand title.
       await page
         .waitForFunction(
-          () => document.title && document.title !== "DatIQ: The Unified Web Intelligence Platform | Intelligence from Web",
+          () => Boolean(document.querySelector("#root .app-root")) && Boolean(document.title),
           { timeout: 5000 },
         )
         .catch(() => { /* the homepage-titled routes are legitimately rare */ });

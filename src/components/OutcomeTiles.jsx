@@ -12,37 +12,37 @@ import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 
 export default function OutcomeTiles({ activeKey = null, onToggle, disabled = false }) {
   return (
-    <div className="outcome-tiles rise" role="list" aria-label="Common jobs to be done">
+    <section className="outcome-tiles rise" aria-label="Common jobs to be done">
       <div className="outcome-tiles-head">
         <span className="outcome-tiles-label">
           <Icon name="zap" size={12} />
           Common jobs
         </span>
       </div>
-      <div className="outcome-tiles-row">
+      <div className="outcome-tiles-row" role="list" aria-label="Common jobs to be done">
         {OUTCOME_TILES.map((tile) => {
           const isActive = activeKey === tile.key;
           return (
-            <button
-              key={tile.key}
-              type="button"
-              className={"outcome-tile" + (isActive ? " outcome-tile-active" : "")}
-              onClick={() => onToggle?.(isActive ? null : tile)}
-              disabled={disabled}
-              role="listitem"
-              aria-pressed={isActive}
-              style={{ "--tile-accent": tile.color }}
-              title={isActive ? `Click to clear: ${tile.title}` : `Click to use: ${tile.title}`}
-            >
-              <span className="outcome-tile-icon" aria-hidden="true">
-                <Icon name={isActive ? "check" : tile.icon} size={16} />
-              </span>
-              <span className="outcome-tile-title">{tile.title}</span>
-              <span className="outcome-tile-desc">{tile.desc}</span>
-            </button>
+            <div key={tile.key} className="outcome-tile-item" role="listitem">
+              <button
+                type="button"
+                className={"outcome-tile" + (isActive ? " outcome-tile-active" : "")}
+                onClick={() => onToggle?.(isActive ? null : tile)}
+                disabled={disabled}
+                aria-pressed={isActive}
+                style={{ "--tile-accent": tile.color }}
+                title={isActive ? `Click to clear: ${tile.title}` : `Click to use: ${tile.title}`}
+              >
+                <span className="outcome-tile-icon" aria-hidden="true">
+                  <Icon name={isActive ? "check" : tile.icon} size={16} />
+                </span>
+                <span className="outcome-tile-title">{tile.title}</span>
+                <span className="outcome-tile-desc">{tile.desc}</span>
+              </button>
+            </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

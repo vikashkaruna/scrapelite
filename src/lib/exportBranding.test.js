@@ -87,7 +87,7 @@ describe("exportBranding — buildBrandingContext (with a Brand Kit)", () => {
   it("blank Brand Kit fields fall back to the DatIQ defaults", () => {
     const ctx = buildBrandingContext({ generatedAt: GENERATED_AT, brandKit: {} });
     expect(ctx.brand).toBe(BRAND);
-    expect(ctx.tagline).toBe("Intelligence from the Web");
+    expect(ctx.tagline).toBe("Intelligence, Connected.");
     expect(ctx.accentColor).toBe("#4f46e5");
   });
 });
@@ -109,7 +109,7 @@ describe("exportBranding — Markdown", () => {
   it("footer always includes the DatIQ attribution line", () => {
     const ctx = buildBrandingContext({ generatedAt: GENERATED_AT });
     const footer = brandingMarkdownFooter(ctx);
-    expect(footer).toContain("*Exported via DatIQ — https://datiq.app · Intelligence from the Web*");
+    expect(footer).toContain("*Exported via DatIQ — https://datiq.app · Intelligence, Connected.*");
   });
 
   it("appends extra (format-specific) disclaimers after the shared attribution", () => {
