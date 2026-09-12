@@ -2,6 +2,60 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
+> **Last updated: 2026-09-13 — P3 IS PLANNED FROM THE SUPPLIED BRD/PRD, AND ROUGHLY A THIRD OF THE SXO SCORE IS ALREADY MEASURED BY SHIPPED CODE. STAGING IS MERGED INTO BOTH `Discoverability-P1-P3-implementation` (`0705eb6`) AND `discoverability-P3` (`218955b`). `Analysis-2/` IS REMOVED FROM `staging` (`000c008`). `main` UNTOUCHED AT `2042348`. NO CODE WAS WRITTEN — THE DELIVERABLE IS THE PLAN, AND P3 IMPLEMENTATION GOES TO CODEX.**
+>
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> **the plan:** [docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).
+>
+> 🔴 **READ §2 OF THE PLAN BEFORE §6.** §2 is the reuse map and the core of the document; §6 is the
+> stage list. **`TD` (0.20 of SXO) is a re-weighting of the Technical Accessibility pillar, not a new
+> measurement**, and **half of `UX`'s weight** — `CWV` 0.30 and `Mobile` 0.20 — already arrives through
+> `fetchWebVitals` and the mobile-parity penalty. `IC` and `IA` extend Answer Clarity and Structural
+> Hierarchy. And **`gapTaxonomy.js` already reserves the `conversion_friction` root cause with ZERO
+> issues referring to it** — a socket placed in P1 and deliberately left unused, which `CD` activates.
+> ⚠️ **AI Visibility is BUILT AND SHIPPED, not roadmap** — `aiVisibility.js` carries
+> `WAVI = 0.20M + 0.30C + 0.30R + 0.10P + 0.10A`, matching the document exactly and already asserted
+> by test. Building Stage 2 without §2 rebuilds a third of the engine from scratch.
+>
+> ✅ **EVERY FORMULA IS SETTLED — D13 AND D18 ARE RESOLVED.** The markdown BRD/PRD carries all six SXO
+> component weights, the executive master, and all seven §13 roles as text. 🔴 **The PDF is NOT a
+> usable source and must not be decoded again:** its formulas are vector outlines. A full hand-written
+> decoder (3 955 objects, 19 ToUnicode CMaps, 36 content streams, 47 653 characters of prose) returns
+> **zero** matches for `0\.[0-9]{2}`, with no images and no XObjects to OCR. ⚠️ **Neither source
+> document is committed — this repository is public.** The plan cites every clause by section number.
+>
+> 🔴 **`Analysis-2/` IS NOT A SCOPE SOURCE.** Its R0–R5 map contains **no SXO at all**, schedules
+> **AI Visibility — shipped here — for months 7–9** as a $99/mo add-on, and puts the **entity graph**
+> (shipped, `0056`) in **Year 2**; its "already live" list never mentions the discoverability engine.
+> Owner decision: the BRD/PRD governs. Removed from `staging` because the repo is public and the
+> pricing/revenue model would have gone public on the next promotion — `git revert 000c008` restores it.
+>
+> 🔴 **SIX LIVE CATALOGUE ISSUES ADVERTISE A SHIPPED MODULE AS "(coming)".** Three
+> `MODULES[].available` flags are stale — `ai_visibility` (W6/W7), `trust_and_proof` (W13, `0062`) and
+> `local_directory` (W12, `0058`) — and four real `issueCatalog` entries route to the second, two to
+> the first. ⚠️ **This file's own entry below says the opposite** (*"the '(coming)' badge is now
+> UNREACHABLE FROM REAL DATA"*), which is false in both directions. The badge's regression test uses a
+> **deliberately synthetic** module and structurally cannot catch it; Stage 0.2 adds the real guard and
+> extends it to staging's new public `platformModules.js`, which carries the same drift risk.
+>
+> 🔴 **M1–M13 MAPS ONTO ONLY SIX OF THE REPO'S THIRTEEN MODULES.** §5's M-codes are *architectural
+> modules*; `gapTaxonomy.js`'s are *recommendation destinations*, and the two thirteens are a
+> coincidence. Fill in six (`recommendation_studio`=M5, `validation_lab`=M6, `ai_visibility`=M7,
+> `entity_graph`=M9, `local_directory`=M10, `trust_and_proof`=M11), leave seven null **with the reason
+> written down**, and pin the split rather than the absence. Inventing seven is what W4 declined to do.
+>
+> ⚠️ **THREE DECISIONS GATE THE FIRST TWO STAGES AND CANNOT BE DEFAULTED:** **D12** how a scorable
+> subject is created (blocks CP-1.1 entirely — the document does not address it, because DEV-01 is our
+> defect), **D22** which of the two regression runners now on this branch absorbs P3's checks, and
+> **D21** whether W12's reach-ranked directory tiers survive §9.6's published `5x/4x/4x/3x/1–2x`.
+>
+> **Verified on the merged tree:** `npx vitest run` **396 files / 6569 passed / 0 failed** · db-verify
+> **64 migrations** + referral 17 + workflows 56 · build clean · prerender 28 pages / 112 refs ·
+> security clean. 🔴 **Production is still FIFTEEN migrations behind (`0050`–`0064`)**, and `0061` is
+> the RPC lockdown. ⚠️ **The next migration number is `0065`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
 > **Last updated: 2026-09-12 — Guest-trial status alignment is merged to staging (`a5b0b6c`) and Netlify deploy `6aa58d4b1c115400081e2848` is ready at https://staging.datiq.app. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 > **Last updated: 2026-09-12 (VERIFIED + APPLIED) — P1 AND P2 ARE COMPLETE, AND `0060`–`0064` ARE NOW ON DEV/STAGE. RE-VERIFIED GREEN END TO END AFTER THE APPLY. MANUAL TEST PLAN WRITTEN FOR BRANCH → STAGING → PRODUCTION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
 >
@@ -1276,8 +1330,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` again this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`04e8df3` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `Discoverability-P1-P3-implementation` — **D7** (`0057_audit_subjects.sql`, the subject registry) + P2/**W12** (`0058_local_directory.sql`, `directorySources.js`, `napModel.js`, `/local-directory/*`). Under it `04e8df3` (**W11** subject scoring), `b7a1c52` (14 Stripe tests un-skipped, the D7 recommendation, runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
+| **Branches** | As of **2026-09-13**, re-verified with `git rev-parse` + `git merge-base --is-ancestor` this session, not carried forward: `origin/main` = **`2042348`** (UNTOUCHED all session) · `origin/staging` = **`000c008`** · `origin/Discoverability-P1-P3-implementation` = **`0705eb6`** · `origin/discoverability-P3` = **`218955b`**. 🔴 **Containment is now a chain, and it is checked, not inferred from identical files:** `staging` ⊂ the base branch ⊂ `discoverability-P3`. **P3 work happens on `discoverability-P3`**; the base branch is the integration line and is held behind `staging` on purpose while P1/P2 is still in build phase. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. 🔴 `origin/claude/p2-w9-work-streams-o4gvmq` still exists, is fully merged, and **cannot be deleted from here** (`send-pack: unexpected disconnect`; the GitHub MCP set has no delete-branch tool) — delete it from the branches page. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-P3` @ **`218955b`** — the P3 plan rewritten from the supplied BRD/PRD (`16bcf79`) on top of a tree carrying **both** lines of work: `d4bb180` merged `staging` in, `218955b` merged the updated base branch so the history agrees with the tree (0 file changes). ⚠️ **The plan was written three times as better sources arrived — only `16bcf79` is current.** `0d39895` decoded the BRD/PRD **PDF** and concluded no weight was obtainable; that is true of the PDF (vector outlines) and **wrong about the project**, because the markdown sources carry every formula as text. Run `git log --oneline origin/Discoverability-P1-P3-implementation..discoverability-P3`. |
 | **Verify the schema locally** | `npm run test:db` — applies all **64** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**791 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 

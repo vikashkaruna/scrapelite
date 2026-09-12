@@ -18,6 +18,281 @@
 
 ---
 
+## 2026-09-13 00:11 IST — P3 planned from the supplied BRD/PRD; staging merged into both discoverability branches; Analysis-2 removed
+
+> **Branch:** `discoverability-P3` @ `218955b` — carries **both** lines of work
+> **Also pushed:** `Discoverability-P1-P3-implementation` @ `0705eb6` (staging merged in) · `staging` @ `000c008` (Analysis-2 removed)
+> **Untouched:** `main` @ `2042348`
+> **Verification:** `npx vitest run` **396 files / 6569 passed / 0 failed** · db-verify **64 migrations** + referral 17 + workflows 56 · build clean · check:prerender 28 pages / 112 refs · security clean
+> **Next session:** P3 implementation is being handed to **Codex**. No code was written this session — the deliverable is the plan.
+
+---
+
+## 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-13 |
+| **Branch** | `discoverability-P3` |
+| **HEAD SHA** | `218955b` |
+| **Status** | Complete & verified. Tree clean, 0 unpushed. |
+| **Active focus** | Plan P3 from the real BRD/PRD; stop the two development lines diverging |
+| **Deliverable** | [`docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md`](../DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md) (584 lines) + a review artifact |
+
+**Branch topology after this session** — `staging` is contained in the base branch, and the base
+branch in `discoverability-P3`, all three confirmed with `git merge-base --is-ancestor` rather than
+inferred from identical files:
+
+```
+staging (000c008) ──┐
+                    ├──> Discoverability-P1-P3-implementation (0705eb6) ──> discoverability-P3 (218955b)
+P1+P2 (628e47f) ────┘
+```
+
+---
+
+## 2. What was accomplished
+
+### 2.1 The P3 plan, written three times — read only the third
+
+The plan was rewritten twice as better sources arrived. **Only `16bcf79` is current**; the two
+earlier versions are superseded and one of them is factually wrong.
+
+| Commit | Source | Status |
+|---|---|---|
+| `4c22e98` | none — deliberately refused to guess P3's scope | superseded |
+| `0d39895` | the BRD/PRD **PDF**, decoded by hand | 🔴 **wrong** — claimed no weight is obtainable |
+| `1631fd1` | the supplied **markdown** BRD/PRD | superseded |
+| `16bcf79` | same markdown + the owner's *"extend what is built"* rule | ✅ **current** |
+
+🔴 **The PDF's formulas are vector outlines, not text.** A full hand-written decoder (3 955 objects,
+19 ToUnicode CMaps, 36 content streams, 47 653 characters of prose recovered) returns **zero**
+matches for `0\.[0-9]{2}` anywhere in the document — there are no images and no XObjects to OCR
+either. So `0d39895` concluded, correctly for that artefact, that no weight was readable, and
+recorded it as **P3-DEV-01**. The owner then supplied the **markdown** sources, which carry every
+formula as text. **P3-DEV-01 and decision D13 are RESOLVED**; the PDF is not a usable source for
+any formula and should not be decoded again.
+
+### 2.2 The governing rule: extend, do not rebuild
+
+The owner's instruction was to reuse and extend what already ships (naming AI Visibility
+explicitly) and add only what is genuinely new. §2 of the plan is therefore its core, and it was
+written by checking the code rather than reasoning from the spec:
+
+* **`TD` (0.20) is a re-weighting of the Technical Accessibility pillar, not a new measurement.**
+  Reuse wholesale — a second technical scorer would let two scorers disagree about one page.
+* **Half of `UX`'s weight is already measured** — `CWV` 0.30 and `Mobile` 0.20 arrive through
+  `fetchWebVitals` and the `MOBILE_PARITY_MISSING` penalty. Reuse the vitals fetch; a second
+  PageSpeed call doubles quota and latency.
+* **`IC` and `IA` extend Answer Clarity and Structural Hierarchy.** First-screen clarity is the
+  genuinely new part of `IA`.
+* **`gapTaxonomy.js` already reserves the `conversion_friction` root cause with ZERO issues
+  referring to it** — a socket placed in P1 and deliberately left unused. `CD` activating it is
+  that reservation paying off.
+* **So ~0.30 of the 1.00 SXO weight is already measured in production.**
+* **AI Visibility is built and shipped, not roadmap** — `aiVisibility.js` carries
+  `WAVI = 0.20M + 0.30C + 0.30R + 0.10P + 0.10A`, matching the document exactly and already
+  asserted by test, alongside `citationStates.js`, `promptTaxonomy.js`, `promptMonitorModel.js`,
+  `displacement.js` and the `prompt-runs` / `benchmarks` routes.
+* `auditProfiles.js` has **9 of the 12** §11.10 templates — add three, renumber none.
+* `personaConfig.js` has 7 personas for §11.11's 7 packs; issues carry an `owner` with only
+  **four** values where §12's matrix needs twelve.
+* `validationLab.js` already refuses to claim cause, so experiments extend it and must never drop
+  `relationship: "correlation"`.
+
+### 2.3 Analysis-2 excluded as a scope source, then removed from the repository
+
+`Analysis-2/` (35 files: a Model Council report, an **R0–R5 release roadmap**, a 12-week sprint
+plan, a Social Listening MVP spec, a Pricing/Packaging/Revenue model, Homepage Rebrand concepts,
+Implementation Prompts R0–R5, plus raw multi-model analyses as PDFs) was pushed to `staging` by the
+owner at 10:49 IST and is **a competing roadmap**:
+
+* it contains **no SXO at all**;
+* it schedules **AI Visibility — already shipped here — for months 7–9** as a $99/mo add-on;
+* it puts the **entity graph** (shipped, `0056`) in **Year 2**;
+* its *"already live"* exclusion list never mentions the discoverability audit engine, which
+  suggests the council was briefed on a product state that did not include W1–W14 — consistent
+  with those 61 commits not being on `staging` at the time.
+
+**Owner decision: the BRD/PRD governs P3 and Analysis-2 is not a scope source.** It was removed
+from `discoverability-P3` during the merge (`d4bb180`) and then from `staging` (`000c008`, 35 files,
+zero collateral changes) on an explicit override of the standing don't-touch-other-branches rule,
+because the repository is public and the pricing/revenue model would have become publicly readable
+on the next promotion to `main`.
+
+⚠️ **Checked before deleting:** `docs/FACE-LIFT-R0-R2-RELEASE-PLAN.md` cites it, but in one prose
+line recording that it is reference material rather than executable instructions — **no functional
+dependency**; nothing reads those files at build, test or runtime. `git revert 000c008` restores
+them if they are wanted privately.
+
+### 2.4 Both branches brought onto staging
+
+The owner asked for staging merged into both lines. `discoverability-P3` took it first (`d4bb180`);
+the base branch then took the **same** resolutions (`0705eb6`) rather than a second interpretation;
+`218955b` is a bookkeeping merge that makes the history agree with the tree (0 file changes).
+
+**A merge, not a rebase, deliberately** — rebasing would rewrite the 61 discoverability commits
+other work already refers to.
+
+**30 conflicts, resolved by class:**
+* The **28 prerendered `public/` pages are GENERATED.** Took staging's content, then re-ran
+  prerender from the merged source and rebuilt, so the committed pages reflect the merged
+  `Home.jsx` rather than either side's. 28 rendered / 28 written / 0 failed.
+* `CLAUDE.md` and `docs/sessions/SESSION-LOG.md` are **prepend-newest-first logs** and both sides
+  had prepended their own entry — resolved as a **union with staging's later entry first**, so
+  neither session's record is lost.
+* `package.json` and `src/styles/screens.css` auto-merged with both sides' additions intact.
+
+**What staging contributes:** a reworked `Home.jsx` and `OutcomeTiles`, a new
+`src/lib/platformModules.js` public module catalogue with an available/beta/upcoming status policy,
+`scripts/release-regression.mjs` (539 lines) and its test, an `api-v1` OpenAPI contract test, an
+export contract test, ~165 lines of `screens.css`, refreshed Chromium visual baselines, and the
+`test:e2e:deploy` and `test:release` scripts.
+
+---
+
+## 3. Two defects found by checking the code against the documents
+
+### 3.1 🔴 Six live catalogue issues advertise a shipped module as "(coming)"
+
+`MODULES[].available` drives `IssueMatrix.jsx:203`'s `(coming)` badge. **Three flags are stale:**
+
+| Module | Flag | Reality | Real `issueCatalog` entries routed to it |
+|---|---|---|---|
+| `ai_visibility` | `false` | W6/W7 shipped — `prompt-runs` + `benchmarks` routes, `aiVisibility.js`, `citationStates.js`, `promptTaxonomy.js` | **2 — live-visible** |
+| `trust_and_proof` | `false` | W13 shipped — `0062`, `trustProof.js`, `/schema-trust/*` | **4 — live-visible** |
+| `local_directory` | `false` | W12 shipped — `0058`, `napModel.js`, `directorySources.js` | 0 — latent |
+
+**Symptom:** a customer whose page trips any of those six findings is told the module that fixes it
+is still on the way.
+**Root cause:** a declared-vs-actual flag with nothing re-checking it — the same drift class W13
+caught in `local_directory.built`. ⚠️ **`CLAUDE.md` records the opposite** (*"the '(coming)' badge is
+now UNREACHABLE FROM REAL DATA"*), which is false in both directions: it is reachable, and two of
+the modules it reaches are built.
+**Why no test caught it:** the badge's own regression test uses a **deliberately synthetic** module
+and says why, so it structurally cannot see the real catalogue.
+**Resolution:** not patched. Stage 0.2 of the plan fixes the three flags and adds the missing guard
+— *every module referenced by a real `issueCatalog` entry whose workstream has shipped must read
+`available: true`* — extended to the new public `platformModules.js`, which carries the same drift
+risk on a marketing surface.
+
+⚠️ `brand_discoverability`, `product_discoverability` and `service_findability` read `false`
+**correctly for now** — W11 shipped the model but DEV-01 leaves it unreachable, so those flip in
+CP-1.1, not before.
+
+### 3.2 🔴 M1–M13 maps onto only SIX of the repo's thirteen modules
+
+W4 declined to guess the numbering and left `mCode: null` on all thirteen, with
+`gapTaxonomy.test.js` asserting `toBeNull()` for every one. §5 of the BRD/PRD now supplies the list
+— and **the counts both being thirteen is a coincidence, not a correspondence.** §5's M-codes are
+*architectural modules*; the repo's `MODULES` are *recommendation destinations*.
+
+| Repo module | §5 M-code |
+|---|---|
+| `recommendation_studio` | **M5** Recommendation Studio |
+| `validation_lab` | **M6** Validation Lab |
+| `ai_visibility` | **M7** Benchmarks & AI Visibility |
+| `entity_graph` | **M9** Entity Graph Builder |
+| `local_directory` | **M10** Local & Directory Intelligence |
+| `trust_and_proof` | **M11** Trust & Proof Audit |
+
+The other seven — `technical_remediation`, `schema_intelligence`, `business_truth_record`, the
+three subject scores, `service_radius` — are sub-capabilities of M2/M3/M9/M10 with no §5 entry.
+Conversely M1 Audit Intake, M2 Extraction & Evidence, M3 Scoring Engine, M4 Gap Analysis, M8
+Workflow Hub, **M12 SXO Experience Lab** and **M13 Portfolio Operations** are not referral
+destinations and get no repo module.
+
+**Resolution:** fill in six, leave seven null **with the reason written down**, and rewrite the
+`toBeNull()` assertion to pin the split rather than the absence. Inventing seven codes is the exact
+mistake W4 declined to make; the slug stays the stored identifier either way. Recorded as
+**P3-DEV-02**, Stage 0.3.
+
+### 3.3 The specified master score double-counts technical health
+
+Expanding §11.3 through §7.3, Technical Accessibility reaches the master four ways —
+`0.25×0.40 + 0.20×0.15 + 0.20×0.20 + 0.35×0.20 = 0.24` — while CWV and mobile parity arrive
+*again* inside SXO's own `UX` (`0.35 × 0.20 × 0.50 = 0.035`), having already arrived through `TD`.
+
+**It is the document's own model, so P3 implements it as specified.** But §13 requires every score
+to store its calculation components, so the overlap ships as **disclosure in the explainability
+payload**, not silently smoothed away. Recorded as **P3-DEV-03**, gated on **D14**.
+
+---
+
+## 4. Verification evidence
+
+Run on the merged tree, not carried forward:
+
+| Gate | Result |
+|---|---|
+| `npx vitest run` | **396 files / 6569 passed / 0 skipped / 0 failed** (+5 files, +39 tests from staging) |
+| `npm run test:db` | **64 migrations** · referral **17** · workflows **56** · 0 failed |
+| `npm run build` | clean |
+| `npm run prerender` | 28 rendered / 28 written / 0 failed |
+| `npm run check:prerender` | 28 generated pages / **112 asset references, all present** |
+| `npm run test:security` | source and dependency checks passed |
+| `scripts/verify-discoverability-e2e.test.mjs` | 23 / 23 (doc↔registry parity still green after the plan rewrite) |
+
+⚠️ The `✗` marks in the vitest log are probes inside a readiness smoke test against a non-running
+server — that file passes; they are not failures.
+
+---
+
+## 5. Open items for the next session
+
+**P3 implementation is being handed to Codex.** The plan is the contract; these are the inputs it
+still needs.
+
+### 5.1 Decisions that gate work — none can be defaulted
+
+| # | Decision | Gates |
+|---|---|---|
+| **D12** | **How a scorable subject is created** — auto-mint per approved entity, or an explicit act with its own endpoint? Auto-minting puts a row in `audit_subjects` for every proposed-then-rejected node with a score history hanging off it. The choice shows up in stored rows, and **the document does not address it** because DEV-01 is our defect, not a gap in the spec. | CP-1.1 — Stage 1 cannot start |
+| **D22** | **Which of the two regression runners absorbs P3's checks** — `verify-discoverability-e2e.mjs` (61 checks) or staging's `release-regression.mjs` (539 lines). Two runners disagreeing about release readiness is worse than either alone. | Stage 0.5 |
+| **D21** | **Do W12's reach-ranked directory tiers survive §9.6's published `5x/4x/4x/3x/1–2x`?** W12 put `registry` below `major_aggregator` on written reasoning; a tier weight moves every NAP score, so one of them gives. | Stage 0.6 |
+| **D14** | Master score **stored or read-time composite**. Storing it bumps `SCORING_MODEL_VERSION` to `v4` and makes every stored baseline incomparable on release day. Recommended: read-time composite over two audit objects. | CP-2.7 |
+| **D15** | What *"weights configurable by business model"* (§11.3) means — it contradicts the profile-is-a-lens rule, pinned by test. Recommended: a stored, versioned weight-set id with `auditDiff` refusing across ids. | CP-2.7 |
+| **D16** | Analytics data governance — **a default retention period**, deletion on disconnect, token encryption, purge-list placement, `Privacy.jsx`. §13 requires configurability and names no default. | Stage 3 |
+| **D17** | `/api/v1/sxo/*` vs D2's canonical prefix. Recommended: `/api/v1/discoverability/sxo/*` canonical, `/api/v1/sxo/*` a permanent alias. | CP-2.9 |
+| **D19** | Which analytics providers ship first, and the monthly call budget against §13's 60 s median. | Stage 3 |
+| **D20** | Entitlement and packaging. Business-value doc §9 names **Search-to-Outcome Intelligence** and **Enterprise Discoverability OS**. | CP-2.9 |
+
+✅ **D13 resolved** — every SXO weight and component id is transcribed in §0.1 of the plan.
+✅ **D18 resolved** — §13's seven roles (`viewer`, `analyst`, `editor`, `manager`, `admin`,
+`agency admin`, `client viewer`) and §9.10's seven approval stages are named.
+
+### 5.2 Operator tasks
+
+- [ ] 🔴 **Apply `0050`–`0064` to production.** Fifteen behind; every P2 endpoint reads a table that
+      does not exist there, so a deploy without the apply turns a feature that tested clean twice
+      into a 500. **`0061` first and alone** if a feature release is not imminent — it is the RPC
+      lockdown: ten `SECURITY DEFINER` functions taking a caller-supplied `p_user_id`, each an
+      impersonation primitive reachable with the committed publishable key.
+      [Runbook §4d + §4e](../DB-MIGRATION-RUNBOOK.md).
+- [ ] Verify with `npm run verify:rls -- --prod` → 15/15 refused.
+- [ ] **Next migration number is `0065`.**
+- [ ] Decide whether `Analysis-2/` should live in a **private** repo. It is out of `staging` and off
+      both discoverability branches; `git revert 000c008` restores it if wanted.
+- [ ] The two source documents (BRD/PRD + business-value analysis) are **deliberately not
+      committed** — this repository is public. They are held outside it; the plan cites every clause
+      by section number so it can be checked against them without them being in the repo.
+
+### 5.3 Codex handover notes
+
+* **Read `docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md` §2 before §6.** §2 is the reuse map and
+  the core of the plan; §6 is the stage list. Building Stage 2 without §2 rebuilds `TD` and half of
+  `UX` from scratch.
+* **Stage 0 and Stage 1 are unblocked** except CP-1.1 (needs D12) and CP-0.5 (needs D22).
+* Every checkpoint closes the same five ways: vitest green with **each new guard confirmed RED
+  first**; `test:db` green; the regression runner **exit 0, not 2**; the test sheet gains its rows
+  with matching ids; anything deferred gains a deviation-register row with a named reason.
+* The plan's §8 carries **15 standing rules** inherited from earlier repairs — rule 14 is the new
+  one: *extend before you build*, and a new module declares `reusesFrom`.
+* A review surface for the plan was published as a private artifact this session (reuse map, the
+  two defects, the stages, the decisions). It is a read-only view of the same document.
+
+---
+
 ## 2026-09-12 23:06 IST — Trial-status alignment merged to staging and deployed
 
 ### Quick orientation
