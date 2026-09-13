@@ -85,6 +85,8 @@ const FEATURE_ROWS = [
   // allowance of at least 25 (`audit.benchmark`). Mirrored here rather than
   // re-derived, so the table cannot drift from what the server enforces.
   { key: "benchmarks",     group: "Discoverability", label: "Competitive benchmarks",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
+  { key: "sxo",            group: "Discoverability", label: "Search-to-Outcome Intelligence", render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
+  { key: "portfolio_os",   group: "Discoverability", label: "Enterprise Discoverability OS",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 100) },
   { key: "csv",            group: "Exports",     label: "CSV export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("csv")) },
   { key: "pdf",            group: "Exports",     label: "PDF export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("pdf")) },
   { key: "markdown",       group: "Exports",     label: "Markdown export",             render: (p) => fmtBool((p.limits?.exports || []).includes("markdown")) },

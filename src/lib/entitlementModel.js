@@ -42,6 +42,8 @@ export const CAPS = Object.freeze([
   "audit.schema_trust",
   "audit.subject_score",
   "audit.revalidate",
+  "audit.sxo",
+  "audit.portfolio",
   "enrich",
   "ai",
   "export.csv",
@@ -524,13 +526,17 @@ export function can(ent, capability, ctx = {}) {
     case "audit.entity_graph":
     case "audit.local_directory":
     case "audit.schema_trust":
-    case "audit.subject_score": {
+    case "audit.subject_score":
+    case "audit.sxo":
+    case "audit.portfolio": {
       const names = {
         "audit.business_truth": "The canonical business truth record",
         "audit.entity_graph": "The entity graph",
         "audit.local_directory": "Local and directory intelligence",
         "audit.schema_trust": "Schema and trust intelligence",
         "audit.subject_score": "Brand, product and service scoring",
+        "audit.sxo": "Search-to-Outcome Intelligence",
+        "audit.portfolio": "Enterprise Discoverability OS",
       };
       const what = names[capability] || "This intelligence module";
       if (!L.audits) {

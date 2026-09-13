@@ -114,8 +114,8 @@ describe("the check registry", () => {
 
   it("covers every section of the companion document", () => {
     const prefixes = new Set(allChecks.map((c) => c.id[0]));
-    // P pre-flight · A P1 · B W9/W10 · C W12 · D W13 · E W14 · F W11 · S security
-    expect([...prefixes].sort()).toEqual(["A", "B", "C", "D", "E", "F", "P", "S"]);
+    // P pre-flight · A P1 · B W9/W10 · C W12 · D W13 · E W14 · F W11 · G P3A · H P3B · I P3C · S security
+    expect([...prefixes].sort()).toEqual(["A", "B", "C", "D", "E", "F", "G", "H", "I", "P", "S"]);
   });
 
   // Coverage that quietly omits what it does not cover is the same defect as
@@ -179,7 +179,7 @@ describe("the safety model", () => {
 });
 
 describe("the companion document and the runner are one artifact in two forms", () => {
-  const DOC = readFileSync(join(ROOT, "docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md"), "utf8");
+  const DOC = readFileSync(join(ROOT, "docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md"), "utf8");
 
   // A document that restates the thing it documents cannot catch it drifting —
   // the defect that let `UNBUILT_SOURCES` stay stale for a whole session, and

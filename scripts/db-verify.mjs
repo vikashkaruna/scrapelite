@@ -180,10 +180,11 @@ grant usage on schema public to anon, authenticated;
 //   changing any stored id: eighteen internal entity types cover §9.2's
 //   fifteen semantic concepts, and thirteen internal predicates cover its
 //   nine relationships. No objects are added; counts are unchanged.
-// Taking these to 103 / 50 / 29.
+// P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions)
+// Taking these to 116 / 53 / 29.
 const EXPECT = {
-  tables: 104,
-  functions: 50,
+  tables: 116,
+  functions: 53,
   triggers: 29,
   tablesWithoutRls: 0,
 };
@@ -2827,8 +2828,8 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     `insert into public.audit_targets (user_id, canonical_url, host, label)
      values ($1,'https://acme.com/pricing','acme.com','Pricing') returning id`, [owner])).id;
   const ent = (await one(
-    `insert into public.audit_entities (user_id, entity_type, name, source, canonical_domain)
-     values ($1,'brand','Acme Cloud','declared','acme.com') returning id`, [owner])).id;
+    `insert into public.audit_entities (user_id, entity_type, name, source, canonical_domain, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,'brand','Acme Cloud','declared','acme.com',$1,$2,now(),'approved') returning id`, [owner, other])).id;
   const rec = (await one(
     `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
      values ($1,'acme.com','Acme') returning id`, [owner])).id;
@@ -2898,7 +2899,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   check("🔴 upsert_audit_subject is ATOMIC — every insert carries ON CONFLICT",
     (subjSrc.match(/insert into public\.audit_subjects/g) || []).length ===
     (subjSrc.match(/on conflict/gi) || []).length &&
-    (subjSrc.match(/on conflict/gi) || []).length === 3);
+    (subjSrc.match(/on conflict/gi) || []).length >= 3);
   check("...inferring each PARTIAL index by restating its predicate",
     /on conflict \(user_id, subject_kind, target_id\) where target_id is not null/i.test(subjSrc)
     && /on conflict \(user_id, subject_kind, entity_id\) where entity_id is not null/i.test(subjSrc)

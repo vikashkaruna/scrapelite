@@ -73,7 +73,7 @@
 > `npm run verify:discoverability -- --base-url=<host> --target=<url>` runs **61 checks** against a
 > real deployment, a real session and a real database
 > ([scripts/verify-discoverability-e2e.mjs](scripts/verify-discoverability-e2e.mjs); the sheet is
-> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md),
+> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md),
 > renamed from `MANUAL-TEST-…`). **Run in that order because each environment answers a different
 > question**; passing on one does not answer for the next. **13 rows genuinely cannot be automated**
 > and are listed rather than quietly omitted. ⚠️ **Exit 2 means INCONCLUSIVE, not pass** — a run that

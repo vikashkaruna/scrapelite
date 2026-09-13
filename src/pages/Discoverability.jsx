@@ -179,8 +179,8 @@ export default function Discoverability() {
 
   useEffect(() => {
     if (!user) { setSubjects([]); return; }
-    discoverability.listSubjects(currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {})
-      .then((res) => setSubjects(res.subjects || []))
+    (discoverability?.listSubjects ? discoverability.listSubjects(currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {}) : Promise.resolve({ subjects: [] }))
+      .then((res) => setSubjects(res?.subjects || []))
       .catch(() => setSubjects([]));
   }, [user, currentWorkspaceId]);
 

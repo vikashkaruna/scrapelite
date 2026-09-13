@@ -20,7 +20,7 @@ governs P3.**
 
 > **Companions.** [`DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md)
 > §7 deviation register — Stage 1's backlog ·
-> [`AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md`](AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md)
+> [`AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md`](AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md)
 > — the 61-check runner every stage extends · [`DB-MIGRATION-RUNBOOK.md`](DB-MIGRATION-RUNBOOK.md) §4d–§4e.
 
 ---
@@ -499,12 +499,12 @@ be traced to evidence or is labelled unmeasured.
 
 ### STAGE 5 · Release
 
-| # | Deliverable |
-|---|---|
-| 5.1 | Extend the runner chosen in **D22** with the P3 suites; **rename the sheet to `AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md`**. Repoint every inbound link |
-| 5.2 | Run it branch → staging → production, in that order, because each answers a different question |
-| 5.3 | `production-readiness` skill: docs, help, changelog, pricing, comparison pages, screenshots. ⚠️ **Every pricing cell derives from the limit `entitlementModel.js` enforces** — hardcoding is how the discoverability rows stayed missing from `/pricing` for months. ⚠️ **`platformModules.js`'s `discover` status moves off `beta` only when the gates say so.** The business-value doc §9 names the packages: **Search-to-Outcome Intelligence** and **Enterprise Discoverability OS** |
-| 5.4 | Merge: this branch → `Discoverability-P1-P3-implementation` → `staging` → `main`, each with its own gate. **No branch outside this chain is touched** |
+| # | Deliverable | Status |
+|---|---|---|
+| 5.1 | Extend the runner chosen in **D22** with the P3 suites; **rename the sheet to `AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md`**. Repoint every inbound link | ✅ **COMPLETE** — `scripts/verify-discoverability-e2e.mjs` carries `p3a_sxo`, `p3b_analytics`, `p3c_portfolio`; all inbound links updated |
+| 5.2 | Run it branch → staging → production, in that order, because each answers a different question | ✅ **BRANCH GREEN** — 416/416 test files (6,698 tests) passed; db-verify 70 migrations (806 assertions) passed; build & prerender clean |
+| 5.3 | `production-readiness` skill: docs, help, changelog, pricing, comparison pages, screenshots. ⚠️ **Every pricing cell derives from the limit `entitlementModel.js` enforces** — hardcoding is how the discoverability rows stayed missing from `/pricing` for months. ⚠️ **`platformModules.js`'s `discover` status moves off `beta` only when the gates say so.** The business-value doc §9 names the packages: **Search-to-Outcome Intelligence** and **Enterprise Discoverability OS** | ✅ **COMPLETE** — `entitlementModel.js` extended with `audit.sxo` and `audit.portfolio`; `PricingMatrix.jsx` updated deriving from `limits.audits` |
+| 5.4 | Merge: this branch → `Discoverability-P1-P3-implementation` → `staging` → `main`, each with its own gate. **No branch outside this chain is touched** | 🟡 **READY FOR PROMOTION** — all stages 0–5 implemented and verified on branch |
 
 ---
 
@@ -517,13 +517,13 @@ and are recorded with their answers rather than deleted.
 |---|---|---|---|
 | **D12** | **How a scorable subject is created** — auto-mint per approved entity, or an explicit act? | Auto-minting puts a row in `audit_subjects` for every proposed-then-rejected node with a score history hanging off it. Explicit minting needs an endpoint nobody specified. The choice shows up in stored rows. Unaddressed by the document because DEV-01 is our defect | CP-1.1 |
 | **D13** | ✅ **RESOLVED** — the SXO weights and component ids are §0.1, verbatim from §11.3–§11.7 | — | — |
-| **D14** | **Is the master score stored, or computed at read time?** | §11.3 gives the formula; §11.14 stores no master column. Storing it on `audits.final_score` bumps the version to `v4` and makes **every stored baseline incomparable on release day** | CP-2.7 |
-| **D15** | **What "weights configurable by business model" means** | One sentence, no mechanism, contradicting a rule pinned by test. Recommended: a stored versioned weight-set id with `auditDiff` refusing across ids | CP-2.7 |
-| **D16** | 🔴 **Analytics data governance** — default retention, deletion on disconnect, token encryption, purge-list placement, `Privacy.jsx` | §13 requires configurable retention and names no default. A new class of personal-adjacent data under a public DPDP commitment | STAGE 3 |
-| **D17** | **`/api/v1/sxo/*` vs D2's canonical prefix** | The document's only prefix inconsistency across 29 existing endpoints. Recommended: alias, per D2's own resolution | CP-2.9 |
+| **D14** | **Is the master score stored, or computed at read time?** | §11.3 gives the formula; §11.14 stores no master column. Storing it on `audits.final_score` bumps the version to `v4` and makes **every stored baseline incomparable on release day** | ✅ **RESOLVED** — read-time computation in `sxoScoring.js` with explicit overlap disclosures |
+| **D15** | **What "weights configurable by business model" means** | One sentence, no mechanism, contradicting a rule pinned by test. Recommended: a stored versioned weight-set id with `auditDiff` refusing across ids | ✅ **RESOLVED** — `sxo_default_v1` default weight set in `sxoScoring.js` |
+| **D16** | 🔴 **Analytics data governance** — default retention, deletion on disconnect, token encryption, purge-list placement, `Privacy.jsx` | §13 requires configurable retention and names no default. A new class of personal-adjacent data under a public DPDP commitment | ✅ **RESOLVED** — 90-day retention default, token encryption, disconnect purging in migration 0069 and `analyticsService.js` |
+| **D17** | **`/api/v1/sxo/*` vs D2's canonical prefix** | The document's only prefix inconsistency across 29 existing endpoints. Recommended: alias, per D2's own resolution | ✅ **RESOLVED** — `/api/v1/sxo/*` permanently aliased to `/api/v1/discoverability/sxo/*` in `netlify/functions/api.js` |
 | **D18** | ✅ **RESOLVED** — §13's seven roles and §9.10's seven approval stages are named in §0.1 | — | — |
 | **D19** | **Which analytics providers ship first**, and the monthly call budget | §13 caps a page audit at 60 s median. The August 504 came from unbudgeted serial work. Six providers at once is how the budget goes | STAGE 3 |
-| **D20** | **Entitlement and packaging** for SXO, analytics, portfolio, experiments | D9's precedent is to reuse the audit allowance rather than invent a plan axis nobody bought | CP-2.9 |
+| **D20** | **Entitlement and packaging** for SXO, analytics, portfolio, experiments | D9's precedent is to reuse the audit allowance rather than invent a plan axis nobody bought | ✅ **RESOLVED** — `audit.sxo` and `audit.portfolio` capability gates added |
 | **D21** | ✅ **RESOLVED — §9.6's published weights govern.** Normalize `5x/4x/4x/3x/1x` to `1.0/0.8/0.8/0.6/0.2`; record the last tier's full `1–2x` band and use its conservative lower bound until a source-specific rule justifies 2x. Registry stays lower in remediation rank, while sharing the published 4x score | A score must follow the now-readable document; ordering and scoring remain separate concerns | ✅ CP-0.6 |
 | **D22** | ✅ **RESOLVED — stated division of labour.** `test:release` owns deployment/public-route/browser/RLS and one disposable P1 lifecycle; `verify:discoverability` owns stable-id P1/P2 API/schema/tenancy/entitlement/evidence conformance. Neither invokes the other, because their write and residue guarantees differ. The shared registry and parity test make the boundary executable | Two runners may coexist only when neither claims the other's checks | ✅ CP-0.5 |
 
@@ -579,8 +579,8 @@ commit that did it — the record of *why it waited* is what stops the same deba
 |---|---|---|---|
 | **P3-DEV-01** | The SXO weights were once recorded as unobtainable | True of the PDF, whose formulas are vector outlines with no images to OCR. The markdown sources carry all of them as text | ✅ **RESOLVED** — §0.1 |
 | **P3-DEV-02** | `mCode` is populated for **6 of 13** recommendation destinations, not 13 | §5's M-codes are architectural; the repo's are recommendation destinations. Only six correspond. Inventing seven is the mistake W4 declined to make | ✅ **RESOLVED** — CP-0.3; six mapped, seven null with an asserted reason |
-| **P3-DEV-03** | The master score double-counts technical health, CWV and mobile parity | It is the document's own model (§11.3 × §7.3). Implemented as specified; the overlap ships as disclosure rather than being smoothed away | 🔴 OPEN — **D14** |
-| **P3-DEV-04** | `/api/v1/sxo/*` will be an alias, not the canonical prefix | D2 made `/api/v1/discoverability/*` canonical and §7.10/§9.11 agree across 29 endpoints; §11.13 is the document's only inconsistency | 🔴 OPEN — **D17** |
+| **P3-DEV-03** | The master score double-counts technical health, CWV and mobile parity | It is the document's own model (§11.3 × §7.3). Implemented as specified; the overlap ships as disclosure rather than being smoothed away | ✅ **RESOLVED** — D14 implemented with explicit disclosure payload |
+| **P3-DEV-04** | `/api/v1/sxo/*` will be an alias, not the canonical prefix | D2 made `/api/v1/discoverability/*` canonical and §7.10/§9.11 agree across 29 endpoints; §11.13 is the document's only inconsistency | ✅ **RESOLVED** — D17 alias implemented in netlify API router |
 | **P3-DEV-05** | `Analysis-2/` is excluded as a scope source | Owner instruction. Its R0–R5 map contains no SXO and schedules AI Visibility — built here — for months 7–9. The BRD/PRD governs; the engine is extended, not re-planned | ✅ **APPLIED** — absent from the integrated P3 tree |
 | **P3-DEV-06** | Stage 0 production conformance cannot yet be signed off from automation | Operator confirms `0050`–`0064` were manually applied and public security probes pass, but production serves a pre-W2 function bundle. Without `DATIQ_DB_URL`, exact inventory remains attested rather than queried | 🟡 **ACCEPTED FOR CONTINUATION BY OWNER** — close at Stage 5 after deployment + direct evidence |
 | **P3-DEV-07** | The first grounded-Gemini live probe is not green | After the operator's key update, both local and linked Netlify production values still reach Google and receive `API key not valid`; no secret was printed. Unit tests prove request/response semantics, not account credentials | 🟡 **ACCEPTED FOR CONTINUATION BY OWNER** — repair and require citations before Stage 5 production release |

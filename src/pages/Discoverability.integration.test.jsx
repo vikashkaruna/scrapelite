@@ -27,6 +27,8 @@ const api = vi.hoisted(() => ({
   // header degrades to the identity block and every existing assertion below
   // keeps testing what it was written to test.
   summary: vi.fn(async () => ({ summary: null, unavailable: true })),
+  listSubjects: vi.fn(async () => ({ subjects: [] })),
+  evaluateSxo: vi.fn(async () => ({ sxo: { score: 85 } })),
 }));
 
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn(), getAuthToken: () => "tok" }));
