@@ -63,7 +63,9 @@ import { createDeadline, budgetFromEnv } from "./lib/audit/deadline.js";
 import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
-import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
+import {
+  buildWorkspaceCtx, requireWorkspaceDiscoverabilityAction,
+} from "./lib/workspaceContext.js";
 import {
   APPROVED_TYPES, APPROVED_TYPE_IDS, EXCLUDED_TYPES,
   SCHEMA_COMPONENTS, SCHEMA_COMPONENT_IDS,
@@ -79,7 +81,9 @@ import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
 import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend, incomparableDiff, subjectMismatchCause } from "../../src/lib/discoverability/auditDiff.js";
-import { sameSubject, subjectMismatchReason, scoreIdFor } from "../../src/lib/discoverability/subjectModel.js";
+import {
+  sameSubject, subjectMismatchReason, scoreIdFor, canCreateEntitySubject,
+} from "../../src/lib/discoverability/subjectModel.js";
 import {
   scoreSubject, missingFacts, isThin, intentCoverage,
   SUBJECT_SCORES, SUBJECT_SCORE_IDS, SUBJECT_MODEL_VERSION, THIN_COVERAGE,
@@ -624,10 +628,18 @@ export const handler = async (event) => {
 
     // ── /recommendations ───────────────────────────────────────────────────
     if (root === "recommendations" && id) {
+      const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
+      // Scope first, permission second: foreign ids remain indistinguishable
+      // from missing ids and cannot be enumerated through a role error.
+      const scopedRecommendation = await store.getRecommendation(userId, id, { workspaceId });
+      if (!scopedRecommendation) return notFound("Recommendation not found.");
+
       if (method === "POST" && sub === "assign") {
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
         // `assignee: null` puts it down. Anything else is checked against
         // shared workspace membership by the database, not here.
-        const r = await store.setRecommendationAssignee(userId, id, body.assignee ?? null);
+        const r = await store.setRecommendationAssignee(userId, id, body.assignee ?? null, { workspaceId });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         await store.recordEvent(userId, {
@@ -648,18 +660,21 @@ export const handler = async (event) => {
       // W8 — the full lifecycle. The four original verbs keep their exact
       // meanings so no existing client breaks; the rest are new.
       if (method === "POST" && VERB_TO_STATE[sub]) {
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
         const status = VERB_TO_STATE[sub];
         const r = await store.setRecommendationStatus(userId, id, status, body.reason, {
           validatedByAuditId: body.validated_by_audit_id || null,
           assignee: body.assignee || null,
           dueAt: body.due_at,
           notes: body.notes,
+          workspaceId,
         });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         // W8 — the audit trail entry AND the webhook, which are different
         // readers: the first is ours, the second is somebody's integration.
-        await dispatchAuditEvent(userId, WEBHOOK_EVENT_FOR[status] || null, {
+        await dispatchAuditEvent(scopedRecommendation.user_id || userId, WEBHOOK_EVENT_FOR[status] || null, {
           audit: { id: r.recommendation.audit_id },
           recommendation: r.recommendation,
         }).catch(() => {});
@@ -1064,12 +1079,18 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability =
  * they already own would be taking away something they were given, which is a
  * different act from declining to create more.
  */
-async function gateP2Capability(event, capability, rawWorkspaceId) {
+async function gateP2Capability(event, capability, rawWorkspaceId, action = "run_analysis") {
   const resolved = await resolveRequestEntitlement(event);
-  const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, rawWorkspaceId);
-  if (refusal) {
-    return { ok: false, response: json(403, { error: refusal.message, code: refusal.code }) };
+  const roleGate = await requireWorkspaceDiscoverabilityAction(
+    resolved.userId, rawWorkspaceId, action,
+  );
+  if (!roleGate.ok) {
+    return {
+      ok: false,
+      response: json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code }),
+    };
   }
+  const workspaceCtx = roleGate.ctx || {};
   if (resolved.degraded) return { ok: true, resolved };
 
   const check = checkCapability(resolved, capability, { ...workspaceCtx });
@@ -1093,8 +1114,11 @@ async function gateP2Capability(event, capability, rawWorkspaceId) {
  * to see it. A refusal has to reach the person who asked.
  */
 async function revalidateRoute(event, userId, recId, body) {
-  const rec = await store.getRecommendation(userId, recId);
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
+  const rec = await store.getRecommendation(userId, recId, { workspaceId });
   if (!rec) return notFound("Recommendation not found.");
+  const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+  if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
 
   // Only something believed FIXED is worth re-checking. Asking to revalidate
   // an open item would spend an audit to confirm what the last one said.
@@ -1121,11 +1145,12 @@ async function revalidateRoute(event, userId, recId, body) {
   }
 
   // 🔴 THE REAL AUDIT QUOTA, not a feature flag — this spends one.
-  const gate = await gateAuditQuota(event, userId, 1, body.workspace_id, "audit.revalidate");
+  const gate = await gateAuditQuota(event, userId, 1, workspaceId, "audit.revalidate");
   if (!gate.ok) return gate.response;
 
   const claim = await store.claimRevalidation(userId, recId, {
     baselineAuditId: body.baseline_audit_id || rec.audit_id || null,
+    workspaceId,
   });
   if (!claim.ok) {
     return json(503, { error: "Could not record the request.", code: "STORAGE_UNAVAILABLE", detail: claim.error });
@@ -1263,6 +1288,8 @@ const WEBHOOK_EVENT_FOR = Object.freeze({
   done: "recommendation.implemented",   // one state, one event
   validation_scheduled: "recommendation.validation_scheduled",
   validated: "recommendation.validated",
+  no_measurable_change: "recommendation.no_measurable_change",
+  regressed: "recommendation.regressed",
   dismissed: "recommendation.dismissed",
   open: "recommendation.reopened",
 });
@@ -1277,6 +1304,8 @@ const VERB_TO_STATE = Object.freeze({
   implemented: "implemented",
   schedule_validation: "validation_scheduled",
   validate: "validated",
+  no_change: "no_measurable_change",
+  regress: "regressed",
 });
 
 async function promptMonitorRoute(event, userId, method, id, sub, body) {
@@ -1742,11 +1771,16 @@ function describeVersion(row) {
 }
 
 async function businessTruthRoute(userId, method, path, body, event) {
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
   // W14/D9. Writes are gated; reads are not — refusing to show a customer the
   // record they already own is taking away something they were given, which is
   // a different act from declining to create more.
   if (method !== "GET") {
-    const gate = await gateP2Capability(event, "audit.business_truth", body.workspace_id);
+    const approving = path.includes("promote") || path.includes("reject") || path.includes("conflicts");
+    const gate = await gateP2Capability(
+      event, "audit.business_truth", workspaceId,
+      approving ? "approve_changes" : "propose_changes",
+    );
     if (!gate.ok) return gate.response;
   }
   // `path` is the whole parsed sub-path, because a version verb lives at
@@ -1772,6 +1806,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   if (!id) {
     if (method === "GET") {
       const q = event.queryStringParameters || {};
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, q.workspace_id, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
       const records = await store.listTruthRecords(userId, { workspaceId: q.workspace_id || null });
       return json(200, { records, count: records.length });
     }
@@ -1815,7 +1851,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── One record ───────────────────────────────────────────────────────────
   if (!sub) {
     if (method === "GET") {
-      const full = await store.getTruthRecordFull(userId, id);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       const canonical = full.versions.find((v) => v.id === full.current_version_id) || null;
       return json(200, {
@@ -1827,7 +1865,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       });
     }
     if (method === "DELETE") {
-      const r = await store.archiveTruthRecord(userId, id);
+      const r = await store.archiveTruthRecord(userId, id, { workspaceId });
       return r.ok ? json(200, { archived: true }) : notFound("Truth record not found.");
     }
     return notFound("Unknown endpoint.");
@@ -1836,7 +1874,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Versions ─────────────────────────────────────────────────────────────
   if (sub === "versions") {
     if (!subId && method === "POST") {
-      const record = await store.getTruthRecord(userId, id);
+      const record = await store.getTruthRecord(userId, id, { workspaceId });
       if (!record) return notFound("Truth record not found.");
 
       const source = body.source || "declared";
@@ -1869,7 +1907,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       const created = await store.createTruthVersion(userId, id, {
         fields,
         completeness: completeness.percent,
-        origin: "manual",
+        origin: "manual", workspaceId,
       });
       if (created.conflict) {
         return json(409, {
@@ -1888,19 +1926,23 @@ async function businessTruthRoute(userId, method, path, body, event) {
     }
 
     if (subId && method === "GET") {
-      const row = await store.getTruthVersion(userId, id, subId);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const row = await store.getTruthVersion(userId, id, subId, { workspaceId });
       return row ? json(200, { version: describeVersion(row) }) : notFound("Version not found.");
     }
 
     // Verbs on one version.
     if (subId && method === "POST" && verb) {
-      const row = await store.getTruthVersion(userId, id, subId);
+      const row = await store.getTruthVersion(userId, id, subId, { workspaceId });
       if (!row) return notFound("Version not found.");
 
       if (verb === "promote") {
-        const r = await store.promoteTruthVersion(userId, id, subId, { note: body.note || null });
+        const r = await store.promoteTruthVersion(userId, id, subId, {
+          note: body.note || null, workspaceId,
+        });
         if (r.ok) {
-          const full = await store.getTruthRecordFull(userId, id);
+          const full = await store.getTruthRecordFull(userId, id, { workspaceId });
           return json(200, {
             promoted: true,
             record: full,
@@ -1940,7 +1982,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
           { code: "REASON_REQUIRED" });
       }
 
-      const r = await store.setTruthVersionState(userId, id, subId, next, { note: note || null });
+      const r = await store.setTruthVersionState(userId, id, subId, next, {
+        note: note || null, workspaceId,
+      });
       if (!r.ok) {
         if (r.notFound) return notFound("Version not found.");
         if (r.refused) return json(409, { error: "Approval goes through promote, which carries the interlocks.", code: "USE_PROMOTE" });
@@ -1955,7 +1999,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Diff ─────────────────────────────────────────────────────────────────
   if (sub === "diff" && method === "GET") {
     const q = event.queryStringParameters || {};
-    const full = await store.getTruthRecordFull(userId, id);
+    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+    const full = await store.getTruthRecordFull(userId, id, { workspaceId });
     if (!full) return notFound("Truth record not found.");
 
     const byId = new Map(full.versions.map((v) => [v.id, v]));
@@ -1986,7 +2032,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Conflicts ────────────────────────────────────────────────────────────
   if (sub === "conflicts") {
     if (!subId && method === "GET") {
-      const full = await store.getTruthRecordFull(userId, id);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       return json(200, { conflicts: full.conflicts, count: full.conflicts.length });
     }
@@ -1996,7 +2044,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       if (!ALLOWED.includes(resolution)) {
         return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
       }
-      const r = await store.resolveTruthConflict(userId, id, subId, resolution);
+      const r = await store.resolveTruthConflict(userId, id, subId, resolution, { workspaceId });
       return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
     }
   }
@@ -2023,11 +2071,16 @@ async function businessTruthRoute(userId, method, path, body, event) {
 // unreviewed nodes is a half-built statement.
 
 async function entityGraphRoute(userId, method, path, body, event) {
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
   // W14/D9. Writes are gated; reads are not — refusing to show a customer the
   // record they already own is taking away something they were given, which is
   // a different act from declining to create more.
   if (method !== "GET") {
-    const gate = await gateP2Capability(event, "audit.entity_graph", body.workspace_id);
+    const approving = path.includes("approve") || path.includes("reject") || path.includes("resolve");
+    const gate = await gateP2Capability(
+      event, "audit.entity_graph", workspaceId,
+      approving ? "approve_changes" : "propose_changes",
+    );
     if (!gate.ok) return gate.response;
   }
   const [, section, id, verb] = path;
@@ -2046,11 +2099,13 @@ async function entityGraphRoute(userId, method, path, body, event) {
   // ── The graph ────────────────────────────────────────────────────────────
   if (!section && method === "GET") {
     const q = event.queryStringParameters || {};
+    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
     const truthRecordId = q.truth_record_id || null;
     const [entities, relationships, conflicts] = await Promise.all([
-      store.listEntities(userId, { truthRecordId }),
-      store.listRelationships(userId),
-      store.listGraphConflicts(userId, { truthRecordId }),
+      store.listEntities(userId, { truthRecordId, workspaceId }),
+      store.listRelationships(userId, { workspaceId }),
+      store.listGraphConflicts(userId, { truthRecordId, workspaceId }),
     ]);
 
     // Coverage is computed from the rows, in the pure model, so the number the
@@ -2116,7 +2171,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
         return bad("A rejection needs a reason. A rejected entity that keeps being re-proposed is itself a finding, and without the reason nobody can tell a decision from a mis-click.",
           { code: "REASON_REQUIRED" });
       }
-      const r = await store.rejectGraphRow(userId, "entity", id, reason);
+      const r = await store.rejectGraphRow(userId, "entity", id, reason, { workspaceId });
       return r.ok ? json(200, { entity: r.row }) : notFound("Entity not found.");
     }
 
@@ -2148,7 +2203,8 @@ async function entityGraphRoute(userId, method, path, body, event) {
       // supplied. A caller that could name its own endpoint types could declare
       // any edge legal, and the domain/range rules would enforce nothing.
       const [subject, object] = await Promise.all([
-        store.getEntity(userId, subjectId), store.getEntity(userId, objectId),
+        store.getEntity(userId, subjectId, { workspaceId }),
+        store.getEntity(userId, objectId, { workspaceId }),
       ]);
       if (!subject || !object) return notFound("One or both entities were not found.");
 
@@ -2164,7 +2220,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
       }
 
       const created = await store.createRelationship(userId, {
-        subjectId, predicate, objectId, source, note: body.note || null,
+        subjectId, predicate, objectId, source, note: body.note || null, workspaceId,
       });
       if (created.duplicate) {
         // 🔴 THIS SENTENCE USED TO BE FALSE. The route said "re-observing one
@@ -2180,7 +2236,9 @@ async function entityGraphRoute(userId, method, path, body, event) {
         // status code is a public contract `/api/v1` holders read. What
         // changed is that the body now reports what actually happened, so a
         // caller can tell a recorded sighting from a lost one.
-        const existing = await store.findRelationship(userId, { subjectId, predicate, objectId });
+        const existing = await store.findRelationship(userId, {
+          subjectId, predicate, objectId, workspaceId,
+        });
         let corroborated = false;
         if (existing) {
           const ev = await store.recordEntityEvidence({
@@ -2204,11 +2262,13 @@ async function entityGraphRoute(userId, method, path, body, event) {
     }
 
     if (id && method === "POST" && verb === "approve") {
-      const r = await store.approveEntityRelationship(userId, id, { note: body.note || null });
+      const r = await store.approveEntityRelationship(userId, id, {
+        note: body.note || null, workspaceId,
+      });
       if (r.ok) {
-        const relationship = await store.getRelationship(userId, id);
+        const relationship = await store.getRelationship(userId, id, { workspaceId });
         // The approved graph just changed, so its conflicts just changed.
-        const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null);
+        const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null, workspaceId);
         return json(200, { approved: true, relationship, conflicts: sweep });
       }
       if (r.notFound) return notFound("Relationship not found.");
@@ -2226,7 +2286,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
     if (id && method === "POST" && verb === "reject") {
       const reason = typeof body.reason === "string" ? body.reason.trim() : "";
       if (!reason) return bad("A rejection needs a reason.", { code: "REASON_REQUIRED" });
-      const r = await store.rejectGraphRow(userId, "relationship", id, reason);
+      const r = await store.rejectGraphRow(userId, "relationship", id, reason, { workspaceId });
       return r.ok ? json(200, { relationship: r.row }) : notFound("Relationship not found.");
     }
 
@@ -2237,7 +2297,11 @@ async function entityGraphRoute(userId, method, path, body, event) {
   if (section === "conflicts") {
     if (!id && method === "GET") {
       const q = event.queryStringParameters || {};
-      const conflicts = await store.listGraphConflicts(userId, { truthRecordId: q.truth_record_id || null });
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const conflicts = await store.listGraphConflicts(userId, {
+        truthRecordId: q.truth_record_id || null, workspaceId,
+      });
       return json(200, { conflicts, count: conflicts.length });
     }
     if (id && method === "POST" && verb === "resolve") {
@@ -2245,7 +2309,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
       if (!ALLOWED.includes(body.resolution)) {
         return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
       }
-      const r = await store.resolveGraphConflict(userId, id, body.resolution);
+      const r = await store.resolveGraphConflict(userId, id, body.resolution, { workspaceId });
       return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
     }
     return notFound("Unknown endpoint.");
@@ -2297,12 +2361,12 @@ function toRelationModels(rows, entities) {
  * ⚠️ AND IT NEVER FAILS THE APPROVAL. The edge was approved; a conflict sweep
  * that cannot write is not a reason to tell the user their approval failed.
  */
-async function refreshGraphConflicts(userId, truthRecordId = null) {
+async function refreshGraphConflicts(userId, truthRecordId = null, workspaceId = null) {
   try {
     const [entities, relationships, open] = await Promise.all([
-      store.listEntities(userId, { truthRecordId }),
-      store.listRelationships(userId),
-      store.listGraphConflicts(userId, { truthRecordId }),
+      store.listEntities(userId, { truthRecordId, workspaceId }),
+      store.listRelationships(userId, { workspaceId }),
+      store.listGraphConflicts(userId, { truthRecordId, workspaceId }),
     ]);
 
     const entityModels = entities.map((e) => ({
@@ -2323,7 +2387,9 @@ async function refreshGraphConflicts(userId, truthRecordId = null) {
         subject_entity_id: byId.has(c.subject_id) ? c.subject_id : null,
       }));
 
-    if (fresh.length) await store.recordGraphConflicts(userId, truthRecordId, null, fresh);
+    if (fresh.length) {
+      await store.recordGraphConflicts(userId, truthRecordId, null, fresh, { workspaceId });
+    }
     return { found: found.length, recorded: fresh.length };
   } catch {
     return null;
@@ -2368,11 +2434,15 @@ async function requireLocalRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.truth_record_id) {
-    const rec = await store.getTruthRecord(userId, body.truth_record_id);
+    const rec = await store.getTruthRecord(userId, body.truth_record_id, {
+      workspaceId: body.workspace_id || null,
+    });
     if (!rec) return { refusal: notFound("Business truth record not found.") };
   }
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id);
+    const subj = await store.getSubject(userId, body.subject_id, {
+      workspaceId: body.workspace_id || null,
+    });
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   return { refusal: null };
@@ -2414,6 +2484,13 @@ async function subjectScoreRoute(userId, method, path, body, event) {
   }
   const [, section] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   // The registry, so a client renders the same component names and weights the
   // server scores with rather than keeping a copy that drifts.
@@ -2437,9 +2514,41 @@ async function subjectScoreRoute(userId, method, path, body, event) {
     return json(200, intentCoverage(Array.isArray(body.intents) ? body.intents : []));
   }
 
+  if (section === "subjects" && method === "POST") {
+    if (!body.entity_id || !body.subject_kind) {
+      return bad("`entity_id` and `subject_kind` are required.");
+    }
+    const entity = await store.getEntity(userId, body.entity_id, {
+      workspaceId: body.workspace_id || null,
+    });
+    if (!entity) return notFound("Entity not found.");
+    const allowed = canCreateEntitySubject(entity, body.subject_kind);
+    if (!allowed.ok) {
+      return json(entity.state === "approved" ? 422 : 409, {
+        error: allowed.reason,
+        code: entity.state === "approved" ? "SUBJECT_KIND_MISMATCH" : "ENTITY_NOT_APPROVED",
+      });
+    }
+    const subjectId = await store.ensureSubject(userId, {
+      kind: body.subject_kind,
+      entityId: entity.id,
+      label: entity.name,
+      canonicalDomain: entity.canonical_domain,
+      workspaceId: entity.workspace_id || null,
+    });
+    if (!subjectId) return json(502, { error: "Could not create the subject." });
+    const subject = await store.getSubject(userId, subjectId, {
+      workspaceId: entity.workspace_id || null,
+    });
+    return json(201, { subject });
+  }
+
   if (section === "scores") {
     if (method === "GET") {
-      const rows = await store.listSubjectScores(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listSubjectScores(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       return json(200, { scores: rows, count: rows.length });
     }
 
@@ -2499,7 +2608,9 @@ async function requireSubjectScoreRefs(userId, body) {
   const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
-  const subject = await store.getSubject(userId, body.subject_id);
+  const subject = await store.getSubject(userId, body.subject_id, {
+    workspaceId: body.workspace_id || null,
+  });
   if (!subject) return { refusal: notFound("Subject not found.") };
 
   if (body.audit_id) {
@@ -2519,6 +2630,13 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   }
   const [, section] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   if (section === "schema-registry" && method === "GET") {
     return json(200, {
@@ -2534,7 +2652,10 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   // ── Schema observations ──────────────────────────────────────────────────
   if (section === "schema") {
     if (method === "GET") {
-      const rows = await store.listSchemaEntities(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listSchemaEntities(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       return json(200, { entities: rows, count: rows.length });
     }
 
@@ -2584,7 +2705,10 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   // ── Trust observations ───────────────────────────────────────────────────
   if (section === "trust") {
     if (method === "GET") {
-      const rows = await store.listTrustObservations(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listTrustObservations(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       const kind = q.kind || "brand";
       const bySignal = {};
       for (const row of rows) {
@@ -2675,7 +2799,9 @@ async function requireSchemaTrustRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id);
+    const subj = await store.getSubject(userId, body.subject_id, {
+      workspaceId: body.workspace_id || null,
+    });
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   if (body.audit_id) {
@@ -2695,6 +2821,13 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   }
   const [, section, id, verb] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   if (section === "schema" && method === "GET") {
     return json(200, {
@@ -2710,7 +2843,10 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   // ── Listings ─────────────────────────────────────────────────────────────
   if (section === "listings") {
     if (method === "GET") {
-      const rows = await store.listDirectoryListings(userId, { truthRecordId: q.truth_record_id || null });
+      const rows = await store.listDirectoryListings(userId, {
+        truthRecordId: q.truth_record_id || null,
+        workspaceId,
+      });
       return json(200, {
         listings: rows,
         count: rows.length,
@@ -2760,7 +2896,9 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     }
 
     if (method === "DELETE" && id) {
-      const r = await store.deleteDirectoryListing(userId, id);
+      const r = await store.deleteDirectoryListing(userId, id, {
+        workspaceId: body.workspace_id || null,
+      });
       if (r.notFound) return notFound("Listing not found.");
       return json(200, { deleted: true });
     }
@@ -2778,7 +2916,10 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     const ref = await requireLocalRefs(userId, body);
     if (ref.refusal) return ref.refusal;
 
-    const listings = await store.listDirectoryListings(userId, { truthRecordId });
+    const listings = await store.listDirectoryListings(userId, {
+      truthRecordId,
+      workspaceId: body.workspace_id || null,
+    });
     const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES).map((src) => src.id);
 
     const matches = listings
@@ -2829,12 +2970,13 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   // ── History ──────────────────────────────────────────────────────────────
   if (section === "checks" && method === "GET") {
     if (id) {
-      const full = await store.getLocalCheckFull(userId, id);
+      const full = await store.getLocalCheckFull(userId, id, { workspaceId });
       if (!full) return notFound("Check not found.");
       return json(200, full);
     }
     const rows = await store.listLocalChecks(userId, {
       truthRecordId: q.truth_record_id || null, subjectId: q.subject_id || null,
+      workspaceId,
     });
     return json(200, { checks: rows, count: rows.length });
   }
@@ -2845,7 +2987,9 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     if (!LOCAL_RESOLUTIONS.includes(resolution)) {
       return bad(`Resolution must be one of: ${LOCAL_RESOLUTIONS.join(", ")}.`);
     }
-    const r = await store.resolveLocalFinding(userId, id, resolution);
+    const r = await store.resolveLocalFinding(userId, id, resolution, {
+      workspaceId: body.workspace_id || null,
+    });
     if (r.notFound) return notFound("Finding not found.");
     if (!r.ok) return json(503, { error: "Could not resolve the finding.", code: "STORAGE_UNAVAILABLE", detail: r.error });
     return json(200, { finding: r.finding });

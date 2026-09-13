@@ -21,6 +21,9 @@
 // correctly refused or allowed; a request that names none behaves exactly as
 // it always has (personal, ungated by workspace state).
 import { getServiceDb } from "./requireEntitlement.js";
+import {
+  defaultDiscoverabilityRole, requireDiscoverabilityRole,
+} from "../../../src/lib/discoverability/governanceModel.js";
 
 /**
  * @param {string} workspaceId - client-supplied; untrusted until matched
@@ -43,16 +46,16 @@ import { getServiceDb } from "./requireEntitlement.js";
  */
 export async function resolveWorkspaceMembership(workspaceId, userId) {
   const db = getServiceDb();
-  if (!db) return { ok: true, memberPaused: false };
+  if (!db) return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
   try {
     const res = await fetch(
       `${db.base}/workspace_members` +
         `?workspace_id=eq.${encodeURIComponent(workspaceId)}` +
         `&user_id=eq.${encodeURIComponent(userId)}` +
-        `&select=paused_at&limit=1`,
+        `&select=paused_at,role,discoverability_role&limit=1`,
       { headers: db.headers },
     );
-    if (!res.ok) return { ok: true, memberPaused: false };
+    if (!res.ok) return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
     const rows = await res.json();
     const row = Array.isArray(rows) && rows[0];
     if (!row) {
@@ -62,9 +65,16 @@ export async function resolveWorkspaceMembership(workspaceId, userId) {
         message: "You are not a member of this workspace.",
       };
     }
-    return { ok: true, memberPaused: Boolean(row.paused_at) };
+    const discoverabilityRole = row.discoverability_role
+      || (row.role ? defaultDiscoverabilityRole(row.role) : null);
+    return {
+      ok: true,
+      memberPaused: Boolean(row.paused_at),
+      discoverabilityRole,
+      degraded: !discoverabilityRole,
+    };
   } catch {
-    return { ok: true, memberPaused: false };
+    return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
   }
 }
 
@@ -85,5 +95,34 @@ export async function buildWorkspaceCtx(resolved, rawWorkspaceId) {
   if (!membership.ok) {
     return { ctx: null, refusal: { code: membership.code, message: membership.message } };
   }
-  return { ctx: { memberPaused: membership.memberPaused }, refusal: null };
+  return {
+    ctx: {
+      memberPaused: membership.memberPaused,
+      discoverabilityRole: membership.discoverabilityRole,
+      workspaceMembershipDegraded: membership.degraded === true,
+    },
+    refusal: null,
+  };
+}
+
+/** Apply a Discoverability-scoped action after membership is established. */
+export async function requireWorkspaceDiscoverabilityAction(userId, rawWorkspaceId, action) {
+  const workspaceId = typeof rawWorkspaceId === "string" ? rawWorkspaceId.trim() : "";
+  if (!workspaceId) return { ok: true, ctx: {}, personal: true };
+  const built = await buildWorkspaceCtx({ userId }, workspaceId);
+  if (built.refusal) return { ok: false, refusal: built.refusal };
+  if (built.ctx.workspaceMembershipDegraded || !built.ctx.discoverabilityRole) {
+    return { ok: true, ctx: built.ctx, degraded: true };
+  }
+  const permission = requireDiscoverabilityRole(built.ctx.discoverabilityRole, action);
+  if (!permission.ok) {
+    return {
+      ok: false,
+      refusal: {
+        code: permission.code,
+        message: `Your Discoverability role cannot ${action.replaceAll("_", " ")} in this workspace.`,
+      },
+    };
+  }
+  return { ok: true, ctx: built.ctx, degraded: false };
 }

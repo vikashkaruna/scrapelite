@@ -3,8 +3,9 @@
 // Talks to Supabase over PostgREST with the SERVICE key, for the same reason
 // requireEntitlement.js does: it is immune to RLS policy drift, and a user
 // cannot make themselves look unrestricted by arranging for their own rows to
-// be unreadable. Every read is still scoped by user_id in the query itself, so
-// the service key never widens what a caller can see.
+// be unreadable. Personal reads are scoped by user_id; workspace reads are
+// scoped by workspace_id only after the route has verified membership and the
+// requested Discoverability action.
 //
 // ── QUOTA IS COUNTED FROM THE AUDITS THEMSELVES ────────────────────────────
 // There is deliberately no counter column. `usage_records` is session-keyed and
@@ -19,6 +20,12 @@ import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverab
 import { makeSubject } from "../../../../src/lib/discoverability/subjectModel.js";
 
 const SELECT_ALL = "select=*";
+
+function ownerOrWorkspace(userId, workspaceId = null) {
+  return workspaceId
+    ? `workspace_id=eq.${encodeURIComponent(workspaceId)}`
+    : `user_id=eq.${encodeURIComponent(userId)}`;
+}
 
 /**
  * Past this, a still-`running` audit is abandoned rather than in flight.
@@ -762,7 +769,7 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
   if (!req.ok) return { ok: false, error: req.missing[0] };
 
   const r = await rest(
-    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, extra.workspaceId || null)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -797,14 +804,18 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
  * `not_found` covers both "no such recommendation" and "not yours", so an id
  * space cannot be enumerated by comparing the two.
  */
-export async function setRecommendationAssignee(userId, recId, assigneeId) {
+export async function setRecommendationAssignee(userId, recId, assigneeId, { workspaceId = null } = {}) {
   const conn = db();
   if (!conn) return { ok: false, error: "Audit storage is unavailable." };
   try {
-    const res = await fetch(`${conn.base}/rpc/assign_recommendation`, {
+    const rpc = workspaceId ? "assign_discoverability_recommendation" : "assign_recommendation";
+    const res = await fetch(`${conn.base}/rpc/${rpc}`, {
       method: "POST",
       headers: conn.headers,
-      body: JSON.stringify({ p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null }),
+      body: JSON.stringify({
+        p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null,
+        ...(workspaceId ? { p_workspace_id: workspaceId } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -818,7 +829,8 @@ export async function setRecommendationAssignee(userId, recId, assigneeId) {
     if (verdict !== "ok") return { ok: false, error: "Assignment was refused." };
 
     const row = await rest(
-      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}&select=id,audit_id,code,assigned_to,assigned_at`,
+      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, workspaceId)}`
+      + `&select=id,user_id,workspace_id,audit_id,code,assigned_to,assigned_at`,
     );
     const rec = Array.isArray(row.data) ? row.data[0] : row.data;
     return { ok: true, recommendation: rec || { id: recId, assigned_to: assigneeId || null } };
@@ -1120,23 +1132,22 @@ export async function createTruthRecord(userId, { canonicalDomain, displayName =
 }
 
 export async function listTruthRecords(userId, { workspaceId = null, limit = 50 } = {}) {
-  const ws = workspaceId ? `&workspace_id=eq.${encodeURIComponent(workspaceId)}` : "";
   const r = await rest(
-    `audit_business_truth_records?user_id=eq.${encodeURIComponent(userId)}&status=eq.active${ws}`
+    `audit_business_truth_records?${ownerOrWorkspace(userId, workspaceId)}&status=eq.active`
     + `&${SELECT_ALL}&order=updated_at.desc&limit=${Number(limit) || 50}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getTruthRecord(userId, recordId) {
+export async function getTruthRecord(userId, recordId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** The record plus its versions, newest first, and its open conflicts. */
-export async function getTruthRecordFull(userId, recordId) {
-  const record = await getTruthRecord(userId, recordId);
+export async function getTruthRecordFull(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record) return null;
   const [versions, conflicts] = await Promise.all([
     rest(`audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
@@ -1151,8 +1162,8 @@ export async function getTruthRecordFull(userId, recordId) {
   };
 }
 
-export async function getTruthVersion(userId, recordId, versionId) {
-  const owned = await getTruthRecord(userId, recordId);
+export async function getTruthVersion(userId, recordId, versionId, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
   if (!owned) return null;
   const r = await rest(
     `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
@@ -1161,10 +1172,10 @@ export async function getTruthVersion(userId, recordId, versionId) {
 }
 
 /** The canonical version, or null when nothing has been approved yet. */
-export async function getCanonicalTruthVersion(userId, recordId) {
-  const record = await getTruthRecord(userId, recordId);
+export async function getCanonicalTruthVersion(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record?.current_version_id) return null;
-  return getTruthVersion(userId, recordId, record.current_version_id);
+  return getTruthVersion(userId, recordId, record.current_version_id, { workspaceId });
 }
 
 /**
@@ -1179,8 +1190,9 @@ export async function getCanonicalTruthVersion(userId, recordId) {
  */
 export async function createTruthVersion(userId, recordId, {
   fields, completeness = null, origin = "manual", sourceAuditId = null, state = "draft",
+  workspaceId = null,
 }) {
-  const record = await getTruthRecord(userId, recordId);
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record) return { ok: false, notFound: true };
 
   const last = await rest(
@@ -1213,9 +1225,11 @@ export async function createTruthVersion(userId, recordId, {
  * that could set `state='approved'` would be a second promotion path with none
  * of the interlocks, and the second path is always the one that forgets.
  */
-export async function setTruthVersionState(userId, recordId, versionId, state, { note = null, reviewerId = null } = {}) {
+export async function setTruthVersionState(userId, recordId, versionId, state, {
+  note = null, reviewerId = null, workspaceId = null,
+} = {}) {
   if (state === "approved") return { ok: false, refused: "approval_requires_promotion" };
-  const current = await getTruthVersion(userId, recordId, versionId);
+  const current = await getTruthVersion(userId, recordId, versionId, { workspaceId });
   if (!current) return { ok: false, notFound: true };
 
   const patch = { state };
@@ -1241,8 +1255,8 @@ export async function setTruthVersionState(userId, recordId, versionId, state, {
  * function, atomically, and its verdict string is returned unchanged so the
  * route can map it to a status code without re-deriving anything.
  */
-export async function promoteTruthVersion(userId, recordId, versionId, { note = null } = {}) {
-  const owned = await getTruthVersion(userId, recordId, versionId);
+export async function promoteTruthVersion(userId, recordId, versionId, { note = null, workspaceId = null } = {}) {
+  const owned = await getTruthVersion(userId, recordId, versionId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
 
   const conn = db();
@@ -1258,10 +1272,10 @@ export async function promoteTruthVersion(userId, recordId, versionId, { note = 
   return verdict === "ok" ? { ok: true } : { ok: false, verdict };
 }
 
-export async function archiveTruthRecord(userId, recordId) {
+export async function archiveTruthRecord(userId, recordId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}`,
+    + `&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1296,8 +1310,8 @@ export async function recordTruthConflicts(recordId, auditId, versionId, conflic
   return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
 }
 
-export async function resolveTruthConflict(userId, recordId, conflictId, resolution) {
-  const owned = await getTruthRecord(userId, recordId);
+export async function resolveTruthConflict(userId, recordId, conflictId, resolution, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
   const r = await rest(
     `audit_business_truth_conflicts?id=eq.${encodeURIComponent(conflictId)}`
@@ -1342,23 +1356,26 @@ export async function createEntity(userId, {
   return { ok: true, entity: Array.isArray(r.data) ? r.data[0] : r.data };
 }
 
-export async function listEntities(userId, { truthRecordId = null, state = null, limit = 500 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listEntities(userId, {
+  truthRecordId = null, state = null, workspaceId = null, limit = 500,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
   const r = await rest(`audit_entities?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 500}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getEntity(userId, entityId) {
+export async function getEntity(userId, entityId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_entities?id=eq.${encodeURIComponent(entityId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 export async function createRelationship(userId, {
   subjectId, predicate, objectId, source = "declared",
   evidence = null, confidence = null, note = null, sourceAuditId = null,
+  workspaceId = null,
 }) {
   const r = await insert("audit_entity_relationships", [{
     user_id: userId,
@@ -1370,6 +1387,7 @@ export async function createRelationship(userId, {
     confidence,
     note,
     source_audit_id: sourceAuditId,
+    workspace_id: workspaceId,
     proposed_by: userId,
   }]);
   if (!r.ok) {
@@ -1389,17 +1407,21 @@ export async function createRelationship(userId, {
  * than retry blindly — but corroboration has to attach to a row id, and the
  * refused insert never returned one. This finds it.
  */
-export async function findRelationship(userId, { subjectId, predicate, objectId }) {
+export async function findRelationship(userId, {
+  subjectId, predicate, objectId, workspaceId = null,
+}) {
   const r = await rest(
-    `audit_entity_relationships?user_id=eq.${encodeURIComponent(userId)}`
+    `audit_entity_relationships?${ownerOrWorkspace(userId, workspaceId)}`
     + `&subject_id=eq.${encodeURIComponent(subjectId)}`
     + `&predicate=eq.${encodeURIComponent(predicate)}`
     + `&object_id=eq.${encodeURIComponent(objectId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-export async function listRelationships(userId, { state = null, entityId = null, limit = 1000 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listRelationships(userId, {
+  state = null, entityId = null, workspaceId = null, limit = 1000,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
   if (entityId) {
     parts.push(`or=(subject_id.eq.${encodeURIComponent(entityId)},object_id.eq.${encodeURIComponent(entityId)})`);
@@ -1409,16 +1431,18 @@ export async function listRelationships(userId, { state = null, entityId = null,
   return r.ok ? r.data || [] : [];
 }
 
-export async function getRelationship(userId, relationshipId) {
+export async function getRelationship(userId, relationshipId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_entity_relationships?id=eq.${encodeURIComponent(relationshipId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
-export async function approveEntityRelationship(userId, relationshipId, { note = null } = {}) {
-  const owned = await getRelationship(userId, relationshipId);
+export async function approveEntityRelationship(userId, relationshipId, {
+  note = null, workspaceId = null,
+} = {}) {
+  const owned = await getRelationship(userId, relationshipId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
 
   const conn = db();
@@ -1440,10 +1464,10 @@ export async function approveEntityRelationship(userId, relationshipId, { note =
  * edge that keeps being re-proposed is itself a finding, and without the reason
  * nobody can tell a considered decision from a mis-click.
  */
-export async function rejectGraphRow(userId, table, id, reason) {
+export async function rejectGraphRow(userId, table, id, reason, { workspaceId = null } = {}) {
   const t = table === "entity" ? "audit_entities" : "audit_entity_relationships";
   const r = await rest(
-    `${t}?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `${t}?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1468,11 +1492,14 @@ export async function recordEntityEvidence({ entityId = null, relationshipId = n
   return r.ok ? { ok: true } : { ok: false, error: r.error };
 }
 
-export async function recordGraphConflicts(userId, truthRecordId, auditId, conflicts = []) {
+export async function recordGraphConflicts(
+  userId, truthRecordId, auditId, conflicts = [], { workspaceId = null } = {},
+) {
   const rows = (Array.isArray(conflicts) ? conflicts : [])
     .filter((c) => c && typeof c.code === "string")
     .map((c) => ({
       user_id: userId,
+      workspace_id: workspaceId,
       truth_record_id: truthRecordId || null,
       audit_id: auditId || null,
       code: c.code,
@@ -1490,17 +1517,19 @@ export async function recordGraphConflicts(userId, truthRecordId, auditId, confl
   return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
 }
 
-export async function listGraphConflicts(userId, { truthRecordId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`, "resolved_at=is.null"];
+export async function listGraphConflicts(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), "resolved_at=is.null"];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   const r = await rest(
     `audit_entity_conflicts?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 200}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function resolveGraphConflict(userId, conflictId, resolution) {
+export async function resolveGraphConflict(userId, conflictId, resolution, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1553,16 +1582,18 @@ export async function upsertDirectoryListing(userId, {
   return r.ok ? { ok: true, listing: Array.isArray(r.data) ? r.data[0] : r.data } : { ok: false, error: r.error };
 }
 
-export async function listDirectoryListings(userId, { truthRecordId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listDirectoryListings(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   const r = await rest(`audit_directory_listings?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${Number(limit) || 200}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function deleteDirectoryListing(userId, listingId) {
+export async function deleteDirectoryListing(userId, listingId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     { method: "DELETE", headers: { Prefer: "return=representation" } },
   );
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
@@ -1633,8 +1664,10 @@ export async function saveLocalCheck(userId, {
   return { ok: true, check };
 }
 
-export async function listLocalChecks(userId, { truthRecordId = null, subjectId = null, limit = 30 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listLocalChecks(userId, {
+  truthRecordId = null, subjectId = null, workspaceId = null, limit = 30,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(`audit_local_checks?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 30}`);
@@ -1650,10 +1683,10 @@ export async function listLocalChecks(userId, { truthRecordId = null, subjectId 
 // ── W14 · Revalidation ─────────────────────────────────────────────────────
 
 /** One recommendation, scoped to its owner. */
-export async function getRecommendation(userId, recId) {
+export async function getRecommendation(userId, recId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
@@ -1667,10 +1700,12 @@ export async function getRecommendation(userId, recId) {
  * `payment-webhook.js:49-59`'s dedup does, and the cost of losing that race
  * here is a second paid audit.
  */
-export async function claimRevalidation(userId, recId, { baselineAuditId = null } = {}) {
+export async function claimRevalidation(userId, recId, {
+  baselineAuditId = null, workspaceId = null,
+} = {}) {
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}`
     + `&revalidation_requested_at=is.null`,
     {
       method: "PATCH",
@@ -1760,8 +1795,10 @@ export async function saveTrustObservation(userId, {
 }
 
 /** Every schema observation for a subject, scoped to its owner. */
-export async function listSchemaEntities(userId, { subjectId = null, limit = 100 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listSchemaEntities(userId, {
+  subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_schema_entities?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 100)}`);
@@ -1769,8 +1806,10 @@ export async function listSchemaEntities(userId, { subjectId = null, limit = 100
 }
 
 /** Every trust observation for a subject, scoped to its owner. */
-export async function listTrustObservations(userId, { subjectId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listTrustObservations(userId, {
+  subjectId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_trust_evidence?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 200)}`);
@@ -1831,24 +1870,26 @@ export async function saveSubjectScore(userId, {
  * ⚠️ Owner-scoped at the query, like every other read here. The subject id
  * alone is not authorisation.
  */
-export async function listSubjectScores(userId, { subjectId = null, limit = 50 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listSubjectScores(userId, {
+  subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_subject_scores?${parts.join("&")}&${SELECT_ALL}&order=scored_at.desc&limit=${rowCap(limit, 50)}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getSubject(userId, subjectId) {
+export async function getSubject(userId, subjectId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-export async function getLocalCheckFull(userId, checkId) {
+export async function getLocalCheckFull(userId, checkId, { workspaceId = null } = {}) {
   const check = await rest(
-    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   const row = check.ok && Array.isArray(check.data) ? check.data[0] : null;
   if (!row) return null;
   const [matches, findings] = await Promise.all([
@@ -1862,11 +1903,11 @@ export async function getLocalCheckFull(userId, checkId) {
   };
 }
 
-export async function resolveLocalFinding(userId, findingId, resolution) {
+export async function resolveLocalFinding(userId, findingId, resolution, { workspaceId = null } = {}) {
   // Paired, because the CHECK constraint refuses half a record — a resolution
   // with no timestamp shows as open while a reader believes it closed.
   const r = await rest(
-    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },

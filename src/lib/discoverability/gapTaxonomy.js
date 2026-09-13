@@ -169,17 +169,17 @@ export const MODULES = Object.freeze({
   },
   brand_discoverability: {
     id: "brand_discoverability", label: "Brand discoverability",
-    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: true,
     description: "Brand-level scoring, share of voice and recommendation rate.",
   },
   product_discoverability: {
     id: "product_discoverability", label: "Product discoverability",
-    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: true,
     description: "Product entity cards, missing facts and comparison blueprints.",
   },
   service_findability: {
     id: "service_findability", label: "Service findability",
-    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: true,
     description: "Service intent coverage and the page backlog behind it.",
   },
   local_directory: {

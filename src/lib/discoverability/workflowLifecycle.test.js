@@ -33,7 +33,9 @@ describe("the lifecycle", () => {
     expect(ACTIVE_STATE_IDS).toContain("in_progress");
     expect(ACTIVE_STATE_IDS).not.toContain("validated");
     expect(ACTIVE_STATE_IDS).not.toContain("dismissed");
-    expect(TERMINAL_STATES).toEqual(["validated", "dismissed"]);
+    expect(TERMINAL_STATES).toEqual([
+      "validated", "no_measurable_change", "regressed", "dismissed",
+    ]);
   });
 
   it("returns null for an unknown state rather than throwing", () => {
@@ -79,6 +81,10 @@ describe("requirementsFor", () => {
     expect(r.ok).toBe(false);
     expect(r.missing[0]).toMatch(/re-measured/i);
     expect(requirementsFor("validated", { validatedByAuditId: "aud-1" }).ok).toBe(true);
+    for (const outcome of ["no_measurable_change", "regressed"]) {
+      expect(requirementsFor(outcome, {}).ok, outcome).toBe(false);
+      expect(requirementsFor(outcome, { validatedByAuditId: "aud-1" }).ok, outcome).toBe(true);
+    }
   });
 
   it("assigning needs somebody to assign to", () => {

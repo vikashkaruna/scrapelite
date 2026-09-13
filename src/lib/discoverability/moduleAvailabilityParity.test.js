@@ -7,9 +7,8 @@ import {
   hasModuleCta,
 } from "../platformModules.js";
 
-// Workstreams W1-W10 and W12-W13 are implemented. The three subject-score
-// destinations stay out until CP-1.1 makes entity subjects reachable, and
-// service_radius stays out until its own implementation lands.
+// Workstreams W1-W13 are implemented and CP-1.1 makes all three score-bearing
+// entity kinds reachable. Service radius is still a separate availability.
 const SHIPPED_RECOMMENDATION_MODULES = Object.freeze([
   "technical_remediation",
   "recommendation_studio",
@@ -18,6 +17,9 @@ const SHIPPED_RECOMMENDATION_MODULES = Object.freeze([
   "validation_lab",
   "business_truth_record",
   "entity_graph",
+  "brand_discoverability",
+  "product_discoverability",
+  "service_findability",
   "local_directory",
   "trust_and_proof",
 ]);

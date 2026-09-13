@@ -8,18 +8,21 @@
 // a workflow: nothing could say a fix was underway, and nothing could say it
 // had been VERIFIED rather than merely claimed.
 //
-// ── EIGHT STATES, AND `dismissed` IS THE EIGHTH ON PURPOSE ─────────────────
-// The PRD names seven. A queue you cannot decline an item from forces the user
+// ── TEN STATES, INCLUDING THREE MEASURED OUTCOMES ───────────────────────────
+// The approval path names seven stages. A queue you cannot decline an item from forces the user
 // to do work they judged unnecessary or leave it open for ever, and the
 // mandatory dismissal reason this codebase already enforces is some of the most
 // useful data in the table.
+// P3 adds two honest validation outcomes: no measurable change and regressed.
 //
 // ── `done` AND `implemented` ARE ONE STATE UNDER TWO NAMES ─────────────────
 // Every stored row, export and webhook payload uses `done`. Renaming it would
 // rewrite history for no gain. `implemented` is the PRD's word; both are
 // accepted and both render as one label.
 
-export const TERMINAL_STATES = Object.freeze(["validated", "dismissed"]);
+export const TERMINAL_STATES = Object.freeze([
+  "validated", "no_measurable_change", "regressed", "dismissed",
+]);
 
 /**
  * Every state, with what it means and what may follow.
@@ -64,15 +67,25 @@ export const WORKFLOW_STATES = Object.freeze({
   validation_scheduled: {
     id: "validation_scheduled", label: "Validation scheduled", order: 5, active: false,
     describes: "A re-audit is queued to check it.",
-    next: ["validated", "in_progress"],
+    next: ["validated", "no_measurable_change", "regressed", "in_progress"],
   },
   validated: {
     id: "validated", label: "Validated", order: 6, active: false,
     describes: "A later audit re-measured the signal and the fix holds.",
     next: ["in_progress"],
   },
+  no_measurable_change: {
+    id: "no_measurable_change", label: "No measurable change", order: 7, active: false,
+    describes: "A later audit found no meaningful movement in the intended metric.",
+    next: ["in_progress", "dismissed"],
+  },
+  regressed: {
+    id: "regressed", label: "Regressed", order: 8, active: false,
+    describes: "A later audit measured a worse outcome after implementation.",
+    next: ["in_progress", "dismissed"],
+  },
   dismissed: {
-    id: "dismissed", label: "Dismissed", order: 7, active: false,
+    id: "dismissed", label: "Dismissed", order: 9, active: false,
     describes: "Declined, with a reason. Ours, not the PRD's, and load-bearing.",
     next: ["open"],
   },
@@ -141,7 +154,7 @@ export function requirementsFor(state, ctx = {}) {
   // 🔴 The rule that makes `validated` mean anything. Without a re-measuring
   // audit it is a second word for `implemented`: a claim by the same person who
   // did the work, which is exactly what the validation loop exists to replace.
-  if (s === "validated" && !ctx.validatedByAuditId) {
+  if (["validated", "no_measurable_change", "regressed"].includes(s) && !ctx.validatedByAuditId) {
     missing.push("Validation needs the audit that re-measured the signal — otherwise it is a claim, not a measurement.");
   }
   if (s === "assigned" && !ctx.assignee) {

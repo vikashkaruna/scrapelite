@@ -66,7 +66,7 @@ export async function listMyWorkspaces(userId, env = process.env) {
   try {
     const memberships = await rest(
       db,
-      `/workspace_members?select=workspace_id,role&user_id=eq.${userId}`,
+      `/workspace_members?select=workspace_id,role,discoverability_role&user_id=eq.${userId}`,
     );
     if (!Array.isArray(memberships) || memberships.length === 0) return empty;
 
@@ -83,12 +83,15 @@ export async function listMyWorkspaces(userId, env = process.env) {
     }
     const roleByWorkspace = {};
     for (const m of memberships) roleByWorkspace[m.workspace_id] = m.role;
+    const discoverabilityRoleByWorkspace = {};
+    for (const m of memberships) discoverabilityRoleByWorkspace[m.workspace_id] = m.discoverability_role;
 
     const workspaces = (rows || []).map((w) => ({
       id: w.id,
       name: w.name,
       ownerId: w.owner_id,
       role: roleByWorkspace[w.id] || "member",
+      discoverabilityRole: discoverabilityRoleByWorkspace[w.id] || "viewer",
       seats: seatCounts[w.id] || 1,
       createdAt: w.created_at,
     }));
@@ -276,6 +279,30 @@ export async function setWorkspaceMemberPaused(
   }
 }
 
+/** Set the role that applies only to Discoverability work. */
+export async function setWorkspaceDiscoverabilityRole(
+  workspaceId, actorId, targetUserId, role, env = process.env,
+) {
+  if (!workspaceId || !actorId || !targetUserId || !role) {
+    return { ok: false, reason: "invalid", degraded: false };
+  }
+  const db = serviceDb(env);
+  if (!db) return { ok: false, reason: "unavailable", degraded: true };
+  try {
+    const verdict = await rpc(db, "set_workspace_discoverability_role", {
+      p_workspace_id: workspaceId,
+      p_actor: actorId,
+      p_target_user: targetUserId,
+      p_role: role,
+    });
+    if (verdict === "ok") return { ok: true, degraded: false };
+    return { ok: false, reason: verdict || "not_authorized", degraded: false };
+  } catch (err) {
+    console.error("[DatIQ] set_workspace_discoverability_role failed:", err.message);
+    return { ok: false, reason: "unavailable", degraded: true };
+  }
+}
+
 /**
  * Members of one workspace, for the settings page. Returns
  * { members: [{userId,email,role,createdAt}], degraded }.
@@ -288,12 +315,13 @@ export async function listWorkspaceMembers(workspaceId, env = process.env) {
   try {
     const rows = await rest(
       db,
-      `/workspace_members?select=user_id,role,created_at,paused_at,users:user_id(email)&workspace_id=eq.${workspaceId}&order=created_at.asc`,
+      `/workspace_members?select=user_id,role,discoverability_role,created_at,paused_at,users:user_id(email)&workspace_id=eq.${workspaceId}&order=created_at.asc`,
     );
     const members = (rows || []).map((r) => ({
       userId: r.user_id,
       email: r.users?.email || null,
       role: r.role,
+      discoverabilityRole: r.discoverability_role || "viewer",
       createdAt: r.created_at,
       // A paused seat is still a seat — it counts, and the member keeps read
       // and export access. Pausing is not a cheaper removal.
@@ -307,12 +335,13 @@ export async function listWorkspaceMembers(workspaceId, env = process.env) {
     try {
       const rows = await rest(
         db,
-        `/workspace_members?select=user_id,role,created_at,paused_at&workspace_id=eq.${workspaceId}&order=created_at.asc`,
+        `/workspace_members?select=user_id,role,discoverability_role,created_at,paused_at&workspace_id=eq.${workspaceId}&order=created_at.asc`,
       );
       const members = (rows || []).map((r) => ({
         userId: r.user_id,
         email: null,
         role: r.role,
+        discoverabilityRole: r.discoverability_role || "viewer",
         pausedAt: r.paused_at || null,
         createdAt: r.created_at,
       }));
