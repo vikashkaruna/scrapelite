@@ -117,6 +117,7 @@ describe("Stage 4 API Handlers Execution", () => {
       ok: true,
       user: { id: userId, email: "stage4@datiq.test" },
     });
+    vi.spyOn(auditStore, "getRecommendation").mockResolvedValue({ id: "rec-999", user_id: userId });
   });
 
   it("POST /api/sxo/experiments creates an experiment and returns 200", async () => {
@@ -183,6 +184,36 @@ describe("Stage 4 API Handlers Execution", () => {
     expect(body.rollups).toHaveLength(1);
   });
 
+  it("POST /api/sxo/portfolio/rollups calculates only from scoped stored audits", async () => {
+    vi.spyOn(auditStore, "listPortfolioAuditInputs").mockResolvedValue([
+      {
+        id: "aud-stored", page_type: "landing_page",
+        result: { final_score: 70, seo_score: 80, aeo_score: 70, geo_score: 60 },
+        sxo: { sxo_total_score: 90 },
+      },
+    ]);
+    const save = vi.spyOn(auditStore, "savePortfolioRollup").mockResolvedValue({ ok: true, rollup: {} });
+
+    const res = await handler({
+      httpMethod: "POST",
+      path: "/api/sxo/portfolio/rollups",
+      headers: { authorization: "Bearer valid-token" },
+      body: JSON.stringify({
+        axis: "template",
+        audits: [{ template: "forged", master_score: 100, framework_scores: { seo: { score: 100 } } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.rollups).toHaveLength(1);
+    expect(body.rollups[0].axis_key).toBe("landing_page");
+    expect(body.rollups[0].master_score).toBe(77.5);
+    expect(save).toHaveBeenCalledWith(userId, expect.objectContaining({
+      rollupAxis: "template", axisValue: "landing_page", masterScore: 77.5,
+    }));
+  });
+
   it("POST /api/sxo/recommendations/:id/validate transitions status to validated and warns correlation", async () => {
     vi.spyOn(auditStore, "setRecommendationStatus").mockResolvedValue({
       ok: true,
@@ -203,5 +234,31 @@ describe("Stage 4 API Handlers Execution", () => {
     expect(body.recommendation.status).toBe("validated");
     expect(body.relationship).toBe("correlation");
     expect(body.caveats[0]).toContain("correlational");
+  });
+
+  it("returns 404 without mutating when an experiment is not in the caller's scope", async () => {
+    vi.spyOn(auditStore, "getOptimizationExperiment").mockResolvedValue(null);
+    const update = vi.spyOn(auditStore, "updateOptimizationExperiment");
+    const res = await handler({
+      httpMethod: "POST",
+      path: "/api/sxo/experiments/foreign/evaluate",
+      headers: { authorization: "Bearer valid-token" },
+      body: JSON.stringify({ baseline_audit_id: "base", current_audit_id: "current" }),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 before validation when a recommendation is out of scope", async () => {
+    auditStore.getRecommendation.mockResolvedValue(null);
+    const update = vi.spyOn(auditStore, "setRecommendationStatus");
+    const res = await handler({
+      httpMethod: "POST",
+      path: "/api/sxo/recommendations/foreign/validate",
+      headers: { authorization: "Bearer valid-token" },
+      body: JSON.stringify({}),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(update).not.toHaveBeenCalled();
   });
 });

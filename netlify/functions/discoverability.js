@@ -1300,12 +1300,18 @@ export const handler = async (event) => {
       if (id === "experiments") {
         if (!sub && method === "POST") {
           const workspaceId = body.workspace_id || null;
-          if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-          }
+          const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+          if (!capabilityGate.ok) return capabilityGate.response;
           if (!body.experiment_name && !body.name) {
             return bad("`experiment_name` is required for optimization experiments.");
+          }
+          if (body.audit_id) {
+            const audit = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+            if (!audit) return notFound("Audit not found.");
+          }
+          if (body.recommendation_id) {
+            const recommendation = await store.getRecommendation(userId, body.recommendation_id, { workspaceId });
+            if (!recommendation) return notFound("Recommendation not found.");
           }
           const expData = createExperimentRecord({
             auditId: body.audit_id || null,
@@ -1324,7 +1330,7 @@ export const handler = async (event) => {
             ...expData,
             workspaceId,
           });
-          return json(200, saved);
+          return saved.ok ? json(200, saved) : json(502, saved);
         }
 
         if (!sub && method === "GET") {
@@ -1348,19 +1354,35 @@ export const handler = async (event) => {
         }
 
         if (sub && subId === "evaluate" && method === "POST") {
-          const baseline = body.baseline_audit_id ? await store.getAuditFull(userId, body.baseline_audit_id) : null;
-          const current = body.current_audit_id ? await store.getAuditFull(userId, body.current_audit_id) : null;
+          const workspaceId = body.workspace_id || null;
+          const experiment = await store.getOptimizationExperiment(userId, sub, { workspaceId });
+          if (!experiment) return notFound("Experiment not found.");
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          if (!body.baseline_audit_id || !body.current_audit_id) {
+            return bad("`baseline_audit_id` and `current_audit_id` are required.");
+          }
+          const baselineFull = await store.getAuditFull(userId, body.baseline_audit_id, { workspaceId });
+          if (!baselineFull) return notFound("Baseline audit not found.");
+          const currentFull = await store.getAuditFull(userId, body.current_audit_id, { workspaceId });
+          if (!currentFull) return notFound("Current audit not found.");
+          const [baselineSxo, currentSxo] = await Promise.all([
+            store.getSxoForAudit(userId, body.baseline_audit_id, { workspaceId }),
+            store.getSxoForAudit(userId, body.current_audit_id, { workspaceId }),
+          ]);
+          const baselineAudit = { ...rehydrate(baselineFull), sxo_total_score: baselineSxo?.sxo_total_score ?? null };
+          const currentAudit = { ...rehydrate(currentFull), sxo_total_score: currentSxo?.sxo_total_score ?? null };
           const impact = evaluateExperimentImpact({
-            baselineAudit: baseline,
-            currentAudit: current,
-            targetMetric: body.target_metric || "sxo_total_score",
+            baselineAudit,
+            currentAudit,
+            targetMetric: body.target_metric || experiment.expected_metric || "sxo_total_score",
           });
-          await store.updateOptimizationExperiment(userId, sub, {
+          const updated = await store.updateOptimizationExperiment(userId, sub, {
             results: impact,
             status: body.complete ? "completed" : "active",
-            current_value: impact.current,
-          });
-          return json(200, { ok: true, impact });
+            current_value: impact.current_value,
+          }, { workspaceId });
+          return updated.ok ? json(200, { ok: true, impact, experiment: updated.experiment }) : json(502, updated);
         }
       }
 
@@ -1386,30 +1408,65 @@ export const handler = async (event) => {
           if (!axis || !PORTFOLIO_ROLLUP_AXES.includes(axis)) {
             return bad(`Invalid axis "${axis}". Must be one of: ${PORTFOLIO_ROLLUP_AXES.join(", ")}.`);
           }
-          const calculated = calculatePortfolioRollup(body.audits || [], {
-            axis,
-            axisValue: body.axis_value || "all",
+          const storedInputs = await store.listPortfolioAuditInputs(userId, { workspaceId });
+          const scoredInputs = storedInputs.map((item) => {
+            const master = computeMasterScore({
+              seo: item.result?.seo_score ?? null,
+              aeo: item.result?.aeo_score ?? null,
+              geo: item.result?.geo_score ?? null,
+              sxo: item.sxo?.sxo_total_score ?? null,
+            });
+            return {
+              ...item,
+              template: item.template || item.page_type || "unknown",
+              final_score: item.result?.final_score ?? null,
+              master_score: master.score,
+              coverage: master.coverage,
+              framework_scores: {
+                seo: { score: item.result?.seo_score ?? null },
+                aeo: { score: item.result?.aeo_score ?? null },
+                geo: { score: item.result?.geo_score ?? null },
+                sxo: { score: item.sxo?.sxo_total_score ?? null },
+              },
+            };
           });
-          const saved = await store.savePortfolioRollup(userId, {
-            rollupAxis: calculated.rollup_axis,
-            axisValue: calculated.axis_value,
-            auditCount: calculated.audit_count,
-            masterScore: calculated.master_score,
-            layerScores: calculated.layer_scores,
-            frameworkScores: calculated.framework_scores,
-            coverage: calculated.coverage,
-            workspaceId,
+          const calculated = calculatePortfolioRollup(scoredInputs, axis);
+          const persisted = await Promise.all(calculated.rollups.map((rollup) =>
+            store.savePortfolioRollup(userId, {
+              rollupAxis: rollup.axis,
+              axisValue: rollup.axis_label || rollup.axis_key,
+              auditCount: rollup.audit_count,
+              masterScore: rollup.master_score,
+              layerScores: {},
+              frameworkScores: rollup.framework_scores,
+              coverage: rollup.coverage,
+              workspaceId,
+            })));
+          if (persisted.some((result) => !result.ok)) {
+            return json(502, { ok: false, error: "One or more portfolio rollups could not be saved." });
+          }
+          return json(200, {
+            ok: true,
+            axis: calculated.axis,
+            total_audits: calculated.total_audits,
+            unaudited_count: calculated.unaudited_count,
+            rollups: calculated.rollups,
           });
-          return json(200, saved);
         }
       }
 
       // 13. POST /sxo/recommendations/:id/validate
       if (id === "recommendations" && sub && subId === "validate" && method === "POST") {
         const workspaceId = body.workspace_id || null;
+        const recommendation = await store.getRecommendation(userId, sub, { workspaceId });
+        if (!recommendation) return notFound("Recommendation not found.");
         if (workspaceId) {
           const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
           if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+        if (body.validated_by_audit_id) {
+          const validationAudit = await store.getAuditFull(userId, body.validated_by_audit_id, { workspaceId });
+          if (!validationAudit) return notFound("Validation audit not found.");
         }
         const r = await store.setRecommendationStatus(userId, sub, "validated", body.reason || "Validated via SXO", {
           validatedByAuditId: body.validated_by_audit_id || null,

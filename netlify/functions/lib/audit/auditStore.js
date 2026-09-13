@@ -2375,3 +2375,36 @@ export async function listPortfolioRollups(userId, {
   const r = await rest(`audit_portfolio_rollups?${parts.join("&")}&${SELECT_ALL}&order=calculated_at.desc&limit=${rowCap(limit, 100)}`);
   return r.ok ? r.data || [] : [];
 }
+
+/**
+ * Read the authorized, persisted inputs used to calculate portfolio rollups.
+ * Client-supplied scores are never accepted: audit ids come from the scoped
+ * parent query, then service-role child reads are restricted to those ids.
+ */
+export async function listPortfolioAuditInputs(userId, { workspaceId = null, limit = 500 } = {}) {
+  const auditsResult = await rest(
+    `audits?${ownerOrWorkspace(userId, workspaceId)}&status=eq.completed`
+    + `&select=id,user_id,workspace_id,target_id,subject_id,page_type,target_geography,tags,created_at`
+    + `&order=created_at.desc&limit=${rowCap(limit, 500)}`,
+  );
+  const audits = auditsResult.ok && Array.isArray(auditsResult.data) ? auditsResult.data : [];
+  if (audits.length === 0) return [];
+
+  const idFilter = `audit_id=in.(${audits.map((row) => encodeURIComponent(row.id)).join(",")})`;
+  const [resultsResult, sxoResult] = await Promise.all([
+    rest(`audit_results?${idFilter}&select=audit_id,final_score,seo_score,aeo_score,geo_score,coverage`),
+    rest(`audit_sxo_runs?${idFilter}&select=audit_id,sxo_total_score,coverage,created_at&order=created_at.desc`),
+  ]);
+  const resultsByAudit = new Map((resultsResult.data || []).map((row) => [row.audit_id, row]));
+  const sxoByAudit = new Map();
+  for (const row of sxoResult.data || []) {
+    if (!sxoByAudit.has(row.audit_id)) sxoByAudit.set(row.audit_id, row);
+  }
+
+  return audits.map((audit) => ({
+    ...audit,
+    template: audit.page_type || "unknown",
+    result: resultsByAudit.get(audit.id) || null,
+    sxo: sxoByAudit.get(audit.id) || null,
+  }));
+}
