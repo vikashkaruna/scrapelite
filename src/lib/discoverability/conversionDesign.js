@@ -17,40 +17,40 @@
 import { SXO_LAYERS, weightedMeanMap } from "./sxoModel.js";
 
 export const PRIMARY_OUTCOMES = Object.freeze([
-  "lead_capture",
-  "saas_signup",
-  "ecommerce_purchase",
-  "phone_call",
-  "appointment_booking",
-  "quote_request",
-  "content_download",
-  "newsletter_subscription",
-  "free_trial",
-  "demo_request",
-  "affiliate_click",
-  "support_deflection",
+  "demo",
+  "trial",
+  "contact",
+  "quote",
+  "booking",
+  "purchase",
+  "add_to_cart",
+  "call",
+  "whatsapp_chat",
+  "download",
+  "newsletter",
+  "account_creation",
 ]);
 
 export const PRIMARY_OUTCOME_DETAILS = Object.freeze({
-  lead_capture: { id: "lead_capture", label: "Lead Capture", defaultFormFields: ["email", "name"] },
-  saas_signup: { id: "saas_signup", label: "SaaS Sign-up", defaultFormFields: ["email", "password"] },
-  ecommerce_purchase: { id: "ecommerce_purchase", label: "E-commerce Purchase", defaultFormFields: ["cart", "checkout"] },
-  phone_call: { id: "phone_call", label: "Phone Call / Direct Contact", defaultFormFields: ["tel"] },
-  appointment_booking: { id: "appointment_booking", label: "Appointment Booking", defaultFormFields: ["datetime", "email"] },
-  quote_request: { id: "quote_request", label: "Quote Request", defaultFormFields: ["scope", "email", "phone"] },
-  content_download: { id: "content_download", label: "Content Download", defaultFormFields: ["email"] },
-  newsletter_subscription: { id: "newsletter_subscription", label: "Newsletter Subscription", defaultFormFields: ["email"] },
-  free_trial: { id: "free_trial", label: "Free Trial", defaultFormFields: ["email"] },
-  demo_request: { id: "demo_request", label: "Demo Request", defaultFormFields: ["company", "email", "name"] },
-  affiliate_click: { id: "affiliate_click", label: "Affiliate Outbound Click", defaultFormFields: [] },
-  support_deflection: { id: "support_deflection", label: "Support Deflection", defaultFormFields: [] },
+  demo: { id: "demo", label: "Demo", defaultFormFields: ["company", "email", "name"] },
+  trial: { id: "trial", label: "Trial", defaultFormFields: ["email"] },
+  contact: { id: "contact", label: "Contact", defaultFormFields: ["email", "name"] },
+  quote: { id: "quote", label: "Quote", defaultFormFields: ["scope", "email", "phone"] },
+  booking: { id: "booking", label: "Booking", defaultFormFields: ["datetime", "email"] },
+  purchase: { id: "purchase", label: "Purchase", defaultFormFields: ["cart", "checkout"] },
+  add_to_cart: { id: "add_to_cart", label: "Add to Cart", defaultFormFields: [] },
+  call: { id: "call", label: "Call", defaultFormFields: ["tel"] },
+  whatsapp_chat: { id: "whatsapp_chat", label: "WhatsApp Chat", defaultFormFields: [] },
+  download: { id: "download", label: "Download", defaultFormFields: ["email"] },
+  newsletter: { id: "newsletter", label: "Newsletter", defaultFormFields: ["email"] },
+  account_creation: { id: "account_creation", label: "Account Creation", defaultFormFields: ["email", "password"] },
 });
 
 /**
  * Score Outcome Pathway Clarity (cd.cta, weight 0.25).
  * Is the primary conversion pathway distinct, unambiguous, and present?
  */
-export function scorePathwayClarity(evidence = {}, facts = {}, outcome = "lead_capture") {
+export function scorePathwayClarity(evidence = {}, facts = {}, outcome = "contact") {
   const technical = facts.technical || {};
   const content = facts.content || {};
   const buttons = content.detected_buttons || [];
@@ -134,7 +134,7 @@ export function scorePriceClarity(evidence = {}, facts = {}) {
  * Score Value Exchange Fairness & Flow (flow, weight 0.15).
  * Does what the visitor receives justify what they are asked to give?
  */
-export function scoreValueExchange(facts = {}, outcome = "lead_capture") {
+export function scoreValueExchange(facts = {}, outcome = "contact") {
   // Fair flow: strong value proposition matched with modest initial commitment
   return {
     score: 80,
@@ -145,7 +145,7 @@ export function scoreValueExchange(facts = {}, outcome = "lead_capture") {
 /**
  * Primary evaluator for Conversion Design (CD).
  */
-export function evaluateConversionDesign(evidence = {}, facts = {}, { primaryOutcome = "lead_capture" } = {}) {
+export function evaluateConversionDesign(evidence = {}, facts = {}, { primaryOutcome = "contact" } = {}) {
   const cta = scorePathwayClarity(evidence, facts, primaryOutcome);
   const form = scoreFormFriction(facts);
   const proof = scoreTrustProximity(evidence, facts);

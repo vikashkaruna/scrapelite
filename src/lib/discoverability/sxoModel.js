@@ -53,6 +53,19 @@ export const MASTER_FRAMEWORK_WEIGHTS = Object.freeze({
   sxo: 0.35,
 });
 
+export const SXO_WEIGHT_SETS = Object.freeze({
+  [DEFAULT_WEIGHT_SET_ID]: Object.freeze({
+    id: DEFAULT_WEIGHT_SET_ID,
+    modelVersion: SXO_MODEL_VERSION,
+    layerWeights: SXO_LAYER_WEIGHTS,
+    masterWeights: MASTER_FRAMEWORK_WEIGHTS,
+  }),
+});
+
+export function isKnownSxoWeightSet(id) {
+  return typeof id === "string" && Object.hasOwn(SXO_WEIGHT_SETS, id);
+}
+
 export const SXO_LAYERS = Object.freeze({
   td: {
     id: "td",

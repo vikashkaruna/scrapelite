@@ -19,12 +19,12 @@ import { PROMPT_KINDS } from "./promptTaxonomy.js";
 export const INTENT_CLASSES = Object.freeze([
   "informational",
   "navigational",
-  "transactional",
   "commercial_investigation",
-  "local",
-  "comparative",
+  "comparison",
+  "transactional",
+  "local_service",
   "support_troubleshooting",
-  "regulatory_compliance",
+  "brand_reputation_validation",
 ]);
 
 export const INTENT_CLASS_DETAILS = Object.freeze({
@@ -56,19 +56,19 @@ export const INTENT_CLASS_DETAILS = Object.freeze({
     suggestedPromptKinds: ["category", "buyer_problem", "comparison"],
     idealCta: ["demo_request", "quote_request", "see_pricing"],
   },
-  local: {
-    id: "local",
-    label: "Local",
-    description: "Searcher seeks a physical venue, service radius, or local provider nearby.",
-    suggestedPromptKinds: ["local"],
-    idealCta: ["phone_call", "get_directions", "book_appointment"],
-  },
-  comparative: {
-    id: "comparative",
-    label: "Comparative",
+  comparison: {
+    id: "comparison",
+    label: "Comparison",
     description: "Searcher is comparing two or more named alternatives or seeking versus analysis.",
     suggestedPromptKinds: ["comparison"],
-    idealCta: ["comparison_guide", "feature_matrix", "free_trial"],
+    idealCta: ["comparison_guide", "feature_matrix", "trial"],
+  },
+  local_service: {
+    id: "local_service",
+    label: "Local Service",
+    description: "Searcher seeks a physical venue, service radius, or local provider nearby.",
+    suggestedPromptKinds: ["local"],
+    idealCta: ["call", "get_directions", "booking", "whatsapp_chat"],
   },
   support_troubleshooting: {
     id: "support_troubleshooting",
@@ -77,12 +77,12 @@ export const INTENT_CLASS_DETAILS = Object.freeze({
     suggestedPromptKinds: ["buyer_problem"],
     idealCta: ["support_deflection", "documentation", "contact_support"],
   },
-  regulatory_compliance: {
-    id: "regulatory_compliance",
-    label: "Regulatory & Compliance",
-    description: "Searcher seeks legal terms, compliance documentation, licenses, or disclosures.",
+  brand_reputation_validation: {
+    id: "brand_reputation_validation",
+    label: "Brand Reputation Validation",
+    description: "Searcher is validating a brand's legitimacy, reputation, proof, and trustworthiness.",
     suggestedPromptKinds: ["trust"],
-    idealCta: ["download_policy", "security_overview", "contact_legal"],
+    idealCta: ["contact", "case_study", "reviews", "security_overview"],
   },
 });
 
@@ -161,8 +161,7 @@ export function scoreIntentCta(evidence = {}, intentClass = "informational") {
   const intentMeta = INTENT_CLASS_DETAILS[intentClass] || INTENT_CLASS_DETAILS.informational;
   const actions = evidence.detected_actions || [];
   if (actions.length === 0) {
-    // If no action data, default neutral score
-    return { score: 60, findings: [] };
+    return { score: null, findings: ["Call-to-action evidence was not measured."] };
   }
   const matches = actions.some((act) => intentMeta.idealCta.some((ideal) => (act.type || act.label || "").toLowerCase().includes(ideal.replace("_", " "))));
   return {

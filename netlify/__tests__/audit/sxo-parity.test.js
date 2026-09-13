@@ -87,6 +87,18 @@ describe("SXO API Routes & Handler Execution", () => {
     expect(body.master_weights.sxo).toBe(0.35);
     expect(body.model_version).toBe("s1");
     expect(body.default_weight_set_id).toBe("sxo_default_v1");
+    expect(Object.keys(body.intent_classes)).toEqual([
+      "informational", "navigational", "transactional", "commercial_investigation",
+      "comparison", "local_service", "support_troubleshooting", "brand_reputation_validation",
+    ]);
+    expect(Object.keys(body.primary_outcomes)).toEqual([
+      "demo", "trial", "contact", "quote", "booking", "purchase", "add_to_cart",
+      "call", "whatsapp_chat", "download", "newsletter", "account_creation",
+    ]);
+    expect(body.flags).toEqual([
+      "generic_hero_without_category", "audience_not_identified", "value_or_proof_buried",
+      "competing_ctas", "intrusive_overlays", "no_practical_pricing_path",
+    ]);
   });
 
   it("GET /api/sxo/schema (alias route D17) reaches the SXO handler and returns 200", async () => {
@@ -117,26 +129,28 @@ describe("SXO API Routes & Handler Execution", () => {
   });
 
   it("POST /sxo/evaluate evaluates audit, computes master score, and persists run", async () => {
+    // This is the real getAuditFull storage shape. In particular there are no
+    // top-level `pillars`, `facts`, `evidence`, or `framework_scores` fields.
     const mockAudit = {
-      audit: { id: "aud-123", subject_id: "subj-1", target_id: "tar-1" },
+      audit: {
+        id: "aud-123", subject_id: "subj-1", target_id: "tar-1",
+        target_url: "https://example.com", page_type: "landing_page",
+      },
       result: {
-        framework_scores: {
-          seo: { score: 82 },
-          aeo: { score: 78 },
-          geo: { score: 74 },
+        final_score: 79, seo_score: 82, aeo_score: 78, geo_score: 74,
+        answer_clarity_score: 80, entity_authority_score: 76,
+        structural_hierarchy_score: 81, technical_accessibility_score: 85,
+        coverage: 92, penalty_multiplier: 1,
+        evidence_json: {
+          heading_outline: [{ level: 1, text: "Best Web Scraping Tools" }],
+          direct_answer_blocks: [{ text: "DatIQ is an AI enrichment platform." }],
+        },
+        facts_json: {
+          content: { word_count: 500 },
+          technical: { viewport_meta: true },
         },
       },
-      pillars: {
-        technical_accessibility: { score: 85, coverage: 100 },
-      },
-      evidence: {
-        heading_outline: [{ level: 1, text: "Best Web Scraping Tools" }],
-        direct_answer_blocks: [{ text: "DatIQ is an AI enrichment platform." }],
-      },
-      facts: {
-        content: { word_count: 500 },
-        technical: { viewport_meta: true },
-      },
+      signals: [], issues: [], recommendations: [], promptRuns: [],
     };
 
     vi.spyOn(auditStore, "getAuditFull").mockResolvedValue(mockAudit);
@@ -152,7 +166,7 @@ describe("SXO API Routes & Handler Execution", () => {
       body: JSON.stringify({
         audit_id: "aud-123",
         intent_class: "informational",
-        primary_outcome: "lead_capture",
+        primary_outcome: "contact",
       }),
     };
 
@@ -168,14 +182,14 @@ describe("SXO API Routes & Handler Execution", () => {
 
   it("GET /sxo/composite/:id computes read-time master score", async () => {
     const mockAudit = {
-      audit: { id: "aud-123" },
+      audit: { id: "aud-123", target_url: "https://example.com", page_type: "page" },
       result: {
-        framework_scores: {
-          seo: { score: 80 },
-          aeo: { score: 80 },
-          geo: { score: 80 },
-        },
+        final_score: 80, seo_score: 80, aeo_score: 80, geo_score: 80,
+        answer_clarity_score: 80, entity_authority_score: 80,
+        structural_hierarchy_score: 80, technical_accessibility_score: 80,
+        coverage: 100, penalty_multiplier: 1, facts_json: {}, evidence_json: {},
       },
+      signals: [], issues: [], recommendations: [], promptRuns: [],
     };
 
     vi.spyOn(auditStore, "getAuditFull").mockResolvedValue(mockAudit);
@@ -197,5 +211,23 @@ describe("SXO API Routes & Handler Execution", () => {
     // All 4 frameworks are 80, so master is 80.0
     expect(body.master.score).toBe(80.0);
     expect(body.master.coverage).toBe(100);
+  });
+
+  it("rejects unknown scoring vocabularies and weight sets before reading an audit", async () => {
+    const getAudit = vi.spyOn(auditStore, "getAuditFull");
+    for (const body of [
+      { audit_id: "aud-123", intent_class: "comparative" },
+      { audit_id: "aud-123", primary_outcome: "lead_capture" },
+      { audit_id: "aud-123", weight_set_id: "caller_defined" },
+    ]) {
+      const res = await handler({
+        httpMethod: "POST",
+        path: "/api/discoverability/sxo/evaluate",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify(body),
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(getAudit).not.toHaveBeenCalled();
   });
 });

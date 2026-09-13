@@ -16,18 +16,18 @@
 import { SXO_LAYERS, weightedMeanMap } from "./sxoModel.js";
 
 export const FIRST_SCREEN_FLAGS = Object.freeze([
-  "has_visible_h1",
-  "has_direct_answer_atf",
-  "has_primary_action_atf",
-  "viewport_meta_valid",
-  "hero_text_substantial",
-  "media_overflow_absent",
+  "generic_hero_without_category",
+  "audience_not_identified",
+  "value_or_proof_buried",
+  "competing_ctas",
+  "intrusive_overlays",
+  "no_practical_pricing_path",
 ]);
 
 /**
  * Evaluates the 6 required flags from raw evidence and facts.
  */
-export function evaluateFirstScreenFlags(evidence = {}, facts = {}) {
+export function evaluateFirstScreenFlags(evidence = {}, facts = {}, options = {}) {
   const headings = evidence.heading_outline || [];
   const technical = facts.technical || {};
   const content = facts.content || {};
@@ -39,13 +39,30 @@ export function evaluateFirstScreenFlags(evidence = {}, facts = {}) {
   const hero_text_substantial = (content.hero_word_count ?? (content.word_count > 150 ? 40 : 10)) >= 20;
   const media_overflow_absent = technical.horizontal_scroll_absent !== false;
 
+  const buttons = Array.isArray(content.detected_buttons) ? content.detected_buttons : null;
+  const intentClass = options.intentClass || facts.intent_class;
+  const highCommercialIntent = intentClass === "commercial_investigation"
+    || intentClass === "comparison"
+    || intentClass === "transactional";
   return {
-    has_visible_h1,
-    has_direct_answer_atf,
-    has_primary_action_atf,
-    viewport_meta_valid,
-    hero_text_substantial,
-    media_overflow_absent,
+    generic_hero_without_category: content.hero_category_identified === false
+      || (content.hero_category_identified == null && has_visible_h1 && !facts.entity?.name),
+    audience_not_identified: content.audience_identified === false,
+    value_or_proof_buried: content.value_proof_atf === false
+      || (content.value_proof_atf == null && !has_direct_answer_atf && !hero_text_substantial),
+    competing_ctas: buttons ? buttons.length > 3 : null,
+    intrusive_overlays: technical.intrusive_interstitial_detected === true || technical.modal_overlay_atf === true,
+    no_practical_pricing_path: highCommercialIntent
+      ? !(content.price_detected || content.pricing_link_detected || evidence.schema_types?.some((t) => ["Offer", "PriceSpecification"].includes(t)))
+      : false,
+    _measurements: {
+      has_visible_h1,
+      has_direct_answer_atf,
+      has_primary_action_atf,
+      viewport_meta_valid,
+      hero_text_substantial,
+      media_overflow_absent,
+    },
   };
 }
 
@@ -114,12 +131,13 @@ export function scoreNavigationHierarchy(evidence = {}) {
  * Primary evaluator for Information Architecture & First Screen (IA).
  */
 export function evaluateFirstScreen(evidence = {}, facts = {}, options = {}) {
-  const flags = evaluateFirstScreenFlags(evidence, facts);
+  const flags = evaluateFirstScreenFlags(evidence, facts, options);
+  const measurements = flags._measurements;
 
-  const o = scoreOrientation(evidence, facts, flags);
-  const a = scoreAnswerImmediacy(evidence, flags);
-  const v = scoreValueProp(facts, flags);
-  const p = scorePrimaryAction(flags);
+  const o = scoreOrientation(evidence, facts, measurements);
+  const a = scoreAnswerImmediacy(evidence, measurements);
+  const v = scoreValueProp(facts, measurements);
+  const p = scorePrimaryAction(measurements);
   const n = scoreNavigationHierarchy(evidence);
 
   const rawComponents = { o, a, v, p, n };
@@ -127,17 +145,19 @@ export function evaluateFirstScreen(evidence = {}, facts = {}, options = {}) {
   const { score, coverage } = weightedMeanMap(rawComponents, weights);
 
   const findings = [];
-  if (!flags.has_visible_h1) findings.push("Missing visible H1 above the fold.");
-  if (!flags.has_direct_answer_atf) findings.push("No direct answer or primary statement visible above the fold.");
-  if (!flags.has_primary_action_atf) findings.push("No clear primary call to action visible above the fold.");
-  if (!flags.viewport_meta_valid) findings.push("Invalid or missing viewport meta tag.");
-  if (!flags.hero_text_substantial) findings.push("Hero text is sparse or lacking informative context.");
-  if (!flags.media_overflow_absent) findings.push("Horizontal overflow detected on mobile viewports.");
+  if (flags.generic_hero_without_category) findings.push("Generic hero does not identify the category.");
+  if (flags.audience_not_identified) findings.push("The first screen does not identify its intended audience.");
+  if (flags.value_or_proof_buried) findings.push("Value or proof is buried below the first decision point.");
+  if (flags.competing_ctas) findings.push("Competing calls to action weaken the primary path.");
+  if (flags.intrusive_overlays) findings.push("An intrusive overlay obstructs the first screen.");
+  if (flags.no_practical_pricing_path) findings.push("This high-commercial-intent page has no practical pricing or evaluation path.");
+
+  const publicFlags = Object.fromEntries(FIRST_SCREEN_FLAGS.map((id) => [id, flags[id]]));
 
   return {
     score,
     coverage,
-    flags,
+    flags: publicFlags,
     components: rawComponents,
     findings,
   };

@@ -54,11 +54,10 @@ describe("SXO Model & Weights (§0.1 / §11.3 parity)", () => {
 
 describe("Intent Match (IC layer §11.4)", () => {
   it("defines exactly the 8 intent classes", () => {
-    expect(INTENT_CLASSES.length).toBe(8);
-    expect(INTENT_CLASSES).toContain("informational");
-    expect(INTENT_CLASSES).toContain("transactional");
-    expect(INTENT_CLASSES).toContain("commercial_investigation");
-    expect(INTENT_CLASSES).toContain("comparative");
+    expect(INTENT_CLASSES).toEqual([
+      "informational", "navigational", "commercial_investigation", "comparison",
+      "transactional", "local_service", "support_troubleshooting", "brand_reputation_validation",
+    ]);
   });
 
   it("scores question headings accurately", () => {
@@ -97,8 +96,7 @@ describe("First Screen & Information Architecture (IA layer §11.5)", () => {
     const facts = { technical: { viewport_meta: true, mobile_friendly: true } };
     const res = evaluateFirstScreen(evidence, facts);
 
-    expect(res.flags.has_visible_h1).toBe(true);
-    expect(res.flags.viewport_meta_valid).toBe(true);
+    expect(Object.keys(res.flags)).toEqual(FIRST_SCREEN_FLAGS);
     expect(res.score).toBeGreaterThan(0);
     expect(res.coverage).toBe(100);
   });
@@ -120,10 +118,10 @@ describe("Fast, Low-Friction Experience (UX layer §11.6)", () => {
 
 describe("Conversion Design (CD layer §11.7)", () => {
   it("defines the 12 primary outcomes", () => {
-    expect(PRIMARY_OUTCOMES.length).toBe(12);
-    expect(PRIMARY_OUTCOMES).toContain("lead_capture");
-    expect(PRIMARY_OUTCOMES).toContain("saas_signup");
-    expect(PRIMARY_OUTCOMES).toContain("ecommerce_purchase");
+    expect(PRIMARY_OUTCOMES).toEqual([
+      "demo", "trial", "contact", "quote", "booking", "purchase", "add_to_cart",
+      "call", "whatsapp_chat", "download", "newsletter", "account_creation",
+    ]);
   });
 
   it("activates conversion_friction root cause on findings", () => {

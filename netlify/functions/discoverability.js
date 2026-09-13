@@ -129,10 +129,12 @@ import {
   MASTER_FRAMEWORK_WEIGHTS,
   SXO_MODEL_VERSION,
   DEFAULT_WEIGHT_SET_ID,
+  SXO_WEIGHT_SETS,
+  isKnownSxoWeightSet,
 } from "../../src/lib/discoverability/sxoModel.js";
-import { INTENT_CLASS_DETAILS } from "../../src/lib/discoverability/intentMatch.js";
+import { INTENT_CLASSES, INTENT_CLASS_DETAILS } from "../../src/lib/discoverability/intentMatch.js";
 import { FIRST_SCREEN_FLAGS } from "../../src/lib/discoverability/firstScreen.js";
-import { PRIMARY_OUTCOME_DETAILS } from "../../src/lib/discoverability/conversionDesign.js";
+import { PRIMARY_OUTCOMES, PRIMARY_OUTCOME_DETAILS } from "../../src/lib/discoverability/conversionDesign.js";
 import { evaluateSxo, computeMasterScore } from "../../src/lib/discoverability/sxoScoring.js";
 import {
   NORMALIZED_EVENTS,
@@ -173,6 +175,19 @@ const unauthorized = () => json(401, {
   error: "Sign in to run discoverability audits.",
   code: "AUTH_REQUIRED",
 });
+
+function validateSxoOptions(body = {}) {
+  if (body.intent_class && !INTENT_CLASSES.includes(body.intent_class)) {
+    return bad("Unknown `intent_class`.", { allowed: INTENT_CLASSES });
+  }
+  if (body.primary_outcome && !PRIMARY_OUTCOMES.includes(body.primary_outcome)) {
+    return bad("Unknown `primary_outcome`.", { allowed: PRIMARY_OUTCOMES });
+  }
+  if (body.weight_set_id && !isKnownSxoWeightSet(body.weight_set_id)) {
+    return bad("Unknown `weight_set_id`.", { allowed: Object.keys(SXO_WEIGHT_SETS) });
+  }
+  return null;
+}
 
 export function parsePath(splat) {
   if (!splat) return [];
@@ -839,10 +854,13 @@ export const handler = async (event) => {
           flags: FIRST_SCREEN_FLAGS,
           model_version: SXO_MODEL_VERSION,
           default_weight_set_id: DEFAULT_WEIGHT_SET_ID,
+          weight_sets: SXO_WEIGHT_SETS,
         });
       }
 
       if (id === "evaluate" && method === "POST") {
+        const invalidOptions = validateSxoOptions(body);
+        if (invalidOptions) return invalidOptions;
         const workspaceId = body.workspace_id || null;
         if (workspaceId) {
           const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
@@ -856,16 +874,17 @@ export const handler = async (event) => {
         const full = await store.getAuditFull(userId, body.audit_id);
         if (!full) return notFound("Audit not found.");
 
-        const sxoResult = evaluateSxo(full, {
+        const hydrated = rehydrate(full);
+        const sxoResult = evaluateSxo(hydrated, {
           intentClass: body.intent_class,
           primaryOutcome: body.primary_outcome,
           weightSetId: body.weight_set_id,
         });
 
         const masterScore = computeMasterScore({
-          seo: full.result?.framework_scores?.seo?.score ?? null,
-          aeo: full.result?.framework_scores?.aeo?.score ?? null,
-          geo: full.result?.framework_scores?.geo?.score ?? null,
+          seo: hydrated.frameworks.seo.score,
+          aeo: hydrated.frameworks.aeo.score,
+          geo: hydrated.frameworks.geo.score,
           sxo: sxoResult.score,
         });
 
@@ -917,12 +936,13 @@ export const handler = async (event) => {
         if (method === "GET") {
           const full = await store.getAuditFull(userId, sub);
           if (!full) return notFound("Audit not found.");
+          const hydrated = rehydrate(full);
           const existingRun = await store.getSxoForAudit(userId, sub);
           const sxoScore = existingRun?.sxo_total_score ?? null;
           const masterScore = computeMasterScore({
-            seo: full.result?.framework_scores?.seo?.score ?? null,
-            aeo: full.result?.framework_scores?.aeo?.score ?? null,
-            geo: full.result?.framework_scores?.geo?.score ?? null,
+            seo: hydrated.frameworks.seo.score,
+            aeo: hydrated.frameworks.aeo.score,
+            geo: hydrated.frameworks.geo.score,
             sxo: sxoScore,
           });
           return json(200, {
@@ -937,6 +957,8 @@ export const handler = async (event) => {
 
       // 1. POST /sxo/audits (create/evaluate SXO audit)
       if (id === "audits" && !sub && method === "POST") {
+        const invalidOptions = validateSxoOptions(body);
+        if (invalidOptions) return invalidOptions;
         const workspaceId = body.workspace_id || null;
         if (workspaceId) {
           const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
@@ -950,16 +972,17 @@ export const handler = async (event) => {
         const full = await store.getAuditFull(userId, body.audit_id);
         if (!full) return notFound("Audit not found.");
 
-        const sxoResult = evaluateSxo(full, {
+        const hydrated = rehydrate(full);
+        const sxoResult = evaluateSxo(hydrated, {
           intentClass: body.intent_class,
           primaryOutcome: body.primary_outcome,
           weightSetId: body.weight_set_id,
         });
 
         const masterScore = computeMasterScore({
-          seo: full.result?.framework_scores?.seo?.score ?? null,
-          aeo: full.result?.framework_scores?.aeo?.score ?? null,
-          geo: full.result?.framework_scores?.geo?.score ?? null,
+          seo: hydrated.frameworks.seo.score,
+          aeo: hydrated.frameworks.aeo.score,
+          geo: hydrated.frameworks.geo.score,
           sxo: sxoResult.score,
         });
 

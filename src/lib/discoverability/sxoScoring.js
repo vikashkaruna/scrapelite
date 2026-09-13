@@ -57,11 +57,14 @@ export function evaluateSxo(auditData = {}, options = {}) {
   const ux = evaluateFriction(evidence, facts, options);
 
   // 4. IA: Information Architecture & First Screen (weight 0.20)
-  const ia = evaluateFirstScreen(evidence, facts, options);
+  const ia = evaluateFirstScreen(evidence, facts, {
+    ...options,
+    intentClass: options.intentClass || auditData.intentClass || "informational",
+  });
 
   // 5. CD: Conversion Design (weight 0.15)
   const cd = evaluateConversionDesign(evidence, facts, {
-    primaryOutcome: options.primaryOutcome || auditData.primaryOutcome || "lead_capture",
+    primaryOutcome: options.primaryOutcome || auditData.primaryOutcome || "contact",
   });
 
   // 6. MI: Measurement & Iteration (weight 0.05)
