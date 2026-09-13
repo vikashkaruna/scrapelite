@@ -1950,3 +1950,79 @@ export async function claimConnectorDispatch(userId, {
   }
 }
 
+export async function saveSxoRun(userId, {
+  auditId, subjectId = null, targetId = null, workspaceId = null,
+  sxoTotalScore = null, coverage = 100, layerScores = {}, layerResults = {},
+  findings = [], weightSetId = "sxo_default_v1", modelVersion = "s1",
+}) {
+  const r = await rest("audit_sxo_runs", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId || null,
+      target_id: targetId || null,
+      sxo_total_score: sxoTotalScore,
+      coverage,
+      layer_scores: layerScores,
+      layer_results: layerResults,
+      findings,
+      weight_set_id: weightSetId,
+      model_version: modelVersion,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, run: row } : { ok: false, error: r.error || "Could not save SXO run." };
+}
+
+export async function getSxoRun(userId, id, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_sxo_runs?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function listSxoRuns(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_sxo_runs?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getSxoForAudit(userId, auditId, { workspaceId = null } = {}) {
+  const runs = await listSxoRuns(userId, { auditId, workspaceId, limit: 1 });
+  return runs.length > 0 ? runs[0] : null;
+}
+
+export async function saveIntentMapping(userId, {
+  subjectId = null, intentClass, targetUrl, mappedPromptKinds = [], workspaceId = null,
+}) {
+  const r = await rest("audit_intent_mappings", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      subject_id: subjectId || null,
+      intent_class: intentClass,
+      target_url: targetUrl,
+      mapped_prompt_kinds: mappedPromptKinds,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, mapping: row } : { ok: false, error: r.error || "Could not save intent mapping." };
+}
+
+export async function listIntentMappings(userId, { subjectId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_intent_mappings?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+

@@ -339,6 +339,23 @@ export const discoverability = {
 
   // ── Connector dispatches (CP-1.2) ─────────────────────────────────────────
   claimConnectorDispatch: (payload) => req("/connectors/dispatch", "POST", payload),
+
+  // ── Search Experience Optimization (SXO) (P3A / Stage 2) ────────────────
+  sxoSchema: () => req("/sxo/schema"),
+  evaluateSxo: (payload) => req("/sxo/evaluate", "POST", payload),
+  listSxoRuns: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/runs${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoRun: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/runs/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoComposite: (auditId) => req(`/sxo/composite/${encodeURIComponent(auditId)}`),
 };
 
 async function emailReport(payload) {

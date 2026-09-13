@@ -123,6 +123,17 @@ import {
   RELATION_SOURCES, REVIEW_STATES, GRAPH_CONFLICT_CODES, IDENTIFYING_TYPES,
   validateRelation, detectGraphConflicts, graphCoverage, buildIndex,
 } from "../../src/lib/discoverability/entityGraph.js";
+import {
+  SXO_LAYERS,
+  SXO_LAYER_WEIGHTS,
+  MASTER_FRAMEWORK_WEIGHTS,
+  SXO_MODEL_VERSION,
+  DEFAULT_WEIGHT_SET_ID,
+} from "../../src/lib/discoverability/sxoModel.js";
+import { INTENT_CLASS_DETAILS } from "../../src/lib/discoverability/intentMatch.js";
+import { FIRST_SCREEN_FLAGS } from "../../src/lib/discoverability/firstScreen.js";
+import { PRIMARY_OUTCOME_DETAILS } from "../../src/lib/discoverability/conversionDesign.js";
+import { evaluateSxo, computeMasterScore } from "../../src/lib/discoverability/sxoScoring.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -190,7 +201,11 @@ function resolveSplat(event) {
   const p = event.path || "";
   const marker = "/discoverability/";
   const idx = p.lastIndexOf(marker);
-  return idx === -1 ? "" : p.slice(idx + marker.length);
+  if (idx !== -1) return p.slice(idx + marker.length);
+  const sxoMarker = "/sxo/";
+  const sIdx = p.lastIndexOf(sxoMarker);
+  if (sIdx !== -1) return "sxo/" + p.slice(sIdx + sxoMarker.length);
+  return "";
 }
 
 function readBody(event) {
@@ -795,6 +810,115 @@ export const handler = async (event) => {
         }
         return json(res.replay ? 200 : 201, res);
       }
+      return json(405, { error: "Method not allowed." });
+    }
+
+    // ── /sxo — Search Experience Optimization (SXO) (P3A / Stage 2) ────────
+    if (root === "sxo") {
+      if (id === "schema" && method === "GET") {
+        return json(200, {
+          layers: SXO_LAYERS,
+          layer_weights: SXO_LAYER_WEIGHTS,
+          master_weights: MASTER_FRAMEWORK_WEIGHTS,
+          intent_classes: INTENT_CLASS_DETAILS,
+          primary_outcomes: PRIMARY_OUTCOME_DETAILS,
+          flags: FIRST_SCREEN_FLAGS,
+          model_version: SXO_MODEL_VERSION,
+          default_weight_set_id: DEFAULT_WEIGHT_SET_ID,
+        });
+      }
+
+      if (id === "evaluate" && method === "POST") {
+        const workspaceId = body.workspace_id || null;
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+
+        if (!body.audit_id) {
+          return bad("`audit_id` is required to evaluate SXO.");
+        }
+
+        const full = await store.getAuditFull(userId, body.audit_id);
+        if (!full) return notFound("Audit not found.");
+
+        const sxoResult = evaluateSxo(full, {
+          intentClass: body.intent_class,
+          primaryOutcome: body.primary_outcome,
+          weightSetId: body.weight_set_id,
+        });
+
+        const masterScore = computeMasterScore({
+          seo: full.result?.framework_scores?.seo?.score ?? null,
+          aeo: full.result?.framework_scores?.aeo?.score ?? null,
+          geo: full.result?.framework_scores?.geo?.score ?? null,
+          sxo: sxoResult.score,
+        });
+
+        const saved = await store.saveSxoRun(userId, {
+          auditId: body.audit_id,
+          subjectId: full.audit?.subject_id || null,
+          targetId: full.audit?.target_id || null,
+          workspaceId: workspaceId || full.audit?.workspace_id || null,
+          sxoTotalScore: sxoResult.score,
+          coverage: sxoResult.coverage,
+          layerScores: sxoResult.layerScores,
+          layerResults: sxoResult.layerResults,
+          findings: sxoResult.findings,
+          weightSetId: sxoResult.weightSetId,
+          modelVersion: sxoResult.modelVersion,
+        });
+
+        return json(200, {
+          ok: true,
+          sxo: sxoResult,
+          master: masterScore,
+          run: saved.run || null,
+        });
+      }
+
+      if (id === "runs" && !sub) {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const runs = await store.listSxoRuns(userId, {
+            auditId: q.audit_id || null,
+            subjectId: q.subject_id || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 50,
+          });
+          return json(200, { runs });
+        }
+      }
+
+      if (id === "runs" && sub) {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const run = await store.getSxoRun(userId, sub, { workspaceId: q.workspace_id || null });
+          if (!run) return notFound("SXO run not found.");
+          return json(200, { run });
+        }
+      }
+
+      if (id === "composite" && sub) {
+        if (method === "GET") {
+          const full = await store.getAuditFull(userId, sub);
+          if (!full) return notFound("Audit not found.");
+          const existingRun = await store.getSxoForAudit(userId, sub);
+          const sxoScore = existingRun?.sxo_total_score ?? null;
+          const masterScore = computeMasterScore({
+            seo: full.result?.framework_scores?.seo?.score ?? null,
+            aeo: full.result?.framework_scores?.aeo?.score ?? null,
+            geo: full.result?.framework_scores?.geo?.score ?? null,
+            sxo: sxoScore,
+          });
+          return json(200, {
+            audit_id: sub,
+            master: masterScore,
+            sxo_run_id: existingRun?.id || null,
+          });
+        }
+      }
+
       return json(405, { error: "Method not allowed." });
     }
 

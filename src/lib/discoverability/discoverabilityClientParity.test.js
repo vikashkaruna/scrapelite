@@ -62,6 +62,8 @@ describe("discoverabilityClient parity — API surface completeness", () => {
     "listTrustObservations", "saveTrustObservation",
     // Connectors dispatch (CP-1.2)
     "claimConnectorDispatch",
+    // Search Experience Optimization (SXO) (P3A / Stage 2)
+    "sxoSchema", "evaluateSxo", "listSxoRuns", "getSxoRun", "getSxoComposite",
   ];
 
   it("exposes all expected client methods as functions", () => {
