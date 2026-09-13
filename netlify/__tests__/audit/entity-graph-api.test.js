@@ -302,11 +302,13 @@ describe("approving a relationship", () => {
   });
 
   it("approves and reports the conflict sweep", async () => {
+    storeMock.ensureSubject = vi.fn();
     storeMock.approveEntityRelationship = vi.fn(async () => ({ ok: true }));
     const res = await call("POST", "entity-graph/relationships/r-1/approve", { body: { note: "Checked." } });
     expect(res.statusCode).toBe(200);
     expect(parse(res).approved).toBe(true);
     expect(parse(res).conflicts).toMatchObject({ found: expect.any(Number), recorded: expect.any(Number) });
+    expect(storeMock.ensureSubject).not.toHaveBeenCalled();
   });
 
   it("🔴 turns self-approval into 403", async () => {
