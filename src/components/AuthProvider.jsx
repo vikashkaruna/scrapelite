@@ -3,26 +3,12 @@
 // Also keeps apiClient in sync with the current JWT so all API calls carry auth.
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { getSession, onAuthStateChange, signInWithEmail } from "../lib/authService.js";
+import { getSession, onAuthStateChange } from "../lib/authService.js";
 import { setAuthToken } from "../lib/apiClient.js";
 import { applyTrialCredit } from "../lib/usageService.js";
 import { linkConsentToUser } from "../lib/consentService.js";
 import { claimBillingSession } from "../lib/billingRepo.js";
 import { clearEntitlementCache } from "../lib/entitlementClient.js";
-import { IS_PRODUCTION } from "../lib/config.js";
-
-export const REVIEWER_CREDENTIALS = {
-  email: "reviewer@datiq.app",
-  password: "DatIQ-Review-2026!",
-};
-
-export const MOCK_REVIEWER_USER = {
-  id: "76683aad-883f-437a-bf72-5b2ed4cd0d99",
-  email: "reviewer@datiq.app",
-  user_metadata: { name: "Non-Prod Reviewer", full_name: "Non-Prod Reviewer" },
-  app_metadata: { plan: "enterprise", provider: "email" },
-  role: "authenticated",
-};
 
 const AuthContext = createContext(null);
 
@@ -201,60 +187,12 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  const loginAsReviewer = useCallback(async () => {
-    try {
-      setAuthLoading(true);
-      const data = await signInWithEmail(REVIEWER_CREDENTIALS.email, REVIEWER_CREDENTIALS.password);
-      setShowAuthModal(false);
-      setAuthError("");
-      return data;
-    } catch (err) {
-      // Offline fallback: set mock reviewer session
-      const fallbackSession = {
-        access_token: "nonprod-preview-token",
-        user: MOCK_REVIEWER_USER,
-      };
-      setSession(fallbackSession);
-      setUser(MOCK_REVIEWER_USER);
-      setAuthToken(fallbackSession.access_token);
-      setShowAuthModal(false);
-      setAuthError("");
-      return { user: MOCK_REVIEWER_USER, session: fallbackSession };
-    } finally {
-      setAuthLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!IS_PRODUCTION && typeof window !== "undefined") {
-      const search = window.location.search || "";
-      if (search.includes("review=true") || search.includes("dev=true") || search.includes("reviewer=true")) {
-        getSession().then((s) => {
-          if (!s) {
-            loginAsReviewer().catch(() => {});
-          }
-        });
-      }
-    }
-  }, [loginAsReviewer]);
-
   const openAuth = useCallback((mode = "signin") => { setAuthMode(mode); setShowAuthModal(true); }, []);
   const closeAuth = useCallback(() => { setShowAuthModal(false); setAuthError(""); }, []);
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        session,
-        authLoading,
-        showAuthModal,
-        authMode,
-        authError,
-        openAuth,
-        closeAuth,
-        loginAsReviewer,
-        isNonProd: !IS_PRODUCTION,
-      }}
+      value={{ user, session, authLoading, showAuthModal, authMode, authError, openAuth, closeAuth }}
     >
       {children}
     </AuthContext.Provider>
