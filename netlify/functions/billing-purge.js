@@ -76,6 +76,17 @@ const PURGE_TABLES = [
   // (see RETAIN_TABLES: a workspace is shared, so deleting it would destroy
   // other members' data over one member's purge).
   "workspace_members",
+  // ── 0068 discoverability P3A SXO static runs ──
+  "audit_sxo_runs",
+  "audit_intent_mappings",
+  "audit_page_templates",
+  // ── 0069 discoverability P3B analytics, funnels, forms & goals ──
+  "audit_conversion_goals",
+  "audit_analytics_connections",
+  "audit_analytics_event_mappings",
+  "audit_analytics_aggregates",
+  "audit_journey_funnels",
+  "audit_form_diagnostics",
 ];
 
 // User-scoped tables from 0029-0031 deliberately NOT auto-purged, and why.

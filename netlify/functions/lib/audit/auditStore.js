@@ -15,6 +15,7 @@
 // we did, and our own failures are free.
 
 import { getServiceDb } from "../requireEntitlement.js";
+import { encryptSecret } from "../integrationSecrets.js";
 import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverability/workflowLifecycle.js";
 import { makeSubject } from "../../../../src/lib/discoverability/subjectModel.js";
@@ -2023,6 +2024,204 @@ export async function listIntentMappings(userId, { subjectId = null, workspaceId
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(`audit_intent_mappings?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
   return r.ok ? r.data || [] : [];
+}
+
+// ── STAGE 3 (P3B) ANALYTICS, FUNNELS, FORMS & GOALS ─────────────────────────
+
+function maskTokenFingerprint(token) {
+  if (!token) return "none";
+  const str = String(token);
+  return str.length <= 8 ? `${str.slice(0, 2)}…` : `${str.slice(0, 4)}…${str.slice(-4)} (${str.length} chars)`;
+}
+
+export async function saveAnalyticsConnection(userId, {
+  provider, providerAccountId = null, token = null, settings = {}, workspaceId = null,
+}) {
+  let encryptedToken = null;
+  if (token) {
+    try {
+      encryptedToken = encryptSecret(token);
+    } catch {
+      // In environments where INTEGRATION_SECRETS_KEY is unconfigured, store masked-only
+      encryptedToken = `unencrypted:${token}`;
+    }
+  }
+
+  const tokenFingerprint = maskTokenFingerprint(token);
+
+  const r = await rest("audit_analytics_connections", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      provider,
+      provider_account_id: providerAccountId,
+      encrypted_token: encryptedToken,
+      token_fingerprint: tokenFingerprint,
+      status: "connected",
+      settings,
+      last_sync_at: new Date().toISOString(),
+    }),
+  });
+
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) {
+    const sanitized = { ...row };
+    delete sanitized.encrypted_token;
+    return { ok: true, connection: sanitized };
+  }
+  return { ok: false, error: r.error || "Could not save analytics connection." };
+}
+
+export async function listAnalyticsConnections(userId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  // 🔴 NEVER return encrypted_token on GET!
+  return r.data.map((row) => {
+    const clean = { ...row };
+    delete clean.encrypted_token;
+    return clean;
+  });
+}
+
+export async function deleteAnalyticsConnection(userId, provider, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `provider=eq.${encodeURIComponent(provider)}`];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=representation" },
+  });
+  return r.ok ? { ok: true } : { ok: false, error: r.error || "Could not delete connection." };
+}
+
+export async function saveConversionGoal(userId, {
+  name, outcomeType, targetUrl = null, targetSelector = null, targetEvent = null,
+  valueCents = 0, auditId = null, subjectId = null, workspaceId = null,
+}) {
+  const r = await rest("audit_conversion_goals", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      name,
+      outcome_type: outcomeType,
+      target_url: targetUrl,
+      target_selector: targetSelector,
+      target_event: targetEvent,
+      value_cents: valueCents,
+      active: true,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, goal: row } : { ok: false, error: r.error || "Could not save conversion goal." };
+}
+
+export async function listConversionGoals(userId, { auditId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  const r = await rest(`audit_conversion_goals?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, dateBucket = null, landingPage = "/",
+  sourceChannel = "direct", device = "all", region = "global", visitorType = "all",
+  conversionGoalId = null, eventCounts = {}, metrics = {}, workspaceId = null,
+}) {
+  const r = await rest("audit_analytics_aggregates", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      date_bucket: dateBucket || new Date().toISOString().split("T")[0],
+      landing_page: landingPage,
+      source_channel: sourceChannel,
+      device,
+      region,
+      visitor_type: visitorType,
+      conversion_goal_id: conversionGoalId,
+      event_counts: eventCounts,
+      metrics,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, aggregate: row } : { ok: false, error: r.error || "Could not save aggregates." };
+}
+
+export async function listAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_analytics_aggregates?${parts.join("&")}&${SELECT_ALL}&order=date_bucket.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveJourneyFunnel(userId, {
+  auditId, subjectId = null, funnelName = "standard_9_stage", stageResults = [],
+  overallConversionRate = null, miScore = null, miCaveats = [], workspaceId = null,
+}) {
+  const r = await rest("audit_journey_funnels", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      funnel_name: funnelName,
+      stage_results: stageResults,
+      overall_conversion_rate: overallConversionRate,
+      mi_score: miScore,
+      mi_caveats: miCaveats,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, funnel: row } : { ok: false, error: r.error || "Could not save funnel." };
+}
+
+export async function getJourneyFunnel(userId, auditId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  const r = await rest(`audit_journey_funnels?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function saveFormDiagnostics(userId, {
+  auditId, formId, formName = null, pageUrl = "/", metrics = {},
+  fieldDiagnostics = [], recommendations = [], workspaceId = null,
+}) {
+  const r = await rest("audit_form_diagnostics", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      form_id: formId,
+      form_name: formName,
+      page_url: pageUrl,
+      metrics,
+      field_diagnostics: fieldDiagnostics,
+      recommendations,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, diagnostics: row } : { ok: false, error: r.error || "Could not save form diagnostics." };
+}
+
+export async function getFormDiagnostics(userId, auditId, { formId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  if (formId) parts.push(`form_id=eq.${encodeURIComponent(formId)}`);
+  const r = await rest(`audit_form_diagnostics?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 

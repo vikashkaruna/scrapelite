@@ -24,47 +24,10 @@ import { evaluateIntentMatch } from "./intentMatch.js";
 import { evaluateFirstScreen } from "./firstScreen.js";
 import { evaluateFriction } from "./frictionAudit.js";
 import { evaluateConversionDesign } from "./conversionDesign.js";
+import { evaluateMeasurementMaturity } from "./measurementMaturity.js";
 
-/**
- * Evaluates the Measurement & Iteration (MI) layer.
- * Returns null if no analytics connection exists (unmeasured).
- */
-export function evaluateMeasurementIteration(analytics = null) {
-  if (!analytics || !analytics.connected) {
-    return {
-      score: null,
-      coverage: 0,
-      components: {
-        event_instrumentation: null,
-        funnel_tracking: null,
-        form_analytics: null,
-        experiment_readiness: null,
-      },
-      findings: ["Analytics and measurement telemetry not connected; MI is unmeasured."],
-    };
-  }
-
-  const eventScore = analytics.eventsCount > 0 ? 85 : 40;
-  const funnelScore = analytics.funnelStagesCount > 0 ? 80 : 35;
-  const formScore = analytics.formTrackingEnabled ? 90 : 50;
-  const expScore = analytics.hasExperiments ? 90 : 60;
-
-  const rawComponents = {
-    event_instrumentation: eventScore,
-    funnel_tracking: funnelScore,
-    form_analytics: formScore,
-    experiment_readiness: expScore,
-  };
-
-  const { score, coverage } = weightedMeanMap(rawComponents, SXO_LAYERS.mi.componentWeights);
-
-  return {
-    score,
-    coverage,
-    components: rawComponents,
-    findings: [],
-  };
-}
+export { evaluateMeasurementMaturity };
+export const evaluateMeasurementIteration = evaluateMeasurementMaturity;
 
 /**
  * Evaluates all 6 SXO layers for a given audit result.

@@ -356,6 +356,42 @@ export const discoverability = {
     return req(`/sxo/runs/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
   },
   getSxoComposite: (auditId) => req(`/sxo/composite/${encodeURIComponent(auditId)}`),
+
+  // ── Analytics, Funnels, Forms & Goals (Stage 3 / P3B) ───────────────────
+  sxoJourney: (auditId, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/audits/${encodeURIComponent(auditId)}/journey${q.toString() ? `?${q}` : ""}`);
+  },
+  sxoFormDiagnostics: (auditId, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/audits/${encodeURIComponent(auditId)}/form-diagnostics${q.toString() ? `?${q}` : ""}`);
+  },
+  importSxoEvents: (payload) => req("/sxo/events/import", "POST", payload),
+  connectSxoIntegration: (provider, payload) =>
+    req(`/sxo/integrations/${encodeURIComponent(provider)}/connect`, "POST", payload),
+  listSxoIntegrations: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/integrations${q.toString() ? `?${q}` : ""}`);
+  },
+  disconnectSxoIntegration: (provider, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/integrations/${encodeURIComponent(provider)}${q.toString() ? `?${q}` : ""}`, "DELETE");
+  },
+  saveSxoConversionGoal: (payload) => req("/sxo/conversion-goals", "POST", payload),
+  listSxoConversionGoals: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/conversion-goals${q.toString() ? `?${q}` : ""}`);
+  },
 };
 
 async function emailReport(payload) {

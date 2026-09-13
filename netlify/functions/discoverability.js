@@ -134,6 +134,16 @@ import { INTENT_CLASS_DETAILS } from "../../src/lib/discoverability/intentMatch.
 import { FIRST_SCREEN_FLAGS } from "../../src/lib/discoverability/firstScreen.js";
 import { PRIMARY_OUTCOME_DETAILS } from "../../src/lib/discoverability/conversionDesign.js";
 import { evaluateSxo, computeMasterScore } from "../../src/lib/discoverability/sxoScoring.js";
+import {
+  NORMALIZED_EVENTS,
+  NORMALIZED_EVENT_SET,
+  SEGMENTATION_AXES,
+  mapSourceEvent,
+  isValidNormalizedEvent,
+} from "../../src/lib/discoverability/eventTaxonomy.js";
+import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../src/lib/discoverability/journeyModel.js";
+import { FORM_METRIC_KEYS, evaluateFormDiagnostics } from "../../src/lib/discoverability/formDiagnostics.js";
+import { evaluateMeasurementMaturity } from "../../src/lib/discoverability/measurementMaturity.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -916,6 +926,208 @@ export const handler = async (event) => {
             master: masterScore,
             sxo_run_id: existingRun?.id || null,
           });
+        }
+      }
+
+      // ── Stage 3 / P3B Endpoints ──
+
+      // 1. GET /sxo/audits/:id/journey
+      if (id === "audits" && sub && subId === "journey") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          let funnel = await store.getJourneyFunnel(userId, sub, { workspaceId: q.workspace_id || null });
+          if (!funnel) {
+            const aggregates = await store.listAnalyticsAggregates(userId, { auditId: sub, workspaceId: q.workspace_id || null });
+            const aggregatedCounts = {};
+            for (const agg of aggregates) {
+              for (const [evt, count] of Object.entries(agg.event_counts || {})) {
+                aggregatedCounts[evt] = (aggregatedCounts[evt] || 0) + Number(count || 0);
+              }
+            }
+            const stageInputs = {
+              landing_session: aggregatedCounts.page_view ?? null,
+              engaged_session: (aggregatedCounts.scroll_50 || aggregatedCounts.scroll_75 || aggregatedCounts.scroll_90) ?? null,
+              key_content_seen: (aggregatedCounts.pricing_view || aggregatedCounts.form_view) ?? null,
+              primary_cta_view: aggregatedCounts.primary_cta_view ?? null,
+              primary_cta_click: aggregatedCounts.primary_cta_click ?? null,
+              action_start: (aggregatedCounts.form_start || aggregatedCounts.booking_start || aggregatedCounts.checkout_start) ?? null,
+              conversion_complete: (aggregatedCounts.form_submit || aggregatedCounts.booking_complete || aggregatedCounts.purchase_complete) ?? null,
+              qualified_outcome: aggregatedCounts.qualified_conversion ?? null,
+            };
+            const calculated = calculateJourneyFunnel(stageInputs, { name: `audit_${sub}_funnel` });
+            const mi = evaluateMeasurementMaturity({
+              connected: aggregates.length > 0,
+              trackedEventsCount: Object.keys(aggregatedCounts).length,
+              measuredFunnelStagesCount: calculated.measured_stages_count,
+            });
+            funnel = {
+              audit_id: sub,
+              funnel_name: calculated.funnel_name,
+              stage_results: calculated.stages,
+              overall_conversion_rate: calculated.overall_conversion_rate,
+              mi_score: mi.score,
+              mi_caveats: calculated.caveats.concat(mi.caveats),
+            };
+          }
+          return json(200, { ok: true, audit_id: sub, funnel });
+        }
+      }
+
+      // 2. GET /sxo/audits/:id/form-diagnostics
+      if (id === "audits" && sub && subId === "form-diagnostics") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          let diagnostics = await store.getFormDiagnostics(userId, sub, {
+            formId: q.form_id || null,
+            workspaceId: q.workspace_id || null,
+          });
+          if (!diagnostics) {
+            diagnostics = evaluateFormDiagnostics({
+              views: Number(q.views) || 0,
+              starts: Number(q.starts) || 0,
+              submits: Number(q.submits) || 0,
+              fieldErrors: Number(q.field_errors) || 0,
+              completionTimeSec: q.completion_time_sec ? Number(q.completion_time_sec) : null,
+              deviceSplit: {
+                desktop: Number(q.desktop) || 0,
+                mobile: Number(q.mobile) || 0,
+                tablet: Number(q.tablet) || 0,
+              },
+              form_id: q.form_id || "default_form",
+              page_url: q.page_url || "/",
+            });
+          }
+          return json(200, { ok: true, audit_id: sub, diagnostics });
+        }
+      }
+
+      // 3. POST /sxo/events/import
+      if (id === "events" && sub === "import") {
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+
+          const events = Array.isArray(body.events) ? body.events : [body];
+          const provider = body.provider || "custom";
+          const mappedCounts = {};
+          const unmappedList = [];
+
+          for (const item of events) {
+            const rawName = item.event_name || item.name || item.event;
+            if (!rawName) continue;
+            const props = item.properties || item.params || {};
+            const mapResult = mapSourceEvent(provider, rawName, props);
+            if (mapResult.valid && mapResult.normalized_event) {
+              const count = Number(item.count || 1);
+              mappedCounts[mapResult.normalized_event] = (mappedCounts[mapResult.normalized_event] || 0) + count;
+            } else {
+              unmappedList.push({
+                unmapped_name: mapResult.unmapped_name || rawName,
+                reason: mapResult.reason || "Unrecognized event name",
+              });
+            }
+          }
+
+          const saved = await store.saveAnalyticsAggregates(userId, {
+            auditId: body.audit_id || null,
+            subjectId: body.subject_id || null,
+            dateBucket: body.date_bucket || null,
+            landingPage: body.landing_page || "/",
+            sourceChannel: body.source_channel || "direct",
+            device: body.device || "all",
+            region: body.region || "global",
+            visitorType: body.visitor_type || "all",
+            conversionGoalId: body.conversion_goal_id || null,
+            eventCounts: mappedCounts,
+            metrics: body.metrics || {},
+            workspaceId,
+          });
+
+          return json(200, {
+            ok: true,
+            imported_events_count: Object.keys(mappedCounts).length,
+            event_counts: mappedCounts,
+            unmapped: unmappedList,
+            aggregate: saved.aggregate || null,
+          });
+        }
+      }
+
+      // 4. /sxo/integrations
+      if (id === "integrations") {
+        if (sub && subId === "connect" && method === "POST") {
+          const provider = sub;
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          const saved = await store.saveAnalyticsConnection(userId, {
+            provider,
+            providerAccountId: body.provider_account_id || null,
+            token: body.token || body.api_key || null,
+            settings: body.settings || {},
+            workspaceId,
+          });
+          return json(200, saved);
+        }
+
+        if (!sub && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const connections = await store.listAnalyticsConnections(userId, {
+            workspaceId: q.workspace_id || null,
+          });
+          return json(200, { ok: true, connections });
+        }
+
+        if (sub && !subId && method === "DELETE") {
+          const provider = sub;
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          await store.deleteAnalyticsConnection(userId, provider, { workspaceId });
+          return json(200, { ok: true, disconnected: provider });
+        }
+      }
+
+      // 5. /sxo/conversion-goals
+      if (id === "conversion-goals") {
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          if (!body.name || !body.outcome_type) {
+            return bad("`name` and `outcome_type` are required for conversion goals.");
+          }
+          const saved = await store.saveConversionGoal(userId, {
+            name: body.name,
+            outcomeType: body.outcome_type,
+            targetUrl: body.target_url || null,
+            targetSelector: body.target_selector || null,
+            targetEvent: body.target_event || null,
+            valueCents: Number(body.value_cents) || 0,
+            auditId: body.audit_id || null,
+            subjectId: body.subject_id || null,
+            workspaceId,
+          });
+          return json(200, saved);
+        }
+
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const goals = await store.listConversionGoals(userId, {
+            auditId: q.audit_id || null,
+            workspaceId: q.workspace_id || null,
+          });
+          return json(200, { ok: true, goals });
         }
       }
 

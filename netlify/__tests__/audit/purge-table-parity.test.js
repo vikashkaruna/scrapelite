@@ -72,3 +72,38 @@ describe("PURGE_TABLES ↔ RETAIN_TABLES parity for 0029-0031", () => {
     expect(_internal.PURGE_TABLES).toContain("workspace_members");
   });
 });
+
+describe("PURGE_TABLES ↔ RETAIN_TABLES parity for P3 migrations (0068-0069)", () => {
+  const P3_MIGRATIONS = [
+    "0068_sxo_static_runs.sql",
+    "0069_analytics_funnels_forms.sql",
+  ];
+  const p3Tables = P3_MIGRATIONS.flatMap(tablesIn);
+
+  it("identifies all tables in 0068 and 0069 migrations", () => {
+    expect(p3Tables.length).toBe(9);
+    expect(p3Tables).toEqual([
+      "audit_sxo_runs",
+      "audit_intent_mappings",
+      "audit_page_templates",
+      "audit_conversion_goals",
+      "audit_analytics_connections",
+      "audit_analytics_event_mappings",
+      "audit_analytics_aggregates",
+      "audit_journey_funnels",
+      "audit_form_diagnostics",
+    ]);
+  });
+
+  it("every table introduced in 0068 and 0069 is accounted for in PURGE_TABLES", () => {
+    const purge = new Set(_internal.PURGE_TABLES);
+    const retain = new Set(Object.keys(RETAIN_TABLES));
+
+    const unhandled = p3Tables.filter((t) => !purge.has(t) && !retain.has(t));
+    expect(unhandled, `P3 tables unhandled in purge/retain lists: ${unhandled.join(", ")}`).toEqual([]);
+
+    for (const table of p3Tables) {
+      expect(purge.has(table), `${table} must be in PURGE_TABLES`).toBe(true);
+    }
+  });
+});

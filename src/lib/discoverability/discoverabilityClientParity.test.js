@@ -64,6 +64,10 @@ describe("discoverabilityClient parity — API surface completeness", () => {
     "claimConnectorDispatch",
     // Search Experience Optimization (SXO) (P3A / Stage 2)
     "sxoSchema", "evaluateSxo", "listSxoRuns", "getSxoRun", "getSxoComposite",
+    // Analytics, Funnels, Forms & Goals (P3B / Stage 3)
+    "sxoJourney", "sxoFormDiagnostics", "importSxoEvents",
+    "connectSxoIntegration", "listSxoIntegrations", "disconnectSxoIntegration",
+    "saveSxoConversionGoal", "listSxoConversionGoals",
   ];
 
   it("exposes all expected client methods as functions", () => {
