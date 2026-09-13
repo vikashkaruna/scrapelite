@@ -648,18 +648,21 @@ export async function deletePromptMonitor(userId, monitorId) {
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-export async function getAudit(userId, auditId) {
+export async function getAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`,
   );
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** An audit plus every child. The `/results` endpoint's payload. */
-export async function getAuditFull(userId, auditId) {
-  const audit = await getAudit(userId, auditId);
+export async function getAuditFull(userId, auditId, { workspaceId = null } = {}) {
+  const audit = await getAudit(userId, auditId, { workspaceId });
   if (!audit) return null;
-  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`;
+  // Child rows keep the audit creator as user_id. Once the workspace-scoped
+  // parent has been authorized, use that stored owner id rather than the
+  // viewer's id so another workspace member can read the complete audit.
+  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(audit.user_id || userId)}`;
   const [results, signals, issues, recs, runs] = await Promise.all([
     rest(`audit_results?${scope}&${SELECT_ALL}&limit=1`),
     rest(`audit_signals?${scope}&${SELECT_ALL}&order=pillar.asc,signal_code.asc`),
@@ -2041,9 +2044,12 @@ export async function saveAnalyticsConnection(userId, {
   if (token) {
     try {
       encryptedToken = encryptSecret(token);
-    } catch {
-      // In environments where INTEGRATION_SECRETS_KEY is unconfigured, store masked-only
-      encryptedToken = `unencrypted:${token}`;
+    } catch (error) {
+      return {
+        ok: false,
+        code: "ENCRYPTION_UNAVAILABLE",
+        error: error?.message || "Analytics credentials cannot be encrypted.",
+      };
     }
   }
 
@@ -2369,5 +2375,3 @@ export async function listPortfolioRollups(userId, {
   const r = await rest(`audit_portfolio_rollups?${parts.join("&")}&${SELECT_ALL}&order=calculated_at.desc&limit=${rowCap(limit, 100)}`);
   return r.ok ? r.data || [] : [];
 }
-
-

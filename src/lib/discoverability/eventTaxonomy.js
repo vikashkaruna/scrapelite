@@ -97,6 +97,9 @@ export const SEGMENTATION_AXES = Object.freeze([
 
 // ── PROVIDER MAPPINGS ──────────────────────────────────────────────────────
 
+export const ANALYTICS_CONNECTOR_PROVIDERS = Object.freeze(["ga4", "posthog", "plausible"]);
+export const ANALYTICS_IMPORT_PROVIDERS = Object.freeze([...ANALYTICS_CONNECTOR_PROVIDERS, "custom"]);
+
 const GA4_EVENT_MAP = Object.freeze({
   page_view: "page_view",
   scroll: (props = {}) => {

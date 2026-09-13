@@ -13,7 +13,7 @@ import * as auditStore from "../../functions/lib/audit/auditStore.js";
 import * as serverClient from "../../functions/lib/supabaseServerClient.js";
 import { NORMALIZED_EVENTS, SEGMENTATION_AXES } from "../../../src/lib/discoverability/eventTaxonomy.js";
 import { FUNNEL_STAGES } from "../../../src/lib/discoverability/journeyModel.js";
-import { FORM_METRIC_KEYS } from "../../../src/lib/discoverability/formDiagnostics.js";
+import { FORM_METRIC_KEYS, evaluateFormDiagnostics } from "../../../src/lib/discoverability/formDiagnostics.js";
 
 const ROOT = process.cwd();
 const RAW_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0069_analytics_funnels_forms.sql"), "utf8");
@@ -58,6 +58,10 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
     vi.spyOn(serverClient, "authenticateBearer").mockResolvedValue({
       ok: true,
       user: { id: userId, email: "analytics@datiq.test" },
+    });
+    vi.spyOn(auditStore, "getAuditFull").mockResolvedValue({
+      audit: { id: "aud-owned", user_id: userId },
+      result: {}, signals: [], issues: [], recommendations: [], promptRuns: [],
     });
   });
 
@@ -193,7 +197,9 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
   });
 
   it("GET /api/sxo/audits/:id/form-diagnostics returns 9 per-form metrics and recommendations", async () => {
-    vi.spyOn(auditStore, "getFormDiagnostics").mockResolvedValue(null);
+    vi.spyOn(auditStore, "getFormDiagnostics").mockResolvedValue(evaluateFormDiagnostics({
+      views: 1000, starts: 400, submits: 100, fieldErrors: 200,
+    }));
 
     const res = await handler({
       httpMethod: "GET",
@@ -216,6 +222,30 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
     expect(body.diagnostics.metrics.completion_rate).toBe(25);
     expect(body.diagnostics.metrics.abandonment_rate).toBe(75);
     expect(body.diagnostics.friction_flags).toContain("HIGH_ABANDONMENT_RATE");
+  });
+
+  it("does not synthesize form diagnostics from caller-controlled query parameters", async () => {
+    vi.spyOn(auditStore, "getFormDiagnostics").mockResolvedValue(null);
+    const res = await handler({
+      httpMethod: "GET",
+      path: "/api/sxo/audits/aud-789/form-diagnostics",
+      headers: { authorization: "Bearer valid-token" },
+      queryStringParameters: { views: "1000000", submits: "1000000" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).diagnostics).toBeNull();
+  });
+
+  it("returns 404 for journey and form reads when the audit is not accessible", async () => {
+    auditStore.getAuditFull.mockResolvedValue(null);
+    for (const suffix of ["journey", "form-diagnostics"]) {
+      const res = await handler({
+        httpMethod: "GET",
+        path: `/api/sxo/audits/foreign-audit/${suffix}`,
+        headers: { authorization: "Bearer valid-token" },
+      });
+      expect(res.statusCode).toBe(404);
+    }
   });
 
   it("POST /api/sxo/conversion-goals and GET /api/sxo/conversion-goals manages goals", async () => {

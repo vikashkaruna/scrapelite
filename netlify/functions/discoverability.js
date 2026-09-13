@@ -140,6 +140,8 @@ import {
   NORMALIZED_EVENTS,
   NORMALIZED_EVENT_SET,
   SEGMENTATION_AXES,
+  ANALYTICS_CONNECTOR_PROVIDERS,
+  ANALYTICS_IMPORT_PROVIDERS,
   mapSourceEvent,
   isValidNormalizedEvent,
 } from "../../src/lib/discoverability/eventTaxonomy.js";
@@ -862,16 +864,14 @@ export const handler = async (event) => {
         const invalidOptions = validateSxoOptions(body);
         if (invalidOptions) return invalidOptions;
         const workspaceId = body.workspace_id || null;
-        if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-        }
+        const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+        if (!capabilityGate.ok) return capabilityGate.response;
 
         if (!body.audit_id) {
           return bad("`audit_id` is required to evaluate SXO.");
         }
 
-        const full = await store.getAuditFull(userId, body.audit_id);
+        const full = await store.getAuditFull(userId, body.audit_id, { workspaceId });
         if (!full) return notFound("Audit not found.");
 
         const hydrated = rehydrate(full);
@@ -934,10 +934,13 @@ export const handler = async (event) => {
 
       if (id === "composite" && sub) {
         if (method === "GET") {
-          const full = await store.getAuditFull(userId, sub);
+          const workspaceId = event.queryStringParameters?.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
           if (!full) return notFound("Audit not found.");
           const hydrated = rehydrate(full);
-          const existingRun = await store.getSxoForAudit(userId, sub);
+          const existingRun = await store.getSxoForAudit(userId, sub, { workspaceId });
           const sxoScore = existingRun?.sxo_total_score ?? null;
           const masterScore = computeMasterScore({
             seo: hydrated.frameworks.seo.score,
@@ -960,16 +963,14 @@ export const handler = async (event) => {
         const invalidOptions = validateSxoOptions(body);
         if (invalidOptions) return invalidOptions;
         const workspaceId = body.workspace_id || null;
-        if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-        }
+        const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+        if (!capabilityGate.ok) return capabilityGate.response;
 
         if (!body.audit_id) {
           return bad("`audit_id` is required to evaluate SXO.");
         }
 
-        const full = await store.getAuditFull(userId, body.audit_id);
+        const full = await store.getAuditFull(userId, body.audit_id, { workspaceId });
         if (!full) return notFound("Audit not found.");
 
         const hydrated = rehydrate(full);
@@ -1010,15 +1011,23 @@ export const handler = async (event) => {
 
       // 2. GET /sxo/audits/:id (summary / status)
       if (id === "audits" && sub && !subId && method === "GET") {
-        const full = await store.getAuditFull(userId, sub);
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
         if (!full) return notFound("Audit not found.");
-        const run = await store.getSxoForAudit(userId, sub);
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
         return json(200, { ok: true, audit: full.audit, sxo_run: run });
       }
 
       // 3. GET /sxo/audits/:id/results (scores + evidence)
       if (id === "audits" && sub && subId === "results" && method === "GET") {
-        const run = await store.getSxoForAudit(userId, sub);
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
         return json(200, {
           ok: true,
           audit_id: sub,
@@ -1030,7 +1039,12 @@ export const handler = async (event) => {
 
       // 4. GET /sxo/audits/:id/intent-match (intent findings)
       if (id === "audits" && sub && subId === "intent-match" && method === "GET") {
-        const run = await store.getSxoForAudit(userId, sub);
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
         return json(200, {
           ok: true,
           audit_id: sub,
@@ -1040,7 +1054,12 @@ export const handler = async (event) => {
 
       // 5. GET /sxo/audits/:id/first-screen (first-screen findings)
       if (id === "audits" && sub && subId === "first-screen" && method === "GET") {
-        const run = await store.getSxoForAudit(userId, sub);
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
         return json(200, {
           ok: true,
           audit_id: sub,
@@ -1052,9 +1071,14 @@ export const handler = async (event) => {
       if (id === "audits" && sub && subId === "journey") {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
-          let funnel = await store.getJourneyFunnel(userId, sub, { workspaceId: q.workspace_id || null });
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
+          if (!full) return notFound("Audit not found.");
+          let funnel = await store.getJourneyFunnel(userId, sub, { workspaceId });
           if (!funnel) {
-            const aggregates = await store.listAnalyticsAggregates(userId, { auditId: sub, workspaceId: q.workspace_id || null });
+            const aggregates = await store.listAnalyticsAggregates(userId, { auditId: sub, workspaceId });
             const aggregatedCounts = {};
             for (const agg of aggregates) {
               for (const [evt, count] of Object.entries(agg.event_counts || {})) {
@@ -1094,25 +1118,17 @@ export const handler = async (event) => {
       if (id === "audits" && sub && subId === "form-diagnostics") {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
+          if (!full) return notFound("Audit not found.");
           let diagnostics = await store.getFormDiagnostics(userId, sub, {
             formId: q.form_id || null,
-            workspaceId: q.workspace_id || null,
+            workspaceId,
           });
           if (!diagnostics) {
-            diagnostics = evaluateFormDiagnostics({
-              views: Number(q.views) || 0,
-              starts: Number(q.starts) || 0,
-              submits: Number(q.submits) || 0,
-              fieldErrors: Number(q.field_errors) || 0,
-              completionTimeSec: q.completion_time_sec ? Number(q.completion_time_sec) : null,
-              deviceSplit: {
-                desktop: Number(q.desktop) || 0,
-                mobile: Number(q.mobile) || 0,
-                tablet: Number(q.tablet) || 0,
-              },
-              form_id: q.form_id || "default_form",
-              page_url: q.page_url || "/",
-            });
+            diagnostics = null;
           }
           return json(200, { ok: true, audit_id: sub, diagnostics });
         }
@@ -1129,6 +1145,9 @@ export const handler = async (event) => {
 
           const events = Array.isArray(body.events) ? body.events : [body];
           const provider = body.provider || "custom";
+          if (!ANALYTICS_IMPORT_PROVIDERS.includes(provider)) {
+            return bad("Unsupported analytics import provider.", { allowed: ANALYTICS_IMPORT_PROVIDERS });
+          }
           const mappedCounts = {};
           const unmappedList = [];
 
@@ -1138,7 +1157,10 @@ export const handler = async (event) => {
             const props = item.properties || item.params || {};
             const mapResult = mapSourceEvent(provider, rawName, props);
             if (mapResult.valid && mapResult.normalized_event) {
-              const count = Number(item.count || 1);
+              const count = item.count === undefined ? 1 : Number(item.count);
+              if (!Number.isSafeInteger(count) || count < 0) {
+                return bad("Every event `count` must be a non-negative safe integer.");
+              }
               mappedCounts[mapResult.normalized_event] = (mappedCounts[mapResult.normalized_event] || 0) + count;
             } else {
               unmappedList.push({
@@ -1177,6 +1199,10 @@ export const handler = async (event) => {
       if (id === "integrations") {
         if (sub && subId === "connect" && method === "POST") {
           const provider = sub;
+          if (!ANALYTICS_CONNECTOR_PROVIDERS.includes(provider)) {
+            return bad("Unsupported analytics connector.", { allowed: ANALYTICS_CONNECTOR_PROVIDERS });
+          }
+          if (!body.token && !body.api_key) return bad("`token` or `api_key` is required.");
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
             const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
@@ -1189,7 +1215,9 @@ export const handler = async (event) => {
             settings: body.settings || {},
             workspaceId,
           });
-          return json(200, saved);
+          return saved.ok
+            ? json(200, saved)
+            : json(saved.code === "ENCRYPTION_UNAVAILABLE" ? 503 : 502, saved);
         }
 
         if (!sub && method === "GET") {
