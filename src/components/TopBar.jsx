@@ -255,8 +255,7 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onLi
 
 // ── Mobile nav panel (hamburger menu) ────────────────────────────
 function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreActive, persona, user,
-                     onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn,
-                     onReviewerLogin, isNonProd }) {
+                     onWorkspace, onAccount, onSchedules, onSwitchRole, onSignOut, onSignIn }) {
   const [exploreOpen, setExploreOpen] = useState(false);
 
   // Close panel on navigation
@@ -383,18 +382,10 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
               </button>
             </>
           ) : (
-            <>
-              {isNonProd && (
-                <button className="mobile-nav-item" onClick={() => { onReviewerLogin?.(); onClose(); }} style={{ color: "var(--accent)", fontWeight: 600 }}>
-                  <span className="mobile-nav-icon"><Icon name="zap" size={17} /></span>
-                  Reviewer Login (1-Click)
-                </button>
-              )}
-              <button className="mobile-nav-item mobile-nav-item-primary" onClick={() => { onSignIn("signin"); onClose(); }}>
-                <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
-                Sign in
-              </button>
-            </>
+            <button className="mobile-nav-item mobile-nav-item-primary" onClick={() => { onSignIn("signin"); onClose(); }}>
+              <span className="mobile-nav-icon"><Icon name="log-in" size={17} /></span>
+              Sign in
+            </button>
           )}
         </div>
       </nav>
@@ -407,7 +398,7 @@ export default function TopBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
-  const { user, openAuth, loginAsReviewer, isNonProd } = useAuth();
+  const { user, openAuth } = useAuth();
   const { personaId, resetOnboarding } = usePersona();
 
   const [showExplore, setShowExplore]  = useState(false);
@@ -516,14 +507,7 @@ export default function TopBar() {
               onSignIn={() => openAuth("signin")}
             />
           ) : (
-            <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-              {isNonProd && (
-                <Button variant="secondary" size="sm" icon="zap" onClick={() => loginAsReviewer?.()} title="1-Click Reviewer Login (Enterprise Plan)">
-                  Reviewer Login
-                </Button>
-              )}
-              <Button variant="primary" size="sm" icon="log-in" onClick={() => openAuth("signin")}>Sign in</Button>
-            </div>
+            <Button variant="primary" size="sm" icon="log-in" onClick={() => openAuth("signin")}>Sign in</Button>
           )}
         </div>
 
@@ -561,8 +545,6 @@ export default function TopBar() {
         onSwitchRole={handleSwitchRole}
         onSignOut={handleSignOut}
         onSignIn={(mode) => openAuth(mode || "signin")}
-        onReviewerLogin={loginAsReviewer}
-        isNonProd={isNonProd}
       />
     </>
   );
