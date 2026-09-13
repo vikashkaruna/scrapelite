@@ -1918,3 +1918,35 @@ export async function resolveLocalFinding(userId, findingId, resolution, { works
   if (!r.ok) return { ok: false, error: r.error };
   return row ? { ok: true, finding: row } : { ok: false, notFound: true };
 }
+
+export async function claimConnectorDispatch(userId, {
+  provider, idempotencyKey, truthRecordId = null, entityId = null,
+  workspaceId = null, payload = {},
+}) {
+  const conn = db();
+  if (!conn) return { ok: false, error: "Audit storage is unavailable." };
+  try {
+    const res = await fetch(`${conn.base}/rpc/claim_discoverability_connector_dispatch`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_provider: provider,
+        p_idempotency_key: idempotencyKey,
+        p_truth_record_id: truthRecordId || null,
+        p_entity_id: entityId || null,
+        p_workspace_id: workspaceId || null,
+        p_payload: payload || {},
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `claim dispatch failed: ${res.status} ${detail}`.trim() };
+    }
+    const verdict = await res.json();
+    return verdict;
+  } catch (err) {
+    return { ok: false, error: err?.message || "claim dispatch failed" };
+  }
+}
+

@@ -266,6 +266,79 @@ export const discoverability = {
   /** resolution: "relationship_removed" | "relationship_corrected" | "entity_merged" | "not_a_conflict". */
   resolveGraphConflict: (conflictId, resolution) =>
     req(`/entity-graph/conflicts/${encodeURIComponent(conflictId)}/resolve`, "POST", { resolution }),
+
+  // ── Subject scores (W11 / CP-1.1) ─────────────────────────────────────────
+  subjectScoreSchema: () => req("/subject-score/schema"),
+  listSubjects: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/subject-score/subjects${q.toString() ? `?${q}` : ""}`);
+  },
+  getSubject: (id) => req(`/subject-score/subjects/${encodeURIComponent(id)}`),
+  createEntitySubject: ({ subjectKind, entityId, workspaceId = null }) =>
+    req("/subject-score/subjects", "POST", {
+      subject_kind: subjectKind,
+      entity_id: entityId,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    }),
+  listSubjectScores: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/subject-score/scores${q.toString() ? `?${q}` : ""}`);
+  },
+  getSubjectScore: (id) => req(`/subject-score/scores/${encodeURIComponent(id)}`),
+  scoreSubject: (payload) => req("/subject-score/scores", "POST", payload),
+
+  // ── Local and directory intelligence (W12) ────────────────────────────────
+  localDirectorySchema: () => req("/local-directory/schema"),
+  listDirectoryListings: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/listings${q.toString() ? `?${q}` : ""}`);
+  },
+  upsertDirectoryListing: (payload) => req("/local-directory/listings", "POST", payload),
+  deleteDirectoryListing: (id, payload = {}) =>
+    req(`/local-directory/listings/${encodeURIComponent(id)}`, "DELETE", payload),
+  runLocalCheck: (payload) => req("/local-directory/check", "POST", payload),
+  listLocalChecks: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/checks${q.toString() ? `?${q}` : ""}`);
+  },
+  getLocalCheck: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/checks/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  resolveLocalFinding: (id, resolution, payload = {}) =>
+    req(`/local-directory/findings/${encodeURIComponent(id)}/resolve`, "POST", { resolution, ...payload }),
+
+  // ── Schema intelligence & Trust proof (W13) ──────────────────────────────
+  schemaRegistry: () => req("/schema-trust/schema-registry"),
+  listSchemaEntities: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/schema-trust/schema${q.toString() ? `?${q}` : ""}`);
+  },
+  saveSchemaEntity: (payload) => req("/schema-trust/schema", "POST", payload),
+  deleteSchemaEntity: (id, payload = {}) =>
+    req(`/schema-trust/schema/${encodeURIComponent(id)}`, "DELETE", payload),
+  listTrustObservations: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/schema-trust/trust${q.toString() ? `?${q}` : ""}`);
+  },
+  saveTrustObservation: (payload) => req("/schema-trust/trust", "POST", payload),
+
+  // ── Connector dispatches (CP-1.2) ─────────────────────────────────────────
+  claimConnectorDispatch: (payload) => req("/connectors/dispatch", "POST", payload),
 };
 
 async function emailReport(payload) {

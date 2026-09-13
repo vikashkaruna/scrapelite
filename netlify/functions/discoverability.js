@@ -629,17 +629,24 @@ export const handler = async (event) => {
     // ── /recommendations ───────────────────────────────────────────────────
     if (root === "recommendations" && id) {
       const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
-      // Scope first, permission second: foreign ids remain indistinguishable
-      // from missing ids and cannot be enumerated through a role error.
-      const scopedRecommendation = await store.getRecommendation(userId, id, { workspaceId });
-      if (!scopedRecommendation) return notFound("Recommendation not found.");
+      let scopedRecommendation = null;
+      if (workspaceId) {
+        // Scope first, permission second: foreign ids remain indistinguishable
+        // from missing ids and cannot be enumerated through a role error.
+        scopedRecommendation = await store.getRecommendation(userId, id, { workspaceId });
+        if (!scopedRecommendation) return notFound("Recommendation not found.");
+      }
 
       if (method === "POST" && sub === "assign") {
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
         // `assignee: null` puts it down. Anything else is checked against
         // shared workspace membership by the database, not here.
-        const r = await store.setRecommendationAssignee(userId, id, body.assignee ?? null, { workspaceId });
+        const r = await (workspaceId
+          ? store.setRecommendationAssignee(userId, id, body.assignee ?? null, { workspaceId })
+          : store.setRecommendationAssignee(userId, id, body.assignee ?? null));
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         await store.recordEvent(userId, {
@@ -660,21 +667,23 @@ export const handler = async (event) => {
       // W8 — the full lifecycle. The four original verbs keep their exact
       // meanings so no existing client breaks; the rest are new.
       if (method === "POST" && VERB_TO_STATE[sub]) {
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
         const status = VERB_TO_STATE[sub];
         const r = await store.setRecommendationStatus(userId, id, status, body.reason, {
           validatedByAuditId: body.validated_by_audit_id || null,
           assignee: body.assignee || null,
           dueAt: body.due_at,
           notes: body.notes,
-          workspaceId,
+          ...(workspaceId ? { workspaceId } : {}),
         });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         // W8 — the audit trail entry AND the webhook, which are different
         // readers: the first is ours, the second is somebody's integration.
-        await dispatchAuditEvent(scopedRecommendation.user_id || userId, WEBHOOK_EVENT_FOR[status] || null, {
+        await dispatchAuditEvent(scopedRecommendation?.user_id || userId, WEBHOOK_EVENT_FOR[status] || null, {
           audit: { id: r.recommendation.audit_id },
           recommendation: r.recommendation,
         }).catch(() => {});
@@ -764,6 +773,30 @@ export const handler = async (event) => {
 
     // ── /schedules ─────────────────────────────────────────────────────────
     if (root === "schedules") return await scheduleRoute(event, userId, method, id, body);
+
+    if (root === "connectors") {
+      if (id === "dispatch" && method === "POST") {
+        const { provider, idempotency_key, truth_record_id, entity_id, workspace_id, payload } = body || {};
+        if (!provider || !idempotency_key) {
+          return bad("provider and idempotency_key are required.");
+        }
+        const res = await store.claimConnectorDispatch(userId, {
+          provider,
+          idempotencyKey: idempotency_key,
+          truthRecordId: truth_record_id,
+          entityId: entity_id,
+          workspaceId: workspace_id,
+          payload,
+        });
+        if (!res.ok) {
+          if (res.reason === "not_authorized") return json(403, { error: "Not authorized to dispatch connectors in this workspace." });
+          if (res.reason === "source_not_approved") return json(409, { error: "Source record or entity must be approved before connector dispatch." });
+          return bad(res.error || res.reason || "Dispatch claim refused.");
+        }
+        return json(res.replay ? 200 : 201, res);
+      }
+      return json(405, { error: "Method not allowed." });
+    }
 
     // ── /profiles — static reference data for the UI ────────────────────────
     if (root === "profiles" && method === "GET") return json(200, intakeReference());
@@ -2236,9 +2269,9 @@ async function entityGraphRoute(userId, method, path, body, event) {
         // status code is a public contract `/api/v1` holders read. What
         // changed is that the body now reports what actually happened, so a
         // caller can tell a recorded sighting from a lost one.
-        const existing = await store.findRelationship(userId, {
-          subjectId, predicate, objectId, workspaceId,
-        });
+        const criteria = { subjectId, predicate, objectId };
+        if (workspaceId) criteria.workspaceId = workspaceId;
+        const existing = await store.findRelationship(userId, criteria);
         let corroborated = false;
         if (existing) {
           const ev = await store.recordEntityEvidence({
@@ -2434,15 +2467,15 @@ async function requireLocalRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.truth_record_id) {
-    const rec = await store.getTruthRecord(userId, body.truth_record_id, {
-      workspaceId: body.workspace_id || null,
-    });
+    const rec = await (body.workspace_id
+      ? store.getTruthRecord(userId, body.truth_record_id, { workspaceId: body.workspace_id })
+      : store.getTruthRecord(userId, body.truth_record_id));
     if (!rec) return { refusal: notFound("Business truth record not found.") };
   }
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id, {
-      workspaceId: body.workspace_id || null,
-    });
+    const subj = await (body.workspace_id
+      ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+      : store.getSubject(userId, body.subject_id));
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   return { refusal: null };
@@ -2608,9 +2641,9 @@ async function requireSubjectScoreRefs(userId, body) {
   const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
-  const subject = await store.getSubject(userId, body.subject_id, {
-    workspaceId: body.workspace_id || null,
-  });
+  const subject = await (body.workspace_id
+    ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+    : store.getSubject(userId, body.subject_id));
   if (!subject) return { refusal: notFound("Subject not found.") };
 
   if (body.audit_id) {
@@ -2799,9 +2832,9 @@ async function requireSchemaTrustRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id, {
-      workspaceId: body.workspace_id || null,
-    });
+    const subj = await (body.workspace_id
+      ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+      : store.getSubject(userId, body.subject_id));
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   if (body.audit_id) {

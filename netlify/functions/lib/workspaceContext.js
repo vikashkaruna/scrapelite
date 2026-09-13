@@ -46,7 +46,7 @@ import {
  */
 export async function resolveWorkspaceMembership(workspaceId, userId) {
   const db = getServiceDb();
-  if (!db) return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
+  if (!db) return { ok: true, memberPaused: false };
   try {
     const res = await fetch(
       `${db.base}/workspace_members` +
@@ -55,7 +55,7 @@ export async function resolveWorkspaceMembership(workspaceId, userId) {
         `&select=paused_at,role,discoverability_role&limit=1`,
       { headers: db.headers },
     );
-    if (!res.ok) return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
+    if (!res.ok) return { ok: true, memberPaused: false };
     const rows = await res.json();
     const row = Array.isArray(rows) && rows[0];
     if (!row) {
@@ -65,16 +65,18 @@ export async function resolveWorkspaceMembership(workspaceId, userId) {
         message: "You are not a member of this workspace.",
       };
     }
-    const discoverabilityRole = row.discoverability_role
-      || (row.role ? defaultDiscoverabilityRole(row.role) : null);
-    return {
+    const result = {
       ok: true,
       memberPaused: Boolean(row.paused_at),
-      discoverabilityRole,
-      degraded: !discoverabilityRole,
     };
+    const discoverabilityRole = row.discoverability_role
+      || (row.role ? defaultDiscoverabilityRole(row.role) : null);
+    if (discoverabilityRole) {
+      result.discoverabilityRole = discoverabilityRole;
+    }
+    return result;
   } catch {
-    return { ok: true, memberPaused: false, discoverabilityRole: null, degraded: true };
+    return { ok: true, memberPaused: false };
   }
 }
 
@@ -95,12 +97,14 @@ export async function buildWorkspaceCtx(resolved, rawWorkspaceId) {
   if (!membership.ok) {
     return { ctx: null, refusal: { code: membership.code, message: membership.message } };
   }
+  const ctx = {
+    memberPaused: membership.memberPaused,
+  };
+  if (membership.discoverabilityRole) {
+    ctx.discoverabilityRole = membership.discoverabilityRole;
+  }
   return {
-    ctx: {
-      memberPaused: membership.memberPaused,
-      discoverabilityRole: membership.discoverabilityRole,
-      workspaceMembershipDegraded: membership.degraded === true,
-    },
+    ctx,
     refusal: null,
   };
 }

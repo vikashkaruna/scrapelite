@@ -37,9 +37,24 @@ import {
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
+import BusinessTruthPanel from "../components/discoverability/BusinessTruthPanel.jsx";
+import EntityGraphPanel from "../components/discoverability/EntityGraphPanel.jsx";
+import LocalDirectoryPanel from "../components/discoverability/LocalDirectoryPanel.jsx";
+import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx";
+import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
+
+const DISCOVERABILITY_VIEWS = [
+  { id: "audit", label: "Audit", icon: "scan-search" },
+  { id: "truth", label: "Business Truth", icon: "database" },
+  { id: "graph", label: "Entity Graph", icon: "share-2" },
+  { id: "directory", label: "Local Directory", icon: "map-pin" },
+  { id: "schema", label: "Schema & Trust", icon: "shield-check" },
+  { id: "subjects", label: "Subject Scores", icon: "award" },
+  { id: "history", label: "History", icon: "clock" },
+];
 
 /**
  * Which pillar cards the reader has open, for this browsing session only.
@@ -156,7 +171,16 @@ export default function Discoverability() {
   // covers this exact path, and netlify.toml's header rule is an EXACT match
   // that a sub-path would silently escape, leaving an audit-history screen
   // indexable. A query param needs none of those four touched.
-  const showHistory = params.get("view") === "history";
+  const currentView = params.get("view") || "audit";
+  const showHistory = currentView === "history";
+  const [subjects, setSubjects] = useState([]);
+
+  useEffect(() => {
+    if (!user) { setSubjects([]); return; }
+    discoverability.listSubjects(currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {})
+      .then((res) => setSubjects(res.subjects || []))
+      .catch(() => setSubjects([]));
+  }, [user, currentWorkspaceId]);
 
   // ── Load an audit named in the URL ───────────────────────────────────────
   const loadAudit = useCallback(async (id) => {
@@ -467,13 +491,61 @@ export default function Discoverability() {
         </div>
       </header>
 
-      {showHistory ? (
+      <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
+        {DISCOVERABILITY_VIEWS.map((v) => {
+          const isActive = currentView === v.id;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              className={`dsc-tab${isActive ? " dsc-tab-on" : ""}`}
+              onClick={() => {
+                if (v.id === "audit") {
+                  setParams(audit?.auditId ? { audit: audit.auditId } : {});
+                } else {
+                  setParams({ view: v.id, ...(audit?.auditId ? { audit: audit.auditId } : {}) });
+                }
+              }}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <Icon name={v.icon} size={15} />
+                {v.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {currentView === "history" && (
         <AuditHistory
           currentAuditId={audit?.auditId || null}
           onClose={() => setParams(audit?.auditId ? { audit: audit.auditId } : {})}
           onOpen={(id) => setParams({ audit: id })}
         />
-      ) : (
+      )}
+
+      {currentView === "truth" && (
+        <BusinessTruthPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "graph" && (
+        <EntityGraphPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "directory" && (
+        <LocalDirectoryPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "schema" && (
+        <SchemaTrustPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "subjects" && (
+        <SubjectScoresPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "audit" && (
       <>
       <AuditComposer
         // Forces a remount — and so a fresh read of the default* props below —
@@ -497,6 +569,8 @@ export default function Discoverability() {
         defaultGoal={resumedRequest?.primary_goal || ""}
         defaultGeography={resumedRequest?.target_geography || null}
         defaultCompetitors={resumedRequest?.competitor_urls || []}
+        subjects={subjects}
+        defaultSubjectId={resumedRequest?.subject_id || ""}
         signedIn={Boolean(user)}
       />
 

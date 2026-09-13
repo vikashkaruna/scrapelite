@@ -1,0 +1,102 @@
+// discoverabilityClientParity.test.js
+//
+// Parity test: Asserts that discoverabilityClient.js exposes all endpoints matching
+// the Netlify discoverability function router, and verifies that all P2 UI panels
+// are imported by production code.
+
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { discoverability, describeAuditError } from "./discoverabilityClient.js";
+
+const ROOT = process.cwd();
+
+/** Every .js/.jsx under a directory, excluding tests. */
+function sources(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === "dist" || name.startsWith(".")) continue;
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) sources(full, out);
+    else if (/\.(js|jsx)$/.test(name) && !/\.test\.(js|jsx)$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
+describe("discoverabilityClient parity — API surface completeness", () => {
+  const expectedMethods = [
+    // Audits & Results
+    "runAudit", "listAudits", "getAudit", "getResults", "rerun", "deleteAudit", "compare",
+    // Evidence panels
+    "headings", "schema", "answers", "entities", "technical",
+    // Reports
+    "reportMarkdown", "reportCsv", "reportJson", "summary", "emailReport",
+    // Recommendations
+    "recommendations", "accept", "dismiss", "markDone", "reopen", "assign",
+    // Targets & Trends
+    "listTargets", "history", "trends",
+    // Benchmarks
+    "createBenchmark", "listBenchmarks", "getBenchmark", "deleteBenchmark",
+    // Prompt sets
+    "createPromptSet", "listPromptSets", "getPromptSet", "deletePromptSet",
+    // Webhooks
+    "createWebhook", "listWebhooks", "deleteWebhook",
+    // Schedules
+    "listSchedules", "createSchedule", "updateSchedule", "deleteSchedule",
+    "profiles",
+    // Business Truth (W9)
+    "truthFields", "listTruthRecords", "createTruthRecord", "getTruthRecord", "archiveTruthRecord",
+    "proposeTruthVersion", "getTruthVersion", "submitTruthVersion", "withdrawTruthVersion",
+    "rejectTruthVersion", "promoteTruthVersion", "truthDiff", "truthConflicts", "resolveTruthConflict",
+    // Entity Graph (W10)
+    "graphSchema", "getGraph", "proposeEntity", "rejectEntity",
+    "proposeRelationship", "approveRelationship", "rejectRelationship",
+    "graphConflicts", "resolveGraphConflict",
+    // Subject Scores (W11 / CP-1.1)
+    "subjectScoreSchema", "listSubjects", "getSubject", "createEntitySubject",
+    "listSubjectScores", "getSubjectScore", "scoreSubject",
+    // Local Directory (W12)
+    "localDirectorySchema", "listDirectoryListings", "upsertDirectoryListing", "deleteDirectoryListing",
+    "runLocalCheck", "listLocalChecks", "getLocalCheck", "resolveLocalFinding",
+    // Schema Trust (W13)
+    "schemaRegistry", "listSchemaEntities", "saveSchemaEntity", "deleteSchemaEntity",
+    "listTrustObservations", "saveTrustObservation",
+    // Connectors dispatch (CP-1.2)
+    "claimConnectorDispatch",
+  ];
+
+  it("exposes all expected client methods as functions", () => {
+    for (const method of expectedMethods) {
+      expect(typeof discoverability[method], `Missing client method: ${method}`).toBe("function");
+    }
+  });
+
+  it("describes all standard audit errors into user actionable format", () => {
+    expect(describeAuditError({ code: "AUTH_REQUIRED" }).action).toBe("signin");
+    expect(describeAuditError({ code: "robots_disallowed", overridable: true }).action).toBe("attest");
+    expect(describeAuditError({ code: "QUOTA_EXCEEDED", upgradeTo: "growth" }).action).toBe("upgrade");
+    expect(describeAuditError({ code: "STORAGE_UNAVAILABLE" }).action).toBe("retry");
+  });
+});
+
+describe("P2 Panels — non-test importer wiring", () => {
+  const p2Panels = [
+    "BusinessTruthPanel.jsx",
+    "EntityGraphPanel.jsx",
+    "LocalDirectoryPanel.jsx",
+    "SchemaTrustPanel.jsx",
+    "SubjectScoresPanel.jsx",
+  ];
+
+  for (const panel of p2Panels) {
+    it(`ensures ${panel} is imported by production code (e.g. Discoverability.jsx)`, () => {
+      const allSources = sources(join(ROOT, "src"));
+      const importers = allSources.filter((file) => {
+        if (file.endsWith(panel)) return false;
+        const content = readFileSync(file, "utf8");
+        return content.includes(panel.replace(".jsx", ""));
+      });
+
+      expect(importers.length, `${panel} has no production importers`).toBeGreaterThan(0);
+    });
+  }
+});
