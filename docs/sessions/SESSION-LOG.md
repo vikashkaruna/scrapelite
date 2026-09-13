@@ -18,6 +18,111 @@
 
 ---
 
+## 2026-09-13 23:50 IST — Discoverability P3 Stages 0 to 5 Complete: SXO Engine, Analytics Governance, Portfolios & Personas, Release Runner & Packaging Alignment
+
+> **Branch:** `discoverability-P3` @ `639f47e` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  
+> **Verification:** `npx vitest run` **416 files / 6,698 passed / 0 failed / 0 skipped** · db-verify **70 migrations / 806 assertions passed / 0 failed** · 17 referral assertions · 56 workflow assertions · 116 tables with RLS enabled (0 without RLS) · 15 tables refuse anon reads · build clean in 1.30s · check:prerender 28 pages / 112 asset refs · E2E test runner 23/23 passed
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-13 |
+| **Branch** | `discoverability-P3` |
+| **HEAD SHA** | `639f47e` |
+| **Status** | Stages 0 to 5 Complete & Verified on Branch. Tree clean. |
+| **Pre-Push Gates** | 100% green (`npm test`, `npm run test:db`, `npm run verify:rls`, `npm run build`, `npm run check:prerender`) |
+| **Active Focus** | Execute and verify all Discoverability P3 Stages (0 through 5) per the master BRD/PRD and implementation plan |
+
+---
+
+### 2. What was accomplished across Stages 0 to 5
+
+- **Stage 0 · Ground Truth & Alignment** (`0877cde`):
+  - Verified and aligned schema baselines against master BRD/PRD §0.1, §9.2, §11.3–§11.7.
+  - Added migration `0065_entity_graph_p3.sql` providing additive schema entity types (`event`, `job_posting`, `course`, `software_application`, `dataset`) and predicates.
+  - Pinned SXO formula weights verbatim, mapped M-codes (6 mapped recommendation destinations, 7 architectural nulls with assertions), and codified D22 runner boundary.
+
+- **Stage 1 · Foundation Residue & Governance** (`82a1cef`, `269f584`):
+  - **CP-1.1**: Entity Subject Spine: migration `0066_workspace_audit_subjects.sql` adding workspace-aware subject indexing and conflict resolution; enforced reviewer constraints on approved entities.
+  - **CP-1.2**: Governance Models: `governanceReview.js`, `pSeoGovernance.js`, migration `0067_governance_p3.sql` providing approval lifecycle tracking and pSEO guardrails.
+  - **CP-1.3**: UI panels & client parity: Implemented `SubjectScoresPanel.jsx`, `LocalDirectoryPanel.jsx`, `EntityIntelligencePanel.jsx` in Discoverability UI with full client method wiring.
+
+- **Stage 2 · Stage P3A Static SXO Engine** (`b4b90b9`):
+  - Model engine `src/lib/discoverability/sxoScoring.js`: Evaluates master SXO formula \(SXO = 0.25 UX + 0.20 TD + 0.20 IC + 0.20 IA + 0.15 CD\) verbatim from §11.3–§11.7.
+  - Migration `0068_sxo_scores.sql`: Append-only scores table `audit_sxo_scores` (`score` nullable, `coverage` not null, model `s1`, default weight set `sxo_default_v1` per D15).
+  - Decision D14: Implemented read-time master composite calculation with explicit overlap disclosures (acknowledging technical health and CWV overlap without double-counting distortion).
+  - Netlify API routing: Registered `/api/v1/discoverability/sxo/*` and permanent alias `/api/v1/sxo/*` (D17).
+
+- **Stage 3 · Stage P3B Analytics, Funnels, Forms & Retention** (`9ef5d92`):
+  - Migration `0069_sxo_analytics_governance.sql`: 5 tables (`sxo_analytics_connections`, `sxo_funnel_definitions`, `sxo_funnel_steps`, `sxo_form_friction_audits`, `sxo_correlation_observations`) with strict RLS and workspace scoping.
+  - Decision D16: 90-day retention default, token encryption, purge-on-disconnect, and compliance with data governance commitments.
+  - Service layer `analyticsService.js`: Adapters for GA4, PostHog, Plausible with graceful fallback and mock simulation for local/dev.
+  - Endpoints: Wired `/api/v1/discoverability/analytics/*` for connection lifecycle, funnel analysis, and form friction audits.
+
+- **Stage 4 · Stage P3C Portfolio, Personas, Experiments & Dashboard** (`39a0ac0`):
+  - Migration `0070_portfolio_experiments.sql`: Tables `sxo_portfolios` and `sxo_experiments` + functions `upsert_sxo_portfolio`, `record_sxo_experiment`, `evaluate_sxo_experiment`.
+  - Portfolio engine `portfolioService.js`: Cross-subject rollout tracking, portfolio aggregation, and template benchmarks.
+  - Persona matrix `personaConfig.js`: 7 persona packs and 12 issue owner roles per §11.11 and §12.
+  - Correlation enforcement `validationLab.js`: Strict labelling of experimental findings as correlation per §11.12.
+  - Discoverability UI `DiscoverabilityDashboard.jsx`: Added SXO performance card, portfolio views, persona filtering, and experiment tracking widgets.
+
+- **Stage 5 · Release Verification & Packaging Alignment** (`639f47e`):
+  - Deliverable 5.1: Extended E2E runner `scripts/verify-discoverability-e2e.mjs` with P3 suites (`p3a_sxo` G-01..G-06, `p3b_analytics` H-01..H-04, `p3c_portfolio` I-01..I-04) + manual verification rows. Renamed master sheet to `docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md` and updated all inbound links.
+  - Deliverable 5.2: Verification suite run: 416 test files (6,698 tests) passed, 70 migrations applied (806 assertions passed), 116 tables RLS-verified, clean build and prerender.
+  - Deliverable 5.3: Packaging alignment: Added `audit.sxo` and `audit.portfolio` to `entitlementModel.js` and updated `PricingMatrix.jsx` to derive "Search-to-Outcome Intelligence" (Select+) and "Enterprise Discoverability OS" (Pro+) strictly from `limits.audits`.
+
+---
+
+### 3. Root cause analyses & defensive fixes
+
+1. **Entity approval reviewer constraint**:
+   - *Symptom*: Migration `0058`/`0066` check constraint `audit_entities_approved_has_reviewer` failed in test fixtures inserting approved entities.
+   - *Root Cause*: Approved status requires `reviewed_by` and `reviewed_at`, where `reviewed_by <> proposed_by`.
+   - *Resolution*: Updated test fixtures in `scripts/db-verify.mjs` to supply valid distinct reviewer IDs and timestamps when setting status to `approved`.
+
+2. **Discoverability subject listing mock resilience**:
+   - *Symptom*: `Discoverability.integration.test.jsx` failed with `TypeError: discoverability.listSubjects is not a function`.
+   - *Root Cause*: Hoisted test mock omitted `listSubjects` and `evaluateSxo`.
+   - *Resolution*: Added defensive optional chaining in `Discoverability.jsx` (`discoverability?.listSubjects`) and populated the mock methods in `Discoverability.integration.test.jsx`.
+
+3. **Database verification catalog expectations**:
+   - *Symptom*: `npm run test:db` failed catalog count checks.
+   - *Root Cause*: EXPECT constants in `scripts/db-verify.mjs` were pinned to pre-P3 counts (64 migrations, 104 tables, 50 functions).
+   - *Resolution*: Updated counts to reflect 70 applied migrations (+0065–0070), 116 total tables, 53 functions, and updated `upsert_audit_subject` assertion to match `>= 3` ON CONFLICT clauses.
+
+---
+
+### 4. Verification evidence
+
+- `npm test`: **416 test files passed (416/416), 6,698 tests passed (6698/6698)**.
+- `npm run test:db`: **70 migrations applied, 806 db assertions passed (0 failed)**, 17 referral assertions, 56 workflow assertions.
+- `npm run verify:rls`: **15 tables refuse anonymous reads; all 116 tables have RLS enabled (0 without RLS)**.
+- `npm run build`: **1.30s clean Vite build**; 28 prerendered pages and 84 asset references synced.
+- `npm run check:prerender`: **28 generated pages, 112 asset references present, 0 broken links**.
+- `node --test scripts/verify-discoverability-e2e.test.mjs`: **23/23 tests passed**.
+
+---
+
+### 5. Environment state after this session
+
+- **Branch:** `discoverability-P3` is 6 commits ahead of `origin/discoverability-P3` with all Stages 0–5 complete and clean.
+- **Migrations:** `0065` to `0070` are committed and verified against local WASM PostgreSQL.
+- **Entitlement / Pricing:** Aligned with `entitlementModel.js` and `PricingMatrix.jsx`.
+
+---
+
+### 6. Open items for operator
+
+- [ ] **Apply migrations `0065`–`0070` to dev/staging Supabase instance**: Follow `docs/DB-MIGRATION-RUNBOOK.md` §4e. All 6 migrations are additive and re-runnable.
+- [ ] **Execute promotion merge sequence**:
+  1. `git push origin discoverability-P3`
+  2. Merge `discoverability-P3` into `Discoverability-P1-P3-implementation`
+  3. Run merged gate, then merge into `staging`
+  4. Run staging release verification, then merge into `main`.
+
+---
+
 ## 2026-09-13 00:11 IST — P3 planned from the supplied BRD/PRD; staging merged into both discoverability branches; Analysis-2 removed
 
 > **Branch:** `discoverability-P3` @ `218955b` — carries **both** lines of work
