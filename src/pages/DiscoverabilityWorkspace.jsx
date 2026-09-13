@@ -8,6 +8,7 @@ import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx
 import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
 import SxoDashboard from "../components/discoverability/SxoDashboard.jsx";
 import { useWorkspace } from "../components/WorkspaceContext.jsx";
+import { useAuth } from "../components/AuthProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { discoverability } from "../lib/discoverability/discoverabilityClient.js";
@@ -25,6 +26,7 @@ function WorkspaceScreen() {
   const { pathname } = useLocation();
   const [params] = useSearchParams();
   const { currentWorkspaceId } = useWorkspace();
+  const { user } = useAuth();
   const showToast = useToast();
   const config = DISCOVERABILITY_WORKSPACES.find((item) => item.path === pathname)
     || DISCOVERABILITY_WORKSPACES[0];
@@ -55,7 +57,10 @@ function WorkspaceScreen() {
           }
         },
       }
-    : { workspaceId: currentWorkspaceId };
+    : {
+        workspaceId: currentWorkspaceId,
+        ...(config.path === "/discoverability/truth" ? { currentUser: user } : {}),
+      };
 
   return (
     <div className="page dsc-page">

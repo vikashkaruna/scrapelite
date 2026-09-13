@@ -9,7 +9,7 @@ import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 
 export default function BusinessTruthPanel({ workspaceId = null, currentUser = null }) {
-  const { showToast } = useToast();
+  const showToast = useToast();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -52,15 +52,15 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
     if (!recordId) return;
     try {
       const [diffRes, conflictRes] = await Promise.all([
-        discoverability.truthDiff(recordId).catch(() => null),
-        discoverability.truthConflicts(recordId).catch(() => ({ conflicts: [] })),
+        discoverability.truthDiff(recordId, { workspaceId }).catch(() => null),
+        discoverability.truthConflicts(recordId, { workspaceId }).catch(() => ({ conflicts: [] })),
       ]);
       setDiff(diffRes?.diff || null);
       setConflicts(conflictRes?.conflicts || []);
     } catch {
       // Best-effort enrichment
     }
-  }, []);
+  }, [workspaceId]);
 
   useEffect(() => {
     if (selectedRecord?.id) {
@@ -75,6 +75,7 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
       await discoverability.proposeTruthVersion(selectedRecord.id, {
         fields: formFields,
         source: "declared",
+        workspaceId,
       });
       showToast("Truth record version proposed successfully.", "check");
       setProposing(false);
@@ -96,7 +97,9 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
     }
     setPromoteLoading(true);
     try {
-      await discoverability.promoteTruthVersion(selectedRecord.id, version.id, "Promoted by review");
+      await discoverability.promoteTruthVersion(
+        selectedRecord.id, version.id, "Promoted by review", { workspaceId },
+      );
       showToast("Version promoted to canonical truth.", "check");
       loadRecords();
     } catch (err) {
@@ -117,7 +120,9 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
     if (!selectedRecord?.id) return;
     setResolveLoading(conflictId);
     try {
-      await discoverability.resolveTruthConflict(selectedRecord.id, conflictId, resolution);
+      await discoverability.resolveTruthConflict(
+        selectedRecord.id, conflictId, resolution, { workspaceId },
+      );
       showToast("Conflict marked resolved.", "check");
       setConflicts((prev) => prev.filter((c) => c.id !== conflictId));
     } catch (err) {

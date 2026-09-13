@@ -1139,7 +1139,7 @@ export const handler = async (event) => {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
 
@@ -1205,7 +1205,7 @@ export const handler = async (event) => {
           if (!body.token && !body.api_key) return bad("`token` or `api_key` is required.");
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
           const saved = await store.saveAnalyticsConnection(userId, {
@@ -1234,7 +1234,7 @@ export const handler = async (event) => {
           const workspaceId = q.workspace_id || null;
           const purgeData = q.purge_data === "true" || q.purge_data === "1" || body?.purge_data === true;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
           await store.deleteAnalyticsConnection(userId, provider, { workspaceId, purgeData });
@@ -1247,7 +1247,7 @@ export const handler = async (event) => {
         const q = event.queryStringParameters || {};
         const workspaceId = q.workspace_id || body?.workspace_id || null;
         if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
           if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
         }
         const olderThan = q.older_than_days !== undefined ? q.older_than_days : body?.older_than_days;
@@ -1266,7 +1266,7 @@ export const handler = async (event) => {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
           if (!body.name || !body.outcome_type) {
@@ -1401,7 +1401,7 @@ export const handler = async (event) => {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
           const axis = body.axis || body.rollup_axis;

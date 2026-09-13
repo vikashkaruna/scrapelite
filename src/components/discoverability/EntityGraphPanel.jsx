@@ -18,7 +18,7 @@ const ENTITY_TYPES = [
 ];
 
 export default function EntityGraphPanel({ workspaceId = null }) {
-  const { showToast } = useToast();
+  const showToast = useToast();
   const [graph, setGraph] = useState({ entities: [], relationships: [] });
   const [conflicts, setConflicts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -92,6 +92,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
         objectId: relForm.object_id,
         source: "declared",
         note: relForm.note || null,
+        workspaceId,
       });
       showToast("Relationship proposed successfully.", "check");
       setProposingRel(false);
@@ -114,7 +115,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
 
   const handleApproveRel = async (relId) => {
     try {
-      await discoverability.approveRelationship(relId);
+      await discoverability.approveRelationship(relId, { workspaceId });
       showToast("Relationship and endpoints approved.", "check");
       loadGraphData();
     } catch (err) {
@@ -124,7 +125,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
 
   const handleResolveConflict = async (conflictId, resolution) => {
     try {
-      await discoverability.resolveGraphConflict(conflictId, resolution);
+      await discoverability.resolveGraphConflict(conflictId, resolution, { workspaceId });
       showToast("Conflict resolved.", "check");
       setConflicts((prev) => prev.filter((c) => c.id !== conflictId));
     } catch (err) {

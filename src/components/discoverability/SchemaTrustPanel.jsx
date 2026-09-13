@@ -18,7 +18,7 @@ const TRUST_SIGNALS = [
 ];
 
 export default function SchemaTrustPanel({ workspaceId = null }) {
-  const { showToast } = useToast();
+  const showToast = useToast();
   const [schemaEntities, setSchemaEntities] = useState([]);
   const [trustObservations, setTrustObservations] = useState([]);
   const [loading, setLoading] = useState(true);

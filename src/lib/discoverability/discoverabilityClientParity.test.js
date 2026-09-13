@@ -4,7 +4,7 @@
 // the Netlify discoverability function router, and verifies that all P2 UI panels
 // are imported by production code.
 
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { discoverability, describeAuditError } from "./discoverabilityClient.js";
@@ -88,6 +88,48 @@ describe("discoverabilityClient parity — API surface completeness", () => {
   });
 });
 
+describe("discoverabilityClient workspace propagation", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async () => new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("scopes record-specific Business Truth reads with the active workspace", async () => {
+    await discoverability.truthDiff("record-1", { workspaceId: "workspace-1" });
+    expect(globalThis.fetch.mock.calls[0][0]).toBe(
+      "/api/discoverability/business-truth/record-1/diff?workspace_id=workspace-1",
+    );
+  });
+
+  it("scopes Business Truth governance writes with the active workspace", async () => {
+    await discoverability.promoteTruthVersion(
+      "record-1", "version-2", "Reviewed", { workspaceId: "workspace-1" },
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+      note: "Reviewed",
+      workspace_id: "workspace-1",
+    });
+  });
+
+  it("scopes Entity Graph relationship writes with the active workspace", async () => {
+    await discoverability.proposeRelationship({
+      subjectId: "entity-a",
+      predicate: "owns",
+      objectId: "entity-b",
+      workspaceId: "workspace-1",
+    });
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toMatchObject({
+      subject_id: "entity-a",
+      object_id: "entity-b",
+      workspace_id: "workspace-1",
+    });
+  });
+});
+
 describe("P2 Panels — non-test importer wiring", () => {
   const p2Panels = [
     "BusinessTruthPanel.jsx",
@@ -107,6 +149,12 @@ describe("P2 Panels — non-test importer wiring", () => {
       });
 
       expect(importers.length, `${panel} has no production importers`).toBeGreaterThan(0);
+    });
+
+    it(`uses the Toast context contract correctly in ${panel}`, () => {
+      const content = readFileSync(join(ROOT, "src/components/discoverability", panel), "utf8");
+      expect(content).not.toContain("const { showToast } = useToast()");
+      expect(content).toContain("const showToast = useToast()");
     });
   }
 });

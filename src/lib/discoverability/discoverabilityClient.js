@@ -66,6 +66,17 @@ async function reqText(path) {
   return res.text();
 }
 
+function withQuery(path, params = {}) {
+  const q = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+  return `${path}${q.toString() ? `?${q}` : ""}`;
+}
+
+function withWorkspace(body, workspaceId) {
+  return workspaceId ? { ...body, workspace_id: workspaceId } : body;
+}
+
 export const discoverability = {
   // ── Audits ───────────────────────────────────────────────────────────────
   /**
@@ -187,8 +198,10 @@ export const discoverability = {
     return req(`/business-truth${q.toString() ? `?${q}` : ""}`);
   },
   createTruthRecord: (payload) => req("/business-truth", "POST", payload),
-  getTruthRecord: (id) => req(`/business-truth/${encodeURIComponent(id)}`),
-  archiveTruthRecord: (id) => req(`/business-truth/${encodeURIComponent(id)}`, "DELETE"),
+  getTruthRecord: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  archiveTruthRecord: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(id)}`, { workspace_id: workspaceId }), "DELETE"),
 
   /**
    * Propose a version.
@@ -197,35 +210,43 @@ export const discoverability = {
    * `observed` and `imported` from a client: those carry a warranty that
    * somebody could go and check, and this path has no evidence to attach.
    */
-  proposeTruthVersion: (recordId, { fields, source = "declared", statedBy = null }) =>
+  proposeTruthVersion: (recordId, {
+    fields, source = "declared", statedBy = null, workspaceId = null, workspace_id = null,
+  }) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/versions`, "POST",
-      { fields, source, stated_by: statedBy }),
+      withWorkspace({ fields, source, stated_by: statedBy }, workspaceId || workspace_id)),
 
-  getTruthVersion: (recordId, versionId) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}`),
+  getTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}`,
+      { workspace_id: workspaceId })),
 
-  submitTruthVersion: (recordId, versionId) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/submit`, "POST"),
-  withdrawTruthVersion: (recordId, versionId) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/withdraw`, "POST"),
+  submitTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/submit`, "POST",
+      withWorkspace({}, workspaceId)),
+  withdrawTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/withdraw`, "POST",
+      withWorkspace({}, workspaceId)),
   /** `note` is REQUIRED — the server refuses a rejection without a reason. */
-  rejectTruthVersion: (recordId, versionId, note) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST", { note }),
-  promoteTruthVersion: (recordId, versionId, note = null) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST", { note }),
+  rejectTruthVersion: (recordId, versionId, note, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST",
+      withWorkspace({ note }, workspaceId)),
+  promoteTruthVersion: (recordId, versionId, note = null, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST",
+      withWorkspace({ note }, workspaceId)),
 
-  truthDiff: (recordId, { from = null, to = null } = {}) => {
+  truthDiff: (recordId, { from = null, to = null, workspaceId = null, workspace_id = null } = {}) => {
     const q = new URLSearchParams(
-      Object.entries({ from, to }).filter(([, v]) => v),
+      Object.entries({ from, to, workspace_id: workspaceId || workspace_id }).filter(([, v]) => v),
     );
     return req(`/business-truth/${encodeURIComponent(recordId)}/diff${q.toString() ? `?${q}` : ""}`);
   },
 
-  truthConflicts: (recordId) => req(`/business-truth/${encodeURIComponent(recordId)}/conflicts`),
+  truthConflicts: (recordId, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(recordId)}/conflicts`, { workspace_id: workspaceId })),
   /** resolution: "record_updated" | "page_updated" | "not_a_conflict". */
-  resolveTruthConflict: (recordId, conflictId, resolution) =>
+  resolveTruthConflict: (recordId, conflictId, resolution, { workspaceId = null } = {}) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/conflicts/${encodeURIComponent(conflictId)}`,
-      "POST", { resolution }),
+      "POST", withWorkspace({ resolution }, workspaceId)),
 
   // ── Entity graph (W10) ───────────────────────────────────────────────────
   //
@@ -245,17 +266,20 @@ export const discoverability = {
   /** `source` may only be `declared` or `inferred`; the server writes observed. */
   proposeEntity: (payload) => req("/entity-graph/entities", "POST", payload),
   /** `reason` is REQUIRED — the server refuses a rejection without one. */
-  rejectEntity: (id, reason) =>
-    req(`/entity-graph/entities/${encodeURIComponent(id)}/reject`, "POST", { reason }),
+  rejectEntity: (id, reason, { workspaceId = null } = {}) =>
+    req(`/entity-graph/entities/${encodeURIComponent(id)}/reject`, "POST", withWorkspace({ reason }, workspaceId)),
 
-  proposeRelationship: ({ subjectId, predicate, objectId, source = "declared", note = null }) =>
+  proposeRelationship: ({
+    subjectId, predicate, objectId, source = "declared", note = null, workspaceId = null,
+  }) =>
     req("/entity-graph/relationships", "POST",
-      { subject_id: subjectId, predicate, object_id: objectId, source, note }),
-  approveRelationship: (id, { note = null, truthRecordId = null } = {}) =>
+      withWorkspace({ subject_id: subjectId, predicate, object_id: objectId, source, note }, workspaceId)),
+  approveRelationship: (id, { note = null, truthRecordId = null, workspaceId = null } = {}) =>
     req(`/entity-graph/relationships/${encodeURIComponent(id)}/approve`, "POST",
-      { note, truth_record_id: truthRecordId }),
-  rejectRelationship: (id, reason) =>
-    req(`/entity-graph/relationships/${encodeURIComponent(id)}/reject`, "POST", { reason }),
+      withWorkspace({ note, truth_record_id: truthRecordId }, workspaceId)),
+  rejectRelationship: (id, reason, { workspaceId = null } = {}) =>
+    req(`/entity-graph/relationships/${encodeURIComponent(id)}/reject`, "POST",
+      withWorkspace({ reason }, workspaceId)),
 
   graphConflicts: (params = {}) => {
     const q = new URLSearchParams(
@@ -264,8 +288,9 @@ export const discoverability = {
     return req(`/entity-graph/conflicts${q.toString() ? `?${q}` : ""}`);
   },
   /** resolution: "relationship_removed" | "relationship_corrected" | "entity_merged" | "not_a_conflict". */
-  resolveGraphConflict: (conflictId, resolution) =>
-    req(`/entity-graph/conflicts/${encodeURIComponent(conflictId)}/resolve`, "POST", { resolution }),
+  resolveGraphConflict: (conflictId, resolution, { workspaceId = null } = {}) =>
+    req(`/entity-graph/conflicts/${encodeURIComponent(conflictId)}/resolve`, "POST",
+      withWorkspace({ resolution }, workspaceId)),
 
   // ── Subject scores (W11 / CP-1.1) ─────────────────────────────────────────
   subjectScoreSchema: () => req("/subject-score/schema"),
@@ -275,7 +300,8 @@ export const discoverability = {
     );
     return req(`/subject-score/subjects${q.toString() ? `?${q}` : ""}`);
   },
-  getSubject: (id) => req(`/subject-score/subjects/${encodeURIComponent(id)}`),
+  getSubject: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/subject-score/subjects/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
   createEntitySubject: ({ subjectKind, entityId, workspaceId = null }) =>
     req("/subject-score/subjects", "POST", {
       subject_kind: subjectKind,
@@ -288,7 +314,8 @@ export const discoverability = {
     );
     return req(`/subject-score/scores${q.toString() ? `?${q}` : ""}`);
   },
-  getSubjectScore: (id) => req(`/subject-score/scores/${encodeURIComponent(id)}`),
+  getSubjectScore: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/subject-score/scores/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
   scoreSubject: (payload) => req("/subject-score/scores", "POST", payload),
 
   // ── Local and directory intelligence (W12) ────────────────────────────────
@@ -355,7 +382,8 @@ export const discoverability = {
     );
     return req(`/sxo/runs/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
   },
-  getSxoComposite: (auditId) => req(`/sxo/composite/${encodeURIComponent(auditId)}`),
+  getSxoComposite: (auditId, { workspaceId = null } = {}) =>
+    req(withQuery(`/sxo/composite/${encodeURIComponent(auditId)}`, { workspace_id: workspaceId })),
 
   // ── Analytics, Funnels, Forms & Goals (Stage 3 / P3B) ───────────────────
   sxoJourney: (auditId, params = {}) => {

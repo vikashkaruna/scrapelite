@@ -34,7 +34,7 @@ const SCORES_META = {
 };
 
 export default function SubjectScoresPanel({ workspaceId = null }) {
-  const { showToast } = useToast();
+  const showToast = useToast();
   const [subjects, setSubjects] = useState([]);
   const [entities, setEntities] = useState([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState("");

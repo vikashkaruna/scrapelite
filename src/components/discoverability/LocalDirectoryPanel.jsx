@@ -10,7 +10,7 @@ import { discoverability } from "../../lib/discoverability/discoverabilityClient
 import { coverageClaim } from "../../lib/discoverability/directorySources.js";
 
 export default function LocalDirectoryPanel({ workspaceId = null }) {
-  const { showToast } = useToast();
+  const showToast = useToast();
   const [schema, setSchema] = useState(null);
   const [truthRecords, setTruthRecords] = useState([]);
   const [selectedRecordId, setSelectedRecordId] = useState("");
