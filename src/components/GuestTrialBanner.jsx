@@ -1,20 +1,64 @@
 // GuestTrialBanner.jsx — slim info bar shown to non-logged-in users.
 // Shows remaining extraction headroom against the hard limits, nudges sign-up.
+import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import { useGuestTrial } from "./GuestTrialProvider.jsx";
+import { useLocation } from "react-router";
 import Icon from "./Icon.jsx";
+import OffersBanner from "./OffersBanner.jsx";
+import { getHeadlineOffer } from "../lib/offersService.js";
+
+export const GUEST_TRIAL_AUTO_DISMISS_MS = 6_000;
 
 export default function GuestTrialBanner() {
-  const { user, openAuth } = useAuth();
+  const { user } = useAuth();
+  const { pathname } = useLocation();
   const { count, batchCount, SINGLE_LIMIT, BATCH_LIMIT } = useGuestTrial();
-
-  if (user) return null;
 
   const singleRemaining = Math.max(0, SINGLE_LIMIT - count);
   const batchRemaining  = Math.max(0, BATCH_LIMIT  - batchCount);
   const atSingleLimit   = count >= SINGLE_LIMIT;
   const atBatchLimit    = batchCount >= BATCH_LIMIT;
   const atAnyLimit      = atSingleLimit || atBatchLimit;
+  const trialFingerprint = `${count}:${batchCount}:${atAnyLimit ? "limit" : "active"}`;
+  const [dismissedFingerprint, setDismissedFingerprint] = useState(() => {
+    try { return sessionStorage.getItem("datiq.guestTrialBannerDismissed"); } catch { return null; }
+  });
+  // Do not introduce the trial meter before someone has actually used it.
+  // The campaign remains useful to a first-time visitor, so it stays visible
+  // on Home even while this status row is absent.
+  const panelDismissed = dismissedFingerprint === trialFingerprint;
+  const showTrialMessage = (count > 0 || batchCount > 0 || atAnyLimit)
+    && !panelDismissed;
+  // A home-only offer belongs with the guest decision point, not in the
+  // extraction workflow. Keep it data-driven so an expired campaign vanishes.
+  const showHomeOffer = pathname === "/" && Boolean(getHeadlineOffer()) && !panelDismissed;
+
+  const dismissTrialPanel = () => {
+    setDismissedFingerprint(trialFingerprint);
+    try { sessionStorage.setItem("datiq.guestTrialBannerDismissed", trialFingerprint); } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    // A new usage state deserves a fresh, informative trial status even when
+    // the previous state was dismissed. In particular, never hide a limit.
+    if (dismissedFingerprint && dismissedFingerprint !== trialFingerprint) {
+      setDismissedFingerprint(null);
+      try { sessionStorage.removeItem("datiq.guestTrialBannerDismissed"); } catch { /* ignore */ }
+    }
+  }, [dismissedFingerprint, trialFingerprint]);
+
+  useEffect(() => {
+    // A progress update is useful briefly, then should get out of the way.
+    // On Home this dismisses the attached offer too, matching the explicit
+    // close affordance. Hard-limit warnings remain until the user acts.
+    if (!showTrialMessage || atAnyLimit) return undefined;
+    const timer = window.setTimeout(dismissTrialPanel, GUEST_TRIAL_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [atAnyLimit, showTrialMessage, trialFingerprint]);
+
+  if (user) return null;
+  if (!showTrialMessage && !showHomeOffer) return null;
 
   let message;
   if (atSingleLimit && atBatchLimit) {
@@ -32,8 +76,8 @@ export default function GuestTrialBanner() {
   }
 
   return (
-    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "")} role="status">
-      <div className="guest-trial-bar-inner">
+    <div className={"guest-trial-bar" + (atAnyLimit ? " gtb-urgent" : "") + (showHomeOffer ? " gtb-home-offer" : "") + (!showTrialMessage ? " gtb-offer-only" : "")} role={showTrialMessage ? "status" : undefined}>
+      {showTrialMessage && <div className="guest-trial-bar-inner">
         <span className="gtb-text">
           <Icon name={atAnyLimit ? "alert-triangle" : "flask"} size={13} />
           {/* The message is wrapped so it is ONE flex item.
@@ -46,10 +90,11 @@ export default function GuestTrialBanner() {
               from the words they count. */}
           <span className="gtb-message">{message}</span>
         </span>
-        <button className="gtb-cta" onClick={() => openAuth("signup")}>
-          {atAnyLimit ? "Create free account" : "Sign up free"} →
+        <button type="button" className="gtb-dismiss" onClick={dismissTrialPanel} aria-label="Dismiss trial and offer">
+          <Icon name="x" size={14} />
         </button>
-      </div>
+      </div>}
+      {showHomeOffer && <OffersBanner variant="trial" />}
     </div>
   );
 }

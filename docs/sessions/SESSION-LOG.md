@@ -293,6 +293,180 @@ still needs.
 
 ---
 
+ ## 2026-09-13 03:00 IST — Fresh-start checkpoint: aligned hero and calm trial panel
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Release source** | `origin/staging` @ `620dc36` |
+| **Staging deploy** | Ready at https://staging.datiq.app |
+| **Active focus completed** | Homepage hero alignment and guest-trial panel behavior |
+| **Local primary-worktree note** | Preserve the user-owned roadmap edit and video-production document; neither belongs to this release. |
+
+### Delivered
+
+- The **DatIQ Intelligence** preview now aligns with the top of the
+  **Intelligence, Connected.** headline, including while the home offer is present.
+- The close control dismisses the complete floating home panel: both the trial status and the
+  attached discount offer disappear together for the unchanged trial state.
+- An active, non-limit trial panel automatically dismisses after **6 seconds**. Hard-limit
+  warnings deliberately remain visible so a blocked visitor still sees the required next step.
+
+### Verification
+
+- `src/components/GuestTrialBanner.test.jsx` — **2 passed**: complete panel auto-dismiss and
+  hard-limit persistence.
+- Chromium homepage/topbar smoke suite — **20 passed**, including precise hero alignment and
+  complete-panel manual dismissal.
+- Protected pre-push gate completed before `620dc36` reached `origin/staging`.
+- `npm run prerender && npm run build && npm run check:prerender` — **28 generated pages** and
+  **112 asset references** verified.
+
+### Next session
+
+- Start from `origin/staging`, not the older local `face-lift` checkout.
+- The homepage trial/offer behavior is intentionally session-scoped: a changed usage state can
+  surface fresh status, while the same state stays dismissed after the visitor closes it.
+
+---
+
+## 2026-09-13 02:15 IST — Custom Preview handoffs and calmer first-visit Home are ready for staging
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge** | `e1c0257` — `codex/preview-custom-actions` merged onto current staging `ac8b22d`. |
+| **Scope** | Custom Preview entry points, Home custom-composer handoff, first-visit offer/trial refinement, and consent-banner containment. |
+| **Deployment** | The protected push of this record promotes the merge to `origin/staging`; Netlify branch deployment should follow automatically. |
+
+### Delivered
+
+- Added **Custom enrichment** in Preview’s Quick enrichment row and **Custom content** in its
+  Generate content row. Both preserve the current source URL, route to Home, select **Custom…**,
+  reveal the custom-extraction prompt, scroll it into view, and focus it for immediate typing.
+- Removed the redundant Home quick-example chip strip.
+- Simplified the hero action to one linked CTA: **Start free, paste a URL and see it work**;
+  the opening phrase inherits the Connected accent treatment.
+- Centered the connected-intelligence introduction and held its supporting sentence on one line at
+  desktop widths, while allowing normal wrapping on small screens.
+- A first-time guest now sees the active public offer without a Trial mode meter. After trial usage,
+  the meter contains no signup CTA and can be dismissed with a small accessible × without removing
+  the offer. A new usage state restores the appropriate status.
+- Constrained the analytics-consent panel to the same 1080px content measure as the primary menu,
+  rather than tinting the entire viewport width.
+
+### Verification evidence
+
+- Targeted Home, Preview, and consent tests — **19/19 passed**.
+- Chromium Home/topbar smoke — **6/6 passed**, including fresh-visitor offer-only, used-trial
+  dismiss, and no redundant signup-action coverage.
+- Homepage visual regression — **3/3 Chromium snapshots passed** (desktop light/dark and mobile).
+- `npm run build && npm run prerender && npm run check:prerender` — passed; **28 generated pages**
+  and **112 asset references** verified.
+- `git diff --check` — passed. Existing Vite chunk/dynamic-import advisories remain non-blocking.
+
+### Fresh-start action
+
+1. Confirm Netlify reports the automatically triggered staging deploy ready for the pushed commit.
+2. Staging browser/API checks remain externally Edge Access-gated; do not interpret its HTTP 401 as
+   an application regression until the approved bypass is available.
+3. Keep parallel feature branches deferred until their owners complete and integrate them.
+
+---
+
+## 2026-09-13 00:45 IST — Homepage offer and module hierarchy refined; staging merge ready
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge** | `e39ca53` — `codex/homepage-offer-layout` merged onto staging @ `0aa8f1e`. |
+| **Scope** | Home-only promotion placement, hierarchy/spacing refinement, regenerated public output, and regression coverage. |
+| **Deployment** | Push to `origin/staging` is the next operation; Netlify will create the branch deployment automatically. |
+
+### Delivered
+
+- Moved the active, data-driven public offer from beneath the extraction composer into the
+  home guest-trial floating card. It appears below the trial-status message and **Sign up free**
+  action, uses the existing green offer language, fills the card width, and disappears when the
+  campaign is no longer active. The composer no longer carries a duplicate promotion.
+- Added desktop-only clearance so the taller trial-and-offer card never covers the DatIQ
+  Intelligence preview. The guest card remains aligned below the account controls.
+- Clarified the connected-intelligence hierarchy as **From signal to next step.** → its
+  explanatory sentence → **One connected intelligence layer**, and increased the space before
+  **What can DatIQ extract from a page?** so the capability section no longer crowds the module grid.
+
+### Verification evidence
+
+- Focused browser regression — **18 Chromium smoke tests passed**, including a geometric assertion
+  that the offer is below the trial decision row and spans the floating card; it also proves the
+  composer no longer renders an offer banner.
+- Homepage visual regression — **3/3 Chromium snapshots passed** (desktop light/dark and mobile).
+- `npm run test:prepush` — **9/9 release suites passed**.
+- `npm run build && npm run check:prerender` — build passed; **28 generated pages** and
+  **112 asset references** verified.
+- `git diff --check` — passed. Existing Vite dynamic-import/chunk-size advisories remain
+  non-blocking and unchanged in nature.
+
+### Fresh-start action
+
+1. Confirm the automatic Netlify staging deployment for the pushed merge is ready.
+2. Public post-deploy regression remains gated by Netlify Edge Access HTTP 401; do not treat that
+   policy as an application failure. Use the approved non-interactive path before running the
+   parameterized deployed release runner.
+3. Keep the named parallel feature branches deferred until their owners complete integration.
+
+---
+
+## 2026-09-13 00:20 IST — Face-lift cutover merged to staging and deployed
+
+### Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Staging merge commit** | `1f017df` — `face-lift` merged onto `origin/staging` @ `000c008` in an isolated staging worktree. |
+| **Published staging commit** | `d219333` — merge plus test-contract correction and this fresh-start handoff. |
+| **Included work** | Train A homepage refinements, restored DatIQ favicon/app-icon assets, requested Analysis-1/Analysis-2 repository cleanup, and the current remote staging release work. |
+| **Netlify deployment** | `6aa59fc26d1d0c0008c91b0f` — **ready** at `https://staging.datiq.app` for `d219333`. |
+| **Primary workspace safety** | The user-owned `docs/DATIQ-3MIN-EXPLAINER-VIDEO-PRODUCTION-PACKAGE.md` remains untracked and untouched in `/Users/vikash/Extracta`. |
+
+### What changed in this cutover
+
+- Promoted the approved homepage changes: **Intelligence, Connected.**, aligned intelligence-preview
+  card, no unapproved duplicate hero paragraph, and interactive preview routes for
+  **Discover → Discoverability**, **Connect → Integrations**, and **Compete → Account Lists**.
+- Restored the complete browser/app favicon set: SVG, ICO, 192px/512px PNG, Apple touch icon,
+  manifest, and all public document references, with smoke coverage.
+- Preserved the user-requested removal of the obsolete analysis artifacts. No incomplete parallel
+  feature branch was merged as part of this cutover.
+- Replaced an obsolete release test that required the exact hero paragraph the owner asked to
+  remove. The test now prevents that retired, unapproved answer block from being reintroduced;
+  it does not change Discoverability's public `AC-01` code or audit semantics.
+
+### Verification evidence
+
+- `npm run test:prepush` — **9/9 suites passed**: readiness; **3,047 unit** tests; contract;
+  integration; system; database/referral/workflow verification; production build/sync; prerender
+  integrity; and security.
+- `npm run test:e2e:smoke` — **149 Chromium smoke tests passed**.
+- Focused homepage regression before the cutover — **17 Chromium smoke tests** and **3 visual
+  checks** passed, followed by a production build with **28 rendered pages** and **112 verified
+  asset references**.
+- `git diff --check` — passed.
+
+### Deployment verification and next fresh-start action
+
+1. Netlify completed the branch deployment in 22 seconds without a reported build or deploy error.
+2. Netlify Edge Access currently returns HTTP 401 to unauthenticated public-route/API regression.
+   After the approved bypass/test credential exists, run the parameterized staging runner against
+   a disposable owned Discoverability URL; do not use a customer URL or production account.
+3. Keep `workflow-implementation-and-optimization`, `feat/prospect-engagement-engine`, and
+   `Discoverability-P1-P3-implementation` deferred for their owners' integration and review.
+
+---
+
 ## 2026-09-12 23:06 IST — Trial-status alignment merged to staging and deployed
 
 ### Quick orientation
@@ -330,6 +504,36 @@ Configure the approved non-interactive Edge Access route for public assets, `/ap
 Discoverability endpoints, then run the parameterized staging release runner with an owned,
 disposable discoverability target. Keep the three deferred parallel branches unmerged until their
 owners complete their integration and review gates.
+
+---
+
+## 2026-09-13 02:42 IST — Fresh-start checkpoint: Train A hero remains concise
+
+**Branch.** `staging` (pre-record head `bf4c931`).
+**Deployment status.** Requested staging redeploy follows this record.
+
+### Verified state
+
+- The homepage does **not** ship the retired, citation-ready answer-first paragraph. The concise
+  **Intelligence, Connected.** Train A hero remains the approved homepage presentation.
+- The staging SEO contract explicitly guards that decision: it asserts the retired
+  `.home-answer-block` cannot reappear, rather than requiring obsolete marketing copy.
+- No product-code or static-page change was needed for this checkpoint: the intended source,
+  prerendered homepage, and test contract were already present on `origin/staging`.
+
+### Verification
+
+- `npx vitest run scripts/seo-homepage.test.mjs --reporter=verbose` — **16 passed**.
+- `npm run build && npm run check:prerender` — build passed; **28 generated pages** and
+  **112 asset references** verified.
+- `git diff --check` — passed.
+
+### Fresh-start direction
+
+- Treat `origin/staging` as the release source of truth. Do not transplant the older local
+  `face-lift` SEO test state into staging; it predates the approved Train A contract.
+- The standard Netlify Edge Access limitation for unauthenticated external route checks remains
+  unchanged; the Git-triggered deploy itself is expected to complete normally.
 
 ---
 

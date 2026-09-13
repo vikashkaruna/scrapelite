@@ -89,24 +89,11 @@ describe("homepage — is actually rendered", () => {
   });
 });
 
-describe("homepage — the answer-first block (AC-01)", () => {
-  const answer = (body.match(/class="[^"]*home-answer-block[^"]*"[^>]*>([\s\S]*?)<\/p>/) || [])[1];
-
-  it("exists", () => {
-    expect(answer, "no .home-answer-block in the shipped homepage").toBeTruthy();
-  });
-
-  it("is 40-60 words — long enough to answer, short enough to quote", () => {
-    const words = visibleText(answer).split(" ").length;
-    expect(words, `answer block is ${words} words`).toBeGreaterThanOrEqual(40);
-    expect(words, `answer block is ${words} words`).toBeLessThanOrEqual(60);
-  });
-
-  it("names its subject rather than opening with a back-reference", () => {
-    // It has to survive being quoted alone, with no page around it.
-    const text = visibleText(answer);
-    expect(text).toMatch(/^DatIQ\b/);
-    expect(text.toLowerCase()).not.toMatch(/^(this|it|as mentioned|the platform)\b/);
+describe("homepage — approved Train A hero", () => {
+  it("does not ship the retired answer-first paragraph", () => {
+    // Train A's approved homepage contract uses the concise connected-intelligence
+    // subhead. Do not reintroduce an unapproved, duplicate marketing paragraph.
+    expect(body).not.toMatch(/class="[^"]*home-answer-block[^"]*"/);
   });
 });
 

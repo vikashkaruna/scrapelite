@@ -9,9 +9,8 @@
 //   • Render JS stays as a collapsible Advanced option
 //   • Post-extraction: /batch pre-populated via navigation state when routing there
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, Link } from "react-router";
+import { useLocation, useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
-import Button from "../components/Button.jsx";
 import HeroComposer from "../components/HeroComposer.jsx";
 import RecentExtractions from "../components/RecentExtractions.jsx";
 import OutcomeTiles from "../components/OutcomeTiles.jsx";
@@ -19,11 +18,9 @@ import TryExampleDemo from "../components/TryExampleDemo.jsx";
 import TemplateGallery from "../components/TemplateGallery.jsx";
 import CreditEstimator from "../components/CreditEstimator.jsx";
 import TrustStrip from "../components/TrustStrip.jsx";
-import OffersBanner from "../components/OffersBanner.jsx";
 import { estimateCredits } from "../lib/creditEstimator.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useBilling } from "../components/BillingProvider.jsx";
-import { useAuth } from "../components/AuthProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
 import { useSeo } from "../hooks/useSeo.js";
@@ -114,9 +111,15 @@ function DashboardReveal() {
         <span className="hdr-source-state">Structured</span>
       </div>
       <div className="hdr-signal-grid">
-        <div><Icon name="scan-search" size={14} /><span>Discover</span></div>
-        <div><Icon name="share" size={14} /><span>Connect</span></div>
-        <div><Icon name="eye" size={14} /><span>Compete</span></div>
+        <Link className="hdr-signal-tile" to="/discoverability" aria-label="Open Discoverability">
+          <Icon name="scan-search" size={14} /><span>Discover</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/integrations" aria-label="Open Integrations">
+          <Icon name="share" size={14} /><span>Connect</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/lists" aria-label="Open Account Lists">
+          <Icon name="eye" size={14} /><span>Compete</span>
+        </Link>
       </div>
       <div className="hdr-evidence-row">
         <Icon name="check-circle" size={14} />
@@ -228,10 +231,10 @@ export default function Home() {
     ],
   });
   const { personaId, userName, resetOnboarding } = usePersona();
-  const { user, openAuth } = useAuth();
   const billing = useBilling();
   const showToast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
@@ -339,15 +342,37 @@ export default function Home() {
     }
   }, [navigate, url]);
 
-  const focusComposer = useCallback((nextIntent) => {
+  const focusComposer = useCallback((nextIntent, focusCustomInput = false) => {
     if (nextIntent) {
       setIntent(nextIntent);
       if (nextIntent !== "custom") setCustomPrompt("");
     }
     const composer = document.querySelector("#extract-composer");
     composer?.scrollIntoView({ behavior: "smooth", block: "center" });
-    window.setTimeout(() => composer?.querySelector("textarea")?.focus(), 240);
+    window.setTimeout(() => {
+      const target = focusCustomInput
+        ? composer?.querySelector(".custom-extract-input")
+        : composer?.querySelector(".hero-composer-input, textarea");
+      target?.focus();
+    }, 240);
   }, []);
+
+  // Preview's custom actions return the reader to the same single-URL
+  // composer, with the custom intent visibly selected and ready for a prompt.
+  // Replace the history state immediately so a later Home re-render never
+  // replays the scroll/focus handoff.
+  useEffect(() => {
+    const handoff = location.state?.openCustomExtraction;
+    if (!handoff) return;
+
+    if (location.state?.url) setUrl(location.state.url);
+    setTouched(false);
+    setPreview(null);
+    setActiveTileKey(null);
+    setCustomPrompt(location.state?.customPrompt || "");
+    focusComposer("custom", true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [focusComposer, location.pathname, location.state, navigate]);
 
   const handleModuleAction = useCallback((module) => {
     if (module.action === "composer") {
@@ -360,14 +385,6 @@ export default function Home() {
     }
     if (module.to) navigate(module.to);
   }, [focusComposer, navigate]);
-
-  const handlePrimaryCta = useCallback(() => {
-    if (user) {
-      navigate("/dashboard");
-      return;
-    }
-    openAuth("signup");
-  }, [navigate, openAuth, user]);
 
   // Resolve the per-intent prompt that the composer carries into the extraction.
   // (contacts / pricing have canned prompts; custom uses the user's text.)
@@ -471,12 +488,6 @@ export default function Home() {
   const subtext = "Turn public web signals into structured intelligence, then move the evidence into the work that follows.";
   const greeting = userName ? `Hi ${userName} —` : null;
 
-  const DEFAULT_QUICK_CONTEXTS = [
-    { label: "example.com",      url: "https://example.com",         icon: "globe" },
-    { label: "stripe.com/pricing", url: "https://stripe.com/pricing", icon: "tag" },
-    { label: "anthropic.com",    url: "https://anthropic.com",       icon: "sparkles" },
-  ];
-
   return (
     <div className="page">
       <div
@@ -510,22 +521,11 @@ export default function Home() {
             </p>
 
             <div className="home-rebrand-actions rise" style={{ animationDelay: ".12s" }}>
-              <Button variant="primary" icon={user ? "grid" : "user-plus"} onClick={handlePrimaryCta}>
-                {user ? "Open dashboard" : "Start free"}
-              </Button>
               <button type="button" className="home-secondary-cta" onClick={() => focusComposer()}>
-                Paste a URL and see it work <Icon name="chevron-down" size={15} />
+                <span className="home-secondary-cta-lead">Start free</span>, paste a URL and see it work <Icon name="chevron-down" size={15} />
               </button>
             </div>
 
-            {/* A self-contained answer engines can cite without surrounding UI. */}
-            <p className="rise home-answer-block" style={{ animationDelay: ".14s" }}>
-              DatIQ is a zero-code web intelligence platform that turns public
-              URLs into structured data. Extract headings, links, contacts,
-              pricing and AI summaries, then route the evidence into a workflow
-              or monitor the page as it changes. Save, compare and export the
-              results with confidence.
-            </p>
           </div>
           <DashboardReveal />
         </section>
@@ -572,11 +572,6 @@ export default function Home() {
               )}
             </div>
           )}
-
-          {/* Active coupons/discounts — hidden entirely when nothing is active */}
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-            <OffersBanner variant="compact" />
-          </div>
 
           {/* F14 — in-product trust strip (under the composer) */}
           <TrustStrip />
@@ -734,39 +729,11 @@ export default function Home() {
           <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle} />
         </div>
 
-        {(() => {
-          const contexts = persona
-            ? persona.examples.map((ex, i) => ({
-                label: ex, url: ex.startsWith("http") ? ex : `https://${ex}`,
-                icon: ["target", "eye", "bar-chart"][i % 3],
-              }))
-            : DEFAULT_QUICK_CONTEXTS;
-          return (
-            <div className="persona-contexts rise" style={{ animationDelay: ".23s" }}>
-              <span className="persona-ctx-label">
-                <Icon name="sparkles" size={12} />
-                {persona ? `${persona.badge} quick-start` : "Try a quick example"}
-              </span>
-              <div className="persona-ctx-chips">
-                {contexts.map((ctx) => (
-                  <button
-                    key={ctx.url} type="button" className="persona-ctx-chip"
-                    onClick={() => { setUrl(ctx.url); setTouched(false); setPreview(null); }}
-                    title={`Use: ${ctx.url}`}
-                  >
-                    <Icon name={ctx.icon} size={11} /> {ctx.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
         <section className="home-module-overview rise" aria-labelledby="modules-title" style={{ animationDelay: ".24s" }}>
           <div className="home-module-intro">
-            <span className="eyebrow"><Icon name="layers" size={13} /> One connected intelligence layer</span>
             <h2 id="modules-title">From signal to next step.</h2>
             <p>Start with a URL, then use the right DatIQ module when the work needs to go further.</p>
+            <span className="eyebrow"><Icon name="layers" size={13} /> One connected intelligence layer</span>
           </div>
           <div className="home-module-grid">
             {PLATFORM_MODULES.map((module) => (
