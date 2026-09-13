@@ -87,6 +87,9 @@ const PURGE_TABLES = [
   "audit_analytics_aggregates",
   "audit_journey_funnels",
   "audit_form_diagnostics",
+  // ── 0070 discoverability P3C portfolio & optimization experiments ──
+  "audit_portfolio_rollups",
+  "audit_optimization_experiments",
 ];
 
 // User-scoped tables from 0029-0031 deliberately NOT auto-purged, and why.

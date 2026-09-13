@@ -144,6 +144,10 @@ import {
 import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../src/lib/discoverability/journeyModel.js";
 import { FORM_METRIC_KEYS, evaluateFormDiagnostics } from "../../src/lib/discoverability/formDiagnostics.js";
 import { evaluateMeasurementMaturity } from "../../src/lib/discoverability/measurementMaturity.js";
+import { classifyPageTemplate } from "../../src/lib/discoverability/templateClassification.js";
+import { calculatePortfolioRollup, PORTFOLIO_ROLLUP_AXES } from "../../src/lib/discoverability/portfolioModel.js";
+import { PERSONA_PACKS, filterPersonaQueue } from "../../src/lib/discoverability/personaPacks.js";
+import { createExperimentRecord, evaluateExperimentImpact } from "../../src/lib/discoverability/optimizationExperiments.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -929,9 +933,99 @@ export const handler = async (event) => {
         }
       }
 
-      // ── Stage 3 / P3B Endpoints ──
+      // ── Stage 3 / P3B & Stage 4 / P3C Endpoints ──
 
-      // 1. GET /sxo/audits/:id/journey
+      // 1. POST /sxo/audits (create/evaluate SXO audit)
+      if (id === "audits" && !sub && method === "POST") {
+        const workspaceId = body.workspace_id || null;
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+
+        if (!body.audit_id) {
+          return bad("`audit_id` is required to evaluate SXO.");
+        }
+
+        const full = await store.getAuditFull(userId, body.audit_id);
+        if (!full) return notFound("Audit not found.");
+
+        const sxoResult = evaluateSxo(full, {
+          intentClass: body.intent_class,
+          primaryOutcome: body.primary_outcome,
+          weightSetId: body.weight_set_id,
+        });
+
+        const masterScore = computeMasterScore({
+          seo: full.result?.framework_scores?.seo?.score ?? null,
+          aeo: full.result?.framework_scores?.aeo?.score ?? null,
+          geo: full.result?.framework_scores?.geo?.score ?? null,
+          sxo: sxoResult.score,
+        });
+
+        const saved = await store.saveSxoRun(userId, {
+          auditId: body.audit_id,
+          subjectId: full.audit?.subject_id || null,
+          targetId: full.audit?.target_id || null,
+          workspaceId: workspaceId || full.audit?.workspace_id || null,
+          sxoTotalScore: sxoResult.score,
+          coverage: sxoResult.coverage,
+          layerScores: sxoResult.layerScores,
+          layerResults: sxoResult.layerResults,
+          findings: sxoResult.findings,
+          weightSetId: sxoResult.weightSetId,
+          modelVersion: sxoResult.modelVersion,
+        });
+
+        return json(200, {
+          ok: true,
+          sxo: sxoResult,
+          master: masterScore,
+          run: saved.run || null,
+        });
+      }
+
+      // 2. GET /sxo/audits/:id (summary / status)
+      if (id === "audits" && sub && !subId && method === "GET") {
+        const full = await store.getAuditFull(userId, sub);
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub);
+        return json(200, { ok: true, audit: full.audit, sxo_run: run });
+      }
+
+      // 3. GET /sxo/audits/:id/results (scores + evidence)
+      if (id === "audits" && sub && subId === "results" && method === "GET") {
+        const run = await store.getSxoForAudit(userId, sub);
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          sxo_results: run?.layer_results || null,
+          layer_scores: run?.layer_scores || null,
+          coverage: run?.coverage ?? null,
+        });
+      }
+
+      // 4. GET /sxo/audits/:id/intent-match (intent findings)
+      if (id === "audits" && sub && subId === "intent-match" && method === "GET") {
+        const run = await store.getSxoForAudit(userId, sub);
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          intent_match: run?.layer_results?.ic || null,
+        });
+      }
+
+      // 5. GET /sxo/audits/:id/first-screen (first-screen findings)
+      if (id === "audits" && sub && subId === "first-screen" && method === "GET") {
+        const run = await store.getSxoForAudit(userId, sub);
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          first_screen: run?.layer_results?.ia || null,
+        });
+      }
+
+      // 6. GET /sxo/audits/:id/journey
       if (id === "audits" && sub && subId === "journey") {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
@@ -973,7 +1067,7 @@ export const handler = async (event) => {
         }
       }
 
-      // 2. GET /sxo/audits/:id/form-diagnostics
+      // 7. GET /sxo/audits/:id/form-diagnostics
       if (id === "audits" && sub && subId === "form-diagnostics") {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
@@ -1001,7 +1095,7 @@ export const handler = async (event) => {
         }
       }
 
-      // 3. POST /sxo/events/import
+      // 8. POST /sxo/events/import
       if (id === "events" && sub === "import") {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
@@ -1056,7 +1150,7 @@ export const handler = async (event) => {
         }
       }
 
-      // 4. /sxo/integrations
+      // 9. /sxo/integrations
       if (id === "integrations") {
         if (sub && subId === "connect" && method === "POST") {
           const provider = sub;
@@ -1096,7 +1190,7 @@ export const handler = async (event) => {
         }
       }
 
-      // 5. /sxo/conversion-goals
+      // 10. /sxo/conversion-goals
       if (id === "conversion-goals") {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
@@ -1129,6 +1223,139 @@ export const handler = async (event) => {
           });
           return json(200, { ok: true, goals });
         }
+      }
+
+      // 11. /sxo/experiments (POST, GET)
+      if (id === "experiments") {
+        if (!sub && method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          if (!body.experiment_name && !body.name) {
+            return bad("`experiment_name` is required for optimization experiments.");
+          }
+          const expData = createExperimentRecord({
+            auditId: body.audit_id || null,
+            recommendationId: body.recommendation_id || null,
+            experimentName: body.experiment_name || body.name,
+            ticketUrl: body.ticket_url || null,
+            hypothesis: body.hypothesis || null,
+            expectedMetric: body.expected_metric || "sxo_total_score",
+            baselineValue: body.baseline_value ?? null,
+            currentValue: body.current_value ?? null,
+            status: body.status || "active",
+            observationPeriodDays: Number(body.observation_period_days) || 28,
+            results: body.results || {},
+          });
+          const saved = await store.saveOptimizationExperiment(userId, {
+            ...expData,
+            workspaceId,
+          });
+          return json(200, saved);
+        }
+
+        if (!sub && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const experiments = await store.listOptimizationExperiments(userId, {
+            auditId: q.audit_id || null,
+            status: q.status || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 50,
+          });
+          return json(200, { ok: true, experiments });
+        }
+
+        if (sub && !subId && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const experiment = await store.getOptimizationExperiment(userId, sub, {
+            workspaceId: q.workspace_id || null,
+          });
+          if (!experiment) return notFound("Experiment not found.");
+          return json(200, { ok: true, experiment });
+        }
+
+        if (sub && subId === "evaluate" && method === "POST") {
+          const baseline = body.baseline_audit_id ? await store.getAuditFull(userId, body.baseline_audit_id) : null;
+          const current = body.current_audit_id ? await store.getAuditFull(userId, body.current_audit_id) : null;
+          const impact = evaluateExperimentImpact({
+            baselineAudit: baseline,
+            currentAudit: current,
+            targetMetric: body.target_metric || "sxo_total_score",
+          });
+          await store.updateOptimizationExperiment(userId, sub, {
+            results: impact,
+            status: body.complete ? "completed" : "active",
+            current_value: impact.current,
+          });
+          return json(200, { ok: true, impact });
+        }
+      }
+
+      // 12. /sxo/portfolio/rollups (GET, POST)
+      if (id === "portfolio" && sub === "rollups") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const rollups = await store.listPortfolioRollups(userId, {
+            rollupAxis: q.axis || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 100,
+          });
+          return json(200, { ok: true, rollups });
+        }
+
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          const axis = body.axis || body.rollup_axis;
+          if (!axis || !PORTFOLIO_ROLLUP_AXES.includes(axis)) {
+            return bad(`Invalid axis "${axis}". Must be one of: ${PORTFOLIO_ROLLUP_AXES.join(", ")}.`);
+          }
+          const calculated = calculatePortfolioRollup(body.audits || [], {
+            axis,
+            axisValue: body.axis_value || "all",
+          });
+          const saved = await store.savePortfolioRollup(userId, {
+            rollupAxis: calculated.rollup_axis,
+            axisValue: calculated.axis_value,
+            auditCount: calculated.audit_count,
+            masterScore: calculated.master_score,
+            layerScores: calculated.layer_scores,
+            frameworkScores: calculated.framework_scores,
+            coverage: calculated.coverage,
+            workspaceId,
+          });
+          return json(200, saved);
+        }
+      }
+
+      // 13. POST /sxo/recommendations/:id/validate
+      if (id === "recommendations" && sub && subId === "validate" && method === "POST") {
+        const workspaceId = body.workspace_id || null;
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+        const r = await store.setRecommendationStatus(userId, sub, "validated", body.reason || "Validated via SXO", {
+          validatedByAuditId: body.validated_by_audit_id || null,
+          notes: body.notes || null,
+          ...(workspaceId ? { workspaceId } : {}),
+        });
+        if (r.notFound) return notFound("Recommendation not found.");
+        if (!r.ok) return bad(r.error);
+        return json(200, {
+          ok: true,
+          recommendation: r.recommendation,
+          relationship: "correlation",
+          caveats: [
+            "Observed metric movement between baseline and observation periods is correlational.",
+            "Correlation does not establish causation.",
+          ],
+        });
       }
 
       return json(405, { error: "Method not allowed." });

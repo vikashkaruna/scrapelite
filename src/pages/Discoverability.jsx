@@ -42,12 +42,14 @@ import EntityGraphPanel from "../components/discoverability/EntityGraphPanel.jsx
 import LocalDirectoryPanel from "../components/discoverability/LocalDirectoryPanel.jsx";
 import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx";
 import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
+import SxoDashboard from "../components/discoverability/SxoDashboard.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
 const DISCOVERABILITY_VIEWS = [
   { id: "audit", label: "Audit", icon: "scan-search" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap" },
   { id: "truth", label: "Business Truth", icon: "database" },
   { id: "graph", label: "Entity Graph", icon: "share-2" },
   { id: "directory", label: "Local Directory", icon: "map-pin" },
@@ -543,6 +545,28 @@ export default function Discoverability() {
 
       {currentView === "subjects" && (
         <SubjectScoresPanel workspaceId={currentWorkspaceId} />
+      )}
+
+      {currentView === "sxo" && (
+        <SxoDashboard
+          auditId={audit?.auditId || null}
+          fullAudit={audit}
+          workspaceId={currentWorkspaceId}
+          onRunSxo={() => {
+            if (audit?.auditId) {
+              discoverability.evaluateSxo({
+                audit_id: audit.auditId,
+                workspace_id: currentWorkspaceId,
+              }).then((res) => {
+                if (res.ok) showToast("SXO evaluation refreshed.", "success");
+              }).catch((err) => {
+                showToast(err.message || "Failed to evaluate SXO", "error");
+              });
+            } else {
+              showToast("Run an audit first to evaluate SXO.", "warning");
+            }
+          }}
+        />
       )}
 
       {currentView === "audit" && (

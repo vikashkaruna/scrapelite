@@ -392,6 +392,32 @@ export const discoverability = {
     );
     return req(`/sxo/conversion-goals${q.toString() ? `?${q}` : ""}`);
   },
+
+  // ── Portfolio Rollups, Personas & Experiments (P3C / Stage 4) ─────────────
+  createSxoExperiment: (payload) => req("/sxo/experiments", "POST", payload),
+  listSxoExperiments: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/experiments${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoExperiment: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/experiments/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  evaluateSxoExperiment: (id, payload) =>
+    req(`/sxo/experiments/${encodeURIComponent(id)}/evaluate`, "POST", payload),
+  getSxoPortfolioRollups: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/portfolio/rollups${q.toString() ? `?${q}` : ""}`);
+  },
+  saveSxoPortfolioRollup: (payload) => req("/sxo/portfolio/rollups", "POST", payload),
+  validateSxoRecommendation: (id, payload = {}) =>
+    req(`/sxo/recommendations/${encodeURIComponent(id)}/validate`, "POST", payload),
 };
 
 async function emailReport(payload) {

@@ -2224,4 +2224,104 @@ export async function getFormDiagnostics(userId, auditId, { formId = null, works
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
+// ── STAGE 4 (P3C) PORTFOLIO ROLLUPS & EXPERIMENTS ───────────────────────────
+
+export async function saveOptimizationExperiment(userId, {
+  auditId = null, recommendationId = null, experimentName, ticketUrl = null,
+  hypothesis = null, expectedMetric = "sxo_total_score", baselineValue = null,
+  currentValue = null, status = "active", observationPeriodDays = 28,
+  results = {}, workspaceId = null,
+}) {
+  const r = await rest("audit_optimization_experiments", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      recommendation_id: recommendationId,
+      experiment_name: experimentName,
+      ticket_url: ticketUrl,
+      hypothesis,
+      expected_metric: expectedMetric,
+      baseline_value: baselineValue,
+      current_value: currentValue,
+      status,
+      observation_period_days: observationPeriodDays,
+      start_date: new Date().toISOString(),
+      relationship: "correlation",
+      caveats: [
+        "Observed metric movement between baseline and observation periods is correlational.",
+        "Correlation does not establish causation.",
+      ],
+      results,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not save experiment." };
+}
+
+export async function listOptimizationExperiments(userId, {
+  auditId = null, status = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (status) parts.push(`status=eq.${encodeURIComponent(status)}`);
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getOptimizationExperiment(userId, id, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function updateOptimizationExperiment(userId, id, fields = {}, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      ...fields,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not update experiment." };
+}
+
+export async function savePortfolioRollup(userId, {
+  rollupAxis, axisValue, auditCount = 0, masterScore = null,
+  layerScores = {}, frameworkScores = {}, coverage = 0, workspaceId = null,
+}) {
+  const r = await rest("audit_portfolio_rollups", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      rollup_axis: rollupAxis,
+      axis_value: axisValue,
+      audit_count: auditCount,
+      master_score: masterScore,
+      layer_scores: layerScores,
+      framework_scores: frameworkScores,
+      coverage,
+      calculated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, rollup: row } : { ok: false, error: r.error || "Could not save portfolio rollup." };
+}
+
+export async function listPortfolioRollups(userId, {
+  rollupAxis = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (rollupAxis) parts.push(`rollup_axis=eq.${encodeURIComponent(rollupAxis)}`);
+  const r = await rest(`audit_portfolio_rollups?${parts.join("&")}&${SELECT_ALL}&order=calculated_at.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
 

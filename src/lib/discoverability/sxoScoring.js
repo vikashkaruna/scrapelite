@@ -130,5 +130,7 @@ export function computeMasterScore(frameworks = {}) {
     coverage,
     frameworks: rawScores,
     weights: MASTER_FRAMEWORK_WEIGHTS,
+    overlap_disclosure:
+      "Master score weights include: SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35. Technical accessibility signals (including Core Web Vitals and mobile parity) are evaluated across both technical SEO foundation and SXO experience friction layers as specified in §11.3.",
   };
 }

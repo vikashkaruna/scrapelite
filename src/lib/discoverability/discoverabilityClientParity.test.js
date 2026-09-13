@@ -68,6 +68,9 @@ describe("discoverabilityClient parity — API surface completeness", () => {
     "sxoJourney", "sxoFormDiagnostics", "importSxoEvents",
     "connectSxoIntegration", "listSxoIntegrations", "disconnectSxoIntegration",
     "saveSxoConversionGoal", "listSxoConversionGoals",
+    // Portfolio Rollups, Personas & Experiments (P3C / Stage 4)
+    "createSxoExperiment", "listSxoExperiments", "getSxoExperiment", "evaluateSxoExperiment",
+    "getSxoPortfolioRollups", "saveSxoPortfolioRollup", "validateSxoRecommendation",
   ];
 
   it("exposes all expected client methods as functions", () => {

@@ -93,7 +93,7 @@ async function sendAlert({ schedule, diff, result, verdict }) {
       <p style="color:#555;margin:0 0 16px">${escapeHtml(url)}</p>
       <p style="font-size:15px"><strong>${escapeHtml(diff.headline)}</strong></p>
       <table style="border-collapse:collapse;font-size:14px;margin:14px 0">
-        ${["overall", "seo", "aeo", "geo"].map((f) => {
+        ${["overall", "seo", "aeo", "geo", "sxo"].map((f) => {
           const d = diff.frameworks?.[f];
           if (!d) return "";
           return `<tr>
