@@ -201,7 +201,7 @@ function PersonaStep({ onSelect, onSkip }) {
 }
 
 export default function AuthModal() {
-  const { closeAuth, authError, authMode } = useAuth();
+  const { closeAuth, authError, authMode, loginAsReviewer, isNonProd } = useAuth();
   const { onboarded, selectPersona, completeOnboarding } = usePersona();
   const navigate = useNavigate();
 
@@ -386,6 +386,37 @@ export default function AuthModal() {
                 ? "Sign in to save and manage your extractions."
                 : "Start extracting and enriching web data in seconds."}
             </p>
+
+            {isNonProd && (
+              <div style={{ marginBottom: 14, padding: 12, background: "var(--accent-subtle, rgba(59,130,246,0.08))", borderRadius: 8, border: "1px solid var(--accent, #3b82f6)" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="zap" size={14} />
+                  Non-Production Review Mode
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 10 }}>
+                  Skip OAuth redirects. One-click sign-in with full Enterprise entitlements.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", fontWeight: 600 }}
+                  onClick={async () => {
+                    setLoading("reviewer");
+                    try {
+                      await loginAsReviewer();
+                    } catch (e) {
+                      setError(e.message || "Reviewer login failed");
+                    } finally {
+                      setLoading("");
+                    }
+                  }}
+                  disabled={!!loading}
+                >
+                  {loading === "reviewer" ? <Spinner /> : <Icon name="check-circle" size={15} />}
+                  <span>Sign in as Reviewer (1-Click)</span>
+                </button>
+              </div>
+            )}
 
             {/* OAuth buttons */}
             <div className="auth-oauth">

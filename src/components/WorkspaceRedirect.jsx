@@ -9,7 +9,7 @@ import Button from "./Button.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 
 export default function WorkspaceRedirect({ children }) {
-  const { user } = useAuth();
+  const { user, loginAsReviewer, isNonProd } = useAuth();
   if (!user) {
     return (
       <div className="page">
@@ -26,7 +26,12 @@ export default function WorkspaceRedirect({ children }) {
             all in one place. Anonymous extraction still works on the home page.
           </p>
           <div style={{ marginTop: 28, display: "inline-flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-            <Button variant="primary" onClick={() => window.dispatchEvent(new CustomEvent("datiq:openAuth", { detail: { mode: "signup" } }))}>
+            {isNonProd && (
+              <Button variant="primary" icon="zap" onClick={() => loginAsReviewer?.()}>
+                Enter as Reviewer (1-Click)
+              </Button>
+            )}
+            <Button variant={isNonProd ? "secondary" : "primary"} onClick={() => window.dispatchEvent(new CustomEvent("datiq:openAuth", { detail: { mode: "signup" } }))}>
               Create a free account
             </Button>
             <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent("datiq:openAuth", { detail: { mode: "signin" } }))}>
