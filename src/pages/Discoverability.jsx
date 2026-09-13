@@ -37,24 +37,18 @@ import {
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
-import BusinessTruthPanel from "../components/discoverability/BusinessTruthPanel.jsx";
-import EntityGraphPanel from "../components/discoverability/EntityGraphPanel.jsx";
-import LocalDirectoryPanel from "../components/discoverability/LocalDirectoryPanel.jsx";
-import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx";
-import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
-import SxoDashboard from "../components/discoverability/SxoDashboard.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
 const DISCOVERABILITY_VIEWS = [
   { id: "audit", label: "Audit", icon: "scan-search" },
-  { id: "sxo", label: "SXO & Outcomes", icon: "zap" },
-  { id: "truth", label: "Business Truth", icon: "database" },
-  { id: "graph", label: "Entity Graph", icon: "share-2" },
-  { id: "directory", label: "Local Directory", icon: "map-pin" },
-  { id: "schema", label: "Schema & Trust", icon: "shield-check" },
-  { id: "subjects", label: "Subject Scores", icon: "award" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
+  { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
+  { id: "graph", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
+  { id: "directory", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
+  { id: "schema", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
+  { id: "subjects", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
   { id: "history", label: "History", icon: "clock" },
 ];
 
@@ -176,6 +170,12 @@ export default function Discoverability() {
   const currentView = params.get("view") || "audit";
   const showHistory = currentView === "history";
   const [subjects, setSubjects] = useState([]);
+
+  useEffect(() => {
+    const legacy = DISCOVERABILITY_VIEWS.find((view) => view.id === currentView && view.path);
+    if (!legacy) return;
+    navigate(`${legacy.path}${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`, { replace: true });
+  }, [auditId, currentView, navigate]);
 
   useEffect(() => {
     if (!user) { setSubjects([]); return; }
@@ -502,6 +502,10 @@ export default function Discoverability() {
               type="button"
               className={`dsc-tab${isActive ? " dsc-tab-on" : ""}`}
               onClick={() => {
+                if (v.path) {
+                  navigate(`${v.path}${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
+                  return;
+                }
                 if (v.id === "audit") {
                   setParams(audit?.auditId ? { audit: audit.auditId } : {});
                 } else {
@@ -510,7 +514,7 @@ export default function Discoverability() {
               }}
               aria-current={isActive ? "page" : undefined}
             >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <span className="dsc-tab-label">
                 <Icon name={v.icon} size={15} />
                 {v.label}
               </span>
@@ -524,48 +528,6 @@ export default function Discoverability() {
           currentAuditId={audit?.auditId || null}
           onClose={() => setParams(audit?.auditId ? { audit: audit.auditId } : {})}
           onOpen={(id) => setParams({ audit: id })}
-        />
-      )}
-
-      {currentView === "truth" && (
-        <BusinessTruthPanel workspaceId={currentWorkspaceId} />
-      )}
-
-      {currentView === "graph" && (
-        <EntityGraphPanel workspaceId={currentWorkspaceId} />
-      )}
-
-      {currentView === "directory" && (
-        <LocalDirectoryPanel workspaceId={currentWorkspaceId} />
-      )}
-
-      {currentView === "schema" && (
-        <SchemaTrustPanel workspaceId={currentWorkspaceId} />
-      )}
-
-      {currentView === "subjects" && (
-        <SubjectScoresPanel workspaceId={currentWorkspaceId} />
-      )}
-
-      {currentView === "sxo" && (
-        <SxoDashboard
-          auditId={audit?.auditId || null}
-          fullAudit={audit}
-          workspaceId={currentWorkspaceId}
-          onRunSxo={() => {
-            if (audit?.auditId) {
-              discoverability.evaluateSxo({
-                audit_id: audit.auditId,
-                workspace_id: currentWorkspaceId,
-              }).then((res) => {
-                if (res.ok) showToast("SXO evaluation refreshed.", "success");
-              }).catch((err) => {
-                showToast(err.message || "Failed to evaluate SXO", "error");
-              });
-            } else {
-              showToast("Run an audit first to evaluate SXO.", "warning");
-            }
-          }}
         />
       )}
 

@@ -43,10 +43,28 @@ const PUBLIC_ROUTES = [
   "/payment/cancel",
 ];
 
+const PRIVATE_DISCOVERABILITY_ROUTES = [
+  "/discoverability/truth",
+  "/discoverability/entities",
+  "/discoverability/local",
+  "/discoverability/trust",
+  "/discoverability/scores",
+  "/discoverability/sxo",
+];
+
 for (const route of PUBLIC_ROUTES) {
   test(`route ${route} returns 200`, async ({ page }) => {
     const res = await page.goto(route);
     expect(res?.ok()).toBeTruthy();
+  });
+}
+
+for (const route of PRIVATE_DISCOVERABILITY_ROUTES) {
+  test(`private workspace route ${route} returns 200 and remains noindex`, async ({ page }) => {
+    const res = await page.goto(route);
+    expect(res?.ok()).toBeTruthy();
+    await expect(page.getByRole("heading", { name: /Your workspace, once you sign in/i })).toBeVisible();
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
   });
 }
 
