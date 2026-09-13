@@ -1181,13 +1181,33 @@ export const handler = async (event) => {
           const provider = sub;
           const q = event.queryStringParameters || {};
           const workspaceId = q.workspace_id || null;
+          const purgeData = q.purge_data === "true" || q.purge_data === "1" || body?.purge_data === true;
           if (workspaceId) {
             const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
             if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           }
-          await store.deleteAnalyticsConnection(userId, provider, { workspaceId });
-          return json(200, { ok: true, disconnected: provider });
+          await store.deleteAnalyticsConnection(userId, provider, { workspaceId, purgeData });
+          return json(200, { ok: true, disconnected: provider, purged_data: purgeData });
         }
+      }
+
+      // Early Analytics Data Purge (D16 / §13 provision for operators and users)
+      if ((id === "analytics" && sub === "purge" && method === "POST") || (id === "analytics-data" && method === "DELETE")) {
+        const q = event.queryStringParameters || {};
+        const workspaceId = q.workspace_id || body?.workspace_id || null;
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_audit");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+        const olderThan = q.older_than_days !== undefined ? q.older_than_days : body?.older_than_days;
+        const purgeAll = q.purge_all === "true" || q.purge_all === "1" || body?.purge_all === true || olderThan === 0 || olderThan === "0";
+        const result = await store.purgeAnalyticsData(userId, {
+          workspaceId,
+          auditId: q.audit_id || body?.audit_id || null,
+          olderThanDays: olderThan,
+          purgeAll,
+        });
+        return json(200, result);
       }
 
       // 10. /sxo/conversion-goals

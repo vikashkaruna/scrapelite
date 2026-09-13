@@ -67,6 +67,7 @@ describe("discoverabilityClient parity — API surface completeness", () => {
     // Analytics, Funnels, Forms & Goals (P3B / Stage 3)
     "sxoJourney", "sxoFormDiagnostics", "importSxoEvents",
     "connectSxoIntegration", "listSxoIntegrations", "disconnectSxoIntegration",
+    "purgeSxoAnalyticsData",
     "saveSxoConversionGoal", "listSxoConversionGoals",
     // Portfolio Rollups, Personas & Experiments (P3C / Stage 4)
     "createSxoExperiment", "listSxoExperiments", "getSxoExperiment", "evaluateSxoExperiment",

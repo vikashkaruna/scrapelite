@@ -64,7 +64,7 @@ const SECTIONS = [
       },
       {
         heading: "Data retention",
-        text: "We retain your extracted data for as long as you maintain an account. For Discoverability and SXO analytics integrations, behavioural data is ingested and retained strictly in aggregated, privacy-minimized form with a default 90-day rolling retention window; no raw session replays, IP addresses, or visitor personal data are ever stored. Connected provider credentials and OAuth tokens are encrypted at rest with AES-256-GCM and deleted immediately upon provider disconnection. You can delete individual extractions from your Dashboard at any time. To request deletion of all your data, contact us at the email below.",
+        text: "We retain your extracted data for as long as you maintain an account. For Discoverability and SXO analytics integrations, behavioural data is ingested and retained strictly in aggregated, privacy-minimized form with a default 90-day rolling retention window; no raw session replays, IP addresses, or visitor personal data are ever stored. Users, workspace administrators, and platform operators have the provision to trigger early or immediate data deletion at any time via the SXO dashboard or API, or configure shorter custom retention windows. Connected provider credentials and OAuth tokens are encrypted at rest with AES-256-GCM and deleted immediately upon provider disconnection (with an optional immediate data wipe). You can delete individual extractions from your Dashboard at any time. To request deletion of all your data, contact us at the email below.",
       },
     ],
   },

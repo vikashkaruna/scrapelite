@@ -168,4 +168,33 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
       reason: "Validated via SXO outcome testing",
     }));
   });
+
+  it("renders Region 7: Analytics Data Governance & Early Deletion (D16)", async () => {
+    const purgeSpy = vi.spyOn(discoverability, "purgeSxoAnalyticsData").mockResolvedValue({
+      ok: true,
+      purged: true,
+      deleted: { total: 10 },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+
+    expect(screen.getByText("Analytics Data Governance & Early Deletion")).toBeInTheDocument();
+    expect(screen.getByText(/default 90-day retention window/)).toBeInTheDocument();
+
+    const purgeSelect = screen.getByLabelText("Early deletion retention threshold");
+    fireEvent.change(purgeSelect, { target: { value: "14" } });
+
+    const purgeBtn = screen.getByRole("button", { name: "Purge Data" });
+    fireEvent.click(purgeBtn);
+
+    expect(window.confirm).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(purgeSpy).toHaveBeenCalledWith(expect.objectContaining({
+        older_than_days: 14,
+        purge_all: false,
+        audit_id: "aud-test-101",
+      }));
+    });
+  });
 });

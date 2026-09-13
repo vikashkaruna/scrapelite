@@ -18,6 +18,58 @@
 
 ---
 
+## 2026-09-14 00:15 IST — Decisions D12–D17 Signed Off; D16 Early Deletion Provisions Implemented for Users & Operators; Gemini Live Key Mock Approved
+
+> **Branch:** `discoverability-P3` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  
+> **Verification:** `npx vitest run` **417 files / 6,706 passed / 0 failed / 0 skipped** · db-verify **70 migrations / 806 assertions passed / 0 failed** · 17 referral assertions · 56 workflow assertions · 116 tables with RLS enabled (0 without RLS) · 15 tables refuse anon reads · build clean in 1.40s · check:prerender 28 pages / 112 asset refs · E2E test runner 23/23 passed
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `discoverability-P3` |
+| **Status** | Complete & Verified on Branch. Tree clean. |
+| **Pre-Push Gates** | 100% green (`npm test`, `npm run test:db`, `npm run verify:rls`, `npm run build`, `npm run check:prerender`) |
+| **Active Focus** | Implement D16 early deletion provisions for operators and users; finalize D12, D14, D15, D17 approvals; sign off Gemini mock suite |
+
+---
+
+### 2. What was accomplished
+
+- **D16 Early Analytics Data Deletion Provision**:
+  - Implemented `auditStore.purgeAnalyticsData(userId, { workspaceId, auditId, olderThanDays, purgeAll })` to prune records across `audit_analytics_aggregates`, `audit_journey_funnels`, and `audit_form_diagnostics`.
+  - Added cascading data deletion option in `auditStore.deleteAnalyticsConnection(userId, provider, { workspaceId, purgeData })`.
+  - Added Netlify API endpoints: `POST /sxo/analytics/purge` (and permanent alias `/api/v1/sxo/analytics/purge`), `DELETE /sxo/analytics-data`, and query param `purge_data=true` on provider disconnect.
+  - Added operator retention purge action `purge-analytics-retention` in `netlify/functions/admin-automation.js` allowing platform operators to run early retention purges with configurable cutoffs.
+  - Added Region 7: Analytics Data Governance & Early Deletion UI in `SxoDashboard.jsx` providing dropdown selection (30 days, 14 days, 7 days, 0/all) and on-demand purge execution.
+  - Added `purgeSxoAnalyticsData` method to `discoverabilityClient.js` and verified parity in `discoverabilityClientParity.test.js`.
+  - Updated DPDP commitments in `src/pages/Privacy.jsx` to explicitly disclose on-demand early deletion for users, workspace admins, and operators.
+  - Added comprehensive test suite in `netlify/__tests__/audit/analytics-purge.test.js` (7 tests green).
+
+- **Decisions D12, D14, D15, D17 Sign-off**:
+  - **D12**: Confirmed approved; supports auto-minting on entity approval and explicit minting via `POST /subjects` endpoint.
+  - **D14**: Confirmed approved; read-time composite calculation with explicit overlap disclosures.
+  - **D15**: Confirmed approved; `sxo_default_v1` default weight set in `sxoScoring.js`.
+  - **D17**: Confirmed approved; permanent alias `/api/v1/sxo/*` -> `/api/v1/discoverability/sxo/*`.
+  - Updated all decision status entries in `docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md`.
+
+- **Gemini Live Key Mock Test Suite Approval**:
+  - Resolved `P3-DEV-07` in deviation register per owner sign-off: mock test suite proving request/response semantics without active external billing key is accepted for release.
+
+---
+
+### 3. Verification evidence
+
+- `npm test`: **417 test files passed (417/417), 6,706 tests passed (6706/6706)**.
+- `npm run test:db`: **70 migrations applied, 806 db assertions passed (0 failed)**, 17 referral assertions, 56 workflow assertions.
+- `npm run verify:rls`: **15 tables refuse anonymous reads; all 116 tables have RLS enabled (0 without RLS)**.
+- `npm run build`: **1.40s clean Vite build**; 28 prerendered pages and 84 asset references synced.
+- `npm run check:prerender`: **28 generated pages, 112 asset references present, 0 broken links**.
+- `npx vitest run scripts/verify-discoverability-e2e.test.mjs`: **23/23 tests passed**.
+
+---
+
 ## 2026-09-13 23:50 IST — Discoverability P3 Stages 0 to 5 Complete: SXO Engine, Analytics Governance, Portfolios & Personas, Release Runner & Packaging Alignment
 
 > **Branch:** `discoverability-P3` @ `639f47e` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  

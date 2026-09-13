@@ -385,6 +385,7 @@ export const discoverability = {
     );
     return req(`/sxo/integrations/${encodeURIComponent(provider)}${q.toString() ? `?${q}` : ""}`, "DELETE");
   },
+  purgeSxoAnalyticsData: (payload = {}) => req("/sxo/analytics/purge", "POST", payload),
   saveSxoConversionGoal: (payload) => req("/sxo/conversion-goals", "POST", payload),
   listSxoConversionGoals: (params = {}) => {
     const q = new URLSearchParams(

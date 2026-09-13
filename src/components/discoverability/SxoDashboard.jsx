@@ -38,6 +38,8 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [creatingExperiment, setCreatingExperiment] = useState(false);
   const [newExperimentName, setNewExperimentName] = useState("");
   const [newHypothesis, setNewHypothesis] = useState("");
+  const [purgeDays, setPurgeDays] = useState("30");
+  const [purging, setPurging] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     if (!auditId) return;
@@ -125,6 +127,33 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
       }
     } catch (err) {
       showToast(err.message || "Failed to create experiment", "error");
+    }
+  };
+
+  const handlePurgeAnalytics = async () => {
+    const daysNum = Number(purgeDays);
+    const label = daysNum === 0 ? "all analytics data" : `data older than ${daysNum} days`;
+    if (!window.confirm(`Are you sure you want to permanently delete ${label}? This cannot be undone.`)) {
+      return;
+    }
+    setPurging(true);
+    try {
+      const res = await discoverability.purgeSxoAnalyticsData({
+        older_than_days: daysNum,
+        purge_all: daysNum === 0,
+        workspace_id: workspaceId,
+        audit_id: auditId,
+      });
+      if (res?.ok) {
+        showToast(`Analytics data purged (${res.deleted?.total || 0} records deleted).`, "success");
+        loadDashboardData();
+      } else {
+        showToast(res?.error || "Failed to purge analytics data.", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Failed to purge analytics data.", "error");
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -503,6 +532,58 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
         {/* Mandatory Correlation Caveat (§11.12) */}
         <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px dashed var(--border)", fontSize: "12px", color: "var(--text-2)" }}>
           <strong style={{ color: "var(--text)" }}>Experiment Notice:</strong> {CORRELATION_NOTICE}
+        </div>
+      </section>
+
+      {/* ── REGION 7: Analytics Data Governance & Early Deletion (D16 / §13) ── */}
+      <section
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r-lg)",
+          padding: "24px",
+          display: "grid",
+          gap: "16px",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+              <Icon name="shield-check" size={18} />
+              Analytics Data Governance & Early Deletion
+            </h3>
+            <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-2)" }}>
+              Behavioural telemetry is aggregated and privacy-minimized with a default 90-day retention window. Users and operators can trigger early data deletion at any time.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <select
+              value={purgeDays}
+              onChange={(e) => setPurgeDays(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: "12px",
+              }}
+              aria-label="Early deletion retention threshold"
+            >
+              <option value="30">Delete data older than 30 days</option>
+              <option value="14">Delete data older than 14 days</option>
+              <option value="7">Delete data older than 7 days</option>
+              <option value="0">Delete all analytics data now</option>
+            </select>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={purging}
+              onClick={handlePurgeAnalytics}
+            >
+              {purging ? "Purging..." : "Purge Data"}
+            </Button>
+          </div>
         </div>
       </section>
     </div>

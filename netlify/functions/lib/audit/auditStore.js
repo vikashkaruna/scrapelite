@@ -2086,13 +2086,59 @@ export async function listAnalyticsConnections(userId, { workspaceId = null } = 
   });
 }
 
-export async function deleteAnalyticsConnection(userId, provider, { workspaceId = null } = {}) {
+export async function deleteAnalyticsConnection(userId, provider, { workspaceId = null, purgeData = false } = {}) {
   const parts = [ownerOrWorkspace(userId, workspaceId), `provider=eq.${encodeURIComponent(provider)}`];
   const r = await rest(`audit_analytics_connections?${parts.join("&")}`, {
     method: "DELETE",
     headers: { Prefer: "return=representation" },
   });
-  return r.ok ? { ok: true } : { ok: false, error: r.error || "Could not delete connection." };
+  if (purgeData) {
+    await purgeAnalyticsData(userId, { workspaceId, purgeAll: true });
+  }
+  return r.ok ? { ok: true, purged_data: !!purgeData } : { ok: false, error: r.error || "Could not delete connection." };
+}
+
+/**
+ * D16 / §13 — Early retention purge for analytics data.
+ * Allows users and operators to delete analytics data earlier than the 90-day retention window.
+ *
+ * @param {string} userId - Tenant user ID
+ * @param {object} opts - { workspaceId, auditId, olderThanDays, purgeAll }
+ */
+export async function purgeAnalyticsData(userId, {
+  workspaceId = null, auditId = null, olderThanDays = null, purgeAll = false,
+} = {}) {
+  const scope = ownerOrWorkspace(userId, workspaceId);
+  const filterParts = [scope];
+  if (auditId) {
+    filterParts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  }
+  if (!purgeAll && olderThanDays !== null && olderThanDays !== undefined && Number(olderThanDays) > 0) {
+    const cutoffDate = new Date(Date.now() - Number(olderThanDays) * 86400000).toISOString();
+    filterParts.push(`created_at=lt.${encodeURIComponent(cutoffDate)}`);
+  }
+
+  const query = filterParts.join("&");
+  const [delAgg, delFunnels, delForms] = await Promise.all([
+    rest(`audit_analytics_aggregates?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_journey_funnels?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_form_diagnostics?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+  ]);
+
+  const aggCount = Array.isArray(delAgg?.data) ? delAgg.data.length : 0;
+  const funnelCount = Array.isArray(delFunnels?.data) ? delFunnels.data.length : 0;
+  const formCount = Array.isArray(delForms?.data) ? delForms.data.length : 0;
+
+  return {
+    ok: true,
+    purged: true,
+    deleted: {
+      aggregates: aggCount,
+      funnels: funnelCount,
+      form_diagnostics: formCount,
+      total: aggCount + funnelCount + formCount,
+    },
+  };
 }
 
 export async function saveConversionGoal(userId, {
