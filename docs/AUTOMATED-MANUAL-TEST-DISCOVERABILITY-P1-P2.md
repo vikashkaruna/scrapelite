@@ -19,6 +19,16 @@
 > procedures · [`POST-DEPLOYMENT-MANUAL-TEST.md`](POST-DEPLOYMENT-MANUAL-TEST.md)
 > — the workflow pipeline, a separate subsystem.
 
+**D22 runner boundary.** `npm run test:release` owns deployment smoke, public
+route contracts, deployed Chromium checks, anonymous RLS posture, and at most
+one disposable P1 audit lifecycle. This sheet and its stable check ids belong
+only to `npm run verify:discoverability`, which owns the exhaustive P1/P2 API,
+schema, tenancy, entitlement, and evidence checks. Neither command invokes the
+other: their write opt-ins differ, and hiding the conformance runner inside a
+general release gate could spend audit quota or leave append-only test rows.
+The division is executable in `scripts/release-gate-scopes.mjs` and guarded by
+`scripts/release-gate-scopes.test.mjs`.
+
 ---
 
 ## 0. The shortest useful version

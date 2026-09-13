@@ -32,35 +32,36 @@
 /**
  * The five tiers, and what each weighs.
  *
- * ⚠️ THE WEIGHTS ARE A JUDGEMENT ABOUT REACH, NOT ABOUT TRUST.
- * A statutory registry is the most TRUSTWORTHY record a business has and one
- * of the least READ by an answer engine, which is why `registry` sits below
- * `major_aggregator`. Ranking by trust would tell a customer to go and fix a
- * filing almost nothing reads while their Google profile says the wrong thing.
+ * D21 adopts §9.6's published reach multipliers and normalises them against
+ * the 5x maximum for the 0–1 scorer: 5x/4x/4x/3x/1x. The final published tier
+ * is a 1–2x range; we record the range and conservatively score 1x until a
+ * source-specific reach rule supports the higher value. `rank` still orders
+ * remediation, so a statutory filing may follow a major aggregator even when
+ * both carry the document's 4x scoring weight.
  */
 export const SOURCE_TIERS = Object.freeze({
   authoritative: {
-    id: "authoritative", rank: 1, weight: 1.00,
+    id: "authoritative", rank: 1, multiplier: 5, weight: 1.00,
     label: "Authoritative",
     describes: "The record the engine keeps itself. What it answers from before it reads anything else.",
   },
   major_aggregator: {
-    id: "major_aggregator", rank: 2, weight: 0.70,
+    id: "major_aggregator", rank: 2, multiplier: 4, weight: 0.80,
     label: "Major aggregator",
     describes: "A national directory that feeds many downstream surfaces, so one wrong value propagates.",
   },
   registry: {
-    id: "registry", rank: 3, weight: 0.55,
+    id: "registry", rank: 3, multiplier: 4, weight: 0.80,
     label: "Official registry",
     describes: "A statutory filing. The most trustworthy record and one of the least read — high trust, low reach.",
   },
   vertical: {
-    id: "vertical", rank: 4, weight: 0.35,
+    id: "vertical", rank: 4, multiplier: 3, weight: 0.60,
     label: "Vertical directory",
     describes: "Industry-specific. Decisive inside its category and invisible outside it.",
   },
   social_review: {
-    id: "social_review", rank: 5, weight: 0.20,
+    id: "social_review", rank: 5, multiplier: 1, multiplierRange: Object.freeze([1, 2]), weight: 0.20,
     label: "Social and review",
     describes: "A profile or review surface. Rarely the resolving record, frequently the contradicting one.",
   },

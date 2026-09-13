@@ -20,18 +20,13 @@
 // of building the graph would ship the two one bug apart. When D7 lands, these
 // findings migrate into whatever it decides; nothing here blocks that.
 //
-// ── THE TAXONOMY, AND WHAT I DID NOT GUESS ─────────────────────────────────
-// ⚠️ The PRD names fourteen entity types and nine predicates and ENUMERATES
-// NEITHER anywhere visible in this repository — the same situation W4 hit with
-// "M1-M13". The counts below match; the NAMES are derived from schema.org,
-// which is the vocabulary this module already reads, validates and generates.
-// That is a defensible derivation rather than a guess, and it has the property
-// that matters: every type here maps to something an audit can actually
-// observe in markup.
-//
-// 🔴 IF THE PRD'S OWN LIST DIFFERS, ADD — NEVER RENUMBER OR REPURPOSE. These
-// ids travel in stored rows, API payloads and every historical diff, exactly
-// like the signal and issue codes.
+// ── THE TAXONOMY ───────────────────────────────────────────────────────────
+// §9.2 publishes fifteen semantic entity types and nine relationships. The
+// original W10 registry pre-dates that source list, so `prdType` and
+// `prdPredicate` make the mapping explicit. Existing stored ids remain stable;
+// four missing entity concepts and four missing relationships are additive.
+// `offer`, `event`, `topic`, `owns`, `part_of`, `same_as`, and `about` remain
+// useful implementation extensions and deliberately have no §9.2 mapping.
 //
 // ── THE RULE THAT KEEPS A GRAPH HONEST ─────────────────────────────────────
 // 🔴 EVERY RELATION CARRIES EVIDENCE AND A CONFIDENCE, OR IT IS NOT A RELATION.
@@ -51,61 +46,93 @@ import { isEvidence, evidenceConfidence } from "./evidenceModel.js";
 export const ENTITY_TYPES = Object.freeze({
   organization: {
     id: "organization", label: "Organization", schemaType: "Organization",
-    identifying: true,
+    prdType: "Organization/brand", identifying: true,
     describes: "A company or legal entity. The usual root of a business graph.",
   },
   brand: {
     id: "brand", label: "Brand", schemaType: "Brand", identifying: true,
+    prdType: "Sub-brand",
     describes: "A name customers use, which is frequently not the legal name.",
   },
   product: {
     id: "product", label: "Product", schemaType: "Product", identifying: true,
+    prdType: "Product",
     describes: "Something sold as a thing.",
   },
   service: {
     id: "service", label: "Service", schemaType: "Service", identifying: true,
+    prdType: "Service",
     describes: "Something sold as work performed.",
   },
   location: {
     id: "location", label: "Location", schemaType: "Place", identifying: true,
+    prdType: "Location",
     describes: "A physical place the business operates from or serves.",
   },
   person: {
     id: "person", label: "Person", schemaType: "Person", identifying: true,
+    prdType: "Person/expert/founder",
     describes: "A named human — founder, author, executive.",
   },
   offer: {
     id: "offer", label: "Offer", schemaType: "Offer", identifying: false,
+    prdType: null,
     describes: "A priced commitment attached to a product or service.",
   },
   review: {
     id: "review", label: "Review", schemaType: "Review", identifying: false,
+    prdType: "Review profile",
     describes: "A published assessment. Evidence of trust, not a claim of it.",
   },
   credential: {
     id: "credential", label: "Credential", schemaType: "EducationalOccupationalCredential",
-    identifying: false,
+    prdType: "Certification", identifying: false,
     describes: "A certification, accreditation or award held by an entity.",
   },
   event: {
     id: "event", label: "Event", schemaType: "Event", identifying: false,
+    prdType: null,
     describes: "Something scheduled — a conference, a webinar, an opening.",
   },
   content_asset: {
     id: "content_asset", label: "Content", schemaType: "CreativeWork", identifying: false,
+    prdType: "Media/publication mention",
     describes: "A page, article or asset that mentions or explains other entities.",
   },
   topic: {
     id: "topic", label: "Topic", schemaType: "Thing", identifying: false,
+    prdType: null,
     describes: "Subject matter. What content is about, and what a brand wants to be known for.",
   },
   industry: {
     id: "industry", label: "Industry", schemaType: "Thing", identifying: false,
+    prdType: "Industry/vertical",
     describes: "A market category, in the vocabulary directories and engines use.",
   },
   audience: {
     id: "audience", label: "Audience", schemaType: "Audience", identifying: false,
+    prdType: "Customer segment/persona",
     describes: "Who the business serves. The other half of every service-intent query.",
+  },
+  partner: {
+    id: "partner", label: "Partner", schemaType: "Organization",
+    prdType: "Partner", identifying: true,
+    describes: "An organization with a declared commercial or delivery relationship.",
+  },
+  customer_case_study: {
+    id: "customer_case_study", label: "Customer / case study", schemaType: "CreativeWork",
+    prdType: "Customer/case study", identifying: false,
+    describes: "A customer relationship or published case study that substantiates an outcome.",
+  },
+  directory_listing: {
+    id: "directory_listing", label: "Directory listing", schemaType: "WebPage",
+    prdType: "Directory listing", identifying: false,
+    describes: "A directory record on which the business or one of its offerings is listed.",
+  },
+  competitor: {
+    id: "competitor", label: "Competitor", schemaType: "Organization",
+    prdType: "Competitor", identifying: true,
+    describes: "A named organization competing for the same demand.",
   },
 });
 
@@ -126,50 +153,85 @@ export const IDENTIFYING_TYPES = Object.freeze(
 export const PREDICATES = Object.freeze({
   owns: {
     id: "owns", label: "owns", inverse: "owned_by", functional: false,
+    prdPredicate: null,
     domain: ["organization"], range: ["brand", "product", "service", "location"],
     describes: "The organization owns this. Ownership, not merely sale.",
   },
   offers: {
     id: "offers", label: "offers", inverse: "offered_by", functional: false,
+    prdPredicate: "offers",
     domain: ["organization", "brand"], range: ["product", "service", "offer"],
     describes: "Available to buy from this entity.",
   },
   located_at: {
     id: "located_at", label: "located at", inverse: "location_of", functional: true,
+    prdPredicate: "operatesAt",
     domain: ["organization", "person", "event"], range: ["location"],
     describes: "The primary place. Functional: a second approved one is a contradiction, not extra detail.",
   },
   employs: {
     id: "employs", label: "employs", inverse: "works_for", functional: false,
+    prdPredicate: "employs",
     domain: ["organization"], range: ["person"],
     describes: "A named person publicly associated with the organization.",
   },
   part_of: {
     id: "part_of", label: "part of", inverse: "has_part", functional: true,
+    prdPredicate: null,
     domain: ENTITY_TYPE_IDS, range: ENTITY_TYPE_IDS,
     describes: "Hierarchy — a division of a group, a module of a product. Cycles are refused.",
   },
   same_as: {
     id: "same_as", label: "same as", inverse: "same_as", functional: false,
+    prdPredicate: null,
     domain: ENTITY_TYPE_IDS, range: ENTITY_TYPE_IDS,
     describes: "Two records are one entity. This is schema.org sameAs, and it is how scattered mentions resolve to one node.",
   },
   about: {
     id: "about", label: "about", inverse: "subject_of", functional: false,
+    prdPredicate: null,
     domain: ["content_asset", "event"], range: ["topic", "product", "service", "organization", "brand", "industry"],
     describes: "What this content is actually about, as opposed to what it merely mentions.",
   },
   serves: {
     id: "serves", label: "serves", inverse: "served_by", functional: false,
+    prdPredicate: "serves",
     domain: ["organization", "brand", "service", "product"],
     range: ["audience", "industry", "location"],
     describes: "Who and where. The other half of every service-intent query.",
   },
   competes_with: {
     id: "competes_with", label: "competes with", inverse: "competes_with", functional: false,
+    prdPredicate: "competesWith",
     domain: ["organization", "brand", "product", "service"],
     range: ["organization", "brand", "product", "service"],
     describes: "A rival for the same demand. Symmetric, and never inferred from a single mention.",
+  },
+  provides: {
+    id: "provides", label: "provides", inverse: "provided_by", functional: false,
+    prdPredicate: "provides",
+    domain: ["organization", "brand", "partner", "competitor"], range: ["service"],
+    describes: "The subject performs or delivers this service.",
+  },
+  founded_by: {
+    id: "founded_by", label: "founded by", inverse: "founded", functional: false,
+    prdPredicate: "foundedBy",
+    domain: ["organization", "brand", "partner", "competitor"], range: ["person"],
+    describes: "The named person founded this organization or brand.",
+  },
+  validated_by: {
+    id: "validated_by", label: "validated by", inverse: "validates", functional: false,
+    prdPredicate: "validatedBy",
+    domain: ["organization", "brand", "product", "service"],
+    range: ["partner", "credential", "customer_case_study", "review"],
+    describes: "An external relationship or record substantiates this entity's claim.",
+  },
+  listed_on: {
+    id: "listed_on", label: "listed on", inverse: "lists", functional: false,
+    prdPredicate: "listedOn",
+    domain: ["organization", "brand", "product", "service", "location"],
+    range: ["directory_listing", "review"],
+    describes: "This entity has a discoverable directory or review-platform record.",
   },
 });
 

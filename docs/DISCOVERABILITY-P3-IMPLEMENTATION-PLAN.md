@@ -1,11 +1,9 @@
 # Discoverability Intelligence — P3 implementation plan
 
-**Branch:** `discoverability-P3` @ `d4bb180`, which now carries **both** lines of work:
-`Discoverability-P1-P3-implementation` (`628e47f`, all of P1+P2) merged with `origin/staging`
-(`ca648af`, the Train A face-lift and platform work).
-🔴 **No other branch is touched.** `main` `2042348`, `staging` `ca648af` and
-`Discoverability-P1-P3-implementation` `628e47f` are unchanged — staging is held behind on
-purpose while this line is in build phase.
+**Branch:** `discoverability-P3` @ `2ccd690`, containing the verified integration chain
+`origin/staging` (`9aac771`) → `origin/Discoverability-P1-P3-implementation` (`ba9bb46`) →
+`origin/discoverability-P3` (`2ccd690`). P3 implementation is isolated in its own clean
+worktree; the user's concurrent `face-lift` checkout is not modified.
 
 **Source of truth:** the consolidated **BRD/PRD (P1/P2/P3)** supplied this session — §10 (P3
 BRD), §11.1–§11.15 (P3 PRD), §12 (lifecycle + ownership), §13 (NFRs), §14 (sequencing), §15
@@ -17,8 +15,8 @@ staging merge (35 files) and was removed. Its R0–R5 release map contains no SX
 schedules AI Visibility — already built here — for months 7–9 as a paid add-on. **The BRD/PRD
 governs P3.**
 
-**Status:** P1 (W1–W8) and P2 (W9–W14) are complete as code. P3 is not started.
-**Next migration number: `0065`.**
+**Status:** P1 (W1–W8) and P2 (W9–W14) are complete as code. P3 Stage 0 is in progress.
+**Next migration number: `0066`** (`0065` is the forward-only §9.2 taxonomy reconciliation).
 
 > **Companions.** [`DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md)
 > §7 deviation register — Stage 1's backlog ·
@@ -354,18 +352,20 @@ P3 reads from things that are not reachable today.
 
 | # | Deliverable |
 |---|---|
-| 0.1 | 🔴 **Apply `0050`–`0064` to production.** Fifteen behind; every P2 endpoint reads a table that does not exist there. **`0061` first and alone** if a feature release is not imminent — it is the RPC lockdown: ten `SECURITY DEFINER` functions taking a caller-supplied `p_user_id`, each an impersonation primitive reachable with the committed publishable key. Runbook §4d + §4e. Verify with `verify:rls -- --prod` → 15/15 refused |
-| 0.2 | 🔴 **Fix the three stale `available` flags** (§3.2) and add the parity test the synthetic-module test cannot be: **every module referenced by a real `issueCatalog` entry whose workstream has shipped must read `available: true`**. Confirm RED by reverting one flag. Extend the same guard to `platformModules.js`. Correct `CLAUDE.md`'s claim |
-| 0.3 | **Populate `mCode` for the six modules §5 names** (§3.1), leave seven null with the reason, and rewrite the `toBeNull()` assertion to pin the split rather than the absence |
-| 0.4 | **Assert the shipped weights against the document** — §7.3, §7.4 (recording D1's two departures *as* departures), §7.6, §7.8, §9.3–§9.8. One test file. The claim that they match is currently a memory, not a check |
-| 0.5 | **D22 — reconcile the two regression runners** (§2.3). One entry point, or a stated division of labour with a test asserting neither claims the other's checks |
-| 0.6 | **Reconcile W12's tiers against §9.6's published weights** (`5x/4x/4x/3x/1–2x`). W12 ranks by reach, not trust, and put `registry` below `major_aggregator`; §9.6 puts India directories at Tier 3 `4x`. Either the reasoning survives the document or the weights change — **record which, and why** → **D21** |
-| 0.7 | **Reconcile W10's entity types and predicates against §9.2's 15 and 9.** 🔴 **Add; never renumber** — a type id travels in stored rows and every historical diff |
-| 0.8 | Correct `DISCOVERABILITY-MODULE.md` §8 — it still marks **W6 ❌ "largest remaining P1 item"** and says *"P2 … is not started"*, both true when written and neither true now. Add the §5.2 name mapping and a P3 section |
-| 0.9 | **First live third-party exercise** (DEF-06): one real directory fetch through the compliance engine, one real grounded-Gemini prompt run. Both are pinned only by unit test today |
+| 0.1 | 🟡 **Production migrations applied; code deployment explicitly deferred.** Operator confirms `0050`–`0064` were executed individually in production. Public probes verify 15/15 protected-table reads and all ten caller-id definer RPCs are refused anonymously. Exact inventory remains operator-attested without `DATIQ_DB_URL`; production still serves the pre-W2 function bundle, which the owner explicitly accepts until the later deployment/release stage |
+| 0.2 | ✅ **Shipped-module availability is truthful and guarded.** `ai_visibility`, `trust_and_proof`, and `local_directory` are available. `moduleAvailabilityParity.test.js` reads the real issue and public-platform registries; its RED state was confirmed against the stale flags. The synthetic badge test now uses a genuinely unbuilt module |
+| 0.3 | ✅ **The §5 module-name split is explicit.** Six recommendation destinations carry their real M-code; seven deliberately remain null with `mCodeReason`. Tests pin both groups and reject accidental invented mappings |
+| 0.4 | ✅ **Published scoring constants are executable contracts.** `specWeightParity.test.js` centralizes §7.3, §7.4, §7.6, §7.8, and §9.3–§9.8, including D1's named departures. A mutated WAVI coefficient was confirmed RED before restoration |
+| 0.5 | ✅ **D22 resolved — stated division of labour.** `test:release` owns deployment/public-route/browser/RLS and one disposable P1 lifecycle; `verify:discoverability` owns the stable-id P1/P2 conformance sheet. Neither invokes the other because their write/residue guarantees differ. `release-gate-scopes.mjs` and its parity test assert the boundary |
+| 0.6 | ✅ **D21 resolved — the published weights govern.** Normalized to the existing 0–1 scorer: `5x/4x/4x/3x/1x` → `1.0/0.8/0.8/0.6/0.2`. The last tier records §9.6's full `1–2x` range but conservatively scores 1x until source-specific reach evidence supports 2x. Registry remains below a major aggregator by remediation `rank`, not by an invented score difference |
+| 0.7 | ✅ **§9.2 reconciled additively.** The original 14 type ids and 9 predicate ids remain unchanged and first in registry order. Four missing semantic entity concepts and four missing relationships were added; explicit `prdType` / `prdPredicate` metadata proves exact coverage of the published 15 and 9. Migration `0065` widens the stored CHECK constraints forward-only; model and live applied-schema parity tests pin both sides |
+| 0.8 | ✅ **Module documentation reconciled.** §8 now maps every §5.2 `M1`–`M13` name to the real implementation, records P1 and P2 as complete code with their two Stage 1 reachability/UI residues, and defines the ordered P3 section. The stale W6/P2 claims and pre-workspace statement were removed |
+| 0.9 | 🟡 **Live third-party exercise half green.** A Sulekha directory URL passed the real DatIQBot robots check, honored the 1 s crawl delay, and returned `HTTP 200` HTML with the expected directory marker. After the operator updated `GEMINI_API_KEY`, both the local value and linked Netlify production value were probed without exposing either secret; Google's API still returns `API key not valid`. Grounding remains an explicit external deviation and must return `grounded: true` plus at least one citation before production release |
 
-**Gate:** production answers the regression runner with zero stop-ship rows, and no shipped module
-is advertised as coming on any surface.
+**Stage 0 disposition:** ✅ repository implementation and the complete local release matrix are
+green. The owner explicitly deferred the production bundle deployment and asked work to continue;
+`P3-DEV-06`/`P3-DEV-07` preserve those external exceptions for the Stage 5 production gate. No
+shipped module is advertised as coming on any surface.
 
 ---
 
@@ -374,7 +374,7 @@ is advertised as coming on any surface.
 §11.15 shows brand, product and service scores beside SXO; §11.10 rolls up by brand and product
 line. **None of that is reachable today.** This is foundation, not tidying.
 
-#### CP-1.1 · The subject spine — close DEV-01 · `0065` · blocked on **D12**
+#### CP-1.1 · The subject spine — close DEV-01 · `0066` · blocked on **D12**
 
 `POST /subject-score/scores` is **unreachable for any API caller**. `audit_subjects` rows are
 minted by exactly one caller — `ensureSubject`, always `kind: "page"` — and `0057`'s
@@ -388,7 +388,7 @@ kinds; the three subject-score `available` flags flip in the same commit.
 ⚠️ **Forward-only, no backfill** — a subject minted over an unreviewed node scores something the
 graph has not agreed exists.
 
-#### CP-1.2 · Governance · `0066`
+#### CP-1.2 · Governance · `0067`
 
 **D18 is resolved**, so this is implementation. §13's seven roles onto existing workspace
 membership; §9.10's seven approval stages; §12's two new terminal states in
@@ -447,7 +447,7 @@ measured by shipped code.
 | 2.5 | **`frictionAudit.js`** — the 7 `UX` inputs, with `CWV` and `Mobile` **reusing `fetchWebVitals`** and the mobile-parity signal. Behavioural inputs are **optional and excluded when absent** — never scored 0 | 11.6 |
 | 2.6 | **`conversionDesign.js`** — 12 primary outcomes, the 5 `CD` components, **activating `gapTaxonomy.js`'s reserved `conversion_friction` root cause**. ⚠️ `CTA` is a component id in **both** `IC` and `CD` with different meanings; namespace them (`ic.cta`, `cd.cta`) so a stored row is unambiguous | 11.7 |
 | 2.7 | **`sxoScoring.js`** — the six-component score through the one `weightedMean`, and the read-time executive composite. 🔴 **D14 and D15 gate this file.** `SXO_MODEL_VERSION` is its own series, never the page model's `v` — W11's `s`-series precedent | 11.3 |
-| 2.8 | Migration `0067` — `audit_sxo_runs`, `audit_sxo_results`, `audit_sxo_findings`, `audit_sxo_recommendations`, `audit_intent_mappings`, `audit_page_templates`. Service-role RLS, revoked from `anon`/`authenticated`, explicit `grant execute … to service_role` on any function. ⚠️ `sxo_total_score` **nullable**, `coverage` **not null** — W11's rule | 11.14 |
+| 2.8 | Migration `0068` — `audit_sxo_runs`, `audit_sxo_results`, `audit_sxo_findings`, `audit_sxo_recommendations`, `audit_intent_mappings`, `audit_page_templates`. Service-role RLS, revoked from `anon`/`authenticated`, explicit `grant execute … to service_role` on any function. ⚠️ `sxo_total_score` **nullable**, `coverage` **not null** — W11's rule | 11.14 |
 | 2.9 | Routes 1–7 of §5.1 + the `audit.sxo` entitlement on the `audit.benchmark` precedent (D9). **Writes gated, reads not** | 11.13 |
 | 2.10 | **Templates 10–12** added to `auditProfiles.js` — category/listing, case study, landing page. Never renumber the nine that exist | 11.10 |
 | 2.11 | Budget discipline. §13 requires a **median single-page audit under 60 s**; SXO adds overlay detection, accessibility basics and mobile parity to a path that already produced a 504 in August from unbudgeted serial work. The deadline **extends**; it is not re-invented | 13 |
@@ -469,7 +469,7 @@ no P1 audit exists; every weight is asserted against the document.
 | 3.3 | **`audit_analytics_aggregates`** — privacy-minimized, the 7 segmentation axes. ⚠️ **Aggregates only.** No raw session rows, per §10 | 11.8 |
 | 3.4 | **`journeyModel.js`** — the 9 funnel stages. A stage with no instrumentation is **excluded and named**; a funnel that treats missing instrumentation as a drop-off invents a leak the customer does not have | 11.9 |
 | 3.5 | **`formDiagnostics.js`** — the 9 per-form metrics | 11.9 |
-| 3.6 | Migration `0068` — the six analytics/funnel/form/goal tables | 11.14 |
+| 3.6 | Migration `0069` — the six analytics/funnel/form/goal tables | 11.14 |
 | 3.7 | Routes 8–11 of §5.1. Ingestion **asynchronous, retryable and idempotent** per §13 — every job stage | 11.13, 13 |
 | 3.8 | 🔴 **Retention, deletion and purge.** Every new table on `PURGE_TABLES` or `RETAIN_TABLES` with a written reason — the parity test asserts it. A **default** retention period, not just configurability. `Privacy.jsx` reconciled with the new data class | 13 |
 | 3.9 | **`MI` — the Measurement Maturity Auditor.** ⚠️ At `0.05` it is the smallest SXO weight and the largest dependency; a low `MI` must **caveat the funnel**, not just cost five points | 11.8 |
@@ -488,7 +488,7 @@ unmeasured; a disconnect deletes what the retention policy says it deletes, prov
 | 4.3 | **Persona packs** — the 7 packs as presentation over `recommendationModel.js`, with §12's widened owner vocabulary. **Not seven copies of the queue** | 11.11, 12 |
 | 4.4 | **`audit_optimization_experiments`** extending `validationLab.js` — ticket/release/A-B/change-record link, expected metric, observation period, completion date. 🔴 **Records, never deploys.** Before/after carries volume, seasonality and attribution caveats, and **correlation stays labelled as correlation** | 11.12 |
 | 4.5 | **Scheduled regression alerts** on the existing cron + `AUTOMATION_JOBS`. ⚠️ **`netlify.toml` is the only thing that registers a cron**, and `cron-registry-parity.test.js` asserts the two agree | 10 |
-| 4.6 | Migration `0069` | 11.14 |
+| 4.6 | Migration `0070` | 11.14 |
 | 4.7 | Routes 12–14 of §5.1 | 11.13 |
 | 4.8 | **§11.15 dashboard** — master + 5 frameworks + qualified-lead delta, 6 layer scores, funnel, top friction, template/portfolio performance, actions and validation. ⚠️ The master carries its overlap disclosure (§4.1) | 11.15 |
 
@@ -524,8 +524,8 @@ and are recorded with their answers rather than deleted.
 | **D18** | ✅ **RESOLVED** — §13's seven roles and §9.10's seven approval stages are named in §0.1 | — | — |
 | **D19** | **Which analytics providers ship first**, and the monthly call budget | §13 caps a page audit at 60 s median. The August 504 came from unbudgeted serial work. Six providers at once is how the budget goes | STAGE 3 |
 | **D20** | **Entitlement and packaging** for SXO, analytics, portfolio, experiments | D9's precedent is to reuse the audit allowance rather than invent a plan axis nobody bought | CP-2.9 |
-| **D21** | **Do W12's reach-ranked tiers survive §9.6's published weights?** | A tier weight moves every NAP score. W12's reasoning is written down; the document's numbers are now readable. One of them gives | CP-0.6 |
-| **D22** | **Two regression runners** — `verify-discoverability-e2e.mjs` (61 checks) and staging's `release-regression.mjs` (539 lines) | Two runners that disagree about whether a release is ready is worse than either alone, and P3 must extend one of them, not add a third | CP-0.5 |
+| **D21** | ✅ **RESOLVED — §9.6's published weights govern.** Normalize `5x/4x/4x/3x/1x` to `1.0/0.8/0.8/0.6/0.2`; record the last tier's full `1–2x` band and use its conservative lower bound until a source-specific rule justifies 2x. Registry stays lower in remediation rank, while sharing the published 4x score | A score must follow the now-readable document; ordering and scoring remain separate concerns | ✅ CP-0.6 |
+| **D22** | ✅ **RESOLVED — stated division of labour.** `test:release` owns deployment/public-route/browser/RLS and one disposable P1 lifecycle; `verify:discoverability` owns stable-id P1/P2 API/schema/tenancy/entitlement/evidence conformance. Neither invokes the other, because their write and residue guarantees differ. The shared registry and parity test make the boundary executable | Two runners may coexist only when neither claims the other's checks | ✅ CP-0.5 |
 
 ---
 
@@ -578,7 +578,9 @@ commit that did it — the record of *why it waited* is what stops the same deba
 | # | What | Why | Status |
 |---|---|---|---|
 | **P3-DEV-01** | The SXO weights were once recorded as unobtainable | True of the PDF, whose formulas are vector outlines with no images to OCR. The markdown sources carry all of them as text | ✅ **RESOLVED** — §0.1 |
-| **P3-DEV-02** | `mCode` will be populated for **6 of 13** modules, not 13 | §5's M-codes are architectural; the repo's are recommendation destinations. Only six correspond. Inventing seven is the mistake W4 declined to make | 🔴 OPEN — CP-0.3 |
+| **P3-DEV-02** | `mCode` is populated for **6 of 13** recommendation destinations, not 13 | §5's M-codes are architectural; the repo's are recommendation destinations. Only six correspond. Inventing seven is the mistake W4 declined to make | ✅ **RESOLVED** — CP-0.3; six mapped, seven null with an asserted reason |
 | **P3-DEV-03** | The master score double-counts technical health, CWV and mobile parity | It is the document's own model (§11.3 × §7.3). Implemented as specified; the overlap ships as disclosure rather than being smoothed away | 🔴 OPEN — **D14** |
 | **P3-DEV-04** | `/api/v1/sxo/*` will be an alias, not the canonical prefix | D2 made `/api/v1/discoverability/*` canonical and §7.10/§9.11 agree across 29 endpoints; §11.13 is the document's only inconsistency | 🔴 OPEN — **D17** |
-| **P3-DEV-05** | `Analysis-2/` is excluded as a scope source | Owner instruction. Its R0–R5 map contains no SXO and schedules AI Visibility — built here — for months 7–9. The BRD/PRD governs; the engine is extended, not re-planned | ✅ **APPLIED** — removed in `d4bb180` |
+| **P3-DEV-05** | `Analysis-2/` is excluded as a scope source | Owner instruction. Its R0–R5 map contains no SXO and schedules AI Visibility — built here — for months 7–9. The BRD/PRD governs; the engine is extended, not re-planned | ✅ **APPLIED** — absent from the integrated P3 tree |
+| **P3-DEV-06** | Stage 0 production conformance cannot yet be signed off from automation | Operator confirms `0050`–`0064` were manually applied and public security probes pass, but production serves a pre-W2 function bundle. Without `DATIQ_DB_URL`, exact inventory remains attested rather than queried | 🟡 **ACCEPTED FOR CONTINUATION BY OWNER** — close at Stage 5 after deployment + direct evidence |
+| **P3-DEV-07** | The first grounded-Gemini live probe is not green | After the operator's key update, both local and linked Netlify production values still reach Google and receive `API key not valid`; no secret was printed. Unit tests prove request/response semantics, not account credentials | 🟡 **ACCEPTED FOR CONTINUATION BY OWNER** — repair and require citations before Stage 5 production release |

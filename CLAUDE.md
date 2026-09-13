@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-13 — P3 IS PLANNED FROM THE SUPPLIED BRD/PRD, AND ROUGHLY A THIRD OF THE SXO SCORE IS ALREADY MEASURED BY SHIPPED CODE. STAGING IS MERGED INTO BOTH `Discoverability-P1-P3-implementation` (`0705eb6`) AND `discoverability-P3` (`218955b`). `Analysis-2/` IS REMOVED FROM `staging` (`000c008`). `main` UNTOUCHED AT `2042348`. NO CODE WAS WRITTEN — THE DELIVERABLE IS THE PLAN, AND P3 IMPLEMENTATION GOES TO CODEX.**
+> **Last updated: 2026-09-13 — P3 STAGE 0 REPO WORK IS IMPLEMENTED ON `discoverability-P3`. THE VERIFIED INTEGRATION CHAIN IS `staging` (`9aac771`) → `Discoverability-P1-P3-implementation` (`ba9bb46`) → `discoverability-P3` (`2ccd690`). THE ENTITY GRAPH NOW COVERS §9.2 ADDITIVELY IN `0065`; PUBLISHED WEIGHTS, MODULE AVAILABILITY, M-CODES AND RUNNER OWNERSHIP ARE PINNED BY TEST. TWO EXTERNAL GATES REMAIN: PRODUCTION STILL SERVES THE PRE-W2 FUNCTION BUNDLE, AND THE CONFIGURED GEMINI SERVER KEY IS INVALID.**
 >
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > **the plan:** [docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).
@@ -30,29 +30,30 @@
 > Owner decision: the BRD/PRD governs. Removed from `staging` because the repo is public and the
 > pricing/revenue model would have gone public on the next promotion — `git revert 000c008` restores it.
 >
-> 🔴 **SIX LIVE CATALOGUE ISSUES ADVERTISE A SHIPPED MODULE AS "(coming)".** Three
-> `MODULES[].available` flags are stale — `ai_visibility` (W6/W7), `trust_and_proof` (W13, `0062`) and
-> `local_directory` (W12, `0058`) — and four real `issueCatalog` entries route to the second, two to
-> the first. ⚠️ **This file's own entry below says the opposite** (*"the '(coming)' badge is now
-> UNREACHABLE FROM REAL DATA"*), which is false in both directions. The badge's regression test uses a
-> **deliberately synthetic** module and structurally cannot catch it; Stage 0.2 adds the real guard and
-> extends it to staging's new public `platformModules.js`, which carries the same drift risk.
+> ✅ **THE SIX STALE “(COMING)” REFERRALS ARE FIXED AND CANNOT QUIETLY RETURN.**
+> `ai_visibility`, `trust_and_proof` and `local_directory` now advertise their shipped state;
+> `moduleAvailabilityParity.test.js` reads the real issue catalogue and public platform registry.
+> The badge's component test uses the genuinely unbuilt `service_radius` module.
 >
-> 🔴 **M1–M13 MAPS ONTO ONLY SIX OF THE REPO'S THIRTEEN MODULES.** §5's M-codes are *architectural
-> modules*; `gapTaxonomy.js`'s are *recommendation destinations*, and the two thirteens are a
-> coincidence. Fill in six (`recommendation_studio`=M5, `validation_lab`=M6, `ai_visibility`=M7,
-> `entity_graph`=M9, `local_directory`=M10, `trust_and_proof`=M11), leave seven null **with the reason
-> written down**, and pin the split rather than the absence. Inventing seven is what W4 declined to do.
+> ✅ **M1–M13 IS RECONCILED WITHOUT INVENTING SEVEN FALSE MAPPINGS.** §5's M-codes are architectural
+> modules; `gapTaxonomy.js`'s are recommendation destinations. Six real correspondences are populated
+> (`M5`, `M6`, `M7`, `M9`, `M10`, `M11`); seven remain null with a required reason, and tests pin both
+> sets.
 >
-> ⚠️ **THREE DECISIONS GATE THE FIRST TWO STAGES AND CANNOT BE DEFAULTED:** **D12** how a scorable
-> subject is created (blocks CP-1.1 entirely — the document does not address it, because DEV-01 is our
-> defect), **D22** which of the two regression runners now on this branch absorbs P3's checks, and
-> **D21** whether W12's reach-ranked directory tiers survive §9.6's published `5x/4x/4x/3x/1–2x`.
+> ⚠️ **D12 IS THE ONE REMAINING DECISION BEFORE STAGE 1:** how a scorable subject is created. D21 is
+> resolved in favour of §9.6's published `5x/4x/4x/3x/1–2x`; D22 assigns deployment/browser/RLS to
+> `test:release` and stable-id API/schema/tenancy conformance to `verify:discoverability`.
 >
-> **Verified on the merged tree:** `npx vitest run` **396 files / 6569 passed / 0 failed** · db-verify
-> **64 migrations** + referral 17 + workflows 56 · build clean · prerender 28 pages / 112 refs ·
-> security clean. 🔴 **Production is still FIFTEEN migrations behind (`0050`–`0064`)**, and `0061` is
-> the RPC lockdown. ⚠️ **The next migration number is `0065`.**
+> **Stage 0 verification:** the complete ten-suite `test:all` matrix is green — readiness, unit,
+> contract, integration, system, db/referral/workflow, production build, prerender integrity, security,
+> and Chromium smoke. db-verify applied **65 migrations / 801 assertions**; the focused new model/parity
+> set is 77/77. The live directory exercise is green through robots and fetch (`HTTP 200`). The operator
+> confirms production migrations `0050`–`0064` were manually applied; public posture is green (15/15
+> table reads and all ten definer RPCs refused anonymously). Exact inventory remains unproved without
+> direct DB access, and the owner explicitly deferred the pre-W2 production bundle until release. The
+> updated local and linked Netlify production Gemini values still receive `API key not valid` from Google;
+> this is recorded as an external deviation and cannot be called grounded.
+> ⚠️ **The next migration number is `0066`.**
 >
 > ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
 >
@@ -570,10 +571,11 @@
 > cover that path passed against the broken code**, because it asserted only that an EG-05 existed,
 > not that nothing spurious did. It now asserts the exact subject ids, confirmed RED.
 >
-> ⚠️ **THE "(coming)" BADGE IS NOW UNREACHABLE FROM REAL DATA** — no issue in `issueCatalog` maps to
-> an unbuilt module any more; W9 and W10 shipped the last two. Its test uses a deliberately
-> synthetic module and says why, because pointing it at a catalogue issue makes it go
-> green-then-silently-dead the moment the next workstream ships. W11–W14 will make it live again.
+> ⚠️ **HISTORICAL W10 CHECKPOINT — SUPERSEDED BY P3 STAGE 0.2.** The badge was unreachable from
+> real catalogue data when W9/W10 landed, but later workstreams shipped AI Visibility, Local &
+> Directory, and Trust & Proof without updating their three `available` flags. P3 Stage 0.2 fixes
+> those flags and adds a parity test over the real `issueCatalog`, the complete shipped-module
+> set, and the public `platformModules.js` Discover pillar so this drift cannot recur silently.
 >
 > **Verified:** **366 files / 5986 passed / 14 skipped / 0 failed** (+90) · db-verify **56
 > migrations / 664 assertions / 0 failed** (+46) · referral 17 · workflows 56 · build clean ·

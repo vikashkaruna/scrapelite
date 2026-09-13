@@ -776,24 +776,28 @@ bug apart. When D7 lands, these findings migrate into whatever it decides.
 ⚠️ **W9 and W10 both attach to a business rather than to an audit**, so whatever
 D7 resolves to attaches to them rather than replacing them.
 
-### The taxonomy, and what was not guessed
+### The §9.2 taxonomy, reconciled without rewriting history
 
-⚠️ The PRD names **fourteen entity types** and **nine predicates** and
-enumerates neither anywhere visible in this repository — the same situation W4
-hit with "M1–M13". The counts match; the **names are derived from schema.org**,
-which is the vocabulary this module already reads, validates and generates. That
-is a defensible derivation rather than a guess, and it has the property that
-matters: every type maps to something an audit can actually observe in markup.
+The consolidated BRD/PRD publishes **fifteen semantic entity types** and **nine
+relationships**. W10 shipped before that list was available and already stored
+fourteen stable type ids and nine stable predicate ids. Migration `0065` follows
+the rule recorded here from the start: **add; never renumber or repurpose**.
 
-🔴 **If the PRD's own list differs, ADD — never renumber or repurpose.** These
-ids travel in stored rows and every historical diff, exactly like the signal and
-issue codes.
+`ENTITY_TYPES[].prdType` now maps eleven original ids and four additive ids onto
+all fifteen published concepts exactly. The implementation keeps three useful
+extensions (`offer`, `event`, `topic`), for eighteen internal ids total.
+Likewise, `PREDICATES[].prdPredicate` maps five original and four additive ids
+onto all nine published relationships; four implementation extensions (`owns`,
+`part_of`, `same_as`, `about`) remain, for thirteen internal ids total.
 
-**Types** — organization, brand, product, service, location, person, offer,
-review, credential, event, content_asset, topic, industry, audience.
+**Additive types** — `partner`, `customer_case_study`, `directory_listing`,
+`competitor`.
 
-**Predicates** — owns, offers, located_at, employs, part_of, same_as, about,
-serves, competes_with.
+**Additive predicates** — `provides`, `founded_by`, `validated_by`, `listed_on`.
+
+The pure-model test asserts published semantic coverage and preserves the old id
+prefix; `db-verify` reads the final applied CHECK constraints and asserts exact
+parity with both registries.
 
 ⚠️ **Every predicate declares a domain and a range, and `validateRelation`
 enforces them.** Without that a graph is a bag of edges: *"this review employs
@@ -1041,42 +1045,73 @@ deletion is what an audit trail exists to prevent. Nothing calls
 - **A ranking or traffic prediction.** An explicit non-goal. Every surface —
   report footer, UI, blog post, help section — says the scores describe how
   discoverable a page is today and predict nothing.
-- **Workspaces.** The PRD schema has a `workspaces` table; DatIQ does not.
-  Every table carries a nullable `workspace_id` reserved for when team
-  workspaces ship, so the column can be back-filled without a second migration.
+- **Discoverability portfolio rollups.** DatIQ has had `public.workspaces` since
+  migration `0031`, and every audit table carries the nullable `workspace_id`
+  bridge. P3 Stage 4 builds the nine-axis rollup; no second workspace or team
+  model is needed.
 - **A separate auth system.** The PRD specifies `/api/v1/auth/login`. DatIQ has
   Supabase auth. Building a second identity system beside the real one is how an
   app ends up with two answers to "who is this?" and the wrong one gating access.
 
 ---
 
-## 8. Release mapping
+## 8. Consolidated BRD/PRD mapping
 
-⚠️ **This table maps the module onto the CURRENT consolidated BRD/PRD (P1/P2/P3),
-which is not the three-phase document the module was originally built against.**
-An earlier version of this file marked all three of THAT document's phases ✅,
-and that remains true of it — but the new P1 is broader in several places and
-the new P2 is largely greenfield, so the old mapping does not transfer. The
-clause-by-clause gap analysis lives in
-[DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
+This section maps the repository to the current P1/P2/P3 document. The complete
+P1/P2 audit trail is in
+[DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md);
+the ordered P3 checkpoints are in
+[DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).
 
-| P1 area | State |
-|---|---|
-| Four-pillar model, SEO/AEO/GEO framework views | ✅ weights match the PRD exactly |
-| Evidence envelope and explainability | ✅ W1 — `evidenceModel.js`, migration 0048 |
-| Penalty model | ✅ W3 — 9 blockers, `v2`, cross-version diff guard. Shipped calibration retained per D1 (§3c) |
-| Goal-based intake (audit type, primary goal, geography, 8 profiles) | ✅ W2 — `intakeModel.js`, migration 0049 |
-| Gap analysis v2 (root cause, module, observed-fact/inference split) | ✅ W4 — `gapTaxonomy.js`, migration 0050 (§3d) |
-| Recommendation Studio (meta variants, internal links, content brief) | ⚠️ W5 — 13 of 17 constructs |
-| AI visibility (prompt taxonomy, 7 citation states, SOV, WAVI, displacement) | ❌ W6 — largest remaining P1 item |
-| Validation Lab (signal diff, regressed/unchanged, trend windows, attribution) | ⚠️ W7 |
-| Workflow Hub lite (7-state lifecycle, assignment, due dates, notes) | ⚠️ W8 — 4 of 9 states |
-| `/api/v1/discoverability/*` namespace | ⚠️ W8 — served under `/api/v1/audits/*` |
+### §5.2 module-name mapping
 
-**P2 — brand, product, service and local intelligence — is not started.** Schema
-intelligence has two of its signals; everything else (truth record, entity graph,
-BDS/PDS/SFS, NAP and directory, trust and proof, service radius) is greenfield.
+The document's `M1`–`M13` ids are architectural modules. They are not the same
+registry as `gapTaxonomy.js`'s recommendation-destination slugs. The explicit
+mapping prevents that accidental thirteen-to-thirteen coincidence from becoming
+a stored contract.
 
-Workspace rollups are no longer blocked: `public.workspaces` has existed since
-migration 0031, and the nullable `workspace_id` columns on every audit table are
-the hook. Wiring them is W8.
+| BRD/PRD module | Repository implementation | State |
+|---|---|---|
+| M1 Audit Intake | `intakeModel.js`, `auditProfiles.js` | ✅ P1 |
+| M2 Extraction & Evidence | `auditPipeline.js`, `evidenceCollector.js`, `evidenceModel.js` | ✅ existing + P1 |
+| M3 Scoring Engine | `scoringModel.js`, `subjectScoring.js`; P3 extends with SXO | ✅ P1/P2; P3 extension planned |
+| M4 Gap Analysis | `issueCatalog.js`, `gapTaxonomy.js` | ✅ P1 |
+| M5 Recommendation Studio | `recommendationModel.js`, `constructTemplates.js` | ✅ P1; extended by P2/P3 findings |
+| M6 Validation Lab | `auditDiff.js`, `validationLab.js` | ✅ P1 |
+| M7 Benchmarks & AI Visibility | `promptTaxonomy.js`, `citationStates.js`, `aiVisibility.js`, `displacement.js` | ✅ P1/P2 |
+| M8 Workflow Hub | `workflowLifecycle.js`, recommendation routes and lifecycle webhooks | ✅ P1 lite/P2; P3 governance extension planned |
+| M9 Entity Graph Builder | `entityGraph.js`, migrations `0056` + `0065` | ✅ P2 |
+| M10 Local & Directory Intelligence | `directorySources.js`, `napModel.js`, migration `0058` | ✅ P2 |
+| M11 Trust & Proof Audit | `schemaIntelligence.js`, `trustProof.js`, migration `0062` | ✅ P2 |
+| M12 SXO Experience Lab | P3 Stages 2–3 | ⏳ not yet implemented |
+| M13 Portfolio Operations | P3 Stage 4 | ⏳ not yet implemented |
+
+### P1 and P2
+
+| Release | Repository state | Customer-facing residue |
+|---|---|---|
+| P1 · W1–W8 | ✅ Complete: evidence, intake, penalty model, gap analysis, Recommendation Studio, grounded AI visibility, Validation Lab, Workflow Hub, canonical `/api/v1/discoverability/*` routes | A live grounded-provider exercise remains an environment gate, not missing code |
+| P2 · W9–W14 | ✅ Backend/model/API complete: truth record, entity graph, BDS/PDS/SFS, directory/local, schema/trust, entitlement and revalidation | Stage 1 supplies the P2 screens and the approved-entity → scorable-subject entry point (DEV-01) |
+
+“Complete as code” does not mean the two named Stage 1 residues are usable by a
+customer today. It means the P1/P2 contracts they extend are present and tested,
+so P3 builds on one implementation rather than recreating them.
+
+### P3 · Search-to-outcome intelligence
+
+P3 is deliberately sequential:
+
+1. Stage 0 freezes ground truth, published taxonomy and release gates.
+2. Stage 1 closes the P1/P2 reachability and UI residue P3 consumes.
+3. Stage 2 adds static SXO: TD, intent fit, first-screen clarity, UX friction,
+   conversion design and the versioned SXO/composite scorer.
+4. Stage 3 adds privacy-minimized analytics, funnels, forms and measurement
+   maturity behind operator-configured provider connections.
+5. Stage 4 adds templates, workspace rollups, persona views and controlled
+   experiment records.
+6. Stage 5 runs branch → staging → production release gates and updates every
+   public promise only after the evidence is green.
+
+The out-of-scope guarantees remain binding throughout: no raw session-replay
+store, no autonomous experiment deployment, and no causal label without
+controlled experimental evidence.

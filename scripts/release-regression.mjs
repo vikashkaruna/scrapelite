@@ -26,6 +26,9 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { fetchWithRetry, runSmoke } from "./smoke-prod.mjs";
+import { RELEASE_GATE_SCOPES } from "./release-gate-scopes.mjs";
+
+export const RUNNER_SCOPE = RELEASE_GATE_SCOPES.release;
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_RETRIES = 3;
@@ -34,6 +37,10 @@ const ENVIRONMENTS = new Set(["branch", "staging", "production"]);
 export function usage() {
   return `Usage:
   npm run test:release -- --base-url <https://deploy-url> [options]
+
+Scope (${RUNNER_SCOPE.id}):
+  ${RUNNER_SCOPE.summary}
+  This is not the stable-id P1/P2 conformance suite; run npm run verify:discoverability separately.
 
 Read-only deploy checks run by default:
   - deployment smoke (routes, prerendered content, assets, /api/stats)
@@ -161,6 +168,7 @@ function elapsedSince(startedAt) {
 
 function publicOptions(options) {
   return {
+    runnerScope: RUNNER_SCOPE.id,
     baseUrl: options.baseUrl,
     environment: options.environment,
     withLocal: options.withLocal,

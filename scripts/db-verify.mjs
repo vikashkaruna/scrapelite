@@ -176,6 +176,10 @@ grant usage on schema public to anon, authenticated;
 //   0054 and `validated_by_audit_id` has recorded the result; between them sat
 //   no way to ASK. Columns rather than a table, because nothing here is
 //   several writes that must not separate.
+// 0065_entity_graph_taxonomy.sql widens 0056's two CHECK constraints without
+//   changing any stored id: eighteen internal entity types cover §9.2's
+//   fifteen semantic concepts, and thirteen internal predicates cover its
+//   nine relationships. No objects are added; counts are unchanged.
 // Taking these to 103 / 50 / 29.
 const EXPECT = {
   tables: 104,
@@ -2615,7 +2619,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("everything is created proposed, whatever proposed it",
     (await one(`select state from public.audit_entities where id=$1`, [acme])).state, "proposed");
 
-  check("an invented entity type is refused — the fourteen are a contract", Boolean(await throws(
+  check("an invented entity type is refused — the stable registry is a contract", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source)
      values ($1,'wizard','Merlin','declared')`, [owner])));
   check("an unnamed node is refused — it resolves nothing", Boolean(await throws(
@@ -2630,6 +2634,12 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   check("a confidence outside 0-1 is refused", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source, confidence)
      values ($1,'organization','X','declared',1.5)`, [owner])));
+
+  for (const type of ["partner", "customer_case_study", "directory_listing", "competitor"]) {
+    check(`§9.2 additive entity type '${type}' is storable`, !(await throws(
+      `insert into public.audit_entities (user_id, entity_type, name, source)
+       values ($1,$2,$3,'declared')`, [owner, type, `Example ${type}`])));
+  }
 
   check("🔴 self-approval of an entity is refused by the database", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source, proposed_by, reviewed_by, reviewed_at, state)
@@ -2649,9 +2659,16 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("a relation is created proposed too",
     (await one(`select state from public.audit_entity_relationships where id=$1`, [owns])).state, "proposed");
 
-  check("an invented predicate is refused — the nine are a contract", Boolean(await throws(
+  check("an invented predicate is refused — the stable registry is a contract", Boolean(await throws(
     `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
      values ($1,$2,'vibes',$3,'declared')`, [owner, acme, cloud])));
+
+  for (const predicate of ["provides", "founded_by", "validated_by", "listed_on"]) {
+    check(`§9.2 additive predicate '${predicate}' is storable`, !(await throws(
+      `insert into public.audit_entity_relationships
+         (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,$3,$4,'declared')`, [owner, acme, predicate, cloud])));
+  }
 
   check("🔴 A SELF-EDGE IS REFUSED — it is vacuously true and pollutes every traversal",
     Boolean(await throws(
@@ -2732,19 +2749,32 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   {
     const { ENTITY_TYPE_IDS, PREDICATE_IDS, GRAPH_CONFLICT_CODES } = await import(
       "file://" + join(ROOT, "src", "lib", "discoverability", "entityGraph.js"));
+    const constraintValues = async (name) => {
+      const row = await one(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where conname=$1`,
+        [name],
+      );
+      return row ? [...row.definition.matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+    };
+    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
+    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
+      await constraintValues("audit_entity_relationships_predicate_check"), [...PREDICATE_IDS].sort());
     const src = readFileSync(join(DIR, "0056_entity_graph.sql"), "utf8");
     const listIn = (col) => {
       const m = src.match(new RegExp(`${col}\\s+text not null[\\s\\S]*?check \\(${col} in \\(([\\s\\S]*?)\\)\\)`));
       return m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
     };
-    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
-      listIn("entity_type"), [...ENTITY_TYPE_IDS].sort());
-    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
-      listIn("predicate"), [...PREDICATE_IDS].sort());
     eq("parity: the conflict-code CHECK matches GRAPH_CONFLICT_CODES exactly",
       listIn("code"), Object.keys(GRAPH_CONFLICT_CODES).sort());
-    eq("parity: fourteen types and nine predicates, as the plan calls for",
-      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [14, 9]);
+    eq("parity: eighteen stable ids cover §9.2's fifteen types and nine relationships",
+      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [18, 13]);
+
+    await db.exec(readFileSync(join(DIR, "0065_entity_graph_taxonomy.sql"), "utf8"));
+    eq("0065 is forward-only and safely re-runnable after entity rows exist",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
   }
 
   // ── Evidence and conflicts ────────────────────────────────────────────────

@@ -94,9 +94,11 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { postgrestAnswer } from "./lib/postgrestAnswer.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { RELEASE_GATE_SCOPES } from "./release-gate-scopes.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_ID = `vde-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const RUNNER_SCOPE = RELEASE_GATE_SCOPES.discoverability;
 
 // ── Arguments ───────────────────────────────────────────────────────────────
 
@@ -1832,6 +1834,7 @@ function banner() {
   console.log(`  environment   ${ENV.toUpperCase()}${IS_PROD ? "   🔴 this is customers' data" : ""}`);
   console.log(`  base url      ${BASE}`);
   console.log(`  mode          ${mode}`);
+  console.log(`  scope         ${RUNNER_SCOPE.id}`);
   console.log(`  run id        ${RUN_ID}`);
   console.log(`  target        ${TARGET || "(none — audit checks will skip)"}`);
   console.log(`  capabilities  ${Object.entries(CAPS).map(([k, f]) => `${f() ? "+" : "-"}${k}`).join(" ")}`);
@@ -2011,6 +2014,7 @@ function writeReports({ verdict }) {
   const mdPath = argv.opt.md;
   const payload = {
     run_id: RUN_ID, environment: ENV, base_url: BASE,
+    runner_scope: RUNNER_SCOPE.id,
     started_at: new Date().toISOString(),
     mode: { allow_writes: ALLOW_WRITES, allow_audits: ALLOW_AUDITS },
     capabilities: Object.fromEntries(Object.entries(CAPS).map(([k, f]) => [k, f()])),
@@ -2056,7 +2060,7 @@ function writeReports({ verdict }) {
 // catching — `verify-discoverability-e2e.test.mjs` imports `suites` and pins
 // that every check carries the prereq / post-check / fix a human needs.
 
-export { suites, MANUAL_ONLY, parseArgs, networkVerdict, VERDICT };
+export { suites, MANUAL_ONLY, parseArgs, networkVerdict, VERDICT, RUNNER_SCOPE };
 
 if (!IMPORT_ONLY) {
   await runAll();

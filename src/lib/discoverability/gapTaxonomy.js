@@ -109,46 +109,45 @@ export const ROOT_CAUSE_IDS = Object.freeze(
  * The DatIQ capabilities a finding can be referred to.
  *
  * ── ⚠️ THE KEY IS THE SLUG, NOT THE M-NUMBER ──────────────────────────────
- * The BRD refers to these as "M1–M13" and does NOT enumerate which module is
- * which anywhere this repository can see. Numbering them from a guess and then
- * storing those numbers would break the rule that matters most here — codes are
- * a public contract; never repurpose or renumber one — the first time the real
- * list disagreed.
+ * The BRD/PRD §5 architectural map corresponds to six of these recommendation
+ * destinations. The other seven are sub-capabilities, not missing numbers.
  *
  * So the stable identifier is the SLUG, which is derived from the PRD's own
  * §7/§9 section names and cannot be wrong about itself. `mCode` is a nullable
- * DISPLAY ALIAS, to be filled in once the PRD's numbering is confirmed, and
- * nothing keys off it. Filling in thirteen labels later is a one-line change;
- * renumbering a column that has shipped is not.
+ * DISPLAY ALIAS and nothing keys off it. Codes are additive public contracts:
+ * never repurpose or renumber one.
  *
  * `phase` says when the module can actually accept a referral. A finding
  * referred to a P2 module today is still correctly diagnosed — the UI shows it
  * as "not yet available" rather than pretending the referral is actionable.
  */
+const NO_STANDALONE_M_CODE =
+  "This recommendation destination has no standalone architectural §5 M-code.";
+
 export const MODULES = Object.freeze({
   technical_remediation: {
     id: "technical_remediation", label: "Technical remediation",
-    mCode: null, phase: "P1", available: true,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P1", available: true,
     description: "Crawl access, rendering, canonicals and performance.",
   },
   recommendation_studio: {
     id: "recommendation_studio", label: "Recommendation Studio",
-    mCode: null, phase: "P1", available: true,
+    mCode: "M5", phase: "P1", available: true,
     description: "Answer blocks, heading plans, FAQ content and metadata.",
   },
   schema_intelligence: {
     id: "schema_intelligence", label: "Schema intelligence",
-    mCode: null, phase: "P1", available: true,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P1", available: true,
     description: "Structured-data generation and validation.",
   },
   ai_visibility: {
     id: "ai_visibility", label: "AI Visibility Intelligence",
-    mCode: null, phase: "P1", available: false,
+    mCode: "M7", phase: "P1", available: true,
     description: "Prompt monitoring, citation classification and share of voice.",
   },
   validation_lab: {
     id: "validation_lab", label: "Validation Lab",
-    mCode: null, phase: "P1", available: true,
+    mCode: "M6", phase: "P1", available: true,
     description: "Baselines, re-audits and score-movement attribution.",
   },
   business_truth_record: {
@@ -157,7 +156,7 @@ export const MODULES = Object.freeze({
     // leaving it false would keep telling customers a built module is still on
     // the way — the mirror of the rule that an unbuilt one must never be
     // advertised.
-    mCode: null, phase: "P2", available: true,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: true,
     description: "One approved source of truth for business facts.",
   },
   entity_graph: {
@@ -165,37 +164,37 @@ export const MODULES = Object.freeze({
     // W10 shipped it. See the note on business_truth_record above: `available`
     // drives the "(coming)" badge, so leaving it false advertises a built
     // module as still on the way.
-    mCode: null, phase: "P2", available: true,
+    mCode: "M9", phase: "P2", available: true,
     description: "Entities, relationships and the evidence behind each.",
   },
   brand_discoverability: {
     id: "brand_discoverability", label: "Brand discoverability",
-    mCode: null, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
     description: "Brand-level scoring, share of voice and recommendation rate.",
   },
   product_discoverability: {
     id: "product_discoverability", label: "Product discoverability",
-    mCode: null, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
     description: "Product entity cards, missing facts and comparison blueprints.",
   },
   service_findability: {
     id: "service_findability", label: "Service findability",
-    mCode: null, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
     description: "Service intent coverage and the page backlog behind it.",
   },
   local_directory: {
     id: "local_directory", label: "Local and directory intelligence",
-    mCode: null, phase: "P2", available: false,
+    mCode: "M10", phase: "P2", available: true,
     description: "NAP consistency, directory listings and correction packs.",
   },
   trust_and_proof: {
     id: "trust_and_proof", label: "Trust and proof",
-    mCode: null, phase: "P2", available: false,
+    mCode: "M11", phase: "P2", available: true,
     description: "Authorship, citations, reviews and the evidence that backs a claim.",
   },
   service_radius: {
     id: "service_radius", label: "Service radius",
-    mCode: null, phase: "P2", available: false,
+    mCode: null, mCodeReason: NO_STANDALONE_M_CODE, phase: "P2", available: false,
     description: "Coverage bands and the queries a service area should answer.",
   },
 });
