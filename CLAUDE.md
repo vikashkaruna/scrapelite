@@ -2,7 +2,9 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-14 — DISCOVERABILITY P3 STAGES 0–5 COMPLETE, RECONCILED, VERIFIED, COMMITTED, AND PUSHED ON `discoverability-P3` @ `e4873d1`. REQUIRED PRE-PUSH GATE GREEN; 72 MIGRATIONS / 821 DB ASSERTIONS GREEN. OWNER INSTRUCTION: DO NOT MERGE OR DELETE THIS BRANCH. PRODUCTION DEPLOYMENT AND MIGRATIONS 0065–0072 REMAIN OPERATOR ACTIONS.**
+> **Last updated: 2026-09-14 (review) — DISCOVERABILITY P1–P3 END-TO-END REVIEW ON `Discoverability-P1-P3-implementation`: fixed a cross-tenant workspace read leak (six readers ungated + membership failing OPEN), a guest-quota bypass via any unverified `Authorization` header (audits, extract, guest-usage), ungated SXO writes, and four workspace panels that did not match the API. New migration `0073_guest_audit_credit.sql` — apply `0065`–`0073` before deploying. vitest 6,915 · db 73 migrations / 832 assertions. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md).**
+>
+> Prior: 2026-09-14 — DISCOVERABILITY P3 STAGES 0–5 COMPLETE, RECONCILED, VERIFIED, COMMITTED, AND PUSHED ON `discoverability-P3` @ `e4873d1`. REQUIRED PRE-PUSH GATE GREEN; 72 MIGRATIONS / 821 DB ASSERTIONS GREEN. OWNER INSTRUCTION: DO NOT MERGE OR DELETE THIS BRANCH. PRODUCTION DEPLOYMENT AND MIGRATIONS 0065–0072 REMAIN OPERATOR ACTIONS.**
 >
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
 > **the plan:** [docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).

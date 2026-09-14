@@ -34,7 +34,10 @@ describe("SXO analytics import worker", () => {
     }));
     expect(auditStore.completeAnalyticsImportJob).toHaveBeenCalledWith("job-1", expect.objectContaining({
       aggregate_id: "aggregate-1",
-      imported_events_count: 1,
+      // Ten page_view events of ONE normalized type. The key used to report the
+      // type count under an events name.
+      imported_events_count: 10,
+      imported_event_types_count: 1,
     }));
     expect(fail).not.toHaveBeenCalled();
   });

@@ -57,6 +57,13 @@ vi.mock("../../functions/lib/audit/auditStore.js", async () => {
   ]));
 });
 
+// The guest charge is observable so its ORDER against SSRF/compliance can be
+// asserted. Default: allowed, exactly what the real helper returns unconfigured.
+const guestCredit = vi.fn();
+vi.mock("../../functions/lib/guestUsage.js", () => ({
+  consumeGuestCredit: (...a) => guestCredit(...a),
+}));
+
 const summarise = vi.fn();
 vi.mock("../../functions/lib/audit/aiEvaluator.js", () => ({
   summariseAudit: (...a) => summarise(...a),
@@ -103,6 +110,7 @@ beforeEach(() => {
   });
   auditRun.mockResolvedValue({ ...AUDIT_RESULT });
   dispatchWebhook.mockResolvedValue({ delivered: 0, failed: 0, results: [] });
+  guestCredit.mockResolvedValue({ ok: true, allowed: true, degraded: true, cookie: null, remaining: null });
 });
 
 // Configure the store proxy for a happy path.
@@ -1082,7 +1090,10 @@ describe("workspace member pause", () => {
   }));
 
   it("scopes audit history, report reads, and target trends to the active workspace", withServiceDb(async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+    // A FRESH Response per lookup. Reusing one object meant the second
+    // membership check read an already-consumed body, threw, and was waved
+    // through by the old fail-open — this test only ever passed because of it.
+    globalThis.fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify([{
       paused_at: null, role: "member", discoverability_role: "viewer",
     }]), { status: 200 }));
     storeMock.listAudits = vi.fn(async () => []);
@@ -1236,5 +1247,307 @@ describe("D7 — every audit gets a subject, and every pre-0057 audit still work
     const body = parse(await call("GET", "audits/current/compare/base"));
     expect(body.baseline.subject_id).toBe("subj-1");
     expect(body.current.subject_id).toBe("subj-1");
+  });
+});
+
+// ── P1–P3 review · tenancy on workspace-scoped reads ────────────────────────
+//
+// 🔴 `auditStore.ownerOrWorkspace` scopes a query by `workspace_id` ALONE when
+// one is named — it deliberately drops the `user_id` filter so a teammate can
+// read a colleague's work. That makes the route's membership check the ONLY
+// thing between a caller-supplied workspace id and another tenant's rows. Six
+// readers shipped without it, so any signed-in user holding a workspace UUID
+// could list that workspace's SXO runs, experiments and portfolio rollups.
+describe("workspace-scoped reads refuse non-members before touching the store", () => {
+  const withMembership = (response) => async (fn) => {
+    process.env.SUPABASE_URL = "https://db.example.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => response());
+    try {
+      await fn();
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SERVICE_KEY;
+    }
+  };
+  const nonMember = withMembership(() => new Response(JSON.stringify([]), { status: 200 }));
+  const membershipDown = withMembership(() => new Response("boom", { status: 500 }));
+  const leak = [{ id: "must-not-leak", workspace_id: "ws-foreign" }];
+
+  const READERS = [
+    ["GET sxo/runs", "sxo/runs", "listSxoRuns", async () => leak],
+    ["GET sxo/runs/:id", "sxo/runs/run-1", "getSxoRun", async () => leak[0]],
+    ["GET sxo/experiments", "sxo/experiments", "listOptimizationExperiments", async () => leak],
+    ["GET sxo/experiments/:id", "sxo/experiments/exp-1", "getOptimizationExperiment", async () => leak[0]],
+    ["GET sxo/portfolio/rollups", "sxo/portfolio/rollups", "listPortfolioRollups", async () => leak],
+    ["GET recommendations/:id/asset", "recommendations/rec-1/asset", "getAuditFull", async () => ({
+      audit: { id: "audit-1" }, recommendations: [{ id: "rec-1", implementation_asset_json: { secret: 1 } }],
+    })],
+  ];
+
+  for (const [label, splat, storeFn, impl] of READERS) {
+    it(`${label} → 403 WORKSPACE_NOT_MEMBER for a foreign workspace`, () => nonMember(async () => {
+      storeMock[storeFn] = vi.fn(impl);
+      storeMock.getRecommendation = vi.fn(async () => ({ id: "rec-1", workspace_id: "ws-foreign" }));
+      const res = await call("GET", splat, { query: { workspace_id: "ws-foreign", audit_id: "audit-1" } });
+      expect(res.statusCode).toBe(403);
+      expect(parse(res).code).toBe("WORKSPACE_NOT_MEMBER");
+      expect(storeMock[storeFn]).not.toHaveBeenCalled();
+    }));
+  }
+
+  // 🔴 A membership lookup that FAILED is not a membership that was FOUND.
+  // requireWorkspaceDiscoverabilityAction used to read "no role came back" as
+  // "degraded, allow" — the entitlement posture. For tenancy that turns a
+  // PostgREST 5xx (or a production database still missing 0067's
+  // `discoverability_role` column, which 400s the select) into every workspace
+  // being readable by every user.
+  it("fails CLOSED when the membership lookup itself fails", () => membershipDown(async () => {
+    storeMock.listAudits = vi.fn(async () => leak);
+    const res = await call("GET", "audits", { query: { workspace_id: "ws-foreign" } });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_MEMBERSHIP_UNAVAILABLE");
+    expect(storeMock.listAudits).not.toHaveBeenCalled();
+  }));
+
+  it("does not stamp a new audit into a workspace whose membership could not be verified", () => membershipDown(async () => {
+    happyStore();
+    const res = await call("POST", "audits", {
+      body: { target_url: "https://example.com", workspace_id: "ws-foreign" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_MEMBERSHIP_UNAVAILABLE");
+    expect(storeMock.createAudit).not.toHaveBeenCalled();
+    expect(auditRun).not.toHaveBeenCalled();
+  }));
+
+  it("a personal request (no workspace) still never consults membership", () => membershipDown(async () => {
+    storeMock.listAudits = vi.fn(async () => []);
+    const res = await call("GET", "audits");
+    expect(res.statusCode).toBe(200);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  }));
+});
+
+// ── P1–P3 review · the guest audit path ─────────────────────────────────────
+describe("guest audits cannot be taken for free", () => {
+  const guestEntitlement = () => { authenticate.mockResolvedValue({ ok: false, user: null }); return entitlement.mockResolvedValue({
+    userId: null, guest: true, degraded: false,
+    entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+  }); };
+
+  // 🔴 consumeGuestCredit short-circuits to "authenticated, allowed" whenever
+  // ANY Authorization header is present — it trusts its caller to have already
+  // resolved one. The discoverability handler let a FAILED bearer fall through
+  // to the guest branch, so `Authorization: Bearer x` + `guest: true` ran the
+  // full audit pipeline with no quota at all, as many times as requested.
+  it("an invalid bearer token is a 401, never a free guest audit", async () => {
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    guestEntitlement();
+    guestCredit.mockImplementation(async (event) => (
+      event?.headers?.authorization
+        ? { ok: true, allowed: true, authenticated: true, cookie: null }
+        : { ok: true, allowed: false, cookie: null }
+    ));
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com", guest: true } });
+    expect(res.statusCode).toBe(401);
+    expect(auditRun).not.toHaveBeenCalled();
+  });
+
+  const guestCall = (body) => handler({
+    httpMethod: "POST",
+    queryStringParameters: { splat: "audits" },
+    headers: {},
+    body: JSON.stringify({ guest: true, ...body }),
+  });
+
+  it("a guest request with no Authorization header still runs", async () => {
+    guestEntitlement();
+    const res = await guestCall({ target_url: "https://example.com" });
+    expect(res.statusCode).toBe(200);
+    expect(guestCredit).toHaveBeenCalledTimes(1);
+    expect(auditRun).toHaveBeenCalledTimes(1);
+  });
+
+  // Same load-bearing order as extract.js: every gate that can decline without
+  // doing work runs BEFORE the charge, so a refused guest audit costs nothing.
+  it("an SSRF refusal does not spend the guest's credit", async () => {
+    guestEntitlement();
+    publicUrl.mockResolvedValue(false);
+    const res = await guestCall({ target_url: "http://169.254.169.254/" });
+    expect(res.statusCode).toBe(400);
+    expect(guestCredit).not.toHaveBeenCalled();
+  });
+
+  it("a robots.txt refusal does not spend the guest's credit", async () => {
+    guestEntitlement();
+    compliance.mockResolvedValue({
+      allowed: false, host: "linkedin.com", code: "robots_disallowed", reason: "robots.txt disallows",
+    });
+    const res = await guestCall({ target_url: "https://linkedin.com/company/x" });
+    expect(res.statusCode).toBe(403);
+    expect(guestCredit).not.toHaveBeenCalled();
+  });
+
+  it("an exhausted guest is refused before the pipeline runs", async () => {
+    guestEntitlement();
+    guestCredit.mockResolvedValue({ ok: true, allowed: false, cookie: "datiq_guest=abc" });
+    const res = await guestCall({ target_url: "https://example.com" });
+    expect(res.statusCode).toBe(402);
+    expect(auditRun).not.toHaveBeenCalled();
+    expect(res.headers["Set-Cookie"]).toBe("datiq_guest=abc");
+  });
+});
+
+// ── P1–P3 review · SXO writes are plan-gated, and references are owned ─────
+describe("SXO analytics writes: plan gate and foreign references", () => {
+  const plan = (planId) => entitlement.mockResolvedValue({
+    userId: "user-1", guest: false, degraded: false,
+    entitlement: { plan_id: planId, status: "active" }, planMap: PLAN_BY_ID,
+  });
+
+  // D20. Storing a third-party analytics credential and defining outcome goals
+  // are writes into Search-to-Outcome Intelligence, and every other P3 write
+  // already answered to `audit.sxo`. These two did not.
+  it("refuses to store an analytics credential on a plan without SXO", async () => {
+    plan("free");
+    storeMock.saveAnalyticsConnection = vi.fn(async () => ({ ok: true, connection: {} }));
+    const res = await call("POST", "sxo/integrations/ga4/connect", { body: { token: "secret" } });
+    expect(res.statusCode).toBe(402);
+    expect(parse(res).capability).toBe("audit.sxo");
+    expect(storeMock.saveAnalyticsConnection).not.toHaveBeenCalled();
+  });
+
+  it("stores the credential on a plan that includes SXO", async () => {
+    plan("pro");
+    storeMock.saveAnalyticsConnection = vi.fn(async () => ({ ok: true, connection: { provider: "ga4" } }));
+    const res = await call("POST", "sxo/integrations/ga4/connect", { body: { token: "secret" } });
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.saveAnalyticsConnection).toHaveBeenCalled();
+  });
+
+  it("still lets any plan disconnect and purge — removing your data never needs an upgrade", async () => {
+    plan("free");
+    storeMock.deleteAnalyticsConnection = vi.fn(async () => ({ ok: true }));
+    const res = await call("DELETE", "sxo/integrations/ga4");
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.deleteAnalyticsConnection).toHaveBeenCalled();
+  });
+
+  it("refuses a conversion goal on a plan without SXO", async () => {
+    plan("free");
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", { body: { name: "Demo booked", outcome_type: "lead" } });
+    expect(res.statusCode).toBe(402);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("🔴 refuses a conversion goal that points at somebody else's audit — 404, never 403", async () => {
+    plan("pro");
+    storeMock.getAudit = vi.fn(async () => null);
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", {
+      body: { name: "Demo booked", outcome_type: "lead", audit_id: "foreign-audit" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a conversion goal over a subject the caller cannot address", async () => {
+    plan("pro");
+    storeMock.getSubject = vi.fn(async () => null);
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", {
+      body: { name: "Demo booked", outcome_type: "lead", subject_id: "foreign-subject" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("🔴 refuses an analytics import attributed to somebody else's conversion goal", async () => {
+    plan("pro");
+    storeMock.getConversionGoal = vi.fn(async () => null);
+    storeMock.enqueueAnalyticsImport = vi.fn();
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k1", provider: "custom", conversion_goal_id: "foreign-goal",
+      events: [{ event_name: "page_view", count: 3 }],
+    } });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.enqueueAnalyticsImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses an analytics import on a plan without SXO", async () => {
+    plan("free");
+    storeMock.enqueueAnalyticsImport = vi.fn();
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k1", provider: "custom", events: [{ event_name: "page_view" }],
+    } });
+    expect(res.statusCode).toBe(402);
+    expect(storeMock.enqueueAnalyticsImport).not.toHaveBeenCalled();
+  });
+
+  it("reports total events and distinct event types separately", async () => {
+    plan("pro");
+    storeMock.enqueueAnalyticsImport = vi.fn(async () => ({
+      ok: true, replay: false,
+      job: { id: "job-1", state: "completed", attempts: 1, payload_hash: null, result_json: null },
+    }));
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k2", provider: "custom",
+      events: [{ event_name: "page_view", count: 7 }, { event_name: "page_view", count: 3 }],
+    } });
+    // payload_hash of null vs the real hash is a replay mismatch only when replay=true.
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.event_counts).toEqual({ page_view: 10 });
+    expect(body.imported_events_count).toBe(10);
+    expect(body.imported_event_types_count).toBe(1);
+  });
+});
+
+describe("guest audits draw on their own bucket", () => {
+  it("charges the `audit` kind, not the extraction bucket", async () => {
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    const res = await handler({
+      httpMethod: "POST",
+      queryStringParameters: { splat: "audits" },
+      headers: {},
+      body: JSON.stringify({ guest: true, target_url: "https://example.com" }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(guestCredit).toHaveBeenCalledWith(expect.anything(), "audit");
+  });
+});
+
+// ── P1–P3 review · the subjects reader the client always called ───────────
+describe("GET /subject-score/subjects", () => {
+  it("🔴 exists, and lists scorable kinds by default", async () => {
+    storeMock.listSubjects = vi.fn(async () => [{ id: "s1", subject_kind: "brand" }]);
+    const res = await call("GET", "subject-score/subjects");
+    expect(res.statusCode).toBe(200);
+    expect(parse(res).subjects).toHaveLength(1);
+    expect(storeMock.listSubjects).toHaveBeenCalledWith("user-1", {
+      workspaceId: null, kinds: ["brand", "product", "service"],
+    });
+  });
+
+  it("filters to one real kind, lists everything for kind=all, and ignores an invented kind", async () => {
+    storeMock.listSubjects = vi.fn(async () => []);
+    await call("GET", "subject-score/subjects", { query: { kind: "page" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", { workspaceId: null, kinds: ["page"] });
+    await call("GET", "subject-score/subjects", { query: { kind: "all" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", { workspaceId: null, kinds: null });
+    await call("GET", "subject-score/subjects", { query: { kind: "brand)&user_id=eq.x" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", {
+      workspaceId: null, kinds: ["brand", "product", "service"],
+    });
+  });
+
+  it("reads one subject, 404 when it is not the caller's", async () => {
+    storeMock.getSubject = vi.fn(async (_u, id) => (id === "mine" ? { id: "mine" } : null));
+    expect((await call("GET", "subject-score/subjects/mine")).statusCode).toBe(200);
+    expect((await call("GET", "subject-score/subjects/theirs")).statusCode).toBe(404);
   });
 });

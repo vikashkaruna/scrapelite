@@ -1925,6 +1925,23 @@ export async function listSubjectScores(userId, {
   return r.ok ? r.data || [] : [];
 }
 
+/**
+ * Subjects a caller may address, newest first.
+ *
+ * Existed as a client method (`listSubjects`) with no reader and no route, so
+ * the Subject Scores screen and the composer's "Associated subject" picker both
+ * rendered an empty list for every account — a 404 swallowed by `.catch`.
+ */
+export async function listSubjects(userId, { workspaceId = null, kinds = null, limit = 100 } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (Array.isArray(kinds) && kinds.length) {
+    parts.push(`subject_kind=in.(${kinds.map((k) => encodeURIComponent(k)).join(",")})`);
+  }
+  const r = await rest(
+    `audit_subjects?${parts.join("&")}&${SELECT_ALL}&order=updated_at.desc&limit=${rowCap(limit, 100, 500)}`);
+  return r.ok ? r.data || [] : [];
+}
+
 export async function getSubject(userId, subjectId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`
@@ -2213,6 +2230,15 @@ export async function saveConversionGoal(userId, {
   });
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
   return r.ok && row ? { ok: true, goal: row } : { ok: false, error: r.error || "Could not save conversion goal." };
+}
+
+/** One conversion goal, scoped exactly like every other reader here. */
+export async function getConversionGoal(userId, goalId, { workspaceId = null } = {}) {
+  if (!goalId) return null;
+  const r = await rest(
+    `audit_conversion_goals?id=eq.${encodeURIComponent(goalId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 export async function listConversionGoals(userId, { auditId = null, workspaceId = null } = {}) {

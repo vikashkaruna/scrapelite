@@ -25,8 +25,12 @@ export async function runOnce() {
       });
       if (!saved.ok) throw new Error(saved.error || "Could not persist analytics aggregate.");
 
+      const counts = payload.eventCounts || {};
       const result = {
-        imported_events_count: Object.keys(payload.eventCounts || {}).length,
+        // Total events, and separately how many distinct normalized events they
+        // were. The first key used to carry the type count under an events name.
+        imported_events_count: Object.values(counts).reduce((sum, n) => sum + (Number(n) || 0), 0),
+        imported_event_types_count: Object.keys(counts).length,
         event_counts: payload.eventCounts || {},
         unmapped: payload.unmapped || [],
         aggregate_id: saved.aggregate?.id || null,

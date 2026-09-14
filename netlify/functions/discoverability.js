@@ -65,7 +65,7 @@ import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
 import {
-  buildWorkspaceCtx, requireWorkspaceDiscoverabilityAction,
+  buildWorkspaceCtx, requireWorkspaceDiscoverabilityAction, WORKSPACE_MEMBERSHIP_UNAVAILABLE,
 } from "./lib/workspaceContext.js";
 import {
   APPROVED_TYPES, APPROVED_TYPE_IDS, EXCLUDED_TYPES,
@@ -261,7 +261,13 @@ export const MAX_BENCHMARK_URLS = 10;
  * the guest-credit leak documented in CLAUDE.md happened: checking and blocking
  * were two steps each caller wired itself, and four paths drifted.
  */
-async function executeAudit({ event, userId, rawUrl, options = {}, resolved, source = "ui" }) {
+async function executeAudit({ event, userId, rawUrl, options = {}, resolved, source = "ui", chargeGuest = null }) {
+  // A guest run with no charge attached would be a free audit. Refuse rather
+  // than trust every future caller to remember to pass one.
+  if (!userId && typeof chargeGuest !== "function") {
+    return { ok: false, statusCode: 401, body: { error: "Sign in to run an audit.", code: "UNAUTHORIZED" } };
+  }
+
   // ── The budget covers the WHOLE REQUEST, not just the pipeline ───────────
   //
   // It is created here rather than inside runAudit because a large share of the
@@ -310,6 +316,25 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
           // Branch on the code, never the prose. Matching prose is what made a
           // robots refusal render as "Something went wrong" with a stack trace.
           overridable,
+        },
+      };
+    }
+  }
+
+  // ── the guest charge — AFTER every gate that can decline without work ────
+  // Same load-bearing order as extract.js: SSRF and robots refusals above cost
+  // the guest nothing, because nothing was fetched on their behalf.
+  let guestHeaders = {};
+  if (!userId) {
+    const usage = await chargeGuest();
+    guestHeaders = usage?.cookie ? { "Set-Cookie": usage.cookie } : {};
+    if (!usage?.allowed) {
+      return {
+        ok: false, statusCode: 402, headers: guestHeaders,
+        body: {
+          error: "You have used your free Discoverability audit. Sign in to save reports and unlock ongoing monitoring.",
+          code: "UPGRADE_REQUIRED",
+          upgradeTo: "free",
         },
       };
     }
@@ -373,11 +398,11 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     try {
       result = await runAudit(rawUrl, pipelineOptions);
     } catch (err) {
-      return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
+      return { ok: false, statusCode: 502, headers: guestHeaders, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
     }
     const auditId = `guest-${Date.now()}`;
     return {
-      ok: true, statusCode: 200,
+      ok: true, statusCode: 200, headers: guestHeaders,
       body: { ...result, auditId, targetId: null, persisted: false, guest: true },
     };
   }
@@ -610,7 +635,13 @@ export const handler = async (event) => {
   if (root === "profiles" && method === "GET") return json(200, intakeReference());
 
   // Guest audit: allow unauthenticated visitors to run 1 free discoverability audit
-  const isGuestAudit = !userId && root === "audits" && method === "POST" && !id && Boolean(body?.guest);
+  // 🔴 A credential that was PRESENTED and FAILED is a 401, never a guest.
+  // consumeGuestCredit treats any Authorization header as "already signed in"
+  // and skips the charge, so letting a bad bearer fall through to the guest
+  // branch ran the full pipeline with no quota at all.
+  const presentedCredential = Boolean(event.headers?.authorization || event.headers?.Authorization);
+  const isGuestAudit = !userId && !presentedCredential
+    && root === "audits" && method === "POST" && !id && Boolean(body?.guest);
 
   if (!userId && !isGuestAudit) {
     return unauthorized();
@@ -623,8 +654,8 @@ export const handler = async (event) => {
       if (!id && method === "GET") {
         const q = event.queryStringParameters || {};
         const workspaceId = q.workspace_id || null;
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const rows = await store.listAudits(userId, {
           limit: Number(q.limit) || 25, offset: Number(q.offset) || 0,
           targetId: q.target_id || null, status: q.status || null, workspaceId,
@@ -638,8 +669,8 @@ export const handler = async (event) => {
       if (method === "DELETE" && !sub) {
         const scoped = await store.getAudit(userId, id, { workspaceId });
         if (!scoped) return notFound("Audit not found.");
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "run_analysis");
+        if (denied) return denied;
         const r = await store.deleteAudit(userId, id, { workspaceId });
         if (r.notFound) return notFound("Audit not found.");
         if (!r.ok) return json(503, { error: "Could not delete the audit." });
@@ -654,8 +685,8 @@ export const handler = async (event) => {
         // 404, never 403, for somebody else's audit: a 403 confirms the id is
         // real, which is how an id space gets enumerated.
         if (!full) return notFound("Audit not found.");
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
 
         if (!sub) return json(200, { audit: full.audit, result: full.result });
         if (sub === "results") return json(200, shapeFull(full));
@@ -681,8 +712,8 @@ export const handler = async (event) => {
       if (method === "POST" && id && sub === "summary") {
         const full = await store.getAuditFull(userId, id, { workspaceId });
         if (!full) return notFound("Audit not found.");
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         return await summaryRoute(userId, id, full, workspaceId);
       }
       return json(405, { error: "Method not allowed." });
@@ -701,8 +732,8 @@ export const handler = async (event) => {
 
       if (method === "POST" && sub === "assign") {
         if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "manage_workflow");
+          if (denied) return denied;
         }
         // `assignee: null` puts it down. Anything else is checked against
         // shared workspace membership by the database, not here.
@@ -730,8 +761,8 @@ export const handler = async (event) => {
       // meanings so no existing client breaks; the rest are new.
       if (method === "POST" && VERB_TO_STATE[sub]) {
         if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "manage_workflow");
+          if (denied) return denied;
         }
         const status = VERB_TO_STATE[sub];
         const r = await store.setRecommendationStatus(userId, id, status, body.reason, {
@@ -757,6 +788,8 @@ export const handler = async (event) => {
         return json(200, { recommendation: r.recommendation });
       }
       if (method === "GET" && sub === "asset") {
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const full = await store.getAuditFull(
           userId, body.audit_id || event.queryStringParameters?.audit_id, { workspaceId },
         );
@@ -770,8 +803,8 @@ export const handler = async (event) => {
     // ── /targets ───────────────────────────────────────────────────────────
     if (root === "targets") {
       const workspaceId = event.queryStringParameters?.workspace_id || null;
-      const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       if (!id && method === "GET") {
         return json(200, { targets: await store.listTargets(userId, { workspaceId }) });
       }
@@ -806,8 +839,8 @@ export const handler = async (event) => {
     // somebody working a backlog across twenty pages.
     if (root === "queue" && method === "GET") {
       const workspaceId = event.queryStringParameters?.workspace_id || null;
-      const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       const rows = await store.listRecommendationQueue(userId, {
         status: sub || null,
         workspaceId,
@@ -943,6 +976,8 @@ export const handler = async (event) => {
       if (id === "runs" && !sub) {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
+          const denied = await workspaceDenial(userId, q.workspace_id, "read");
+          if (denied) return denied;
           const runs = await store.listSxoRuns(userId, {
             auditId: q.audit_id || null,
             subjectId: q.subject_id || null,
@@ -956,6 +991,8 @@ export const handler = async (event) => {
       if (id === "runs" && sub) {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
+          const denied = await workspaceDenial(userId, q.workspace_id, "read");
+          if (denied) return denied;
           const run = await store.getSxoRun(userId, sub, { workspaceId: q.workspace_id || null });
           if (!run) return notFound("SXO run not found.");
           return json(200, { run });
@@ -965,8 +1002,8 @@ export const handler = async (event) => {
       if (id === "composite" && sub) {
         if (method === "GET") {
           const workspaceId = event.queryStringParameters?.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "read");
+          if (denied) return denied;
           const full = await store.getAuditFull(userId, sub, { workspaceId });
           if (!full) return notFound("Audit not found.");
           const hydrated = rehydrate(full);
@@ -1042,8 +1079,8 @@ export const handler = async (event) => {
       // 2. GET /sxo/audits/:id (summary / status)
       if (id === "audits" && sub && !subId && method === "GET") {
         const workspaceId = event.queryStringParameters?.workspace_id || null;
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const full = await store.getAuditFull(userId, sub, { workspaceId });
         if (!full) return notFound("Audit not found.");
         const run = await store.getSxoForAudit(userId, sub, { workspaceId });
@@ -1053,8 +1090,8 @@ export const handler = async (event) => {
       // 3. GET /sxo/audits/:id/results (scores + evidence)
       if (id === "audits" && sub && subId === "results" && method === "GET") {
         const workspaceId = event.queryStringParameters?.workspace_id || null;
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const full = await store.getAuditFull(userId, sub, { workspaceId });
         if (!full) return notFound("Audit not found.");
         const run = await store.getSxoForAudit(userId, sub, { workspaceId });
@@ -1070,8 +1107,8 @@ export const handler = async (event) => {
       // 4. GET /sxo/audits/:id/intent-match (intent findings)
       if (id === "audits" && sub && subId === "intent-match" && method === "GET") {
         const workspaceId = event.queryStringParameters?.workspace_id || null;
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const full = await store.getAuditFull(userId, sub, { workspaceId });
         if (!full) return notFound("Audit not found.");
         const run = await store.getSxoForAudit(userId, sub, { workspaceId });
@@ -1085,8 +1122,8 @@ export const handler = async (event) => {
       // 5. GET /sxo/audits/:id/first-screen (first-screen findings)
       if (id === "audits" && sub && subId === "first-screen" && method === "GET") {
         const workspaceId = event.queryStringParameters?.workspace_id || null;
-        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const denied = await workspaceDenial(userId, workspaceId, "read");
+        if (denied) return denied;
         const full = await store.getAuditFull(userId, sub, { workspaceId });
         if (!full) return notFound("Audit not found.");
         const run = await store.getSxoForAudit(userId, sub, { workspaceId });
@@ -1102,8 +1139,8 @@ export const handler = async (event) => {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
           const workspaceId = q.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "read");
+          if (denied) return denied;
           const full = await store.getAuditFull(userId, sub, { workspaceId });
           if (!full) return notFound("Audit not found.");
           let funnel = await store.getJourneyFunnel(userId, sub, { workspaceId });
@@ -1149,8 +1186,8 @@ export const handler = async (event) => {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
           const workspaceId = q.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "read");
+          if (denied) return denied;
           const full = await store.getAuditFull(userId, sub, { workspaceId });
           if (!full) return notFound("Audit not found.");
           let diagnostics = await store.getFormDiagnostics(userId, sub, {
@@ -1168,8 +1205,8 @@ export const handler = async (event) => {
       if (id === "events" && sub === "import") {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+          if (!capabilityGate.ok) return capabilityGate.response;
 
           const idempotencyKey = typeof body.idempotency_key === "string"
             ? body.idempotency_key.trim() : "";
@@ -1189,6 +1226,10 @@ export const handler = async (event) => {
           if (body.subject_id) {
             const subject = await store.getSubject(userId, body.subject_id, { workspaceId });
             if (!subject) return notFound("Subject not found.");
+          }
+          if (body.conversion_goal_id) {
+            const goal = await store.getConversionGoal(userId, body.conversion_goal_id, { workspaceId });
+            if (!goal) return notFound("Conversion goal not found.");
           }
           const mappedCounts = {};
           const unmappedList = [];
@@ -1256,7 +1297,11 @@ export const handler = async (event) => {
               attempts: queued.job.attempts,
             },
             imported_events_count: completed
-              ? queued.job.result_json?.imported_events_count ?? Object.keys(eventCounts).length
+              ? queued.job.result_json?.imported_events_count
+                ?? Object.values(eventCounts).reduce((sum, n) => sum + n, 0)
+              : 0,
+            imported_event_types_count: completed
+              ? queued.job.result_json?.imported_event_types_count ?? Object.keys(eventCounts).length
               : 0,
             event_counts: eventCounts,
             unmapped: unmappedList,
@@ -1274,10 +1319,11 @@ export const handler = async (event) => {
           }
           if (!body.token && !body.api_key) return bad("`token` or `api_key` is required.");
           const workspaceId = body.workspace_id || null;
-          if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-          }
+          // A write that stores a third-party credential: plan-gated (D20) as
+          // well as role-gated. Disconnect and purge deliberately stay ungated
+          // by plan — removing your own data must never need an upgrade.
+          const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+          if (!capabilityGate.ok) return capabilityGate.response;
           const saved = await store.saveAnalyticsConnection(userId, {
             provider,
             providerAccountId: body.provider_account_id || null,
@@ -1293,8 +1339,8 @@ export const handler = async (event) => {
         if (!sub && method === "GET") {
           const q = event.queryStringParameters || {};
           const workspaceId = q.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "read");
+          if (denied) return denied;
           const connections = await store.listAnalyticsConnections(userId, {
             workspaceId,
           });
@@ -1307,8 +1353,8 @@ export const handler = async (event) => {
           const workspaceId = q.workspace_id || null;
           const purgeData = q.purge_data === "true" || q.purge_data === "1" || body?.purge_data === true;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+            const denied = await workspaceDenial(userId, workspaceId, "run_analysis");
+            if (denied) return denied;
           }
           await store.deleteAnalyticsConnection(userId, provider, { workspaceId, purgeData });
           return json(200, { ok: true, disconnected: provider, purged_data: purgeData });
@@ -1320,8 +1366,8 @@ export const handler = async (event) => {
         const q = event.queryStringParameters || {};
         const workspaceId = q.workspace_id || body?.workspace_id || null;
         if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "run_analysis");
+          if (denied) return denied;
         }
         const olderThan = q.older_than_days !== undefined ? q.older_than_days : body?.older_than_days;
         const purgeAll = q.purge_all === "true" || q.purge_all === "1" || body?.purge_all === true || olderThan === 0 || olderThan === "0";
@@ -1338,12 +1384,18 @@ export const handler = async (event) => {
       if (id === "conversion-goals") {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
-          if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-          }
+          const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+          if (!capabilityGate.ok) return capabilityGate.response;
           if (!body.name || !body.outcome_type) {
             return bad("`name` and `outcome_type` are required for conversion goals.");
+          }
+          // A goal pointing at somebody else's audit or subject would attach
+          // their ids to this tenant's outcome data. Same 404-not-403 rule.
+          if (body.audit_id && !(await store.getAudit(userId, body.audit_id, { workspaceId }))) {
+            return notFound("Audit not found.");
+          }
+          if (body.subject_id && !(await store.getSubject(userId, body.subject_id, { workspaceId }))) {
+            return notFound("Subject not found.");
           }
           const saved = await store.saveConversionGoal(userId, {
             name: body.name,
@@ -1362,8 +1414,8 @@ export const handler = async (event) => {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
           const workspaceId = q.workspace_id || null;
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "read");
+          if (denied) return denied;
           const goals = await store.listConversionGoals(userId, {
             auditId: q.audit_id || null,
             workspaceId,
@@ -1411,6 +1463,8 @@ export const handler = async (event) => {
 
         if (!sub && method === "GET") {
           const q = event.queryStringParameters || {};
+          const denied = await workspaceDenial(userId, q.workspace_id, "read");
+          if (denied) return denied;
           const experiments = await store.listOptimizationExperiments(userId, {
             auditId: q.audit_id || null,
             status: q.status || null,
@@ -1422,6 +1476,8 @@ export const handler = async (event) => {
 
         if (sub && !subId && method === "GET") {
           const q = event.queryStringParameters || {};
+          const denied = await workspaceDenial(userId, q.workspace_id, "read");
+          if (denied) return denied;
           const experiment = await store.getOptimizationExperiment(userId, sub, {
             workspaceId: q.workspace_id || null,
           });
@@ -1433,8 +1489,8 @@ export const handler = async (event) => {
           const workspaceId = body.workspace_id || null;
           const experiment = await store.getOptimizationExperiment(userId, sub, { workspaceId });
           if (!experiment) return notFound("Experiment not found.");
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "run_analysis");
+          if (denied) return denied;
           if (!body.baseline_audit_id || !body.current_audit_id) {
             return bad("`baseline_audit_id` and `current_audit_id` are required.");
           }
@@ -1466,6 +1522,8 @@ export const handler = async (event) => {
       if (id === "portfolio" && sub === "rollups") {
         if (method === "GET") {
           const q = event.queryStringParameters || {};
+          const denied = await workspaceDenial(userId, q.workspace_id, "read");
+          if (denied) return denied;
           const rollups = await store.listPortfolioRollups(userId, {
             rollupAxis: q.axis || null,
             workspaceId: q.workspace_id || null,
@@ -1477,8 +1535,8 @@ export const handler = async (event) => {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
           if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+            const denied = await workspaceDenial(userId, workspaceId, "run_analysis");
+            if (denied) return denied;
           }
           const axis = body.axis || body.rollup_axis;
           if (!axis || !PORTFOLIO_ROLLUP_AXES.includes(axis)) {
@@ -1537,8 +1595,8 @@ export const handler = async (event) => {
         const recommendation = await store.getRecommendation(userId, sub, { workspaceId });
         if (!recommendation) return notFound("Recommendation not found.");
         if (workspaceId) {
-          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const denied = await workspaceDenial(userId, workspaceId, "manage_workflow");
+          if (denied) return denied;
         }
         if (body.validated_by_audit_id) {
           const validationAudit = await store.getAuditFull(userId, body.validated_by_audit_id, { workspaceId });
@@ -1590,21 +1648,13 @@ async function createAuditRoute(event, userId, body) {
   if (errors.length) return bad(errors.join(" "), { code: "INVALID_REQUEST" });
 
   if (!userId) {
-    // ── Guest Audit Quota Check (1 free audit) ─────────────────────────
-    const guestUsage = await consumeGuestCredit(event, "single");
-    if (!guestUsage.allowed) {
-      return json(402, {
-        error: "You have used your free Discoverability audit. Sign in to save reports and unlock ongoing monitoring.",
-        code: "UPGRADE_REQUIRED",
-        upgradeTo: "starter",
-      });
-    }
-
+    // The charge is handed IN rather than taken here, so executeAudit spends
+    // it only after SSRF and robots.txt have had their chance to decline.
     const run = await executeAudit({
       event, userId: null, rawUrl: url, options, resolved: null, source: "guest_ui",
+      chargeGuest: () => consumeGuestCredit(event, "audit"),
     });
-    const extraHeaders = guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {};
-    return json(run.statusCode, run.body, extraHeaders);
+    return json(run.statusCode, run.body, run.headers || {});
   }
 
   // Idempotency BEFORE the quota check: a retried request must return the
@@ -1654,7 +1704,7 @@ async function rerunRoute(event, userId, auditId, body) {
     return json(402, {
       error: "Re-discovery and comparative re-auditing require a paid DatIQ plan.",
       code: "UPGRADE_REQUIRED",
-      upgradeTo: "starter",
+      upgradeTo: "go",
     });
   }
 
@@ -1835,6 +1885,19 @@ function reportRoute(event, full) {
  * asymmetry: a Supabase blip must not take auditing down. It fails CLOSED only
  * on an explicitly-read over-quota state.
  */
+/**
+ * The Discoverability role gate as ONE call.
+ *
+ * Returns the 403 to send, or null when the caller may proceed. It replaced the
+ * same two lines copied ~40 times — the copy that got forgotten is exactly how
+ * six workspace readers shipped with no membership check. A new route now has
+ * one short line to remember instead of two to transcribe.
+ */
+async function workspaceDenial(userId, workspaceId, action) {
+  const gate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, action);
+  return gate.ok ? null : json(403, { error: gate.refusal.message, code: gate.refusal.code });
+}
+
 async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability = "audit") {
   const resolved = await resolveRequestEntitlement(event);
   // A refusal here (named a workspace the caller isn't in, or a paused seat)
@@ -1843,6 +1906,17 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability =
   const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, rawWorkspaceId);
   if (refusal) {
     return { ok: false, response: json(403, { error: refusal.message, code: refusal.code }) };
+  }
+  // The pause check may fail open; the workspace_id this request will stamp on
+  // the audit row may not. An unverified membership would write into somebody
+  // else's workspace history.
+  if (workspaceCtx?.workspaceMembershipDegraded) {
+    return {
+      ok: false,
+      response: json(403, {
+        error: WORKSPACE_MEMBERSHIP_UNAVAILABLE.message, code: WORKSPACE_MEMBERSHIP_UNAVAILABLE.code,
+      }),
+    };
   }
   const { count: used, degraded } = await store.countAuditsThisMonth(userId);
   if (degraded) return { ok: true, resolved };
@@ -1919,8 +1993,8 @@ async function revalidateRoute(event, userId, recId, body) {
   const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
   const rec = await store.getRecommendation(userId, recId, { workspaceId });
   if (!rec) return notFound("Recommendation not found.");
-  const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
-  if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+  const denied = await workspaceDenial(userId, workspaceId, "manage_workflow");
+  if (denied) return denied;
 
   // Only something believed FIXED is worth re-checking. Asking to revalidate
   // an open item would spend an audit to confirm what the last one said.
@@ -2608,8 +2682,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   if (!id) {
     if (method === "GET") {
       const q = event.queryStringParameters || {};
-      const readGate = await requireWorkspaceDiscoverabilityAction(userId, q.workspace_id, "read");
-      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const denied = await workspaceDenial(userId, q.workspace_id, "read");
+      if (denied) return denied;
       const records = await store.listTruthRecords(userId, { workspaceId: q.workspace_id || null });
       return json(200, { records, count: records.length });
     }
@@ -2653,8 +2727,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── One record ───────────────────────────────────────────────────────────
   if (!sub) {
     if (method === "GET") {
-      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       const canonical = full.versions.find((v) => v.id === full.current_version_id) || null;
@@ -2728,8 +2802,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
     }
 
     if (subId && method === "GET") {
-      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       const row = await store.getTruthVersion(userId, id, subId, { workspaceId });
       return row ? json(200, { version: describeVersion(row) }) : notFound("Version not found.");
     }
@@ -2801,8 +2875,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Diff ─────────────────────────────────────────────────────────────────
   if (sub === "diff" && method === "GET") {
     const q = event.queryStringParameters || {};
-    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+    const denied = await workspaceDenial(userId, workspaceId, "read");
+    if (denied) return denied;
     const full = await store.getTruthRecordFull(userId, id, { workspaceId });
     if (!full) return notFound("Truth record not found.");
 
@@ -2834,8 +2908,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Conflicts ────────────────────────────────────────────────────────────
   if (sub === "conflicts") {
     if (!subId && method === "GET") {
-      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       return json(200, { conflicts: full.conflicts, count: full.conflicts.length });
@@ -2901,8 +2975,8 @@ async function entityGraphRoute(userId, method, path, body, event) {
   // ── The graph ────────────────────────────────────────────────────────────
   if (!section && method === "GET") {
     const q = event.queryStringParameters || {};
-    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+    const denied = await workspaceDenial(userId, workspaceId, "read");
+    if (denied) return denied;
     const truthRecordId = q.truth_record_id || null;
     const [entities, relationships, conflicts] = await Promise.all([
       store.listEntities(userId, { truthRecordId, workspaceId }),
@@ -3099,8 +3173,8 @@ async function entityGraphRoute(userId, method, path, body, event) {
   if (section === "conflicts") {
     if (!id && method === "GET") {
       const q = event.queryStringParameters || {};
-      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const denied = await workspaceDenial(userId, workspaceId, "read");
+      if (denied) return denied;
       const conflicts = await store.listGraphConflicts(userId, {
         truthRecordId: q.truth_record_id || null, workspaceId,
       });
@@ -3288,10 +3362,8 @@ async function subjectScoreRoute(userId, method, path, body, event) {
   const q = event.queryStringParameters || {};
   const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
   if (method === "GET" && workspaceId) {
-    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-    if (!roleGate.ok) {
-      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-    }
+    const denied = await workspaceDenial(userId, workspaceId, "read");
+    if (denied) return denied;
   }
 
   // The registry, so a client renders the same component names and weights the
@@ -3314,6 +3386,23 @@ async function subjectScoreRoute(userId, method, path, body, event) {
   // gaps. An intent nobody sampled is not an intent you lost.
   if (section === "intent-coverage" && method === "POST") {
     return json(200, intentCoverage(Array.isArray(body.intents) ? body.intents : []));
+  }
+
+  // The reader the client always called and the router never had. Scorable
+  // kinds by default, because every page audit mints a `page` subject and the
+  // score screen would otherwise drown in them; `?kind=all` lists everything.
+  if (section === "subjects" && method === "GET") {
+    const subjectId = path[2] || null;
+    if (subjectId) {
+      const subject = await store.getSubject(userId, subjectId, { workspaceId });
+      return subject ? json(200, { subject }) : notFound("Subject not found.");
+    }
+    const requested = String(q.kind || "");
+    const kinds = requested === "all"
+      ? null
+      : SUBJECT_KINDS_LISTABLE.includes(requested) ? [requested] : [...SUBJECT_SCORE_IDS];
+    const subjects = await store.listSubjects(userId, { workspaceId, kinds });
+    return json(200, { subjects, count: subjects.length });
   }
 
   if (section === "subjects" && method === "POST") {
@@ -3406,6 +3495,9 @@ async function subjectScoreRoute(userId, method, path, body, event) {
  * confirms the row exists and makes the endpoint an enumeration oracle over
  * other tenants' uuids.
  */
+/** Every kind 0057's CHECK constraint accepts — the only values a `?kind=` filter may carry. */
+const SUBJECT_KINDS_LISTABLE = Object.freeze(["page", "domain", "brand", "product", "service", "location"]);
+
 async function requireSubjectScoreRefs(userId, body) {
   const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
@@ -3434,10 +3526,8 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   const q = event.queryStringParameters || {};
   const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
   if (method === "GET" && workspaceId) {
-    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-    if (!roleGate.ok) {
-      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-    }
+    const denied = await workspaceDenial(userId, workspaceId, "read");
+    if (denied) return denied;
   }
 
   if (section === "schema-registry" && method === "GET") {
@@ -3625,10 +3715,8 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   const q = event.queryStringParameters || {};
   const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
   if (method === "GET" && workspaceId) {
-    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
-    if (!roleGate.ok) {
-      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
-    }
+    const denied = await workspaceDenial(userId, workspaceId, "read");
+    if (denied) return denied;
   }
 
   if (section === "schema" && method === "GET") {

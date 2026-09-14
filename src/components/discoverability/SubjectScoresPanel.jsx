@@ -2,36 +2,40 @@
 // Computes and displays Brand Discoverability, Product Discoverability, and Service Findability.
 // 🔴 Rule: An excluded component reads "cannot measure yet", never 0, never in danger styling.
 // Coverage renders beside the score, always.
+//
+// ⚠️ EVERYTHING HERE IS READ FROM THE MODEL OR THE STORED ROW, NEVER RETYPED.
+// This screen previously invented its own component names ("name_consistency",
+// "price_clarity", …) that no formula has, read `final_score` and `created_at`
+// from a row that stores `score` and `scored_at`, multiplied an already-percent
+// coverage by 100, and listed subjects from a route that did not exist — so it
+// showed "No Scorable Subjects Found" to every account, including ones that had
+// just created one.
 
 import { useState, useEffect, useCallback } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
+import { SUBJECT_SCORES, SUBJECT_SCORE_IDS, THIN_COVERAGE } from "../../lib/discoverability/subjectScoring.js";
+import { SCORABLE_ENTITY_TYPES } from "../../lib/discoverability/subjectModel.js";
 
-const SCORES_META = {
-  brand: {
-    id: "brand",
-    name: "Brand Discoverability Score (BDS)",
-    icon: "award",
-    description: "Evaluates recognition, factual corroboration, and presence in answer engines.",
-    components: ["name_consistency", "share_of_voice", "trust_citations", "entity_resolution"],
-  },
-  product: {
-    id: "product",
-    name: "Product Discoverability Score (PDS)",
-    icon: "shopping-bag",
-    description: "Evaluates structured product facts, comparisons, pricing, and availability signals.",
-    components: ["product_facts", "price_clarity", "specification_depth", "competitor_alignment"],
-  },
-  service: {
-    id: "service",
-    name: "Service Findability Score (SFS)",
-    icon: "briefcase",
-    description: "Evaluates intent coverage, geographic radius, local directory matches, and booking paths.",
-    components: ["intent_coverage", "service_radius", "directory_nap", "conversion_readiness"],
-  },
+const DESCRIPTIONS = {
+  brand: "Recognition, factual corroboration, and presence in answer engines.",
+  product: "Structured product facts, comparisons, pricing, and availability signals.",
+  service: "Intent coverage, service radius, local directory matches, and booking paths.",
 };
+
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** The components to render: the stored row's when scored, the registry's otherwise. */
+export function componentsFor(kind, latestScore) {
+  if (Array.isArray(latestScore?.components) && latestScore.components.length) {
+    return latestScore.components;
+  }
+  const spec = SUBJECT_SCORES[kind];
+  if (!spec) return [];
+  return Object.entries(spec.components).map(([id, c]) => ({ id, ...c, value: null }));
+}
 
 export default function SubjectScoresPanel({ workspaceId = null }) {
   const showToast = useToast();
@@ -43,8 +47,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
   const [creatingSubject, setCreatingSubject] = useState(false);
   const [scoring, setScoring] = useState(false);
 
-  // Creation form
-  const [newKind, setNewKind] = useState("brand");
+  const [newKind, setNewKind] = useState(SUBJECT_SCORE_IDS[0]);
   const [newEntityId, setNewEntityId] = useState("");
 
   const loadData = useCallback(async () => {
@@ -55,19 +58,19 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
         discoverability.getGraph({ workspace_id: workspaceId }).catch(() => ({ entities: [] })),
         discoverability.listSubjectScores({ workspace_id: workspaceId }).catch(() => ({ scores: [] })),
       ]);
-      const sList = subjRes.subjects || [];
-      setSubjects(sList);
+      const list = (subjRes.subjects || []).filter((s) => SUBJECT_SCORES[s.subject_kind]);
+      setSubjects(list);
       setEntities((graphRes.entities || []).filter((e) => e.state === "approved"));
       setScores(scoreRes.scores || []);
-      if (sList.length > 0 && !selectedSubjectId) {
-        setSelectedSubjectId(sList[0].id);
-      }
+      setSelectedSubjectId((current) => (
+        current && list.some((s) => s.id === current) ? current : list[0]?.id || ""
+      ));
     } catch (err) {
       showToast(err.message || "Failed to load subjects", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, selectedSubjectId, showToast]);
+  }, [workspaceId, showToast]);
 
   useEffect(() => {
     loadData();
@@ -80,13 +83,10 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
       return;
     }
     try {
-      await discoverability.createEntitySubject({
-        subjectKind: newKind,
-        entityId: newEntityId,
-        workspaceId,
-      });
+      await discoverability.createEntitySubject({ subjectKind: newKind, entityId: newEntityId, workspaceId });
       showToast("Score subject created over approved entity.", "check");
       setCreatingSubject(false);
+      setNewEntityId("");
       loadData();
     } catch (err) {
       showToast(err.message || "Could not create subject", "error");
@@ -99,9 +99,14 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
     try {
       const res = await discoverability.scoreSubject({
         subject_id: selectedSubjectId,
-        workspace_id: workspaceId,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
       });
-      showToast("Subject scored successfully.", "check");
+      showToast(
+        res?.thin
+          ? "Scored — but coverage is thin, so treat this as provisional."
+          : "Subject scored successfully.",
+        res?.thin ? "warning" : "check",
+      );
       loadData();
     } catch (err) {
       showToast(err.message || "Scoring failed", "error");
@@ -119,10 +124,13 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
     );
   }
 
-  const currentSubject = subjects.find((s) => s.id === selectedSubjectId);
+  const currentSubject = subjects.find((s) => s.id === selectedSubjectId) || null;
   const subjectScores = scores.filter((sc) => sc.subject_id === selectedSubjectId);
   const latestScore = subjectScores[0] || null;
-  const meta = currentSubject ? SCORES_META[currentSubject.subject_kind] || SCORES_META.brand : SCORES_META.brand;
+  const spec = currentSubject ? SUBJECT_SCORES[currentSubject.subject_kind] : null;
+  const components = currentSubject ? componentsFor(currentSubject.subject_kind, latestScore) : [];
+  const eligibleEntities = entities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type));
+  const thin = latestScore && (latestScore.score === null || Number(latestScore.coverage) < THIN_COVERAGE);
 
   return (
     <div className="dsc-subjects-surface" style={{ display: "grid", gap: "1.5rem" }}>
@@ -153,38 +161,27 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.875rem" }}>
               Subject Kind
-              <select
-                className="dsc-input"
-                value={newKind}
-                onChange={(e) => setNewKind(e.target.value)}
-              >
-                <option value="brand">Brand Discoverability (BDS)</option>
-                <option value="product">Product Discoverability (PDS)</option>
-                <option value="service">Service Findability (SFS)</option>
+              <select className="dsc-input" value={newKind} onChange={(e) => { setNewKind(e.target.value); setNewEntityId(""); }}>
+                {SUBJECT_SCORE_IDS.map((id) => (
+                  <option key={id} value={id}>{SUBJECT_SCORES[id].label} ({SUBJECT_SCORES[id].code})</option>
+                ))}
               </select>
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.875rem" }}>
               Approved Entity
-              <select
-                className="dsc-input"
-                value={newEntityId}
-                onChange={(e) => setNewEntityId(e.target.value)}
-                required
-              >
+              <select className="dsc-input" value={newEntityId} onChange={(e) => setNewEntityId(e.target.value)} required>
                 <option value="">Select approved entity…</option>
-                {entities
-                  .filter((e) => {
-                    if (newKind === "brand") return ["organization", "brand"].includes(e.entity_type);
-                    if (newKind === "product") return e.entity_type === "product";
-                    if (newKind === "service") return e.entity_type === "service";
-                    return false;
-                  })
-                  .map((e) => (
-                    <option key={e.id} value={e.id}>{e.name} ({e.entity_type})</option>
-                  ))}
+                {eligibleEntities.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name} ({e.entity_type})</option>
+                ))}
               </select>
             </label>
           </div>
+          {eligibleEntities.length === 0 && (
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-sub)", margin: 0 }}>
+              No approved {(SCORABLE_ENTITY_TYPES[newKind] || []).join(" or ")} entity yet — approve one in the Entity Graph first.
+            </p>
+          )}
           <Button size="sm" type="submit">Create Subject</Button>
         </form>
       )}
@@ -199,7 +196,6 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: "1.5rem" }}>
-          {/* Subjects List */}
           <div className="dsc-panel" style={{ padding: "1rem" }}>
             <h4 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.75rem", textTransform: "uppercase" }}>
               Subjects ({subjects.length})
@@ -210,6 +206,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
                   key={s.id}
                   type="button"
                   onClick={() => setSelectedSubjectId(s.id)}
+                  aria-pressed={selectedSubjectId === s.id}
                   style={{
                     textAlign: "left",
                     padding: "0.625rem",
@@ -228,55 +225,53 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
             </div>
           </div>
 
-          {/* Selected Subject Score Card */}
-          {currentSubject && (
+          {currentSubject && spec && (
             <div style={{ display: "grid", gap: "1.25rem" }}>
               <div className="dsc-panel" style={{ padding: "1.5rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <h3 style={{ fontSize: "1.25rem", fontWeight: 600 }}>{meta.name}</h3>
-                    <p style={{ color: "var(--text-sub)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{meta.description}</p>
+                    <h3 style={{ fontSize: "1.25rem", fontWeight: 600 }}>{spec.label} ({spec.code})</h3>
+                    <p style={{ color: "var(--text-sub)", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+                      {DESCRIPTIONS[currentSubject.subject_kind]}
+                    </p>
                   </div>
                   {/* 🔴 Coverage always rendered beside score */}
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "2rem", fontWeight: 700, color: latestScore ? "var(--accent)" : "var(--text-sub)" }}>
-                      {latestScore?.final_score !== undefined && latestScore?.final_score !== null
-                        ? latestScore.final_score.toFixed(1)
+                  <div style={{ textAlign: "right" }} data-testid="subject-score">
+                    <div style={{ fontSize: "2rem", fontWeight: 700, color: isNum(Number(latestScore?.score)) && latestScore?.score !== null ? "var(--accent)" : "var(--text-sub)" }}>
+                      {latestScore && latestScore.score !== null && latestScore.score !== undefined
+                        ? Number(latestScore.score).toFixed(1)
                         : "—"}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
-                      Coverage: {latestScore?.coverage !== undefined && latestScore?.coverage !== null
-                        ? `${(latestScore.coverage * 100).toFixed(0)}%`
-                        : "0%"}
+                      Coverage: {latestScore ? `${Math.round(Number(latestScore.coverage) || 0)}%` : "not scored yet"}
                     </div>
+                    {thin && (
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontStyle: "italic" }}>
+                        Thin coverage — provisional
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Component Breakdown */}
                 <h4 style={{ fontSize: "0.875rem", fontWeight: 600, marginTop: "1.5rem", marginBottom: "0.75rem", textTransform: "uppercase" }}>
                   Components & Evidence
                 </h4>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
-                  {meta.components.map((cKey) => {
-                    const compValue = latestScore?.components?.[cKey];
-                    const isMeasured = compValue !== undefined && compValue !== null;
+                  {components.map((c) => {
+                    const measured = isNum(c.value);
                     return (
                       <div
-                        key={cKey}
-                        style={{
-                          padding: "0.75rem",
-                          background: "var(--bg)",
-                          borderRadius: "var(--r)",
-                          border: "1px solid var(--border)",
-                        }}
+                        key={c.id}
+                        data-testid={`component-${c.id}`}
+                        style={{ padding: "0.75rem", background: "var(--bg)", borderRadius: "var(--r)", border: "1px solid var(--border)" }}
                       >
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", textTransform: "capitalize" }}>
-                          {cKey.replace(/_/g, " ")}
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
+                          {c.label || c.id} · weight {Math.round((c.weight || 0) * 100)}%
                         </div>
                         {/* 🔴 Rule: Unmeasured reads "cannot measure yet", never 0, never in danger */}
                         <div style={{ marginTop: "0.25rem", fontSize: "1.125rem", fontWeight: 600 }}>
-                          {isMeasured ? (
-                            <span>{(compValue * 100).toFixed(0)}%</span>
+                          {measured ? (
+                            <span>{Math.round(c.value)}</span>
                           ) : (
                             <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontStyle: "italic", fontWeight: 400 }}>
                               cannot measure yet
@@ -289,27 +284,21 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
                 </div>
               </div>
 
-              {/* Historical Trend */}
               {subjectScores.length > 1 && (
                 <div className="dsc-panel" style={{ padding: "1.25rem" }}>
                   <h4 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.75rem", textTransform: "uppercase" }}>
-                    Score History ({subjectScores.length} Audits)
+                    Score History ({subjectScores.length} Runs)
                   </h4>
                   <div style={{ display: "grid", gap: "0.5rem" }}>
                     {subjectScores.slice(0, 5).map((sc, i) => (
                       <div
                         key={sc.id || i}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "0.5rem 0.75rem",
-                          borderRadius: "var(--r)",
-                          background: "var(--bg)",
-                        }}
+                        style={{ display: "flex", justifyContent: "space-between", padding: "0.5rem 0.75rem", borderRadius: "var(--r)", background: "var(--bg)" }}
                       >
-                        <span style={{ fontSize: "0.8125rem" }}>{new Date(sc.created_at).toLocaleString()}</span>
+                        <span style={{ fontSize: "0.8125rem" }}>{sc.scored_at ? new Date(sc.scored_at).toLocaleString() : "—"}</span>
                         <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                          Score: {sc.final_score?.toFixed(1) || "—"} (Coverage: {((sc.coverage || 0) * 100).toFixed(0)}%)
+                          Score: {sc.score !== null && sc.score !== undefined ? Number(sc.score).toFixed(1) : "—"}
+                          {" "}(Coverage: {Math.round(Number(sc.coverage) || 0)}%)
                         </span>
                       </div>
                     ))}

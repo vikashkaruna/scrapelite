@@ -55,7 +55,11 @@ export async function resolveWorkspaceMembership(workspaceId, userId) {
         `&select=paused_at,role,discoverability_role&limit=1`,
       { headers: db.headers },
     );
-    if (!res.ok) return { ok: true, memberPaused: false };
+    // `degraded` is reported, not acted on, here: the pause check keeps its
+    // fail-open posture, while tenancy callers (requireWorkspaceDiscoverabilityAction,
+    // gateAuditQuota) refuse on it. A 400 here is also what a database still
+    // missing 0067's `discoverability_role` column returns for this select.
+    if (!res.ok) return { ok: true, memberPaused: false, degraded: true };
     const rows = await res.json();
     const row = Array.isArray(rows) && rows[0];
     if (!row) {
@@ -76,7 +80,7 @@ export async function resolveWorkspaceMembership(workspaceId, userId) {
     }
     return result;
   } catch {
-    return { ok: true, memberPaused: false };
+    return { ok: true, memberPaused: false, degraded: true };
   }
 }
 
@@ -100,6 +104,9 @@ export async function buildWorkspaceCtx(resolved, rawWorkspaceId) {
   const ctx = {
     memberPaused: membership.memberPaused,
   };
+  if (membership.degraded) {
+    ctx.workspaceMembershipDegraded = true;
+  }
   if (membership.discoverabilityRole) {
     ctx.discoverabilityRole = membership.discoverabilityRole;
   }
@@ -109,13 +116,28 @@ export async function buildWorkspaceCtx(resolved, rawWorkspaceId) {
   };
 }
 
+export const WORKSPACE_MEMBERSHIP_UNAVAILABLE = Object.freeze({
+  code: "WORKSPACE_MEMBERSHIP_UNAVAILABLE",
+  message: "Workspace access could not be verified right now. Try again shortly.",
+});
+
 /** Apply a Discoverability-scoped action after membership is established. */
 export async function requireWorkspaceDiscoverabilityAction(userId, rawWorkspaceId, action) {
   const workspaceId = typeof rawWorkspaceId === "string" ? rawWorkspaceId.trim() : "";
   if (!workspaceId) return { ok: true, ctx: {}, personal: true };
   const built = await buildWorkspaceCtx({ userId }, workspaceId);
   if (built.refusal) return { ok: false, refusal: built.refusal };
-  if (built.ctx.workspaceMembershipDegraded || !built.ctx.discoverabilityRole) {
+  // 🔴 FAILS CLOSED, unlike the pause check. auditStore's `ownerOrWorkspace`
+  // drops the user_id filter whenever a workspace is named, so this gate is the
+  // only tenancy boundary a workspace read has. A lookup that FAILED is not a
+  // membership that was FOUND — allowing it would expose every workspace to
+  // every signed-in user for as long as PostgREST is unhealthy.
+  if (built.ctx.workspaceMembershipDegraded) {
+    return { ok: false, refusal: WORKSPACE_MEMBERSHIP_UNAVAILABLE };
+  }
+  // No service key at all: the store has no data plane either, so there is
+  // nothing to expose. Kept permissive so local/dev runs without Supabase work.
+  if (!built.ctx.discoverabilityRole) {
     return { ok: true, ctx: built.ctx, degraded: true };
   }
   const permission = requireDiscoverabilityRole(built.ctx.discoverabilityRole, action);

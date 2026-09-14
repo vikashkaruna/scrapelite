@@ -1,6 +1,12 @@
 // LocalDirectoryPanel.jsx — Local & Directory Intelligence (W12 / CP-1.4c).
 // Displays NAP consistency, directory matches, correction packs, and local checks.
 // 🔴 Rule: Render coverageClaim() verbatim. Unchecked sources are excluded and named, never scored 0.
+//
+// ⚠️ READ THE STORED SHAPE, NOT AN IMAGINED ONE. This panel read a match
+// "state", a finding "code"/"description"/"suggested value" under names 0058
+// never stored, and resolved findings with a value the route rejects.
+// `runLocalCheck` also returns `score` as an OBJECT from napScore(), so the
+// completion toast printed "NaN%".
 
 import { useState, useEffect, useCallback } from "react";
 import Icon from "../Icon.jsx";
@@ -8,6 +14,19 @@ import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 import { coverageClaim } from "../../lib/discoverability/directorySources.js";
+
+/** 0058 stores a score and the mismatched field list, never a state label. */
+export function matchState(match) {
+  if (!match) return "unchecked";
+  if (match.match_score === null || match.match_score === undefined) return "unreadable";
+  return (match.mismatched || []).length > 0 ? "mismatch" : "match";
+}
+
+const MATCH_LABELS = {
+  match: "Matches the record",
+  mismatch: "Mismatch",
+  unreadable: "Listing unreadable",
+};
 
 export default function LocalDirectoryPanel({ workspaceId = null }) {
   const showToast = useToast();
@@ -84,7 +103,13 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
         region,
         workspace_id: workspaceId,
       });
-      showToast(`Local NAP check complete (Score: ${(res.score * 100).toFixed(0)}%).`, "check");
+      const napScore = res?.score?.score;
+      showToast(
+        Number.isFinite(napScore)
+          ? `Local NAP check complete (score ${Math.round(napScore)}/100).`
+          : "Local NAP check complete — no listing was comparable, so there is no score yet.",
+        "check",
+      );
       loadRecordDetails(selectedRecordId);
     } catch (err) {
       showToast(err.message || "Directory check failed", "error");
@@ -116,7 +141,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
   }
 
   // 🔴 Render coverageClaim() verbatim.
-  const checkedCount = selectedCheck?.matches?.length || listings.length;
+  const checkedCount = selectedCheck?.check?.checked_count ?? listings.length;
   const coverageSentence = coverageClaim({ checked: checkedCount, region });
 
   return (
@@ -192,8 +217,8 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                       </div>
                     </div>
                     {match ? (
-                      <span className={`dsc-pill dsc-pill-${match.match_state}`}>
-                        {match.match_state}
+                      <span className={`dsc-pill dsc-pill-${matchState(match)}`}>
+                        {MATCH_LABELS[matchState(match)]}
                       </span>
                     ) : (
                       <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontStyle: "italic" }}>
@@ -228,25 +253,33 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{f.finding_code}</span>
+                      <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{f.code}</span>
                       <span className={`dsc-pill dsc-pill-${f.severity}`}>{f.severity}</span>
                     </div>
-                    <p style={{ fontSize: "0.8125rem", marginTop: "0.25rem", color: "var(--text-sub)" }}>
-                      {f.description}
-                    </p>
-                    {f.suggested_value && (
+                    {f.detail && (
+                      <p style={{ fontSize: "0.8125rem", marginTop: "0.25rem", color: "var(--text-sub)" }}>
+                        {f.detail}
+                      </p>
+                    )}
+                    {(f.fields || []).length > 0 && (
                       <div style={{ fontSize: "0.75rem", marginTop: "0.375rem" }}>
-                        <strong>Correction Pack:</strong> Update to <code>{f.suggested_value}</code>
+                        Fields: {f.fields.join(", ")}
                       </div>
                     )}
-                    <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
-                      <Button size="sm" variant="ghost" onClick={() => handleResolveFinding(f.id, "listing_updated")}>
-                        Listing Updated
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleResolveFinding(f.id, "not_a_mismatch")}>
-                        Not a Mismatch
-                      </Button>
-                    </div>
+                    {f.resolved_at ? (
+                      <div style={{ fontSize: "0.75rem", marginTop: "0.5rem", color: "var(--text-sub)" }}>
+                        Resolved ({String(f.resolution || "").replace(/_/g, " ")})
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
+                        <Button size="sm" variant="ghost" onClick={() => handleResolveFinding(f.id, "listing_updated")}>
+                          Listing Updated
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleResolveFinding(f.id, "not_a_conflict")}>
+                          Not a Conflict
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

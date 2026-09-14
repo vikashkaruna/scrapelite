@@ -679,6 +679,28 @@ group("0026 guest identity usage — atomic quota");
   eq("guest identity row is stored without raw cookie", table.n, 2);
 }
 
+// ── 0073 guest audit credit — its own bucket of one ──────────────────────────
+group("0073 guest audit credit — a separate, single free audit");
+{
+  const h = "guest-hash-audit-00000000000000000000000000000";
+  const first = await one(`select public.consume_guest_credit($1,'audit',10,5,1) result`, [h]);
+  eq("the first guest audit is allowed", first.result.allowed, true);
+  eq("...and reported as the audit kind", first.result.kind, "audit");
+  const second = await one(`select public.consume_guest_credit($1,'audit',10,5,1) result`, [h]);
+  eq("a second guest audit is refused at the limit of one", second.result.allowed, false);
+  eq("...with a kind-specific reason", second.result.reason, "audit_limit_reached");
+  const single = await one(`select public.consume_guest_credit($1,'single',10,5) result`, [h]);
+  eq("spending the audit does not touch the extraction bucket", single.result.allowed, true);
+  eq("...which still has nine left", single.result.remaining, 9);
+  const counts = await one(`select audit_count, single_count from public.guest_identities where token_hash = $1`, [h]);
+  eq("audit_count recorded exactly one audit", counts.audit_count, 1);
+  eq("single_count recorded exactly one extraction", counts.single_count, 1);
+  const unknown = await one(`select public.consume_guest_credit('guest-hash-audit-00000000000000000000000000001','bogus',10,5) result`);
+  eq("an unknown kind still counts as single, as 0026 did", unknown.result.kind, "single");
+  const overloads = await one(`select count(*)::int n from pg_proc where proname = 'consume_guest_credit'`);
+  eq("the 4-argument signature was replaced, not overloaded", overloads.n, 1);
+}
+
 // ── 0027 admin coupon grants ───────────────────────────────────────────────
 group("0027 admin coupon grants — user-scoped, one-time redemption");
 {

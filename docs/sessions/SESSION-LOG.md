@@ -18,6 +18,38 @@
 
 ---
 
+## 2026-09-14 19:40 IST — Discoverability P1–P3 End-to-End Review: Tenancy Leak, Guest-Quota Bypass and Four Broken Workspace Panels Fixed
+
+> **Branch:** `Discoverability-P1-P3-implementation` (after confirming `discoverability-P3` was already merged via PR #169) · **Base:** `87fb7a9` · **Scope:** review + fixes, committed on this branch; not pushed, not promoted
+> **Verification:** vitest **6,915 passed / 0 failed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · build · check:prerender 28 pages / 112 refs · security · `npm audit` 0 · `build:sql --check` · Discoverability Chromium smoke green · **64 new behaviour tests confirmed RED against `87fb7a9` first**
+
+### 1. What the review found — in code already recorded as complete and green
+
+- 🔴 **Cross-tenant reads.** `auditStore.ownerOrWorkspace` scopes by `workspace_id` ALONE when one is named, so the route's membership check is the only tenancy boundary. Six readers had none: `GET /sxo/runs`, `/sxo/runs/:id`, `/sxo/experiments`, `/sxo/experiments/:id`, `/sxo/portfolio/rollups`, `/recommendations/:id/asset`.
+- 🔴 **Membership failed OPEN.** `requireWorkspaceDiscoverabilityAction` treated a failed lookup as "degraded, allow". A PostgREST 5xx — or a production database without `0067`'s `discoverability_role` column, which 400s the select — authorised every workspace for every user. An existing test only passed *because* of this (it reused one consumed `Response`).
+- 🔴 **Guest quota bypass.** `consumeGuestCredit` exempted any request carrying an `Authorization` header without verifying it: `Bearer x` + `guest:true` ran unlimited audits; the same hole existed in `/api/extract` and `/api/guest-usage`.
+- 🟠 Guest audit charged **before** SSRF/robots; guests shared the 10-credit extraction bucket while the UI promised one audit; `upgradeTo: "starter"` named a plan that does not exist.
+- 🟠 Analytics credential storage, conversion goals and event imports were **not plan-gated** (`audit.sxo`); goals/imports accepted **foreign** audit, subject and goal ids.
+- 🔴 **Four of five workspace panels did not match the API.** `SubjectScoresPanel` listed subjects from a route that never existed (always empty), read `final_score`/`created_at` from a row storing `score`/`scored_at`, multiplied percent coverage by 100, and invented component names. `BusinessTruthPanel` read versions off list rows that carry none, so nothing could ever be promoted; proposed facts under ids no TRUTH_FIELD has. `SchemaTrustPanel` offered six signals the route rejects. `LocalDirectoryPanel` resolved with `not_a_mismatch` (rejected) and printed `NaN%`. `EntityGraphPanel` offered six types/predicates the registry rejects.
+- 🟡 `imported_events_count` carried the distinct-type count; ~39 copies of the role-gate snippet (the copy that got forgotten is how the six readers shipped).
+
+### 2. What changed
+
+- `workspaceDenial()` — ONE fail-closed role gate, replacing 39 copies; `resolveWorkspaceMembership` now reports `degraded` (the extract/pause path keeps its fail-open posture); `gateAuditQuota` refuses to stamp an audit into an unverified workspace.
+- `consumeGuestCredit(event, kind, { verifiedUserId })` — exempts only a verified user; `extract.js` passes the resolved id; `guest-usage.js` verifies the token.
+- **Migration `0073_guest_audit_credit.sql`** — `audit_count` + `p_audit_limit default 1`; the 4-arg function is dropped, not overloaded. Callers send `p_audit_limit` ONLY for audits.
+- `GET /subject-score/subjects[/:id]` + `store.listSubjects`; `store.getConversionGoal`; `audit.sxo` gates on connect/goals/import; foreign-reference 404s.
+- Panels rewritten against the real stored shapes and imported registries (`TRUST_SIGNALS`, `ENTITY_TYPES`, `PREDICATES`, `TRUTH_FIELDS`, `SUBJECT_SCORES`); client exposes `corroborated` on a 409.
+- New direct coverage: the three pillar analysers, `auditUrl`, `AuditComposer`, `AuditHistory`, `EvidencePanels`, `TrendChart`, and the five workspace panels; `guest-usage` endpoint.
+- Help screenshots regenerated; P3 plan deviation rows **P3-DEV-09** (resolved) and **P3-DEV-10** (open deployment order).
+- Correction to the review report: the "misnamed rollups test" finding was wrong — two sed ranges had been stitched together.
+
+### 3. Operator actions
+
+1. **Apply `0065`–`0073` in order before deploying this code.** Without `0073`, audit-kind guest credits fail open (unmetered); without `0067`, workspace-scoped Discoverability requests now return 403 `WORKSPACE_MEMBERSHIP_UNAVAILABLE` instead of leaking.
+2. Optional env: `GUEST_AUDIT_HARD_LIMIT` (default 1).
+3. The workspace panels were verified by component tests against API-shaped fixtures, not in a signed-in browser — no session signs in. Walk `/discoverability/truth|entities|local|trust|scores` on staging with a real account.
+
 ## 2026-09-14 18:26 IST — Discoverability P3 Stages 0–5 Completed, Reconciled, Verified, and Pushed; Branch Preserved Without Promotion
 
 > **Branch:** `discoverability-P3` · **Verified implementation HEAD before this handoff record:** `e4873d1999d802adf3f1034429aaf1806011861c` · **Scope:** branch only; no merge, promotion, deployment, or branch deletion performed

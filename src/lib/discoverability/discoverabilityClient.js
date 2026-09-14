@@ -37,6 +37,9 @@ async function throwFromResponse(res, method, path) {
   // `overridable` distinguishes a robots.txt refusal — which a signed-in owner
   // may attest past — from the operator's host allowlist, which they may not.
   if (data.overridable !== undefined) e.overridable = data.overridable;
+  // A duplicate relationship answers 409 and says whether the sighting was
+  // recorded; the panel must not claim corroboration that did not happen.
+  if (data.corroborated !== undefined) e.corroborated = data.corroborated;
   if (data.upgradeTo) e.upgradeTo = data.upgradeTo;
   if (data.remaining !== undefined) e.remaining = data.remaining;
   if (data.capability) e.capability = data.capability;

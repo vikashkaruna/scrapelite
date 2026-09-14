@@ -8,14 +8,13 @@ import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
-
-const PREDICATES = [
-  "owns", "operates", "offers", "provides", "features", "serves", "author_of", "located_at", "parent_of",
-];
-
-const ENTITY_TYPES = [
-  "organization", "brand", "product", "service", "person", "place", "local_business",
-];
+// ⚠️ IMPORTED, NEVER RETYPED. The hand-written lists here offered `operates`,
+// `features`, `author_of`, `parent_of`, `place` and `local_business`, none of
+// which the registry (or 0056/0065's CHECK constraints) accepts — so choosing
+// one produced a 400 from a form that looked valid.
+import {
+  ENTITY_TYPES, ENTITY_TYPE_IDS, PREDICATES, PREDICATE_IDS, GRAPH_CONFLICT_CODES,
+} from "../../lib/discoverability/entityGraph.js";
 
 export default function EntityGraphPanel({ workspaceId = null }) {
   const showToast = useToast();
@@ -98,13 +97,17 @@ export default function EntityGraphPanel({ workspaceId = null }) {
       setProposingRel(false);
       loadGraphData();
     } catch (err) {
-      // Rule: 409 means the relationship already exists and has been corroborated!
+      // 409 means the edge already exists. Whether the sighting was RECORDED is
+      // a separate fact the server reports — claiming corroboration it could not
+      // write would repeat the lie that route's own comment records fixing.
       if (err.status === 409 || err.code === "RELATIONSHIP_EXISTS") {
         setCorroborationNotice({
-          text: "Relationship corroborated! This edge already exists in the graph and your observation has been added to its corroboration history.",
+          text: err.corroborated === false
+            ? "This relationship already exists. Your sighting could not be recorded against it — try again shortly."
+            : "Relationship corroborated! This edge already exists in the graph and your observation has been added to its corroboration history.",
           time: new Date().toLocaleTimeString(),
         });
-        showToast("Corroborated existing relationship.", "check");
+        showToast(err.corroborated === false ? "Relationship already exists." : "Corroborated existing relationship.", "check");
         setProposingRel(false);
         loadGraphData();
       } else {
@@ -196,8 +199,8 @@ export default function EntityGraphPanel({ workspaceId = null }) {
                 value={entityForm.entity_type}
                 onChange={(e) => setEntityForm({ ...entityForm, entity_type: e.target.value })}
               >
-                {ENTITY_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {ENTITY_TYPE_IDS.map((t) => (
+                  <option key={t} value={t}>{ENTITY_TYPES[t].label}</option>
                 ))}
               </select>
             </label>
@@ -239,7 +242,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
               >
                 <option value="">Select entity…</option>
                 {entities.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.name} ({ent.entity_type})</option>
+                  <option key={ent.id} value={ent.id}>{ent.name} ({ENTITY_TYPES[ent.entity_type]?.label || ent.entity_type})</option>
                 ))}
               </select>
             </label>
@@ -250,8 +253,8 @@ export default function EntityGraphPanel({ workspaceId = null }) {
                 value={relForm.predicate}
                 onChange={(e) => setRelForm({ ...relForm, predicate: e.target.value })}
               >
-                {PREDICATES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                {PREDICATE_IDS.map((p) => (
+                  <option key={p} value={p}>{PREDICATES[p].label}</option>
                 ))}
               </select>
             </label>
@@ -265,7 +268,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
               >
                 <option value="">Select entity…</option>
                 {entities.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.name} ({ent.entity_type})</option>
+                  <option key={ent.id} value={ent.id}>{ent.name} ({ENTITY_TYPES[ent.entity_type]?.label || ent.entity_type})</option>
                 ))}
               </select>
             </label>
@@ -300,7 +303,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
                   <div>
                     <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{e.name}</div>
                     <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
-                      {e.entity_type} {e.canonical_domain ? `• ${e.canonical_domain}` : ""}
+                      {ENTITY_TYPES[e.entity_type]?.label || e.entity_type} {e.canonical_domain ? `• ${e.canonical_domain}` : ""}
                     </div>
                   </div>
                   <span className={`dsc-pill dsc-pill-${e.state || "proposed"}`}>{e.state || "proposed"}</span>
@@ -336,7 +339,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
                   >
                     <div>
                       <div style={{ fontWeight: 500, fontSize: "0.875rem" }}>
-                        <strong>{subj?.name || "Subject"}</strong> &mdash; <em>{r.predicate}</em> &rarr; <strong>{obj?.name || "Object"}</strong>
+                        <strong>{subj?.name || "Subject"}</strong> &mdash; <em>{PREDICATES[r.predicate]?.label || r.predicate}</em> &rarr; <strong>{obj?.name || "Object"}</strong>
                       </div>
                       <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
                         Source: {r.source} {r.confidence ? `• Confidence: ${(r.confidence * 100).toFixed(0)}%` : ""}
@@ -367,7 +370,9 @@ export default function EntityGraphPanel({ workspaceId = null }) {
           <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.75rem" }}>
             {conflicts.map((c) => (
               <div key={c.id} style={{ padding: "0.75rem", background: "var(--bg)", borderRadius: "var(--r)" }}>
-                <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>{c.description || "Graph conflict detected"}</div>
+                <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>
+                  {c.code ? `${c.code}: ` : ""}{c.message || GRAPH_CONFLICT_CODES[c.code]?.label || "Graph conflict detected"}
+                </div>
                 <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
                   <Button size="sm" variant="ghost" onClick={() => handleResolveConflict(c.id, "relationship_corrected")}>
                     Corrected
