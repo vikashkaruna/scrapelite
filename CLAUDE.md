@@ -4,6 +4,8 @@
 > It captures the complete state of the project so work can continue seamlessly.
 > **Last updated: 2026-09-14 (review) — DISCOVERABILITY P1–P3 END-TO-END REVIEW, PUSHED TO `origin/Discoverability-P1-P3-implementation` @ `471f307` (pre-push gate green in 265s, e2e smoke 159; not promoted): fixed a cross-tenant workspace read leak (six readers ungated + membership failing OPEN), a guest-quota bypass via any unverified `Authorization` header (audits, extract, guest-usage), ungated SXO writes, and four workspace panels that did not match the API. New migration `0073_guest_audit_credit.sql` — apply `0065`–`0073` before deploying. vitest 6,915 · db 73 migrations / 832 assertions. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md).**
 >
+> Prior (merged in from `staging` @ `0ec1df9`): 2026-09-14 — Staging auth-signup error handling is pushed at `a0b274d`. The deployed client points to the correct staging Supabase project; a remaining “Database error saving new user” must be resolved in the staging Supabase Auth trigger/hook configuration.
+>
 > Prior: 2026-09-14 — DISCOVERABILITY P3 STAGES 0–5 COMPLETE, RECONCILED, VERIFIED, COMMITTED, AND PUSHED ON `discoverability-P3` @ `e4873d1`. REQUIRED PRE-PUSH GATE GREEN; 72 MIGRATIONS / 821 DB ASSERTIONS GREEN. OWNER INSTRUCTION: DO NOT MERGE OR DELETE THIS BRANCH. PRODUCTION DEPLOYMENT AND MIGRATIONS 0065–0072 REMAIN OPERATOR ACTIONS.**
 >
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·

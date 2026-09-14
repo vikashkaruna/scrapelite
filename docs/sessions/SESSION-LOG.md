@@ -179,6 +179,53 @@
 
 ---
 
+## 2026-09-14 IST — Staging signup diagnosis and customer-facing auth repair
+
+> **Branch:** `staging` @ `a0b274d` · **Pushed to:** `origin/staging` · **`main`:** unchanged
+
+### 1. Quick orientation
+
+| Property | Current state |
+|---|---|
+| **Reported symptom** | Creating an account on staging showed the generic “Something went wrong while signing you in” text and a Reset password CTA. |
+| **Release commits** | `710607e fix(auth): clarify staging signup failures`; `a0b274d chore: refresh prerendered pages`. |
+| **Deployment** | `origin/staging` is at `a0b274d`; Netlify branch deployment should run automatically. |
+| **Scope boundary** | No real account was created and no password or personal email was submitted during diagnosis. |
+
+### 2. What was accomplished
+
+- Updated `AuthModal` to pass whether an email/password operation is a sign-in or sign-up into `classifyAuthError()`.
+- Added precise, non-misleading handling for Supabase Auth database-save failures (`unexpected_failure` / “Database error saving new user”), invalid API keys, and email-validation failures.
+- A failed sign-up now says that the account could not be created and does not offer the irrelevant password-reset CTA.
+- Added unit and integration regression coverage, including the exact database-save error shape and the absence of Reset password for that case.
+- Regenerated the 28 public prerendered pages required by the protected pre-push gate.
+
+### 3. Root cause analysis
+
+- The original message came from `authErrors.js`'s sign-in-oriented default fallback. It was also used by the Create account action, so any unclassified signup response was presented as an invalid sign-in and directed the visitor to reset a password they did not yet have.
+- The deployed staging bundle contains the correct staging project URL and matching `sb_publishable_` key for `aubwooslkkrprdxuiyvj`. Direct read-only validation against `/auth/v1/signup` returned the expected `validation_failed` response, and `/auth/v1/health` returned GoTrue health metadata. This rules out the prior project/key mismatch class of failure.
+- A real `Database error saving new user` response originates inside the staging Supabase Auth/database path, commonly an Auth hook or new-user trigger. Client code cannot repair that persistence failure; it now reports it accurately.
+
+### 4. Verification evidence
+
+- Focused auth regression: **30 tests passed** across `src/lib/authErrors.test.js` and `src/components/AuthModal.integration.test.jsx`.
+- `npm run build` passed; existing Vite chunk/dynamic-import advisories remain non-blocking.
+- Protected pre-push gate passed before the staging push: readiness (**4 pass / 3 warn / 0 fail**), **3,051 unit tests**, **2,016 contract tests** (14 skipped), and Chromium smoke stage.
+- `npm run prerender` rendered **28 pages**; `npm run build` synchronized the resulting asset references.
+
+### 5. Environment state after this session
+
+- `origin/staging` equals local `staging` at `a0b274d`.
+- The primary `/Users/vikash/Extracta` checkout remains on `face-lift` with user-owned documentation edits untouched; all changes here were made in the isolated staging worktree.
+
+### 6. Open items for the next session
+
+1. In the Supabase dashboard for staging project `aubwooslkkrprdxuiyvj`, inspect Auth logs for the failing signup's `unexpected_failure` / database-save event.
+2. Repair or disable the failing Auth hook/new-user database trigger, then verify new-account creation with an owned disposable test account under the operator’s authorization.
+3. Confirm Netlify completed the automatic deployment for `a0b274d`, then run the approved staging smoke path.
+
+---
+
 ## 2026-09-14 02:45 IST — Discoverability P1, P2, and P3 End-to-End Validation Complete; All Quality Gates Green; Ready for Promotion
 
 > **Branch:** `discoverability-P3` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  
