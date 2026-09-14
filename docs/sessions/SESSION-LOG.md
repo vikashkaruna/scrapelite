@@ -18,10 +18,27 @@
 
 ---
 
-## 2026-09-14 19:40 IST — Discoverability P1–P3 End-to-End Review: Tenancy Leak, Guest-Quota Bypass and Four Broken Workspace Panels Fixed
+## 2026-09-14 20:15 IST — Discoverability P1–P3 End-to-End Review: Tenancy Leak, Guest-Quota Bypass and Four Broken Workspace Panels Fixed; Pushed
 
-> **Branch:** `Discoverability-P1-P3-implementation` (after confirming `discoverability-P3` was already merged via PR #169) · **Base:** `87fb7a9` · **Scope:** review + fixes, committed on this branch; not pushed, not promoted
-> **Verification:** vitest **6,915 passed / 0 failed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · build · check:prerender 28 pages / 112 refs · security · `npm audit` 0 · `build:sql --check` · Discoverability Chromium smoke green · **64 new behaviour tests confirmed RED against `87fb7a9` first**
+> **Branch:** `Discoverability-P1-P3-implementation` @ `471f307` (fix `52f7df7` + prerender refresh `471f307`, then this handoff record) · **Target:** feature branch only — pushed to origin, **not** merged to `staging`/`main`, **not** deployed
+> **Verification:** pre-push gate **all green in 265s** (readiness, unit, contract, integration, system, db, build, prerender, security, Chromium e2e smoke **159 passed**) · vitest **432 files / 6,915 passed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · `npm audit` 0 · `build:sql --check` · readiness 6 pass / 1 warn (unconditional gallery warn) · **64 new behaviour tests confirmed RED against `87fb7a9` first**
+
+### 0. Fresh-start orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `Discoverability-P1-P3-implementation` (local == origin after push) |
+| **HEAD SHA before this record** | `471f307` (remote moved `87fb7a9..471f307`) |
+| **Merge check** | `discoverability-P3` was already fully contained (PR #169); nothing to merge |
+| **Status** | Review complete; every finding fixed, tested, committed and pushed |
+| **Worktree used** | `.claude/worktrees/missing-public-tables-107e72` (this branch checked out there) |
+| **Next migration number** | `0074` |
+| **Not done** | No promotion, no deploy, no production migration apply; panels not walked in a signed-in browser |
+
+**Start the next session by:** `git fetch && git log --oneline -3 origin/Discoverability-P1-P3-implementation`, then read §3 below. Under Node 24 (`nvm use 24`): `npm test`, `npm run test:db`.
+
+⚠️ **Trap hit this session:** the pre-push hook refused the first push with "prerendered pages are stale" because `src/components/**` changed. The fix is `npm run prerender` and commit the 28 pages (done in `471f307`) — do **not** reach for `PREPUSH_SKIP_PRERENDER=1`.
 
 ### 1. What the review found — in code already recorded as complete and green
 
