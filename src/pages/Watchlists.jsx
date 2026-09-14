@@ -219,9 +219,60 @@ export default function Watchlists() {
             </h3>
 
             {!currentWatchlist.changes?.length ? (
-              <p style={{ color: "var(--text-3)", padding: "20px 0" }}>
-                No material changes detected yet. The automated crawler monitors pages according to your cadence.
-              </p>
+              <div className="watchlist-baseline-landscape">
+                <div style={{
+                  padding: "16px 20px",
+                  background: "var(--surface-2)",
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                }}>
+                  <Icon name="check-circle" size={18} style={{ color: "var(--accent)", marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ fontSize: "0.95rem", display: "block", marginBottom: 4 }}>
+                      Baseline competitive landscape established
+                    </strong>
+                    <p style={{ margin: 0, color: "var(--text-2)", fontSize: "0.88rem" }}>
+                      Initial snapshot captured across all {currentWatchlist.targets?.length || 0} competitors. DatIQ is actively monitoring these domains for material movements in pricing models, feature rollouts, and positioning changes.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+                  {(currentWatchlist.targets || []).map((t) => (
+                    <div
+                      key={t.id || t.domain}
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        padding: 16,
+                        background: "var(--surface-1)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.95rem", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Icon name="globe" size={14} className="text-accent" />
+                          {t.domain}
+                        </span>
+                        <span className="wrh-pill" style={{ background: "var(--accent-soft)", color: "var(--accent)", fontSize: "0.72rem" }}>
+                          BASELINE ACTIVE
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
+                        <div>Monitoring: Pricing, Tier limits, Positioning copy</div>
+                        <div style={{ marginTop: 4, color: "var(--text-3)", fontSize: "0.75rem" }}>
+                          Status: First observation recorded · Ready for diff detection
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {currentWatchlist.changes.map((c) => {

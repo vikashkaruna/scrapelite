@@ -196,14 +196,14 @@ export function normaliseGeography(input) {
  * route is what turns them into runs. The cap exists so the column cannot be
  * used as unbounded storage, not because each entry costs anything.
  */
-export const MAX_COMPETITOR_URLS = 10;
+export const MAX_COMPETITOR_URLS = 20;
 
 /**
  * Normalise a competitor list.
  *
  * Returns `{ urls, rejected }` rather than a bare array. A caller who sent
- * eleven URLs, or one with a typo, has to be told which ones did not make it —
- * silently keeping ten of eleven is how a customer ends up believing a
+ * twenty-one URLs, or one with a typo, has to be told which ones did not make it —
+ * silently keeping twenty of twenty-one is how a customer ends up believing a
  * competitor is being tracked when it is not.
  */
 export function normaliseCompetitorUrls(input) {
@@ -214,14 +214,25 @@ export function normaliseCompetitorUrls(input) {
   const seen = new Set();
 
   for (const raw of input) {
-    const trimmed = String(raw ?? "").trim();
-    if (!trimmed) continue;
-    if (urls.length >= MAX_COMPETITOR_URLS) { rejected.push(trimmed); continue; }
+    const rawTrimmed = String(raw ?? "").trim();
+    if (!rawTrimmed) continue;
+    if (urls.length >= MAX_COMPETITOR_URLS) { rejected.push(rawTrimmed); continue; }
+
+    let trimmed = rawTrimmed;
+    // If bare name (no scheme, no slash, and either no dot or contains spaces), auto-convert to domain
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+    const isBareName = !hasScheme && !trimmed.includes("://") && !trimmed.includes("/") && (!trimmed.includes(".") || /\s/.test(trimmed));
+    if (isBareName) {
+      const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (slug) {
+        trimmed = `https://${slug}.com`;
+      }
+    }
 
     const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
     let parsed;
-    try { parsed = new URL(withScheme); } catch { rejected.push(trimmed); continue; }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") { rejected.push(trimmed); continue; }
+    try { parsed = new URL(withScheme); } catch { rejected.push(rawTrimmed); continue; }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") { rejected.push(rawTrimmed); continue; }
 
     // The fragment never reaches a server, so two URLs differing only by hash
     // are one competitor, and keeping both would double-count them.

@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-14 (review) — DISCOVERABILITY P1–P3 END-TO-END REVIEW, PUSHED TO `origin/Discoverability-P1-P3-implementation` @ `471f307` (pre-push gate green in 265s, e2e smoke 159; not promoted): fixed a cross-tenant workspace read leak (six readers ungated + membership failing OPEN), a guest-quota bypass via any unverified `Authorization` header (audits, extract, guest-usage), ungated SXO writes, and four workspace panels that did not match the API. New migration `0073_guest_audit_credit.sql` — apply `0065`–`0073` before deploying. vitest 6,915 · db 73 migrations / 832 assertions. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md).**
+> **Last updated: 2026-09-15 — DISCOVERABILITY AUDIT 504 TIMEOUT RESOLVED, COMPETITOR LIMIT 20 WITH SMART INTAKE, CLOSED-LOOP OPERATING RIBBON, ACCOUNT 2-COLUMN OVERHAUL & WORKFLOW FIXES MERGED TO `staging`. 432 test files / 6,919 tests 100% green; db-verify 74 migrations / 833 assertions green; prerender 28 pages verified. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) and [docs/sessions/SESSION-HANDOFF-2026-09-14-DISCOVERABILITY-AUDIT-BUGS-AND-ACCOUNT-UX.md](docs/sessions/SESSION-HANDOFF-2026-09-14-DISCOVERABILITY-AUDIT-BUGS-AND-ACCOUNT-UX.md).**
 >
 > Prior (merged in from `staging` @ `0ec1df9`): 2026-09-14 — Staging auth-signup error handling is pushed at `a0b274d`. The deployed client points to the correct staging Supabase project; a remaining “Database error saving new user” must be resolved in the staging Supabase Auth trigger/hook configuration.
 >

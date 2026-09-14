@@ -239,7 +239,7 @@ export async function runAudit(url, options = {}) {
   // its weight redistributes (rule 1.1) and `coverage` reports the thinness.
   // A thin audit that says it is thin beats a 504 that says nothing.
   const budgetLeft = deadline.remaining();
-  const vitalsSlice = deadline.sliceFor(PSI_TIMEOUT_MS);
+  const vitalsSlice = deadline.sliceFor(Math.min(PSI_TIMEOUT_MS, 3_500));
   const citationBudget = deadline.signalFor(deadline.remaining());
   const aiBudget = deadline.signalFor(deadline.remaining());
   const canonicalSlice = deadline.sliceFor(CANONICAL_TIMEOUT_MS);

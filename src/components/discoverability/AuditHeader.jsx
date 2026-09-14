@@ -31,6 +31,26 @@ function when(iso) {
   });
 }
 
+function FaviconOrLogo({ url, size = 26, schemaLogo = null }) {
+  const [hasError, setHasError] = useState(false);
+  const host = hostOf(url);
+  const iconSrc = schemaLogo || (host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64` : null);
+
+  if (!hasError && iconSrc) {
+    return (
+      <img
+        src={iconSrc}
+        alt=""
+        width={size}
+        height={size}
+        onError={() => setHasError(true)}
+        style={{ width: size, height: size, borderRadius: "6px", objectFit: "contain", flexShrink: 0 }}
+      />
+    );
+  }
+  return <FaviconDot url={url} size={size} />;
+}
+
 export default function AuditHeader({
   audit, diff = null, framework = "overall", onFrameworkChange = null, workspaceId = null,
 }) {
@@ -130,7 +150,7 @@ export default function AuditHeader({
   return (
     <section className="dsc-audit-header" aria-label="Audited page">
       <div className="dsc-audit-header-id">
-        <FaviconDot url={url} size={26} />
+        <FaviconOrLogo url={url} size={26} schemaLogo={audit.evidence?.schemaOrg?.logo || audit.evidence?.openGraph?.image || null} />
         <div className="dsc-audit-header-url">
           {/* The full URL, not just the host: two audits of the same site are
               the commonest pair to compare, and the path is the only thing
