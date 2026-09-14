@@ -18,6 +18,53 @@
 
 ---
 
+## 2026-09-14 06:20 IST — Discoverability P1, P2, and P3 Revalidation with Remote Changes; Coupon Rollover Fix; 100% Green Across All Gates
+
+> **Branch:** `discoverability-P3` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  
+> **Verification:** `npx vitest run` **419 files / 6,724 passed / 0 failed** · db-verify **70 migrations / 806 assertions passed / 0 failed** · 17 referral assertions · 56 workflow assertions · 116 tables with RLS enabled · 15 tables refuse anon reads · build clean in 1.30s · check:prerender 28 pages / 112 asset refs · E2E test runner 23/23 passed · Playwright smoke suite **159/159 passed** (2.5m)
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `discoverability-P3` |
+| **Status** | P1, P2, P3 100% Validated & Green. Working tree clean. Ready for Push & Promotion. |
+| **Pre-Push Gates** | 100% green (`npm test`, `npm run test:db`, `npm run verify:rls`, `npm run test:e2e:smoke`, `npm run build`, `npm run check:prerender`) |
+| **Active Focus** | Resync with remote orchestrator commits on `discoverability-P3`; revalidate P1/P2/P3 against implementation plans; resolve calendar rollover coupon expiration bug; verify all test suites green; ready for deployment |
+
+---
+
+### 2. What was accomplished
+
+- **Resync & Remote Delta Revalidation**:
+  - Integrated 7 commits landed on `discoverability-P3` (`7c9e19f`, `c638568`, `fbe8d68`, `316fa80`, `c16d8d4`, `5f9e429`, `7c796db`):
+    - **P3 Stage 1**: Enforced explicit entity subject creation via `POST /subject-score/subjects` (Decision D12). Dedicated Discoverability workspace routing (`/discoverability/workspace` in `DiscoverabilityWorkspace.jsx`). Preserved workspace scoping across all P2 actions (`discoverabilityClient.js`).
+    - **P3 Stage 2**: SXO contracts and persisted scoring alignment (`audit_sxo_results`, read-time master composite, aliased `/api/v1/sxo/*`).
+    - **P3 Stage 3**: Secured analytics boundaries and tenant isolation for GA4/PostHog/Plausible connectors; D16 early deletion provisions.
+    - **P3 Stage 4**: Derived portfolio rollups and optimization experiment tracking from strictly scoped workspace data.
+  - Revalidated all changes against `docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md` and `docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md`.
+
+- **Bug Fix — Calendar Rollover Seed Coupon Expiry**:
+  - **Symptom**: 6 test failures in `create-checkout.test.js`, `pricingSource.test.js`, `validate-coupon.test.js`, and `PaymentConfirmModal.integration.test.jsx`.
+  - **Root Cause**: Hardcoded seed coupon `LAUNCH20` had `expiresAt: "2026-09-14"`. When the calendar rolled over to 2026-09-14, `new Date("2026-09-14") < new Date()` evaluated to true (midnight UTC rollover), causing valid coupon applications to be rejected as expired.
+  - **Fix**: Extended `expiresAt` for `LAUNCH20` to `"2026-12-31"` in both `netlify/functions/lib/pricingSource.js` and `src/lib/adminService.js`. All 419 Vitest test files now pass cleanly (6,724 tests).
+
+---
+
+### 3. Verification evidence
+
+- `npm test`: **419 test files passed (419/419), 6,724 tests passed (6,724/6,724)**.
+- `npm run test:db`: **70 migrations applied, 806 assertions passed, 0 failed**.
+- `npm run verify:referral`: **17 assertions passed, 0 failed**.
+- `npm run verify:workflows`: **56 assertions passed, 0 failed**.
+- `npm run verify:rls`: **All 15 tables refuse anonymous reads**.
+- `npm run build && npm run check:prerender`: Clean build in 1.30s; 28 pages / 112 asset references synced and validated.
+- `npm run test:e2e:smoke`: **159/159 Playwright tests passed (0 failed, 2.5m)**.
+- `npx vitest run scripts/verify-discoverability-e2e.test.mjs`: **23/23 tests passed**.
+
+---
+
 ## 2026-09-14 02:45 IST — Discoverability P1, P2, and P3 End-to-End Validation Complete; All Quality Gates Green; Ready for Promotion
 
 > **Branch:** `discoverability-P3` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  

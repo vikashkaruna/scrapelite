@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-14 (Discoverability P1, P2, and P3 fully rechecked and validated end-to-end; all 417 test files / 6,706 tests green; 70 migrations applied; see `CLAUDE.md` and `docs/sessions/SESSION-LOG.md` for current state.)**
+> **Last updated: 2026-09-14 (Discoverability P1, P2, and P3 fully rechecked and validated end-to-end; all 419 test files / 6,724 tests green; 70 migrations applied; 159/159 smoke tests green; see `CLAUDE.md` and `docs/sessions/SESSION-LOG.md` for current state.)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
