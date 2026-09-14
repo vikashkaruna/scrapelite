@@ -10,7 +10,7 @@ import { linkConsentToUser } from "../lib/consentService.js";
 import { claimBillingSession } from "../lib/billingRepo.js";
 import { clearEntitlementCache } from "../lib/entitlementClient.js";
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
 /**
  * Returns true if the current URL hash looks like an OAuth / magic-link /

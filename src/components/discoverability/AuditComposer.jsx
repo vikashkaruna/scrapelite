@@ -80,8 +80,22 @@ export default function AuditComposer({
     const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     try { new URL(withScheme); } catch { setError("That doesn't look like a web address."); return; }
 
-    const competitorList = competitors
-      .split(/[\n,]/).map((c) => c.trim()).filter(Boolean);
+    const rawCompetitorTokens = competitors
+      .split(/[\n,;]/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    const parsedCompetitors = rawCompetitorTokens.map((c) => {
+      let val = c;
+      if (!val.includes(".") || /\s/.test(val)) {
+        const slug = val.toLowerCase().replace(/[^a-z0-9]+/g, "");
+        if (slug) val = `${slug}.com`;
+      }
+      return /^https?:\/\//i.test(val) ? val : `https://${val}`;
+    });
+
+    const competitorList = Array.from(new Set(parsedCompetitors));
+
     if (competitorList.length > MAX_COMPETITOR_URLS) {
       // Refused here rather than truncated on the server, so nobody believes a
       // competitor is being recorded when it is not.
@@ -293,12 +307,10 @@ export default function AuditComposer({
               rows={3}
               value={competitors}
               onChange={(e) => setCompetitors(e.target.value)}
-              placeholder={"competitor.com/page\nanother.com/page"}
+              placeholder={"competitor.com, https://another.com\nor paste company names / CSV"}
             />
             <small>
-              One per line, up to {MAX_COMPETITOR_URLS}. Recorded with this audit
-              as context — nothing is fetched and no credit is spent. Use a
-              benchmark to actually audit them.
+              Paste CSV, comma/semicolon-separated, multiline URLs, or company names (up to {MAX_COMPETITOR_URLS}). Names automatically convert to URLs.
             </small>
           </label>
         </div>

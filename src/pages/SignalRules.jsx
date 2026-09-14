@@ -143,7 +143,7 @@ export default function SignalRules() {
         : {};
 
     try {
-      await rulesApi.createRule({
+      const res = await rulesApi.createRule({
         name,
         trigger_source: triggerSource,
         conditions,
@@ -151,10 +151,27 @@ export default function SignalRules() {
         action_config: actionConfig,
       });
 
+      const newRule = res?.rule || {
+        id: res?.id || `rule_${Date.now()}`,
+        name,
+        trigger_source: triggerSource,
+        conditions,
+        action_type: actionType,
+        action_config: actionConfig,
+        enabled: true,
+        created_at: new Date().toISOString(),
+      };
+
+      setRules((prev) => {
+        const next = [newRule, ...prev.filter((r) => r.id !== newRule.id)];
+        writePageCache("signalRules", next);
+        return next;
+      });
+
       showToast("Signal rule created.");
       setShowCreateModal(false);
       setName("");
-      loadRules();
+      loadRules(true);
     } catch (err) {
       showToast(err.message);
     }
@@ -162,11 +179,17 @@ export default function SignalRules() {
 
   const handleDelete = async (id) => {
     try {
+      setRules((prev) => {
+        const next = prev.filter((r) => r.id !== id);
+        writePageCache("signalRules", next);
+        return next;
+      });
       await rulesApi.deleteRule(id);
       showToast("Rule deleted.");
-      loadRules();
+      loadRules(true);
     } catch (err) {
       showToast(err.message);
+      loadRules();
     }
   };
 

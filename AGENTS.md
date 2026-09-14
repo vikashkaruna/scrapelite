@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-14 (`discoverability-P3` stages 0–5 complete and pushed at `e4873d1`; mandatory pre-push gate green; do not merge or delete this branch; production migrations 0065–0072 and deployment remain operator actions; see `CLAUDE.md` and `docs/sessions/SESSION-LOG.md`.)**
+> **Last updated: 2026-09-15 (Discoverability audit 504 timeout fixed, competitor limit 20 with smart intake, closed-loop operating ribbon, Account 2-column overhaul & workflow fixes merged to `staging`; 432 test files / 6,919 tests 100% green; db-verify 74 migrations / 833 assertions green; see `CLAUDE.md` and `docs/sessions/SESSION-LOG.md`.)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.

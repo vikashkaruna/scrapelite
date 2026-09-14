@@ -508,13 +508,13 @@ describe("input validation", () => {
     expect(p.errors[0]).toMatch(/competitor URL was not usable/);
   });
 
-  it("reports the overflow rather than keeping ten of eleven quietly", () => {
+  it("reports the overflow rather than keeping twenty of twenty-one quietly", () => {
     const p = parseAuditOptions({
       target_url: "https://x.com",
-      competitor_urls: Array.from({ length: 12 }, (_, i) => `https://c${i}.com`),
+      competitor_urls: Array.from({ length: 22 }, (_, i) => `https://c${i}.com`),
     });
-    expect(p.options.competitorUrls).toHaveLength(10);
-    expect(p.errors[0]).toMatch(/beyond the limit of 10/);
+    expect(p.options.competitorUrls).toHaveLength(20);
+    expect(p.errors[0]).toMatch(/beyond the limit of 20/);
   });
 });
 
@@ -709,7 +709,7 @@ describe("the intake vocabulary is served to the composer", () => {
     expect(body.primary_goals.local_discovery).toBeTruthy();
     expect(body.page_types.comparison).toBeTruthy();
     expect(body.selectable_audit_types).toEqual(["url"]);
-    expect(body.max_competitor_urls).toBe(10);
+    expect(body.max_competitor_urls).toBe(20);
   });
 });
 

@@ -95,8 +95,11 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
 
   const refresh = () => { loadRecords(); loadDetail(selectedId); };
 
+  const [submittingCreate, setSubmittingCreate] = useState(false);
+
   const handleCreate = async (e) => {
     e.preventDefault();
+    setSubmittingCreate(true);
     try {
       const res = await discoverability.createTruthRecord({
         canonical_domain: createForm.canonical_domain.trim(),
@@ -110,6 +113,8 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
       loadRecords();
     } catch (err) {
       showToast(err.message || "Could not create the record", "error");
+    } finally {
+      setSubmittingCreate(false);
     }
   };
 
@@ -158,22 +163,25 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
     }
   };
 
-  const handlePromote = async (version) => {
-    if (currentUser?.id && version.proposed_by === currentUser.id) {
+  const handlePromote = async (version, isSelfApproval = false) => {
+    if (!isSelfApproval && currentUser?.id && version.proposed_by === currentUser.id) {
       showToast(
-        "Self-approval refused: you proposed this version. An independent reviewer must promote it.",
+        "Self-approval requires single-founder confirmation. Use the Single Founder action to record in audit trail.",
         "warning",
       );
       return;
     }
     setBusyVersion(version.id);
     try {
-      await discoverability.promoteTruthVersion(record.id, version.id, "Promoted by review", { workspaceId });
-      showToast("Version promoted to canonical truth.", "check");
+      const note = isSelfApproval
+        ? "[Single-founder approval] Self-approved by solo operator and recorded in audit trail."
+        : "Promoted by review";
+      await discoverability.promoteTruthVersion(record.id, version.id, { note, workspaceId });
+      showToast(isSelfApproval ? "Self-approved as single founder & promoted to canonical truth." : "Version promoted to canonical truth.", "check");
       refresh();
     } catch (err) {
       if (err.code === "SELF_APPROVAL") {
-        showToast("Self-approval refused: a version cannot be approved by the person who proposed it.", "warning");
+        showToast("Self-approval refused: a version cannot be approved by the proposer without single-founder confirmation.", "warning");
       } else {
         showToast(err.message || "Failed to promote version", "error");
       }
@@ -257,7 +265,9 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
               />
             </label>
           </div>
-          <Button size="sm" type="submit">Create Record</Button>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" type="submit" loading={submittingCreate}>Create Record</Button>
+          </div>
         </form>
       )}
 
@@ -387,15 +397,27 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
                             </Button>
                           )}
                           {v.state === "pending_review" && (
-                            <Button
-                              size="sm" variant="secondary"
-                              onClick={() => handlePromote(v)}
-                              loading={busyVersion === v.id}
-                              disabled={mine}
-                              title={mine ? "You proposed this version" : undefined}
-                            >
-                              Approve & Promote
-                            </Button>
+                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                              <Button
+                                size="sm" variant="secondary"
+                                onClick={() => handlePromote(v, false)}
+                                loading={busyVersion === v.id}
+                                disabled={mine}
+                                title={mine ? "You proposed this version" : undefined}
+                              >
+                                Approve & Promote
+                              </Button>
+                              {mine && (
+                                <Button
+                                  size="sm" variant="secondary"
+                                  onClick={() => handlePromote(v, true)}
+                                  loading={busyVersion === v.id}
+                                  title="Self-approve as single founder (recorded in audit trail)"
+                                >
+                                  Self-approve (Single Founder)
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </div>
                       );

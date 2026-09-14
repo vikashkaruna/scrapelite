@@ -3,10 +3,11 @@
 // Rule: A duplicate edge returns 409 from the server; render it as a successful
 // corroboration rather than a failure.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
+import { AuthContext } from "../AuthProvider.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 // ⚠️ IMPORTED, NEVER RETYPED. The hand-written lists here offered `operates`,
 // `features`, `author_of`, `parent_of`, `place` and `local_business`, none of
@@ -16,13 +17,18 @@ import {
   ENTITY_TYPES, ENTITY_TYPE_IDS, PREDICATES, PREDICATE_IDS, GRAPH_CONFLICT_CODES,
 } from "../../lib/discoverability/entityGraph.js";
 
-export default function EntityGraphPanel({ workspaceId = null }) {
+export default function EntityGraphPanel({ workspaceId = null, currentUser = null }) {
   const showToast = useToast();
+  const authContext = useContext(AuthContext);
+  const user = currentUser || authContext?.user || null;
   const [graph, setGraph] = useState({ entities: [], relationships: [] });
   const [conflicts, setConflicts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [proposingEntity, setProposingEntity] = useState(false);
   const [proposingRel, setProposingRel] = useState(false);
+  const [submittingEntity, setSubmittingEntity] = useState(false);
+  const [submittingRel, setSubmittingRel] = useState(false);
+  const [approvingRelId, setApprovingRelId] = useState(null);
   const [corroborationNotice, setCorroborationNotice] = useState(null);
 
   // Form states
@@ -62,6 +68,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
 
   const handleProposeEntity = async (e) => {
     e.preventDefault();
+    setSubmittingEntity(true);
     try {
       await discoverability.proposeEntity({
         ...entityForm,
@@ -74,6 +81,8 @@ export default function EntityGraphPanel({ workspaceId = null }) {
       loadGraphData();
     } catch (err) {
       showToast(err.message || "Could not propose entity", "error");
+    } finally {
+      setSubmittingEntity(false);
     }
   };
 
@@ -83,6 +92,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
       showToast("Both subject and object entities are required.", "warning");
       return;
     }
+    setSubmittingRel(true);
     setCorroborationNotice(null);
     try {
       const res = await discoverability.proposeRelationship({
@@ -113,16 +123,30 @@ export default function EntityGraphPanel({ workspaceId = null }) {
       } else {
         showToast(err.message || "Could not propose relationship", "error");
       }
+    } finally {
+      setSubmittingRel(false);
     }
   };
 
-  const handleApproveRel = async (relId) => {
+  const handleApproveRel = async (relId, isSelfApproval = false) => {
+    setApprovingRelId(relId);
     try {
-      await discoverability.approveRelationship(relId, { workspaceId });
-      showToast("Relationship and endpoints approved.", "check");
+      const note = isSelfApproval
+        ? "[Single-founder approval] Self-approved by solo operator and recorded in audit trail."
+        : undefined;
+      const opts = { workspaceId };
+      if (note) opts.note = note;
+      if (discoverability.approveRelationship) {
+        await discoverability.approveRelationship(relId, opts);
+      } else if (discoverability.reviewRelation) {
+        await discoverability.reviewRelation(relId, "approve", { note, workspaceId });
+      }
+      showToast(isSelfApproval ? "Self-approved relationship as single founder." : "Relationship and endpoints approved.", "check");
       loadGraphData();
     } catch (err) {
       showToast(err.message || "Failed to approve relationship", "error");
+    } finally {
+      setApprovingRelId(null);
     }
   };
 
@@ -223,7 +247,9 @@ export default function EntityGraphPanel({ workspaceId = null }) {
               />
             </label>
           </div>
-          <Button size="sm" type="submit">Submit Entity</Button>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" type="submit" loading={submittingEntity}>Submit Entity</Button>
+          </div>
         </form>
       )}
 
@@ -273,7 +299,9 @@ export default function EntityGraphPanel({ workspaceId = null }) {
               </select>
             </label>
           </div>
-          <Button size="sm" type="submit">Propose Relationship</Button>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" type="submit" loading={submittingRel}>Propose Relationship</Button>
+          </div>
         </form>
       )}
 
@@ -325,6 +353,7 @@ export default function EntityGraphPanel({ workspaceId = null }) {
               {relationships.map((r) => {
                 const subj = entities.find((e) => e.id === r.subject_id);
                 const obj = entities.find((e) => e.id === r.object_id);
+                const mine = Boolean(user?.id && r.proposed_by === user.id);
                 return (
                   <div
                     key={r.id}
@@ -345,12 +374,32 @@ export default function EntityGraphPanel({ workspaceId = null }) {
                         Source: {r.source} {r.confidence ? `• Confidence: ${(r.confidence * 100).toFixed(0)}%` : ""}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                       <span className={`dsc-pill dsc-pill-${r.state || "proposed"}`}>{r.state || "proposed"}</span>
                       {r.state !== "approved" && (
-                        <Button size="sm" variant="ghost" onClick={() => handleApproveRel(r.id)}>
-                          Approve
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleApproveRel(r.id, false)}
+                            loading={approvingRelId === r.id}
+                            disabled={mine}
+                            title={mine ? "You proposed this relationship" : undefined}
+                          >
+                            Approve
+                          </Button>
+                          {mine && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleApproveRel(r.id, true)}
+                              loading={approvingRelId === r.id}
+                              title="Self-approve as single founder (recorded in audit trail)"
+                            >
+                              Self-approve (Solo)
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
