@@ -128,6 +128,30 @@ describe("discoverabilityClient workspace propagation", () => {
       workspace_id: "workspace-1",
     });
   });
+
+  it("scopes the complete audit report, comparison, and trend read path", async () => {
+    await discoverability.getResults("audit-1", { workspaceId: "workspace-1" });
+    await discoverability.compare("audit-1", "audit-0", { workspaceId: "workspace-1" });
+    await discoverability.trends("target-1", 30, { workspaceId: "workspace-1" });
+    expect(globalThis.fetch.mock.calls.map((call) => call[0])).toEqual([
+      "/api/discoverability/audits/audit-1/results?workspace_id=workspace-1",
+      "/api/discoverability/audits/audit-1/compare/audit-0?workspace_id=workspace-1",
+      "/api/discoverability/targets/target-1/trends?limit=30&workspace_id=workspace-1",
+    ]);
+  });
+
+  it("scopes report exports, summary generation, and workflow changes", async () => {
+    await discoverability.reportMarkdown("audit-1", { constructs: true, workspaceId: "workspace-1" });
+    await discoverability.summary("audit-1", { workspaceId: "workspace-1" });
+    await discoverability.dismiss("rec-1", "Not relevant", { workspaceId: "workspace-1" });
+    expect(globalThis.fetch.mock.calls[0][0]).toBe(
+      "/api/discoverability/audits/audit-1/report?format=markdown&constructs=1&workspace_id=workspace-1",
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ workspace_id: "workspace-1" });
+    expect(JSON.parse(globalThis.fetch.mock.calls[2][1].body)).toEqual({
+      reason: "Not relevant", workspace_id: "workspace-1",
+    });
+  });
 });
 
 describe("P2 Panels — non-test importer wiring", () => {

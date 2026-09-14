@@ -18,6 +18,7 @@ import { ToastProvider } from "../components/Toast.jsx";
 import { ErrorModalProvider } from "../components/ErrorModal.jsx";
 
 const authMocks = vi.hoisted(() => ({ getSession: vi.fn(), onAuthStateChange: vi.fn() }));
+const workspaceState = vi.hoisted(() => ({ currentWorkspaceId: null }));
 const api = vi.hoisted(() => ({
   runAudit: vi.fn(), getResults: vi.fn(), rerun: vi.fn(), compare: vi.fn(),
   trends: vi.fn(), history: vi.fn(), accept: vi.fn(), dismiss: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("../lib/authService.js", async () => {
   const actual = await vi.importActual("../lib/authService.js");
   return { ...actual, getSession: authMocks.getSession, onAuthStateChange: authMocks.onAuthStateChange };
 });
+vi.mock("../components/WorkspaceContext.jsx", () => ({ useWorkspace: () => workspaceState }));
 vi.mock("../lib/discoverability/discoverabilityClient.js", async () => {
   const actual = await vi.importActual("../lib/discoverability/discoverabilityClient.js");
   return { ...actual, discoverability: api };
@@ -121,6 +123,7 @@ const AUDIT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  workspaceState.currentWorkspaceId = null;
   localStorage.clear();
   authMocks.getSession.mockResolvedValue({ user: { id: "u1", email: "a@b.com" }, access_token: "t" });
   authMocks.onAuthStateChange.mockReturnValue(() => {});
@@ -222,6 +225,22 @@ describe("running an audit", () => {
   it("sends an idempotency key so a double-clicked button costs one audit", async () => {
     await runAudit();
     expect(api.runAudit.mock.calls[0][0].idempotency_key).toBeTruthy();
+  });
+
+  it("keeps the selected workspace on audit creation and subsequent report actions", async () => {
+    workspaceState.currentWorkspaceId = "workspace-1";
+    api.runAudit.mockResolvedValueOnce({
+      ...AUDIT, audit: { id: AUDIT.auditId, workspace_id: "workspace-1" },
+    });
+    await runAudit();
+    expect(api.runAudit).toHaveBeenCalledWith(expect.objectContaining({ workspace_id: "workspace-1" }));
+
+    api.accept.mockResolvedValue({ recommendation: { id: "rec_1", status: "accepted" } });
+    const rec = screen.getByText(/Add FAQPage JSON-LD/).closest("li");
+    fireEvent.click(within(rec).getByRole("button", { name: /^Accept$/ }));
+    await waitFor(() => expect(api.accept).toHaveBeenCalledWith("rec_1", {
+      workspaceId: "workspace-1",
+    }));
   });
 
   it("accepts a bare domain and adds the scheme", async () => {
@@ -432,7 +451,9 @@ describe("the recommendation queue", () => {
     fireEvent.change(within(rec).getByLabelText(/Why are you dismissing this/i),
       { target: { value: "Not applicable to this template" } });
     fireEvent.click(within(rec).getByRole("button", { name: /^Dismiss$/ }));
-    await waitFor(() => expect(api.dismiss).toHaveBeenCalledWith("rec_1", "Not applicable to this template"));
+    await waitFor(() => expect(api.dismiss).toHaveBeenCalledWith(
+      "rec_1", "Not applicable to this template", { workspaceId: null },
+    ));
   });
 
   it("accepts a recommendation", async () => {
@@ -440,7 +461,7 @@ describe("the recommendation queue", () => {
     await runAudit();
     const rec = screen.getByText(/Add FAQPage JSON-LD/).closest("li");
     fireEvent.click(within(rec).getByRole("button", { name: /^Accept$/ }));
-    await waitFor(() => expect(api.accept).toHaveBeenCalledWith("rec_1"));
+    await waitFor(() => expect(api.accept).toHaveBeenCalledWith("rec_1", { workspaceId: null }));
   });
 });
 
@@ -512,7 +533,9 @@ describe("email report — a wholly new capability, no email feature existed her
   it("emails the PDF report and confirms to the signed-in account's own address", async () => {
     await runAudit();
     fireEvent.click(screen.getByRole("button", { name: /email/i }));
-    await waitFor(() => expect(api.emailReport).toHaveBeenCalledWith("aud_1", { format: "pdf", brandKit: null }));
+    await waitFor(() => expect(api.emailReport).toHaveBeenCalledWith("aud_1", {
+      format: "pdf", brandKit: null, workspaceId: null,
+    }));
     expect(await screen.findByText(/report emailed to a@b\.com/i)).toBeInTheDocument();
   });
 

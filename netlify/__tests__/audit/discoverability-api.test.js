@@ -717,7 +717,7 @@ describe("results and ownership", () => {
   it("scopes every read by the caller's user id", async () => {
     storeMock.getAuditFull = vi.fn(async () => null);
     await call("GET", "audits/abc/results");
-    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc");
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc", { workspaceId: null });
   });
 });
 
@@ -1021,7 +1021,7 @@ describe("POST /audits/{id}/summary", () => {
     storeMock.getAuditFull = vi.fn(async () => fullWith(null));
     summarise.mockResolvedValue({ summary: "x".repeat(60), provider: "gemini" });
     await call("POST", "audits/abc/summary", { body: {} });
-    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc");
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc", { workspaceId: null });
     expect(storeMock.saveAuditSummary).toHaveBeenCalledWith("user-1", "abc", expect.anything());
   });
 });
@@ -1079,6 +1079,43 @@ describe("workspace member pause", () => {
     expect(res.statusCode).toBe(201);
     // The workspace lookup is never even attempted for a personal request.
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  }));
+
+  it("scopes audit history, report reads, and target trends to the active workspace", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+      paused_at: null, role: "member", discoverability_role: "viewer",
+    }]), { status: 200 }));
+    storeMock.listAudits = vi.fn(async () => []);
+    storeMock.getAuditFull = vi.fn(async () => ({
+      audit: { id: "audit-1", user_id: "creator-1", workspace_id: "ws-1" },
+      result: {}, signals: [], issues: [], recommendations: [], promptRuns: [],
+    }));
+    storeMock.getTargetTrend = vi.fn(async () => []);
+
+    expect((await call("GET", "audits", { query: { workspace_id: "ws-1" } })).statusCode).toBe(200);
+    expect((await call("GET", "audits/audit-1", { query: { workspace_id: "ws-1" } })).statusCode).toBe(200);
+    expect((await call("GET", "targets/target-1/trends", {
+      query: { workspace_id: "ws-1", limit: "12" },
+    })).statusCode).toBe(200);
+
+    expect(storeMock.listAudits).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      workspaceId: "ws-1",
+    }));
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "audit-1", {
+      workspaceId: "ws-1",
+    });
+    expect(storeMock.getTargetTrend).toHaveBeenCalledWith("user-1", "target-1", 12, {
+      workspaceId: "ws-1",
+    });
+  }));
+
+  it("refuses workspace reads before returning rows to a non-member", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    storeMock.listAudits = vi.fn(async () => [{ id: "must-not-leak" }]);
+    const res = await call("GET", "audits", { query: { workspace_id: "ws-foreign" } });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_NOT_MEMBER");
+    expect(storeMock.listAudits).not.toHaveBeenCalled();
   }));
 });
 

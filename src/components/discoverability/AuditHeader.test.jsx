@@ -77,7 +77,7 @@ describe("AuditHeader — the summary", () => {
     summary.mockResolvedValue({ summary: "Generated summary of the audit." });
     render(<AuditHeader audit={AUDIT} />);
     expect(await screen.findByText(/Generated summary of the audit\./)).toBeInTheDocument();
-    expect(summary).toHaveBeenCalledWith("aud_1");
+    expect(summary).toHaveBeenCalledWith("aud_1", { workspaceId: null });
   });
 
   it("says the summary is unavailable AND that the findings are not", async () => {
@@ -98,7 +98,7 @@ describe("AuditHeader — the summary", () => {
     const { rerender } = render(<AuditHeader audit={AUDIT} />);
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(1));
     rerender(<AuditHeader audit={{ ...AUDIT, auditId: "aud_2" }} />);
-    await waitFor(() => expect(summary).toHaveBeenCalledWith("aud_2"));
+    await waitFor(() => expect(summary).toHaveBeenCalledWith("aud_2", { workspaceId: null }));
   });
 });
 

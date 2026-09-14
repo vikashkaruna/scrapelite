@@ -95,27 +95,44 @@ export const discoverability = {
     return req(`/audits${q.toString() ? `?${q}` : ""}`);
   },
 
-  getAudit: (id) => req(`/audits/${encodeURIComponent(id)}`),
-  getResults: (id) => req(`/audits/${encodeURIComponent(id)}/results`),
-  rerun: (id, payload = {}) => req(`/audits/${encodeURIComponent(id)}/rerun`, "POST", payload),
-  deleteAudit: (id) => req(`/audits/${encodeURIComponent(id)}`, "DELETE"),
-  compare: (id, baselineId) =>
-    req(`/audits/${encodeURIComponent(id)}/compare/${encodeURIComponent(baselineId)}`),
+  getAudit: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  getResults: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/results`, { workspace_id: workspaceId })),
+  rerun: (id, payload = {}, { workspaceId = null } = {}) =>
+    req(`/audits/${encodeURIComponent(id)}/rerun`, "POST", withWorkspace(payload, workspaceId)),
+  deleteAudit: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}`, { workspace_id: workspaceId }), "DELETE"),
+  compare: (id, baselineId, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/compare/${encodeURIComponent(baselineId)}`,
+      { workspace_id: workspaceId })),
 
   // ── Evidence panels ──────────────────────────────────────────────────────
-  headings: (id) => req(`/audits/${encodeURIComponent(id)}/headings`),
-  schema: (id) => req(`/audits/${encodeURIComponent(id)}/schema`),
-  answers: (id) => req(`/audits/${encodeURIComponent(id)}/answers`),
-  entities: (id) => req(`/audits/${encodeURIComponent(id)}/entities`),
-  technical: (id) => req(`/audits/${encodeURIComponent(id)}/technical`),
+  headings: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/headings`, { workspace_id: workspaceId })),
+  schema: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/schema`, { workspace_id: workspaceId })),
+  answers: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/answers`, { workspace_id: workspaceId })),
+  entities: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/entities`, { workspace_id: workspaceId })),
+  technical: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/technical`, { workspace_id: workspaceId })),
 
   // ── Reports ──────────────────────────────────────────────────────────────
-  reportMarkdown: (id, { constructs = false } = {}) =>
-    reqText(`/audits/${encodeURIComponent(id)}/report?format=markdown${constructs ? "&constructs=1" : ""}`),
+  reportMarkdown: (id, { constructs = false, workspaceId = null } = {}) =>
+    reqText(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "markdown", constructs: constructs ? "1" : null, workspace_id: workspaceId,
+    })),
   /** rows: "all" | "scores" | "signals" | "issues" | "recommendations". */
-  reportCsv: (id, rows = "all") =>
-    reqText(`/audits/${encodeURIComponent(id)}/report?format=csv&rows=${encodeURIComponent(rows)}`),
-  reportJson: (id) => req(`/audits/${encodeURIComponent(id)}/report?format=json`),
+  reportCsv: (id, rows = "all", { workspaceId = null } = {}) =>
+    reqText(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "csv", rows, workspace_id: workspaceId,
+    })),
+  reportJson: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "json", workspace_id: workspaceId,
+    })),
 
   /**
    * The audit's executive summary. Generated on first call and cached, so this
@@ -123,28 +140,40 @@ export const discoverability = {
    * Resolves with `summary: null` when the model is unavailable; the header
    * degrades to the deterministic facts rather than showing an error.
    */
-  summary: (id) => req(`/audits/${encodeURIComponent(id)}/summary`, "POST", {}),
+  summary: (id, { workspaceId = null } = {}) =>
+    req(`/audits/${encodeURIComponent(id)}/summary`, "POST", withWorkspace({}, workspaceId)),
 
   // ── Recommendations ──────────────────────────────────────────────────────
-  recommendations: (id) => req(`/audits/${encodeURIComponent(id)}/recommendations`),
-  accept: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/accept`, "POST", {}),
+  recommendations: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/recommendations`, { workspace_id: workspaceId })),
+  accept: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/accept`, "POST", withWorkspace({}, workspaceId)),
   /** A reason is REQUIRED; the server refuses a dismissal without one. */
-  dismiss: (recId, reason) => req(`/recommendations/${encodeURIComponent(recId)}/dismiss`, "POST", { reason }),
-  markDone: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/done`, "POST", {}),
-  reopen: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/reopen`, "POST", {}),
+  dismiss: (recId, reason, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/dismiss`, "POST", withWorkspace({ reason }, workspaceId)),
+  markDone: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/done`, "POST", withWorkspace({}, workspaceId)),
+  reopen: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/reopen`, "POST", withWorkspace({}, workspaceId)),
   /**
    * Hand a recommendation to someone, or put it down with `null`.
    *
    * The server checks that the assignee shares a workspace with you; there is
    * deliberately no client-side membership list to bypass.
    */
-  assign: (recId, assignee) =>
-    req(`/recommendations/${encodeURIComponent(recId)}/assign`, "POST", { assignee: assignee ?? null }),
+  assign: (recId, assignee, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/assign`, "POST",
+      withWorkspace({ assignee: assignee ?? null }, workspaceId)),
 
   // ── Targets and trends ───────────────────────────────────────────────────
-  listTargets: () => req("/targets"),
-  history: (targetId) => req(`/targets/${encodeURIComponent(targetId)}/history`),
-  trends: (targetId, limit = 30) => req(`/targets/${encodeURIComponent(targetId)}/trends?limit=${limit}`),
+  listTargets: ({ workspaceId = null } = {}) =>
+    req(withQuery("/targets", { workspace_id: workspaceId })),
+  history: (targetId, { workspaceId = null } = {}) =>
+    req(withQuery(`/targets/${encodeURIComponent(targetId)}/history`, { workspace_id: workspaceId })),
+  trends: (targetId, limit = 30, { workspaceId = null } = {}) =>
+    req(withQuery(`/targets/${encodeURIComponent(targetId)}/trends`, {
+      limit, workspace_id: workspaceId,
+    })),
 
   // ── Benchmarks ───────────────────────────────────────────────────────────
   createBenchmark: (payload) => req("/benchmarks", "POST", payload),
@@ -179,8 +208,9 @@ export const discoverability = {
    * the signed-in account's own email, resolved server-side, never something
    * this call can specify.
    */
-  emailReport: (auditId, { format = "pdf", brandKit = null } = {}) =>
-    emailReport({ kind: "discoverability", auditId, format, brandKit }),
+  emailReport: (auditId, { format = "pdf", brandKit = null, workspaceId = null } = {}) =>
+    emailReport({ kind: "discoverability", auditId, format, brandKit,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
 
   // ── Canonical Business Truth Record (W9) ─────────────────────────────────
   //

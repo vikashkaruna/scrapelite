@@ -173,3 +173,37 @@ describe("persistResult — the gap-analysis fields reach the row", () => {
     expect(calls.find((c) => c.path === "audit_results")).toBeTruthy();
   });
 });
+
+describe("workspace-scoped audit reads", () => {
+  it("uses workspace_id instead of the viewer's user_id for shared history and deletion", async () => {
+    await store.listAudits("viewer-1", { workspaceId: "workspace-1" });
+    await store.deleteAudit("viewer-1", "audit-1", { workspaceId: "workspace-1" });
+    const paths = calls.map((call) => call.path);
+    expect(paths[0]).toContain("workspace_id=eq.workspace-1");
+    expect(paths[0]).not.toContain("user_id=eq.viewer-1");
+    expect(paths[1]).toContain("workspace_id=eq.workspace-1");
+    expect(paths[1]).not.toContain("user_id=eq.viewer-1");
+  });
+
+  it("builds a shared trend from only that workspace and never calls the target-only RPC", async () => {
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const path = String(url).replace("https://db.test/", "");
+      calls.push({ path, method: init?.method });
+      return {
+        ok: true, status: 200,
+        text: async () => JSON.stringify([{
+          id: "audit-1", created_at: "2026-09-14T00:00:00Z",
+          audit_results: [{ final_score: 78, coverage: 90 }],
+        }]),
+      };
+    });
+    calls = [];
+    const rows = await store.getTargetTrend("viewer-1", "target-1", 30, {
+      workspaceId: "workspace-1",
+    });
+    expect(calls[0].path).toContain("workspace_id=eq.workspace-1");
+    expect(calls[0].path).toContain("target_id=eq.target-1");
+    expect(calls[0].path).not.toContain("rpc/audit_target_trend");
+    expect(rows).toEqual([expect.objectContaining({ audit_id: "audit-1", final_score: 78 })]);
+  });
+});

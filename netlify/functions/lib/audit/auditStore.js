@@ -690,10 +690,14 @@ export async function getAuditFull(userId, auditId, { workspaceId = null } = {})
  * Never throws: a summary that could not be cached is a summary that gets
  * regenerated next time, not a report that fails to load.
  */
-export async function saveAuditSummary(userId, auditId, { summary, model }) {
+export async function saveAuditSummary(userId, auditId, { summary, model, workspaceId = null, auditOwnerId = null }) {
   if (!userId || !auditId || !summary) return { ok: false };
+  // A workspace member may be the first person to open a shared report. The
+  // parent audit has already been scoped and authorized by the route, so cache
+  // against the audit creator stored on that parent rather than the viewer.
+  const storedOwner = workspaceId && auditOwnerId ? auditOwnerId : userId;
   const r = await rest(
-    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(storedOwner)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
@@ -707,9 +711,11 @@ export async function saveAuditSummary(userId, auditId, { summary, model }) {
   return { ok: Boolean(r.ok) };
 }
 
-export async function listAudits(userId, { limit = 25, offset = 0, targetId = null, status = null } = {}) {
+export async function listAudits(userId, {
+  limit = 25, offset = 0, targetId = null, status = null, workspaceId = null,
+} = {}) {
   const params = [
-    `user_id=eq.${encodeURIComponent(userId)}`,
+    ownerOrWorkspace(userId, workspaceId),
     "select=*,audit_results(final_score,seo_score,aeo_score,geo_score,coverage,issue_count,critical_count)",
     "order=created_at.desc",
     `limit=${Math.max(1, Math.min(100, limit))}`,
@@ -721,7 +727,25 @@ export async function listAudits(userId, { limit = 25, offset = 0, targetId = nu
   return r.ok ? r.data || [] : [];
 }
 
-export async function listTargets(userId, { limit = 50 } = {}) {
+export async function listTargets(userId, { limit = 50, workspaceId = null } = {}) {
+  if (workspaceId) {
+    // Targets predate workspaces and intentionally remain account-owned. A
+    // shared target is therefore derived from the workspace's audits, then
+    // hydrated without applying the viewer's user_id (which would hide rows
+    // created by another member).
+    const scoped = await rest(
+      `audits?workspace_id=eq.${encodeURIComponent(workspaceId)}`
+      + `&select=target_id&order=created_at.desc&limit=${Math.max(1, Math.min(500, limit * 10))}`,
+    );
+    const ids = [...new Set((scoped.ok && Array.isArray(scoped.data) ? scoped.data : [])
+      .map((row) => row.target_id).filter(Boolean))].slice(0, Math.max(1, Math.min(200, limit)));
+    if (!ids.length) return [];
+    const r = await rest(
+      `audit_targets?id=in.(${ids.map(encodeURIComponent).join(",")})`
+      + `&${SELECT_ALL}&order=updated_at.desc&limit=${ids.length}`,
+    );
+    return r.ok ? r.data || [] : [];
+  }
   const r = await rest(
     `audit_targets?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=updated_at.desc&limit=${Math.max(1, Math.min(200, limit))}`,
   );
@@ -729,7 +753,24 @@ export async function listTargets(userId, { limit = 50 } = {}) {
 }
 
 /** Score history for a target — the trend chart, via the migration's function. */
-export async function getTargetTrend(userId, targetId, limit = 30) {
+export async function getTargetTrend(userId, targetId, limit = 30, { workspaceId = null } = {}) {
+  if (workspaceId) {
+    // The legacy SECURITY DEFINER RPC is target-scoped, not workspace-scoped.
+    // Calling it after merely finding one shared audit could mix the creator's
+    // personal runs into the workspace graph. Read the exact scoped rows and
+    // flatten the embedded result instead.
+    const r = await rest(
+      `audits?target_id=eq.${encodeURIComponent(targetId)}`
+      + `&workspace_id=eq.${encodeURIComponent(workspaceId)}&status=eq.completed`
+      + `&select=id,created_at,audit_results(final_score,seo_score,aeo_score,geo_score,answer_clarity_score,entity_authority_score,structural_hierarchy_score,technical_accessibility_score,coverage,issue_count,critical_count)`
+      + `&order=created_at.desc&limit=${Math.max(1, Math.min(365, limit))}`,
+    );
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    return r.data.map((row) => {
+      const result = Array.isArray(row.audit_results) ? row.audit_results[0] : row.audit_results;
+      return { audit_id: row.id, created_at: row.created_at, ...(result || {}) };
+    });
+  }
   const conn = db();
   if (!conn) return [];
   // Ownership is checked here rather than relying on the SECURITY DEFINER
@@ -843,9 +884,9 @@ export async function setRecommendationAssignee(userId, recId, assigneeId, { wor
   }
 }
 
-export async function deleteAudit(userId, auditId) {
+export async function deleteAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     { method: "DELETE", headers: { Prefer: "return=representation" } },
   );
   if (!r.ok) return { ok: false, error: r.error };

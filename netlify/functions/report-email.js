@@ -16,6 +16,7 @@ import * as store from "./lib/audit/auditStore.js";
 import { rehydrate } from "./discoverability.js";
 import { validateBrandKit } from "../../src/lib/brandKitValidation.js";
 import { requireCapability } from "./lib/requireEntitlement.js";
+import { requireWorkspaceDiscoverabilityAction } from "./lib/workspaceContext.js";
 
 const HEADERS = {
   "Content-Type": "application/json",
@@ -72,8 +73,13 @@ export const handler = async (event) => {
   if (kind === "discoverability") {
     const auditId = body.auditId || (Array.isArray(body.ids) ? body.ids[0] : null);
     if (!auditId) return respond(400, { ok: false, error: "auditId is required." });
-    const full = await store.getAuditFull(user.id, auditId);
+    const workspaceId = body.workspace_id || null;
+    const full = await store.getAuditFull(user.id, auditId, { workspaceId });
     if (!full) return respond(404, { ok: false, error: "Audit not found." });
+    const roleGate = await requireWorkspaceDiscoverabilityAction(user.id, workspaceId, "read");
+    if (!roleGate.ok) {
+      return respond(403, { ok: false, error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
     const audit = rehydrate(full);
     const result = await sendReportEmail({ kind, recipient, format, audit, ctaUrl, brandKit });
     if (!result.sent) return respond(502, { ok: false, error: "Could not send the email.", reason: result.reason });
